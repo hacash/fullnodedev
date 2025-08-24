@@ -1,0 +1,14 @@
+[package]
+name = "protocol"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sys = { path = "../sys" }
+field = { path = "../field" }
+dyn-clone = "1.0.17"
+concat-idents = "1.1.5"
+hex = "0.4.3"
+num-bigint = "0.4.6"
+num-traits = "0.2.19"
+lazy_static = "1.5.0"
