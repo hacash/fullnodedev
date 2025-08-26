@@ -1,7 +1,6 @@
 use std::path::*;
-// use std::thread::*;
+use std::sync::*;
 
-use db::NilKV;
 use sys::*;
 // use protocol::interface::*;
 
@@ -10,15 +9,18 @@ use sys::{load_config, IniObj};
 
 
 
-
 /***************************************/
 
 
 
+struct NilDB {}
+impl DiskDB for NilDB {}
 
-struct EmptyBlockScaner {}
-impl Scaner for EmptyBlockScaner {}
+struct NilScaner {}
+impl Scaner for NilScaner {}
 
+struct NilTxPool {}
+impl TxPool for NilTxPool {}
 
 
 
@@ -30,11 +32,11 @@ pub struct Builder {
     #[allow(dead_code)]
     cnfini: IniObj,
     datadir: PathBuf,
-    diskkv: Box<dyn DiskDB>,
-    // txpool: Box<dyn TxPool>,
-    // _minter: Box<dyn Minter>,
-    scaner: Box<dyn Scaner>,
-    // _engine: Box<dyn Engine>,
+    diskdb: Arc<dyn DiskDB>,
+    txpool: Arc<dyn TxPool>,
+    // _minter: Arc<dyn Minter>,
+    scaner: Arc<dyn Scaner>,
+    // _engine: Arc<dyn Engine>,
 }
 
 impl Builder {
@@ -46,8 +48,10 @@ impl Builder {
         Self {
             cnfini,
             datadir,
-            diskkv: Box::new(NilKV::new()),
-            scaner: Box::new(EmptyBlockScaner{}),
+            diskdb: Arc::new(NilDB{}),
+            scaner: Arc::new(NilScaner{}),
+            txpool: Arc::new(NilTxPool{}),
+
         }
     }
 
@@ -55,15 +59,24 @@ impl Builder {
         &self.datadir
     }
 
-    pub fn scaner(&mut self, scn: Box<dyn Scaner>) -> &mut Self {
+    pub fn scaner(&mut self, scn: Arc<dyn Scaner>) -> &mut Self {
         self.scaner = scn;
         self
     }
 
-    pub fn diskkv(&mut self, dkv: Box<dyn DiskDB>) -> &mut Self {
-        self.diskkv = dkv;
+    pub fn diskdb(&mut self, f: fn(_datadir: &PathBuf)->Box<dyn DiskDB>) -> &mut Self {
+        self.diskdb = f(&self.datadir).into();
         self
     }
+
+    pub fn txpool(&mut self, f: fn(_ini: &IniObj)->Box<dyn TxPool>) -> &mut Self {
+        self.txpool = f(&self.cnfini).into();
+        self
+    }
+
+    
+
+
 
     // do start all
     pub fn run(self) {

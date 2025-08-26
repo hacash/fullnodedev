@@ -1,8 +1,8 @@
 
-
-
 use app::*;
-
+use app::fullnode::Builder;
+use sys::{never, IniObj};
+use protocol::interface::*;
 /*
 * fullnode main
 */ 
@@ -16,17 +16,19 @@ fn main() {
     // setup hook
     protocol::block::setup_block_hasher( x16rs::block_hash );
 
-    // build and start
-    let mut builder = app::fullnode::Builder::new();
+    // build & setup
+    let mut builder =  Builder::new();
+    builder.diskdb(|dir|Box::new(db::DiskKV::open(dir)));
+    builder.txpool(build_txpool);
 
-    // open and setup kv database
-    let dkv = Box::new(db::DiskKV::open(builder.datadir()));
-    builder.diskkv(dkv);
-
-    
+    // start run
     builder.run();
-
 }
 
 
+fn build_txpool(_ini: &IniObj) -> Box<dyn TxPool> {
+    
 
+
+    unimplemented!()
+}

@@ -79,7 +79,7 @@ impl Serialize for Fold64 {
 
     fn serialize(&self) -> Vec<u8> {
         if self.value > Fold64::MAX {
-            unimplemented!() // fatal error!!!
+            never!() // fatal error!!!
         }
         let vs = self.size() as u8;
         let head = vec![(vs - 1) << 5];

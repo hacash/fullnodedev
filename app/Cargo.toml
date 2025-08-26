@@ -9,6 +9,7 @@ sys = { path = "../sys" }
 field = { path = "../field" }
 protocol = { path = "../protocol" }
 db = { path = "../db" }
+node = { path = "../node" }
 # mint = { path = "../mint" }
 hex = "0.4.3"
 serde = "1.0.215"

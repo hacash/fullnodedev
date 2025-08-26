@@ -13,13 +13,13 @@ pub trait Minter : Send + Sync {
     // fn coinbase(&self, _: u64, _: &dyn TransactionRead) -> Rerr { Ok(()) }
     // do
     // data
-    fn genesis_block(&self) -> Arc<dyn Block> { unimplemented!() }
+    fn genesis_block(&self) -> Arc<dyn Block> { never!() }
     // actions
     // fn actions(&self) -> Vec<Box<dyn Action>>;
 
     // v2
 
-    fn config(&self) -> Box<dyn Any> { unimplemented!() }
+    fn config(&self) -> Box<dyn Any> { never!() }
     fn init(&self, _:&IniObj) {}
     // check
     fn initialize(&self, _: &mut dyn State) -> Rerr { Ok(()) }
@@ -36,7 +36,7 @@ pub trait Minter : Send + Sync {
     
     // close exit
     fn exit(&self) {}
-    
+
 }
 
 

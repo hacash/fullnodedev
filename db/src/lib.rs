@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::*;
 use std::any::*;
 
 
@@ -30,6 +30,5 @@ include!{"disk_leveldb_sys.rs"}
 /*****************************/
 
 include!{"memkv.rs"}
-include!{"nil.rs"}
 
 
