@@ -14,3 +14,5 @@ sha3 = "0.10.1"
 ripemd = "0.1.1"
 # getrandom = { version = "0.3.2", features = ["wasm_js"] }
 libsecp256k1 = { version = "0.7.2",  features = ["hmac", "static-context"], default-features = false }
+ctrlc = "3.4.5"
+async-broadcast = "0.7.2"

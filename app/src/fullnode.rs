@@ -78,9 +78,24 @@ impl Builder {
 
 fn run_fullnode(_builder: Builder) {
 
-    // open kv database
-    
+    let exiter = Exiter::new();
+
+
+
+
+    let worker = exiter.work();
+
     println!("Hello, hacash fullnode!");
+    
+    worker.exit();
+
+
+
+
+
+
+    exiter.wait();
+    println!("\n[Exit] Hacash fullnode closed.");
 }
 
 
