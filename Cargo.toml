@@ -1,5 +1,6 @@
 [package]
 name = "hacash"
+default-run = "hacash"
 version = "0.3.0"
 edition = "2024"
 
@@ -9,6 +10,7 @@ sys = {path = "./sys"}
 field = {path = "./field"}
 protocol = {path = "./protocol"}
 db = {path = "./db"}
+app = {path = "./app"}
 
 
 

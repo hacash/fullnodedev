@@ -30,5 +30,6 @@ include!{"disk_leveldb_sys.rs"}
 /*****************************/
 
 include!{"memkv.rs"}
+include!{"nil.rs"}
 
 

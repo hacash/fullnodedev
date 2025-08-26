@@ -51,7 +51,7 @@ impl EngineConf {
         
 
         // datadir
-        let data_dir = get_data_dir(ini);
+        let data_dir = get_mainnet_data_dir(ini);
     
         let mut state_data_dir = join_path(&data_dir, "state");
         state_data_dir.push(format!("v{}", dbv));

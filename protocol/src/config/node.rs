@@ -93,7 +93,7 @@ impl NodeConf {
 fn read_node_key(ini: &IniObj, sec: &HashMap<String, Option<String>>) -> [u8; 16] {
 
     // node.id path
-    let mut nidfp = get_data_dir(ini);
+    let mut nidfp = get_mainnet_data_dir(ini);
     let kph =  std::path::absolute(nidfp.as_path());
     nidfp.push("node.id");
         

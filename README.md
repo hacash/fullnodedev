@@ -1,6 +1,13 @@
 
 
 
+### Run fullnode for dev 
+
+```sh
+cp ./hacash.config.ini ./target/debug/ && cargo run
+```
+
+
 
 
 #### start flow:

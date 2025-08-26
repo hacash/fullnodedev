@@ -1,9 +1,17 @@
-fn main() {
+/*
 
-    protocol::block::setup_block_hasher( x16rs::block_hash );
+RUSTFLAGS="-C target-feature=-crt-static" cargo build
 
-    use protocol::interface::*;
-    let _memkvinst = db::MemKV::new();
+cp hacash.config.ini ./target/debug/ && rm -rf ./target/debug/hacash_mainnet_data/ && RUST_BACKTRACE=all cargo run --bin fullnode
 
-    println!("Hello, world!");
-}
+*/
+
+
+
+
+/*
+* main fullnode
+*/
+include!{"./bin/fullnode.rs"}
+
+
