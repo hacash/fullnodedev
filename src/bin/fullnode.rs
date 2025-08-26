@@ -1,9 +1,13 @@
 
+use sys::*;
 use app::*;
 use app::fullnode::Builder;
-use sys::{never, IniObj};
-use protocol::interface::*;
+use protocol::{interface::*, EngineConf};
+use node::memtxpool::*;
+
+
 /*
+
 * fullnode main
 */ 
 #[allow(dead_code)]
@@ -26,9 +30,16 @@ fn main() {
 }
 
 
-fn build_txpool(_ini: &IniObj) -> Box<dyn TxPool> {
-    
-
-
-    unimplemented!()
+fn build_txpool(engcnf: &EngineConf) -> Box<dyn TxPool> {
+    let mut tpmaxs = maybe!(engcnf.miner_enable,
+        vec![2000, 100], // miner node
+        vec![10, 10]     // normal node
+    );
+    let fpmds  = vec![true, false]; // is sort by fee_purity, normal or diamint
+    cover(&mut tpmaxs, &engcnf.txpool_maxs);
+    Box::new(MemTxPool::new(
+        engcnf.lowest_fee_purity, 
+        tpmaxs, 
+        fpmds
+    ))
 }

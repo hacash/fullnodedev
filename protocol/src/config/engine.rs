@@ -23,17 +23,19 @@ pub struct EngineConf {
     pub recent_blocks: bool,
     pub average_fee_purity: bool,
     pub lowest_fee_purity: u64, 
-    // HAC miner
+    // hac miner
     pub miner_enable: bool,
     pub miner_reward_address: Address,
     pub miner_message: Fixed16,
-    // Diamond miner
+    // diamond miner
     pub dmer_enable: bool,
     pub dmer_reward_address: Address,
     pub dmer_bid_account: Account,
     pub dmer_bid_min:  Amount,
     pub dmer_bid_max:  Amount,
     pub dmer_bid_step: Amount,
+    // tx pool
+    pub txpool_maxs: Vec<usize>,
 }
 
 
@@ -91,6 +93,8 @@ impl EngineConf {
             dmer_bid_min:  Amount::small_mei(1),
             dmer_bid_max:  Amount::small_mei(31),
             dmer_bid_step: Amount::small(5, 247),
+            // tx pool
+            txpool_maxs: Vec::default(),
         };
         // setup lowest_fee
         if ini_must(sec_server, "lowest_fee", "").len() > 0 {
@@ -129,6 +133,15 @@ impl EngineConf {
             cnf.dmer_bid_max =  ini_must_amount(sec_dmer, "bid_max").compress(2, AmtCpr::Grow).unwrap();
             cnf.dmer_bid_step = ini_must_amount(sec_dmer, "bid_step").compress(2, AmtCpr::Grow).unwrap();
         }
+
+        // tx pool
+        let sec_txpool = &ini_section(ini, "txpool");
+        cnf.txpool_maxs = ini_must(sec_txpool, "maxs", "").replace(" ", "").split(",").map(|a|{
+            match a.parse::<usize>() {
+                Ok(n) => n,
+                _ => 100,
+            }
+        }).collect();
 
         // ok
         cnf

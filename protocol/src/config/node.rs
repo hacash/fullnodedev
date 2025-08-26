@@ -13,7 +13,6 @@ pub struct NodeConf {
     
     pub multi_thread: bool,
 
-    pub txpool_maxs: Vec<usize>,
 
 }
 
@@ -66,19 +65,10 @@ impl NodeConf {
             offshoot_peers: 200,
             backbone_peers: 4,
             multi_thread:  ini_must_bool(sec, "multi_thread", false),
-            txpool_maxs: Vec::default(),
         };
 
         cnf.offshoot_peers = ini_must_u64(sec, "offshoot_peers", 200) as usize;
         cnf.backbone_peers = ini_must_u64(sec, "backbone_peers", 4) as usize;
-
-        let sec_txpool = &ini_section(ini, "txpool");
-        cnf.txpool_maxs = ini_must(sec_txpool, "maxs", "").replace(" ", "").split(",").map(|a|{
-            match a.parse::<usize>() {
-                Ok(n) => n,
-                _ => 100,
-            }
-        }).collect();
 
         // ok
         cnf

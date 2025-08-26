@@ -4,7 +4,7 @@
 ### Run fullnode for dev 
 
 ```sh
-cp ./hacash.config.ini ./target/debug/ && cargo run
+cp ./hacash.config.ini ./target/debug/ && RUST_BACKTRACE=1 cargo run
 ```
 
 

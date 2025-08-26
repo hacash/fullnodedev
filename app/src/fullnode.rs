@@ -1,11 +1,12 @@
 use std::path::*;
 use std::sync::*;
 
-use sys::*;
-// use protocol::interface::*;
 
+use super::*;
+
+use sys::*;
+use protocol::*;
 use protocol::interface::*;
-use sys::{load_config, IniObj};
 
 
 
@@ -15,7 +16,7 @@ use sys::{load_config, IniObj};
 
 struct NilDB {}
 impl DiskDB for NilDB {}
-
+type FnBuildDB = fn(_: &PathBuf)->Box<dyn DiskDB>;
 struct NilScaner {}
 impl Scaner for NilScaner {}
 
@@ -28,11 +29,13 @@ impl TxPool for NilTxPool {}
 
 
 
+#[allow(dead_code)]
 pub struct Builder {
-    #[allow(dead_code)]
     cnfini: IniObj,
     datadir: PathBuf,
-    diskdb: Arc<dyn DiskDB>,
+    engcnf: Arc<EngineConf>,
+    nodcnf: Arc<NodeConf>,
+    diskdb: FnBuildDB,
     txpool: Arc<dyn TxPool>,
     // _minter: Arc<dyn Minter>,
     scaner: Arc<dyn Scaner>,
@@ -45,18 +48,24 @@ impl Builder {
         let cnfpath = "./hacash.config.ini".to_owned();
         let cnfini = load_config(cnfpath);
         let datadir = get_mainnet_data_dir(&cnfini);
+        let engcnf = Arc::new(EngineConf::new(&cnfini, HACASH_STATE_DB_UPDT));
+        let nodcnf = Arc::new(NodeConf::new(&cnfini));
+        let build_nil_db: FnBuildDB = |_|Box::new(NilDB{});
         Self {
             cnfini,
             datadir,
-            diskdb: Arc::new(NilDB{}),
+            engcnf,
+            nodcnf,
+            diskdb: build_nil_db,
             scaner: Arc::new(NilScaner{}),
             txpool: Arc::new(NilTxPool{}),
 
         }
     }
 
-    pub fn datadir(&self) -> &PathBuf {
-        &self.datadir
+    pub fn diskdb(&mut self, f: FnBuildDB) -> &mut Self {
+        self.diskdb = f;
+        self
     }
 
     pub fn scaner(&mut self, scn: Arc<dyn Scaner>) -> &mut Self {
@@ -64,19 +73,10 @@ impl Builder {
         self
     }
 
-    pub fn diskdb(&mut self, f: fn(_datadir: &PathBuf)->Box<dyn DiskDB>) -> &mut Self {
-        self.diskdb = f(&self.datadir).into();
+    pub fn txpool(&mut self, f: fn(_: &EngineConf)->Box<dyn TxPool>) -> &mut Self {
+        self.txpool = f(&self.engcnf).into();
         self
     }
-
-    pub fn txpool(&mut self, f: fn(_ini: &IniObj)->Box<dyn TxPool>) -> &mut Self {
-        self.txpool = f(&self.cnfini).into();
-        self
-    }
-
-    
-
-
 
     // do start all
     pub fn run(self) {
