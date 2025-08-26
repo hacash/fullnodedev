@@ -31,11 +31,13 @@ impl BlockStore {
         self.disk.save(&hei.to_bytes(), hx.as_ref())
     }
     
-    pub fn save_block_hash_path(&self, paths: &dyn MemBatch) {
+    // MemBatch
+    pub fn save_block_hash_path(&self, paths: Box<dyn Any>) {
         self.disk.write_batch(paths)
     }
     
-    pub fn save_batch(&self, batch: &dyn MemBatch) {
+    // MemBatch
+    pub fn save_batch(&self, batch: Box<dyn Any>) {
         self.disk.write_batch(batch)
     }
 
