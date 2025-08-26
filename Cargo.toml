@@ -11,6 +11,7 @@ field = {path = "./field"}
 protocol = {path = "./protocol"}
 db = {path = "./db"}
 mint = {path = "./mint"}
+chain = {path = "./chain"}
 node = {path = "./node"}
 app = {path = "./app"}
 

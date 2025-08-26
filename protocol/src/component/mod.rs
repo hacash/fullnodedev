@@ -9,5 +9,7 @@ use super::interface::*;
 // use super::block::*;
 
 
+include!{"define.rs"}
 include!{"tx.rs"}
 include!{"block.rs"}
+include!{"memkv.rs"}

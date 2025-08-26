@@ -7,6 +7,7 @@ use super::*;
 use sys::*;
 use protocol::*;
 use protocol::interface::*;
+use protocol::component::*;
 
 
 
@@ -16,7 +17,6 @@ use protocol::interface::*;
 
 struct NilDB {}
 impl DiskDB for NilDB {}
-type FnBuildDB = fn(_: &PathBuf)->Box<dyn DiskDB>;
 struct NilScaner {}
 impl Scaner for NilScaner {}
 
@@ -36,8 +36,8 @@ pub struct Builder {
     engcnf: Arc<EngineConf>,
     nodcnf: Arc<NodeConf>,
     diskdb: FnBuildDB,
+    // _minter: Box<dyn Minter>,
     txpool: Arc<dyn TxPool>,
-    // _minter: Arc<dyn Minter>,
     scaner: Arc<dyn Scaner>,
     // _engine: Arc<dyn Engine>,
 }

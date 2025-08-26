@@ -36,13 +36,13 @@ impl Store for BlockStore {
     }
     
     // MemBatch
-    fn save_block_hash_path(&self, paths: Box<dyn Any>) {
-        self.disk.write_batch(paths)
+    fn save_block_hash_path(&self, paths: &dyn MemDB) {
+        self.disk.write(paths)
     }
     
     // MemBatch
-    fn save_batch(&self, batch: Box<dyn Any>) {
-        self.disk.write_batch(batch)
+    fn save_batch(&self, batch: &dyn MemDB) {
+        self.disk.write(batch)
     }
 
     // read
