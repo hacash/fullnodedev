@@ -12,6 +12,7 @@ use field::*;
 use field::interface::*;
 
 use super::*;
+use super::component::*;
 // use super::context::*;
 
 
@@ -22,5 +23,10 @@ include!{"vm.rs"}
 include!{"action.rs"}
 include!{"transaction.rs"}
 include!{"block.rs"}
+include!{"txpool.rs"}
+include!{"minter.rs"}
+include!{"scaner.rs"}
+include!{"engine.rs"}
+include!{"node.rs"}
 
 

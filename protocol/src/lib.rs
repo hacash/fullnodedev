@@ -10,10 +10,14 @@ use field::*;
 // use transaction::*;
 // use interface::*;
 
-include!{"depth.rs"}
+
+include!{"define.rs"}
 include!{"env.rs"}
+include!{"config/mod.rs"}
+
 
 pub mod interface;
+pub mod component;
 pub mod difficulty;
 pub mod state;
 pub mod operate;
@@ -21,10 +25,6 @@ pub mod action;
 pub mod transaction;
 pub mod block;
 pub mod context;
-pub mod component;
-
-// include!{"data/tx.rs"}
-// include!{"data/block.rs"}
 
 
 

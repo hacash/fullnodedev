@@ -5,8 +5,8 @@ use field::interface::*;
 
 use super::*;
 use super::interface::*;
-use super::transaction::*;
-use super::block::*;
+// use super::transaction::*;
+// use super::block::*;
 
 
 include!{"tx.rs"}

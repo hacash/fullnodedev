@@ -9,16 +9,18 @@ use super::context;
 
 use super::*;
 use super::interface::*;
+use super::state::*;
 use super::transaction::*;
+use super::component::*;
 
 
 
 
-include!{"define.rs"}
 include!{"util.rs"}
 include!{"hook.rs"}
 include!{"intro.rs"}
 include!{"v1.rs"}
 include!{"create.rs"}
+include!{"store.rs"}
 
 

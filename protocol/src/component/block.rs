@@ -1,29 +1,4 @@
-use crate::state::BlockStore;
-
-
-    
-pub fn load_block(store: &BlockStore, hx: &Hash) -> Option<(Vec<u8>, Box<dyn Block>)> {
-	let Some(data) = store.block_data(&hx) else {
-		return None
-	};
-	// parse
-	match block::create(&data).map(|(b,_)|b) {
-		Err(..) => None,
-		Ok(b) => Some((data, b))
-	}
-}
-    
-
-
-pub fn load_block_by_height(store: &BlockStore, hei: &BlockHeight) -> Option<(Hash, Vec<u8>, Box<dyn Block>)> {
-	let Some(hx) = store.block_hash(hei) else {
-		return None
-	};
-	let Some((data, block)) = load_block(store, &hx) else {
-		return None
-	};
-	Some((hx, data, block))
-}
+// use crate::state::BlockStore;
 
 
 
@@ -41,7 +16,7 @@ impl BlockPkg {
 
 	pub fn new(objc: Box<dyn Block>, data: Vec<u8>) -> Self {
 		Self {
-			orgi: BlkOrigin::UNKNOWN,
+			orgi: BlkOrigin::Unknown,
             hein: objc.height().uint(),
 			hash: objc.hash(),
 			data,
@@ -52,23 +27,12 @@ impl BlockPkg {
 	pub fn create(objc: Box<dyn Block>) -> Self {
         let data = objc.serialize();
 		Self {
-			orgi: BlkOrigin::UNKNOWN,
+			orgi: BlkOrigin::Unknown,
             hein: objc.height().uint(),
 			hash: objc.hash(),
 			data,
 			objc,
 		}
-	}
-
-	pub fn build(data: Vec<u8>) -> Ret<Self> {
-		let (objc, _) = block::create(&data)?;
-		Ok(Self {
-			orgi: BlkOrigin::UNKNOWN,
-            hein: objc.height().uint(),
-			hash: objc.hash(),
-			data,
-			objc,
-		})
 	}
 
 	pub fn into_block(self) -> Box<dyn Block> {
