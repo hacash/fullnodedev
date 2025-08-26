@@ -23,6 +23,14 @@ impl Scaner for NilScaner {}
 struct NilTxPool {}
 impl TxPool for NilTxPool {}
 
+struct NilMinter {}
+impl Minter for NilMinter {}
+
+struct NilEngine {}
+impl EngineRead for NilEngine {}
+impl Engine for NilEngine {}
+
+
 
 
 /***************************************/
@@ -36,10 +44,10 @@ pub struct Builder {
     engcnf: Arc<EngineConf>,
     nodcnf: Arc<NodeConf>,
     diskdb: FnBuildDB,
-    // _minter: Box<dyn Minter>,
+    minter: Arc<dyn Minter>,
+    engine: Arc<dyn Engine>,
     txpool: Arc<dyn TxPool>,
     scaner: Arc<dyn Scaner>,
-    // _engine: Arc<dyn Engine>,
 }
 
 impl Builder {
@@ -57,6 +65,8 @@ impl Builder {
             engcnf,
             nodcnf,
             diskdb: build_nil_db,
+            minter: Arc::new(NilMinter{}),
+            engine: Arc::new(NilEngine{}),
             scaner: Arc::new(NilScaner{}),
             txpool: Arc::new(NilTxPool{}),
 
@@ -68,18 +78,37 @@ impl Builder {
         self
     }
 
-    pub fn scaner(&mut self, scn: Arc<dyn Scaner>) -> &mut Self {
-        self.scaner = scn;
-        self
-    }
-
     pub fn txpool(&mut self, f: fn(_: &EngineConf)->Box<dyn TxPool>) -> &mut Self {
         self.txpool = f(&self.engcnf).into();
         self
     }
+    
+    pub fn minter(&mut self, f: fn(_: &IniObj)->Box<dyn Minter>) -> &mut Self {
+        self.minter = f(&self.cnfini).into();
+        self
+    }
+    
+    pub fn scaner(&mut self, scn: Box<dyn Scaner>) -> &mut Self {
+        self.scaner = scn.into();
+        self
+    }
+
+    pub fn engine(&mut self, 
+        f: fn(
+            _: FnBuildDB,
+            _: Arc<EngineConf>,
+            _: Arc<dyn Minter>,
+            _: Arc<dyn Scaner>
+        )->Box<dyn Engine>
+    ) -> &mut Self {
+        self.engine = f(self.diskdb, self.engcnf.clone(), self.minter.clone(), self.scaner.clone()).into();
+        self
+    }
+
 
     // do start all
     pub fn run(self) {
+
         run_fullnode(self)
     }
 

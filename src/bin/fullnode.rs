@@ -1,8 +1,10 @@
 
+use mint::HacashMinter;
 use sys::*;
 use app::*;
 use app::fullnode::Builder;
 use protocol::{interface::*, EngineConf};
+use chain::engine::*;
 use node::memtxpool::*;
 
 
@@ -17,13 +19,14 @@ fn main() {
         HACASH_NODE_VERSION, HACASH_NODE_BUILD_TIME, HACASH_STATE_DB_UPDT
     );
 
-    // setup hook
-    protocol::block::setup_block_hasher( x16rs::block_hash );
-
     // build & setup
     let mut builder =  Builder::new();
-    builder.diskdb(|dir|Box::new(db::DiskKV::open(dir)));
-    builder.txpool(build_txpool);
+
+    builder.diskdb(|dir|Box::new(db::DiskKV::open(dir)))
+        .minter(|ini|Box::new(HacashMinter::create(ini)))
+        .engine(|dbfn, cnf, minter, scaner|Box::new(ChainEngine::open(dbfn, cnf, minter, scaner)))
+        .txpool(build_txpool)
+        ;
 
     // start run
     builder.run();

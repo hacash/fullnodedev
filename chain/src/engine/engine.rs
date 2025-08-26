@@ -12,9 +12,9 @@ const ISRT_STAT_SYNCING:  usize = 2;
 
 #[allow(dead_code)]
 pub struct ChainEngine {
-    cnf: EngineConf,
+    cnf: Arc<EngineConf>,
     // 
-    minter: Box<dyn Minter>,
+    minter: Arc<dyn Minter>,
     scaner: Arc<dyn Scaner>,
 
     // data
@@ -36,15 +36,13 @@ pub struct ChainEngine {
 impl ChainEngine {
 
 
-    pub fn open(ini: &IniObj, dbv: u32,
+    pub fn open(
         dbopfn: FnBuildDB,
-        minter: Box<dyn Minter>,
+        cnf: Arc<EngineConf>,
+        minter: Arc<dyn Minter>,
         scaner: Arc<dyn Scaner>
     ) -> ChainEngine {
-        // init
-        minter.init(ini); 
         // cnf
-        let cnf = EngineConf::new(ini, dbv);
         let blk_dir = &cnf.block_data_dir;
         let sta_dir = &cnf.state_data_dir;
         let is_state_upgrade = !sta_dir.exists(); // not find new dir
