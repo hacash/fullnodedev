@@ -84,12 +84,15 @@ fn read_node_key(ini: &IniObj, sec: &HashMap<String, Option<String>>) -> [u8; 16
 
     // node.id path
     let mut nidfp = get_mainnet_data_dir(ini);
+    std::fs::create_dir_all(nidfp.clone()).unwrap();
     let kph =  std::path::absolute(nidfp.as_path());
     nidfp.push("node.id");
         
     // node id
     let mut node_key = [0u8; 16];
-    let mut nidfile = OpenOptions::new().read(true).write(true).create(true).open(nidfp).expect("cannot open node info file.");
+    let mut nidfile = OpenOptions::new()
+        .read(true).write(true).create(true).open(nidfp)
+        .expect("cannot open node info file.");
     // read
     let mut snid = String::new();
     nidfile.read_to_string(&mut snid).unwrap();

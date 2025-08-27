@@ -34,16 +34,17 @@ impl DiskDB for DiskKV {
         self.ldb.get(k)
     }
 
-    fn write(&self, memkv: Box<dyn Any>) {
-        let mkv = memkv.downcast::<MemKV>().unwrap().to_batch();
-        let wb = mkv.downcast::<Membatch>().unwrap();
+    fn write(&self, memkv: &dyn MemDB) {
+        let wb = Membatch::from_memkv(memkv);
         self.ldb.write(&wb.into_batch()); // must
     }
 
+    /*
     fn write_batch(&self, batch: Box<dyn Any>) {
         let wb = batch.downcast::<Membatch>().unwrap().into_batch();
         self.ldb.write(&wb); // must
     }
+    */
 
     
 }
