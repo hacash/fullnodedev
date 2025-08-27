@@ -10,6 +10,15 @@ pub struct Worker {
 
 impl Worker {
 
+    pub fn fork(&self) -> Self {
+        let mut jobs = self.jobs.lock().unwrap();
+        *jobs += 1;
+        Self {
+            jobs: self.jobs.clone(),
+            receiver: self.receiver.clone(),
+        }
+    }
+
     pub fn exit(&self) {
         let mut jobs = self.jobs.lock().unwrap();
         *jobs -= 1;
@@ -59,6 +68,8 @@ impl Exiter {
     }
 
     pub fn work(&self) -> Worker {
+        let mut jobs = self.jobs.lock().unwrap();
+        *jobs += 1;
         Worker {
             jobs: self.jobs.clone(),
             receiver: self.receiver.clone()
@@ -70,6 +81,7 @@ impl Exiter {
         loop {
             sleep(Duration::from_millis(333));
             let j = self.jobs.lock().unwrap();
+            // println!("Exiter::wait, jobs={}", *j);
             if *j <= 0 {
                 break; // exit all
             }

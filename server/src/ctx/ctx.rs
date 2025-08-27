@@ -7,7 +7,6 @@ pub type BlockCaches = Arc<Mutex<VecDeque<Arc<BlockPkg>>>>;
 
 #[derive(Clone)]
 pub struct ApiCtx {
-    worker: Worker,
     pub engine: ChainEngine,
     pub hcshnd: ChainNode,
     pub blocks: BlockCaches,
@@ -17,9 +16,8 @@ pub struct ApiCtx {
 }
 
 impl ApiCtx {
-    pub fn new(wk: Worker, eng: ChainEngine, nd: ChainNode) -> ApiCtx {
+    pub fn new(eng: ChainEngine, nd: ChainNode) -> ApiCtx {
         ApiCtx {
-            worker: wk,
             engine: eng,
             hcshnd: nd,
             blocks: Arc::default(),

@@ -3,7 +3,7 @@
 
 impl MsgHandler {
 
-    pub async fn start(this: Arc<MsgHandler>) {
+    pub async fn start(this: Arc<MsgHandler>, mut worker: Worker) {
         // let mut closech = this.exiter.signal();
         let mut blktxch = { 
             this.blktxch.lock().unwrap().take().unwrap()
@@ -11,9 +11,9 @@ impl MsgHandler {
         loop {
             tokio::select! {
                 // close signal
-                // _ = closech.recv() => {
-                //     break
-                // },
+                _ = worker.wait_exit() => {
+                    break
+                },
                 // block tx arrived
                 msg = blktxch.recv() => {
                     match msg.unwrap() {
@@ -23,7 +23,8 @@ impl MsgHandler {
                 }
             }
         }
-        // println!("[MsgHandler] loop end.");
+        println!("[MsgHandler] loop end.");
+        worker.exit();
     }
 }
 

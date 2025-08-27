@@ -2,6 +2,12 @@
 
 impl HNoder for HacashNode {
 
+
+    fn start(&self, worker: Worker) {
+        self.do_start(worker)
+    }
+
+
     fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool) -> Rerr {
         // check signature
         let txread = txpkg.objc.as_read();

@@ -31,11 +31,17 @@ async fn server_listen(ser: &HttpServer, worker: Worker) {
     println!("[Http Api Server] Listening on http://{addr}");
     // 
     let app = api::routes(ApiCtx::new(
-        worker,
         ser.engine.clone(),
         ser.hcshnd.clone(),
     ));
-    if let Err(e) = axum::serve(listener, app).await {
+    let mut wkr = worker.clone();
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            let _ = wkr.wait_exit().await;
+        })
+        .await {
         println!("{e}");
     }
+    println!("[Http Server] serve end.");
+    worker.exit();
 }

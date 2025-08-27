@@ -1,5 +1,6 @@
 use std::path::*;
 use std::sync::*;
+use std::thread::*;
 
 
 use super::*;
@@ -162,30 +163,34 @@ fn run_fullnode(builder: Builder) {
     let exiter = Exiter::new();
 
     // unpack
-    let _txpool = builder.txpool.clone();
-    let _scaner = builder.scaner.clone();
-    let _minter = builder.minter.clone();
-    let _engine = builder.engine.clone();
+    // let _txpool = builder.txpool.clone();
+    // let _scaner = builder.scaner.clone();
+    // let _minter = builder.minter.clone();
+    // let _engine = builder.engine.clone();
+    let hnoder = builder.hnoder.clone();
+    let server = builder.server.clone();
 
 
-
-
-    let worker = exiter.work();
-
-    println!("Hello, hacash fullnode!");
+    // start node
+    let wkr1 = exiter.work();
+    spawn(move||{ hnoder.start(wkr1) });
     
-    worker.exit();
-
+    // start server
+    let wkr2 = exiter.work();
+    spawn(move||{ server.start(wkr2) });
 
     // run extend app
+    for app in builder.extapp {
+        let wkr = exiter.work();
+        let hnoder = builder.hnoder.clone();
+        spawn(move||{ app(wkr, hnoder) });
+    }
 
 
-
-
-
-
+    // start all and wait them exit
     exiter.wait();
-    println!("\n[Exit] Hacash fullnode closed.");
+    println!("[Exit] Hacash fullnode closed.");
+
 }
 
 

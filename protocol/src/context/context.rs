@@ -39,7 +39,7 @@ impl ExtActCal for ContextInst<'_> {
 
 impl Context for ContextInst<'_> {
     fn as_ext_caller(&mut self) -> &mut dyn ExtActCal { self }
-    // fn env(&self) -> &Env { &self.env}
+    fn env(&self) -> &Env { &self.env }
     fn state(&mut self) -> &mut dyn State { self.sta.as_mut() }
     fn state_fork(&mut self) -> Box<dyn State> {
         ctx_state_fork_sub(self)
@@ -51,8 +51,8 @@ impl Context for ContextInst<'_> {
         std::mem::replace(&mut self.sta, sta)
     }
     fn depth(&mut self) -> &mut CallDepth { &mut self.depth }
+    fn depth_set(&mut self, cd: CallDepth) { self.depth = cd }
     /*
-    fn depth_set(&mut self, d: i8) { self.depth = d }
     fn depth_add(&mut self) { self.depth += 1 }
     fn depth_sub(&mut self) { self.depth -= 1 }
     */
