@@ -1,7 +1,8 @@
 use std::{sync::*, thread::sleep};
 
-use async_broadcast::{broadcast, Sender, Receiver, Recv};
+use async_broadcast::{broadcast, Sender, Receiver, Recv, TryRecvError};
 
+#[derive(Clone)]
 pub struct Worker {
     jobs: Arc<Mutex<isize>>,
     receiver: Receiver<()>,
@@ -14,8 +15,18 @@ impl Worker {
         *jobs -= 1;
     }
 
-    pub fn wait(&mut self) -> Recv<'_, ()> {
+    pub fn wait_exit(&mut self) -> Recv<'_, ()> {
         self.receiver.recv_direct()
+    }
+
+    pub fn check_exit(&mut self) -> bool {
+        match self.receiver.try_recv() {
+            Err(TryRecvError::Empty) => false,
+            _ => {
+                self.exit();
+                true
+            }
+        }
     }
 
 }

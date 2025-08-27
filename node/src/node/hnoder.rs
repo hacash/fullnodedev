@@ -1,6 +1,6 @@
 
 
-impl Node for HacashNode {
+impl HNoder for HacashNode {
 
     fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool) -> Rerr {
         // check signature

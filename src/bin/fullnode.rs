@@ -1,11 +1,12 @@
 
 use mint::HacashMinter;
+use server::HttpServer;
 use sys::*;
 use app::*;
 use app::fullnode::Builder;
 use protocol::{interface::*, EngineConf};
 use chain::engine::*;
-use node::memtxpool::*;
+use node::{memtxpool::*, node::HacashNode};
 
 
 /*
@@ -23,9 +24,12 @@ fn main() {
     let mut builder =  Builder::new();
 
     builder.diskdb(|dir|Box::new(db::DiskKV::open(dir)))
+        .txpool(build_txpool)
         .minter(|ini|Box::new(HacashMinter::create(ini)))
         .engine(|dbfn, cnf, minter, scaner|Box::new(ChainEngine::open(dbfn, cnf, minter, scaner)))
-        .txpool(build_txpool)
+        .hnoder(|ini, txpool, engine|Box::new(HacashNode::open(ini, txpool, engine)))
+        .server(|ini, hnoder|Box::new(HttpServer::open(ini, hnoder)))
+        .app(diabider::start_diamond_auto_bidding)
         ;
 
     // start run

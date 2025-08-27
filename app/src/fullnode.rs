@@ -7,7 +7,14 @@ use super::*;
 use sys::*;
 use protocol::*;
 use protocol::interface::*;
-use protocol::component::*;
+
+
+
+/***************************************/
+
+
+pub type FnBuildDB = fn(_: &PathBuf)->Box<dyn DiskDB>;
+pub type FnExtendApp = fn(_: Worker, _: Arc<dyn HNoder>);
 
 
 
@@ -30,7 +37,11 @@ struct NilEngine {}
 impl EngineRead for NilEngine {}
 impl Engine for NilEngine {}
 
+struct NilHNoder {}
+impl HNoder for NilHNoder {}
 
+struct NilServer {}
+impl Server for NilServer {}
 
 
 /***************************************/
@@ -44,10 +55,13 @@ pub struct Builder {
     engcnf: Arc<EngineConf>,
     nodcnf: Arc<NodeConf>,
     diskdb: FnBuildDB,
+    extapp: Vec<FnExtendApp>,
     minter: Arc<dyn Minter>,
     engine: Arc<dyn Engine>,
     txpool: Arc<dyn TxPool>,
     scaner: Arc<dyn Scaner>,
+    hnoder: Arc<dyn HNoder>,
+    server: Arc<dyn Server>,
 }
 
 impl Builder {
@@ -65,11 +79,13 @@ impl Builder {
             engcnf,
             nodcnf,
             diskdb: build_nil_db,
-            minter: Arc::new(NilMinter{}),
-            engine: Arc::new(NilEngine{}),
+            extapp: Vec::new(),
             scaner: Arc::new(NilScaner{}),
             txpool: Arc::new(NilTxPool{}),
-
+            minter: Arc::new(NilMinter{}),
+            engine: Arc::new(NilEngine{}),
+            hnoder: Arc::new(NilHNoder{}),
+            server: Arc::new(NilServer{}),
         }
     }
 
@@ -105,6 +121,29 @@ impl Builder {
         self
     }
 
+    pub fn hnoder(&mut self, 
+        f: fn(
+            _: &IniObj, _: Arc<dyn TxPool>, _: Arc<dyn Engine>
+        )->Box<dyn HNoder>
+    ) ->  &mut Self {
+        self.hnoder = f(&self.cnfini, self.txpool.clone(), self.engine.clone()).into();
+        self
+    }
+
+    pub fn server(&mut self, 
+        f: fn(
+            _: &IniObj, _: Arc<dyn HNoder>
+        )->Box<dyn Server>
+    ) ->  &mut Self {
+        self.server = f(&self.cnfini, self.hnoder.clone()).into();
+        self
+    }
+    
+
+    pub fn app(&mut self, f: FnExtendApp) -> &mut Self {
+        self.extapp.push(f);
+        self
+    }
 
     // do start all
     pub fn run(self) {
@@ -118,9 +157,15 @@ impl Builder {
 
 
 
-fn run_fullnode(_builder: Builder) {
+fn run_fullnode(builder: Builder) {
 
     let exiter = Exiter::new();
+
+    // unpack
+    let _txpool = builder.txpool.clone();
+    let _scaner = builder.scaner.clone();
+    let _minter = builder.minter.clone();
+    let _engine = builder.engine.clone();
 
 
 
@@ -130,6 +175,9 @@ fn run_fullnode(_builder: Builder) {
     println!("Hello, hacash fullnode!");
     
     worker.exit();
+
+
+    // run extend app
 
 
 

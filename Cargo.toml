@@ -13,6 +13,7 @@ db = {path = "./db"}
 mint = {path = "./mint"}
 chain = {path = "./chain"}
 node = {path = "./node"}
+server = {path = "./server"}
 app = {path = "./app"}
 
 

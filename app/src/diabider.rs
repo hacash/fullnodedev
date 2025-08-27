@@ -9,15 +9,13 @@ use field::*;
 use field::interface::*;
 use protocol::*;
 use protocol::interface::*;
-use chain::engine::*;
+use protocol::component::*;
 use mint::*;
 use mint::action::*;
 
 
-use super::interface::*;
 
-
-pub fn start_diamond_auto_bidding(hnode: Arc<dyn HNode>) {
+pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
     
     // check config
     let eng = hnode.engine();
@@ -27,8 +25,9 @@ pub fn start_diamond_auto_bidding(hnode: Arc<dyn HNode>) {
     let bidstep = cnf.dmer_bid_step.clone();
     let minstep = Amount::coin(1, 244);
 
-    if ! cnf.dmer_enable {
-        return // not enable
+    if !cnf.dmer_enable || !cnf.is_mainnet() {
+        worker.exit();
+        return // not enable or not mainnet
     }
 
     macro_rules! printerr {
@@ -61,8 +60,10 @@ pub fn start_diamond_auto_bidding(hnode: Arc<dyn HNode>) {
         loop {
             let pending_height = eng.latest_block().height().uint() + 1;
             check_bidding_step(hnode.clone(), &engcnf, pending_height, &mut current_number);
-            // sleep 0.3 secs
             thread::sleep( Duration::from_millis(77) );
+            if worker.check_exit() {
+                break;
+            }
         }
     });
 }
@@ -75,7 +76,7 @@ pub fn start_diamond_auto_bidding(hnode: Arc<dyn HNode>) {
 
 
 
-fn check_bidding_step(hnode: Arc<dyn HNode>, engcnf: &EngineConf, pending_height: u64, bidding_number: &mut u32) {
+fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_height: u64, bidding_number: &mut u32) {
     if pending_height % 5 == 0  {
         return // not need bid in mining block tail 5 and 10
     }

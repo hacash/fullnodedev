@@ -9,6 +9,7 @@ const ISRT_STAT_SYNCING:  usize = 2;
 // type InsertResult = Ret<(Option<Arc<Chunk>>, Option<Arc<Chunk>>, Vec<u8>)>;
 
 
+pub type FnBuildDB = fn(_: &PathBuf)->Box<dyn DiskDB>;
 
 #[allow(dead_code)]
 pub struct ChainEngine {
