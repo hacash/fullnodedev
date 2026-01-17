@@ -1,4 +1,5 @@
 
+/*
 
 const H32: usize = 32;
 
@@ -22,3 +23,4 @@ pub fn setup_block_hasher(f: FnExtendBlockHasherFunc) {
 
 
 
+*/

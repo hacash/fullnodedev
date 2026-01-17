@@ -4,12 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-hex = "0.4.3"
-dyn-clone = "1.0.17"
-concat-idents = "1.1.5"
 sys            = {path = "../sys"}
 field          = {path = "../field"}
 basis          = {path = "../basis"}
+hex = "0.4.3"
+axum = "0.7.9"
+serde_json = "1.0.133"
+dyn-clone = "1.0.17"
+concat-idents = "1.1.5"
+tokio = { version = "1.41.1", features = ["rt", "rt-multi-thread", "sync", "time", "io-util", "net", "macros"] }
 
 [features]
 tex = []

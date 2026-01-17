@@ -13,5 +13,6 @@ use field::*;
 
 include!{"engine.rs"}
 include!{"node.rs"}
+include!{"server.rs"}
 
 

@@ -58,7 +58,7 @@ impl BlockRead for BlockHeadMeta {
     fn hash(&self) -> Hash {
         let intro = vec![ self.head.serialize(), self.meta.serialize() ].concat();
 		let hx = unsafe {
-			EXTEND_BLOCK_HASHER_FUNC(self.head.height.uint(), &intro)
+			super::setup::BLOCK_HASHER_FUNC(self.head.height.uint(), &intro)
 		};
         Hash::must(&hx[..])
     }

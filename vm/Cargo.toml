@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-sys = {path = "../sys"}
-field = {path = "../field", features = ["hvm"]}
-protocol = {path = "../protocol"}
-server = {path = "../server"}
+sys            = {path = "../sys"}
+field          = {path = "../field", features = ["hvm"]}
+basis          = {path = "../basis"}
+protocol       = {path = "../protocol"}
+# server         = {path = "../server"}
 concat-idents = "1.1.5"
 dyn-clone = "1.0.17"
 hex = "0.4.3"

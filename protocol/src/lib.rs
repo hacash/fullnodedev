@@ -9,6 +9,7 @@ pub mod transaction;
 pub mod block;
 #[cfg(feature = "tex")]
 pub mod tex;
+pub mod server;
 
 
 

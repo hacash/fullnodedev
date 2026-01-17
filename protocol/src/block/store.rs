@@ -22,17 +22,3 @@ pub fn load_block_by_height(store: &dyn Store, hei: &BlockHeight) -> Option<(Has
 	};
 	Some((hx, data, block))
 }
-
-
-pub fn build_block_package(data: Vec<u8>) -> Ret<BlkPkg> {
-    let (objc, sk) = create(&data)?;
-    Ok(BlkPkg {
-        orgi: BlkOrigin::Unknown,
-        hein: objc.height().uint(),
-        hash: objc.hash(),
-        data: data.into(),
-		seek: 0,
-		size: sk,
-        objc,
-    })
-}

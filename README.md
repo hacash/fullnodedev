@@ -9,12 +9,11 @@ Hacash Fullnode
 - x16rs    ->   
 - sys      ->  
 - field    ->  
-- basis    ->  
+- basis    ->  interface, api server
 - protocol ->  
 - mint     ->  
 - chain    ->  
 - node     ->  
-- server   ->  
 - scaner   ->  
 - app      ->  
 ```
