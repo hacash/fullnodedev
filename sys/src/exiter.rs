@@ -77,12 +77,7 @@ impl Exiter {
         }
     }
 
-    pub fn exit(&self) {
-        // broadcast to nitify all thread to quit
-        let _ = self.sender.broadcast_blocking(());
-    }
-
-    pub fn work(&self) -> Worker {
+    pub fn worker(&self) -> Worker {
         let mut jobs = self.jobs.lock().unwrap();
         *jobs += 1;
         Worker {
@@ -91,6 +86,10 @@ impl Exiter {
         }
     }
     
+    pub fn exit(&self) {
+        // broadcast to nitify all thread to quit
+        let _ = self.sender.broadcast_blocking(());
+    }
     
     pub fn wait(self) {
         loop {

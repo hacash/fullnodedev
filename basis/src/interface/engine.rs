@@ -1,7 +1,7 @@
 
 pub trait EngineRead: Send + Sync {
     
-    // fn config(&self) -> &EngineConf { never!() }
+    fn config(&self) -> &EngineConf { never!() }
 
     fn state(&self) -> Arc<Box<dyn State>> { never!() }
     fn fork_sub_state(&self) -> Box<dyn State> { never!() }
@@ -9,7 +9,7 @@ pub trait EngineRead: Send + Sync {
     fn logs(&self) -> Arc<dyn Logs> { never!() }
 
     // fn confirm_state(&self) -> (Arc<dyn State>, Arc<dyn BlockPkg>);
-    fn head_block(&self) -> Arc<dyn Block> { never!() }
+    fn latest_block(&self) -> Arc<dyn Block> { never!() }
     fn minter(&self) -> &dyn Minter { never!() }
 
     fn recent_blocks(&self) -> Vec<Arc<RecentBlockInfo>> { Vec::new() }

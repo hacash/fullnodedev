@@ -1,8 +1,9 @@
 
+#[derive(Debug, Clone)]
 pub struct BlkPkg {
-    data: Arc<Vec<u8>>,
-    seek: usize,
-    size: usize,
+    pub data: Arc<Vec<u8>>,
+    pub seek: usize,
+    pub size: usize,
     pub orgi: BlkOrigin,
     pub objc: Box<dyn Block>,
     pub hash: Hash,
@@ -12,7 +13,22 @@ pub struct BlkPkg {
 
 impl_pkg_common!{ BlkPkg, Block, BlkOrigin }
 
+impl BlkPkg {
 
+    pub fn new(objc: Box<dyn Block>, data: Vec<u8>) -> Self {
+        let size = data.len();
+        Self {
+            orgi: BlkOrigin::Unknown,
+            hein: objc.height().uint(),
+            hash: objc.hash(),
+            data: data.into(),
+            seek: 0,
+            size,
+            objc,
+        }
+    }
+
+}
 
 
 /***********************************************************/

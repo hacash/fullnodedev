@@ -4,3 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+hex = "0.4.3"
+dyn-clone = "1.0.17"
+concat-idents = "1.1.5"
+sys            = {path = "../sys"}
+field          = {path = "../field"}
+basis          = {path = "../basis"}
+
+[features]
+tex = []
+ast = []
+p2sh = []
+

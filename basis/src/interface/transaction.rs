@@ -9,7 +9,7 @@ pub trait TxExec {
 }
 
 
-pub trait TransactionRead : Serialize + TxExec + Send + Sync + DynClone { 
+pub trait TransactionRead : Serialize + TxExec + Send + Sync + DynClone + std::fmt::Debug { 
     fn ty(&self) -> u8;
 
     fn hash(&self) -> Hash;

@@ -1,7 +1,7 @@
 
 
 
-#[derive(Default, PartialEq, Copy, Clone)]
+#[derive(Debug, Default, PartialEq, Copy, Clone)]
 pub enum BlkOrigin {
     #[default] Unknown, 
     Rebuild,
@@ -11,7 +11,7 @@ pub enum BlkOrigin {
 }
 
 
-#[derive(Default, PartialEq, Copy, Clone)]
+#[derive(Debug, Default, PartialEq, Copy, Clone)]
 pub enum TxOrigin {
     #[default] Unknown,
     Sync,

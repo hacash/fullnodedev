@@ -27,7 +27,7 @@ pub trait Context : StateOperat + ActCall {
     fn vm(&mut self) -> &mut dyn VM;
     fn vm_replace(&mut self, _: Box<dyn VM>) -> Box<dyn VM>;
     // tex
-    fn tex_state(&mut self) -> &mut TexLedger;
+    fn tex_ledger(&mut self) -> &mut TexLedger;
     // log
     fn logs(&mut self) -> &mut dyn Logs;
     // p2sh

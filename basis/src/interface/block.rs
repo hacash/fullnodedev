@@ -21,7 +21,7 @@ pub trait BlockRead : BlockExec + Serialize + Send + Sync + DynClone {
 
 }
 
-pub trait Block : BlockRead + Field + Send + Sync + DynClone {
+pub trait Block : BlockRead + Field + Send + Sync + DynClone + std::fmt::Debug {
 
     fn as_read(&self) -> &dyn BlockRead { never!() }
 

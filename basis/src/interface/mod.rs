@@ -7,6 +7,7 @@ use dyn_clone::*;
 use sys::*;
 use field::*;
 
+use super::config::*;
 use super::component::{ 
     MemMap, ActLv, ChainInfo,
     Env, CallDepth, TexLedger,

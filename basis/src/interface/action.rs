@@ -6,7 +6,7 @@ pub trait ActExec {
 
 
 
-pub trait Action : ActExec + Field + Send + Sync + DynClone {
+pub trait Action : ActExec + Field + Send + Sync + DynClone + std::fmt::Debug {
     fn kind(&self) -> u16 { never!() }
     fn level(&self) -> ActLv { ActLv::Top }
     fn burn_90(&self) -> bool { false } // is_burning_90_persent_fee
