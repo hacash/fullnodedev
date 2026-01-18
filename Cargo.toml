@@ -11,25 +11,26 @@ field          = {path = "./field"}
 basis          = {path = "./basis"}
 db             = {path = "./db", default-features = false}
 protocol       = {path = "./protocol"}
+vm             = {path = "./vm", optional = true }
 chain          = {path = "./chain"}
 mint           = {path = "./mint"}
-vm             = {path = "./vm", optional = true }
-app            = {path = "./app"}
+server         = {path = "./server"}
 node           = {path = "./node"}
+app            = {path = "./app"}
 # server = {path = "./server"}
 
 [features]
-default = ["db-sled", "tex", "ast", "hvm", "p2sh"] # , "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
-# hip20 = ["mint/hip20"]
+default = ["db-sled"] # , "tex", "ast", "hvm", "p2sh"] # , "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
+hip20 = ["mint/hip20"]
 tex = ["protocol/tex"]
 ast = ["protocol/ast"]
 hvm = ["dep:vm", "field/hvm"]
 p2sh = ["dep:vm", "vm/p2sh", "protocol/p2sh"]
-# ocl = ["app/ocl"]
+ocl = ["app/ocl"]
 db-sled = ["db/db-sled"]
-# db-rusty-leveldb = ["db/db-rusty-leveldb"]
-# db-leveldb-sys = ["db/db-leveldb-sys"]
-# db-rocksdb = ["db/db-rocksdb"]
+db-rusty-leveldb = ["db/db-rusty-leveldb"]
+db-leveldb-sys = ["db/db-leveldb-sys"]
+db-rocksdb = ["db/db-rocksdb"]
 
 
 [profile.release]

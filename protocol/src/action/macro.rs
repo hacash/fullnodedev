@@ -72,9 +72,7 @@ macro_rules! action_define {
                 let res: Ret<Vec<u8>> = $exec;
                 let res = res?;
                 // call action hook
-                unsafe {
-                    ACTION_HOOK_FUNC($pself.kind(), $pself as &dyn Any, $pctx, &mut $pgas)?;
-                }
+                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx, &mut $pgas)?;
                 Ok(($pgas, res))
             }
         }

@@ -2,7 +2,7 @@
 
 
 pub fn build_tx_package(data: Vec<u8>) -> Ret<TxPkg> {
-    let (objc, sk) = transaction::create(&data)?;
+    let (objc, sk) = transaction::transaction_create(&data)?;
     let pkg = TxPkg {
         orgi: TxOrigin::Unknown,
         hash: objc.hash(),

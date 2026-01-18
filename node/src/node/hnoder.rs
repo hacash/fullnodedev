@@ -28,7 +28,6 @@ impl HNoder for HacashNode {
         Ok(())
     }
 
-
     fn submit_block(&self, blkpkg: &BlkPkg, in_async: bool) -> Rerr {
         // NOT do any check
         // insert

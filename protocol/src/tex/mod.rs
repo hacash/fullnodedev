@@ -11,6 +11,7 @@ use basis::method::*;
 
 use super::*;
 use super::state::*;
+use super::setup::*;
 use super::operate::*;
 use super::action::*;
 

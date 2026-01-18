@@ -1,5 +1,5 @@
 
-pub fn create(buf: &[u8]) -> Ret<(Box<dyn Block>, usize)> {
+pub fn block_create(buf: &[u8]) -> Ret<(Box<dyn Block>, usize)> {
     // println!("block::create {}", hex::encode(buf));
     let version = bufeatone(buf)?;
     match version {
@@ -13,7 +13,7 @@ pub fn create(buf: &[u8]) -> Ret<(Box<dyn Block>, usize)> {
 
 
 pub fn build_block_package(data: Vec<u8>) -> Ret<BlkPkg> {
-    let (objc, _) = create(&data)?;
+    let (objc, _) = block_create(&data)?;
     Ok(BlkPkg::new(objc, data))
 }
 

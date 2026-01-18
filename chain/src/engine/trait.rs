@@ -226,7 +226,7 @@ impl Engine for ChainEngine {
                 break // end
             }
             let seek;
-            let blkobj = match block::create(&datas) {
+            let blkobj = match block::block_create(&datas) {
                 Ok((b, s)) => {seek = s; b},
                 Err(e) => return errf!("block parse error: {}", e)
             };
@@ -254,7 +254,7 @@ impl Engine for ChainEngine {
                 // println!("--------- need_blk_hei {} datas len={}", need_blk_hei, datas.len());
                 if blockdts.len() == 0 { break } // finish
                 let seek;
-                let blkobj = match block::create(&blockdts) {
+                let blkobj = match block::block_create(&blockdts) {
                     Ok((b, s)) => {seek = s; b},
                     Err(e) => {
                         errch.send(format!("block parse error: {}", e)).unwrap();

@@ -1,18 +1,9 @@
-use std::sync::Arc;
-
-use axum::{
-    extract::{Query, State}, 
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
-
-use protocol::block::create_tx_info;
-// use serde_json::json;
 
 
-use super::*;
-use super::ContractAddress;
+
+use vm::*;
+use vm::rt::*;
+use vm::ContractAddress;
 
 
 
@@ -42,7 +33,7 @@ async fn vm_logs_read(State(ctx): State<ApiCtx>, q: Query<Q9264>) -> impl IntoRe
     let Some(itdts) = logs.load(ck_hei, q.index) else {
         return api_data_raw(s!(r#""end":true"#))
     };
-    let Ok(item) = VmLog::build(&itdts).map_ire(LogError) else {
+    let Ok(item) = VmLog::build(&itdts).map_ire(ItrErrCode::LogError) else {
         return api_error("log format error")
     };
     let ignore = api_data_raw(s!(r#""ignore":true"#));
@@ -124,7 +115,7 @@ async fn contract_sandbox_call(State(ctx): State<ApiCtx>, q: Query<Q8365>) -> im
             hash: Hash::default(),
             coinbase: Address::default(),
         },
-        tx: create_tx_info(&tx),
+        tx: block::create_tx_info(&tx),
     };
     let mut ctxobj = ContextInst::new(env, substa, Box::new(EmptyLogs{}) ,&tx);
 

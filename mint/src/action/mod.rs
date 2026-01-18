@@ -5,6 +5,7 @@ use basis::interface::*;
 use basis::component::*;
 use basis::method::*;
 use protocol::*;
+use protocol::setup::*;
 use protocol::transaction::*;
 use protocol::action::*;
 use protocol::state::*;

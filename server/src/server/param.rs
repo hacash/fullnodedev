@@ -28,7 +28,7 @@ macro_rules! ctx_store{
 #[macro_export]
 macro_rules! ctx_mintcnf{
     ($ctx:expr) => (
-        $ctx.engine.mint_checker().config().downcast::<MintConf>().unwrap()
+        $ctx.engine.minter().config().downcast::<MintConf>().unwrap()
     )
 }
 

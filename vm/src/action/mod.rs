@@ -5,6 +5,7 @@ use field::*;
 use basis::interface::*;
 use basis::component::*;
 use protocol::*;
+use protocol::setup::*;
 use protocol::state::*;
 use protocol::action::*;
 

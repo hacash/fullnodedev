@@ -5,7 +5,7 @@ pub fn load_block(store: &dyn Store, hx: &Hash) -> Option<(Vec<u8>, Box<dyn Bloc
 		return None
 	};
 	// parse
-	match create(&data).map(|(b,_)|b) {
+	match block_create(&data).map(|(b,_)|b) {
 		Err(..) => None,
 		Ok(b) => Some((data, b))
 	}

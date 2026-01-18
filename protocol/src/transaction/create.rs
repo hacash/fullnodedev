@@ -5,7 +5,7 @@
 macro_rules! transaction_register {
     ( $( $tty:ident )+ ) => {
         
-        pub fn create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
+        pub fn transaction_create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
             let ty = bufeatone(buf)?;
             match ty {
                 $(
@@ -25,7 +25,7 @@ macro_rules! transaction_register {
 
 // Trs list
 combi_dynvec!{ DynVecTransaction, 
-    Uint4, Transaction, create
+    Uint4, Transaction, transaction_create
 }
 
 

@@ -24,7 +24,7 @@ pub fn action_register(create_fn: ActCreateFun) {
 
 
 
-pub fn action_create(kind: u16, buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
+pub fn do_action_create(kind: u16, buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
     unsafe {
         for idx in 0 .. ACTION_CREATE_LEN {
             if let Some(act) = ACTION_CREATE_PTR[idx](kind, buf)? {

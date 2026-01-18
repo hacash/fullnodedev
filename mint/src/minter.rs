@@ -67,10 +67,12 @@ impl Minter for HacashMinter {
 
     fn p2p_on_connect(&self, peer: Arc<dyn NPeer>, _: Arc<dyn Engine>, txpool: Arc<dyn TxPool>) -> Rerr {
 
-        if let Ok(Some(txp)) = txpool.first_at(TXGID_DIAMINT) {
-            // send highest bidding diamond mint tx
-            let _ = peer.send_msg_on_block(P2P_MSG_TX_SUBMIT, txp.data.to_vec());
-        }
+        std::thread::spawn(move ||{
+            if let Ok(Some(txp)) = txpool.first_at(TXGID_DIAMINT) {
+                // send highest bidding diamond mint tx
+                let _ = peer.send_msg_on_block(P2P_MSG_TX_SUBMIT, txp.data.to_vec());
+            }
+        });
         Ok(())
     }
 

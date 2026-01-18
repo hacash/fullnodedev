@@ -6,15 +6,16 @@ Hacash Fullnode
 ### Module Architecture
 
 ```
-- x16rs    ->   
-- sys      ->  
-- field    ->  
-- basis    ->  interface, api server
-- protocol ->  
-- mint     ->  
-- chain    ->  
-- node     ->  
-- scaner   ->  
-- app      ->  
+- x16rs    ->  x16rs-sys
+- sys      ->  -
+- field    ->  sys
+- basis    ->  field
+- protocol ->  basis
+- chain    ->  protocol
+- scaner   ->  protocol
+- mint     ->  protocol
+- node     ->  protocol, tokio
+- server   ->  mint, tokio
+- app      ->  mint
 ```
 

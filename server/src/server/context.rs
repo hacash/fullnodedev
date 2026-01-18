@@ -1,14 +1,14 @@
 
-pub type ChainEngine = Arc<dyn Engine>;
-pub type ChainNode   = Arc<dyn HNoder>;
+pub type ArcChainEngine = Arc<dyn Engine>;
+pub type ArcChainNode   = Arc<dyn HNoder>;
 pub type BlockCaches = Arc<Mutex<VecDeque<Arc<BlkPkg>>>>;
 
 
 #[allow(unused)]
 #[derive(Clone)]
 pub struct ApiCtx {
-    pub engine: ChainEngine,
-    pub hcshnd: ChainNode,
+    pub engine: ArcChainEngine,
+    pub hcshnd: ArcChainNode,
     pub blocks: BlockCaches,
     pub miner_worker_notice_count: Arc<Mutex<u64>>,
     pub launch_time: u64,
@@ -18,7 +18,7 @@ pub struct ApiCtx {
 
 impl ApiCtx {
  
-    pub fn new(eng: ChainEngine, nd: ChainNode) -> ApiCtx {
+    pub fn new(eng: ArcChainEngine, nd: ArcChainNode) -> ApiCtx {
         ApiCtx {
             engine: eng,
             hcshnd: nd,

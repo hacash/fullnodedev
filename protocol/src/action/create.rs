@@ -7,9 +7,9 @@ fn cut_kind(buf: &[u8]) -> Ret<u16> {
 }
 
 
-pub fn create(buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
+pub fn action_create(buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
     let kid = cut_kind(buf)?;
-    action_create(kid, buf)
+    do_action_create(kid, buf)
 }
 
 /*
@@ -33,11 +33,11 @@ pub fn _create_old(buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
 * list defind
 */
 combi_dynlist!{ DynListActionW1,
-    Uint1, Action, create
+    Uint1, Action, action_create
 }
 
 combi_dynlist!{ DynListActionW2,
-    Uint2, Action, create
+    Uint2, Action, action_create
 }
 
 

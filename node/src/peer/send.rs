@@ -1,6 +1,3 @@
-use basis::method::new_current_thread_tokio_rt;
-
-
 
 impl NPeer for Peer {
     

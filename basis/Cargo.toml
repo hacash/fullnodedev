@@ -7,12 +7,11 @@ edition = "2024"
 sys            = {path = "../sys"}
 field          = {path = "../field"}
 hex = "0.4.3"
-axum = "0.7.9"
-serde_json = "1.0.133"
+# axum = "0.7.9"
+# serde_json = "1.0.133"
 dyn-clone = "1.0.17"
 num-bigint = "0.4.6"
 num-traits = "0.2.19"
-tokio = { version = "1.41.1", features = ["rt", "rt-multi-thread", "sync", "time", "io-util", "net", "macros"] }
 
 
 

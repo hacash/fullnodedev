@@ -538,10 +538,10 @@ fn record_log(adr: &ContractAddress, log: &mut dyn Logs, tds: Vec<Value>) -> Vmr
 }
 
 
-fn debug_print_value(ctx: &ContractAddress, cur: &ContractAddress 
-, mode: CallMode, depth: isize, val: Value) {
+fn debug_print_value(_ctx: &ContractAddress, _cur: &ContractAddress 
+, _mode: CallMode, _depth: isize, _val: Value) {
     debug_println!("{}-{} {} {:?} => {:?}", 
-        ctx.prefix(7), cur.prefix(7), depth, mode, val);
+        _ctx.prefix(7), _cur.prefix(7), _depth, _mode, _val);
 }
 
 
