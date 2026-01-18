@@ -52,6 +52,9 @@ macro_rules! uint_define {
 
         impl Serialize for $class {
             fn serialize(&self) -> Vec<u8> {
+                if self.value > Self::MAX {
+                    never!() // fatal error!!!
+                }
                 self.to_bytes().to_vec()
             }
             fn size(&self) -> usize {
@@ -63,7 +66,11 @@ macro_rules! uint_define {
 
         impl $class {
 
-            pub const MAX: $vty = <$vty>::MAX;
+            pub const MAX: $vty = if $size == $numlen {
+                <$vty>::MAX
+            } else {
+                ((1u128 << ($size * 8)) - 1) as $vty
+            };
             pub const SIZE: usize = $size as usize;
 
             pub fn zero_ref() -> &'static Self {
@@ -100,6 +107,9 @@ macro_rules! uint_define {
             }
 
             pub fn to_bytes(&self) -> [u8; $size] {
+                if self.value > Self::MAX {
+                    never!() // fatal error!!!
+                }
                 let mut real = [0u8; $size];
                 let bts = <$vty>::to_be_bytes(self.value);
                 for x in 1 ..= $size {
@@ -109,6 +119,12 @@ macro_rules! uint_define {
                 real
             }
             
+            pub fn checked(self) -> Ret<Self> {
+                if self.value > Self::MAX {
+                    return errf!("{} value {} overflow max {}", stringify!($class), self.value, Self::MAX)
+                }
+                Ok(self)
+            }
 
         }
 
@@ -223,10 +239,24 @@ mod uint_tests {
 
     }
 
+    #[test]
+    fn test_checked_overflow() {
+        let ov3 = Uint3::from((1u32 << 24) as u32);
+        assert!(ov3.checked().is_err());
+        let ov5 = Uint5::from((1u64 << 40) as u64);
+        assert!(ov5.checked().is_err());
+    }
+
+    #[test]
+    fn test_max_constants() {
+        assert_eq!(Uint3::MAX, (1u32 << 24) - 1);
+        assert_eq!(Uint5::MAX, (1u64 << 40) - 1);
+        assert_eq!(Uint7::MAX, (1u64 << 56) - 1);
+        assert_eq!(Uint8::MAX, u64::MAX);
+    }
+
 
 }
-
-
 
 
 

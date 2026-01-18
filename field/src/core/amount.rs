@@ -1013,5 +1013,52 @@ mod amount_tests {
 
     }
 
+    #[test]
+    fn test_bigint_round_trip_and_units() {
+        let full_value = "1234567890123456789012345678901234567890";
+        let zero_unit_amt = Amount::from(&format!("{}:0", full_value)).unwrap();
+        let expect_int = BigInt::from_str_radix(full_value, 10).unwrap();
+        assert_eq!(zero_unit_amt.to_bigint(), expect_int);
+
+        let trailing_zero_value = "9876500000";
+        let base_int = BigInt::from_str_radix(trailing_zero_value, 10).unwrap();
+        let amt = Amount::from_bigint(&base_int).unwrap();
+        assert_eq!(amt.to_bigint(), base_int);
+        assert!(amt.unit() > 0);
+        let roundtrip = Amount::from_bigint(&amt.to_bigint()).unwrap();
+        assert_eq!(roundtrip.to_bigint(), base_int);
+    }
+
+    #[test]
+    fn test_bigint_add_sub_consistency() {
+        let a = Amount::from_bigint(
+            &BigInt::from_str_radix("111111111111111111111111111111111111111", 10).unwrap()
+        ).unwrap();
+        let b = Amount::from_bigint(
+            &BigInt::from_str_radix("222222222222222222222222222222222222222", 10).unwrap()
+        ).unwrap();
+        let sum = a.add_mode_bigint(&b).unwrap();
+        let expected_sum = a.to_bigint() + b.to_bigint();
+        assert_eq!(sum.to_bigint(), expected_sum);
+        let diff = sum.sub_mode_bigint(&b).unwrap();
+        assert_eq!(diff.to_bigint(), a.to_bigint());
+    }
+
+    #[test]
+    fn test_serialize_parse_roundtrip() {
+        let amt = Amount::from("123456789012345:248").unwrap();
+        let serialized = amt.serialize();
+        let mut parsed = Amount::default();
+        parsed.parse(&serialized).unwrap();
+        assert!(parsed.equal(&amt));
+    }
+
+    #[test]
+    fn test_from_unit_byte_zero_normalizes() {
+        let amt = Amount::from_unit_byte(UNIT_MEI, vec![0]).unwrap();
+        assert!(amt.is_zero());
+        assert_eq!(amt.to_bigint(), BigInt::from(0));
+    }
+
 
 }
