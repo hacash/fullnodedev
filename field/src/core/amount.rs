@@ -68,7 +68,11 @@ impl PartialOrd for Amount {
 impl Parse for Amount {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.unit = bufeatone(&buf)?;
-        self.dist = bufeatone(&buf[1..])? as i8;
+        let dist = bufeatone(&buf[1..])?;
+        if dist as i16 == i8::MIN as i16 {
+            return errf!("dist cannot be {}", i8::MIN)
+        }
+        self.dist = dist as i8;
         let btlen = self.dist.abs() as usize;
         self.byte = bufeat(&buf[2..], btlen)?;
         Ok(2 + btlen)
@@ -236,7 +240,13 @@ impl Amount {
     }
 
     fn from_fin(v: String) -> Ret<Self> {
+        if v.len() > 17 {
+            return errf!("amount {} format overflow", v)
+        } 
         let amt: Vec<&str> = v.split(":").collect();
+        if amt.len() > 2 {
+            ret_amtfmte!{"amt", v}
+        }
         let Ok(u) = amt[1].parse::<u8>() else {
             ret_amtfmte!{"unit", amt[1]}
         };
@@ -249,6 +259,9 @@ impl Amount {
             amt.unit = u;
             return Ok(amt)
         };
+        if v == i128::MIN {
+            return errf!("amount '{}' overflow", v)
+        }
         // from u128
         let mut amt = Self::coin_u128(v.abs() as u128, u);
         if v < 0 {
@@ -544,7 +557,8 @@ impl Amount {
     pub fn cmp(&self, src: &Amount) -> Ordering {
         use Ordering::*;
         if self.dist < 0 || src.dist < 0 {
-            panic!("cannot compare between with negative")
+            // panic!("cannot compare between with negative")
+            return self.cmp_mode_bigint(src)
         }
         if self.equal(src) {
             return Equal // a == b
@@ -618,6 +632,9 @@ impl Amount {
     }
 
     pub fn add(&self, amt: &Amount, mode: AmtMode) -> Ret<Self> {
+        if self.is_negative() || amt.is_negative() {
+            return self.add_mode_bigint(amt)
+        }
         match mode {
             AmtMode::U64 => self.add_mode_u64(amt),
             AmtMode::U128 => self.add_mode_u128(amt),
@@ -626,6 +643,9 @@ impl Amount {
     }
 
     pub fn sub(&self, amt: &Amount, mode: AmtMode) -> Ret<Self> {
+        if self.is_negative() || amt.is_negative() {
+            return self.sub_mode_bigint(amt)
+        }
         match mode {
             AmtMode::U64 => self.sub_mode_u64(amt),
             AmtMode::U128 => self.sub_mode_u128(amt),
@@ -740,15 +760,19 @@ macro_rules! compute_mode_define {
             let utsk = (dst.unit as i32 - src.unit as i32).abs() as u32;
             let baseut;
             if dst.unit > src.unit {
-                let Some(ndu) = du.checked_mul( (10 as $ty).pow(utsk) as $ty ) else {
-                    // return self.add_mode_bigint(src) // to mode bigint
+                let Some(pwn) = (10 as $ty).checked_pow(utsk) else {
+                    rte_ovfl!{}
+                };
+                let Some(ndu) = du.checked_mul( pwn as $ty ) else {
                     rte_ovfl!{}
                 };
                 du = ndu;
                 baseut = src.unit;
             }else if dst.unit < src.unit {
-                let Some(nsu) = su.checked_mul( (10 as $ty).pow(utsk) as $ty ) else {
-                    // return self.add_mode_bigint(src) // to mode bigint
+                let Some(pwn) = (10 as $ty).checked_pow(utsk) else {
+                    rte_ovfl!{}
+                };
+                let Some(nsu) = su.checked_mul( pwn as $ty ) else {
                     rte_ovfl!{}
                 };
                 su = nsu;
