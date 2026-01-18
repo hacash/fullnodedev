@@ -2,9 +2,9 @@ use std::any::*;
 
 use sys::*;
 use field::*;
-use field::interface::*;
+use basis::interface::*;
+use basis::component::*;
 use protocol::*;
-use protocol::interface::*;
 use protocol::state::*;
 use protocol::action::*;
 

@@ -1,7 +1,6 @@
-
 use axum::routing::*;
 
-use super::server::*;
+use basis::server::ApiCtx;
 
 
 pub type SvrRouter = Router<ApiCtx>;
@@ -19,9 +18,22 @@ pub fn server_router(router: SvrRouter) {
 
 
 #[allow(static_mut_refs)]
-pub fn routers() -> Vec<SvrRouter> {
+fn take_routers() -> Vec<SvrRouter> {
     unsafe {
         SERVER_ROUTE_LIST.take().unwrap_or_default()
     }
 }
 
+
+/*
+    routers
+*/
+pub fn route(ctx: ApiCtx) -> Router {
+    let mut rtr = Router::new()
+        .route("/_server_", get("Hacash Api Server"));
+    for r in take_routers() {
+        rtr = rtr.merge(r);
+    }
+    rtr.with_state(ctx)
+}
+    

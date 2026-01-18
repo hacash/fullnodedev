@@ -1,8 +1,10 @@
+#[allow(unused)]
 #[derive(Clone)]
 pub struct HttpServer {
     cnf: ServerConf,
     engine: Arc<dyn Engine>,
     hcshnd: Arc<dyn HNoder>,
+    router: Arc<Mutex<Option<Router>>>,
 }
 
 
@@ -14,12 +16,14 @@ impl Server for HttpServer {
 
 
 impl HttpServer {
-    pub fn open(iniobj: &IniObj, hnd: Arc<dyn HNoder>) -> Self {
+    
+    pub fn open(iniobj: &IniObj, hnd: Arc<dyn HNoder>, router: Router) -> Self {
         let cnf = ServerConf::new(iniobj);
         Self{
             cnf: cnf,
             engine: hnd.engine(),
             hcshnd: hnd,
+            router: Mutex::new(Some(router)).into(),
         }
     }
     
@@ -50,13 +54,13 @@ async fn server_listen(ser: &HttpServer, worker: Worker) {
     }
     let listener = listener.unwrap();
     println!("[Http Api Server] Listening on http://{addr}");
-    // 
-    let app = route(ApiCtx::new(
+    /* let app = route(ApiCtx::new(
         ser.engine.clone(),
         ser.hcshnd.clone(),
-    ));
+    )); */
+    let rtapp = ser.router.lock().unwrap().take().unwrap();
     let mut wkr = worker.clone();
-    if let Err(e) = axum::serve(listener, app)
+    if let Err(e) = axum::serve(listener, rtapp)
         .with_graceful_shutdown(async move {
             let _ = wkr.wait().await;
         })

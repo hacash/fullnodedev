@@ -3,7 +3,9 @@ use std::collections::*;
 use std::cell::*;
 
 use sys::*;
-use protocol::interface::*;
+use basis::*;
+use basis::interface::*;
+use basis::component::*;
 use protocol::transaction::*;
 
 use super::*;

@@ -1,9 +1,11 @@
 use std::any::*;
 
-use field::interface::Serialize;
 use sys::*;
-use protocol::*;
-use protocol::interface::*;
+use field::*;
+use basis::*;
+use basis::interface::*;
+use basis::component::*;
+use basis::server::*;
 use protocol::action::*;
 use protocol::state::*;
 

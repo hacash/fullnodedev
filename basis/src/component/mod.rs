@@ -18,4 +18,3 @@ include!{"transaction.rs"}
 include!{"block.rs"}
 
 
-

@@ -22,15 +22,7 @@ pub fn util(p: &str) -> String {
 }
 
 
-
-/*
-    routers
-*/
-pub fn route(ctx: ApiCtx) -> Router {
-    let mut rtr = Router::new();
-    for r in super::setup::routers() {
-        rtr = rtr.merge(r);
-    }
-    rtr.with_state(ctx)
+async fn _server_(State(_ctx): State<ApiCtx>, _: Request) -> impl IntoResponse {
+    (html_headers(), "Hacash Api Server")
 }
-    
+

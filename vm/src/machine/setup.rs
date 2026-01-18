@@ -3,7 +3,7 @@
 /*
     return gas, val
 */
-pub fn setup_vm_run(depth: isize, ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value) -> Ret<(i64, Value)> {
+pub fn setup_vm_run(depth: i8, ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value) -> Ret<(i64, Value)> {
     // check tx type
     const TY3: u8 = TransactionType3::TYPE;
     let txty = ctx.env().tx.ty;

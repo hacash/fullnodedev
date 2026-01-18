@@ -33,7 +33,7 @@ fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn A
     let mut from = ctx.env().tx.main;
     let mut to = from.clone();
     let mut argvs: VecDeque<Value>;
-    let calldpt: isize = CallDepth::new(1).into();
+    let calldpt: i8 = CallDepth::new(1).into();
     let absty = CallMode::Abst as u8;
     let asset_param = |asset: &AssetAmt| {
         VecDeque::from([ 

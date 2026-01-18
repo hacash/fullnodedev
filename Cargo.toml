@@ -13,17 +13,17 @@ db             = {path = "./db", default-features = false}
 protocol       = {path = "./protocol"}
 chain          = {path = "./chain"}
 mint           = {path = "./mint"}
-# vm             = {path = "./vm", optional = true }
+vm             = {path = "./vm", optional = true }
 app            = {path = "./app"}
 # node = {path = "./node"}
 # server = {path = "./server"}
 
 [features]
-default = ["db-sled", "tex", "ast"] # , "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
+default = ["db-sled", "tex", "ast", "hvm"] # , "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
 # hip20 = ["mint/hip20"]
 tex = ["protocol/tex"]
 ast = ["protocol/ast"]
-# hvm = ["dep:vm", "field/hvm"]
+hvm = ["dep:vm", "field/hvm"]
 # p2sh = ["dep:vm", "protocol/p2sh", "vm/p2sh"]
 # ocl = ["app/ocl"]
 db-sled = ["db/db-sled"]

@@ -5,10 +5,12 @@ use sys::*;
 use field::*;
 use basis::interface::*;
 use basis::component::*;
+use basis::server::*;
 use super::transaction;
 
 // include!{"env.rs"}
 include!{"context.rs"}
 include!{"actcall.rs"}
 include!{"sub.rs"}
+include!{"api.rs"}
 

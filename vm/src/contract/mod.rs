@@ -3,8 +3,7 @@
 
 use sys::*;
 use field::*;
-use field::interface::*;
-use protocol::interface::*;
+use basis::interface::*;
 use protocol::transaction::*;
 
 

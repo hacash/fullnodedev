@@ -157,7 +157,7 @@ pub fn execute_code(
     globals: &mut GKVMap,
     memorys: &mut CtcKVMap,
 
-    ctx: &mut dyn ExtActCal,
+    ctx: &mut dyn ActCall,
     log: &mut dyn Logs,
     state: &mut VMState,
 
