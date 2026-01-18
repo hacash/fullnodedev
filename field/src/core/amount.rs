@@ -128,7 +128,7 @@ impl Amount {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.unit == 0 || self.dist == 0 || bytes_is_zero(&self.byte)
+        self.unit == 0 || bytes_is_zero(&self.byte)
     }
 
     pub fn not_zero(&self) -> bool {
