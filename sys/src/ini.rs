@@ -25,8 +25,12 @@ pub fn ini_must_maxlen(sec: &HashMap<String, Option<String>>, key: &str, def: &s
         Some(None) => def.to_string(),
         None => def.to_string(),
     };
-    if ml > 0 {
-        val.truncate(ml);
+    if ml > 0 && val.len() > ml {
+        let mut cut = ml;
+        while cut > 0 && !val.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        val.truncate(cut);
     }
     val
 }

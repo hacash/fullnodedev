@@ -2,8 +2,8 @@
 pub fn bytes_from_hex(stuff: &[u8], len: usize) -> Ret<Vec<u8>> {
     let rsz = stuff.len();
     let tsz = len * 2;
-    if rsz < tsz {
-        return Err("FieldHex".to_owned()+" from_hex size error need "+&rsz.to_string()+" but got "+&rsz.to_string())
+    if rsz != tsz {
+        return Err("FieldHex".to_owned()+" from_hex size error need "+&tsz.to_string()+" but got "+&rsz.to_string())
     }
     let bts = hex::decode(stuff);
     match bts {

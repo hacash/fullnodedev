@@ -5,10 +5,15 @@ use async_broadcast::{broadcast, Sender, Receiver, Recv, TryRecvError};
 type JobCount = Arc<Mutex<isize>>;
 
 
-#[derive(Clone)]
 pub struct Worker {
     jobs: Arc<Mutex<Option<JobCount>>>,
     receiver: Receiver<()>,
+}
+
+impl Clone for Worker {
+    fn clone(&self) -> Self {
+        self.fork()
+    }
 }
 
 impl Drop for Worker {
@@ -104,4 +109,3 @@ impl Exiter {
 
 
 }
-

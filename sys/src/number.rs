@@ -25,8 +25,12 @@ pub const UINT_MAX_DEFS: [u64; 9] = [
 // bytes <=> uint common fn
 
 pub fn bytes_to_uint(buf: &[u8], msz: usize, len: usize) -> Ret<u64> {
-    if len > msz || len > 8 {        
-        return Err("size cannot over ".to_owned() + &msz.to_string())
+    let max_len = if msz < 8 { msz } else { 8 };
+    if len > max_len {
+        return Err("size cannot over ".to_owned() + &max_len.to_string())
+    }
+    if buf.len() < len {
+        return err_buf_short!()
     }
     let mut vbts = [0u8; 8];
     let left = 8 - len;
@@ -40,8 +44,9 @@ pub fn bytes_to_uint(buf: &[u8], msz: usize, len: usize) -> Ret<u64> {
 }
 
 pub fn bytes_from_uint(val: u64, msz: usize, len: usize) -> Ret<Vec<u8>> {
-    if len > msz {
-        return Err("size cannot over ".to_owned() + &msz.to_string())
+    let max_len = if msz < 8 { msz } else { 8 };
+    if len > max_len {
+        return Err("size cannot over ".to_owned() + &max_len.to_string())
     }
     let rlbt = val.to_be_bytes();
     let left = 8 - len;
