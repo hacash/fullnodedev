@@ -69,7 +69,7 @@ impl Parse for Amount {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.unit = bufeatone(&buf)?;
         let dist = bufeatone(&buf[1..])?;
-        if dist as i16 == i8::MIN as i16 {
+        if dist == i8::MIN as u8 {
             return errf!("dist cannot be {}", i8::MIN)
         }
         self.dist = dist as i8;
@@ -82,7 +82,7 @@ impl Parse for Amount {
         if self.dist != 0 && rbtl == 0 {
             return errf!("dist and byte zore not match")
         }
-        if rbtl > 0 && bytes_is_zero(&self.byte)  {
+        if rbtl > 1 && bytes_is_zero(&self.byte)  {
             return errf!("byte cannot much zore ")
         }
         Ok(2 + btlen)
@@ -167,7 +167,7 @@ macro_rules! ret_amtfmte {
 macro_rules! coin_with {
     ($fn:ident, $ty:ty) => {
         pub fn $fn(mut v: $ty, mut u: u8) -> Self {
-            if v == 0 || u == 0 {
+            if v == 0 {
                 return Self::zero()
             }
             while v % 10 == 0 {
@@ -197,6 +197,9 @@ impl Amount {
         Self::default()
     }
     pub fn small(v: u8, u: u8) -> Self {
+        if v == 0 {
+            return Self::zero()
+        }
         Self {
             unit: u,
             dist: 1i8,
@@ -204,6 +207,9 @@ impl Amount {
         }
     }
     pub fn small_mei(v: u8) -> Self {
+        if v == 0 {
+            return Self::zero()
+        }
         Self {
             unit: UNIT_MEI,
             dist: 1i8,
@@ -262,9 +268,9 @@ impl Amount {
             let Ok(bign) = BigInt::from_str_radix(&amt[0], 10) else {
                 return errf!("amount '{}' overflow BigInt::from_str_radix", &v)
             };
-            let mut amt = Self::from_bigint(&bign)?;
-            amt.unit = u;
-            return Ok(amt)
+            let powv = BigInt::from(10u64).pow(u as u32);
+            let bign = bign * powv;
+            return Self::from_bigint(&bign)
         };
         if v == i128::MIN {
             return errf!("amount '{}' overflow", v)
@@ -313,17 +319,15 @@ impl Amount {
         if digits.is_empty() {
             return Ok(Self::zero());
         }
-        let Ok(bigv) = BigUint::from_str_radix(digits, 10) else {
+        let Ok(mut bigv) = BigInt::from_str_radix(digits, 10) else {
             ret_amtfmte!{"value", v}
         };
-        let Some(value) = bigv.to_u128() else {
-            ret_amtfmte!{"value", v}
-        };
-        let mut amt = Self::coin_u128(value, unit);
         if negative {
-            amt.dist *= -1; // if neg
+            bigv = -bigv;
         }
-        Ok(amt)
+        let powv = BigInt::from(10u64).pow(unit as u32);
+        let bigv = bigv * powv;
+        Self::from_bigint(&bigv)
     }
 
     pub fn from_bigint( bignum: &BigInt ) -> Ret<Self> {
@@ -364,6 +368,9 @@ impl Amount {
         let bl = byte.len();
         if bl > 127 {
             return Err("amount bytes len overflow 127.".to_string())
+        }
+        if bl == 0 || bytes_is_zero(&byte) {
+            return Ok(Self::zero())
         }
         Ok(Amount{
             unit: unit,
