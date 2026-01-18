@@ -75,6 +75,16 @@ impl Parse for Amount {
         self.dist = dist as i8;
         let btlen = self.dist.abs() as usize;
         self.byte = bufeat(&buf[2..], btlen)?;
+        let rbtl = self.byte.len();
+        if btlen != rbtl {
+            return errf!("dist and byte len not match")
+        }
+        if self.dist != 0 && rbtl == 0 {
+            return errf!("dist and byte zore not match")
+        }
+        if rbtl > 0 && bytes_is_zero(&self.byte)  {
+            return errf!("byte cannot much zore ")
+        }
         Ok(2 + btlen)
     }
 }
@@ -128,7 +138,7 @@ impl Amount {
     }
 
     pub fn is_zero(&self) -> bool {
-        self.unit == 0 || bytes_is_zero(&self.byte)
+        bytes_is_zero(&self.byte)
     }
 
     pub fn not_zero(&self) -> bool {
@@ -240,9 +250,6 @@ impl Amount {
     }
 
     fn from_fin(v: String) -> Ret<Self> {
-        if v.len() > 17 {
-            return errf!("amount {} format overflow", v)
-        } 
         let amt: Vec<&str> = v.split(":").collect();
         if amt.len() > 2 {
             ret_amtfmte!{"amt", v}
@@ -427,7 +434,7 @@ macro_rules! to_unit_define {
     ($fu64:ident, $fu128:ident, $unit:expr) => {
         
     pub fn $fu128(&self) -> Option<u128> {
-        self.to_unit_biguint($unit).to_u128()
+        self.to_unit_biguint($unit)?.to_u128()
     }
     
     pub fn $fu64(&self) -> Option<u64> {
@@ -451,14 +458,16 @@ impl Amount {
     to_unit_define!{ to_zhu_u64, to_zhu_u128, UNIT_ZHU }
     to_unit_define!{ to_238_u64, to_238_u128, UNIT_238 } // for fee_purity
 
-    pub fn to_unit_biguint(&self, base_unit: u8) -> BigUint {
-        assert!(!self.is_negative());
+    pub fn to_unit_biguint(&self, base_unit: u8) -> Option<BigUint> {
+        if self.is_negative() {
+            return None
+        }
         if self.is_zero() {
-            return 0u64.into()
+            return Some(0u64.into())
         }
         let bigu = self.to_biguint();
         let powv: BigUint = BigUint::from(10u64).pow(base_unit as u64);
-        bigu / powv
+        Some(bigu / powv)
     }
 
     pub unsafe fn to_unit_float(&self, base_unit: u8) -> f64 {
