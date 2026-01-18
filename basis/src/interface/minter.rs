@@ -33,6 +33,9 @@ pub trait Minter : Send + Sync {
     fn tx_pool_group(&self, _: &TxPkg) -> usize { 0 }
     fn tx_pool_refresh(&self, _: &dyn EngineRead, _: &dyn TxPool, _txs: Vec<Hash>, _blkhei: u64) {}
     
+    // p2p
+    fn p2p_on_connect(&self, _: Arc<dyn NPeer>, _: Arc<dyn Engine>, _: Arc<dyn TxPool>) -> Rerr { Ok(()) }
+    
     // close exit
     fn exit(&self) {}
 

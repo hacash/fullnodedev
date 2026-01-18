@@ -17,6 +17,7 @@ use super::component::{
 
 
 
+include!{"peer.rs"}
 include!{"txpool.rs"}
 include!{"p2sh.rs"}
 include!{"db.rs"}

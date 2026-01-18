@@ -17,6 +17,7 @@ pub struct EngineConf {
     pub block_data_dir: PathBuf, // block data
     pub state_data_dir: PathBuf, // chain state
     pub blogs_data_dir: PathBuf, // logs  state
+    pub show_miner_name: bool,
     // block logs
     pub vmlogs_enable: bool,
     pub vmlogs_open_height: u64,
@@ -83,6 +84,7 @@ impl EngineConf {
             blogs_data_dir: join_path(&data_dir, "logs"),
             data_dir: data_dir.to_str().unwrap().to_owned(),
             dev_count_switch: 0,
+            show_miner_name: false,
             // logs
             vmlogs_enable: false,
             vmlogs_open_height: 0,
@@ -121,6 +123,7 @@ impl EngineConf {
         cnf.chain_id = ini_must_u64(sec_mint, "chain_id", 0) as u32;
         cnf.sync_maxh = ini_must_u64(sec_mint, "height_max", 0);
         cnf.dev_count_switch = ini_must_u64(sec_mint, "dev_count_switch", 0) as usize;
+        cnf.show_miner_name = ini_must_bool(sec_mint, "show_miner_name", false);
 
         let sec_vmlog = &ini_section(ini, "vmlog");
         cnf.vmlogs_enable = ini_must_bool(sec_vmlog, "enable", false);

@@ -7,6 +7,7 @@ use num_bigint::*;
 
 use sys::*;
 use field::*;
+use basis::*;
 use basis::interface::*;
 use basis::component::*;
 use basis::difficulty::*;

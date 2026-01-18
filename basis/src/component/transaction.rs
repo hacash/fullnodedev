@@ -1,5 +1,6 @@
 
 
+#[derive(Debug, Clone)]
 pub struct TxPkg {
     pub data: Arc<Vec<u8>>,
     pub seek: usize,

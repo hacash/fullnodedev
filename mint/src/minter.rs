@@ -65,6 +65,15 @@ impl Minter for HacashMinter {
         impl_packing_next_block(self, eng, tp)
     }
 
+    fn p2p_on_connect(&self, peer: Arc<dyn NPeer>, _: Arc<dyn Engine>, txpool: Arc<dyn TxPool>) -> Rerr {
+
+        if let Ok(Some(txp)) = txpool.first_at(TXGID_DIAMINT) {
+            // send highest bidding diamond mint tx
+            let _ = peer.send_msg_on_block(P2P_MSG_TX_SUBMIT, txp.data.to_vec());
+        }
+        Ok(())
+    }
+
 
     /*
     fn coinbase(&self, hei: u64, tx: &dyn TransactionRead) -> Rerr {
