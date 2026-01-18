@@ -278,23 +278,49 @@ impl Amount {
     }
     
     fn from_mei(v: String) -> Ret<Self> {
-        let mut u: u8 = UNIT_MEI;
-        let Ok(mut f) = v.parse::<f64>() else {
+        let v = v.trim();
+        if v.is_empty() {
+            ret_amtfmte!{"value", v}
+        }
+        let (negative, digits) = match v.strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, v),
+        };
+        let parts: Vec<&str> = digits.split('.').collect();
+        if parts.len() > 2 {
+            ret_amtfmte!{"value", v}
+        }
+        let int_part = parts[0];
+        let frac_part = if parts.len() == 2 { parts[1] } else { "" };
+        if int_part.is_empty() && frac_part.is_empty() {
+            ret_amtfmte!{"value", v}
+        }
+        if !int_part.chars().all(|c| c.is_ascii_digit())
+            || !frac_part.chars().all(|c| c.is_ascii_digit())
+        {
+            ret_amtfmte!{"value", v}
+        }
+        let frac_trimmed = frac_part.trim_end_matches('0');
+        let frac_len = frac_trimmed.len();
+        if frac_len > UNIT_MEI as usize {
+            ret_amtfmte!{"value", v}
+        }
+        let unit = UNIT_MEI - frac_len as u8;
+        let mut digits = String::with_capacity(int_part.len() + frac_trimmed.len());
+        digits.push_str(int_part);
+        digits.push_str(frac_trimmed);
+        let digits = digits.trim_start_matches('0');
+        if digits.is_empty() {
+            return Ok(Self::zero());
+        }
+        let Ok(bigv) = BigUint::from_str_radix(digits, 10) else {
             ret_amtfmte!{"value", v}
         };
-        while f.fract() > 0.0 {
-            if u == 0 {
-                ret_amtfmte!{"value", v}
-            }
-            u -= 1;
-            f *= 10.0;
-        }
-        if f > u128::MAX as f64 {
+        let Some(value) = bigv.to_u128() else {
             ret_amtfmte!{"value", v}
-        }
-
-        let mut amt = Self::coin_u128(f.abs() as u128, u);
-        if f < 0.0 {
+        };
+        let mut amt = Self::coin_u128(value, unit);
+        if negative {
             amt.dist *= -1; // if neg
         }
         Ok(amt)
