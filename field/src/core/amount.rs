@@ -137,12 +137,12 @@ impl Amount {
 
     // check must be positive and cannot be zero
     pub fn is_positive(&self) -> bool {
-        self.unit > 0 && self.dist > 0 && bytes_not_zero(&self.byte)
+        self.dist > 0 && bytes_not_zero(&self.byte)
     }
 
     // check must be negative and cannot be zero
     pub fn is_negative(&self) -> bool {
-        self.unit > 0 && self.dist < 0 && bytes_not_zero(&self.byte)
+        self.dist < 0 && bytes_not_zero(&self.byte)
     }
     
 }
