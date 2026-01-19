@@ -197,6 +197,7 @@ pub fn execute_code(
     // let tail = codelen;
 
     macro_rules! check_gas { () => { if *gas_usable < 0 { return itr_err_code!(OutOfGas) } } }
+    macro_rules! nsw { () => { if mode == Static { return itr_err_code!(InstDisabled) } } } // not write in static mode
     macro_rules! pu8 { () => { itrparamu8!(codes, *pc) } }
     macro_rules! pty { () => { ops.peek()?.ty() } }
     macro_rules! ptyn { () => { ops.peek()?.ty_num() } }
@@ -367,19 +368,19 @@ pub fn execute_code(
             // storage
             SREST => *ops.peek()? = state.srest(hei, context_addr, ops.peek()?)?,
             SLOAD => *ops.peek()? = state.sload(hei, context_addr, ops.peek()?)?,
-            SDEL  => state.sdel(context_addr, ops.pop()?)?,
-            SSAVE => { let v = ops.pop()?; state.ssave(hei, context_addr, ops.pop()?, v)?; },
-            SRENT => { let t = ops.pop()?; gas += state.srent(gst, hei, context_addr, ops.pop()?, t)?; },
+            SDEL  => { nsw!(); state.sdel(context_addr, ops.pop()?)?; },
+            SSAVE => { nsw!(); let v = ops.pop()?; state.ssave(hei, context_addr, ops.pop()?, v)?; },
+            SRENT => { nsw!(); let t = ops.pop()?; gas += state.srent(gst, hei, context_addr, ops.pop()?, t)?; },
             // global & memory
-            GPUT => { let v = ops.pop()?; globals.put(ops.pop()?, v)?; },
+            GPUT => { nsw!(); let v = ops.pop()?; globals.put(ops.pop()?, v)?; },
             GGET => *ops.peek()? = globals.get(ops.peek()?)?,
-            MPUT => { let v = ops.pop()?; memorys.entry(context_addr)?.put(ops.pop()?, v)?; },
+            MPUT => { nsw!(); let v = ops.pop()?; memorys.entry(context_addr)?.put(ops.pop()?, v)?; },
             MGET => *ops.peek()? = memorys.entry(context_addr)?.get(ops.peek()?)?,
             // log (t1,[t2,t3,t4,]d)
-            LOG1 => record_log(context_addr, log, ops.popn(2)?)?,
-            LOG2 => record_log(context_addr, log, ops.popn(3)?)?,
-            LOG3 => record_log(context_addr, log, ops.popn(4)?)?,
-            LOG4 => record_log(context_addr, log, ops.popn(5)?)?,
+            LOG1 => { nsw!(); record_log(context_addr, log, ops.popn(2)?)?; },
+            LOG2 => { nsw!(); record_log(context_addr, log, ops.popn(3)?)?; },
+            LOG3 => { nsw!(); record_log(context_addr, log, ops.popn(4)?)?; },
+            LOG4 => { nsw!(); record_log(context_addr, log, ops.popn(5)?)?; },
             // logic
             AND  => binop_btw(ops, lgc_and)?,
             OR   => binop_btw(ops, lgc_or)?,
@@ -481,7 +482,7 @@ fn check_call_mode(mode: CallMode, inst: Bytecode) -> VmrtErr {
         P2sh    if not_ist!(                  CALLSTATIC, CALLCODE) => itr_err_code!(CallOtherInP2sh),
         Abst    if not_ist!(CALLINR, CALLLIB, CALLSTATIC, CALLCODE) => itr_err_code!(CallInAbst),
         Library if not_ist!(         CALLLIB, CALLSTATIC, CALLCODE) => itr_err_code!(CallLocInLib),
-        Static  if not_ist!(                  CALLSTATIC, CALLCODE) => itr_err_code!(CallLibInStatic),
+        Static  if not_ist!(                  CALLSTATIC          ) => itr_err_code!(CallLibInStatic),
         CodeCopy                         /* not allowed any call */ => itr_err_code!(CallInCodeCopy),
         _ => Ok(()), // Outer | Inner support all call instructions
     }

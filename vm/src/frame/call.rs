@@ -8,6 +8,7 @@ impl CallFrame {
     ) -> VmrtRes<Value> {
         use CallExit::*;
         use CallMode::*;
+        let libs_none: Option<Vec<ContractAddress>> = None;
         // to spend gas
         self.contract_count = r.contracts.len();
         let mut curr_frame = self.increase(r)?;
@@ -52,8 +53,10 @@ impl CallFrame {
                 Call(fnptr) => {
                     let ctxadr = &curr_frame.ctxadr;
                     let curadr = &curr_frame.curadr;
+                    // only main-call frame uses tx-provided libs
+                    let libs_ptr = maybe!(curr_frame.depth == 0, &libs, &libs_none);
                     let (chgsrcadr, fnobj) = r.load_must_call(env.sta, fnptr.clone(), 
-                        ctxadr, curadr, &libs)?;
+                        ctxadr, curadr, libs_ptr)?;
                     let fnobj = fnobj.as_ref().clone();
                     let fn_is_public = fnobj.check_conf(FnConf::Public);
                     // check gas
