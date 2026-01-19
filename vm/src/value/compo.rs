@@ -324,12 +324,26 @@ impl CompoItem {
         get_compo_inner_by!(self, Map, get_compo_inner_ref)
     }
 
-    pub fn list_mut(&self) -> VmrtRes<&mut VecDeque<Value>> {
+    fn list_mut(&self) -> VmrtRes<&mut VecDeque<Value>> {
         get_compo_inner_by!(self, List, get_compo_inner_mut)
     }
 
-    pub fn map_mut(&self) -> VmrtRes<&mut BTreeMap<Vec<u8>, Value>> {
+    #[allow(unused)]
+    fn map_mut(&self) -> VmrtRes<&mut BTreeMap<Vec<u8>, Value>> {
         get_compo_inner_by!(self, Map, get_compo_inner_mut)
+    }
+
+    pub fn check_list_param_cast(&mut self, types: &[ValueTy]) -> VmrtErr {
+        let list = self.list_mut()?;
+        let tn = types.len();
+        let vn = list.len();
+        if tn != vn {
+            return itr_err_fmt!(CallArgvTypeFail, "param length error need {} but got {}", tn, vn)
+        }
+        for i in 0..vn {
+            list[i].checked_param_cast(types[i])?;
+        }
+        Ok(())
     }
 
     pub fn new_list() -> Self {
@@ -475,5 +489,3 @@ impl CompoItem {
 
 
 }
-
-

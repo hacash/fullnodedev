@@ -38,18 +38,7 @@ impl FuncArgvTypes {
             // check one argv
             1 => v.checked_param_cast(types[0]),
             // check list
-            _ => {
-                let vs = v.compo()?.list_mut()?;
-                let vn = vs.len();
-                if tn != vn {
-                    return itr_err_fmt!(ec, "param length error need {} but got {}", tn, vn)
-                }
-                for i in 0..vn {
-                    vs[i].checked_param_cast(types[i])?;
-                }
-                // all pass
-                Ok(())
-            }
+            _ => v.compo()?.check_list_param_cast(&types),
         }
     }
 
@@ -142,7 +131,6 @@ impl Serialize for FuncArgvTypes {
 }
 
 impl_field_only_new!{FuncArgvTypes}
-
 
 
 
