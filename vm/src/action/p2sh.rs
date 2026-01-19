@@ -63,10 +63,14 @@ impl UnlockScriptProve {
         // check bytecodes
         let cap = SpaceCap::new(ctx.env().block.height);
         let ctb = CodeType::Bytecode;
-        convert_and_check(&cap, ctb, self.lockbox.as_vec())?;
+        let lockbox = self.lockbox.as_vec();
         let unlocks = self.argvkey.as_vec();
-        let insts = convert_and_check(&cap, ctb, unlocks)?;
-        // check unlock no return or end
+        convert_and_check(&cap, ctb, &lockbox)?;
+        let insts = convert_and_check(&cap, ctb, &unlocks)?;
+        if unlocks.len() + lockbox.len() > cap.one_function_size {
+            return errf!("p2sh code too long")
+        }
+        // check unlock no return or non-stack write
         use Bytecode::*;
         if unlocks.iter().enumerate().any(|(i, a)|{
             if 0 == insts[i] {
@@ -74,21 +78,30 @@ impl UnlockScriptProve {
             }
             let inst: Bytecode = std_mem_transmute!(*a);
             match inst {
-                RET | END => true,
+                RET | END |
+                SDEL | SSAVE | SRENT |
+                GPUT | MPUT |
+                LOG1 | LOG2 | LOG3 | LOG4 |
+                HWRITE | HWRITEX | HWRITEXL | HGROW |
+                ALLOC | PUT | PUTX | XOP | XLG | UPLIST |
+                CALL | CALLINR | CALLLIB | CALLCODE | CALLSTATIC |
+                EXTACTION => true,
                 _ => false,
             }
         }) {
-            return errf!("p2sh unlock script cannot have return inst")
+            return errf!("p2sh unlock script cannot return early or write outside stack")
         }
         // ok 
-        Ok(UnlockScript{ 
-            stuff: vec![
-                self.get_merkel().to_vec(),
-                self.adrlibs.serialize(),
-                self.argvkey.to_vec(),
-                self.lockbox.to_vec(),
-            ].concat()
-        })
+        let merkel = self.get_merkel().to_vec();
+        let libs = self.adrlibs.serialize();
+        let mut stuff = Vec::with_capacity(
+            merkel.len() + libs.len() + unlocks.len() + lockbox.len()
+        );
+        stuff.extend_from_slice(&merkel);
+        stuff.extend_from_slice(&libs);
+        stuff.extend_from_slice(unlocks);
+        stuff.extend_from_slice(lockbox);
+        Ok(UnlockScript{ stuff })
     }
 
     fn get_merkel(&self) -> Address {

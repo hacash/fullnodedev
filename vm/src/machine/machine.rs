@@ -59,7 +59,7 @@ impl MachineBox {
         // min use
         let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
         let min_use = match cty {
-            Main => gsext.main_call_min,
+            Main | P2sh => gsext.main_call_min,
             Abst => gsext.abst_call_min,
             _ => never!()
         };
@@ -96,6 +96,7 @@ impl VM for MachineBox {
         use CallMode::*;
         // init gas & check balance
         self.check_gas(ctx)?;
+        let hei = ctx.env().block.height;
         let gas = &mut self.gas;
         let gas_record = *gas;
         // env & do call
@@ -110,8 +111,9 @@ impl VM for MachineBox {
                 machine.main_call(exenv, cty, data.to_vec())
             }
             P2sh => {
-                let (ctxadr, mv) = Address::create(data)?;
-                let (calibs, mv) = ContractAddressW1::create(&data[mv..])?;
+                let (ctxadr, mv1) = Address::create(data)?;
+                let (calibs, mv2) = ContractAddressW1::create(&data[mv1..])?;
+                let mv = mv1 + mv2;
                 let realcodes = data[mv..].to_vec();
                 let Ok(param) = param.downcast::<Value>() else {
                     return errf!("p2sh argv type not match")

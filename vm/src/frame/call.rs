@@ -13,7 +13,7 @@ impl CallFrame {
         self.contract_count = r.contracts.len();
         let mut curr_frame = self.increase(r)?;
         curr_frame.depth = match mode { // set depth 0 or 1
-            Main => 0,
+            Main | P2sh => 0,
             Abst => 1,
             _ => never!(),
         };

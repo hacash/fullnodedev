@@ -197,7 +197,7 @@ pub fn execute_code(
     // let tail = codelen;
 
     macro_rules! check_gas { () => { if *gas_usable < 0 { return itr_err_code!(OutOfGas) } } }
-    macro_rules! nsw { () => { if mode == Static { return itr_err_code!(InstDisabled) } } } // not write in static mode
+    macro_rules! nsw { () => { if let Static = mode { return itr_err_code!(InstDisabled) } } } // not write in static mode
     macro_rules! pu8 { () => { itrparamu8!(codes, *pc) } }
     macro_rules! pty { () => { ops.peek()?.ty() } }
     macro_rules! ptyn { () => { ops.peek()?.ty_num() } }
