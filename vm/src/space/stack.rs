@@ -31,6 +31,10 @@ impl Stack {
         self.datas.clear();
     }
 
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
     pub fn len(&self) -> usize {
         self.datas.len()
     }

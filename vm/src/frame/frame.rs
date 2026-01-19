@@ -94,9 +94,10 @@ impl Frame {
 
     pub fn next(&self, r: &mut Resoure) -> Self {
         let mut f = Self::new(r);
-        let cap = &r.space_cap;
-        f.oprnds.reset(cap.total_stack - self.oprnds.len());
-        f.locals.reset(cap.total_local - self.locals.len());
+        let stks = self.oprnds.limit() - self.oprnds.len();
+        let locs = self.locals.limit() - self.locals.len();
+        f.oprnds.reset(stks);
+        f.locals.reset(locs);
         f.ctxadr = self.ctxadr.clone();
         f.curadr = self.curadr.clone();
         f.depth = self.depth + 1;
@@ -166,4 +167,3 @@ impl Frame {
     }
 
 }
-
