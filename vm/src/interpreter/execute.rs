@@ -3,13 +3,22 @@
 * parse bytecode params
 */
 
+#[inline(always)]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn read_arr<const N: usize>(codes: &[u8], pc: usize) -> [u8; N] {
+    let mut out = [0u8; N];
+    std::ptr::copy_nonoverlapping(codes.as_ptr().add(pc), out.as_mut_ptr(), N);
+    out
+}
+
 
 
 macro_rules! itrbuf {
     ($codes: expr, $pc: expr, $l: expr) => {
         { 
             let r = $pc + $l;
-            let v: [u8; $l] = $codes[$pc..r].try_into().unwrap();
+            debug_assert!(r <= $codes.len());
+            let v: [u8; $l] = unsafe { read_arr::<$l>($codes, $pc) };
             $pc = r;
             v
         }
@@ -20,7 +29,8 @@ macro_rules! itrparam {
     ($codes: expr, $pc: expr, $l: expr, $t: ty) => {
         { 
             let r = $pc + $l;
-            let v = <$t>::from_be_bytes($codes[$pc..r].try_into().unwrap());
+            debug_assert!(r <= $codes.len());
+            let v = <$t>::from_be_bytes(unsafe { read_arr::<$l>($codes, $pc) });
             $pc = r;
             v
         }
@@ -45,8 +55,10 @@ macro_rules! itrparambufex {
             let s = itrparam!{$codes, $pc, $l, $t} as usize;
             let l = $pc;
             let r = l + s;
+            debug_assert!(r <= $codes.len());
             $pc = r;
-            Value::Bytes( $codes[l..r].into() )
+            let v = unsafe { std::slice::from_raw_parts($codes.as_ptr().add(l), s) };
+            Value::Bytes(v.to_vec())
         }
     }
 }
@@ -202,8 +214,9 @@ pub fn execute_code(
     let exit;
     loop {
         // read inst
-        let instbyte = codes[*pc as usize]; // u8
-        let instruction: Bytecode = std_mem_transmute!(instbyte.clone());
+        debug_assert!(*pc < codes.len());
+        let instbyte = unsafe { *codes.get_unchecked(*pc as usize) }; // u8
+        let instruction: Bytecode = std_mem_transmute!(instbyte);
         *pc += 1; // next
 
         // debug_print_stack(ops, locals, pc, instruction);
@@ -221,7 +234,7 @@ pub fn execute_code(
                 return itr_err_fmt!(ExtActDisabled, "extend call not support in static call")
             }
             let idx = pu8!();
-            let kid = u16::from_be_bytes(vec![instbyte, idx].try_into().unwrap());
+            let kid = u16::from_be_bytes([instbyte, idx]);
             let mut actbody = vec![];
             if $pass_body {
                 let mut bdv = ops.peek()?.canbe_ext_call_data(heap)?;
@@ -236,7 +249,7 @@ pub fn execute_code(
                     EXTENV  => search_ext_by_id(idx, &CALL_EXTEND_ENV_DEFS),
                     EXTFUNC => search_ext_by_id(idx, &CALL_EXTEND_FUNC_DEFS),
                     _ => never!(),
-                }.unwrap().2;
+                }.ok_or_else(|| ItrErr::new(ExtActCallError, &format!("extend id {} not found", idx)))?.2;
                 resv = Value::type_from(vty, cres)?; //  from ty
             } else {
                 resv = Value::Bytes(cres); // only bytes
