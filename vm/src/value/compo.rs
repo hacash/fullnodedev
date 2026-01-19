@@ -141,7 +141,7 @@ impl Compo {
         Ok(Value::Bool(hsk))
     }
 
-    fn itemget(&mut self, k: Value) -> VmrtRes<Value> {
+    fn itemget(&self, k: Value) -> VmrtRes<Value> {
         let nfer = || itr_err_code!(CompoNoFindItem);
         let v = match self {
             Self::List(a) => {
@@ -440,7 +440,7 @@ impl CompoItem {
     }
 
     pub fn itemget(&self, k: Value) -> VmrtRes<Value> {
-        let compo = get_compo_inner_mut!(self);
+        let compo = get_compo_inner_ref!(self);
         compo.itemget(k)
     }
 
@@ -475,6 +475,5 @@ impl CompoItem {
 
 
 }
-
 
 
