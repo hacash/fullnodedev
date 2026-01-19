@@ -55,7 +55,7 @@ impl Stack {
     pub fn alloc(&mut self, num: u8) -> VmrtRes<u8> {
         let osz = self.datas.len();
         let tsz = osz + num as usize;
-        if tsz >= self.limit {
+        if tsz > self.limit {
             return itr_err_code!(OutOfStack)
         }
         self.datas.resize(tsz, Value::nil());
@@ -84,7 +84,7 @@ impl Stack {
         // let opt = mark > 5; // 0b00000111; (mark & 0b00011111)
         let idx = idx as usize;
         let n = self.datas.len();
-        if idx > n {
+        if idx >= n {
             return itr_err_code!(OutOfStack)
         }
         Ok(unsafe { self.datas.get_unchecked_mut(idx) })

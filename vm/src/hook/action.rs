@@ -106,7 +106,7 @@ fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn A
     if fs {
         let mut argvs = argvs.clone();
         argvs.push_front( Value::Address(to) );
-        let param = Value::Compo(CompoItem::list(argvs));
+        let param = Value::Compo(CompoItem::list(argvs)?);
         let codes = ctx.p2sh(&from)?.code_stuff();
         let cm = CallMode::P2sh as u8;
         setup_vm_run(calldpt, ctx.clone_mut(), cm, 0, codes, param)?;
@@ -116,14 +116,14 @@ fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn A
     if fc {
         let mut argvs = argvs.clone();
         argvs.push_front( Value::Address(to) );
-        let param = Value::Compo(CompoItem::list(argvs));
+        let param = Value::Compo(CompoItem::list(argvs)?);
         setup_vm_run(calldpt, ctx, absty, abstfrom as u8, from.as_bytes(), param)?;
     }
 
     // call to contract abstract
     if tc {
         argvs.push_front( Value::Address(from) );
-        let param = Value::Compo(CompoItem::list(argvs));
+        let param = Value::Compo(CompoItem::list(argvs)?);
         setup_vm_run(calldpt, ctx, absty, abstto as u8, to.as_bytes(), param)?;
     }
 

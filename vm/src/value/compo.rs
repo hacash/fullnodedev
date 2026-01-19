@@ -2,7 +2,7 @@
 #[derive(Debug, Clone)]
 enum Compo {
     List(VecDeque<Value>),
-    Map(HashMap<Vec<u8>, Value>),
+    Map(BTreeMap<Vec<u8>, Value>),
 }
 
 impl PartialEq for Compo {
@@ -95,11 +95,16 @@ impl Compo {
         match self {
             Self::List(a) => {
                 let i = k.checked_u32()?;
+                if i as usize >= a.len() {
+                    return itr_err_code!(CompoNoFindItem)
+                }
                 a.remove(i as usize);
             }
             Self::Map(b) => {
                 let k = k.canbe_key()?;
-                b.remove(&k);
+                if b.remove(&k).is_none() {
+                    return itr_err_code!(CompoNoFindItem)
+                }
             }
         }
         Ok(())
@@ -253,21 +258,30 @@ impl CompoItem {
 
 impl CompoItem {
 
-    pub fn list(l: VecDeque<Value>) -> Self {
-        Self {
-            compo: Rc::new(UnsafeCell::new(Compo::List(l))),
+    pub fn list(l: VecDeque<Value>) -> VmrtRes<Self> {
+        for item in &l {
+            item.canbe_value()?;
         }
+        Ok(Self {
+            compo: Rc::new(UnsafeCell::new(Compo::List(l))),
+        })
     }
 
-    pub fn map(m: HashMap<Vec<u8>, Value>) -> Self {
-        Self {
-            compo: Rc::new(UnsafeCell::new(Compo::Map(m))),
+    pub fn map(m: BTreeMap<Vec<u8>, Value>) -> VmrtRes<Self> {
+        for v in m.values() {
+            v.canbe_value()?;
         }
+        Ok(Self {
+            compo: Rc::new(UnsafeCell::new(Compo::Map(m))),
+        })
     }
 
     pub fn pack_list(cap: &SpaceCap, ops: &mut Stack) -> VmrtRes<Value> {
         let items = take_items_from_ops!(false, cap, ops);
-        Ok(Value::Compo(Self::list(VecDeque::from(items))))
+        for item in &items {
+            item.canbe_value()?;
+        }
+        Ok(Value::Compo(Self::list(VecDeque::from(items))?))
     }
 
     pub fn pack_map(cap: &SpaceCap, ops: &mut Stack) -> VmrtRes<Value> {
@@ -277,7 +291,7 @@ impl CompoItem {
             return itr_err_code!(CompoPackError) // map must k => v
         }
         let sz = m / 2;
-        let mut mapobj = HashMap::with_capacity(sz);
+        let mut mapobj = BTreeMap::new();
         for i in 0 .. sz {
             let k = items[i * 2].take().unwrap();
             let v = items[i * 2 + 1].take().unwrap();
@@ -285,7 +299,7 @@ impl CompoItem {
             v.canbe_value()?;
             mapobj.insert(k, v);
         }
-        Ok(Value::Compo(Self::map(mapobj)))
+        Ok(Value::Compo(Self::map(mapobj)?))
     }
 
     pub fn is_list(&self) -> bool {
@@ -306,7 +320,7 @@ impl CompoItem {
         get_compo_inner_by!(self, List, get_compo_inner_ref)
     }
 
-    pub fn map_ref(&self) -> VmrtRes<&HashMap<Vec<u8>, Value>> {
+    pub fn map_ref(&self) -> VmrtRes<&BTreeMap<Vec<u8>, Value>> {
         get_compo_inner_by!(self, Map, get_compo_inner_ref)
     }
 
@@ -314,7 +328,7 @@ impl CompoItem {
         get_compo_inner_by!(self, List, get_compo_inner_mut)
     }
 
-    pub fn map_mut(&self) -> VmrtRes<&mut HashMap<Vec<u8>, Value>> {
+    pub fn map_mut(&self) -> VmrtRes<&mut BTreeMap<Vec<u8>, Value>> {
         get_compo_inner_by!(self, Map, get_compo_inner_mut)
     }
 
@@ -326,7 +340,7 @@ impl CompoItem {
 
     pub fn new_map() -> Self {
         Self {
-            compo: Rc::new(UnsafeCell::new(Compo::Map(HashMap::new()))),
+            compo: Rc::new(UnsafeCell::new(Compo::Map(BTreeMap::new()))),
         }
     }
 
@@ -337,10 +351,36 @@ impl CompoItem {
         }
     }
 
-    pub fn merge(&mut self, compo: CompoItem) -> VmrtErr {
+    pub fn merge(&mut self, cap: &SpaceCap, compo: CompoItem) -> VmrtErr {
+        if Rc::ptr_eq(&self.compo, &compo.compo) {
+            return itr_err_code!(CompoOpInvalid)
+        }
         match get_compo_inner_mut!(self) {
-            Compo::List(l) => l.append( compo.list_mut()? ),
-            Compo::Map(m)  => m.extend( compo.map_mut()?.clone() ),
+            Compo::List(l) => {
+                let src = compo.list_ref()?.clone();
+                let new_len = l.len() + src.len();
+                if new_len > cap.max_compo_length {
+                    return itr_err_code!(OutOfCompoLen)
+                }
+                for v in src.iter() {
+                    v.canbe_value()?;
+                }
+                l.extend(src);
+            }
+            Compo::Map(m)  => {
+                let src = compo.map_ref()?.clone();
+                let mut add = 0usize;
+                for (k, v) in src.iter() {
+                    v.canbe_value()?;
+                    if !m.contains_key(k) {
+                        add += 1;
+                    }
+                }
+                if m.len() + add > cap.max_compo_length {
+                    return itr_err_code!(OutOfCompoLen)
+                }
+                m.extend(src);
+            }
         };
         Ok(())
     }
@@ -404,18 +444,16 @@ impl CompoItem {
         compo.itemget(k)
     }
 
-    pub fn keys(&mut self) -> VmrtErr {
+    pub fn keys(&self) -> VmrtRes<Value> {
         let map = self.map_ref()?;
         let keys = map.keys().map(|k| Value::Bytes(k.clone())).collect();
-        *self = Self::list(keys);
-        Ok(())
+        Ok(Value::Compo(Self::list(keys)?))
     }
 
-    pub fn values(&mut self) -> VmrtErr {
+    pub fn values(&self) -> VmrtRes<Value> {
         let map = self.map_ref()?;
-        let keys = map.values().map(|v|v.clone()).collect();
-        *self = Self::list(keys);
-        Ok(())
+        let values = map.values().map(|v|v.clone()).collect();
+        Ok(Value::Compo(Self::list(values)?))
     }
 
     pub fn head(&mut self) -> VmrtRes<Value> {
@@ -437,14 +475,6 @@ impl CompoItem {
 
 
 }
-
-
-
-
-
-
-
-
 
 
 

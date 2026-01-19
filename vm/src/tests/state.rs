@@ -1,4 +1,4 @@
-use protocol::component::*;
+use basis::component::*;
 
 #[derive(Default)]
 pub struct StateMem {
@@ -8,7 +8,7 @@ pub struct StateMem {
 impl State for StateMem {
     fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
         match self.mem.get(&k) {
-            Some(v) => v,
+            Some(v) => v.clone(),
             _ => None,
         }
     }
@@ -26,7 +26,7 @@ pub struct ExtCallMem {
     hei: u64,
 }
 
-impl ExtActCal for ExtCallMem {
+impl ActCall for ExtCallMem {
     fn height(&self) -> u64 {
         self.hei
     }

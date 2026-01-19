@@ -57,7 +57,7 @@ pub fn execute3() {
     let argv = Value::Compo(CompoItem::list(VecDeque::from([
         Value::Address(field::Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap()),
         Value::Bytes(Amount::from("6:248").unwrap().serialize()),
-    ])));
+    ])).unwrap());
 
     println!("{}", permithac_codes.bytecode_print(true).unwrap());
     let exec_res = execute_test_with_argv(65535, permithac_codes, Some(argv));
@@ -95,7 +95,7 @@ pub fn execute5() {
     let argv = Value::Compo(CompoItem::list(VecDeque::from([
         Value::Address(field::Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap()),
         Value::Bytes(Amount::from("6:248").unwrap().serialize()),
-    ])));
+    ])).unwrap());
 
     println!("{}", permithac_codes.bytecode_print(true).unwrap());
     let exec_res = execute_test_with_argv(65535, permithac_codes, Some(argv));

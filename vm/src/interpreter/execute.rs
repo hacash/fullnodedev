@@ -319,17 +319,17 @@ pub fn execute_code(
             INSERT   => { let v = ops.pop()?; let k = ops.pop()?; ops.compo()?.insert(cap, k, v)? }
             REMOVE   => { let k = ops.pop()?; ops.compo()?.remove(k)?; }
             CLEAR    => { ops.compo()?.clear() }
-            MERGE    => { let p = ops.pop()?; ops.compo()?.merge(p.compo_get()?)?; }
+            MERGE    => { let p = ops.pop()?; ops.compo()?.merge(cap, p.compo_get()?)?; }
             LENGTH   => { let l = ops.compo()?.length(cap)?; *ops.peek()? = l; }
             HASKEY   => { let k = ops.pop()?; let h = ops.compo()?.haskey(k)?; *ops.peek()? = h; }
             ITEMGET  => { let k = ops.pop()?; *ops.peek()? = ops.compo()?.itemget(k)?; }
-            KEYS     => { ops.compo()?.keys()?; }
-            VALUES   => { ops.compo()?.values()?; }
+            KEYS     => { let v = { let c = ops.compo()?; c.keys()? }; *ops.peek()? = v; }
+            VALUES   => { let v = { let c = ops.compo()?; c.values()? }; *ops.peek()? = v; }
             HEAD     => { let v = ops.pop()?.compo()?.head()?; ops.push(v)?; }
             TAIL     => { let v = ops.pop()?.compo()?.tail()?; ops.push(v)?; }
             APPEND   => { let v = ops.pop()?; ops.compo()?.append(cap, v)? }
             CLONE    => { let c = ops.compo()?.copy(); *ops.peek()? = Compo(c); }
-            UPLIST   => { let i = ops.pop()?.checked_u8()?; unpack_list(i, locals, ops.pop()?.compo()?.list_mut()?)?; }
+            UPLIST   => { let i = ops.pop()?.checked_u8()?; unpack_list(i, locals, ops.compo()?.list_ref()?)?; ops.pop()?; }
             // heap
             HGROW    => gas += heap.grow(pu8!())?,
             HWRITE   => heap.write(ops_pop_to_u16!(), ops.pop()?)?,
@@ -509,14 +509,14 @@ fn local_logic(mark: u8, locals: &mut Stack, value: &mut Value) -> VmrtErr {
 }
 
 
-fn unpack_list(mut i: u8, locals: &mut Stack, list: &mut VecDeque<Value>) -> VmrtErr {
+fn unpack_list(mut i: u8, locals: &mut Stack, list: &VecDeque<Value>) -> VmrtErr {
     let start = i as usize;
     if locals.len() < start + list.len() {
         return itr_err_code!(OutOfLocal)
     }
     // replace
-    while let Some(item) = list.pop_front() {
-        *locals.edit(i)? = item;
+    for item in list.iter() {
+        *locals.edit(i)? = item.clone();
         i += 1;
     }
     Ok(())
