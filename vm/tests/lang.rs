@@ -31,3 +31,39 @@ fn t1(){
 
         
 }
+
+#[test]
+fn let_slot_and_cache_print() {
+    let script = r##"
+        let $0 = 1
+        let foo $1 = $0
+        let bar = foo
+        print bar
+        print bar
+    "##;
+    let ircodes = lang_to_ircode(script).unwrap();
+    let printed = ircodes.ircode_print(true).unwrap();
+    assert!(printed.contains("let $0 ="));
+    assert!(printed.contains("let $1 ="));
+    assert!(printed.contains("let $2 ="));
+    assert!(printed.matches("$2").count() >= 2);
+}
+
+#[test]
+fn let_var_interleave_print() {
+    let script = r##"
+        var x $0 = 10
+        let aux $1 = x
+        var y = aux
+        let cache = y
+        print x
+        print cache
+        print $1
+    "##;
+    let ircodes = lang_to_ircode(script).unwrap();
+    let printed = ircodes.ircode_print(true).unwrap();
+    assert!(printed.contains("let $1 ="));
+    assert!(printed.contains("var"));
+    assert!(printed.matches("$1").count() >= 2);
+    assert!(printed.contains("$0"));
+}

@@ -1,17 +1,23 @@
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 
-/*****************************************/
 
-
+#[derive(Clone)]
+enum SymbolEntry {
+    Var(u8),
+    Let(Rc<RefCell<LetInfo>>),
+}
 
 #[allow(dead_code)]
 #[derive(Default)]
 pub struct Syntax {
     tokens: Vec<Token>,
     idx: usize,
-    locals: HashMap<String, u8>,
-    bdlets: HashMap<String, Box<dyn IRNode>>,
+    symbols: HashMap<String, SymbolEntry>,
+    slot_used: HashSet<u8>,
     bdlibs: HashMap<String, (u8, Option<field::Address>)>,
     local_alloc: u8,
     check_op: bool,
@@ -71,6 +77,17 @@ impl Syntax {
         Ok(())
     }
 
+    fn parse_slot_token(token: &Token) -> Option<u8> {
+        if let Identifier(id) = token {
+            if start_with_char(id, '$') {
+                if let Ok(idx) = id.trim_start_matches('$').parse::<u8>() {
+                    return Some(idx);
+                }
+            }
+        }
+        None
+    }
+
     pub fn bind_local_assign(&mut self, s: String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
         let idx = self.local_alloc;
         self.bind_local_assign_replace(s, idx, v)
@@ -84,83 +101,104 @@ impl Syntax {
 
     // ret empty
     pub fn bind_local(&mut self, s: String, idx: u8) -> Ret<Box<dyn IRNode>> {
+        self.reserve_slot(idx)?;
         if idx >= self.local_alloc {
             self.local_alloc = idx + 1;
         }
-        /* if let Some(..) = self.locals.get(&s) {
-            return errf!("<let> cannot repeat bind the symbol '{}'", s)
-        } */
-        self.locals.insert(s, idx);
+        self.register_symbol(s, SymbolEntry::Var(idx))?;
         Ok(Self::empty())
     }
 
-    pub fn bind_let(&mut self, s: String, v: Box<dyn IRNode>) -> Rerr {
-        if let Some(..) = self.bdlets.get(&s) {
-            return errf!("<let> cannot repeat bind the symbol '{}'", s)
+    fn register_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
+        if let Some(..) = self.symbols.get(&s) {
+            return errf!("symbol '{}' already bound", s)
         }
-        self.bdlets.insert(s, v);
+        self.symbols.insert(s, entry);
+        Ok(())
+    }
+
+    pub fn bind_let(&mut self, s: String, v: Box<dyn IRNode>) -> Rerr {
+        let info = Rc::new(RefCell::new(LetInfo::new(v)));
+        self.register_symbol(s, SymbolEntry::Let(info))?;
+        Ok(())
+    }
+
+    fn reserve_slot(&mut self, idx: u8) -> Rerr {
+        if self.slot_used.contains(&idx) {
+            return errf!("slot {} already used", idx)
+        }
+        self.slot_used.insert(idx);
         Ok(())
     }
 
     pub fn link_local(&self, s: &String) -> Ret<Box<dyn IRNode>> {
         let text = s.clone();
-        match self.locals.get(s) {
-            None => return errf!("cannot find symbol '{}'", s),
-            Some(i) => Ok(Self::push_local_get(*i, text)),
+        match self.symbols.get(s) {
+            Some(SymbolEntry::Var(i)) => Ok(Self::push_local_get(*i, text)),
+            _ => return errf!("cannot find symbol '{}'", s),
         }
     }
 
     pub fn link_let(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
-        match self.bdlets.remove(s) {
-            None => return errf!("cannot find or relink symbol '{}'", s),
-            Some(d) => Ok(d),
-        }
+        let info_rc = match self.symbols.get(s) {
+            Some(SymbolEntry::Let(info)) => Rc::clone(info),
+            _ => return errf!("cannot find or relink symbol '{}'", s),
+        };
+        let (ref_idx, hrtv) = {
+            let mut info = info_rc.borrow_mut();
+            let idx = info.refs;
+            info.refs = info.refs.saturating_add(1);
+            if info.refs == 2 {
+                info.needs_slot = true;
+            }
+            (idx, info.expr.hasretval())
+        };
+        Ok(Box::new(IRNodeLetRef { info: info_rc, ref_idx, hrtv }))
     }
 
     pub fn link_symbol(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
-        if let Ok(d) = self.link_let(s) {
-            return Ok(d)
+        match self.symbols.get(s) {
+            Some(SymbolEntry::Let(_)) => self.link_let(s),
+            Some(SymbolEntry::Var(_)) => self.link_local(s),
+            None => errf!("cannot find symbol '{}'", s),
         }
-        self.link_local(s)
     }
 
     pub fn save_local(&self, s: &String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
-        match self.locals.get(s) {
-            None => return errf!("cannot find symbol '{}'", s),
-            Some(i) => Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: *i, subx: v })),
+        match self.symbols.get(s) {
+            Some(SymbolEntry::Var(i)) => Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: *i, subx: v })),
+            _ => return errf!("cannot find symbol '{}'", s),
         }
     }
     
     pub fn assign_local(&self, s: &String, v: Box<dyn IRNode>, op: &Token) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         use KwTy::*;
-        match self.locals.get(s) {
-            None => return errf!("cannot find symbol '{}'", s),
-            Some(i) => {
-                let i = *i;
-                if i < 64 {
-                    let mark = i | match op {
-                        Keyword(AsgAdd) => 0b00000000,
-                        Keyword(AsgSub) => 0b01000000,
-                        Keyword(AsgMul) => 0b10000000,
-                        Keyword(AsgDiv) => 0b11000000,
-                        _ => unreachable!(),
-                    };
-                    return Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: XOP, para: mark, subx: v }))
-                }
-                // $0 = $0 + 1
-                let getv = Self::push_local_get(i, s!(""));
-                let opsv = Box::new(IRNodeDouble{hrtv: true, inst: match op {
-                    Keyword(AsgAdd) => ADD,
-                    Keyword(AsgSub) => SUB,
-                    Keyword(AsgMul) => MUL,
-                    Keyword(AsgDiv) => DIV,
-                    _ => unreachable!()
-                }, subx: getv, suby: v});
-                Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: i, subx: opsv }))
-            },
+        let i = match self.symbols.get(s) {
+            Some(SymbolEntry::Var(idx)) => *idx,
+            _ => return errf!("cannot find symbol '{}'", s),
+        };
+        if i < 64 {
+            let mark = i | match op {
+                Keyword(AsgAdd) => 0b00000000,
+                Keyword(AsgSub) => 0b01000000,
+                Keyword(AsgMul) => 0b10000000,
+                Keyword(AsgDiv) => 0b11000000,
+                _ => unreachable!(),
+            };
+            return Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: XOP, para: mark, subx: v }))
         }
+        // $0 = $0 + 1
+        let getv = Self::push_local_get(i, s!(""));
+        let opsv = Box::new(IRNodeDouble{hrtv: true, inst: match op {
+            Keyword(AsgAdd) => ADD,
+            Keyword(AsgSub) => SUB,
+            Keyword(AsgMul) => MUL,
+            Keyword(AsgDiv) => DIV,
+            _ => unreachable!()
+        }, subx: getv, suby: v});
+        Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: i, subx: opsv }))
     }
     
 
@@ -666,21 +704,43 @@ impl Syntax {
                     _ => return e
                 }?
             }
-            Keyword(Let) => { // let foo = $0
+            Keyword(Let) => { // let name? $slot? = expr
                 let e = errf!("let statement format error");
-                nxt = next!();
-                let Identifier(id) = nxt else {
+                let mut nxt = next!();
+                let mut name: Option<String> = None;
+                let mut slot: Option<u8> = None;
+                if let Identifier(id) = &nxt {
+                    if let Some(idx) = Self::parse_slot_token(&nxt) {
+                        slot = Some(idx);
+                    } else {
+                        name = Some(id.clone());
+                        if self.idx < self.tokens.len() {
+                            let peek = &self.tokens[self.idx];
+                            if let Some(idx) = Self::parse_slot_token(peek) {
+                                slot = Some(idx);
+                                self.idx += 1;
+                            }
+                        }
+                    }
+                } else {
                     return e
-                };
-                let id = id.clone();
+                }
                 nxt = next!();
                 let Keyword(Assign) = nxt else {
                     return e
                 };
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
-                self.bind_let(id, exp)?;
-                Self::empty()
+                if let Some(idx) = slot {
+                    let sym = name.unwrap_or_else(|| format!("${}", idx));
+                    let node = self.bind_local_assign_replace(sym, idx, exp)?;
+                    return Ok(Some(node));
+                }
+                if let Some(n) = name {
+                    self.bind_let(n, exp)?;
+                    return Ok(Some(Self::empty()));
+                }
+                return errf!("let statement needs at least a name or slot")
             }
             /*
             Keyword(Use) => { // use AnySwap = VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
@@ -866,10 +926,11 @@ impl Syntax {
                 self.irnode.push(item);
             };
         }
+        self.finalize_let_slots()?;
         // local alloc
-        if let Some(m) = self.locals.values().max() {
+        if self.local_alloc > 0 {
             let allocs = Box::new(IRNodeParam1{
-                hrtv: false, inst: Bytecode::ALLOC, para: *m+1, text: s!("")
+                hrtv: false, inst: Bytecode::ALLOC, para: self.local_alloc, text: s!("")
             });
             self.irnode.subs[0] = allocs;
         }else{
@@ -879,6 +940,32 @@ impl Syntax {
     }
 
 
+    fn finalize_let_slots(&mut self) -> Rerr {
+        let base = self.local_alloc as usize;
+        let mut let_count = 0usize;
+        let infos: Vec<_> = self.symbols.values().filter_map(|entry| {
+            if let SymbolEntry::Let(info_rc) = entry {
+                Some(Rc::clone(info_rc))
+            } else {
+                None
+            }
+        }).collect();
+        for info_rc in infos {
+            let mut info = info_rc.borrow_mut();
+            if info.needs_slot && info.slot.is_none() {
+                let idx = base + let_count;
+                if idx > u8::MAX as usize {
+                    return errf!("let slot overflow");
+                }
+                let slot = idx as u8;
+                self.reserve_slot(slot)?;
+                info.slot = Some(slot);
+                let_count += 1;
+            }
+        }
+        self.local_alloc = (base + let_count) as u8;
+        Ok(())
+    }
+
+
 }
-
-

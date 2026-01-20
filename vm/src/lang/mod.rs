@@ -23,7 +23,7 @@ pub enum ArgvMode {
 
 include!{"interface.rs"}
 include!{"tokenizer.rs"}
-// include!{"ast.rs"}
+include!{"irlet.rs"}
 include!{"funcs.rs"}
 include!{"syntax.rs"}
 include!{"test.rs"}

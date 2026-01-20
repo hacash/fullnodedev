@@ -4,7 +4,10 @@ impl Syntax {
 
     pub fn item_get(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
-        let Some(_) = self.locals.get(&id) else {
+        let Some(_) = self.symbols.get(&id).and_then(|entry| match entry {
+            SymbolEntry::Var(_) => Some(()),
+            _ => None,
+        }) else {
             return errf!("cannot find '{}' object in item get", id)
         };
         let k = self.item_must(1)?;  // over [
@@ -208,8 +211,6 @@ fn pick_ext_func(id: &str) -> Option<(bool, bool, Bytecode, u8)> {
     }
     None
 }
-
-
 
 
 

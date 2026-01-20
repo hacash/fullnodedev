@@ -825,7 +825,6 @@ impl IRNode for IRNodeBytecodes {
 }
 
 
-
 /*************************************/
 
 macro_rules! define_ir_list_or_block { ($name: ident, $inst: expr, $compile_fn: ident) => {
