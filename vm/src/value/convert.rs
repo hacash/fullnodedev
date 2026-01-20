@@ -96,22 +96,47 @@ impl Value {
         macro_rules! val {()=>{ Self::Bytes(stuff.clone()) }}
         macro_rules! cst {($c: ident)=>{ {let mut v = val!(); v.$c()?; v } }}
         macro_rules! err {()=>{ itr_err_fmt!(CastParamFail, "cannot cast 0x{} to type id {:?}", stuff.clone().to_hex(), ty) }}
-        let cklen = |l, v| maybe!(vlen==l, Ok(v), err!());
-        match ty {
-            ValueTy::Nil       => cklen(0,  Self::Nil),
-            ValueTy::Bool      => cklen(1,  Self::bool(stuff[0]==1)),
-            ValueTy::U8        => cklen(1,  Self::u8(stuff[0])),
-            ValueTy::U16       => cklen(2,  cst!(cast_u16) ),
-            ValueTy::U32       => cklen(4,  cst!(cast_u32) ),
-            ValueTy::U64       => cklen(8,  cst!(cast_u64) ),
-            ValueTy::U128      => cklen(16, cst!(cast_u128) ),
-            ValueTy::Bytes     => Ok(Self::Bytes(stuff)),
-            ValueTy::Address   => {
-                if vlen != field::Address::SIZE {
+        macro_rules! ensure_len {
+            ($l:expr) => {
+                if vlen != $l {
                     return err!()
                 }
-                let addr = field::Address::must_vec(stuff);
-                addr.check_version().map_ire(CastFail)?;
+            };
+        }
+        match ty {
+            ValueTy::Nil       => {
+                ensure_len!(0);
+                Ok(Self::Nil)
+            },
+            ValueTy::Bool      => {
+                ensure_len!(1);
+                Ok(Self::bool(stuff[0] != 0))
+            },
+            ValueTy::U8        => {
+                ensure_len!(1);
+                Ok(Self::u8(stuff[0]))
+            },
+            ValueTy::U16       => {
+                ensure_len!(2);
+                Ok(cst!(cast_u16))
+            },
+            ValueTy::U32       => {
+                ensure_len!(4);
+                Ok(cst!(cast_u32))
+            },
+            ValueTy::U64       => {
+                ensure_len!(8);
+                Ok(cst!(cast_u64))
+            },
+            ValueTy::U128      => {
+                ensure_len!(16);
+                Ok(cst!(cast_u128))
+            },
+            ValueTy::Bytes     => Ok(Self::Bytes(stuff)),
+            ValueTy::Address   => {
+                ensure_len!(field::Address::SIZE);
+                let addr = field::Address::from_bytes(
+                    &stuff[0..field::Address::SIZE]).map_ire(CastFail)?;
                 Ok(Self::Address(addr))
             },
             _ => err!(),
@@ -141,4 +166,3 @@ impl Value {
 
 
 }
-

@@ -53,8 +53,11 @@ impl Parse for Value {
         let sz: usize;
         (sz, *self) = match ty {
             ValueTy::Nil     => (0, Nil),
-            ValueTy::Bool    => (1, Bool(maybe!(buf[0]==0, false, true))),
-            ValueTy::U8      => (1, U8(buf[0])),
+            ValueTy::Bool    => {
+                let b = buf_to_uint!(u8, buf, 1);
+                (1, Bool(maybe!(b == 0, false, true)))
+            },
+            ValueTy::U8      => (1, U8(buf_to_uint!(u8, buf, 1))),
             ValueTy::U16     => (2,   U16(buf_to_uint!(u16,  buf,  2))),
             ValueTy::U32     => (4,   U32(buf_to_uint!(u32,  buf,  4))),
             ValueTy::U64     => (8,   U64(buf_to_uint!(u64,  buf,  8))),
@@ -67,8 +70,11 @@ impl Parse for Value {
                 }
                 (2 + l as usize, Bytes(buf[0..l].to_vec()))
             },
-            ValueTy::Address => (field::Address::SIZE, Address(field::Address::from_bytes(&buf)?)),
-            _ => panic!("Compo or slice value item cannot be parse"),
+            ValueTy::Address => {
+                let (adr, sz) = field::Address::create(buf)?;
+                (sz, Address(adr))
+            },
+            _ => return errf!("Compo or slice value item cannot be parse"),
         };
         Ok(sz + 1)
     }
@@ -85,10 +91,11 @@ impl Serialize for Value {
     }
 
     fn size(&self) -> usize {
-        1 + self.can_get_size().unwrap() as usize // + ty id
+        let base = self.can_get_size().unwrap() as usize;
+        let prefix = maybe!(self.is_bytes(), 2usize, 0usize);
+        1 + prefix + base // type_id + (bytes len prefix?) + value
     }
 }
 
 
 impl Field for Value {}
-
