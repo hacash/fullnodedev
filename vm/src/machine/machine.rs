@@ -96,7 +96,6 @@ impl VM for MachineBox {
         use CallMode::*;
         // init gas & check balance
         self.check_gas(ctx)?;
-        let hei = ctx.env().block.height;
         let gas = &mut self.gas;
         let gas_record = *gas;
         // env & do call

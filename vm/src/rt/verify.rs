@@ -1,6 +1,6 @@
 
 /*
-    return: inst table
+    Verify bytecode validity and return the instruction table.
 */
 pub fn convert_and_check(cap: &SpaceCap, ctype: CodeType, codes: &[u8]) -> VmrtRes<Vec<u8>> {
     use CodeType::*;
@@ -99,6 +99,15 @@ fn verify_valid_instruction(codes: &[u8]) -> VmrtRes<(Vec<u8>, Vec<isize>)> {
         i += meta.param as usize;
         if i > cdlen {            
             return itr_err_code!(InstParamsErr)
+        }        
+        // CALLCODE must be immediately followed by END unless it is the final instruction.
+        if let CALLCODE = inst {
+            if i < cdlen {
+                let nxt: Bytecode = std_mem_transmute!(codes[i]);
+                if nxt != END {
+                    return itr_err_fmt!(InstParamsErr, "CALLCODE must follow END")
+                }
+            }
         }
         // next
     }

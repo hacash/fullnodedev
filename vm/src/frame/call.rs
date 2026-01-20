@@ -6,57 +6,80 @@ impl CallFrame {
         libs: Option<Vec<ContractAddress>>, 
         param: Option<Value>
     ) -> VmrtRes<Value> {
+        macro_rules! curr { () => { self.frames.last_mut().unwrap() }}
+        macro_rules! curr_ref { () => { self.frames.last().unwrap() }}
+        macro_rules! with_curr {
+            (|$curr:ident| $body:block) => {{
+                let $curr = self.frames.last_mut().unwrap();
+                $body
+            }};
+        }
         use CallExit::*;
         use CallMode::*;
         let libs_none: Option<Vec<ContractAddress>> = None;
         // to spend gas
         self.contract_count = r.contracts.len();
-        let mut curr_frame = self.increase(r)?;
-        curr_frame.depth = match mode { // set depth 0 or 1
+        let mut curf = self.increase(r)?; // current frame
+        curf.depth = match mode { // set depth 0 or 1
             Main | P2sh => 0,
             Abst => 1,
             _ => never!(),
         };
-        curr_frame.ctxadr = entry_addr.clone();
-        curr_frame.curadr = entry_addr;
+        curf.ctxadr = entry_addr.clone();
+        curf.curadr = entry_addr;
+        self.push(curf);
         // compile irnode and push func argv ...
-        curr_frame.prepare(mode, code, param)?;
+        curr!().prepare(mode, code, param)?;
         // exec codes
         loop {
-            let exit = curr_frame.execute(r, env)?; // call frame
+            let exit = { curr!().execute(r, env)? }; // call frame
             match exit {
                 // end func
                 Abort | Throw | Finish | Return => {
-                    let mut retv = match exit {
-                        Return | Throw => curr_frame.pop_value()?,
-                        _ => Value::Nil,
-                    };
-                    curr_frame.check_output_type(&mut retv)?;
-                    curr_frame.reclaim(r); // reclaim resource
+                    let mut retv = Value::Nil;
+                    with_curr!(|curr| {
+                        if matches!(exit, Return | Throw) {
+                            retv = curr.pop_value()?;
+                        }
+                        curr.check_output_type(&mut retv)?;
+                    });
                     match exit {
                         Abort | Throw => return itr_err_fmt!(ThrowAbort, "VM return error: {}", retv),
                         Finish | Return => {
-                            match self.pop() {
-                                Some(mut prev) => {
-                                    prev.push_value(retv)?; // push func call result
-                                    curr_frame = prev;
-                                    // curr_frame.pc += 1; // exec next instruction
-                                    continue // prev frame do execute
+                            let curr = self.pop().unwrap();
+                            curr.reclaim(r); // reclaim resource
+                            loop {
+                                let is_tail = match self.frames.last() {
+                                    Some(prev) => prev.pc == prev.codes.len(),
+                                    None => return Ok(retv), // all call finish
+                                };
+                                if !is_tail {
+                                    self.frames.last_mut().unwrap()
+                                        .push_value(retv)?; // push func call result
+                                    break;
                                 }
-                                _ => return Ok(retv) // all call finish
+                                // tail-call collapse: return directly to upper frame
+                                with_curr!(|prev| {
+                                    prev.check_output_type(&mut retv)?;
+                                });
+                                let prev = self.pop().unwrap();
+                                prev.reclaim(r);
                             }
+                            continue // prev frame do execute
                         }
                         _ => unreachable!()
                     }
                 }
                 // next call
                 Call(fnptr) => {
-                    let ctxadr = &curr_frame.ctxadr;
-                    let curadr = &curr_frame.curadr;
+                    let (ctxadr, curadr, depth) = {
+                        let curr = curr_ref!();
+                        (curr.ctxadr.clone(), curr.curadr.clone(), curr.depth)
+                    };
                     // only main-call frame uses tx-provided libs
-                    let libs_ptr = maybe!(curr_frame.depth == 0, &libs, &libs_none);
+                    let libs_ptr = maybe!(depth == 0, &libs, &libs_none);
                     let (chgsrcadr, fnobj) = r.load_must_call(env.sta, fnptr.clone(), 
-                        ctxadr, curadr, libs_ptr)?;
+                        &ctxadr, &curadr, libs_ptr)?;
                     let fnobj = fnobj.as_ref().clone();
                     let fn_is_public = fnobj.check_conf(FnConf::Public);
                     // check gas
@@ -64,31 +87,34 @@ impl CallFrame {
                     // if call code
                     if let CodeCopy = fnptr.mode {
                         // println!("CodeCopy() ctxadr={}, curadr={}", ctxadr.prefix(7), curadr.prefix(7));
-                        curr_frame.prepare(CodeCopy, fnobj, None)?; // no param
+                        curr!().prepare(CodeCopy, fnobj, None)?; // no param
                         continue // do execute
+                    }
+                    if let Outer = fnptr.mode {
+                        let cadr = chgsrcadr.as_ref().unwrap();
+                        if ! fn_is_public {
+                            return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.readable(), fnptr.fnsign.hex())
+                        }
                     }
                     // call next frame                    
                     // println!("{:?}() ctxadr={}, curadr={}", fnptr.mode, ctxadr.prefix(7), curadr.prefix(7));
-                    let param = Some(curr_frame.pop_value()?);
-                    self.push(curr_frame);
-                    let next_frame = self.increase(r)?;
-                    curr_frame = next_frame;
-                    curr_frame.prepare(fnptr.mode, fnobj, param)?;
+                    let param = Some(curr!().pop_value()?);
+                    let next = self.increase(r)?;
+                    self.push(next);
+                    curr!().prepare(fnptr.mode, fnobj, param)?;
                     match fnptr.mode {
                         Inner | Library | Static => {
                             if let Some(cadr) = chgsrcadr {
-                                curr_frame.curadr = cadr; // may change cur adr
+                                curr!().curadr = cadr; // may change cur adr
                             }
                             // continue to do next call
                         }
                         Outer => {
                             let cadr = chgsrcadr.unwrap();
-                            if ! fn_is_public {
-                                curr_frame.reclaim(r); // reclaim resource
-                                return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.readable(), fnptr.fnsign.hex())
-                            }
-                            curr_frame.ctxadr = cadr.clone(); 
-                            curr_frame.curadr = cadr; 
+                            with_curr!(|curr| {
+                                curr.ctxadr = cadr.clone(); 
+                                curr.curadr = cadr; 
+                            });
                             // continue to do next call
                         }
                         _ => unreachable!()
@@ -106,19 +132,18 @@ impl CallFrame {
         let ctlnum = &mut self.contract_count;
         // check gas
         let ctln = r.contracts.len();
-        match ctln - *ctlnum {
-            0 => {},
-            1 => {
-                // check and sub gas
-                *env.gas -= r.gas_extra.load_new_contract;
-                if *env.gas < 0 {
-                    return itr_err_code!(OutOfGas)
-                }
-                // update count
-                *ctlnum = ctln;
-            },
-            _ => unreachable!() // just load one or zero
-        };
+        let delta = ctln.saturating_sub(*ctlnum);
+        if delta > 0 {
+            // Library resolve may touch src+lib (usually 1-2 loads), while inheritance
+            // resolve can walk multiple parents, so delta can be >1 in a single CALL.
+            let fee = (delta as i64) * r.gas_extra.load_new_contract;
+            *env.gas -= fee;
+            if *env.gas < 0 {
+                return itr_err_code!(OutOfGas)
+            }
+            // update count
+            *ctlnum = ctln;
+        }
         Ok(())
     }
     
