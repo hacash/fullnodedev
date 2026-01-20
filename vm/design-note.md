@@ -31,10 +31,11 @@ Contract Deploy & Store:
 Contract Verify:
 
     1. irnode compile
-    3. bytecode finish with END|RET inst
+    2. bytecode finish with END|RET inst
     3. bytecode inst valid
-    3. bytecode param check
-    4. bytecode jump dest
+    4. bytecode param check
+    5. bytecode jump dest
+    6. CALLCODE must follow END op
 
 
 Contract Code Store Fee:
@@ -61,10 +62,9 @@ Storage Entry Address:
 
 
 
-Storage Ban:
+Storage Write Ban:
 
     - Static Call
-    - Library Call (can read)
 
 
 VM Logs:
@@ -109,8 +109,17 @@ Call Privileges:
 
 Call Context Change:
 
-    - move context => Outer
-    - move current => Outer, Inner of inherit, Lib, Static
+    - ctxadr (storage/log context) changes only on Outer
+    - curadr (code owner for library resolution) follows resolved owner:
+      Outer => callee, Inner => resolved child/parent, Lib/Static/CodeCopy => library
+
+
+Inheritance Resolution (CALLINR):
+
+    - DFS search in inherits list order (current => parent => grandparent)
+    - First match wins; inherits list order defines conflict priority
+    - Cycle in inherits list is invalid and triggers InheritsError
+    - Diamond inheritance is allowed; only true cycles are rejected
 
 
 Abst Call Param:
@@ -146,6 +155,3 @@ Comparison Reference:
     5. CKB VM
     6. EOS VM
     7. NEO VM
-
-
-

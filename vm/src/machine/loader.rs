@@ -28,30 +28,49 @@ impl Resoure {
 
     fn load_fn_by_search_inherits(&mut self, vmsta: &mut VMState, addr: &ContractAddress, fnkey: FnKey) 
     -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
-        let csto = self.load_contract(vmsta, addr)?;
-        macro_rules! do_get {($csto : expr) => (
-            match fnkey {
-                FnKey::Abst(s) => $csto.abstfns.get(&s),
-                FnKey::User(u) => $csto.userfns.get(&u),
-            }
-        )}
-        if let Some(c) = do_get!(csto) {
-            return Ok(Some((None, c.clone())))
-        }
-        let inherits = csto.sto.inherits.list();
-        if inherits.is_empty() {
-            return Ok(None)
-        }
-        // search from inherits
-        for ih in inherits {
-            let csto = self.load_contract(vmsta, ih)?;
-            if let Some(c) = do_get!(csto) {
-                return Ok(Some((Some(ih.clone()), c.clone())))
-            }
-        }
-        // not find
-        return Ok(None)
+        let mut visiting = std::collections::HashSet::new();
+        let mut visited = std::collections::HashSet::new();
+        let res = self.load_fn_by_search_inherits_rec(vmsta, addr, &fnkey, &mut visiting, &mut visited)?;
+        Ok(res.map(|(owner, func)| {
+            let change = if &owner == addr { None } else { Some(owner) };
+            (change, func)
+        }))
+    }
 
+    fn load_fn_by_search_inherits_rec(
+        &mut self,
+        vmsta: &mut VMState,
+        addr: &ContractAddress,
+        fnkey: &FnKey,
+        visiting: &mut std::collections::HashSet<ContractAddress>,
+        visited: &mut std::collections::HashSet<ContractAddress>,
+    ) -> VmrtRes<Option<(ContractAddress, Arc<FnObj>)>> {
+        if visiting.contains(addr) {
+            return itr_err_fmt!(InheritsError, "inherits cyclic");
+        }
+        if visited.contains(addr) {
+            return Ok(None);
+        }
+        visiting.insert(addr.clone());
+        let csto = self.load_contract(vmsta, addr)?;
+        let found = match fnkey {
+            FnKey::Abst(s) => csto.abstfns.get(s),
+            FnKey::User(u) => csto.userfns.get(u),
+        };
+        if let Some(c) = found {
+            visiting.remove(addr);
+            return Ok(Some((addr.clone(), c.clone())));
+        }
+        // DFS in inherits list order
+        for ih in csto.sto.inherits.list() {
+            if let Some(found) = self.load_fn_by_search_inherits_rec(vmsta, ih, fnkey, visiting, visited)? {
+                visiting.remove(addr);
+                return Ok(Some(found));
+            }
+        }
+        visiting.remove(addr);
+        visited.insert(addr.clone());
+        Ok(None)
     }
 
 

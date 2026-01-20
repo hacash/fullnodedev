@@ -87,6 +87,9 @@ impl CallFrame {
                     // if call code
                     if let CodeCopy = fnptr.mode {
                         // println!("CodeCopy() ctxadr={}, curadr={}", ctxadr.prefix(7), curadr.prefix(7));
+                        // curadr tracks code owner for library resolution
+                        let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
+                        curr!().curadr = owner;
                         curr!().prepare(CodeCopy, fnobj, None)?; // no param
                         continue // do execute
                     }
@@ -104,9 +107,9 @@ impl CallFrame {
                     curr!().prepare(fnptr.mode, fnobj, param)?;
                     match fnptr.mode {
                         Inner | Library | Static => {
-                            if let Some(cadr) = chgsrcadr {
-                                curr!().curadr = cadr; // may change cur adr
-                            }
+                            // curadr follows resolved code owner (child/parent or library)
+                            let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
+                            curr!().curadr = owner;
                             // continue to do next call
                         }
                         Outer => {
