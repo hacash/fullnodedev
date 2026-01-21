@@ -141,8 +141,8 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             }
             Box::new(list)
         }
-        IRBLOCK => {
-            let mut block = IRNodeBlock::new();
+        IRBLOCK | IRBLOCKR => {
+            let mut block = IRNodeBlock::with_opcode(inst);
             let p = itrp2!();
             let n = u16::from_be_bytes(p);
             let ndp = depth + 1;
@@ -151,7 +151,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             }
             Box::new(block)
         }
-        IRIF => {
+        IRIF | IRIFR => {
             let ndp = depth + 1;
             Box::new(IRNodeTriple{ hrtv, inst,
                 subx: subdph!(ndp, true),

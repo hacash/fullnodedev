@@ -22,7 +22,7 @@ impl Syntax {
 
     pub fn must_get_func_argv(&mut self, md: ArgvMode) -> Ret<(usize, Box<dyn IRNode>)> {
         // use Bytecode::*;
-        let argvs = self.item_may_block()?.into_vec();
+        let argvs = self.item_may_block(false)?.into_vec();
         let alen = argvs.len();
         let argv = match md {
             ArgvMode::Concat => concat_func_argvs(argvs)?,
@@ -35,7 +35,7 @@ impl Syntax {
     pub fn item_func_call(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
         // ir func
         if let Some((_, inst, pms, args, rs)) = pick_ir_func(&id) {
-            let argvs = self.item_may_block()?.into_vec();
+            let argvs = self.item_may_block(false)?.into_vec();
             if pms + args != argvs.len() {
                 return errf!("ir func call argv length must {} but got {}", 
                     pms + args, argvs.len()
@@ -181,7 +181,7 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
             let pklist = Syntax::push_inst(PACKLIST);
             subs.push(num);
             subs.push(pklist);
-            Box::new(IRNodeList{subs})
+            Box::new(IRNodeList{subs, inst: Bytecode::IRLIST})
         },
         _ => return errf!("function argv length cannot more than 15"),
     })
@@ -211,7 +211,5 @@ fn pick_ext_func(id: &str) -> Option<(bool, bool, Bytecode, u8)> {
     }
     None
 }
-
-
 
 

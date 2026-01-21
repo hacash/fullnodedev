@@ -21,6 +21,7 @@ pub struct Syntax {
     bdlibs: HashMap<String, (u8, Option<field::Address>)>,
     local_alloc: u8,
     check_op: bool,
+    expect_retval: bool,
     // leftv: Box<dyn AST>,
     irnode: IRNodeBlock,
 }
@@ -57,6 +58,16 @@ impl Syntax {
         let nxt = &self.tokens[self.idx];
         self.idx += 1;
         Ok(nxt.clone())
+    }
+
+    fn with_expect_retval<F, R>(&mut self, expect: bool, f: F) -> R
+    where F: FnOnce(&mut Self) -> R
+    {
+        let prev = self.expect_retval;
+        self.expect_retval = expect;
+        let res = f(self);
+        self.expect_retval = prev;
+        res
     }
 
     pub fn link_lib(&self, s: &String) -> Ret<u8> {
@@ -336,14 +347,14 @@ impl Syntax {
 
     pub fn item_must(&mut self, jp: usize) -> Ret<Box<dyn IRNode>> {
         self.idx += jp;
-        match self.item_may()? {
+        self.with_expect_retval(true, |s| match s.item_may()? {
             Some(n) => Ok(n),
             None => errf!("not match next Syntax node")
-        }
+        })
     }
 
-    pub fn item_may_list(&mut self) -> Ret<Box<dyn IRNode>> {
-        let block = self.item_may_block()?;
+    pub fn item_may_list(&mut self, keep_retval: bool) -> Ret<Box<dyn IRNode>> {
+        let block = self.item_may_block(keep_retval)?;
         Ok(match block.len() {
             0 => Self::empty(),
             1 => block.into_one(),
@@ -351,8 +362,14 @@ impl Syntax {
         })
     }
     
-    pub fn item_may_block(&mut self) -> Ret<IRNodeBlock> {
-        let mut block = IRNodeBlock::new();
+    pub fn item_may_block(&mut self, keep_retval: bool) -> Ret<IRNodeBlock> {
+        use Bytecode::*;
+        let inst = if keep_retval {
+            IRBLOCKR
+        } else {
+            IRBLOCK
+        };
+        let mut block = IRNodeBlock::with_opcode(inst);
         let max = self.tokens.len() - 1;
         let e =  errf!("block format error");
         if self.idx >= max {
@@ -381,6 +398,13 @@ impl Syntax {
                 break
             };
             block.push( li );
+        }
+        if keep_retval {
+            match block.subs.last() {
+                None => return errf!("block expression cannot be empty"),
+                Some(last) if !last.hasretval() => return errf!("block expression must return value"),
+                _ => {},
+            }
         }
         Ok(block)
     }
@@ -631,7 +655,7 @@ impl Syntax {
                     subs.push(item);
                 }
                 let num = subs.len();
-                let mut list = IRNodeList{subs};
+                let mut list = IRNodeList{subs, inst: Bytecode::IRLIST};
                 list.push(Self::push_num(num as u128));
                 list.push(Self::push_inst(PACKLIST));
                 Box::new(list)
@@ -640,15 +664,16 @@ impl Syntax {
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
                 // let e = errf!("while statement format error");
-                let suby = self.item_may_list()?;
+                let suby = self.item_may_list(false)?;
                 Box::new(IRNodeDouble{hrtv: false, inst: IRWHILE, subx: exp, suby})
             }
             Keyword(If) => {
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
-                let list = self.item_may_list()?;
+                let keep_retval = self.expect_retval;
+                let list = self.item_may_list(keep_retval)?;
                 let mut ifobj = IRNodeTriple{
-                    hrtv: false, inst: IRIF, subx: exp, suby: list, subz: IRNodeLeaf::nop_box()
+                    hrtv: keep_retval, inst: maybe!(keep_retval, IRIFR, IRIF), subx: exp, suby: list, subz: IRNodeLeaf::nop_box()
                 };
                 let nxt = &self.tokens[self.idx];
                 let Keyword(Else) = nxt else {
@@ -659,7 +684,7 @@ impl Syntax {
                 let nxt = &self.tokens[self.idx];
                 // else
                 let Keyword(If) = nxt else {
-                    let elseobj = self.item_may_list()?;
+                    let elseobj = self.item_may_list(keep_retval)?;
                     ifobj.subz = elseobj;
                     return Ok(Some(Box::new(ifobj)))
                 };
@@ -833,7 +858,7 @@ impl Syntax {
             },
             Keyword(List) => {
                 // let e = errf!("list format error");
-                let block = self.item_may_block()?;
+                let block = self.item_may_block(false)?;
                 let num = block.subs.len();
                 match num {
                     0 => Self::push_inst(NEWLIST),
@@ -882,7 +907,7 @@ impl Syntax {
             }
             Keyword(Log) => {
                 let e = errf!("log argv number error");
-                let block = self.item_may_block()?;
+                let block = self.item_may_block(false)?;
                 let num = block.subs.len();
                 match num {
                     2 | 3 | 4 | 5 => {

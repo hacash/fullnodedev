@@ -830,9 +830,16 @@ impl IRNode for IRNodeBytecodes {
 macro_rules! define_ir_list_or_block { ($name: ident, $inst: expr, $compile_fn: ident) => {
      
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct $name {
     pub subs: Vec<Box<dyn IRNode>>,
+    pub inst: Bytecode,
+}
+
+impl Default for $name {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::ops::Deref for $name {
@@ -857,15 +864,15 @@ impl IRNode for $name {
             Some(s) => s.hasretval(),
         }
     }
-    fn bytecode(&self) -> u8 { $inst as u8 }
+    fn bytecode(&self) -> u8 { self.inst as u8 }
     fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        $compile_fn(&self.subs)
+        $compile_fn(self.inst, &self.subs)
     }
     fn serialize(&self) -> Vec<u8> {
         if self.subs.len() > u16::MAX as usize {
             panic!("IRNode list or block length overflow")
         }
-        let mut bytes = iter::once($inst as u8)
+        let mut bytes = iter::once(self.inst as u8)
             .chain((self.subs.len() as u16).to_be_bytes()).collect::<Vec<_>>();
         for a in &self.subs {
             bytes.append(&mut a.serialize());
@@ -878,7 +885,7 @@ impl IRNode for $name {
         let mut buf = String::new();
         if desc {
         }else{
-            buf.push_str(&format!("{}{:?} {} :\n", pre, $inst, num));
+            buf.push_str(&format!("{}{:?} {} :\n", pre, self.inst, num));
         }
         if num == 0 {
             return buf
@@ -902,6 +909,13 @@ impl $name {
     pub fn new() -> Self {
         Self {
             subs: vec![],
+            inst: $inst,
+        }
+    }
+    pub fn with_opcode(inst: Bytecode) -> Self {
+        Self {
+            subs: vec![],
+            inst,
         }
     }
     pub fn with_capacity(n: usize) -> Ret<Self> {
@@ -910,19 +924,23 @@ impl $name {
         }
         Ok(Self{
             subs: Vec::with_capacity(n),
+            inst: $inst,
         })
     }
     pub fn from_vec(subs: Vec<Box<dyn IRNode>>) -> Ret<Self> {
         if subs.len() > u16::MAX as usize {
             return errf!("{} length max {}", stringify!($name), u16::MAX)
         }
-        Ok(Self{subs})
+        Ok(Self{subs, inst: $inst})
     }
     pub fn into_vec(self) -> Vec<Box<dyn IRNode>> {
         self.subs
     }
     pub fn into_one(mut self) -> Box<dyn IRNode> {
         self.subs.pop().unwrap()
+    }
+    pub fn set_inst(&mut self, inst: Bytecode) {
+        self.inst = inst;
     }
 }
 

@@ -1,5 +1,1 @@
-
-
-
-include!{"./bin/fullnode.rs"}
-
+include! {"./bin/fullnode.rs"}

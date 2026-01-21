@@ -7,18 +7,29 @@ const JMP_INST_LEN: usize = 3; //u8 + u16
 const BLOCK_CODES_MAX_LEN: usize = i16::MAX as usize - JMP_INST_LEN - 64;
 
 
-fn compile_block(list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
+fn compile_block(inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
+    let is_expr = inst == Bytecode::IRBLOCKR;
+    if is_expr {
+        match list.last() {
+            None => return itr_err_fmt!(ComplieError, "block expression cannot be empty"),
+            Some(last) if !last.hasretval() => return itr_err_fmt!(ComplieError, "block expression must return value"),
+            _ => {},
+        }
+    }
     let mut codes = vec![];
-    for one in list {
+    for (idx, one) in list.iter().enumerate() {
         codes.append( &mut one.codegen()? );
         if one.hasretval() {
+            if is_expr && idx + 1 == list.len() {
+                continue;
+            }
             codes.push(POP as u8);
         }
     }
     Ok(codes)
 }
 
-fn compile_list(list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
+fn compile_list(_inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
     let mut codes = vec![];
     for one in list {
         codes.append( &mut one.codegen()? );
@@ -70,22 +81,29 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
 
 fn compile_triple(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Option<Vec<u8>>> {
     Ok(match btcd {
-        IRIF => Some(compile_if(x, y, z)?),
+        IRIF | IRIFR => Some(compile_if(btcd, x, y, z)?),
         _ => None
     })
 }
 
 
-fn compile_if(x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8>> {
+fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8>> {
     const JIL: usize = JMP_INST_LEN;
     const MAXL: usize = BLOCK_CODES_MAX_LEN;
     let cond  = x.codegen()?;
     let mut if_br = y.codegen()?;
-    if y.hasretval() {
+    let is_expr = btcd == Bytecode::IRIFR;
+    if is_expr && !y.hasretval() {
+        return itr_err_fmt!(ComplieError, "if expression branch must return value");
+    }
+    if !is_expr && y.hasretval() {
         if_br.push(POP as u8); // pop inst
     }
     let mut el_br = z.codegen()?;
-    if z.hasretval() {
+    if is_expr && !z.hasretval() {
+        return itr_err_fmt!(ComplieError, "if expression branch must return value");
+    }
+    if !is_expr && z.hasretval() {
         el_br.push(POP as u8); // pop inst
     }
     let if_l = if_br.len();
@@ -109,4 +127,3 @@ fn compile_if(x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8>> {
     // end
     .collect())
 }
-

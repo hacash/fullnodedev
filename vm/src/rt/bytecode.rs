@@ -254,10 +254,10 @@ pub enum Bytecode {
     IRBYTECODE          = 0xf0, // <IR NODE>
     IRLIST              = 0xf1, // <IR NODE>
     IRBLOCK             = 0xf2, // <IR NODE>
-    IRIF                = 0xf3, // <IR NODE>
-    IRWHILE             = 0xf4, // <IR NODE>
-    ________________245 = 0xf5,
-    ________________246 = 0xf6,
+    IRBLOCKR            = 0xf3, // <IR NODE>
+    IRIF                = 0xf4, // <IR NODE>
+    IRIFR               = 0xf5, // <IR NODE>
+    IRWHILE             = 0xf6, // <IR NODE>
     ________________247 = 0xf7,
     ________________248 = 0xf8,
     ________________249 = 0xf9,
@@ -482,7 +482,9 @@ bytecode_metadata_define!{
     IRBYTECODE : 2, 255, 0,   ir_bytecode
     IRLIST     : 2, 255, 1,   ir_list
     IRBLOCK    : 2, 255, 0,   ir_block
+    IRBLOCKR   : 2, 255, 1,   ir_block_expr
     IRIF       : 0, 3, 0,     ir_if
+    IRIFR      : 0, 3, 1,     ir_if_expr
     IRWHILE    : 0, 2, 0,     ir_while
 
     BURN       : 2, 0, 0,     gas_burn
@@ -490,5 +492,3 @@ bytecode_metadata_define!{
     NT         : 0, 0, 0,     never_touch
 
 }
-
-
