@@ -16,9 +16,9 @@ fn compile_block(inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>
             _ => {},
         }
     }
-    let mut codes = vec![];
+    let mut codes = Vec::new();
     for (idx, one) in list.iter().enumerate() {
-        codes.append( &mut one.codegen()? );
+        one.codegen_into(&mut codes)?;
         if one.hasretval() {
             if is_expr && idx + 1 == list.len() {
                 continue;
@@ -30,9 +30,9 @@ fn compile_block(inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>
 }
 
 fn compile_list(_inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
-    let mut codes = vec![];
+    let mut codes = Vec::new();
     for one in list {
-        codes.append( &mut one.codegen()? );
+        one.codegen_into(&mut codes)?;
     }
     Ok(codes)
 }
@@ -50,8 +50,10 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
     const JIL: usize = JMP_INST_LEN;
     const MAXL: usize = BLOCK_CODES_MAX_LEN;
     // condition
-    let cond = x.codegen()?;
-    let mut body = y.codegen()?;
+    let mut cond = Vec::new();
+    x.codegen_into(&mut cond)?;
+    let mut body = Vec::new();
+    y.codegen_into(&mut body)?;
     if y.hasretval() {
         body.push(POP as u8); // pop inst
     }
@@ -62,17 +64,14 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
         return itr_err_fmt!(ComplieError, "compile ir codes too long")
     }
     // condition
-    Ok(iter::empty().chain(cond)
-    // if false to break
-    .chain([BRSLN as u8])
-    .chain((body_l as i16).to_be_bytes())
-    // exec body
-    .chain(body)
-    // back jump to condition
-    .chain([JMPSL as u8])
-    .chain((-(alls_l as i16)).to_be_bytes())
-    // end
-    .collect())
+    let mut codes = Vec::with_capacity(cond.len() + 1 + 2 + body.len() + 1 + 2);
+    codes.extend_from_slice(&cond);
+    codes.push(BRSLN as u8);
+    codes.extend_from_slice(&(body_l as i16).to_be_bytes());
+    codes.extend_from_slice(&body);
+    codes.push(JMPSL as u8);
+    codes.extend_from_slice(&(-(alls_l as i16)).to_be_bytes());
+    Ok(codes)
 }
 
 
@@ -90,8 +89,10 @@ fn compile_triple(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Op
 fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8>> {
     const JIL: usize = JMP_INST_LEN;
     const MAXL: usize = BLOCK_CODES_MAX_LEN;
-    let cond  = x.codegen()?;
-    let mut if_br = y.codegen()?;
+    let mut cond = Vec::new();
+    x.codegen_into(&mut cond)?;
+    let mut if_br = Vec::new();
+    y.codegen_into(&mut if_br)?;
     let is_expr = btcd == Bytecode::IRIFR;
     if is_expr && !y.hasretval() {
         return itr_err_fmt!(ComplieError, "if expression branch must return value");
@@ -99,7 +100,8 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     if !is_expr && y.hasretval() {
         if_br.push(POP as u8); // pop inst
     }
-    let mut el_br = z.codegen()?;
+    let mut el_br = Vec::new();
+    z.codegen_into(&mut el_br)?;
     if is_expr && !z.hasretval() {
         return itr_err_fmt!(ComplieError, "if expression branch must return value");
     }
@@ -112,18 +114,15 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     if if_l > MAXL || el_l > MAXL {
         return itr_err_fmt!(ComplieError, "compile ir codes too long")
     }
-    // condition
-    Ok(iter::empty().chain(cond)
-    // check if jmp to if
-    .chain([BRSL as u8])
-    .chain((el_l as i16).to_be_bytes())
-    // else br body
-    .chain(el_br)
-    // jump to end
-    .chain([JMPSL as u8])
-    .chain((if_l as i16).to_be_bytes())
-    // if br body
-    .chain(if_br)
-    // end
-    .collect())
+    let mut codes = Vec::with_capacity(
+        cond.len() + 1 + 2 + el_br.len() + 1 + 2 + if_br.len()
+    );
+    codes.extend_from_slice(&cond);
+    codes.push(BRSL as u8);
+    codes.extend_from_slice(&(el_l as i16).to_be_bytes());
+    codes.extend_from_slice(&el_br);
+    codes.push(JMPSL as u8);
+    codes.extend_from_slice(&(if_l as i16).to_be_bytes());
+    codes.extend_from_slice(&if_br);
+    Ok(codes)
 }

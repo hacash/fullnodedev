@@ -24,7 +24,15 @@ pub trait IRNode : DynClone {
     // fn subnodes(&self) -> Vec<&dyn IRNode> { panic_never_call_this!() }
     // compile
     // fn parsing(&mut self, seek: &mut usize) -> RetErr { panic_never_call_this!() }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> { Ok(vec![self.bytecode()]) }
+    fn codegen(&self) -> VmrtRes<Vec<u8>> {
+        let mut buf = Vec::new();
+        self.codegen_into(&mut buf)?;
+        Ok(buf)
+    }
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        buf.push(self.bytecode());
+        Ok(())
+    }
     fn serialize(&self) -> Vec<u8> { vec![] }
     /*{
         let (_, _, _, out) = Bytecode::metadata(std_mem_transmute!(self.bytecode()));

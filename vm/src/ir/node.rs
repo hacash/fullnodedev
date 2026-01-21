@@ -70,7 +70,6 @@ macro_rules! print_subx_suby_op {
 }
 
 
-
 /*************************************/
 
 
@@ -83,6 +82,7 @@ impl IRNode for IRNodeEmpty {
     fn hasretval(&self) -> bool { false }
     fn bytecode(&self) -> u8 { 0 }
     fn codegen(&self) -> VmrtRes<Vec<u8>> { Ok(vec![]) }
+    fn codegen_into(&self, _buf: &mut Vec<u8>) -> VmrtRes<()> { Ok(()) }
 }
 
 
@@ -96,6 +96,7 @@ impl IRNode for IRNodeText {
     fn hasretval(&self) -> bool { false }
     fn bytecode(&self) -> u8 { 0 }
     fn codegen(&self) -> VmrtRes<Vec<u8>> { Ok(vec![]) }
+    fn codegen_into(&self, _buf: &mut Vec<u8>) -> VmrtRes<()> { Ok(()) }
 }
 
 impl IRNodeText {
@@ -180,10 +181,10 @@ impl IRNode for IRNodeParam1 {
     fn as_any(&self) -> &dyn Any { self }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        iter::once::<u8>(self.bytecode())
-        .chain([self.para])
-        .collect::<Vec<u8>>().into_vmrt()
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        buf.push(self.bytecode());
+        buf.push(self.para);
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         self.codegen().unwrap()
@@ -235,10 +236,10 @@ impl IRNode for IRNodeParam2 {
     fn as_any(&self) -> &dyn Any { self }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        iter::once::<u8>(self.bytecode())
-        .chain(self.para)
-        .collect::<Vec<u8>>().into_vmrt()
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        buf.push(self.bytecode());
+        buf.extend_from_slice(&self.para);
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         self.codegen().unwrap()
@@ -259,6 +260,7 @@ impl IRNode for IRNodeParam2 {
         }
         buf
     }
+
 }
 
 #[derive(Debug, Clone)]
@@ -272,10 +274,10 @@ impl IRNode for IRNodeParams {
     fn as_any(&self) -> &dyn Any { self }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        iter::once::<u8>(self.bytecode())
-        .chain(self.para.clone())
-        .collect::<Vec<u8>>().into_vmrt()
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        buf.push(self.bytecode());
+        buf.extend_from_slice(&self.para);
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         self.codegen().unwrap()
@@ -301,6 +303,7 @@ impl IRNode for IRNodeParams {
         }
         buf
     }
+
 }
 
 fn print_data_bytes(this: &IRNodeParams, buf: &mut String) {
@@ -341,12 +344,11 @@ impl IRNode for IRNodeParamsSingle {
     fn subs(&self) -> usize { 1 }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>>{
-        iter::empty::<u8>()
-        .chain(self.subx.codegen()?)
-        .chain([self.bytecode()])
-        .chain(self.para.clone())
-        .collect::<Vec<u8>>().into_vmrt()
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        self.subx.codegen_into(buf)?;
+        buf.push(self.bytecode());
+        buf.extend_from_slice(&self.para);
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         iter::once(self.bytecode())
@@ -390,6 +392,7 @@ impl IRNode for IRNodeParamsSingle {
         }
         buf
     }
+
 }
 
 
@@ -419,12 +422,12 @@ impl IRNode for IRNodeWrapOne {
     fn subs(&self) -> usize { 0 }
     fn hasretval(&self) -> bool { self.node.hasretval() }
     fn bytecode(&self) -> u8 { self.node.bytecode() }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> { self.node.codegen() }
     fn serialize(&self) -> Vec<u8> { self.node.serialize() }
     fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
         let res = self.node.print(suo, tab, desc);
         maybe!(desc, format!("({})", res), res)
     }
+
 }
 
 /*************************************/
@@ -443,12 +446,6 @@ impl IRNode for IRNodeSingle {
     fn subs(&self) -> usize { 1 }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        iter::empty::<u8>()
-        .chain(self.subx.codegen()?)
-        .chain([self.bytecode()])
-        .collect::<Vec<u8>>().into_vmrt()
-    }
     fn serialize(&self) -> Vec<u8> {
         iter::once(self.bytecode())
         .chain(self.subx.serialize())
@@ -492,7 +489,11 @@ impl IRNode for IRNodeSingle {
         }
         buf
     }
-
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        self.subx.codegen_into(buf)?;
+        buf.push(self.bytecode());
+        Ok(())
+    }
 }
 
 
@@ -516,15 +517,15 @@ impl IRNode for IRNodeDouble {
     }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
         if let Some(c) = compile_double(self.inst, &self.subx, &self.suby)? {
-            return Ok(c)
+            buf.extend(c);
+            return Ok(());
         }
-        iter::empty::<u8>()
-        .chain(self.subx.codegen()?)
-        .chain(self.suby.codegen()?)
-        .chain([self.bytecode()])
-        .collect::<Vec<u8>>().into_vmrt()
+        self.subx.codegen_into(buf)?;
+        self.suby.codegen_into(buf)?;
+        buf.push(self.bytecode());
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         iter::once(self.bytecode())
@@ -600,16 +601,16 @@ impl IRNode for IRNodeTriple {
     fn subs(&self) -> usize { 3 }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
         if let Some(c) = compile_triple(self.inst, &self.subx, &self.suby, &self.subz)? {
-            return Ok(c)
+            buf.extend(c);
+            return Ok(());
         }
-        iter::empty::<u8>()
-        .chain(self.subx.codegen()?)
-        .chain(self.suby.codegen()?)
-        .chain(self.subz.codegen()?)
-        .chain([self.bytecode()])
-        .collect::<Vec<u8>>().into_vmrt()
+        self.subx.codegen_into(buf)?;
+        self.suby.codegen_into(buf)?;
+        self.subz.codegen_into(buf)?;
+        buf.push(self.bytecode());
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         iter::once(self.bytecode())
@@ -665,12 +666,11 @@ impl IRNode for IRNodeParam1Single {
     fn subs(&self) -> usize { 1 }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        iter::empty()
-        .chain(self.subx.codegen()?)
-        .chain([self.bytecode()])
-        .chain([self.para])
-        .collect::<Vec<u8>>().into_vmrt()
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        self.subx.codegen_into(buf)?;
+        buf.push(self.bytecode());
+        buf.push(self.para);
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         iter::once(self.bytecode())
@@ -760,11 +760,11 @@ impl IRNode for IRNodeParam2Single {
     fn subs(&self) -> usize { 1 }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        iter::empty::<u8>()
-        .chain(self.subx.codegen()?)
-        .chain([self.bytecode()])
-        .chain(self.para).collect::<Vec<u8>>().into_vmrt()
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        self.subx.codegen_into(buf)?;
+        buf.push(self.bytecode());
+        buf.extend_from_slice(&self.para);
+        Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
         iter::once(self.bytecode())
@@ -805,7 +805,14 @@ impl IRNode for IRNodeBytecodes {
     fn codegen(&self) -> VmrtRes<Vec<u8>> {
         Ok(self.codes.clone())
     }
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        buf.extend_from_slice(&self.codes);
+        Ok(())
+    }
     fn serialize(&self) -> Vec<u8> {
+        if self.codes.len() > u16::MAX as usize {
+            panic!("IRNodeBytecodes payload too long");
+        }
         iter::once(IRBYTECODE as u8)
             .chain((self.codes.len() as u16).to_be_bytes())
             .chain(self.codes.clone())
