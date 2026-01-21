@@ -117,7 +117,7 @@ impl Syntax {
             self.local_alloc = idx + 1;
         }
         self.register_symbol(s, SymbolEntry::Var(idx))?;
-        Ok(Self::empty())
+        Ok(empty())
     }
 
     fn register_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
@@ -145,7 +145,7 @@ impl Syntax {
     pub fn link_local(&self, s: &String) -> Ret<Box<dyn IRNode>> {
         let text = s.clone();
         match self.symbols.get(s) {
-            Some(SymbolEntry::Var(i)) => Ok(Self::push_local_get(*i, text)),
+            Some(SymbolEntry::Var(i)) => Ok(push_local_get(*i, text)),
             _ => return errf!("cannot find symbol '{}'", s),
         }
     }
@@ -201,7 +201,7 @@ impl Syntax {
             return Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: XOP, para: mark, subx: v }))
         }
         // $0 = $0 + 1
-        let getv = Self::push_local_get(i, s!(""));
+        let getv = push_local_get(i, s!(""));
         let opsv = Box::new(IRNodeDouble{hrtv: true, inst: match op {
             Keyword(AsgAdd) => ADD,
             Keyword(AsgSub) => SUB,
@@ -356,7 +356,7 @@ impl Syntax {
     pub fn item_may_list(&mut self, keep_retval: bool) -> Ret<Box<dyn IRNode>> {
         let block = self.item_may_block(keep_retval)?;
         Ok(match block.len() {
-            0 => Self::empty(),
+            0 => empty(),
             1 => block.into_one(),
             _ => Box::new(block)
         })
@@ -446,8 +446,8 @@ impl Syntax {
             _ => Box::new(IRNodeDouble{
                 hrtv: true, 
                 inst: UPLIST,
-                subx: Self::push_inst(DUP),
-                suby: Self::push_inst(P0),
+                subx: push_inst(Bytecode::DUP),
+                suby: push_inst(Bytecode::P0),
             })
         })
     }
@@ -456,7 +456,7 @@ impl Syntax {
         let (pms, mut subx) = self.must_get_func_argv(ArgvMode::PackList)?;
         if 0 == pms {
             // func() == func(nil)
-            subx = Self::push_nil()
+            subx = push_nil()
         }
         Ok(subx)
     }
@@ -525,83 +525,6 @@ impl Syntax {
         self.link_symbol(&id)
     }
 
-    fn item_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
-        use Bytecode::*;
-        let bl = b.len();
-        if bl == 0 {
-            return Ok(Self::push_inst(PNBUF))
-        }
-        if bl > u16::MAX as usize {
-            return errf!("bytes data too long")
-        }
-        let isl = bl > u8::MAX as usize;
-        let inst = maybe!(isl, PBUFL, PBUF);
-        let size = maybe!(isl, 
-            (bl as u16).to_be_bytes().to_vec(),
-            vec![bl as u8]
-        );
-        let para = iter::empty().chain(size).chain(b.clone()).collect::<Vec<_>>();
-        Ok(Box::new(IRNodeParams{hrtv: true, inst, para}))
-    }
-
-    pub fn empty() -> Box<dyn IRNode> {
-        Box::new(IRNodeEmpty{})
-    }
-
-    pub fn push_nil() -> Box<dyn IRNode> {
-        use Bytecode::*;
-        Self::push_inst(PNIL)
-    }
-
-    pub fn push_local_get(i: u8, text: String) -> Box<dyn IRNode> {
-        use Bytecode::*;
-        match i {
-            0 => Box::new(IRNodeLeaf{  hrtv: true, inst: GET0, text }),
-            1 => Box::new(IRNodeLeaf{  hrtv: true, inst: GET1, text }),
-            2 => Box::new(IRNodeLeaf{  hrtv: true, inst: GET2, text }),
-            3 => Box::new(IRNodeLeaf{  hrtv: true, inst: GET3, text }),
-            _ => Box::new(IRNodeParam1{hrtv: true, inst: GET,  text, para: i })
-        }
-    }
-
-    pub fn push_inst_noret(inst: Bytecode) -> Box<dyn IRNode> {
-        Box::new(IRNodeLeaf::notext(false, inst))
-    }
-
-    pub fn push_inst(inst: Bytecode) -> Box<dyn IRNode> {
-        Box::new(IRNodeLeaf::notext(true, inst))
-    }
-
-    pub fn push_num(n: u128) -> Box<dyn IRNode> {
-        use Bytecode::*;
-        macro_rules! push_uint { ($n:expr, $t:expr) => {{
-            let buf = buf_drop_left_zero(&$n.to_be_bytes(), 0);
-            let numv = iter::once(buf.len() as u8).chain(buf).collect::<Vec<_>>();
-            Box::new(IRNodeSingle{hrtv: true, inst: $t, subx: Box::new(IRNodeParams{
-                hrtv: true, inst: PBUF, para: numv,
-            })})
-        }}}
-        match n {
-            0 => Self::push_inst(P0),
-            1 => Self::push_inst(P1),
-            2 => Self::push_inst(P2),
-            3 => Self::push_inst(P3),
-            4..256 => Box::new(IRNodeParam1{hrtv: true, inst: PU8, para: n as u8, text: s!("")}),
-            256..65536 => Box::new(IRNodeParam2{hrtv: true, inst: PU16, para: (n as u16).to_be_bytes() }),
-            65536..4294967296 => push_uint!(n, CU32),
-            4294967296..18446744073709551616 => push_uint!(n, CU64),
-            _ => push_uint!(n, CU128),
-        }
-    }
-
-    pub fn push_addr(a: field::Address) -> Box<dyn IRNode> {
-        use Bytecode::*;
-        let para = vec![vec![field::Address::SIZE as u8], a.serialize()].concat();
-        Box::new(IRNodeParam1Single{hrtv: true, inst: CTO, para: ValueTy::Address as u8, subx: Box::new(IRNodeParams{
-            hrtv: true, inst: PBUF, para,
-        })})
-    }
-
     pub fn item_may(&mut self) -> Ret<Option<Box<dyn IRNode>>> {
         use Bytecode::*;
         use KwTy::*;
@@ -623,9 +546,9 @@ impl Syntax {
         let mut nxt = next!();
         let mut item: Box<dyn IRNode> = match nxt {
             Identifier(id) => self.item_identifier(id.clone())?,
-            Integer(n) => Self::push_num(*n),
-            Token::Address(a) => Self::push_addr(*a),
-            Token::Bytes(b) => Self::item_bytes(b)?,
+            Integer(n) => push_num(*n),
+            Token::Address(a) => push_addr(*a),
+            Token::Bytes(b) => item_bytes(b)?,
             Partition('(') => {
                 let ckop = self.check_op;
                 self.check_op = true;
@@ -656,8 +579,8 @@ impl Syntax {
                 }
                 let num = subs.len();
                 let mut list = IRNodeList{subs, inst: Bytecode::IRLIST};
-                list.push(Self::push_num(num as u128));
-                list.push(Self::push_inst(PACKLIST));
+                    list.push(push_num(num as u128));
+                    list.push(push_inst(Bytecode::PACKLIST));
                 Box::new(list)
             }
             Keyword(While) => {

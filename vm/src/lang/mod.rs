@@ -23,7 +23,6 @@ pub enum ArgvMode {
 
 include!{"interface.rs"}
 include!{"tokenizer.rs"}
-include!{"irlet.rs"}
 include!{"funcs.rs"}
 include!{"syntax.rs"}
 include!{"test.rs"}
@@ -50,7 +49,6 @@ pub fn lang_to_bytecode(langscript: &str) -> Ret<Vec<u8>> {
     let codes = ir.codegen()?;
     Ok(codes)
 }
-
 
 
 
