@@ -4,6 +4,7 @@ use super::*;
 use super::rt::*;
 use super::rt::Bytecode::*;
 use super::rt::ItrErrCode::*;
+use super::value::*;
 
 
 include!("node.rs");

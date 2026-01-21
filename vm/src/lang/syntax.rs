@@ -117,7 +117,7 @@ impl Syntax {
             self.local_alloc = idx + 1;
         }
         self.register_symbol(s, SymbolEntry::Var(idx))?;
-        Ok(empty())
+        Ok(push_empty())
     }
 
     fn register_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
@@ -356,7 +356,7 @@ impl Syntax {
     pub fn item_may_list(&mut self, keep_retval: bool) -> Ret<Box<dyn IRNode>> {
         let block = self.item_may_block(keep_retval)?;
         Ok(match block.len() {
-            0 => empty(),
+            0 => push_empty(),
             1 => block.into_one(),
             _ => Box::new(block)
         })
@@ -548,7 +548,7 @@ impl Syntax {
             Identifier(id) => self.item_identifier(id.clone())?,
             Integer(n) => push_num(*n),
             Token::Address(a) => push_addr(*a),
-            Token::Bytes(b) => item_bytes(b)?,
+            Token::Bytes(b) => push_bytes(b)?,
             Partition('(') => {
                 let ckop = self.check_op;
                 self.check_op = true;
@@ -679,15 +679,15 @@ impl Syntax {
                 };
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
-                if let Some(idx) = slot {
-                    let sym = name.unwrap_or_else(|| format!("${}", idx));
-                    let node = self.bind_local_assign_replace(sym, idx, exp)?;
-                    return Ok(Some(node));
-                }
-                if let Some(n) = name {
-                    self.bind_let(n, exp)?;
-                    return Ok(Some(Self::empty()));
-                }
+                    if let Some(idx) = slot {
+                        let sym = name.unwrap_or_else(|| format!("${}", idx));
+                        let node = self.bind_local_assign_replace(sym, idx, exp)?;
+                        return Ok(Some(node));
+                    }
+                    if let Some(n) = name {
+                        self.bind_let(n, exp)?;
+                        return Ok(Some(push_empty()));
+                    }
                 return errf!("let statement needs at least a name or slot")
             }
             /*
@@ -706,7 +706,7 @@ impl Syntax {
                     return e
                 };
                 self.bind_uses(id.clone(), addr.clone())?;
-                Self::empty()
+                push_empty()
             }
             */
             Keyword(Lib) => { // lib AnySwap = 1 : VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
@@ -730,7 +730,7 @@ impl Syntax {
                     return errf!("lib statement link index overflow")
                 }
                 self.bind_lib(id.clone(), *idx as u8, adr)?;
-                Self::empty()
+                push_empty()
             }
             Keyword(Param) => {
                 self.item_param()?
@@ -784,11 +784,11 @@ impl Syntax {
                 let block = self.item_may_block(false)?;
                 let num = block.subs.len();
                 match num {
-                    0 => Self::push_inst(NEWLIST),
+                    0 => push_inst(NEWLIST),
                     _ => {
                         let mut subs = block.subs;
-                        subs.push(Self::push_num(num as u128));
-                        subs.push(Self::push_inst(PACKLIST));
+                        subs.push(push_num(num as u128));
+                        subs.push(push_inst(PACKLIST));
                         let arys = IRNodeList::from_vec(subs)?;
                         Box::new(arys)
                     }
@@ -823,8 +823,8 @@ impl Syntax {
                     subs.push(k);
                     subs.push(v);
                 }
-                subs.push(Self::push_num(subs.len() as u128));
-                subs.push(Self::push_inst(PACKMAP));
+                subs.push(push_num(subs.len() as u128));
+                subs.push(push_inst(PACKMAP));
                 let arys = IRNodeList::from_vec(subs)?;
                 Box::new(arys)
             }
@@ -842,18 +842,18 @@ impl Syntax {
                             _ => never!()
                         };
                         let mut subs = block.subs;
-                        subs.push(Self::push_inst_noret(inst));
+                        subs.push(push_inst_noret(inst));
                         let arys = IRNodeList::from_vec(subs)?;
                         Box::new(arys)
                     }
                     _ => return e
                 }
             }
-            Keyword(Nil)    => Self::push_nil(),
-            Keyword(True)   => Self::push_inst(P1),
-            Keyword(False)  => Self::push_inst(P0),
-            Keyword(Abort)  => Self::push_inst_noret(ABT),
-            Keyword(End)    => Self::push_inst_noret(END),
+            Keyword(Nil)    => push_nil(),
+            Keyword(True)   => push_inst(P1),
+            Keyword(False)  => push_inst(P0),
+            Keyword(Abort)  => push_inst_noret(ABT),
+            Keyword(End)    => push_inst_noret(END),
             Keyword(Print)  => Box::new(IRNodeSingle{hrtv: false, inst: PRT, subx: self.item_must(0)?}),
             Keyword(Assert) => Box::new(IRNodeSingle{hrtv: false, inst: AST, subx: self.item_must(0)?}),
             Keyword(Throw)  => Box::new(IRNodeSingle{hrtv: false, inst: ERR, subx: self.item_must(0)?}),
@@ -867,14 +867,14 @@ impl Syntax {
 
     pub fn parse(mut self) -> Ret<IRNodeBlock> {
         // for local alloc
-        self.irnode.push(Self::empty());
+        self.irnode.push(push_empty());
         // bodys
         while let Some(item) = self.item_may()? {
-            if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {} else {
-                self.irnode.push(item);
-            };
-        }
-        self.finalize_let_slots()?;
+                if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {} else {
+                    self.irnode.push(item);
+                };
+            }
+            self.finalize_let_slots()?;
         // local alloc
         if self.local_alloc > 0 {
             let allocs = Box::new(IRNodeParam1{

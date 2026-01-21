@@ -160,7 +160,7 @@ fn pick_native_call(id: &str) -> Option<u8> {
 fn concat_func_argvs(mut list: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     // list.reverse();
     let Some(mut res) = list.pop() else {
-        return Ok(Syntax::push_inst(Bytecode::PNBUF)) // not pass argv
+        return Ok(push_inst(Bytecode::PNBUF)) // not pass argv
     };
     while let Some(x) = list.pop() {
         res = Box::new(IRNodeDouble{hrtv:true, inst:Bytecode::CAT, subx: x, suby: res});
@@ -177,8 +177,8 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
         0 => Box::new(IRNodeEmpty{}),// errf!("function argv length cannot be 0"),
         1 => subs.pop().unwrap(),
         2..=15 => {
-            let num = Syntax::push_num(argv_len as u128);
-            let pklist = Syntax::push_inst(PACKLIST);
+            let num = push_num(argv_len as u128);
+            let pklist = push_inst(PACKLIST);
             subs.push(num);
             subs.push(pklist);
             Box::new(IRNodeList{subs, inst: Bytecode::IRLIST})
@@ -211,5 +211,4 @@ fn pick_ext_func(id: &str) -> Option<(bool, bool, Bytecode, u8)> {
     }
     None
 }
-
 

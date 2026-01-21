@@ -1,10 +1,5 @@
-use std::iter;
 
-use super::*;
-use super::rt::Bytecode;
-use super::value::{field, util::buf_drop_left_zero};
-
-pub fn empty() -> Box<dyn IRNode> {
+pub fn push_empty() -> Box<dyn IRNode> {
     Box::new(IRNodeEmpty {})
 }
 
@@ -86,7 +81,7 @@ pub fn push_addr(a: field::Address) -> Box<dyn IRNode> {
     })
 }
 
-pub fn item_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
+pub fn push_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
     use Bytecode::*;
     let bl = b.len();
     if bl == 0 {
@@ -102,7 +97,7 @@ pub fn item_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
     } else {
         vec![bl as u8]
     };
-    let para = iter::empty().chain(size).chain(b.clone()).collect::<Vec<_>>();
+    let para = std::iter::empty().chain(size).chain(b.clone()).collect::<Vec<_>>();
     Ok(Box::new(IRNodeParams {
         hrtv: true,
         inst,
