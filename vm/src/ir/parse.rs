@@ -1,5 +1,4 @@
 
-
 /*
     parse ir list
 */
@@ -238,10 +237,10 @@ impl IRNode for IRNodeLetExpr {
     fn hasretval(&self) -> bool { self.expr.hasretval() }
     fn bytecode(&self) -> u8 { Bytecode::IRBLOCKR as u8 }
     fn serialize(&self) -> Vec<u8> { self.expr.serialize() }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&super::rt::SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         if desc {
-            let expr_str = self.expr.print("", 0, desc);
+            let expr_str = self.expr.print("", 0, desc, map);
             buf.push_str(&format!("let ${} = {}", self.slot, expr_str));
         } else {
             buf.push_str(&format!("{:?} {}", Bytecode::IRBLOCKR, self.slot));

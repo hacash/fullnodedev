@@ -1,20 +1,17 @@
-use super::*;
-use super::rt::*;
 use super::lang::*;
+use super::rt::*;
+use super::*;
 
-
-include!{"util.rs"}
-include!{"state.rs"}
-include!{"stack.rs"}
-include!{"benchmark.rs"}
-include!{"verify.rs"}
-include!{"ir.rs"}
-include!{"execute.rs"}
-
-
+include! {"util.rs"}
+include! {"state.rs"}
+include! {"stack.rs"}
+include! {"benchmark.rs"}
+include! {"verify.rs"}
+include! {"ir.rs"}
+include! {"execute.rs"}
 
 #[allow(dead_code)]
-pub fn do_all_test () {
+pub fn do_all_test() {
     codegen1();
     codegen2();
     benchmark1();
@@ -23,9 +20,6 @@ pub fn do_all_test () {
     execute2();
     execute3();
 }
-
-
-
 
 #[cfg(test)]
 mod testexec {
@@ -36,5 +30,5 @@ mod testexec {
     }
 }
 /*
-ALLOC 2 P0 PUT 0 GETX 0 P1 EQ BRSL 0 9 P1 PUT 0 P1 PUT 1 JMPSL 0 3 P0 PUT 1 GETX 0 RET 
+ALLOC 2 P0 PUT 0 GETX 0 P1 EQ BRSL 0 9 P1 PUT 0 P1 PUT 1 JMPSL 0 3 P0 PUT 1 GETX 0 RET
 */

@@ -1,12 +1,13 @@
 use native::NativeCall;
+use super::rt::SourceMap;
 
 
 
 macro_rules! print_sub {
-    ($suo:expr, $subx:expr, $tab:expr, $desc:ident) => {
+    ($suo:expr, $subx:expr, $tab:expr, $desc:ident, $map:expr) => {
         match $subx.subs() {
-            0 => $subx.print($suo, 0, $desc),
-            _ => { let mut buf = s!("\n") + &$subx.print($suo, $tab+1, $desc);
+            0 => $subx.print($suo, 0, $desc, $map),
+            _ => { let mut buf = s!("\n") + &$subx.print($suo, $tab+1, $desc, $map);
                 if $desc {
                     buf += &(s!("\n") + &$suo.repeat($tab));
                 }
@@ -17,8 +18,8 @@ macro_rules! print_sub {
 }
 
 macro_rules! print_sub_newline {
-    ($suo:expr, $subx:expr, $tab:expr, $desc:ident) => {{
-        let sub = $subx.print($suo, $tab+1, $desc);
+    ($suo:expr, $subx:expr, $tab:expr, $desc:ident, $map:expr) => {{
+        let sub = $subx.print($suo, $tab+1, $desc, $map);
         let emp = sub.replace(" ", "").replace("\n", "");
         match emp.len() > 0 {
             true => {
@@ -35,8 +36,8 @@ macro_rules! print_sub_newline {
 }
 
 macro_rules! print_sub_inline {
-    ($suo:expr, $subx:expr, $desc:ident) => {{
-        let substr = print_sub!($suo, $subx, 0, $desc);
+    ($suo:expr, $subx:expr, $desc:ident, $map:expr) => {{
+        let substr = print_sub!($suo, $subx, 0, $desc, $map);
         match substr.contains('\n') {
             true => substr[($suo.len()+1)..substr.len()-1].to_owned(),
             false => substr,
@@ -46,10 +47,10 @@ macro_rules! print_sub_inline {
 
 
 macro_rules! print_subx_suby_op {
-    ($suo:expr, $buf:ident, $self:ident, $desc:ident, $op:expr) => {
+    ($suo:expr, $buf:ident, $self:ident, $desc:ident, $op:expr, $map:expr) => {
         {
-            let mut subx = print_sub_inline!($suo, $self.subx, $desc);
-            let mut suby = print_sub_inline!($suo, $self.suby, $desc);
+            let mut subx = print_sub_inline!($suo, $self.subx, $desc, $map);
+            let mut suby = print_sub_inline!($suo, $self.suby, $desc, $map);
             // check level
             let clv = match OpTy::from_bytecode($self.inst) {
                 Ok(t) => t.level(),
@@ -71,6 +72,13 @@ macro_rules! print_subx_suby_op {
 
 
 /*************************************/
+
+fn slot_name_display(slot: u8, map: Option<&SourceMap>) -> String {
+    map.and_then(|m| m.slot(slot))
+        .cloned()
+        .unwrap_or_else(|| format!("${}", slot))
+}
+
 
 
 
@@ -131,7 +139,7 @@ impl IRNode for IRNodeLeaf {
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
     fn serialize(&self) -> Vec<u8> { vec![self.inst as u8] }
-    fn print(&self, sou: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, sou: &str, tab: usize, desc: bool, _map: Option<&SourceMap>) -> String {
         let mut buf = String::from(sou.repeat(tab));
         if desc {
             let meta = self.inst.metadata();
@@ -198,7 +206,7 @@ impl IRNode for IRNodeParam1 {
     fn serialize(&self) -> Vec<u8> {
         self.codegen().unwrap()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, _map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         if desc {
             let meta = self.inst.metadata();
@@ -219,6 +227,7 @@ impl IRNode for IRNodeParam1 {
         }
         buf
     }
+
 }
 
 impl IRNodeParam1 {
@@ -253,7 +262,7 @@ impl IRNode for IRNodeParam2 {
     fn serialize(&self) -> Vec<u8> {
         self.codegen().unwrap()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, _map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         if desc {
             let meta = self.inst.metadata();
@@ -291,7 +300,7 @@ impl IRNode for IRNodeParams {
     fn serialize(&self) -> Vec<u8> {
         self.codegen().unwrap()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, _map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         let parastr = hex::encode(&self.para);
         if desc {
@@ -365,43 +374,92 @@ impl IRNode for IRNodeParamsSingle {
         .chain(self.subx.serialize())
         .collect()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         let parastr = hex::encode(&self.para);
         if desc {
             let meta = self.inst.metadata();
-            let substr = print_sub_inline!(suo, self.subx, desc);
+            let substr = print_sub_inline!(suo, self.subx, desc, map);
             match self.inst {
                 CALL | CALLLIB => {
-                    let idx = self.para[0];
-                    let f = hex::encode(&self.para[1..]);
                     let args = format_call_args(&substr);
-                    buf.push_str(&format!("calllib {}::{}({})", idx, f, args));
+                    if let Some((lib, func)) = self.resolve_lib_func(map) {
+                        buf.push_str(&format!("{}.{}({})", lib, func, args));
+                    } else {
+                        let idx = self.para[0];
+                        let f = hex::encode(&self.para[1..]);
+                        buf.push_str(&format!("calllib {}::{}({})", idx, f, args));
+                    }
                 }
                 CALLINR => {
-                    let f = hex::encode(&self.para);
                     let args = format_call_args(&substr);
-                    buf.push_str(&format!("callself {}({})", f, args));
+                    if let Some(func) = self.resolve_self_func(map) {
+                        buf.push_str(&format!("self.{}({})", func, args));
+                    } else {
+                        let f = hex::encode(&self.para);
+                        buf.push_str(&format!("callself {}({})", f, args));
+                    }
                 }
                 CALLSTATIC => {
-                    let idx = self.para[0];
-                    let f = hex::encode(&self.para[1..]);
                     let args = format_call_args(&substr);
-                    buf.push_str(&format!("callstatic {}::{}({})", idx, f, args));
+                    if let Some((lib, func)) = self.resolve_lib_func(map) {
+                        buf.push_str(&format!("{}::{}({})", lib, func, args));
+                    } else {
+                        let idx = self.para[0];
+                        let f = hex::encode(&self.para[1..]);
+                        buf.push_str(&format!("callstatic {}::{}({})", idx, f, args));
+                    }
                 }
                 _ => {
                     buf.push_str(&format!("{}(0x{}, {})", meta.intro, parastr, substr));
                 }
             }
         } else {
-            let substr = print_sub!(suo, self.subx, tab, desc);
+            let substr = print_sub!(suo, self.subx, tab, desc, map);
             buf.push_str(&format!("{:?} 0x{} {}", self.inst, parastr, substr));
         }
         buf
     }
 
+
 }
 
+
+impl IRNodeParamsSingle {
+    
+    fn decode_lib_sig(&self) -> Option<(u8, [u8;4])> {
+        if self.para.len() < 5 {
+            return None;
+        }
+        let idx = self.para[0];
+        let mut sig = [0u8; 4];
+        sig.copy_from_slice(&self.para[1..5]);
+        Some((idx, sig))
+    }
+
+    fn resolve_lib_func(&self, map: Option<&SourceMap>) -> Option<(String, String)> {
+        let (idx, sig) = self.decode_lib_sig()?;
+        let map = map?;
+        let lib = map.lib(idx)?;
+        let func = map.func(&sig)?;
+        Some((lib.name.clone(), func.clone()))
+    }
+
+    fn decode_self_sig(&self) -> Option<[u8;4]> {
+        if self.para.len() != 4 {
+            return None;
+        }
+        let mut sig = [0u8; 4];
+        sig.copy_from_slice(&self.para);
+        Some(sig)
+    }
+
+    fn resolve_self_func(&self, map: Option<&SourceMap>) -> Option<String> {
+        let sig = self.decode_self_sig()?;
+        let map = map?;
+        map.func(&sig).cloned()
+    }
+}
 
 /*************************************/
 
@@ -430,8 +488,8 @@ impl IRNode for IRNodeWrapOne {
     fn hasretval(&self) -> bool { self.node.hasretval() }
     fn bytecode(&self) -> u8 { self.node.bytecode() }
     fn serialize(&self) -> Vec<u8> { self.node.serialize() }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
-        let res = self.node.print(suo, tab, desc);
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
+        let res = self.node.print(suo, tab, desc, map);
         maybe!(desc, format!("({})", res), res)
     }
 
@@ -458,13 +516,13 @@ impl IRNode for IRNodeSingle {
         .chain(self.subx.serialize())
         .collect()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         if desc {
             let meta = self.inst.metadata();
             match self.inst {
                 TNIL | TLIST | TMAP => {
-                    let substr = print_sub_inline!(suo, self.subx, desc);
+                    let substr = print_sub_inline!(suo, self.subx, desc, map);
                     match self.inst {
                         TNIL  => buf.push_str(&format!("{} is nil", substr)),
                         TLIST => buf.push_str(&format!("{} is list", substr)),
@@ -473,7 +531,7 @@ impl IRNode for IRNodeSingle {
                     }
                 }
                 CU8 | CU16 | CU32 | CU64 | CU128 | NOT | RET | ERR | AST => {
-                    let substr = print_sub_inline!(suo, self.subx, desc);
+                    let substr = print_sub_inline!(suo, self.subx, desc, map);
                     match self.inst {
                         CU8   => buf.push_str(&format!("{} as u8", substr)),
                         CU16  => buf.push_str(&format!("{} as u16", substr)),
@@ -486,7 +544,7 @@ impl IRNode for IRNodeSingle {
                     };
                 },
                 _ => {
-                    let substr = print_sub_inline!(suo, self.subx, desc);
+                    let substr = print_sub_inline!(suo, self.subx, desc, map);
                     match self.inst {
                         Bytecode::PRT => buf.push_str(&format!("{} {}", meta.intro, substr)),
                         _ => buf.push_str(&format!("{}({})", meta.intro, substr)),
@@ -494,7 +552,7 @@ impl IRNode for IRNodeSingle {
                 }
             };
         } else {
-            let substr = print_sub!(suo, self.subx, tab, desc);
+            let substr = print_sub!(suo, self.subx, tab, desc, map);
             buf.push_str(&format!("{:?} {}", self.inst, substr));
         }
         buf
@@ -543,7 +601,7 @@ impl IRNode for IRNodeDouble {
         .chain(self.suby.serialize())
         .collect::<Vec<u8>>()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         if desc {
             let meta = self.inst.metadata();
@@ -570,31 +628,32 @@ impl IRNode for IRNodeDouble {
                 | CAT 
                 => {
                     let sg = OpTy::from_bytecode(self.inst).unwrap().symbol();
-                    print_subx_suby_op!(suo, buf, self, desc, sg)
+                    print_subx_suby_op!(suo, buf, self, desc, sg, map)
                 }
                 IRWHILE => {
-                    let subxstr = print_sub_inline!(suo, self.subx, desc);
-                    let subystr = print_sub!(suo, self.suby, tab, desc);
+                    let subxstr = print_sub_inline!(suo, self.subx, desc, map);
+                    let subystr = print_sub!(suo, self.suby, tab, desc, map);
                     buf.push_str(&format!("while {} {{{}}}", subxstr, subystr))
                 }
                 ITEMGET => {
-                    let subxstr = print_sub!(suo, self.subx, tab, desc);
-                    let subystr = print_sub_inline!(suo, self.suby, desc);
+                    let subxstr = print_sub!(suo, self.subx, tab, desc, map);
+                    let subystr = print_sub_inline!(suo, self.suby, desc, map);
                     buf.push_str(&format!("{}[{}]", subxstr, subystr))
                 }
                 _ => {
-                    let subxstr = print_sub!(suo, self.subx, tab, desc);
-                    let subystr = print_sub!(suo, self.suby, tab, desc);
+                    let subxstr = print_sub!(suo, self.subx, tab, desc, map);
+                    let subystr = print_sub!(suo, self.suby, tab, desc, map);
                     buf.push_str(&format!("{}({}, {})", meta.intro, subxstr, subystr))
                 }
             }
         } else {
-            let subxstr = print_sub!(suo, self.subx, tab, desc);
-            let subystr = print_sub!(suo, self.suby, tab, desc);
+            let subxstr = print_sub!(suo, self.subx, tab, desc, map);
+            let subystr = print_sub!(suo, self.suby, tab, desc, map);
             buf.push_str(&format!("{:?} {} {}", self.inst, subxstr, subystr));
         }
         buf
     }
+
 }
 
 #[derive(Debug, Clone)]
@@ -629,35 +688,36 @@ impl IRNode for IRNodeTriple {
         .chain(self.subz.serialize())
         .collect()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         if desc {
             let meta = self.inst.metadata();
             match self.inst {
                 IRIF | IRIFR => {
-                    let subxstr = &print_sub_inline!(suo, self.subx, desc);
-                    let subystr = print_sub_newline!(suo, self.suby, tab, desc);
-                    let subzstr = print_sub_newline!(suo, self.subz, tab, desc);
-                    buf.push_str(&format!("if {} {{{}}}", subxstr, subystr));
-                    if subzstr.len() > 0 {
-                        buf.push_str(&format!(" else {{{}}}", subzstr));
-                    }
-                }
-                _ => {
-                    let subxstr = print_sub!(suo, self.subx, tab, desc);
-                    let subystr = print_sub!(suo, self.suby, tab, desc);
-                    let subzstr = print_sub!(suo, self.subz, tab, desc);
-                    buf.push_str(&format!("{}({}, {}, {})", meta.intro, subxstr, subystr, subzstr));
+                    let subxstr = &print_sub_inline!(suo, self.subx, desc, map);
+                    let subystr = print_sub_newline!(suo, self.suby, tab, desc, map);
+                    let subzstr = print_sub_newline!(suo, self.subz, tab, desc, map);
+                buf.push_str(&format!("if {} {{{}}}", subxstr, subystr));
+                if subzstr.len() > 0 {
+                    buf.push_str(&format!(" else {{{}}}", subzstr));
                 }
             }
-        } else {
-            let subxstr = print_sub!(suo, self.subx, tab, desc);
-            let subystr = print_sub!(suo, self.suby, tab, desc);
-            let subzstr = print_sub!(suo, self.subz, tab, desc);
-            buf.push_str(&format!("{:?} {} {} {}", self.inst, subxstr, subystr, subzstr));
+            _ => {
+                let subxstr = print_sub!(suo, self.subx, tab, desc, map);
+                let subystr = print_sub!(suo, self.suby, tab, desc, map);
+                let subzstr = print_sub!(suo, self.subz, tab, desc, map);
+                buf.push_str(&format!("{}({}, {}, {})", meta.intro, subxstr, subystr, subzstr));
+            }
         }
+    } else {
+        let subxstr = print_sub!(suo, self.subx, tab, desc, map);
+        let subystr = print_sub!(suo, self.suby, tab, desc, map);
+        let subzstr = print_sub!(suo, self.subz, tab, desc, map);
+        buf.push_str(&format!("{:?} {} {} {}", self.inst, subxstr, subystr, subzstr));
+    }
         buf
     }
+
 }
 
 
@@ -688,14 +748,14 @@ impl IRNode for IRNodeParam1Single {
         .chain(self.subx.serialize())
         .collect()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
-        let substr = print_sub!(suo, self.subx, tab, desc);
+        let substr = print_sub!(suo, self.subx, tab, desc, map);
         if desc {
             let meta = self.inst.metadata();
             match self.inst {
                 TIS => {
-                    let substr = print_sub_inline!(suo, self.subx, desc);
+                    let substr = print_sub_inline!(suo, self.subx, desc, map);
                     let ty = match self.para {
                         0 => "nil",
                         1 => "bool",
@@ -711,36 +771,39 @@ impl IRNode for IRNodeParam1Single {
                     buf.push_str(&format!("{} is {}", substr, ty));
                 }
                 PUT => {
-                    let substr = &print_sub_inline!(suo, self.subx, desc);
-                    let line = format!("${} = {}", self.para, substr);
+                    let substr = &print_sub_inline!(suo, self.subx, desc, map);
+                    let target = slot_name_display(self.para, map);
+                    let line = format!("{} = {}", target, substr);
                     buf.push_str(&line);
                 }
                 XOP => {
-                    let substr = &print_sub_inline!(suo, self.subx, desc);
+                    let substr = &print_sub_inline!(suo, self.subx, desc, map);
                     let (opt, idx) = local_operand_param_parse(self.para);
-                    let line = format!("${} {} {}", idx, opt, substr);
+                    let target = slot_name_display(idx, map);
+                    let line = format!("{} {} {}", target, opt, substr);
                     buf.push_str(&line);
                 }
                 XLG => {
-                    let substr = &print_sub_inline!(suo, self.subx, desc);
+                    let substr = &print_sub_inline!(suo, self.subx, desc, map);
                     let (opt, idx) = local_logic_param_parse(self.para);
-                    let line = format!("${} {} {}", idx, opt, substr);
+                    let target = slot_name_display(idx, map);
+                    let line = format!("{} {} {}", target, opt, substr);
                     buf.push_str(&line);
                 }
                 EXTFUNC => {
-                    let substr = &print_sub_inline!(suo, self.subx, desc);
+                    let substr = &print_sub_inline!(suo, self.subx, desc, map);
                     let ary = CALL_EXTEND_FUNC_DEFS;
                     let f = search_ext_name_by_id(self.para, &ary);
                     buf.push_str(&format!("{}({})", f, substr));
                 }
                 EXTACTION => {
-                    let substr = &print_sub_inline!(suo, self.subx, desc);
+                    let substr = &print_sub_inline!(suo, self.subx, desc, map);
                     let ary = CALL_EXTEND_ACTION_DEFS;
                     let f = search_ext_name_by_id(self.para, &ary);
                     buf.push_str(&format!("{}({})", f, substr));
                 }
                 NTCALL => {
-                    let substr = &print_sub_inline!(suo, self.subx, desc);
+                    let substr = &print_sub_inline!(suo, self.subx, desc, map);
                     let ntcall: NativeCall = std_mem_transmute!(self.para);
                     buf.push_str(&format!("{}({})", ntcall.name(), substr));
                 }
@@ -782,10 +845,10 @@ impl IRNode for IRNodeParam2Single {
         .chain(self.subx.serialize())
         .collect()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
         let mut buf = String::from(suo.repeat(tab));
         let parastr = hex::encode(&self.para);
-        let substr = print_sub!(suo, self.subx, tab, desc);
+        let substr = print_sub!(suo, self.subx, tab, desc, map);
         if desc {
             let meta = self.inst.metadata();
             buf.push_str(meta.intro);
@@ -828,7 +891,7 @@ impl IRNode for IRNodeBytecodes {
             .chain(self.codes.clone())
             .collect::<Vec<_>>()
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, _map: Option<&SourceMap>) -> String {
         let pre = suo.repeat(tab);
         let mut buf = String::new();
         if desc {
@@ -901,7 +964,7 @@ impl IRNode for $name {
         }
         bytes
     }
-    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+    fn print(&self, suo: &str, tab: usize, desc: bool, map: Option<&SourceMap>) -> String {
         let pre = suo.repeat(tab);
         let num = self.subs.len();
         let mut buf = String::new();
@@ -910,7 +973,7 @@ impl IRNode for $name {
             if num > 0 {
                 buf.push('\n');
                 for a in &self.subs {
-                    buf.push_str(&a.print(suo, tab + 1, desc));
+                    buf.push_str(&a.print(suo, tab + 1, desc, map));
                     buf.push('\n');
                 }
                 buf.push_str(&pre);
@@ -924,7 +987,7 @@ impl IRNode for $name {
             return buf
         }
         for a in &self.subs {
-            buf.push_str(&a.print(suo, tab, desc));
+            buf.push_str(&a.print(suo, tab, desc, map));
             buf.push('\n');
         }
         buf.pop();
@@ -988,13 +1051,18 @@ define_ir_list_or_block!{ IRNodeBlock, IRBLOCK, compile_block }
 
 pub trait IRCodePrint {
     fn ircode_print(&self, desc: bool) -> VmrtRes<String>;
+    fn ircode_print_with_sourcemap(&self, desc: bool, map: Option<&SourceMap>) -> VmrtRes<String>;
 }
 
 impl IRCodePrint for Vec<u8> {
 
     fn ircode_print(&self, desc: bool) -> VmrtRes<String> {
+        self.ircode_print_with_sourcemap(desc, None)
+    }
+
+    fn ircode_print_with_sourcemap(&self, desc: bool, map: Option<&SourceMap>) -> VmrtRes<String> {
         let irs = parse_ir_block(self, &mut 0)?;
-        let res = irs.print("    ", 0, desc);
+        let res = irs.print("    ", 0, desc, map);
         Ok(res)
     }
 

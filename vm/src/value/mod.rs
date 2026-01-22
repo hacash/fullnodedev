@@ -1,19 +1,17 @@
+use std::cell::*;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::fmt::*;
 use std::iter;
-use std::collections::{BTreeMap, VecDeque};
 use std::rc::*;
-use std::cell::*;
 
-
-use sys::*;
 use field::*;
+use sys::*;
 
-use super::*;
+use super::rt::ItrErrCode::*;
 use super::rt::*;
 use super::space::*;
-use super::rt::ItrErrCode::*;
-
+use super::*;
 
 include!("util.rs");
 include!("convert.rs");

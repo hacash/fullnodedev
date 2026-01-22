@@ -1,26 +1,21 @@
-use std::sync::*;
-use std::collections::*;
 use std::cell::*;
+use std::collections::*;
+use std::sync::*;
 
-use sys::*;
-use basis::*;
-use basis::interface::*;
 use basis::component::*;
+use basis::interface::*;
+use basis::*;
 use protocol::transaction::*;
+use sys::*;
 
-use super::*;
+use super::frame::*;
 use super::rt::*;
 use super::space::*;
-use super::frame::*;
+use super::*;
 
-
-
-
-
-include!{"manage.rs"}
-include!{"machine.rs"}
+include! {"manage.rs"}
+include! {"machine.rs"}
 include!("resource.rs");
-include!{"loader.rs"}
-include!{"sandbox.rs"}
-include!{"setup.rs"}
-
+include! {"loader.rs"}
+include! {"sandbox.rs"}
+include! {"setup.rs"}

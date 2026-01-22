@@ -7,7 +7,7 @@ macro_rules! define_func_codes {
         pub fn fitsh(self, irs: &str) -> Ret<Self> {
             let tks = Tokenizer::new(irs.as_bytes());
             let sytax = Syntax::new(tks.parse()?);
-            let irnodes = sytax.parse()?;
+            let (irnodes, _) = sytax.parse()?;
             self.irnode(irnodes)
         }
 

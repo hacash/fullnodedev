@@ -1,14 +1,13 @@
-
 #[cfg(test)]
 #[allow(unused)]
 mod hrc20 {
 
     use field::*;
 
-    use vm::ir::*;
-    use vm::rt::*;
-    use vm::lang::*;
     use vm::contract::*;
+    use vm::ir::*;
+    use vm::lang::*;
+    use vm::rt::*;
 
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
@@ -34,17 +33,18 @@ mod hrc20 {
             return 0
         "##;
         println!("{:?}", Tokenizer::new(sss.as_bytes()).parse())
-
     }
 
     #[test]
     fn deploy() {
-
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-
-        // info
-        .func(Func::new("info").public().fitsh(r##"
+            // info
+            .func(
+                Func::new("info")
+                    .public()
+                    .fitsh(
+                        r##"
             var ary1 = list[1, 2, 3, 4]
             var inf2 = map{
                 "symbol":  "THT",
@@ -59,20 +59,32 @@ mod hrc20 {
                 insert(infos, "decimals", 8 as u8)
                 return infos
             */
-        "##).unwrap())
-
-        // total_supply
-        .func(Func::new("total_supply").public().fitsh(r##"
+        "##,
+                    )
+                    .unwrap(),
+            )
+            // total_supply
+            .func(
+                Func::new("total_supply")
+                    .public()
+                    .fitsh(
+                        r##"
             let tk = "total"
             var total = storage_load(tk)
             if size(total) != 8 {
                 total = 0 as u64
             }
             return total
-        "##).unwrap())
-
-        // balance_of
-        .func(Func::new("balance_of").public().fitsh(r##"
+        "##,
+                    )
+                    .unwrap(),
+            )
+            // balance_of
+            .func(
+                Func::new("balance_of")
+                    .public()
+                    .fitsh(
+                        r##"
             param { addr }
             assert addr is address
             let bk = "b_" ++ addr
@@ -81,19 +93,30 @@ mod hrc20 {
                 balance = 0 as u64
             }
             return balance
-        "##).unwrap())
-
-        // transfer
-        .func(Func::new("transfer").public().fitsh(r##"
+        "##,
+                    )
+                    .unwrap(),
+            )
+            // transfer
+            .func(
+                Func::new("transfer")
+                    .public()
+                    .fitsh(
+                        r##"
             param { addr_to, amount }
             var addr_from = tx_main_address()
             // print addr_from
             return self.do_transfer(addr_from, addr_to, amount)
-        "##).unwrap())
-
-        // extend
-
-        .func(Func::new("renewal").public().fitsh(r##"
+        "##,
+                    )
+                    .unwrap(),
+            )
+            // extend
+            .func(
+                Func::new("renewal")
+                    .public()
+                    .fitsh(
+                        r##"
             param{ period }
             assert period is u64
             
@@ -106,9 +129,15 @@ mod hrc20 {
             let tk = "total"
             storage_rent(tk, period)
             end
-        "##).unwrap())
-
-        .func(Func::new("offering").public().fitsh(r##"
+        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("offering")
+                    .public()
+                    .fitsh(
+                        r##"
             var addr = tx_main_address()
             var cur_hei = block_height()
             // check time
@@ -124,13 +153,15 @@ mod hrc20 {
             storage_save(bk, bls + 1000000000) // give 10 token
             storage_save(phk, cur_hei)
             end
-        "##).unwrap())
-
-
-
-        // private
-
-        .func(Func::new("do_transfer").fitsh(r##"
+        "##,
+                    )
+                    .unwrap(),
+            )
+            // private
+            .func(
+                Func::new("do_transfer")
+                    .fitsh(
+                        r##"
             param { addr_from, addr_to, amount }
 
             // print 3
@@ -166,20 +197,19 @@ mod hrc20 {
             // print 7
             // finish
             end
-        "##).unwrap())
-        .testnet_deploy_print_by_nonce("12:244", 0);
-    
-
-
+        "##,
+                    )
+                    .unwrap(),
+            )
+            .testnet_deploy_print_by_nonce("12:244", 0);
     }
-
 
     #[test]
     fn maincall() {
-
-
         // main call
-        Maincall::new().fitsh(r##"
+        Maincall::new()
+            .fitsh(
+                r##"
             lib C = 1
             // print 1
             C.offering()
@@ -193,13 +223,9 @@ mod hrc20 {
             print C.balance_of(a2)
             // print 102
             end
-        "##).unwrap()
-        .testnet_call_print("8:244");
-
-
-        
-
+        "##,
+            )
+            .unwrap()
+            .testnet_call_print("8:244");
     }
-
 }
-

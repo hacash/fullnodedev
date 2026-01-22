@@ -1,39 +1,36 @@
-
 mod common;
 
 mod hacds {
 
-
-    use field::*;
-    use vm::*;
-    use vm::contract::*;
     use super::common::checked_compile_fitsh_to_ir;
+    use field::*;
+    use vm::contract::*;
+    use vm::*;
 
     /*
-    
-    cargo test hacds::hip20 --  --nocapture
-    cargo test hacds::deploy --  --nocapture
-    cargo test hacds::deposit --  --nocapture
-    cargo test hacds::withdraw --  --nocapture
-    
+
+        cargo test hacds::hip20 --  --nocapture
+        cargo test hacds::deploy --  --nocapture
+        cargo test hacds::deposit --  --nocapture
+        cargo test hacds::withdraw --  --nocapture
 
 
 
-curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f3a51500e63c33a796b3032ce6b856f68fccf06608d9ed18f401080001001001c6651728988000080135d4470300daabea474d082733333c1b694d80650548414344530b4841434420506965636573f8010100010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263cd6a94d27f6ba95c7710284b47449dc7820892380774ec9a9b277336cdaf628115546199f89b5c9d4e61f74a4196acc961c8d045b3a9e6944db44cf5537e1c6010800"
 
-curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f3a4ff00e63c33a796b3032ce6b856f68fccf06608d9ed18f401080001007a00000000f60104000000000000000000000000000000041b000001002e7f0472440024eba0a58524a68520c8820322096f75745f6861636473eb3892879387b2338532220405f5e100ee241c00000100427f0572440024eba28525eba2b48632220405f5e100248203b38632220405f5e100eba0a58724a68720c8820422086f75745f68616364eb389283049383043287ee241100000100297f0572440024eba58524820322086f75745f6861636482049287eba8388304eba2830485938728ee2412000001002a7f0572440024eba28525820322096f75745f686163647382049287eba8388304eba2830486938728ee240000000000000000000000010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263cab46d2afb7aa25b8045c1c1af60da63aeb0f3623afa71927b3da704e295a737d0e9ccc9efa3f0c0241a14332de1175bf0ffcf5559b47745e72b53a9f26f8c7ce0800"
+    curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f3a51500e63c33a796b3032ce6b856f68fccf06608d9ed18f401080001001001c6651728988000080135d4470300daabea474d082733333c1b694d80650548414344530b4841434420506965636573f8010100010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263cd6a94d27f6ba95c7710284b47449dc7820892380774ec9a9b277336cdaf628115546199f89b5c9d4e61f74a4196acc961c8d045b3a9e6944db44cf5537e1c6010800"
 
-
-curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f39ade1600e63c33a796b3032ce6b856f68fccf06608d9ed180135d4470300daabea474d082733333c1b694d8065f4010c0002000729054b4b4b4b5641485958594859554554574e4b5759554b4b5a45595754554b001229017dcd650000010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263cdab35500c0c1ac5e6c15ca0646bf6871558ef81de380c8690e73936ab4b462ee32e29a553f4c1b5297680ec068fe367ad454ded33946d25e3f26e705466c5d440800"
+    curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f3a4ff00e63c33a796b3032ce6b856f68fccf06608d9ed18f401080001007a00000000f60104000000000000000000000000000000041b000001002e7f0472440024eba0a58524a68520c8820322096f75745f6861636473eb3892879387b2338532220405f5e100ee241c00000100427f0572440024eba28525eba2b48632220405f5e100248203b38632220405f5e100eba0a58724a68720c8820422086f75745f68616364eb389283049383043287ee241100000100297f0572440024eba58524820322086f75745f6861636482049287eba8388304eba2830485938728ee2412000001002a7f0572440024eba28525820322096f75745f686163647382049287eba8388304eba2830486938728ee240000000000000000000000010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263cab46d2afb7aa25b8045c1c1af60da63aeb0f3623afa71927b3da704e295a737d0e9ccc9efa3f0c0241a14332de1175bf0ffcf5559b47745e72b53a9f26f8c7ce0800"
 
 
-curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f3a89d1600e63c33a796b3032ce6b856f68fccf06608d9ed180135d4470300daabea474d082733333c1b694d8065f4010c00020011290171e1a30000082903554554574e4b5759554b4b5a45595754554b00010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263c7a6b7445805203e5dace84b3a8510b5a6b1387e7b6645b7561d45770fc7fb12f01a5ec88294b378e12db71cc52138eadc050a7904f533c1a8798a755d3c2354c0800"
+    curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f39ade1600e63c33a796b3032ce6b856f68fccf06608d9ed180135d4470300daabea474d082733333c1b694d8065f4010c0002000729054b4b4b4b5641485958594859554554574e4b5759554b4b5a45595754554b001229017dcd650000010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263cdab35500c0c1ac5e6c15ca0646bf6871558ef81de380c8690e73936ab4b462ee32e29a553f4c1b5297680ec068fe367ad454ded33946d25e3f26e705466c5d440800"
+
+
+    curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f3a89d1600e63c33a796b3032ce6b856f68fccf06608d9ed180135d4470300daabea474d082733333c1b694d8065f4010c00020011290171e1a30000082903554554574e4b5759554b4b5a45595754554b00010231745adae24044ff09c3541537160abb8d5d720275bbaeed0b3d035b1e8b263c7a6b7445805203e5dace84b3a8510b5a6b1387e7b6645b7561d45770fc7fb12f01a5ec88294b378e12db71cc52138eadc050a7904f533c1a8798a755d3c2354c0800"
 
 
 
-    */
+        */
 
-    
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
     }
@@ -42,7 +39,8 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
     fn deploy() {
         use vm::rt::AbstCall::*;
 
-        let payable_hacd = checked_compile_fitsh_to_ir(r##"
+        let payable_hacd = checked_compile_fitsh_to_ir(
+            r##"
             param { addr, hacd, names }
             assert hacd > 0 && hacd <= 200
             var hk = "out_hacds"
@@ -50,9 +48,11 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             let hacds = (hacd as u64) * 1_0000_0000
             memory_put(hk, hacds)
             return 0
-        "##);
+        "##,
+        );
 
-        let payable_asset = checked_compile_fitsh_to_ir(r##"
+        let payable_asset = checked_compile_fitsh_to_ir(
+            r##"
             param { addr, serial, amount }
             assert serial == 1 // check serial
             assert amount % 1_0000_0000 == 0
@@ -62,9 +62,11 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             assert memory_get(hk) is nil
             memory_put(hk, hacd as u32)
             return 0
-        "##);
+        "##,
+        );
 
-        let permit_hacd = checked_compile_fitsh_to_ir(r##"
+        let permit_hacd = checked_compile_fitsh_to_ir(
+            r##"
             param { addr, dianum, names }
             assert dianum > 0 
             var hk = "out_hacd"
@@ -73,9 +75,11 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             assert hacd == dianum
             memory_put(hk, nil) // clear
             return 0
-        "##);
+        "##,
+        );
 
-        let permit_asset = checked_compile_fitsh_to_ir(r##"
+        let permit_asset = checked_compile_fitsh_to_ir(
+            r##"
             param { addr, serial, amount }
             assert serial == 1 // check serial
             var hk = "out_hacds"
@@ -84,52 +88,47 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             assert hacds == amount
             memory_put(hk, nil) // clear
             return 0
-        "##);
-
-
-        
+        "##,
+        );
 
         // use vm::value::ValueTy as VT;
 
         let contract = Contract::new()
-        .syst(Abst::new(PayableHACD).ircode(payable_hacd).unwrap())
-        .syst(Abst::new(PayableAsset).ircode(payable_asset).unwrap())
-        .syst(Abst::new(PermitHACD).ircode(permit_hacd).unwrap())
-        .syst(Abst::new(PermitAsset).ircode(permit_asset).unwrap())
-        ;
-        println!("\n{} bytes:\n{}\n\n", contract.serialize().len(), contract.serialize().to_hex());
-        contract.testnet_deploy_print("8:244");    
-
-
-
+            .syst(Abst::new(PayableHACD).ircode(payable_hacd).unwrap())
+            .syst(Abst::new(PayableAsset).ircode(payable_asset).unwrap())
+            .syst(Abst::new(PermitHACD).ircode(permit_hacd).unwrap())
+            .syst(Abst::new(PermitAsset).ircode(permit_asset).unwrap());
+        println!(
+            "\n{} bytes:\n{}\n\n",
+            contract.serialize().len(),
+            contract.serialize().to_hex()
+        );
+        contract.testnet_deploy_print("8:244");
     }
-
-
 
     #[test]
     fn deposit() {
         use protocol::action::*;
-        
+
         let _addr = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
         let _cadr = addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS");
 
         let mut act1 = DiaToTrs::new();
         act1.to = AddrOrPtr::from_ptr(1);
-        act1.diamonds = DiamondNameListMax200::from_readable("KKKKVA,HYXYHY,UETWNK,WYUKKZ,EYWTUK").unwrap();
-        
+        act1.diamonds =
+            DiamondNameListMax200::from_readable("KKKKVA,HYXYHY,UETWNK,WYUKKZ,EYWTUK").unwrap();
+
         let mut act2 = AssetFromTrs::new();
         act2.from = AddrOrPtr::from_ptr(1);
         act2.asset = AssetAmt::from(1, 5 * 1_0000_0000).unwrap();
 
         curl_trs_3(vec![Box::new(act1), Box::new(act2)], "12:244");
-
     }
-
 
     #[test]
     fn withdraw() {
         use protocol::action::*;
-        
+
         let _addr = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
         let _cadr = addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS");
 
@@ -140,39 +139,76 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
         let mut act2 = DiaFromTrs::new();
         act2.from = AddrOrPtr::from_ptr(1);
         act2.diamonds = DiamondNameListMax200::from_readable("UETWNK,WYUKKZ,EYWTUK").unwrap();
-        
+
         curl_trs_3(vec![Box::new(act1), Box::new(act2)], "12:244");
     }
 
-
-
-
-
     #[test]
     fn hip20() {
-
-        use sys::*;
         use field::*;
+        use sys::*;
         // use protocol::action::*;
         // use mint::action::*;
 
         let addr1 = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
         let caddr = ContractAddress::calculate(&addr1, &Uint4::from(0));
 
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(0)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(1)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(2)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(3)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(4)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(5)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(6)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(7)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(8)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(9)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(10)).readable());
-        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(11)).readable());
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(0)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(1)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(2)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(3)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(4)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(5)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(6)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(7)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(8)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(9)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(10)).readable()
+        );
+        println!(
+            "{}",
+            ContractAddress::calculate(&addr1, &Uint4::from(11)).readable()
+        );
 
-        println!("ContractAddress: {} {} {} {}", addr1.readable(), caddr.readable(), Uint4::default().uint(), Uint4::default().serialize().hex());
+        println!(
+            "ContractAddress: {} {} {} {}",
+            addr1.readable(),
+            caddr.readable(),
+            Uint4::default().uint(),
+            Uint4::default().serialize().hex()
+        );
 
         let cadr = addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS");
         assert!(caddr == ContractAddress::from_addr(cadr).unwrap());
@@ -186,12 +222,5 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
         act.metadata.name = BytesW1::from(b"HACD Pieces".to_vec()).unwrap();
         act.protocol_fee = Amount::mei(1);
         curl_trs_1(vec![Box::new(act)]);
-
     }
-
-
-
-
-
-
 }

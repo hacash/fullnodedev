@@ -4,15 +4,12 @@
 // use vm::ir::IRCodePrint;
 // use vm::lang::{Tokenizer, Syntax};
 
+use vm::ir::*;
 use vm::lang::*;
 use vm::rt::*;
-use vm::ir::*;
-
-
 
 #[test]
-fn t1(){
-    
+fn t1() {
     // lang_to_bytecode("return 0").unwrap();
 
     let payable_hac_fitsh = r##"
@@ -28,8 +25,6 @@ fn t1(){
     let bytecodes = convert_ir_to_bytecode(&ircodes).unwrap();
 
     println!("\n{}\n", bytecodes.bytecode_print(false).unwrap());
-
-        
 }
 
 #[test]
@@ -157,8 +152,14 @@ fn nested_expression_contexts_emit_expr_opcodes() {
         print if true { { 19 } } else { { 20 } }
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
-    let blockr = ircodes.iter().filter(|b| **b == Bytecode::IRBLOCKR as u8).count();
-    let ifr = ircodes.iter().filter(|b| **b == Bytecode::IRIFR as u8).count();
+    let blockr = ircodes
+        .iter()
+        .filter(|b| **b == Bytecode::IRBLOCKR as u8)
+        .count();
+    let ifr = ircodes
+        .iter()
+        .filter(|b| **b == Bytecode::IRIFR as u8)
+        .count();
     assert!(blockr >= 5);
     assert!(ifr >= 4);
 }

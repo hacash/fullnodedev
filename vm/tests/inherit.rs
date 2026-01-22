@@ -1,4 +1,3 @@
-
 mod common;
 
 #[cfg(test)]
@@ -7,14 +6,14 @@ mod inherit {
 
     use field::*;
 
-    use sha2::digest::typenum::Abs;
-    use vm::action::*;
-    use vm::ir::*;
-    use vm::rt::*;
-    use vm::lang::*;
-    use vm::contract::*;
-    use vm::ContractAddress;
     use super::common::{checked_compile_fitsh_to_ir, compile_fitsh_bytecode};
+    use sha2::digest::typenum::Abs;
+    use vm::ContractAddress;
+    use vm::action::*;
+    use vm::contract::*;
+    use vm::ir::*;
+    use vm::lang::*;
+    use vm::rt::*;
 
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
@@ -37,96 +36,105 @@ mod inherit {
         g3T3uo1A483LRFufXhFwmMaNaT2ZeDXZ9
         */
         let addr = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
-        for i in 0 .. 12 {        
+        for i in 0..12 {
             let caddr = ContractAddress::calculate(&addr, &Uint4::from(i));
             println!("{}", caddr.readable());
         }
     }
 
-
     #[test]
     fn deploy() {
-
-
-
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         let contract = Contract::new()
-        .func(Func::new("f1").public().fitsh("return 1").unwrap())
-        // .func(Func::new("f2").fitsh(" return 2 ").unwrap())
-        .func(Func::new("f3").fitsh("return 3").unwrap())
-        ;
+            .func(Func::new("f1").public().fitsh("return 1").unwrap())
+            // .func(Func::new("f2").fitsh(" return 2 ").unwrap())
+            .func(Func::new("f3").fitsh("return 3").unwrap());
         contract.testnet_deploy_print("8:244");
 
         // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         let contract = Contract::new()
-        .inh(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
-        .func(Func::new("f3").fitsh("return 31").unwrap())
-        .func(Func::new("f4").fitsh("return 4").unwrap())
-        .func(Func::new("f5").public().fitsh(r##"
+            .inh(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
+            .func(Func::new("f3").fitsh("return 31").unwrap())
+            .func(Func::new("f4").fitsh("return 4").unwrap())
+            .func(
+                Func::new("f5")
+                    .public()
+                    .fitsh(
+                        r##"
             print self.f1()
             print self.f2()
             print self.f3()
             print self.f4()
             end
-        "##).unwrap())
-        ;
+        "##,
+                    )
+                    .unwrap(),
+            );
         contract.testnet_deploy_print_by_nonce("8:244", 1);
-
-
     }
 
     #[test]
     fn deploy2() {
-
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-        .func(Func::new("f1").public().fitsh("return 1").unwrap())
-        .func(Func::new("f2").fitsh("return 2").unwrap())
-        .func(Func::new("f3").fitsh("return 3").unwrap())
-        .testnet_deploy_print("8:244");
+            .func(Func::new("f1").public().fitsh("return 1").unwrap())
+            .func(Func::new("f2").fitsh("return 2").unwrap())
+            .func(Func::new("f3").fitsh("return 3").unwrap())
+            .testnet_deploy_print("8:244");
 
         // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         Contract::new()
-        .func(Func::new("f3").fitsh("return 33").unwrap())
-        .func(Func::new("f4").fitsh("return 44").unwrap())
-        .testnet_deploy_print_by_nonce("8:244", 1);
+            .func(Func::new("f3").fitsh("return 33").unwrap())
+            .func(Func::new("f4").fitsh("return 44").unwrap())
+            .testnet_deploy_print_by_nonce("8:244", 1);
 
         // WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
         Contract::new()
-        .inh(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
-        .inh(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
-        .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
-        .func(Func::new("f5").public().fitsh("
+            .inh(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
+            .inh(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
+            .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
+            .func(
+                Func::new("f5")
+                    .public()
+                    .fitsh(
+                        "
             print self.f1()
             print self.f2()
             print self.f3()
             print self.f4()
             end
-        ").unwrap())
-        .testnet_deploy_print_by_nonce("8:244", 2);
+        ",
+                    )
+                    .unwrap(),
+            )
+            .testnet_deploy_print_by_nonce("8:244", 2);
 
         // bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
         Contract::new()
-        .func(Func::new("f6").fitsh("return 6").unwrap())
-        .testnet_deploy_print_by_nonce("8:244", 3);
-        
+            .func(Func::new("f6").fitsh("return 6").unwrap())
+            .testnet_deploy_print_by_nonce("8:244", 3);
+
         // ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz
         Contract::new()
-        .func(Func::new("f7").fitsh("return 7").unwrap())
-        .testnet_deploy_print_by_nonce("8:244", 4);
-        
+            .func(Func::new("f7").fitsh("return 7").unwrap())
+            .testnet_deploy_print_by_nonce("8:244", 4);
+
         // bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe
         Contract::new()
-        .func(Func::new("f8").fitsh("return 8").unwrap())
-        .testnet_deploy_print_by_nonce("8:244", 5);
-        
-        // 
+            .func(Func::new("f8").fitsh("return 8").unwrap())
+            .testnet_deploy_print_by_nonce("8:244", 5);
+
+        //
         let adr = addr("WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm");
         Contract::new()
-        .inh(addr("bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5"))
-        .inh(addr("ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz"))
-        // .inh(addr("bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe"))
-        .func(Func::new("f9").public().fitsh("
+            .inh(addr("bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5"))
+            .inh(addr("ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz"))
+            // .inh(addr("bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe"))
+            .func(
+                Func::new("f9")
+                    .public()
+                    .fitsh(
+                        "
             print self.f1()
             print self.f2()
             print self.f3()
@@ -136,34 +144,28 @@ mod inherit {
             print self.f7()
             // print self.f8()
             end
-        ").unwrap())
-        .testnet_update_print(adr, "8:244");
-
-
-
-
+        ",
+                    )
+                    .unwrap(),
+            )
+            .testnet_update_print(adr, "8:244");
     }
-
 
     #[test]
     fn call1() {
-
-
-        let maincodes = compile_fitsh_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(
+            r##"
             lib C = 3: WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
             C.f9()
             end
-        "##);
+        "##,
+        );
 
         let act = ContractMainCall::from_bytecode(maincodes).unwrap();
         // print
         curl_trs_3(vec![Box::new(act)], "24:244");
     }
-
-
-
 }
-
 
 /*
 

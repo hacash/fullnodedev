@@ -1,23 +1,20 @@
-
 #[cfg(test)]
 #[allow(unused)]
 mod storage {
 
     use field::*;
 
-    use vm::ir::*;
-    use vm::rt::*;
-    use vm::lang::*;
     use vm::contract::*;
+    use vm::ir::*;
+    use vm::lang::*;
+    use vm::rt::*;
 
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
     }
 
-
     #[test]
     fn sto1() {
-
         let f1 = r##"
             param { rent, num }
             assert num is not nil
@@ -102,23 +99,8 @@ mod storage {
 
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-        .func(Func::new("total").public().fitsh(f3).unwrap())
-        .func(Func::new("sto1").public().fitsh(f2).unwrap())
-        .testnet_deploy_print_by_nonce("12:244", 0);
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
+            .func(Func::new("total").public().fitsh(f3).unwrap())
+            .func(Func::new("sto1").public().fitsh(f2).unwrap())
+            .testnet_deploy_print_by_nonce("12:244", 0);
     }
-
 }

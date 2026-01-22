@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use vm::IRNode;
-use vm::ir::{convert_ir_to_bytecode, parse_ir_block, IRCodePrint};
+use vm::ir::{IRCodePrint, convert_ir_to_bytecode, parse_ir_block};
 use vm::lang::{lang_to_ircode, lang_to_irnode};
 use vm::rt::Bytecode;
 
@@ -45,7 +45,10 @@ pub fn checked_compile_fitsh_to_ir(script: &str) -> Vec<u8> {
         let bytecodes_roundtrip = convert_ir_to_bytecode(&ircodes_roundtrip).unwrap();
         assert_eq!(bytecodes, bytecodes_roundtrip);
     } else {
-        eprintln!("warning: Fitsh roundtrip parse failed for script:\n{}\n", decompiled);
+        eprintln!(
+            "warning: Fitsh roundtrip parse failed for script:\n{}\n",
+            decompiled
+        );
     }
     ircodes
 }

@@ -1,4 +1,4 @@
-
+use crate::rt::{Bytecode, SourceMap};
 
 pub trait IRNode : DynClone {
     fn bytecode(&self) -> u8;
@@ -15,7 +15,7 @@ pub trait IRNode : DynClone {
             }
         }
     }
-    fn print(&self, _sou: &str, _tab: usize, _desc: bool) -> String {
+    fn print(&self, _sou: &str, _tab: usize, _desc: bool, _map: Option<&SourceMap>) -> String {
         "IRNode".to_owned()
     }
     // fn childx(&self) -> &dyn IRNode { panic_never_call_this!() }
@@ -24,12 +24,12 @@ pub trait IRNode : DynClone {
     // fn subnodes(&self) -> Vec<&dyn IRNode> { panic_never_call_this!() }
     // compile
     // fn parsing(&mut self, seek: &mut usize) -> RetErr { panic_never_call_this!() }
-    fn codegen(&self) -> VmrtRes<Vec<u8>> {
+    fn codegen(&self) -> crate::VmrtRes<Vec<u8>> {
         let mut buf = Vec::new();
         self.codegen_into(&mut buf)?;
         Ok(buf)
     }
-    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> crate::VmrtRes<()> {
         buf.push(self.bytecode());
         Ok(())
     }

@@ -1,14 +1,8 @@
-
-
-
-
-
 #[cfg(test)]
 mod other {
 
-
-    use vm::*;
     use vm::rt::*;
+    use vm::*;
 
     use vm::action::*;
     use vm::contract::*;
@@ -16,33 +10,29 @@ mod other {
     use field::*;
 
     use protocol::action::*;
-    
+
     #[test]
     fn test1() {
-
         let mut act2 = ContractMainCall::new();
         act2.ctype = Uint1::from(1);
         act2.codes = BytesW2::from(hex::decode("4e010101414b8059f00000").unwrap()).unwrap();
         // print
         // curl_trs(vec![Box::new(act2)]);
-
-    
     }
-
-
 
     #[test]
     fn test2() {
-
         use Bytecode::*;
 
         let mut syscal1 = ContractAbstCall::new();
         syscal1.sign = Fixed1::from([5]); // PermitHAC   : 5
         syscal1.cdty = Fixed1::from([0]);
-        let codes = vec![hex::decode("0601434e03").unwrap(), 
+        let codes = vec![
+            hex::decode("0601434e03").unwrap(),
             150000000u32.to_be_bytes().to_vec(),
-            hex::decode("437cec").unwrap()
-        ].concat();
+            hex::decode("437cec").unwrap(),
+        ]
+        .concat();
         syscal1.code = BytesW2::from(codes).unwrap(); // return true
         // amt < 1 zhu
         let mut syscal2 = ContractAbstCall::new();
@@ -55,7 +45,8 @@ mod other {
         usrfun1.cdty = Fixed1::from([0b10000000]);
         usrfun1.code = BytesW2::from(build_codes!(
             CU16 DUP ADD RET
-        )).unwrap(); /* a = a + a; return a */
+        ))
+        .unwrap(); /* a = a + a; return a */
         let mut csto = ContractSto::new();
         csto.abstcalls.push(syscal1).unwrap();
         csto.abstcalls.push(syscal2).unwrap();
@@ -66,13 +57,10 @@ mod other {
 
         // print
         curl_trs_1(vec![Box::new(act2)]);
-
-    
     }
 
     #[test]
     fn asset_issue() {
-
         use field::*;
         use protocol::action::*;
         // use mint::action::*;
@@ -84,7 +72,6 @@ mod other {
 
         let cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
         assert!(caddr == ContractAddress::from_addr(cadr).unwrap());
-
 
         let mut act = mint::action::AssetCreate::new();
         act.metadata.issuer = cadr;
@@ -100,26 +87,20 @@ mod other {
         act.to = AddrOrPtr::from_addr(cadr);
         act.hacash = Amount::mei(2);
         curl_trs_1(vec![Box::new(act)]);
-        
+
         let mut act = HacFromTrs::new();
         act.from = AddrOrPtr::from_addr(cadr);
         act.hacash = Amount::mei(2);
         curl_trs_1(vec![Box::new(act)]);
-        
-    
+
         let mut act = HacFromTrs::new();
         act.from = AddrOrPtr::from_addr(cadr);
         act.hacash = Amount::mei(1);
         curl_trs_1(vec![Box::new(act)]);
-        
-    
     }
-
-
 
     #[test]
     fn test4() {
-
         /*
             123456789ABCDEFGHJKLMNP QRSTUVWXYZ abcdefghijk mno pqrstuvwxyz
         */
@@ -132,30 +113,23 @@ mod other {
             println!("- ---------  addr: {}", Account::to_readable(&adr));
         }
         let addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
-        println!("++++++++ addr: {}", ContractAddress::calculate(&addr, &Uint4::from(1)).readable());
-
+        println!(
+            "++++++++ addr: {}",
+            ContractAddress::calculate(&addr, &Uint4::from(1)).readable()
+        );
     }
-
 
     #[test]
     fn test5() {
-
-
         let adr = Address::from_readable("1EuGe2GU8tDKnHLNfBsgyffx66buK7PP6g").unwrap();
 
         let mut act = HacToTrs::new();
         act.to = AddrOrPtr::from_addr(adr);
         act.hacash = Amount::mei(4);
 
-        
         curl_trs_1(vec![Box::new(act.clone())]);
-
-
     }
-
-
 }
-
 
 /*
 http://127.0.0.1:8088/query/contract/sandboxcall?contract=emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS&funcname=testadd&param=0005&retabi=[res:U2]

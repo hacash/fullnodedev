@@ -21,6 +21,7 @@ pub struct Syntax {
     expect_retval: bool,
     // leftv: Box<dyn AST>,
     irnode: IRNodeBlock,
+    source_map: SourceMap,
 }
 
 
@@ -81,7 +82,8 @@ impl Syntax {
         if let Some(adr) = adr {
             adr.must_contract()?;
         }
-        self.bdlibs.insert(s, (idx, adr));
+        self.bdlibs.insert(s.clone(), (idx, adr.clone()));
+        self.source_map.register_lib(idx, s, adr)?;
         Ok(())
     }
 
@@ -156,7 +158,8 @@ impl Syntax {
             }
             self.local_alloc = idx + 1;
         }
-        self.register_var_symbol(s, SymbolEntry::Var(idx))?;
+        self.register_var_symbol(s.clone(), SymbolEntry::Var(idx))?;
+        self.source_map.register_slot(idx, s)?;
         Ok(push_empty())
     }
 
@@ -537,7 +540,8 @@ impl Syntax {
                     return e1
                 };
                 self.idx += 1;
-                let fnsg = calc_func_sign(func);
+                let fnsg = calc_func_sign(&func);
+                self.source_map.register_func(fnsg, func.clone())?;
                 let fnpm = self.deal_func_argv()?;
                 return Ok(match &id=="self" {
                     true => { // CALLINR
@@ -557,7 +561,8 @@ impl Syntax {
                     return e1
                 };
                 self.idx += 1;
-                let fnsg = calc_func_sign(func);
+                let fnsg = calc_func_sign(&func);
+                self.source_map.register_func(fnsg, func.clone())?;
                 let fnpm = self.deal_func_argv()?;
                 let inst = maybe!(is_static, CALLSTATIC, CALLLIB);
                 let libi = self.link_lib(&id)?;
@@ -933,7 +938,7 @@ impl Syntax {
     }
 
 
-    pub fn parse(mut self) -> Ret<IRNodeBlock> {
+    pub fn parse(mut self) -> Ret<(IRNodeBlock, SourceMap)> {
         // for local alloc
         self.irnode.push(push_empty());
         // bodys
@@ -951,7 +956,9 @@ impl Syntax {
         }else{
             self.irnode.subs.remove(0); // no local var
         }
-        Ok(self.irnode)
+        let block = self.irnode;
+        let source_map = self.source_map;
+        Ok((block, source_map))
     }
 
 

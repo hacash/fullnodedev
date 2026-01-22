@@ -1,100 +1,102 @@
-
-
-
-
 mod common;
-
 
 #[cfg(test)]
 mod deploy {
     use field::*;
     use protocol::action::*;
 
-    use vm::*;
-    use vm::ir::*;
-    use vm::rt::*;
-    use vm::lang::*;
-    use vm::rt::Bytecode::*;
-    use vm::rt::AbstCall::*;
-    use vm::contract::*;
     use super::common::compile_fitsh_bytecode;
+    use vm::contract::*;
+    use vm::ir::*;
+    use vm::lang::*;
+    use vm::rt::AbstCall::*;
+    use vm::rt::Bytecode::*;
+    use vm::rt::*;
+    use vm::*;
 
     #[test]
     fn deploy_update_2() {
-
         let _cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let contract = Contract::new()
-        .func(Func::new("f1").public().fitsh(" return 1 ").unwrap())
-        .func(Func::new("f2").public().fitsh(" return 2 ").unwrap());
-        contract.testnet_deploy_print("8:244");  
+            .func(Func::new("f1").public().fitsh(" return 1 ").unwrap())
+            .func(Func::new("f2").public().fitsh(" return 2 ").unwrap());
+        contract.testnet_deploy_print("8:244");
 
-        let contract = Contract::new()  
-        .syst(Abst::new(AbstCall::Change).bytecode(build_codes!(P1 RET)).unwrap())
-        .func(Func::new("f4").public().fitsh(" return 4 ").unwrap());
+        let contract = Contract::new()
+            .syst(
+                Abst::new(AbstCall::Change)
+                    .bytecode(build_codes!(P1 RET))
+                    .unwrap(),
+            )
+            .func(Func::new("f4").public().fitsh(" return 4 ").unwrap());
         contract.testnet_update_print(_cadr, "8:244");
-
     }
-
 
     #[test]
     fn deploy_update() {
-
-
         let irnode = lang_to_irnode(" return 1 ").unwrap();
         println!("{:?}", irnode);
-
 
         let _cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let contract = Contract::new()
-        .syst(Abst::new(AbstCall::Append).bytecode(build_codes!(P0 RET)).unwrap())
-        .syst(Abst::new(AbstCall::Change).bytecode(build_codes!(P0 RET)).unwrap())
-        .func(Func::new("f1").public().fitsh(" return 1 ").unwrap())
-        .func(Func::new("f2").public().fitsh(" return 2 ").unwrap());
-        contract.testnet_deploy_print("8:244");    
+            .syst(
+                Abst::new(AbstCall::Append)
+                    .bytecode(build_codes!(P0 RET))
+                    .unwrap(),
+            )
+            .syst(
+                Abst::new(AbstCall::Change)
+                    .bytecode(build_codes!(P0 RET))
+                    .unwrap(),
+            )
+            .func(Func::new("f1").public().fitsh(" return 1 ").unwrap())
+            .func(Func::new("f2").public().fitsh(" return 2 ").unwrap());
+        contract.testnet_deploy_print("8:244");
 
-        let contract = Contract::new()        
-        .func(Func::new("f2").public().fitsh(" return 2 ").unwrap())
-        .func(Func::new("f3").public().fitsh(" return 3 ").unwrap());
+        let contract = Contract::new()
+            .func(Func::new("f2").public().fitsh(" return 2 ").unwrap())
+            .func(Func::new("f3").public().fitsh(" return 3 ").unwrap());
         contract.testnet_update_print(_cadr, "8:244");
 
-        let contract = Contract::new()  
-        .syst(Abst::new(AbstCall::Append).bytecode(build_codes!(P1 RET)).unwrap())
-        .func(Func::new("f4").public().fitsh(" return 4 ").unwrap());
+        let contract = Contract::new()
+            .syst(
+                Abst::new(AbstCall::Append)
+                    .bytecode(build_codes!(P1 RET))
+                    .unwrap(),
+            )
+            .func(Func::new("f4").public().fitsh(" return 4 ").unwrap());
         contract.testnet_update_print(_cadr, "8:244");
 
-        let contract = Contract::new()  
-        .func(Func::new("f5").public().fitsh(" return 5 ").unwrap());
+        let contract = Contract::new().func(Func::new("f5").public().fitsh(" return 5 ").unwrap());
         contract.testnet_update_print(_cadr, "8:244");
 
-        let contract = Contract::new()  
-        .func(Func::new("f4").public().fitsh(" return 41 ").unwrap());
+        let contract = Contract::new().func(Func::new("f4").public().fitsh(" return 41 ").unwrap());
         contract.testnet_update_print(_cadr, "8:244");
 
-        let contract = Contract::new()  
-        .syst(Abst::new(AbstCall::Change).bytecode(build_codes!(P1 RET)).unwrap())
-        .func(Func::new("f6").public().fitsh(" return 6 ").unwrap());
+        let contract = Contract::new()
+            .syst(
+                Abst::new(AbstCall::Change)
+                    .bytecode(build_codes!(P1 RET))
+                    .unwrap(),
+            )
+            .func(Func::new("f6").public().fitsh(" return 6 ").unwrap());
         contract.testnet_update_print(_cadr, "8:244");
 
-        let contract = Contract::new()  
-        .func(Func::new("f4").public().fitsh(" return 42 ").unwrap());
+        let contract = Contract::new().func(Func::new("f4").public().fitsh(" return 42 ").unwrap());
         contract.testnet_update_print(_cadr, "8:244");
-
-
     }
-
 
     #[test]
     fn recursion() {
-
         /*
             emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 
 
         */
 
-        let recursion_fnstr= r##"
+        let recursion_fnstr = r##"
             bytecode {
                 PU8 1
                 PU8 2
@@ -109,8 +111,8 @@ mod deploy {
             return foo + bar
         "##;
 
-
-        let payable_hac_codes = compile_fitsh_bytecode(r##"
+        let payable_hac_codes = compile_fitsh_bytecode(
+            r##"
             var pms $0 = pick(0)
             var adr $1
             var res $2
@@ -125,49 +127,53 @@ mod deploy {
             assert bdt
 
             return res
-        "##);
-
-
+        "##,
+        );
 
         let codes = compile_fitsh_bytecode(recursion_fnstr);
         println!("{}", codes.bytecode_print(false).unwrap());
         println!("{} {}", codes.len(), codes.to_hex());
 
-        println!("payable_hac: \n{}", payable_hac_codes.bytecode_print(true).unwrap());
+        println!(
+            "payable_hac: \n{}",
+            payable_hac_codes.bytecode_print(true).unwrap()
+        );
         println!("payable_hac codes: {}", payable_hac_codes.to_hex());
-
 
         let permit_hac = convert_ir_to_bytecode(&build_codes!(
             RET CHOISE
                 GT CU64 EXTENV 1 PU8 10
                 PU8 99
-                PU8 0 
-        )).unwrap();
+                PU8 0
+        ))
+        .unwrap();
 
         let contract = Contract::new()
-        .argv(vec![0])
-        .syst(Abst::new(Construct).bytecode(build_codes!(
-            CU8 RET
-        )).unwrap())
-        .syst(Abst::new(PermitHAC).bytecode(permit_hac).unwrap())
-        .syst(Abst::new(PayableHAC).bytecode(payable_hac_codes).unwrap())
-        .func(Func::new("recursion").fitsh(recursion_fnstr).unwrap())
-        ;
+            .argv(vec![0])
+            .syst(
+                Abst::new(Construct)
+                    .bytecode(build_codes!(
+                        CU8 RET
+                    ))
+                    .unwrap(),
+            )
+            .syst(Abst::new(PermitHAC).bytecode(permit_hac).unwrap())
+            .syst(Abst::new(PayableHAC).bytecode(payable_hac_codes).unwrap())
+            .func(Func::new("recursion").fitsh(recursion_fnstr).unwrap());
         // println!("\n\n{}\n\n", contract.serialize().to_hex());
-        contract.testnet_deploy_print("2:244");    
-
+        contract.testnet_deploy_print("2:244");
     }
-
 
     #[test]
     // fn call_recursion() {
     fn maincall1() {
-
         use vm::action::*;
 
-        let maincodes = compile_fitsh_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(
+            r##"
             throw "1"
-        "##);
+        "##,
+        );
 
         println!("{}", maincodes.bytecode_print(true).unwrap());
 
@@ -177,14 +183,11 @@ mod deploy {
 
         // print
         curl_trs_1(vec![Box::new(act)]);
-
     }
-
 
     #[test]
     // fn call_recursion() {
     fn call_transfer() {
-
         let adr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let mut act = HacToTrs::new();
@@ -192,14 +195,5 @@ mod deploy {
         act.hacash = Amount::mei(5);
 
         curl_trs_1(vec![Box::new(act.clone())]);
-
     }
-
-
-
-
-
-
-
-
 }

@@ -103,13 +103,13 @@ mod token_t {
         println!("tokens: {:?}", tkmng1.parse().unwrap());
 
         let sytax1 = Syntax::new(tkmng2.parse().unwrap());
-        let astblock = sytax1.parse().unwrap();
+        let (astblock, _) = sytax1.parse().unwrap();
         let irnodes = astblock.serialize().split_off(3);
         println!("asts len: {}", astblock.len());
 
         println!("irnodes: \n\n{}  len: {}\n\n", irnodes.hex(), irnodes.len());
-        println!("irnodes: \n\n{}\n\n{}\n\n", astblock.print("  ", 0, false), irnodes.ircode_print(false).unwrap());
-        println!("irnodes: \n\n{}\n\n{}\n\n{}\n", sss, astblock.print("    ", 0, true), irnodes.ircode_print(true).unwrap());
+        println!("irnodes: \n\n{}\n\n{}\n\n", astblock.print("  ", 0, false, None), irnodes.ircode_print(false).unwrap());
+        println!("irnodes: \n\n{}\n\n{}\n\n{}\n", sss, astblock.print("    ", 0, true, None), irnodes.ircode_print(true).unwrap());
         let codes = astblock.codegen().unwrap();
         println!("bytecode: \n\n{}  len: {}\n\n", codes.hex(), codes.len());
         println!("bytecode: \n\n{}\n\n", codes.bytecode_print(false).unwrap());

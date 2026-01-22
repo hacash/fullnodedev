@@ -1,5 +1,3 @@
-
-
 mod common;
 
 #[cfg(test)]
@@ -11,23 +9,28 @@ mod amm {
 
     use vm::*;
     // use vm::ir::*;
-    use vm::rt::*;
-    use vm::lang::*;
-    use vm::rt::Bytecode::*;
-    use vm::rt::AbstCall::*;
-    use vm::contract::*;
     use super::common::{checked_compile_fitsh_to_ir, compile_fitsh_bytecode};
+    use vm::contract::*;
+    use vm::lang::*;
+    use vm::rt::AbstCall::*;
+    use vm::rt::Bytecode::*;
+    use vm::rt::*;
 
     #[test]
     fn op() {
         use vm::ir::*;
 
-        println!("\n{}\n", compile_fitsh_bytecode(r##"
+        println!(
+            "\n{}\n",
+            compile_fitsh_bytecode(
+                r##"
             var foo = (1 + 2) * 3 * (4 * 5) / (6 / (7 + 8))
-        "##).bytecode_print(true).unwrap());
-
+        "##
+            )
+            .bytecode_print(true)
+            .unwrap()
+        );
     }
-
 
     #[test]
     fn deploy() {
@@ -39,7 +42,6 @@ mod amm {
             emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 
         */
-
 
         let payable_sat_fitsh = r##"
             param { addr, sat }
@@ -59,7 +61,6 @@ mod amm {
 
         let payable_sat = checked_compile_fitsh_to_ir(&payable_sat_fitsh);
         println!("\n{}\n", payable_sat.ircode_print(true).unwrap());
-
 
         let payable_hac_fitsh = r##"
             // HAC Pay
@@ -89,16 +90,16 @@ mod amm {
         let payable_hac = checked_compile_fitsh_to_ir(&payable_hac_fitsh);
 
         println!("\n{}\n", payable_hac.ircode_print(true).unwrap());
-        
-        /* println!("payable_hac byte code len {} : {}\n\n{}\n\n{}", 
-            payable_hac.len(), 
-            payable_hac.to_hex(), 
+
+        /* println!("payable_hac byte code len {} : {}\n\n{}\n\n{}",
+            payable_hac.len(),
+            payable_hac.to_hex(),
             compile_fitsh_bytecode(&payable_hac_fitsh).bytecode_print(true).unwrap(),
             payable_hac.ircode_print(true).unwrap()
         ); */
-        
 
-        let prepare_codes = checked_compile_fitsh_to_ir(r##"
+        let prepare_codes = checked_compile_fitsh_to_ir(
+            r##"
             param { sat, zhu, deadline }
             assert deadline >= block_height()
             assert sat >= 1000 && zhu >= 10000
@@ -121,13 +122,17 @@ mod amm {
             memory_put(k_in_sat, sat)
             memory_put(k_in_zhu, in_zhu)
             return in_zhu
-        "##);
-        println!("prepare_codes:\n{}\n{}\n", prepare_codes.ircode_print(true).unwrap(), prepare_codes.to_hex());
+        "##,
+        );
+        println!(
+            "prepare_codes:\n{}\n{}\n",
+            prepare_codes.ircode_print(true).unwrap(),
+            prepare_codes.to_hex()
+        );
         let prepare_codes = convert_ir_to_bytecode(&prepare_codes).unwrap();
 
-
-
-        let deposit_codes = checked_compile_fitsh_to_ir(r##"
+        let deposit_codes = checked_compile_fitsh_to_ir(
+            r##"
             param { addr, sat, zhu }
             // get total
             var tt_shares $3
@@ -146,12 +151,17 @@ mod amm {
             my_shares += zhu as u64
             storage_save(lq_k, my_shares)
             end
-        "##);
-        println!("deposit_codes:\n{}\n{}\n", deposit_codes.ircode_print(true).unwrap(), deposit_codes.to_hex());
+        "##,
+        );
+        println!(
+            "deposit_codes:\n{}\n{}\n",
+            deposit_codes.ircode_print(true).unwrap(),
+            deposit_codes.to_hex()
+        );
         let deposit_codes = convert_ir_to_bytecode(&deposit_codes).unwrap();
 
-
-        let withdraw_codes = checked_compile_fitsh_to_ir(r##"
+        let withdraw_codes = checked_compile_fitsh_to_ir(
+            r##"
             param { addr, shares }
             // get total
             var tt_shares $2
@@ -188,13 +198,17 @@ mod amm {
             append(reslist, my_sat as u64)
             append(reslist, my_zhu as u64)
             return reslist
-        "##);
-        println!("withdraw_codes:\n{}\n{}\n", withdraw_codes.ircode_print(true).unwrap(), withdraw_codes.to_hex());
+        "##,
+        );
+        println!(
+            "withdraw_codes:\n{}\n{}\n",
+            withdraw_codes.ircode_print(true).unwrap(),
+            withdraw_codes.to_hex()
+        );
         let withdraw_codes = convert_ir_to_bytecode(&withdraw_codes).unwrap();
 
-
-
-        let buy_codes = checked_compile_fitsh_to_ir(r##"
+        let buy_codes = checked_compile_fitsh_to_ir(
+            r##"
             param { sat, max_zhu, deadline }
             assert deadline >= block_height()
             assert sat>0 && max_zhu>0
@@ -210,12 +224,17 @@ mod amm {
             memory_put("buy_hac", zhu_to_hac(zhu))
             memory_put("out_sat", sat)
             return zhu
-        "##);
-        println!("buy_codes:\n{}\n{}\n", buy_codes.ircode_print(true).unwrap(), buy_codes.to_hex());
+        "##,
+        );
+        println!(
+            "buy_codes:\n{}\n{}\n",
+            buy_codes.ircode_print(true).unwrap(),
+            buy_codes.to_hex()
+        );
         let buy_codes = convert_ir_to_bytecode(&buy_codes).unwrap();
 
-
-        let sell_codes = checked_compile_fitsh_to_ir(r##"
+        let sell_codes = checked_compile_fitsh_to_ir(
+            r##"
             param { sat, min_zhu, deadline }
             assert deadline >= block_height()
             // get total
@@ -230,13 +249,17 @@ mod amm {
             memory_put("sell_sat", sat)
             memory_put("out_hac", zhu_to_hac(out_zhu))
             return out_zhu
-        "##);
-        println!("sell_codes:\n{}\n{}\n", sell_codes.ircode_print(true).unwrap(), sell_codes.to_hex());
+        "##,
+        );
+        println!(
+            "sell_codes:\n{}\n{}\n",
+            sell_codes.ircode_print(true).unwrap(),
+            sell_codes.to_hex()
+        );
         let sell_codes = convert_ir_to_bytecode(&sell_codes).unwrap();
 
-
-
-        let permit_sat = compile_fitsh_bytecode(r##"
+        let permit_sat = compile_fitsh_bytecode(
+            r##"
             param { addr, sat}
             assert memory_get("hac_in")
             var ot_k = "out_sat"
@@ -245,9 +268,11 @@ mod amm {
             memory_put(ot_k, nil)
             // ok
             return 0
-        "##);
+        "##,
+        );
 
-        let permit_hac = compile_fitsh_bytecode(r##"
+        let permit_hac = compile_fitsh_bytecode(
+            r##"
             param { addr, hac}
             assert memory_get("sat_in")
             var ot_k = "out_hac"
@@ -257,11 +282,11 @@ mod amm {
             // ok
             return 0
         
-        "##);
+        "##,
+        );
 
-
-
-        let total_codes = compile_fitsh_bytecode(r##"
+        let total_codes = compile_fitsh_bytecode(
+            r##"
             // get total
             var tt_k = "total_shares"
             var total = storage_load(tt_k)
@@ -281,10 +306,11 @@ mod amm {
             let tt_sat = buf_left(8, ctxadr) as u64
             let tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
             return [tt_shares, tt_sat, tt_zhu]
-        "##);
+        "##,
+        );
 
-
-        let shares_codes = compile_fitsh_bytecode(r##"
+        let shares_codes = compile_fitsh_bytecode(
+            r##"
             // get shares
             var lq_k = pick(0) ++ "_shares"
             var my_shares = storage_load(lq_k)
@@ -292,54 +318,90 @@ mod amm {
                 return 0
             }
             return my_shares
-        "##);
+        "##,
+        );
 
-
-        println!("shares_codes:\n{}\n{}\n", shares_codes.bytecode_print(true).unwrap(), shares_codes.to_hex());
-
-
+        println!(
+            "shares_codes:\n{}\n{}\n",
+            shares_codes.bytecode_print(true).unwrap(),
+            shares_codes.to_hex()
+        );
 
         use vm::value::ValueTy as VT;
 
         let contract = Contract::new()
-        .syst(Abst::new(PayableSAT).ircode(payable_sat).unwrap())
-        .syst(Abst::new(PayableHAC).ircode(payable_hac).unwrap())
-        .syst(Abst::new(PermitSAT).bytecode(permit_sat).unwrap())
-        .syst(Abst::new(PermitHAC).bytecode(permit_hac).unwrap())
-        .func(Func::new("prepare").public()
-            .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64]).bytecode(prepare_codes).unwrap())
-        .func(Func::new("deposit")
-            .types(None, vec![VT::Address, VT::U64, VT::U64]).bytecode(deposit_codes).unwrap())
-        .func(Func::new("withdraw").public()
-            .types(None, vec![VT::Address, VT::U128]).bytecode(withdraw_codes).unwrap())
-        .func(Func::new("buy").public()
-            .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64]).bytecode(buy_codes).unwrap())
-        .func(Func::new("sell").public()
-            .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64]).bytecode(sell_codes).unwrap())
-        .func(Func::new("total").public()
-            .types(None, vec![]).bytecode(total_codes).unwrap())
-        .func(Func::new("shares").public()
-            .types(Some(VT::U128), vec![VT::Address]).bytecode(shares_codes).unwrap())
-        ;
-        println!("\n{} bytes:\n{}\n\n", contract.serialize().len(), contract.serialize().to_hex());
-        contract.testnet_deploy_print("8:244");    
-
+            .syst(Abst::new(PayableSAT).ircode(payable_sat).unwrap())
+            .syst(Abst::new(PayableHAC).ircode(payable_hac).unwrap())
+            .syst(Abst::new(PermitSAT).bytecode(permit_sat).unwrap())
+            .syst(Abst::new(PermitHAC).bytecode(permit_hac).unwrap())
+            .func(
+                Func::new("prepare")
+                    .public()
+                    .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
+                    .bytecode(prepare_codes)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("deposit")
+                    .types(None, vec![VT::Address, VT::U64, VT::U64])
+                    .bytecode(deposit_codes)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("withdraw")
+                    .public()
+                    .types(None, vec![VT::Address, VT::U128])
+                    .bytecode(withdraw_codes)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("buy")
+                    .public()
+                    .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
+                    .bytecode(buy_codes)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("sell")
+                    .public()
+                    .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
+                    .bytecode(sell_codes)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("total")
+                    .public()
+                    .types(None, vec![])
+                    .bytecode(total_codes)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("shares")
+                    .public()
+                    .types(Some(VT::U128), vec![VT::Address])
+                    .bytecode(shares_codes)
+                    .unwrap(),
+            );
+        println!(
+            "\n{} bytes:\n{}\n\n",
+            contract.serialize().len(),
+            contract.serialize().to_hex()
+        );
+        contract.testnet_deploy_print("8:244");
 
         let acc = sys::Account::create_by("123457").unwrap();
         println!("\n{}", acc.readable());
-
     }
-
 
     #[test]
     // fn call_recursion() {
-    // 
+    //
     // function
     fn maincall_add() {
-
         use vm::action::*;
-        
-        let maincodes = compile_fitsh_bytecode(r##"
+
+        let maincodes = compile_fitsh_bytecode(
+            r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 100000000 as u64 // 1 BTC
             var zhu = HacSwap.prepare(sat, 100000000000, 50) // 1k HAC
@@ -348,7 +410,8 @@ mod amm {
             transfer_sat_to(adr, sat)
             transfer_hac_to(adr, zhu_to_hac(zhu))
             end
-        "##);
+        "##,
+        );
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());
@@ -358,16 +421,14 @@ mod amm {
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");
-
     }
-
 
     #[test]
     fn maincall_remove() {
-
         use vm::action::*;
-        
-        let maincodes = compile_fitsh_bytecode(r##"
+
+        let maincodes = compile_fitsh_bytecode(
+            r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var shares = 50000000000 as u64 // 500HAC
             var coins = HacSwap.withdraw(tx_main_address(), shares) // 1k HAC
@@ -377,7 +438,8 @@ mod amm {
             transfer_sat_from(adr, sat)
             transfer_hac_from(adr, zhu_to_hac(zhu))
             end
-        "##);
+        "##,
+        );
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());
@@ -387,16 +449,14 @@ mod amm {
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");
-
     }
-
 
     #[test]
     fn maincall_buy() {
-
         use vm::action::*;
-        
-        let maincodes = compile_fitsh_bytecode(r##"
+
+        let maincodes = compile_fitsh_bytecode(
+            r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 10963 as u64 // 50HAC
             var zhu = HacSwap.buy(sat, 10000000000, 300)
@@ -404,7 +464,8 @@ mod amm {
             transfer_hac_to(adr, zhu_to_hac(zhu))
             transfer_sat_from(adr, sat)
             end
-        "##);
+        "##,
+        );
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());
@@ -414,17 +475,14 @@ mod amm {
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");
-
     }
-
-
 
     #[test]
     fn maincall_sell() {
-
         use vm::action::*;
-        
-        let maincodes = compile_fitsh_bytecode(r##"
+
+        let maincodes = compile_fitsh_bytecode(
+            r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 4626909 as u64
             var zhu = HacSwap.sell(sat, 100000, 300)
@@ -432,7 +490,8 @@ mod amm {
             transfer_sat_to(adr, sat)
             transfer_hac_from(adr, zhu_to_hac(zhu))
             end
-        "##);
+        "##,
+        );
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());
@@ -442,14 +501,10 @@ mod amm {
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");
-
     }
-
-
 
     #[test]
     fn transfer1() {
-
         let adr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let mut act = HacToTrs::new();
@@ -457,34 +512,20 @@ mod amm {
         act.hacash = Amount::mei(5);
 
         curl_trs_1(vec![Box::new(act.clone())]);
-
     }
-
-
 
     #[test]
     fn transfer2() {
-
         let adr = Address::from_readable("18dekVcACnj6Tbd69SsexVMQ5KLBZZfn5K").unwrap();
 
         let mut act1 = HacToTrs::new();
         act1.to = AddrOrPtr::from_addr(adr);
         act1.hacash = Amount::mei(15000);
-        
+
         let mut act2 = SatToTrs::new();
         act2.to = AddrOrPtr::from_addr(adr);
         act2.satoshi = Satoshi::from(500000000);
-        
 
         curl_trs_1(vec![Box::new(act1.clone()), Box::new(act2.clone())]);
-
     }
-
-
-
-
-
-
-
-
 }
