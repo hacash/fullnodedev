@@ -5,6 +5,7 @@
 // use vm::lang::{Tokenizer, Syntax};
 
 use vm::ir::*;
+use vm::IRNode;
 use vm::lang::*;
 use vm::rt::*;
 
@@ -42,17 +43,43 @@ fn let_slot_and_cache_print() {
 }
 
 #[test]
-fn calllib_callself_print() {
+fn calllib_callinr_print() {
     let script = r##"
         calllib 2::abcdef01()
-        callself 11223344()
+        callinr 11223344()
         callstatic 3::deadbeef()
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircodes.ircode_print(true).unwrap();
-    assert!(printed.contains("calllib 2::abcdef01("));
-    assert!(printed.contains("callself 00ab4130("));
+    assert!(printed.contains("calllib 2:abcdef01("));
+    assert!(printed.contains("callinr 00ab4130("));
     assert!(printed.contains("callstatic 3::deadbeef("));
+}
+
+#[test]
+fn call_keyword_print() {
+    let script = r##"
+        call 1::abcdef01()
+    "##;
+    let ircodes = lang_to_ircode(script).unwrap();
+    let printed = ircodes.ircode_print(true).unwrap();
+    assert!(printed.contains("call 1::abcdef01("));
+}
+
+#[test]
+fn var_put_print_roundtrip() {
+    let script = r##"
+        var total $0 = 1
+        total = total + 1
+        var other $1 = total
+        other = $1
+    "##;
+    let (block, source_map) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let printed = block.print("    ", 0, true, Some(&source_map));
+    assert!(printed.contains("var total $0 = 1"));
+    assert!(printed.contains("total = "));
+    assert!(printed.contains("var other $1 = $0"));
+    assert!(printed.contains("other = $1"));
 }
 
 #[test]
@@ -229,9 +256,9 @@ fn fitsh_ir_roundtrip_suite() {
                 } else {
                     callstatic 1::deadbeef(sum, 0)
                 }
-                callself 11223344(sum)
+                callinr 11223344(sum)
             "##,
-            &["while", "calllib", "callstatic", "callself", "if"],
+            &["while", "calllib", "callstatic", "callinr", "if"],
         ),
         (
             r##"

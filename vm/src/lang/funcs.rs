@@ -24,6 +24,9 @@ impl Syntax {
         // use Bytecode::*;
         let argvs = self.item_may_block(false)?.into_vec();
         let alen = argvs.len();
+        for arg in &argvs {
+            arg.checkretval()?;
+        }
         let argv = match md {
             ArgvMode::Concat => concat_func_argvs(argvs)?,
             ArgvMode::PackList => pack_func_argvs(argvs)?,
@@ -36,6 +39,9 @@ impl Syntax {
         // ir func
         if let Some((_, inst, pms, args, rs)) = pick_ir_func(&id) {
             let argvs = self.item_may_block(false)?.into_vec();
+            for arg in &argvs {
+                arg.checkretval()?;
+            }
             if pms + args != argvs.len() {
                 return errf!("ir func call argv length must {} but got {}", 
                     pms + args, argvs.len()
@@ -211,4 +217,3 @@ fn pick_ext_func(id: &str) -> Option<(bool, bool, Bytecode, u8)> {
     }
     None
 }
-

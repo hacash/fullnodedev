@@ -1,7 +1,7 @@
 use field::Address;
 use vm::IRNode;
 use vm::lang::lang_to_irnode_with_sourcemap;
-use vm::rt::calc_func_sign;
+use vm::rt::*;
 
 fn extract_signature(name: &str) -> [u8; 4] {
     calc_func_sign(name)
@@ -48,6 +48,22 @@ fn source_map_recovery_records_symbols() {
     assert!(printed.contains("Fund.deposit("));
     assert!(printed.contains("Fund::audit("));
     assert!(printed.contains("self.notify("));
-    assert!(printed.contains("total ="));
-    assert!(printed.contains("increment ="));
+    assert!(printed.contains("var total $0 ="));
+    assert!(printed.contains("var increment $1 ="));
+}
+
+#[test]
+fn source_map_json_roundtrip() {
+    let mut map = SourceMap::default();
+    map.register_lib(2, "Fund".to_string(), None).unwrap();
+    let sig = extract_signature("deposit");
+    map.register_func(sig, "deposit".to_string()).unwrap();
+    map.register_slot(0, "total".to_string()).unwrap();
+    map.mark_slot_put(0);
+    let json = map.to_json().unwrap();
+    let restored = SourceMap::from_json(&json).unwrap();
+    assert_eq!(restored.lib(2).unwrap().name, "Fund");
+    assert_eq!(restored.func(&sig).map(|s| s.as_str()), Some("deposit"));
+    assert_eq!(restored.slot(0).map(|s| s.as_str()), Some("total"));
+    assert!(!restored.mark_slot_put(0)); // already marked
 }

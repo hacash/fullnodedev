@@ -534,41 +534,41 @@ impl Syntax {
             } else if let Partition('[') = nxt { // item get
                 // println!("---------item_identifier---------- self.tokens[self.idx]= {:?}", nxt); 
                 return self.item_get(id)
-            } else if let Keyword(Dot) = nxt {
-                nxt = next!();
-                let Identifier(func) = nxt else {
-                    return e1
-                };
-                self.idx += 1;
-                let fnsg = calc_func_sign(&func);
-                self.source_map.register_func(fnsg, func.clone())?;
-                let fnpm = self.deal_func_argv()?;
-                return Ok(match &id=="self" {
-                    true => { // CALLINR
-                        let para: Vec<u8> = fnsg.to_vec(); // fnsig
-                        Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLINR, para, subx: fnpm})
-                    },
-                    false => { // CALL
-                        let libi = self.link_lib(&id)?;
-                        let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
-                        Box::new(IRNodeParamsSingle{hrtv: true, inst: CALL, para,  subx: fnpm})
-                    },
-                })
-            }else if Keyword(Colon) == *nxt || Keyword(DColon) == *nxt {
-                let is_static = Keyword(DColon) == *nxt;
-                nxt = next!();
-                let Identifier(func) = nxt else {
-                    return e1
-                };
-                self.idx += 1;
-                let fnsg = calc_func_sign(&func);
-                self.source_map.register_func(fnsg, func.clone())?;
-                let fnpm = self.deal_func_argv()?;
-                let inst = maybe!(is_static, CALLSTATIC, CALLLIB);
-                let libi = self.link_lib(&id)?;
-                let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
-                return Ok(Box::new(IRNodeParamsSingle{hrtv: true, inst, para, subx: fnpm}))
-            }
+                } else if let Keyword(Dot) = nxt {
+                    nxt = next!();
+                    let Identifier(func) = nxt else {
+                        return e1
+                    };
+                    self.idx += 1;
+                    let fnsg = calc_func_sign(&func);
+                    self.source_map.register_func(fnsg, func.clone())?;
+                    let fnpm = self.deal_func_argv()?;
+                    return Ok(match &id=="self" {
+                        true => { // CALLINR
+                            let para: Vec<u8> = fnsg.to_vec(); // fnsig
+                            Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLINR, para, subx: fnpm})
+                        },
+                        false => { // CALL
+                            let libi = self.link_lib(&id)?;
+                            let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
+                            Box::new(IRNodeParamsSingle{hrtv: true, inst: CALL, para,  subx: fnpm})
+                        },
+                    })
+                }else if Keyword(Colon) == *nxt || Keyword(DColon) == *nxt {
+                    let is_static = Keyword(DColon) == *nxt;
+                    nxt = next!();
+                    let Identifier(func) = nxt else {
+                        return e1
+                    };
+                    self.idx += 1;
+                    let fnsg = calc_func_sign(&func);
+                    self.source_map.register_func(fnsg, func.clone())?;
+                    let fnpm = self.deal_func_argv()?;
+                    let inst = maybe!(is_static, CALLSTATIC, CALLLIB);
+                    let libi = self.link_lib(&id)?;
+                    let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
+                    return Ok(Box::new(IRNodeParamsSingle{hrtv: true, inst, para, subx: fnpm}))
+                }
         }
         self.link_symbol(&id)
     }
@@ -782,6 +782,22 @@ impl Syntax {
                 let para: Vec<u8> = iter::once(self.link_lib(id)?).chain(fnsg).collect();
                 Box::new(IRNodeParams{hrtv: false, inst: CALLCODE, para})
             }
+            Keyword(Call) => {
+                let e = errf!("call format error");
+                let idx_token = next!();
+                let lib_idx = Self::parse_lib_index_token(idx_token)?;
+                nxt = next!();
+                let Keyword(DColon) = nxt else {
+                    return e
+                };
+                nxt = next!();
+                let sig = Self::parse_fn_sig_token(nxt)?;
+                let mut para = Vec::with_capacity(1 + sig.len());
+                para.push(lib_idx);
+                para.extend(sig);
+                let argv = self.deal_func_argv()?;
+                Box::new(IRNodeParamsSingle{hrtv: true, inst: CALL, para, subx: argv})
+            }
             Keyword(CallLib) => {
                 let e = errf!("calllib format error");
                 let idx_token = next!();
@@ -814,7 +830,7 @@ impl Syntax {
                 let argv = self.deal_func_argv()?;
                 Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLSTATIC, para, subx: argv})
             }
-            Keyword(CallSelf) => {
+            Keyword(CallInr) => {
                 nxt = next!();
                 let sig = Self::parse_fn_sig_token(nxt)?;
                 let argv = self.deal_func_argv()?;

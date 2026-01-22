@@ -54,10 +54,11 @@ keyword_define!{
     Throw     : "throw"
     Assert    : "assert"
     Print     : "print"
-    CallCode  : "callcode"
+    Call      : "call"
+    CallInr   : "callinr"
     CallLib   : "calllib"
-    CallSelf  : "callself"
     CallStatic: "callstatic"
+    CallCode  : "callcode"
     ByteCode  : "bytecode"
     Param     : "param"
     And       : "and"
@@ -409,4 +410,3 @@ pub enum Token {
     Bytes(Vec<u8>),
     Address(field::Address),
 }
-

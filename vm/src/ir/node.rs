@@ -114,12 +114,13 @@ impl IRNodeText {
 }
 
 fn format_call_args(substr: &str) -> String {
-    let trimmed = substr.trim();
-    if trimmed.is_empty() {
-        String::new()
-    } else {
-        trimmed.replace('\n', ", ").replace('\r', "")
-    }
+    let lines: Vec<String> = substr
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect();
+    lines.join(", ")
 }
 
 
@@ -380,28 +381,35 @@ impl IRNode for IRNodeParamsSingle {
         if desc {
             let meta = self.inst.metadata();
             let substr = print_sub_inline!(suo, self.subx, desc, map);
+            let args = format_call_args(&substr);
             match self.inst {
-                CALL | CALLLIB => {
-                    let args = format_call_args(&substr);
+                CALL => {
                     if let Some((lib, func)) = self.resolve_lib_func(map) {
                         buf.push_str(&format!("{}.{}({})", lib, func, args));
                     } else {
                         let idx = self.para[0];
                         let f = hex::encode(&self.para[1..]);
-                        buf.push_str(&format!("calllib {}::{}({})", idx, f, args));
+                        buf.push_str(&format!("call {}::{}({})", idx, f, args));
+                    }
+                }
+                CALLLIB => {
+                    if let Some((lib, func)) = self.resolve_lib_func(map) {
+                        buf.push_str(&format!("{}:{}({})", lib, func, args));
+                    } else {
+                        let idx = self.para[0];
+                        let f = hex::encode(&self.para[1..]);
+                        buf.push_str(&format!("calllib {}:{}({})", idx, f, args));
                     }
                 }
                 CALLINR => {
-                    let args = format_call_args(&substr);
                     if let Some(func) = self.resolve_self_func(map) {
                         buf.push_str(&format!("self.{}({})", func, args));
                     } else {
                         let f = hex::encode(&self.para);
-                        buf.push_str(&format!("callself {}({})", f, args));
+                        buf.push_str(&format!("callinr {}({})", f, args));
                     }
                 }
                 CALLSTATIC => {
-                    let args = format_call_args(&substr);
                     if let Some((lib, func)) = self.resolve_lib_func(map) {
                         buf.push_str(&format!("{}::{}({})", lib, func, args));
                     } else {
@@ -772,7 +780,16 @@ impl IRNode for IRNodeParam1Single {
                 }
                 PUT => {
                     let substr = &print_sub_inline!(suo, self.subx, desc, map);
-                    let target = slot_name_display(self.para, map);
+                    let slot_name = map.and_then(|s| s.slot(self.para)).cloned();
+                    let is_first = map.map(|m| m.mark_slot_put(self.para)).unwrap_or(false);
+                    let target = if is_first {
+                        match slot_name {
+                            Some(name) => format!("var {} ${}", name, self.para),
+                            None => format!("var ${}", self.para),
+                        }
+                    } else {
+                        slot_name.unwrap_or_else(|| format!("${}", self.para))
+                    };
                     let line = format!("{} = {}", target, substr);
                     buf.push_str(&line);
                 }
