@@ -136,13 +136,6 @@ impl Syntax {
         None
     }
 
-    fn parse_slot_token(token: &Token) -> Option<u8> {
-        if let Identifier(id) = token {
-            return Self::parse_slot_str(id);
-        }
-        None
-    }
-
     pub fn bind_local_assign(&mut self, s: String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
         let idx = self.local_alloc;
         self.bind_local_assign_replace(s, idx, v)
@@ -706,50 +699,19 @@ impl Syntax {
                     _ => return e
                 }?
             }
-            Keyword(Let) => { // let name? $slot? = expr
+            Keyword(Let) => {
                 let e = errf!("let statement format error");
-                let mut nxt = next!();
-                let mut name: Option<String> = None;
-                let mut slot: Option<u8> = None;
-                if let Identifier(id) = &nxt {
-                    if let Some(idx) = Self::parse_slot_token(&nxt) {
-                        slot = Some(idx);
-                    } else {
-                        name = Some(id.clone());
-                        if self.idx < self.tokens.len() {
-                            let peek = &self.tokens[self.idx];
-                            if let Some(idx) = Self::parse_slot_token(peek) {
-                                slot = Some(idx);
-                                self.idx += 1;
-                            }
-                        }
-                    }
-                } else {
-                    return e
-                }
-                nxt = next!();
-                let Keyword(Assign) = nxt else {
+                let token = self.next()?;
+                let Identifier(name) = token else {
                     return e
                 };
-                let exp = self.item_must(0)?;
-                exp.checkretval()?; // must retv
-                let mut bindings = vec![];
-                if let Some(n) = name {
-                    bindings.push(n);
-                }
-                if let Some(idx) = slot {
-                    bindings.push(format!("${}", idx));
-                }
-                if bindings.is_empty() {
-                    return errf!("let statement needs at least a name or slot")
-                }
-                let expr = exp;
-                let alias_src = dyn_clone::clone_box(expr.as_ref());
-                let first = bindings.remove(0);
-                self.bind_let(first, expr)?;
-                for alias in bindings {
-                    self.bind_let(alias, dyn_clone::clone_box(alias_src.as_ref()))?;
-                }
+                let token = self.next()?;
+                let Keyword(Assign) = token else {
+                    return e
+                };
+                let expr = self.item_must(0)?;
+                expr.checkretval()?; // must retv
+                self.bind_let(name.clone(), expr)?;
                 return Ok(Some(push_empty()));
             }
             /*

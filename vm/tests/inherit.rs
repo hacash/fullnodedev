@@ -1,4 +1,6 @@
 
+mod common;
+
 #[cfg(test)]
 #[allow(unused)]
 mod inherit {
@@ -12,6 +14,7 @@ mod inherit {
     use vm::lang::*;
     use vm::contract::*;
     use vm::ContractAddress;
+    use super::common::{checked_compile_fitsh_to_ir, compile_fitsh_bytecode};
 
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
@@ -146,11 +149,11 @@ mod inherit {
     fn call1() {
 
 
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib C = 3: WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
             C.f9()
             end
-        "##).unwrap();
+        "##);
 
         let act = ContractMainCall::from_bytecode(maincodes).unwrap();
         // print

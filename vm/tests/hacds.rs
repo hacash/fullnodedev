@@ -1,13 +1,13 @@
 
-
+mod common;
 
 mod hacds {
 
 
     use field::*;
     use vm::*;
-    use vm::lang::*;
     use vm::contract::*;
+    use super::common::checked_compile_fitsh_to_ir;
 
     /*
     
@@ -42,7 +42,7 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
     fn deploy() {
         use vm::rt::AbstCall::*;
 
-        let payable_hacd = lang_to_ircode(r##"
+        let payable_hacd = checked_compile_fitsh_to_ir(r##"
             param { addr, hacd, names }
             assert hacd > 0 && hacd <= 200
             var hk = "out_hacds"
@@ -50,9 +50,9 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             let hacds = (hacd as u64) * 1_0000_0000
             memory_put(hk, hacds)
             return 0
-        "##).unwrap();
+        "##);
 
-        let payable_asset = lang_to_ircode(r##"
+        let payable_asset = checked_compile_fitsh_to_ir(r##"
             param { addr, serial, amount }
             assert serial == 1 // check serial
             assert amount % 1_0000_0000 == 0
@@ -62,9 +62,9 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             assert memory_get(hk) is nil
             memory_put(hk, hacd as u32)
             return 0
-        "##).unwrap();
+        "##);
 
-        let permit_hacd = lang_to_ircode(r##"
+        let permit_hacd = checked_compile_fitsh_to_ir(r##"
             param { addr, dianum, names }
             assert dianum > 0 
             var hk = "out_hacd"
@@ -73,9 +73,9 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             assert hacd == dianum
             memory_put(hk, nil) // clear
             return 0
-        "##).unwrap();
+        "##);
 
-        let permit_asset = lang_to_ircode(r##"
+        let permit_asset = checked_compile_fitsh_to_ir(r##"
             param { addr, serial, amount }
             assert serial == 1 // check serial
             var hk = "out_hacds"
@@ -84,7 +84,7 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
             assert hacds == amount
             memory_put(hk, nil) // clear
             return 0
-        "##).unwrap();
+        "##);
 
 
         

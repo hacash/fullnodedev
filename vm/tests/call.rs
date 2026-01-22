@@ -1,4 +1,6 @@
 
+mod common;
+
 #[cfg(test)]
 #[allow(unused)]
 mod call {
@@ -9,6 +11,7 @@ mod call {
     use vm::rt::*;
     use vm::lang::*;
     use vm::contract::*;
+    use super::common::{checked_compile_fitsh_to_ir, compile_fitsh_bytecode};
 
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
@@ -90,7 +93,7 @@ mod call {
             return self.recursion(num + 1)
         "##;
 
-        println!("{}", lang_to_bytecode(recursion_fn).unwrap().bytecode_print(false).unwrap());
+        println!("{}", compile_fitsh_bytecode(recursion_fn).bytecode_print(false).unwrap());
 
 
         let contract = Contract::new()
@@ -111,11 +114,11 @@ mod call {
 
         use vm::action::*;
 
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib C = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             C.recursion(1)
             end
-        "##).unwrap();
+        "##);
 
         println!("{}", maincodes.bytecode_print(true).unwrap());
 

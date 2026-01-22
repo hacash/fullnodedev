@@ -17,6 +17,7 @@ mod deploy {
     use vm::rt::Bytecode::*;
     use vm::rt::AbstCall::*;
     use vm::contract::*;
+    use super::common::compile_fitsh_bytecode;
 
     #[test]
     fn deploy_update_2() {
@@ -109,7 +110,7 @@ mod deploy {
         "##;
 
 
-        let payable_hac_codes = lang_to_bytecode(r##"
+        let payable_hac_codes = compile_fitsh_bytecode(r##"
             var pms $0 = pick(0)
             var adr $1
             var res $2
@@ -124,11 +125,11 @@ mod deploy {
             assert bdt
 
             return res
-        "##).unwrap();
+        "##);
 
 
 
-        let codes = lang_to_bytecode(recursion_fnstr).unwrap();
+        let codes = compile_fitsh_bytecode(recursion_fnstr);
         println!("{}", codes.bytecode_print(false).unwrap());
         println!("{} {}", codes.len(), codes.to_hex());
 
@@ -164,9 +165,9 @@ mod deploy {
 
         use vm::action::*;
 
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             throw "1"
-        "##).unwrap();
+        "##);
 
         println!("{}", maincodes.bytecode_print(true).unwrap());
 

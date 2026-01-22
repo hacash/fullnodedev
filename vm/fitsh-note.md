@@ -25,7 +25,7 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 
 ## 4. Statement structure
 - `var name [$slot]? = expr`: evaluates immediately and stores the result in a local slot; the slot can be explicitly numbered (`syntax.rs:620-654`). Use this for mutable state or expressions with side effects.  
-- `let [name] [$slot]? = expr`: lazy/cached binding; the expression is not evaluated at declaration, but the first read triggers evaluation and the result is cached. `vm/src/lang/ir/let.rs` writes the cached value to a slot only after the first use (`syntax.rs:655-690`, `ir/let.rs:41-86`).  
+- `let name = expr`: lazy/cached binding; declarations store the expression template and never emit `PUT`/`GET`. Every reference to `name` clones the template, so it behaves like an inline macro. Because `let` does not allocate slots, there is no `$slot` form anymore; use `var` whenever you need a reusable slot.
 - `lib Foo = idx [: address]?`: binds a short alias to an external library/contract, optionally with an explicit address, for use in `Foo.method(...)` calls.  
 - `param { a b c }`: declares function parameters at the top of the body; the implementation uses `PICK` and `UPLIST` to populate slots (`syntax.rs:412-452`).  
 - `callcode Foo::bar` and `bytecode {...}` inject low-level bytecode directly; use them sparingly, as the compiler does not enforce safety and they can bypass language invariants (`syntax.rs:738-780`).  
@@ -41,7 +41,7 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 
 ## 6. High-risk misuse patterns
 1. **`let` is not evaluated immediately**: Bindings with `storage_save`, `print`, or other side effects only execute when the `let` variable is read; if never read, the effect never happens. Use `var` when you rely on immediate execution.  
-2. **Slot conflicts/reuse**: Slots can be manually assigned or implicitly consumed by `let`/`var`. `finalize_let_slots` assigns real slots after parsing based on reference counts (`syntax.rs:868-916`), making mixed manual (`$0/$1`) and automatic usage risky—avoid reusing slot numbers across bindings.  
+2. **Slot conflicts/reuse**: Slots can be manually assigned or automatically allocated by `var`. Because `let` no longer consumes slots, these collisions now only occur through explicit `$N` or `var` allocations. Avoid reusing the same slot number across multiple `var` declarations or mixing manual numbering with automatic allocations.
 3. **Function arguments capped at 15**: The compiler only allows up to 15 arguments in `pack_func_argvs`. For complex DeFi interfaces, wrap inputs into `list` or `map` structures before calling.  
 4. **Function signature only hashes the name**: Overloading or adding a same-name function changes the selector globally—choose unique names to avoid accidental dispatch changes.  
 5. **`bytecode`/`callcode` bypass type checks**: Use these low-level hooks only when necessary and document the intent for audit trails.  

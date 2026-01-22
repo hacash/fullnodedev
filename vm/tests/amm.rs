@@ -1,13 +1,11 @@
 
 
-
-
 mod common;
-
 
 #[cfg(test)]
 #[allow(unused)]
 mod amm {
+
     use field::*;
     use protocol::action::*;
 
@@ -18,14 +16,15 @@ mod amm {
     use vm::rt::Bytecode::*;
     use vm::rt::AbstCall::*;
     use vm::contract::*;
+    use super::common::{checked_compile_fitsh_to_ir, compile_fitsh_bytecode};
 
     #[test]
     fn op() {
         use vm::ir::*;
 
-        println!("\n{}\n", lang_to_bytecode(r##"
+        println!("\n{}\n", compile_fitsh_bytecode(r##"
             var foo = (1 + 2) * 3 * (4 * 5) / (6 / (7 + 8))
-        "##).unwrap().bytecode_print(true).unwrap());
+        "##).bytecode_print(true).unwrap());
 
     }
 
@@ -58,7 +57,7 @@ mod amm {
             return 0
         "##;
 
-        let payable_sat = lang_to_ircode(&payable_sat_fitsh).unwrap();
+        let payable_sat = checked_compile_fitsh_to_ir(&payable_sat_fitsh);
         println!("\n{}\n", payable_sat.ircode_print(true).unwrap());
 
 
@@ -87,19 +86,19 @@ mod amm {
 
         "##;
 
-        let payable_hac = lang_to_ircode(&payable_hac_fitsh).unwrap();
+        let payable_hac = checked_compile_fitsh_to_ir(&payable_hac_fitsh);
 
-        println!("\n{}\n", lang_to_ircode(&payable_hac_fitsh).unwrap().ircode_print(true).unwrap());
+        println!("\n{}\n", payable_hac.ircode_print(true).unwrap());
         
         /* println!("payable_hac byte code len {} : {}\n\n{}\n\n{}", 
             payable_hac.len(), 
             payable_hac.to_hex(), 
-            lang_to_bytecode(&payable_hac_fitsh).unwrap().bytecode_print(true).unwrap(),
+            compile_fitsh_bytecode(&payable_hac_fitsh).bytecode_print(true).unwrap(),
             payable_hac.ircode_print(true).unwrap()
         ); */
         
 
-        let prepare_codes = lang_to_ircode(r##"
+        let prepare_codes = checked_compile_fitsh_to_ir(r##"
             param { sat, zhu, deadline }
             assert deadline >= block_height()
             assert sat >= 1000 && zhu >= 10000
@@ -122,13 +121,13 @@ mod amm {
             memory_put(k_in_sat, sat)
             memory_put(k_in_zhu, in_zhu)
             return in_zhu
-        "##).unwrap();
+        "##);
         println!("prepare_codes:\n{}\n{}\n", prepare_codes.ircode_print(true).unwrap(), prepare_codes.to_hex());
         let prepare_codes = convert_ir_to_bytecode(&prepare_codes).unwrap();
 
 
 
-        let deposit_codes = lang_to_ircode(r##"
+        let deposit_codes = checked_compile_fitsh_to_ir(r##"
             param { addr, sat, zhu }
             // get total
             var tt_shares $3
@@ -147,12 +146,12 @@ mod amm {
             my_shares += zhu as u64
             storage_save(lq_k, my_shares)
             end
-        "##).unwrap();
+        "##);
         println!("deposit_codes:\n{}\n{}\n", deposit_codes.ircode_print(true).unwrap(), deposit_codes.to_hex());
         let deposit_codes = convert_ir_to_bytecode(&deposit_codes).unwrap();
 
 
-        let withdraw_codes = lang_to_ircode(r##"
+        let withdraw_codes = checked_compile_fitsh_to_ir(r##"
             param { addr, shares }
             // get total
             var tt_shares $2
@@ -189,13 +188,13 @@ mod amm {
             append(reslist, my_sat as u64)
             append(reslist, my_zhu as u64)
             return reslist
-        "##).unwrap();
+        "##);
         println!("withdraw_codes:\n{}\n{}\n", withdraw_codes.ircode_print(true).unwrap(), withdraw_codes.to_hex());
         let withdraw_codes = convert_ir_to_bytecode(&withdraw_codes).unwrap();
 
 
 
-        let buy_codes = lang_to_ircode(r##"
+        let buy_codes = checked_compile_fitsh_to_ir(r##"
             param { sat, max_zhu, deadline }
             assert deadline >= block_height()
             assert sat>0 && max_zhu>0
@@ -211,12 +210,12 @@ mod amm {
             memory_put("buy_hac", zhu_to_hac(zhu))
             memory_put("out_sat", sat)
             return zhu
-        "##).unwrap();
+        "##);
         println!("buy_codes:\n{}\n{}\n", buy_codes.ircode_print(true).unwrap(), buy_codes.to_hex());
         let buy_codes = convert_ir_to_bytecode(&buy_codes).unwrap();
 
 
-        let sell_codes = lang_to_ircode(r##"
+        let sell_codes = checked_compile_fitsh_to_ir(r##"
             param { sat, min_zhu, deadline }
             assert deadline >= block_height()
             // get total
@@ -231,13 +230,13 @@ mod amm {
             memory_put("sell_sat", sat)
             memory_put("out_hac", zhu_to_hac(out_zhu))
             return out_zhu
-        "##).unwrap();
+        "##);
         println!("sell_codes:\n{}\n{}\n", sell_codes.ircode_print(true).unwrap(), sell_codes.to_hex());
         let sell_codes = convert_ir_to_bytecode(&sell_codes).unwrap();
 
 
 
-        let permit_sat = lang_to_bytecode(r##"
+        let permit_sat = compile_fitsh_bytecode(r##"
             param { addr, sat}
             assert memory_get("hac_in")
             var ot_k = "out_sat"
@@ -246,9 +245,9 @@ mod amm {
             memory_put(ot_k, nil)
             // ok
             return 0
-        "##).unwrap();
+        "##);
 
-        let permit_hac = lang_to_bytecode(r##"
+        let permit_hac = compile_fitsh_bytecode(r##"
             param { addr, hac}
             assert memory_get("sat_in")
             var ot_k = "out_hac"
@@ -258,11 +257,11 @@ mod amm {
             // ok
             return 0
         
-        "##).unwrap();
+        "##);
 
 
 
-        let total_codes = lang_to_bytecode(r##"
+        let total_codes = compile_fitsh_bytecode(r##"
             // get total
             var tt_k = "total_shares"
             var total = storage_load(tt_k)
@@ -282,10 +281,10 @@ mod amm {
             let tt_sat = buf_left(8, ctxadr) as u64
             let tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
             return [tt_shares, tt_sat, tt_zhu]
-        "##).unwrap();
+        "##);
 
 
-        let shares_codes = lang_to_bytecode(r##"
+        let shares_codes = compile_fitsh_bytecode(r##"
             // get shares
             var lq_k = pick(0) ++ "_shares"
             var my_shares = storage_load(lq_k)
@@ -293,7 +292,7 @@ mod amm {
                 return 0
             }
             return my_shares
-        "##).unwrap();
+        "##);
 
 
         println!("shares_codes:\n{}\n{}\n", shares_codes.bytecode_print(true).unwrap(), shares_codes.to_hex());
@@ -340,7 +339,7 @@ mod amm {
 
         use vm::action::*;
         
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 100000000 as u64 // 1 BTC
             var zhu = HacSwap.prepare(sat, 100000000000, 50) // 1k HAC
@@ -349,7 +348,7 @@ mod amm {
             transfer_sat_to(adr, sat)
             transfer_hac_to(adr, zhu_to_hac(zhu))
             end
-        "##).unwrap();
+        "##);
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());
@@ -368,7 +367,7 @@ mod amm {
 
         use vm::action::*;
         
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var shares = 50000000000 as u64 // 500HAC
             var coins = HacSwap.withdraw(tx_main_address(), shares) // 1k HAC
@@ -378,7 +377,7 @@ mod amm {
             transfer_sat_from(adr, sat)
             transfer_hac_from(adr, zhu_to_hac(zhu))
             end
-        "##).unwrap();
+        "##);
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());
@@ -397,7 +396,7 @@ mod amm {
 
         use vm::action::*;
         
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 10963 as u64 // 50HAC
             var zhu = HacSwap.buy(sat, 10000000000, 300)
@@ -405,7 +404,7 @@ mod amm {
             transfer_hac_to(adr, zhu_to_hac(zhu))
             transfer_sat_from(adr, sat)
             end
-        "##).unwrap();
+        "##);
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());
@@ -425,7 +424,7 @@ mod amm {
 
         use vm::action::*;
         
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 4626909 as u64
             var zhu = HacSwap.sell(sat, 100000, 300)
@@ -433,7 +432,7 @@ mod amm {
             transfer_sat_to(adr, sat)
             transfer_hac_from(adr, zhu_to_hac(zhu))
             end
-        "##).unwrap();
+        "##);
 
         println!("{}\n", maincodes.bytecode_print(true).unwrap());
         println!("{}\n", maincodes.to_hex());

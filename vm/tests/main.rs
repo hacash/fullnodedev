@@ -1,4 +1,6 @@
 
+mod common;
+
 #[cfg(test)]
 #[allow(unused)]
 mod main {
@@ -10,6 +12,7 @@ mod main {
     use vm::rt::*;
     use vm::lang::*;
     use vm::contract::*;
+    use super::common::{checked_compile_fitsh_to_ir, compile_fitsh_bytecode};
 
     #[test]
     fn deploy() {
@@ -47,13 +50,13 @@ mod main {
     fn call2() {
 
 
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib C = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             global_put("k", 123 as u32)
             var n = C.f1(3)
             print n
             callcode C::f2
-        "##).unwrap();
+        "##);
 
         let act = ContractMainCall::from_bytecode(maincodes).unwrap();
         // print
@@ -65,12 +68,12 @@ mod main {
     fn call1() {
 
 
-        let maincodes = lang_to_bytecode(r##"
+        let maincodes = compile_fitsh_bytecode(r##"
             lib C = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var num = C:f1(2)
             print num
             end
-        "##).unwrap();
+        "##);
 
         println!("{}", maincodes.bytecode_print(true).unwrap());
 

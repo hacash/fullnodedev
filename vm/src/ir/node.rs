@@ -487,7 +487,10 @@ impl IRNode for IRNodeSingle {
                 },
                 _ => {
                     let substr = print_sub_inline!(suo, self.subx, desc);
-                    buf.push_str(&format!("{}({})", meta.intro, substr));
+                    match self.inst {
+                        Bytecode::PRT => buf.push_str(&format!("{} {}", meta.intro, substr)),
+                        _ => buf.push_str(&format!("{}({})", meta.intro, substr)),
+                    }
                 }
             };
         } else {

@@ -1,4 +1,6 @@
 
+mod common;
+
 #[cfg(test)]
 #[allow(unused)]
 mod library {
@@ -12,6 +14,7 @@ mod library {
     use vm::lang::*;
     use vm::contract::*;
     use vm::ContractAddress;
+    use super::common::checked_compile_fitsh_to_ir;
 
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
@@ -20,12 +23,12 @@ mod library {
     #[test]
     fn t1() {
 
-        println!("{}", lang_to_ircode("
+        println!("{}", checked_compile_fitsh_to_ir("
             lib C = 0: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var n1 = C:f1()
             end
             // return n1 + 2
-        ").unwrap().ircode_print(false).unwrap());
+        ").ircode_print(false).unwrap());
 
     }
 
@@ -86,4 +89,3 @@ mod library {
 
 
 }
-
