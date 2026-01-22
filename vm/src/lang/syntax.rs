@@ -114,6 +114,9 @@ impl Syntax {
     pub fn bind_local(&mut self, s: String, idx: u8) -> Ret<Box<dyn IRNode>> {
         self.reserve_slot(idx)?;
         if idx >= self.local_alloc {
+            if idx == u8::MAX {
+                return errf!("slot {} exceeds limit", idx)
+            }
             self.local_alloc = idx + 1;
         }
         self.register_symbol(s, SymbolEntry::Var(idx))?;

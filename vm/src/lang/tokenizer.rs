@@ -62,7 +62,7 @@ impl Tokenizer<'_> {
     }
 
 
-    pub fn parse_comments(&mut self, max: usize) -> bool {
+    pub fn parse_comments(&mut self, max: usize) -> Ret<bool> {
         let c = self.texts[self.idx] as char;
         macro_rules! gtc { ($n: expr) => { self.texts[self.idx + $n] as char } }
         match c {
@@ -71,20 +71,25 @@ impl Tokenizer<'_> {
                 while self.idx < max && gtc!(0) != '\n' {
                     self.idx += 1;
                 }
-                true
+                Ok(true)
             }
             '*' => { // multiple line comments
                 self.idx += 1;
+                let mut closed = false;
                 while self.idx < max - 1 {
                     if gtc!(0) == '*' && gtc!(1) == '/' {
                         self.idx += 2;
+                        closed = true;
                         break
                     }
                     self.idx += 1;
                 }
-                true
+                if !closed {
+                    return errf!("unterminated block comment")
+                }
+                Ok(true)
             }
-            _ => false
+            _ => Ok(false)
         }
     } 
 
@@ -217,7 +222,7 @@ impl Tokenizer<'_> {
             let c = self.texts[self.idx] as char;
             self.idx += 1;
             if c == '/' && self.idx < max {
-                if self.parse_comments(max) {
+                if self.parse_comments(max)? {
                     continue;
                 }
             }
@@ -237,5 +242,3 @@ impl Tokenizer<'_> {
     }
 
 }
-
-
