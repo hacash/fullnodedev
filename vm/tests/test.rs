@@ -14,7 +14,6 @@ mod other {
     use vm::contract::*;
 
     use field::*;
-    use field::interface::*;
 
     use protocol::action::*;
     
@@ -74,7 +73,7 @@ mod other {
     #[test]
     fn asset_issue() {
 
-        use field::interface::*;
+        use field::*;
         use protocol::action::*;
         // use mint::action::*;
 
@@ -83,7 +82,7 @@ mod other {
 
         println!("ContractAddress: {}", caddr.readable());
 
-        let cadr = Address::from_readable("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa").unwrap();
+        let cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
         assert!(caddr == ContractAddress::from_addr(cadr).unwrap());
 
 
@@ -125,10 +124,12 @@ mod other {
             123456789ABCDEFGHJKLMNP QRSTUVWXYZ abcdefghijk mno pqrstuvwxyz
         */
 
+        use sys::Account;
+
         for i in 0..=255 {
             let mut adr = [i; 21];
             adr[0] = 1;
-            // println!("- ---------  addr: {}", Account::to_readable(&adr));
+            println!("- ---------  addr: {}", Account::to_readable(&adr));
         }
         let addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         println!("++++++++ addr: {}", ContractAddress::calculate(&addr, &Uint4::from(1)).readable());
@@ -157,7 +158,7 @@ mod other {
 
 
 /*
-http://127.0.0.1:8088/query/contract/sandboxcall?contract=VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa&funcname=testadd&param=0005&retabi=[res:U2]
+http://127.0.0.1:8088/query/contract/sandboxcall?contract=emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS&funcname=testadd&param=0005&retabi=[res:U2]
 
 
 

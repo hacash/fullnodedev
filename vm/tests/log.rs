@@ -4,7 +4,6 @@
 mod hrc20 {
 
     use field::*;
-    use field::interface::*;
 
     use vm::ir::*;
     use vm::rt::*;
@@ -19,7 +18,7 @@ mod hrc20 {
 
     #[test]
     fn test1() {
-        // VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+        // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
         // log
         .func(Func::new("render").public().fitsh(r##"

@@ -9,7 +9,6 @@ mod common;
 #[allow(unused)]
 mod amm {
     use field::*;
-    use field::interface::*;
     use protocol::action::*;
 
     use vm::*;
@@ -38,7 +37,7 @@ mod amm {
         /*
             1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9   123456
             18dekVcACnj6Tbd69SsexVMQ5KLBZZfn5K   123457
-            VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 
         */
 
@@ -342,7 +341,7 @@ mod amm {
         use vm::action::*;
         
         let maincodes = lang_to_bytecode(r##"
-            lib HacSwap = 1: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 100000000 as u64 // 1 BTC
             var zhu = HacSwap.prepare(sat, 100000000000, 50) // 1k HAC
             var adr = address_ptr(1)
@@ -370,7 +369,7 @@ mod amm {
         use vm::action::*;
         
         let maincodes = lang_to_bytecode(r##"
-            lib HacSwap = 1: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var shares = 50000000000 as u64 // 500HAC
             var coins = HacSwap.withdraw(tx_main_address(), shares) // 1k HAC
             let sat = item_get(coins, 0)
@@ -399,7 +398,7 @@ mod amm {
         use vm::action::*;
         
         let maincodes = lang_to_bytecode(r##"
-            lib HacSwap = 1: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 10963 as u64 // 50HAC
             var zhu = HacSwap.buy(sat, 10000000000, 300)
             var adr = address_ptr(1)
@@ -427,7 +426,7 @@ mod amm {
         use vm::action::*;
         
         let maincodes = lang_to_bytecode(r##"
-            lib HacSwap = 1: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var sat = 4626909 as u64
             var zhu = HacSwap.sell(sat, 100000, 300)
             var adr = address_ptr(1)
@@ -452,7 +451,7 @@ mod amm {
     #[test]
     fn transfer1() {
 
-        let adr = Address::from_readable("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa").unwrap();
+        let adr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let mut act = HacToTrs::new();
         act.to = AddrOrPtr::from_addr(adr);

@@ -1,14 +1,11 @@
 
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::convert::TryInto;
+use hex;
 
-
-
-#[derive(Clone)]
 enum SymbolEntry {
     Var(u8),
-    Let(Rc<RefCell<LetInfo>>),
+    Let(Box<dyn IRNode>),
 }
 
 #[allow(dead_code)]
@@ -88,13 +85,60 @@ impl Syntax {
         Ok(())
     }
 
+    fn parse_lib_index_token(token: &Token) -> Ret<u8> {
+        if let Integer(n) = token {
+            if *n > u8::MAX as u128 {
+                return errf!("call index overflow")
+            }
+            return Ok(*n as u8)
+        }
+        errf!("call index must be integer")
+    }
+
+    fn parse_fn_sig_str(s: &str) -> Ret<[u8;4]> {
+        let hex = s.strip_prefix("0x").unwrap_or(s);
+        if hex.len() != 8 {
+            return errf!("function signature must be 8 hex digits, got '{}'", s)
+        }
+        let bytes = match hex::decode(hex) {
+            Ok(b) => b,
+            Err(_) => return errf!("function signature '{}' decode error", s),
+        };
+        let arr: [u8;4] = match bytes.as_slice().try_into() {
+            Ok(a) => a,
+            Err(_) => return errf!("function signature expects 4 bytes"),
+        };
+        Ok(arr)
+    }
+
+    fn parse_fn_sig_token(token: &Token) -> Ret<[u8;4]> {
+        match token {
+            Identifier(name) => Self::parse_fn_sig_str(name),
+            Bytes(bytes) if bytes.len() == 4 => {
+                let arr: [u8;4] = bytes.as_slice().try_into().unwrap();
+                Ok(arr)
+            }
+            Integer(n) if *n <= u32::MAX as u128 => {
+                let v = *n as u32;
+                Ok(v.to_be_bytes())
+            }
+            Bytes(..) => errf!("function signature bytes must be exactly 4 bytes"),
+            _ => errf!("function signature must be hex identifier, decimal <u32>, or 4-byte literal"),
+        }
+    }
+
+    fn parse_slot_str(id: &str) -> Option<u8> {
+        if start_with_char(id, '$') {
+            if let Ok(idx) = id.trim_start_matches('$').parse::<u8>() {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
     fn parse_slot_token(token: &Token) -> Option<u8> {
         if let Identifier(id) = token {
-            if start_with_char(id, '$') {
-                if let Ok(idx) = id.trim_start_matches('$').parse::<u8>() {
-                    return Some(idx);
-                }
-            }
+            return Self::parse_slot_str(id);
         }
         None
     }
@@ -119,11 +163,11 @@ impl Syntax {
             }
             self.local_alloc = idx + 1;
         }
-        self.register_symbol(s, SymbolEntry::Var(idx))?;
+        self.register_var_symbol(s, SymbolEntry::Var(idx))?;
         Ok(push_empty())
     }
 
-    fn register_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
+    fn register_var_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
         if let Some(..) = self.symbols.get(&s) {
             return errf!("symbol '{}' already bound", s)
         }
@@ -131,16 +175,20 @@ impl Syntax {
         Ok(())
     }
 
+    fn register_let_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
+        if let Some(SymbolEntry::Var(_)) = self.symbols.get(&s) {
+            return errf!("cannot rebind var '{}' with let", s)
+        }
+        self.symbols.insert(s, entry);
+        Ok(())
+    }
+
     pub fn bind_let(&mut self, s: String, v: Box<dyn IRNode>) -> Rerr {
-        let info = Rc::new(RefCell::new(LetInfo::new(v)));
-        self.register_symbol(s, SymbolEntry::Let(info))?;
+        self.register_let_symbol(s, SymbolEntry::Let(v))?;
         Ok(())
     }
 
     fn reserve_slot(&mut self, idx: u8) -> Rerr {
-        if self.slot_used.contains(&idx) {
-            return errf!("slot {} already used", idx)
-        }
         self.slot_used.insert(idx);
         Ok(())
     }
@@ -153,21 +201,11 @@ impl Syntax {
         }
     }
 
-    pub fn link_let(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
-        let info_rc = match self.symbols.get(s) {
-            Some(SymbolEntry::Let(info)) => Rc::clone(info),
-            _ => return errf!("cannot find or relink symbol '{}'", s),
-        };
-        let (ref_idx, hrtv) = {
-            let mut info = info_rc.borrow_mut();
-            let idx = info.refs;
-            info.refs = info.refs.saturating_add(1);
-            if info.refs == 2 {
-                info.needs_slot = true;
-            }
-            (idx, info.expr.hasretval())
-        };
-        Ok(Box::new(IRNodeLetRef { info: info_rc, ref_idx, hrtv }))
+    pub fn link_let(&self, s: &String) -> Ret<Box<dyn IRNode>> {
+        match self.symbols.get(s) {
+            Some(SymbolEntry::Let(expr)) => Ok(dyn_clone::clone_box(expr.as_ref())),
+            _ => errf!("cannot find or relink symbol '{}'", s),
+        }
     }
 
     pub fn link_symbol(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
@@ -374,33 +412,40 @@ impl Syntax {
         };
         let mut block = IRNodeBlock::with_opcode(inst);
         let max = self.tokens.len() - 1;
-        let e =  errf!("block format error");
         if self.idx >= max {
-            return e
+            return errf!("block format error")
         }
         let nxt = &self.tokens[self.idx];
         let se = match nxt {
             Partition('{') => '}',
             Partition('(') => ')',
             Partition('[') => ']',
-            _ => return e
+            _ => return errf!("block format error")
         };
         self.idx += 1;
-        loop {
-            if self.idx >= max { break }
-            let nxt = &self.tokens[self.idx];
-            if let Partition(sp) = nxt {
-                if *sp == se {
-                    self.idx += 1;
-                    break
-                }else {
-                    return e
+        let mut block_err = false;
+        self.with_expect_retval(keep_retval, |s| {
+            loop {
+                if s.idx >= max { break }
+                let nxt = &s.tokens[s.idx];
+                if let Partition(sp) = nxt {
+                    if *sp == se {
+                        s.idx += 1;
+                        break
+                    }else if matches!(sp, '}'|')'|']') {
+                        block_err = true;
+                        break
+                    }
                 }
+                let Some(li) = s.item_may()? else {
+                    break
+                };
+                block.push( li );
             }
-            let Some(li) = self.item_may()? else {
-                break
-            };
-            block.push( li );
+            Ok::<(), Error>(())
+        })?;
+        if block_err {
+            return errf!("block format error")
         }
         if keep_retval {
             match block.subs.last() {
@@ -477,13 +522,15 @@ impl Syntax {
             }
             &self.tokens[self.idx]
         }}}           
-        /* if start_with_char(&id, '$') {
-            let k = id.trim_start_matches('$');
-            return match k {
-                "param" => self.item_param(),
-                _ => e0
+        if start_with_char(&id, '$') {
+            let stripped = id.trim_start_matches('$');
+            if stripped == "param" {
+                return self.item_param();
             }
-        } */
+            if let Some(idx) = Self::parse_slot_str(&id) {
+                return Ok(push_local_get(idx, id.clone()));
+            }
+        }
         if self.idx < max {
             let mut nxt = &self.tokens[self.idx];
             if let Partition('(') = nxt { // function call
@@ -586,6 +633,10 @@ impl Syntax {
                     list.push(push_inst(Bytecode::PACKLIST));
                 Box::new(list)
             }
+            Partition('{') => {
+                self.idx -= 1;
+                Box::new(self.item_may_block(self.expect_retval)?)
+            }
             Keyword(While) => {
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
@@ -682,19 +733,27 @@ impl Syntax {
                 };
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
-                    if let Some(idx) = slot {
-                        let sym = name.unwrap_or_else(|| format!("${}", idx));
-                        let node = self.bind_local_assign_replace(sym, idx, exp)?;
-                        return Ok(Some(node));
-                    }
-                    if let Some(n) = name {
-                        self.bind_let(n, exp)?;
-                        return Ok(Some(push_empty()));
-                    }
-                return errf!("let statement needs at least a name or slot")
+                let mut bindings = vec![];
+                if let Some(n) = name {
+                    bindings.push(n);
+                }
+                if let Some(idx) = slot {
+                    bindings.push(format!("${}", idx));
+                }
+                if bindings.is_empty() {
+                    return errf!("let statement needs at least a name or slot")
+                }
+                let expr = exp;
+                let alias_src = dyn_clone::clone_box(expr.as_ref());
+                let first = bindings.remove(0);
+                self.bind_let(first, expr)?;
+                for alias in bindings {
+                    self.bind_let(alias, dyn_clone::clone_box(alias_src.as_ref()))?;
+                }
+                return Ok(Some(push_empty()));
             }
             /*
-            Keyword(Use) => { // use AnySwap = VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            Keyword(Use) => { // use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
                 let e = errf!("use statement format error");
                 nxt = next!();
                 let Identifier(id) = nxt else {
@@ -712,7 +771,7 @@ impl Syntax {
                 push_empty()
             }
             */
-            Keyword(Lib) => { // lib AnySwap = 1 : VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            Keyword(Lib) => { // lib AnySwap = 1 : emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
                 let e = errf!("lib statement format error");
                 nxt = next!();
                 let Identifier(id) = nxt else { return e };
@@ -755,6 +814,44 @@ impl Syntax {
                 let fnsg = calc_func_sign(func);
                 let para: Vec<u8> = iter::once(self.link_lib(id)?).chain(fnsg).collect();
                 Box::new(IRNodeParams{hrtv: false, inst: CALLCODE, para})
+            }
+            Keyword(CallLib) => {
+                let e = errf!("calllib format error");
+                let idx_token = next!();
+                let lib_idx = Self::parse_lib_index_token(idx_token)?;
+                nxt = next!();
+                let Keyword(DColon) = nxt else {
+                    return e
+                };
+                nxt = next!();
+                let sig = Self::parse_fn_sig_token(nxt)?;
+                let mut para = Vec::with_capacity(1 + sig.len());
+                para.push(lib_idx);
+                para.extend(sig);
+                let argv = self.deal_func_argv()?;
+                Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLLIB, para, subx: argv})
+            }
+            Keyword(CallStatic) => {
+                let e = errf!("callstatic format error");
+                let idx_token = next!();
+                let lib_idx = Self::parse_lib_index_token(idx_token)?;
+                nxt = next!();
+                let Keyword(DColon) = nxt else {
+                    return e
+                };
+                nxt = next!();
+                let sig = Self::parse_fn_sig_token(nxt)?;
+                let mut para = Vec::with_capacity(1 + sig.len());
+                para.push(lib_idx);
+                para.extend(sig);
+                let argv = self.deal_func_argv()?;
+                Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLSTATIC, para, subx: argv})
+            }
+            Keyword(CallSelf) => {
+                nxt = next!();
+                let sig = Self::parse_fn_sig_token(nxt)?;
+                let argv = self.deal_func_argv()?;
+                Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLINR, para: sig.to_vec(), subx: argv})
             }
             Keyword(ByteCode) => {
                 let e = errf!("bytecode format error");
@@ -857,7 +954,13 @@ impl Syntax {
             Keyword(False)  => push_inst(P0),
             Keyword(Abort)  => push_inst_noret(ABT),
             Keyword(End)    => push_inst_noret(END),
-            Keyword(Print)  => Box::new(IRNodeSingle{hrtv: false, inst: PRT, subx: self.item_must(0)?}),
+            Keyword(Print)  => {
+                let exp = self.item_must(0)?;
+                if !exp.hasretval() {
+                    return errf!("print 的参数必须是有返回值的表达式，不能直接使用 let/var 声明");
+                }
+                Box::new(IRNodeSingle{hrtv: false, inst: PRT, subx: exp})
+            },
             Keyword(Assert) => Box::new(IRNodeSingle{hrtv: false, inst: AST, subx: self.item_must(0)?}),
             Keyword(Throw)  => Box::new(IRNodeSingle{hrtv: false, inst: ERR, subx: self.item_must(0)?}),
             Keyword(Return) => Box::new(IRNodeSingle{hrtv: false, inst: RET, subx: self.item_must(0)?}),
@@ -877,8 +980,7 @@ impl Syntax {
                     self.irnode.push(item);
                 };
             }
-            self.finalize_let_slots()?;
-        // local alloc
+    // local alloc
         if self.local_alloc > 0 {
             let allocs = Box::new(IRNodeParam1{
                 hrtv: false, inst: Bytecode::ALLOC, para: self.local_alloc, text: s!("")
@@ -888,34 +990,6 @@ impl Syntax {
             self.irnode.subs.remove(0); // no local var
         }
         Ok(self.irnode)
-    }
-
-
-    fn finalize_let_slots(&mut self) -> Rerr {
-        let base = self.local_alloc as usize;
-        let mut let_count = 0usize;
-        let infos: Vec<_> = self.symbols.values().filter_map(|entry| {
-            if let SymbolEntry::Let(info_rc) = entry {
-                Some(Rc::clone(info_rc))
-            } else {
-                None
-            }
-        }).collect();
-        for info_rc in infos {
-            let mut info = info_rc.borrow_mut();
-            if info.needs_slot && info.slot.is_none() {
-                let idx = base + let_count;
-                if idx > u8::MAX as usize {
-                    return errf!("let slot overflow");
-                }
-                let slot = idx as u8;
-                self.reserve_slot(slot)?;
-                info.slot = Some(slot);
-                let_count += 1;
-            }
-        }
-        self.local_alloc = (base + let_count) as u8;
-        Ok(())
     }
 
 

@@ -105,6 +105,15 @@ impl IRNodeText {
     }
 }
 
+fn format_call_args(substr: &str) -> String {
+    let trimmed = substr.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        trimmed.replace('\n', ", ").replace('\r', "")
+    }
+}
+
 
 
 /*************************************/
@@ -363,24 +372,22 @@ impl IRNode for IRNodeParamsSingle {
             let meta = self.inst.metadata();
             let substr = print_sub_inline!(suo, self.subx, desc);
             match self.inst {
-                CALL => {
-                    let lx = Address::SIZE;
-                    let adr = Address::must_vec(self.para[0..lx].to_vec());
-                    let fun = hex::encode(&self.para[lx..]);
-                    let ss = substr.replace(" ", "").replace("\n", ", ");
-                    buf.push_str(&format!("{}.<{}>({})", adr.readable(), fun, ss));
+                CALL | CALLLIB => {
+                    let idx = self.para[0];
+                    let f = hex::encode(&self.para[1..]);
+                    let args = format_call_args(&substr);
+                    buf.push_str(&format!("calllib {}::{}({})", idx, f, args));
                 }
                 CALLINR => {
                     let f = hex::encode(&self.para);
-                    let ss = substr.replace(" ", "").replace("\n", ", ");
-                    buf.push_str(&format!("self.<{}>({})", f, ss));
+                    let args = format_call_args(&substr);
+                    buf.push_str(&format!("callself {}({})", f, args));
                 }
-                CALLLIB | CALLSTATIC => {
-                    let clt = maybe!(CALLLIB==self.inst, ":", "::");
-                    let i = self.para[0];
+                CALLSTATIC => {
+                    let idx = self.para[0];
                     let f = hex::encode(&self.para[1..]);
-                    let ss = substr.replace(" ", "").replace("\n", ", ");
-                    buf.push_str(&format!("<{}>{}<{}>({})", i, clt, f, ss));
+                    let args = format_call_args(&substr);
+                    buf.push_str(&format!("callstatic {}::{}({})", idx, f, args));
                 }
                 _ => {
                     buf.push_str(&format!("{}(0x{}, {})", meta.intro, parastr, substr));
@@ -624,7 +631,7 @@ impl IRNode for IRNodeTriple {
         if desc {
             let meta = self.inst.metadata();
             match self.inst {
-                IRIF => {
+                IRIF | IRIFR => {
                     let subxstr = &print_sub_inline!(suo, self.subx, desc);
                     let subystr = print_sub_newline!(suo, self.suby, tab, desc);
                     let subzstr = print_sub_newline!(suo, self.subz, tab, desc);
@@ -875,6 +882,11 @@ impl IRNode for $name {
     fn codegen(&self) -> VmrtRes<Vec<u8>> {
         $compile_fn(self.inst, &self.subs)
     }
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        let codes = $compile_fn(self.inst, &self.subs)?;
+        buf.extend_from_slice(&codes);
+        Ok(())
+    }
     fn serialize(&self) -> Vec<u8> {
         if self.subs.len() > u16::MAX as usize {
             panic!("IRNode list or block length overflow")
@@ -891,7 +903,18 @@ impl IRNode for $name {
         let num = self.subs.len();
         let mut buf = String::new();
         if desc {
-        }else{
+            buf.push('{');
+            if num > 0 {
+                buf.push('\n');
+                for a in &self.subs {
+                    buf.push_str(&a.print(suo, tab + 1, desc));
+                    buf.push('\n');
+                }
+                buf.push_str(&pre);
+            }
+            buf.push('}');
+            return buf;
+        } else {
             buf.push_str(&format!("{}{:?} {} :\n", pre, self.inst, num));
         }
         if num == 0 {
@@ -902,10 +925,6 @@ impl IRNode for $name {
             buf.push('\n');
         }
         buf.pop();
-        if desc {
-            buf.push_str(&pre);
-        }else{
-        }
         buf
     }
 }

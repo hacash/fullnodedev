@@ -4,7 +4,6 @@
 mod storage {
 
     use field::*;
-    use field::interface::*;
 
     use vm::ir::*;
     use vm::rt::*;
@@ -101,7 +100,7 @@ mod storage {
             return reslist
         "##;
 
-        // VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+        // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
         .func(Func::new("total").public().fitsh(f3).unwrap())
         .func(Func::new("sto1").public().fitsh(f2).unwrap())

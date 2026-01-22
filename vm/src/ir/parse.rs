@@ -202,6 +202,50 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             }
         }
     };
-    // ok
-    Ok(irnode)
+    let mut node = irnode;
+    if isrtv {
+        if let Some(slot) = consume_let_dup_put(stuff, seek)? {
+            node = Box::new(IRNodeLetExpr { slot, expr: node });
+        }
+    }
+    Ok(node)
+}
+
+fn consume_let_dup_put(stuff: &[u8], seek: &mut usize) -> VmrtRes<Option<u8>> {
+    const DUP: u8 = Bytecode::DUP as u8;
+    const PUT: u8 = Bytecode::PUT as u8;
+    let codesz = stuff.len();
+    let idx = *seek;
+    if idx + 3 > codesz {
+        return Ok(None)
+    }
+    if stuff[idx] == DUP && stuff[idx + 1] == PUT {
+        let slot = stuff[idx + 2];
+        *seek = idx + 3;
+        return Ok(Some(slot))
+    }
+    Ok(None)
+}
+
+#[derive(Clone, Debug)]
+struct IRNodeLetExpr {
+    slot: u8,
+    expr: Box<dyn IRNode>,
+}
+
+impl IRNode for IRNodeLetExpr {
+    fn as_any(&self) -> &dyn Any { self }
+    fn hasretval(&self) -> bool { self.expr.hasretval() }
+    fn bytecode(&self) -> u8 { Bytecode::IRBLOCKR as u8 }
+    fn serialize(&self) -> Vec<u8> { self.expr.serialize() }
+    fn print(&self, suo: &str, tab: usize, desc: bool) -> String {
+        let mut buf = String::from(suo.repeat(tab));
+        if desc {
+            let expr_str = self.expr.print("", 0, desc);
+            buf.push_str(&format!("let ${} = {}", self.slot, expr_str));
+        } else {
+            buf.push_str(&format!("{:?} {}", Bytecode::IRBLOCKR, self.slot));
+        }
+        buf
+    }
 }

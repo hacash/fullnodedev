@@ -43,10 +43,21 @@ fn let_slot_and_cache_print() {
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircodes.ircode_print(true).unwrap();
-    assert!(printed.contains("let $0 ="));
-    assert!(printed.contains("let $1 ="));
-    assert!(printed.contains("let $2 ="));
-    assert!(printed.matches("$2").count() >= 2);
+    assert!(printed.matches("print($0)").count() >= 2);
+}
+
+#[test]
+fn calllib_callself_print() {
+    let script = r##"
+        calllib 2::abcdef01()
+        callself 11223344()
+        callstatic 3::deadbeef()
+    "##;
+    let ircodes = lang_to_ircode(script).unwrap();
+    let printed = ircodes.ircode_print(true).unwrap();
+    assert!(printed.contains("calllib 2::abcdef01("));
+    assert!(printed.contains("callself 00ab4130("));
+    assert!(printed.contains("callstatic 3::deadbeef("));
 }
 
 #[test]
@@ -62,23 +73,43 @@ fn let_var_interleave_print() {
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircodes.ircode_print(true).unwrap();
-    assert!(printed.contains("let $1 ="));
-    assert!(printed.contains("var"));
-    assert!(printed.matches("$1").count() >= 2);
-    assert!(printed.contains("$0"));
+    assert!(printed.contains("$0 = 10"));
+    assert!(printed.contains("$1 = $0"));
+    assert!(printed.matches("print($0)").count() >= 1);
+    assert!(printed.matches("print($1)").count() >= 2);
+}
+
+#[test]
+fn print_decomp_let_alias_clones_expression() {
+    let script = r##"
+        let base = {
+            if true {
+                { 1 }
+            } else {
+                { 2 }
+            }
+        }
+        let alias = base
+        print base
+        print alias
+    "##;
+    let printed = lang_to_ircode(script).unwrap().ircode_print(true).unwrap();
+    assert!(printed.matches("print(").count() >= 2);
+    assert!(printed.matches("if 1 {").count() >= 2);
+    assert!(printed.contains("} else {"));
 }
 
 #[test]
 fn block_and_if_expression_use_expr_opcodes() {
     let script = r##"
-        let value = { 
+        print {
             if false {
                 1
             } else {
                 2
             }
         }
-        let other = if true { 3 } else { 4 }
+        print if true { 3 } else { 4 }
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     assert!(ircodes.iter().any(|b| *b == Bytecode::IRBLOCKR as u8));
@@ -107,20 +138,24 @@ fn block_and_if_statement_use_stmt_opcodes() {
 #[test]
 fn nested_expression_contexts_emit_expr_opcodes() {
     let script = r##"
-        let nested = if true {
-            let inner = if false {
-                { if false { 10 } else { 11 } }
+        print {
+            if true {
+                let inner = if false {
+                    { if false { 10 } else { 11 } }
+                } else {
+                    { { 12 } }
+                }
+                inner
             } else {
-                { { 12 } }
-            }
-            inner
-        } else {
-            {
-                let deep = { if true { { 13 } } else { { 14 } } }
-                deep
+                {
+                    let deep = { if true { { 13 } } else { { 14 } } }
+                    deep
+                }
             }
         }
-        let extra = { { if true { { 15 } } else { { 16 } } } }
+        print { { if true { { 15 } } else { { 16 } } } }
+        print if false { { 17 } } else { { 18 } }
+        print if true { { 19 } } else { { 20 } }
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let blockr = ircodes.iter().filter(|b| **b == Bytecode::IRBLOCKR as u8).count();
@@ -148,6 +183,7 @@ fn var_rhs_block_expression_emits_expr_opcodes() {
         }
         var stmt = {
             print 5
+            0
         }
     "##;
     let ircodes = lang_to_ircode(script).unwrap();

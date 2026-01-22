@@ -4,7 +4,6 @@
 mod inherit {
 
     use field::*;
-    use field::interface::*;
 
     use sha2::digest::typenum::Abs;
     use vm::action::*;
@@ -21,18 +20,18 @@ mod inherit {
     #[test]
     fn addrs() {
         /*
-        VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
-        nakxhQZ2bhKDwKhowM18wyPTDkTDL1yNK
-        hXMHE4TjtUvvuzyevjjRruxiz2yxuT1zH
-        oSPKj5vT2qkrS2ZWL2AMB6AHS5e9mi77L
-        cmhfWCVLLosyQujfPnf86spZVW4exD2yr
-        WzK23CAKQFzoPpMEioBztv9yaASvJxNZM
-        ezFkqc6Smyk5DGvMY6bMoYx6vsU4gs7ba
-        UJ7Ypo4SpQibMudmEjJKbMUN7Zy9viyKS
-        cCBdc3vTmsBzPXbn2SaQy6dfbpvM6aJmK
-        bX96F9rJNYSBi3iE7vj2bQ75ChaTq5KsU
-        SckiYHndzCkKApYhAa9fK2vLfkAunN3w3
-        Td6MYJaoEbwo9JdebnCfcZs9qPAKuJz8A
+        emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
+        iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
+        WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
+        bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
+        ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz
+        bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe
+        Yk3wMvJAW1uHUYEbsCjEZrhPAfLWvL4LB
+        kEAVFuGFjMkYPRVDqpLans1SDUYGyKqD5
+        ezXPRoMFaH2SQfY2MCrUFNp4t5nauQWQi
+        fED9X4bJcGhzjjPrETTq1XjDj6RKTicqg
+        eWvsqW3yb7NsBj2cnhswbtfLAx8j7jXXN
+        g3T3uo1A483LRFufXhFwmMaNaT2ZeDXZ9
         */
         let addr = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
         for i in 0 .. 12 {        
@@ -47,7 +46,7 @@ mod inherit {
 
 
 
-        // VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+        // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         let contract = Contract::new()
         .func(Func::new("f1").public().fitsh("return 1").unwrap())
         // .func(Func::new("f2").fitsh(" return 2 ").unwrap())
@@ -55,9 +54,9 @@ mod inherit {
         ;
         contract.testnet_deploy_print("8:244");
 
-        // nakxhQZ2bhKDwKhowM18wyPTDkTDL1yNK
+        // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         let contract = Contract::new()
-        .inh(addr("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa"))
+        .inh(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
         .func(Func::new("f3").fitsh("return 31").unwrap())
         .func(Func::new("f4").fitsh("return 4").unwrap())
         .func(Func::new("f5").public().fitsh(r##"
@@ -76,23 +75,23 @@ mod inherit {
     #[test]
     fn deploy2() {
 
-        // VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+        // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
         .func(Func::new("f1").public().fitsh("return 1").unwrap())
         .func(Func::new("f2").fitsh("return 2").unwrap())
         .func(Func::new("f3").fitsh("return 3").unwrap())
         .testnet_deploy_print("8:244");
 
-        // nakxhQZ2bhKDwKhowM18wyPTDkTDL1yNK
+        // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         Contract::new()
         .func(Func::new("f3").fitsh("return 33").unwrap())
         .func(Func::new("f4").fitsh("return 44").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 1);
 
-        // hXMHE4TjtUvvuzyevjjRruxiz2yxuT1zH
+        // WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
         Contract::new()
-        .inh(addr("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa"))
-        .inh(addr("nakxhQZ2bhKDwKhowM18wyPTDkTDL1yNK"))
+        .inh(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
+        .inh(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
         .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
         .func(Func::new("f5").public().fitsh("
             print self.f1()
@@ -103,27 +102,27 @@ mod inherit {
         ").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 2);
 
-        // oSPKj5vT2qkrS2ZWL2AMB6AHS5e9mi77L
+        // bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
         Contract::new()
         .func(Func::new("f6").fitsh("return 6").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 3);
         
-        // cmhfWCVLLosyQujfPnf86spZVW4exD2yr
+        // ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz
         Contract::new()
         .func(Func::new("f7").fitsh("return 7").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 4);
         
-        // WzK23CAKQFzoPpMEioBztv9yaASvJxNZM
+        // bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe
         Contract::new()
         .func(Func::new("f8").fitsh("return 8").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 5);
         
         // 
-        let adr = addr("hXMHE4TjtUvvuzyevjjRruxiz2yxuT1zH");
+        let adr = addr("WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm");
         Contract::new()
-        .inh(addr("oSPKj5vT2qkrS2ZWL2AMB6AHS5e9mi77L"))
-        .inh(addr("cmhfWCVLLosyQujfPnf86spZVW4exD2yr"))
-        // .inh(addr("WzK23CAKQFzoPpMEioBztv9yaASvJxNZM"))
+        .inh(addr("bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5"))
+        .inh(addr("ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz"))
+        // .inh(addr("bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe"))
         .func(Func::new("f9").public().fitsh("
             print self.f1()
             print self.f2()
@@ -148,7 +147,7 @@ mod inherit {
 
 
         let maincodes = lang_to_bytecode(r##"
-            lib C = 3: hXMHE4TjtUvvuzyevjjRruxiz2yxuT1zH
+            lib C = 3: WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
             C.f9()
             end
         "##).unwrap();

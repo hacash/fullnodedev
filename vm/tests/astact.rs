@@ -4,7 +4,7 @@
 mod astact {
 
     use field::*;
-    use field::interface::*;
+    use basis::interface::*;
     use protocol::action::*;
     use vm::action::*;
     use vm::contract::curl_trs_1;

@@ -5,7 +5,6 @@ mod hacds {
 
 
     use field::*;
-    use field::interface::*;
     use vm::*;
     use vm::lang::*;
     use vm::contract::*;
@@ -112,7 +111,7 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
         use protocol::action::*;
         
         let _addr = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
-        let _cadr = addr("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa");
+        let _cadr = addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS");
 
         let mut act1 = DiaToTrs::new();
         act1.to = AddrOrPtr::from_ptr(1);
@@ -132,7 +131,7 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
         use protocol::action::*;
         
         let _addr = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
-        let _cadr = addr("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa");
+        let _cadr = addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS");
 
         let mut act1 = AssetToTrs::new();
         act1.to = AddrOrPtr::from_ptr(1);
@@ -152,16 +151,30 @@ curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "030068f
     #[test]
     fn hip20() {
 
-        use field::interface::*;
+        use sys::*;
+        use field::*;
         // use protocol::action::*;
         // use mint::action::*;
 
         let addr1 = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
-        let caddr = ContractAddress::calculate(&addr1, &Uint4::default());
+        let caddr = ContractAddress::calculate(&addr1, &Uint4::from(0));
 
-        println!("ContractAddress: {}", caddr.readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(0)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(1)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(2)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(3)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(4)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(5)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(6)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(7)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(8)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(9)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(10)).readable());
+        println!("{}", ContractAddress::calculate(&addr1, &Uint4::from(11)).readable());
 
-        let cadr = addr("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa");
+        println!("ContractAddress: {} {} {} {}", addr1.readable(), caddr.readable(), Uint4::default().uint(), Uint4::default().serialize().hex());
+
+        let cadr = addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS");
         assert!(caddr == ContractAddress::from_addr(cadr).unwrap());
 
         let mut act = mint::action::AssetCreate::new();

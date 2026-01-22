@@ -4,7 +4,6 @@
 mod main {
 
     use field::*;
-    use field::interface::*;
 
     use vm::action::*;
     use vm::ir::*;
@@ -49,7 +48,7 @@ mod main {
 
 
         let maincodes = lang_to_bytecode(r##"
-            lib C = 1: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib C = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             global_put("k", 123 as u32)
             var n = C.f1(3)
             print n
@@ -67,7 +66,7 @@ mod main {
 
 
         let maincodes = lang_to_bytecode(r##"
-            lib C = 1: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib C = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var num = C:f1(2)
             print num
             end

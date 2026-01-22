@@ -4,7 +4,6 @@
 mod library {
 
     use field::*;
-    use field::interface::*;
 
     use sha2::digest::typenum::Abs;
     use vm::action::*;
@@ -22,7 +21,7 @@ mod library {
     fn t1() {
 
         println!("{}", lang_to_ircode("
-            lib C = 0: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib C = 0: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var n1 = C:f1()
             end
             // return n1 + 2
@@ -33,38 +32,38 @@ mod library {
     #[test]
     fn deploy() {
 
-        // VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+        // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
         .func(Func::new("f1").public().fitsh("return 1").unwrap())
         .func(Func::new("f2").fitsh("return 2").unwrap())
         .testnet_deploy_print("8:244");
 
-        // nakxhQZ2bhKDwKhowM18wyPTDkTDL1yNK
+        // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         Contract::new()
-        .lib(addr("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa"))
+        .lib(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
         .func(Func::new("f3").public().fitsh("
-            lib C = 0: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            lib C = 0: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var n1 = C::f1()
             var n2 = C::f2()
             return n1 + n2
         ").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 1);
 
-        // hXMHE4TjtUvvuzyevjjRruxiz2yxuT1zH
+        // WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
         Contract::new()
         .func(Func::new("f4").public().fitsh("return 4").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 2);
         
-        // oSPKj5vT2qkrS2ZWL2AMB6AHS5e9mi77L
+        // bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
         Contract::new()
         .func(Func::new("f5").public().fitsh("return 5").unwrap())
         .testnet_deploy_print_by_nonce("8:244", 3);
 
-        // cmhfWCVLLosyQujfPnf86spZVW4exD2yr
+        // ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz
         Contract::new()
-        .lib(addr("nakxhQZ2bhKDwKhowM18wyPTDkTDL1yNK"))
-        .lib(addr("hXMHE4TjtUvvuzyevjjRruxiz2yxuT1zH"))
-        .lib(addr("oSPKj5vT2qkrS2ZWL2AMB6AHS5e9mi77L"))
+        .lib(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
+        .lib(addr("WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm"))
+        .lib(addr("bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5"))
         .func(Func::new("f6").public().fitsh("
             lib C0 = 0
             lib C1 = 1

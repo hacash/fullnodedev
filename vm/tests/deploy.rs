@@ -8,7 +8,6 @@ mod common;
 #[cfg(test)]
 mod deploy {
     use field::*;
-    use field::interface::*;
     use protocol::action::*;
 
     use vm::*;
@@ -22,7 +21,7 @@ mod deploy {
     #[test]
     fn deploy_update_2() {
 
-        let _cadr = Address::from_readable("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa").unwrap();
+        let _cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let contract = Contract::new()
         .func(Func::new("f1").public().fitsh(" return 1 ").unwrap())
@@ -45,7 +44,7 @@ mod deploy {
         println!("{:?}", irnode);
 
 
-        let _cadr = Address::from_readable("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa").unwrap();
+        let _cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let contract = Contract::new()
         .syst(Abst::new(AbstCall::Append).bytecode(build_codes!(P0 RET)).unwrap())
@@ -89,7 +88,7 @@ mod deploy {
     fn recursion() {
 
         /*
-            VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
+            emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 
 
         */
@@ -185,7 +184,7 @@ mod deploy {
     // fn call_recursion() {
     fn call_transfer() {
 
-        let adr = Address::from_readable("VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa").unwrap();
+        let adr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let mut act = HacToTrs::new();
         act.to = AddrOrPtr::from_addr(adr);

@@ -11,8 +11,8 @@ mod token_t {
     #[test]
     fn t1(){
         /*
-            use AnySwap = VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
-            lib ERC20   = VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa(1)
+            use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
+            lib ERC20   = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS(1)
             let foo     = $0
 
 
@@ -45,8 +45,8 @@ mod token_t {
         let sss = r##"
 
             
-            use AnySwap = VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
-            lib ERC20   = VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa(1)
+            use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
+            lib ERC20   = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS(1)
 
             callcode ERC20::do_transfer
 
@@ -70,7 +70,7 @@ mod token_t {
             abc = sha3(0x0000111100001111)
             num = ripemd160(abc)
 
-            num = check_signature(VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa)
+            num = check_signature(emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS)
 
             memory_put(abc, 24)
             num = memory_get(abc)

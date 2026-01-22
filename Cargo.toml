@@ -20,7 +20,7 @@ app            = {path = "./app"}
 # server = {path = "./server"}
 
 [features]
-default = ["db-sled"] # , "tex", "ast", "hvm", "p2sh"] # , "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
+default = ["db-sled"] #, "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
 hip20 = ["mint/hip20"]
 tex = ["protocol/tex"]
 ast = ["protocol/ast"]
@@ -40,4 +40,3 @@ lto = true          # Enable Link Time Optimization
 codegen-units = 1   # Reduce number of codegen units to increase optimizations.
 panic = 'abort'     # Abort on panic
 strip = true        # Strip symbols from binary
-
