@@ -20,7 +20,7 @@ app            = {path = "./app"}
 # server = {path = "./server"}
 
 [features]
-default = ["db-sled"] #, "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
+default = ["db-sled", "hip20", "tex", "ast", "hvm", "p2sh"] #, "ocl"]
 hip20 = ["mint/hip20"]
 tex = ["protocol/tex"]
 ast = ["protocol/ast"]

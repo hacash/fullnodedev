@@ -140,6 +140,18 @@ impl OpTy {
             _ => return errf!("cannot find OpTy {:?}", code)
         })
     }
+
+    pub fn is_right_assoc(&self) -> bool {
+        matches!(self, OpTy::POW)
+    }
+
+    pub fn next_min_prec(&self) -> u8 {
+        if self.is_right_assoc() {
+            self.level()
+        } else {
+            self.level().saturating_add(1)
+        }
+    }
 }
 
 
@@ -149,27 +161,27 @@ impl OpTy {
 
 
 operator_define!{
-    NOT       : "!" ,     200
-    POW       : "**",     175 
-    MUL       : "*" ,     150
-    DIV       : "/" ,     150
-    MOD       : "%" ,     150
-    ADD       : "+" ,     120
-    SUB       : "-" ,     120
-    BSHL      : "<<",     110
-    BSHR      : ">>",     110
-    BAND      : "&" ,     109
-    BXOR      : "^" ,     108
-    BOR       : "|" ,     107
-    EQ        : "==",     90 
-    NEQ       : "!=",     90
-    GE        : ">=",     90 
-    LE        : "<=",     90 
-    GT        : ">" ,     90
-    LT        : "<" ,     90
-    AND       : "&&",     79 
-    OR        : "||",     78 
-    CAT       : "++",     60
+    NOT       : "!" ,     13
+    POW       : "**",     12
+    MUL       : "*" ,     11
+    DIV       : "/" ,     11
+    MOD       : "%" ,     11
+    ADD       : "+" ,     10
+    SUB       : "-" ,     10
+    BSHL      : "<<",     9
+    BSHR      : ">>",     9
+    GE        : ">=",     8
+    LE        : "<=",     8
+    GT        : ">" ,     8
+    LT        : "<" ,     8
+    EQ        : "==",     7
+    NEQ       : "!=",     7
+    BAND      : "&" ,     6
+    BXOR      : "^" ,     5
+    BOR       : "|" ,     4
+    AND       : "&&",     3
+    OR        : "||",     2
+    CAT       : "++",     1
 }
 
 

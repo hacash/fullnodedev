@@ -31,7 +31,7 @@ mod main {
             return gn
         "##;
 
-        // println!("{}", lang_to_ircode(&recursion_fn).unwrap().ircode_print(false).unwrap());
+        // println!("{}", ircode_to_lang(&lang_to_ircode(&recursion_fn).unwrap()).unwrap());
 
         let contract = Contract::new()
             .func(Func::new("f1").public().fitsh(_fn1).unwrap())

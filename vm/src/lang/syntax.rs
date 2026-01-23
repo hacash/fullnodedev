@@ -185,6 +185,9 @@ impl Syntax {
     }
 
     fn reserve_slot(&mut self, idx: u8) -> Rerr {
+        if self.slot_used.contains(&idx) {
+            return errf!("slot {} already bound", idx)
+        }
         self.slot_used.insert(idx);
         Ok(())
     }
@@ -261,7 +264,7 @@ impl Syntax {
     }
 
 
-    pub fn item_with_left(&mut self, left: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
+    pub fn item_with_left(&mut self, mut left: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         use KwTy::*;
         let max = self.tokens.len();
@@ -277,109 +280,131 @@ impl Syntax {
             self.idx += 1;
             nxt
         }}}
-        let mut nxt = next!();
-        Ok(match nxt {
-            Keyword(Assign) 
-            | Keyword(AsgAdd) 
-            | Keyword(AsgSub)
-            | Keyword(AsgMul)
-            | Keyword(AsgDiv) => {
-                let e = errf!("assign statement format error");
-                let mut id: Option<String> = None; 
-                if let Some(ir) = left.as_any().downcast_ref::<IRNodeParam1>() {
-                    id = Some(ir.as_text().clone());
-                };
-                if let Some(ir) = left.as_any().downcast_ref::<IRNodeLeaf>() {
-                    id = Some(ir.as_text().clone());
-                };
-                let Some(id) = id else {
-                    return e
-                };
-                let v = unsafe { (&mut *sfptr).item_must(0)? };
-                v.checkretval()?; // must retv
-                match nxt {
-                    Keyword(Assign) => self.save_local(&id, v)?,
-                    _ => self.assign_local(&id, v, nxt)?,
-                }
+        loop {
+            if self.idx >= max {
+                break
             }
-            Keyword(As) => {
-                left.checkretval()?; // must retv
-                let e = errf!("<as> express format error");
-                nxt = next!();
-                let hrtv = true;
-                macro_rules! cuto {($inst: expr) => { 
-                    Box::new(IRNodeSingle{hrtv, inst: $inst, subx: left} )
-                }}
-                let v: Box<dyn IRNode> = match nxt {
-                    Keyword(U8)    => cuto!(CU8)  ,
-                    Keyword(U16)   => cuto!(CU16) ,
-                    Keyword(U32)   => cuto!(CU32) ,
-                    Keyword(U64)   => cuto!(CU64) ,
-                    Keyword(U128)  => cuto!(CU128),
-                    Keyword(Bytes) => cuto!(CBUF) ,
-                    Keyword(Address) => {
-                        let para = ValueTy::Address as u8;
-                        Box::new(IRNodeParam1Single{hrtv, inst: CTO, para, subx: left })       
+            let nxt = next!();
+            match nxt {
+                Keyword(Assign) 
+                | Keyword(AsgAdd) 
+                | Keyword(AsgSub)
+                | Keyword(AsgMul)
+                | Keyword(AsgDiv) => {
+                    let e = errf!("assign statement format error");
+                    let mut id: Option<String> = None; 
+                    if let Some(ir) = left.as_any().downcast_ref::<IRNodeParam1>() {
+                        id = Some(ir.as_text().clone());
+                    };
+                    if let Some(ir) = left.as_any().downcast_ref::<IRNodeLeaf>() {
+                        id = Some(ir.as_text().clone());
+                    };
+                    let Some(id) = id else {
+                        return e
+                    };
+                    let v = unsafe { (&mut *sfptr).item_must(0)? };
+                    v.checkretval()?; // must retv
+                    left = match nxt {
+                        Keyword(Assign) => self.save_local(&id, v)?,
+                        _ => self.assign_local(&id, v, nxt)?,
+                    };
+                }
+                Keyword(As) => {
+                    left.checkretval()?; // must retv
+                    let e = errf!("<as> express format error");
+                    let nk = next!();
+                    let hrtv = true;
+                    macro_rules! cuto {($inst: expr) => { 
+                        Box::new(IRNodeSingle{hrtv, inst: $inst, subx: left} )
+                    }}
+                    let v: Box<dyn IRNode> = match nk {
+                        Keyword(U8)    => cuto!(CU8)  ,
+                        Keyword(U16)   => cuto!(CU16) ,
+                        Keyword(U32)   => cuto!(CU32) ,
+                        Keyword(U64)   => cuto!(CU64) ,
+                        Keyword(U128)  => cuto!(CU128),
+                        Keyword(Bytes) => cuto!(CBUF) ,
+                        Keyword(Address) => {
+                            let para = ValueTy::Address as u8;
+                            Box::new(IRNodeParam1Single{hrtv, inst: CTO, para, subx: left })       
+                        }
+                        _ => return e
+                    };
+                    left = v;
+                }
+                Keyword(Is) => {
+                    let e = errf!("<is> express format error");
+                    let mut nk = next!();
+                    let mut is_not = false;
+                    if let Keyword(Not) = nk {
+                        is_not = true;
+                        nk = next!();
                     }
-                    _ => return e
-                };
-                v
-            }
-            Keyword(Is) => {
-                let e = errf!("<is> express format error");
-                nxt = next!();
-                let mut is_not = false;
-                if let Keyword(Not) = nxt {
-                    is_not = true;
-                    nxt = next!();
+                    let hrtv = true;
+                    let subx = left;
+                    let mut res: Box<dyn IRNode> = match nk {
+                        Keyword(Nil)     => Box::new(IRNodeSingle{hrtv, subx, inst: TNIL   }),
+                        Keyword(List)    => Box::new(IRNodeSingle{hrtv, subx, inst: TLIST  }),
+                        Keyword(Map)     => Box::new(IRNodeSingle{hrtv, subx, inst: TMAP  }),
+                        Keyword(Bool)    => Box::new(IRNodeParam1Single{para: ValueTy::Bool    as u8, hrtv, subx, inst: TIS}),
+                        Keyword(U8)      => Box::new(IRNodeParam1Single{para: ValueTy::U8      as u8, hrtv, subx, inst: TIS}),
+                        Keyword(U16)     => Box::new(IRNodeParam1Single{para: ValueTy::U16     as u8, hrtv, subx, inst: TIS}),
+                        Keyword(U32)     => Box::new(IRNodeParam1Single{para: ValueTy::U32     as u8, hrtv, subx, inst: TIS}),
+                        Keyword(U64)     => Box::new(IRNodeParam1Single{para: ValueTy::U64     as u8, hrtv, subx, inst: TIS}),
+                        Keyword(U128)    => Box::new(IRNodeParam1Single{para: ValueTy::U128    as u8, hrtv, subx, inst: TIS}),
+                        Keyword(Bytes)   => Box::new(IRNodeParam1Single{para: ValueTy::Bytes   as u8, hrtv, subx, inst: TIS}),
+                        Keyword(Address) => Box::new(IRNodeParam1Single{para: ValueTy::Address as u8, hrtv, subx, inst: TIS}),
+                        _ => return e
+                    };
+                    if is_not {
+                        res = Box::new(IRNodeSingle{hrtv, inst: NOT, subx: res})
+                    }
+                    left = res
                 }
-                let hrtv = true;
-                let subx = left;
-                let mut res: Box<dyn IRNode> = match nxt {
-                    Keyword(Nil)     => Box::new(IRNodeSingle{hrtv, subx, inst: TNIL   }),
-                    Keyword(List)    => Box::new(IRNodeSingle{hrtv, subx, inst: TLIST  }),
-                    Keyword(Map)     => Box::new(IRNodeSingle{hrtv, subx, inst: TMAP   }),
-                    Keyword(Bool)    => Box::new(IRNodeParam1Single{para: ValueTy::Bool    as u8, hrtv, subx, inst: TIS}),
-                    Keyword(U8)      => Box::new(IRNodeParam1Single{para: ValueTy::U8      as u8, hrtv, subx, inst: TIS}),
-                    Keyword(U16)     => Box::new(IRNodeParam1Single{para: ValueTy::U16     as u8, hrtv, subx, inst: TIS}),
-                    Keyword(U32)     => Box::new(IRNodeParam1Single{para: ValueTy::U32     as u8, hrtv, subx, inst: TIS}),
-                    Keyword(U64)     => Box::new(IRNodeParam1Single{para: ValueTy::U64     as u8, hrtv, subx, inst: TIS}),
-                    Keyword(U128)    => Box::new(IRNodeParam1Single{para: ValueTy::U128    as u8, hrtv, subx, inst: TIS}),
-                    Keyword(Bytes)   => Box::new(IRNodeParam1Single{para: ValueTy::Bytes   as u8, hrtv, subx, inst: TIS}),
-                    Keyword(Address) => Box::new(IRNodeParam1Single{para: ValueTy::Address as u8, hrtv, subx, inst: TIS}),
-                    _ => return e
-                };
-                if is_not {
-                    res = Box::new(IRNodeSingle{hrtv: true, inst: NOT, subx: res})
+                Operator(_) if self.check_op => {
+                    self.idx -= 1;
+                    self.check_op = false;
+                    let res = self.parse_next_op(left, 0)?;
+                    self.check_op = true;
+                    left = res;
                 }
-                res
+                _ => { self.idx -= 1; break }
             }
-            Operator(op) if self.check_op => {
-                self.check_op = false;
-                let res = self.parse_next_op(left, *op)?;
-                self.check_op = true;
-                res
+        }
+        Ok(left)
+    }
+    fn parse_next_op(&mut self, mut left: Box<dyn IRNode>, min_prec: u8) -> Ret<Box<dyn IRNode>> {
+        loop {
+            let op = match self.peek_operator() {
+                Some(op) if op.level() >= min_prec => op,
+                _ => break,
+            };
+            self.consume_operator();
+            let mut right = self.item_must(0)?;
+            right = self.parse_next_op(right, op.next_min_prec())?;
+            left = Box::new(IRNodeDouble{hrtv: true, inst: op.bytecode(), subx: left, suby: right});
+        }
+        Ok(left)
+    }
+
+    fn peek_operator(&self) -> Option<OpTy> {
+        self.tokens.get(self.idx).and_then(|token| {
+            if let Token::Operator(op) = token {
+                Some(*op)
+            } else {
+                None
             }
-            _ => { self.idx -= 1; left }
         })
     }
 
-    fn parse_next_op(&mut self, mut left: Box<dyn IRNode>, op: OpTy) -> Ret<Box<dyn IRNode>> {
-        let mut right = self.item_must(0)?;
-        let c_node = |op: OpTy, l, r| { Box::new(IRNodeDouble{hrtv: true, inst: op.bytecode(), subx: l, suby: r}) };
-        if let Ok(nxt) = self.next() {
-            if let Operator(op2) = nxt {
-                if op.level() >= op2.level() {
-                    left = c_node(op, left, right);
-                    return self.parse_next_op(left, op2)
-                }else{
-                    right = self.parse_next_op(right, op2)?;
-                }
-            }else{
-                self.idx -= 1; // back
+    fn consume_operator(&mut self) -> Option<OpTy> {
+        if let Some(token) = self.tokens.get(self.idx) {
+            if let Token::Operator(op) = token {
+                self.idx += 1;
+                return Some(*op);
             }
         }
-        Ok(c_node(op, left, right))
+        None
     }
 
     pub fn item_must(&mut self, jp: usize) -> Ret<Box<dyn IRNode>> {
@@ -460,21 +485,27 @@ impl Syntax {
             return e
         };
         let mut params = 0;
+        let mut param_names = Vec::new();
         loop {
             nxt = self.next()?;
             if let Partition('}') = nxt {
                 break // all finish
             };
             if let Identifier(id) = nxt {
+                let name = id.clone();
                 self.bind_local(id, params)?;
+                param_names.push(name);
                 params += 1;
             } 
         }
         // match
         use Bytecode::*;
+        if params == 0 {
+            return errf!("param must need at least one");
+        }
+        self.source_map.register_param_names(param_names)?;
+        // var num = pick(0)
         Ok(match params {
-            0 => return errf!("param must need at least one"),
-            // var num = pick(0)
             1 => Box::new(IRNodeParam1Single{
                 hrtv: true,
                 inst: PUT,
@@ -608,10 +639,7 @@ impl Syntax {
                 let Partition(')') = nxt else {
                     return e
                 };
-                maybe!(exp.subs() >= 2,
-                    Box::new(IRNodeWrapOne{node: exp}),
-                    exp
-                )
+                Box::new(IRNodeWrapOne{node: exp})
             }
             Partition('[') => { // pack_list
                 let mut subs = vec![];
@@ -766,20 +794,26 @@ impl Syntax {
             }
             Keyword(CallCode) => {
                 let e = errf!("callcode statement format error");
-                nxt = next!();
-                let Identifier(id) = nxt else {
-                    return e
+                let idx_token = next!();
+                let lib_idx = match idx_token {
+                    Identifier(id) => self.link_lib(id)?,
+                    _ => Self::parse_lib_index_token(idx_token)?,
                 };
                 nxt = next!();
                 let Keyword(DColon) = nxt else {
                     return e
                 };
                 nxt = next!();
-                let Identifier(func) = nxt else {
-                    return e
+                let fnsg = match nxt {
+                    Identifier(func) => {
+                        match Self::parse_fn_sig_str(&func) {
+                            Ok(sig) => sig,
+                            Err(_) => calc_func_sign(&func),
+                        }
+                    }
+                    _ => Self::parse_fn_sig_token(nxt)?,
                 };
-                let fnsg = calc_func_sign(func);
-                let para: Vec<u8> = iter::once(self.link_lib(id)?).chain(fnsg).collect();
+                let para: Vec<u8> = iter::once(lib_idx).chain(fnsg).collect();
                 Box::new(IRNodeParams{hrtv: false, inst: CALLCODE, para})
             }
             Keyword(Call) => {

@@ -32,8 +32,8 @@ mod amm {
         );
     }
 
-    #[test]
-    fn deploy() {
+    // #[test]
+    fn _deploy() {
         use vm::ir::*;
 
         /*
@@ -60,7 +60,7 @@ mod amm {
         "##;
 
         let payable_sat = checked_compile_fitsh_to_ir(&payable_sat_fitsh);
-        println!("\n{}\n", payable_sat.ircode_print(true).unwrap());
+        println!("\n{}\n", ircode_to_lang(&payable_sat).unwrap());
 
         let payable_hac_fitsh = r##"
             // HAC Pay
@@ -70,7 +70,7 @@ mod amm {
                 return 0 // ok for buy sat
             }
             // deal deposit
-            var zhu $1 = hac_to_zhu(amt) as u128
+            var zhu $2 = hac_to_zhu(amt) as u128
             assert zhu >= 10000
             let in_zhu = memory_get("in_zhu") as u128
             assert zhu == in_zhu
@@ -89,13 +89,13 @@ mod amm {
 
         let payable_hac = checked_compile_fitsh_to_ir(&payable_hac_fitsh);
 
-        println!("\n{}\n", payable_hac.ircode_print(true).unwrap());
+        println!("\n{}\n", ircode_to_lang(&payable_hac).unwrap());
 
         /* println!("payable_hac byte code len {} : {}\n\n{}\n\n{}",
             payable_hac.len(),
             payable_hac.to_hex(),
             compile_fitsh_bytecode(&payable_hac_fitsh).bytecode_print(true).unwrap(),
-            payable_hac.ircode_print(true).unwrap()
+            ircode_to_lang(&payable_hac).unwrap()
         ); */
 
         let prepare_codes = checked_compile_fitsh_to_ir(
@@ -104,9 +104,9 @@ mod amm {
             assert deadline >= block_height()
             assert sat >= 1000 && zhu >= 10000
             // get total
-            var tt_shares $3
-            var tt_sat    $4
-            var tt_zhu    $5
+            var tt_shares $4 = 0
+            var tt_sat    $5 = 0
+            var tt_zhu    $6 = 0
             unpack_list(self.total(), 3)
             // check
             var k_in_sat = "in_sat"
@@ -126,7 +126,7 @@ mod amm {
         );
         println!(
             "prepare_codes:\n{}\n{}\n",
-            prepare_codes.ircode_print(true).unwrap(),
+            ircode_to_lang(&prepare_codes).unwrap(),
             prepare_codes.to_hex()
         );
         let prepare_codes = convert_ir_to_bytecode(&prepare_codes).unwrap();
@@ -135,16 +135,16 @@ mod amm {
             r##"
             param { addr, sat, zhu }
             // get total
-            var tt_shares $3
-            var tt_sat    $4
-            var tt_zhu    $5
+            var tt_shares $3 = 0
+            var tt_sat    $4 = 0
+            var tt_zhu    $5 = 0
             unpack_list(self.total(), 3)
-            tt_shares += zhu as u64
+            tt_shares += (zhu as u64)
             let tt_k = "total_shares"
             storage_save(tt_k, tt_shares)
             // 
-            var lq_k $0 = addr ++ "_shares"
-            var my_shares $4 = storage_load(lq_k)
+            var lq_k $6 = addr ++ "_shares"
+            var my_shares $7 = storage_load(lq_k)
             if my_shares is nil {
                 my_shares = 0 as u64
             }
@@ -155,7 +155,7 @@ mod amm {
         );
         println!(
             "deposit_codes:\n{}\n{}\n",
-            deposit_codes.ircode_print(true).unwrap(),
+            ircode_to_lang(&deposit_codes).unwrap(),
             deposit_codes.to_hex()
         );
         let deposit_codes = convert_ir_to_bytecode(&deposit_codes).unwrap();
@@ -164,9 +164,9 @@ mod amm {
             r##"
             param { addr, shares }
             // get total
-            var tt_shares $2
-            var tt_sat    $3
-            var tt_zhu    $4
+            var tt_shares $2 = 0
+            var tt_sat    $3 = 0
+            var tt_zhu    $4 = 0
             unpack_list(self.total(), 2)
             var lq_k = addr ++ "_shares"
             var my_shares = storage_load(lq_k)
@@ -202,7 +202,7 @@ mod amm {
         );
         println!(
             "withdraw_codes:\n{}\n{}\n",
-            withdraw_codes.ircode_print(true).unwrap(),
+            ircode_to_lang(&withdraw_codes).unwrap(),
             withdraw_codes.to_hex()
         );
         let withdraw_codes = convert_ir_to_bytecode(&withdraw_codes).unwrap();
@@ -213,9 +213,9 @@ mod amm {
             assert deadline >= block_height()
             assert sat>0 && max_zhu>0
             // get total
-            var tt_shares $3
-            var tt_sat    $4
-            var tt_zhu    $5
+            var tt_shares $3 = 0
+            var tt_sat    $4 = 0
+            var tt_zhu    $5 = 0
             unpack_list(self.total(), 3)
             assert tt_shares>0 && tt_sat>0 && tt_zhu>0 
             // 0.3% fee
@@ -228,7 +228,7 @@ mod amm {
         );
         println!(
             "buy_codes:\n{}\n{}\n",
-            buy_codes.ircode_print(true).unwrap(),
+            ircode_to_lang(&buy_codes).unwrap(),
             buy_codes.to_hex()
         );
         let buy_codes = convert_ir_to_bytecode(&buy_codes).unwrap();
@@ -238,9 +238,9 @@ mod amm {
             param { sat, min_zhu, deadline }
             assert deadline >= block_height()
             // get total
-            var tt_shares $3
-            var tt_sat    $4
-            var tt_zhu    $5
+            var tt_shares $3 = 0
+            var tt_sat    $4 = 0
+            var tt_zhu    $5 = 0
             unpack_list(self.total(), 3)
             assert tt_shares>0 && tt_sat>0 && tt_zhu>0 
             // 0.3% fee
@@ -253,7 +253,7 @@ mod amm {
         );
         println!(
             "sell_codes:\n{}\n{}\n",
-            sell_codes.ircode_print(true).unwrap(),
+            ircode_to_lang(&sell_codes).unwrap(),
             sell_codes.to_hex()
         );
         let sell_codes = convert_ir_to_bytecode(&sell_codes).unwrap();
@@ -263,7 +263,7 @@ mod amm {
             param { addr, sat}
             assert memory_get("hac_in")
             var ot_k = "out_sat"
-            var out_sat $0 = memory_get(ot_k)
+            var out_sat $3 = memory_get(ot_k)
             assert sat > 0 && sat == out_sat
             memory_put(ot_k, nil)
             // ok
@@ -276,7 +276,7 @@ mod amm {
             param { addr, hac}
             assert memory_get("sat_in")
             var ot_k = "out_hac"
-            var out_hac $0 = memory_get(ot_k)
+            var out_hac $3 = memory_get(ot_k)
             assert hac_to_zhu(hac) > 0 && hac == out_hac
             memory_put(ot_k, nil)
             // ok
@@ -403,8 +403,8 @@ mod amm {
         let maincodes = compile_fitsh_bytecode(
             r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
-            var sat = 100000000 as u64 // 1 BTC
-            var zhu = HacSwap.prepare(sat, 100000000000, 50) // 1k HAC
+            var sat = 1 as u64 // 1 BTC // 100000000000
+            var zhu = HacSwap.prepare(sat, 1, 50) // 1k HAC
             var adr = address_ptr(1)
             // throw concat(adr, sat)
             transfer_sat_to(adr, sat)

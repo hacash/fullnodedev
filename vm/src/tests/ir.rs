@@ -1,6 +1,7 @@
 
 // use super::rt::Bytecode::*;
 use super::ir::*;
+use super::PrintOption;
 
 
 fn test_irnds() -> Vec<u8> {
@@ -40,8 +41,10 @@ fn codegen1() {
     println!("irbtx len = {}", irbts.len());
     let irnds = parse_ir_block(&irbts, &mut 0).unwrap();
     println!("{:?}", irnds);
-    println!("```ir byte codes:\n{}\n```", irnds.print("    ", 0, false, None));
-    println!("```ir desc codes:\n{}\n```", irnds.print("    ", 0, true, None));
+    let opt_plain = PrintOption::new("    ", 0, false);
+    println!("```ir byte codes:\n{}\n```", irnds.print(&opt_plain));
+    let opt_desc = PrintOption::new("    ", 0, true);
+    println!("```ir desc codes:\n{}\n```", irnds.print(&opt_desc));
     let codes = irnds.codegen().unwrap();
     println!("codes len = {}, {}", codes.len(), codes.bytecode_print(true).unwrap());
 }
@@ -62,4 +65,3 @@ fn codegen2() {
     let us_time = SystemTime::now().duration_since(sy_time).unwrap().as_millis();
     println!("res codes last {}, use time {} millis", res, us_time);
 }
-

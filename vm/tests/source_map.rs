@@ -1,5 +1,6 @@
 use field::Address;
 use vm::IRNode;
+use vm::PrintOption;
 use vm::lang::lang_to_irnode_with_sourcemap;
 use vm::rt::*;
 
@@ -44,7 +45,8 @@ fn source_map_recovery_records_symbols() {
         Some("notify")
     );
 
-    let printed = ir_block.print("    ", 0, true, Some(&source_map));
+    let opt = PrintOption::new("    ", 0, true).with_source_map(&source_map);
+    let printed = ir_block.print(&opt);
     assert!(printed.contains("Fund.deposit("));
     assert!(printed.contains("Fund::audit("));
     assert!(printed.contains("self.notify("));
@@ -66,4 +68,14 @@ fn source_map_json_roundtrip() {
     assert_eq!(restored.func(&sig).map(|s| s.as_str()), Some("deposit"));
     assert_eq!(restored.slot(0).map(|s| s.as_str()), Some("total"));
     assert!(!restored.mark_slot_put(0)); // already marked
+}
+
+#[test]
+fn source_map_param_names_roundtrip() {
+    let mut map = SourceMap::default();
+    let param_names = vec!["addr".to_string(), "sat".to_string()];
+    map.register_param_names(param_names.clone()).unwrap();
+    let json = map.to_json().unwrap();
+    let restored = SourceMap::from_json(&json).unwrap();
+    assert_eq!(restored.param_names().unwrap(), &param_names);
 }

@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use hex;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ struct SourceMapJson {
     funcs: Vec<FuncJson>,
     slots: Vec<SlotJson>,
     puts: Vec<u8>,
+    params: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,7 +50,8 @@ pub struct SourceMap {
     libs: HashMap<u8, LibInfo>,
     funcs: HashMap<FnSign, String>,
     slots: HashMap<u8, String>,
-    allocated: RefCell<HashSet<u8>>,
+    params: Vec<String>,
+    allocated: Rc<RefCell<HashSet<u8>>>,
 }
 
 impl Default for SourceMap {
@@ -57,7 +60,8 @@ impl Default for SourceMap {
             libs: HashMap::new(),
             funcs: HashMap::new(),
             slots: HashMap::new(),
-            allocated: RefCell::new(HashSet::new()),
+            params: Vec::new(),
+            allocated: Rc::new(RefCell::new(HashSet::new())),
         }
     }
 }
@@ -78,6 +82,19 @@ impl SourceMap {
         Ok(())
     }
 
+    pub fn register_param_names(&mut self, names: Vec<String>) -> Rerr {
+        self.params = names;
+        Ok(())
+    }
+
+    pub fn param_names(&self) -> Option<&Vec<String>> {
+        if self.params.is_empty() {
+            None
+        } else {
+            Some(&self.params)
+        }
+    }
+
     pub fn lib(&self, idx: u8) -> Option<&LibInfo> {
         self.libs.get(&idx)
     }
@@ -90,16 +107,22 @@ impl SourceMap {
         self.slots.get(&slot)
     }
 
+    pub fn lib_entries(&self) -> Vec<(u8, LibInfo)> {
+        let mut libs: Vec<(u8, LibInfo)> = self.libs.iter().map(|(&idx, info)| (idx, info.clone())).collect();
+        libs.sort_by_key(|(idx, _)| *idx);
+        libs
+    }
+
+    pub fn slot_puts(&self) -> Rc<RefCell<HashSet<u8>>> {
+        self.allocated.clone()
+    }
+
     pub fn mark_slot_put(&self, slot: u8) -> bool {
         self.allocated.borrow_mut().insert(slot)
     }
 
     pub fn clear_slot_put(&self, slot: u8) {
         self.allocated.borrow_mut().remove(&slot);
-    }
-
-    pub fn clear_all_slot_puts(&self) {
-        self.allocated.borrow_mut().clear();
     }
 
     pub fn to_json(&self) -> Ret<String> {
@@ -117,7 +140,7 @@ impl SourceMap {
             name: name.clone(),
         }).collect();
         let puts: Vec<u8> = self.allocated.borrow().iter().copied().collect();
-        let doc = SourceMapJson { libs, funcs, slots, puts };
+        let doc = SourceMapJson { libs, funcs, slots, puts, params: self.params.clone() };
         serde_json::to_string(&doc).map_err(|_|s!("source map serialize failed"))
     }
 
@@ -143,6 +166,7 @@ impl SourceMap {
         for slot in doc.slots {
             map.register_slot(slot.slot, slot.name)?;
         }
+        map.params = doc.params;
         for slot in doc.puts {
             map.mark_slot_put(slot);
         }

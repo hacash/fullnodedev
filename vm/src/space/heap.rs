@@ -148,7 +148,9 @@ impl Heap {
         5+8 bit = seg max 64 (u8:64, u16:128, u32:256, u64:512)
     */
     pub fn read_ul(&self, mark: u16) -> VmrtRes<Value> {
-        let uty = mark >> 5+8;
+        // upper 3 bits indicate uint type; remaining 13 bits indicate segment
+        // shift by 13 (5+8) explicitly to avoid precedence ambiguity
+        let uty = mark >> 13;
         if uty > 4 {
             return itr_err_fmt!(HeapError, "uint type {} not support", uty)
         }

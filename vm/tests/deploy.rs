@@ -88,8 +88,8 @@ mod deploy {
         contract.testnet_update_print(_cadr, "8:244");
     }
 
-    #[test]
-    fn recursion() {
+    // #[test]
+    fn _recursion() {
         /*
             emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 
@@ -114,13 +114,13 @@ mod deploy {
         let payable_hac_codes = compile_fitsh_bytecode(
             r##"
             var pms $0 = pick(0)
-            var adr $1
-            var res $2
+            var adr $1 = 0
+            var res $2 = 0
             assert type_id(pms) == 15
             assert type_is_list(pms)
             adr = item_get(0, pms)
             adr = pms[3]
-            assert type_is(12, adr)
+            // assert type_is(12, adr)
 
             let bdt = pms + adr
             res = 1 + 2

@@ -21,19 +21,15 @@ mod library {
 
     #[test]
     fn t1() {
-        println!(
-            "{}",
-            checked_compile_fitsh_to_ir(
-                "
+        let ircode = checked_compile_fitsh_to_ir(
+            "
             lib C = 0: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var n1 = C:f1()
             end
             // return n1 + 2
-        "
-            )
-            .ircode_print(false)
-            .unwrap()
+        ",
         );
+        println!("{}", ircode_to_lang(&ircode).unwrap());
     }
 
     #[test]

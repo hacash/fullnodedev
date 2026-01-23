@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use vm::IRNode;
-use vm::ir::{IRCodePrint, convert_ir_to_bytecode, parse_ir_block};
-use vm::lang::{lang_to_ircode, lang_to_irnode};
-use vm::rt::Bytecode;
+use vm::ir::{convert_ir_to_bytecode, parse_ir_block};
+use vm::lang::*;
+use vm::rt::{Bytecode, BytecodePrint};
 
 fn ensure_ir_roundtrip(bytes: &[u8]) {
     let mut idx = 0;
@@ -32,11 +32,29 @@ fn unwrap_root_block(bytes: Vec<u8>) -> Vec<u8> {
 }
 
 pub fn checked_compile_fitsh_to_ir(script: &str) -> Vec<u8> {
+    // check with sourcemap
+    let (ircd1, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let lang1 = ircode_to_lang_with_sourcemap(&ircd1, &smap).unwrap();
+    let res1 = lang_to_ircode_with_sourcemap(&lang1);
+    if let Err(e) = &res1 {
+        println!("Original Script:\n{}", script);
+        println!("Reconstructed Script:\n{}", lang1);
+        panic!("Fitsh roundtrip failed, {}", e);
+    };
+    let (ircd2, _) = res1.unwrap();
+    if ircd1 != ircd2 {
+        println!("-- Original Script:\n{}", script);
+        println!("-- Reconstructed Script:\n{}", lang1);
+        panic!("Fitsh roundtrip IR mismatch");
+    }
+    assert_eq!(ircd1, ircd2);
+
+    // check other
     let _ = lang_to_irnode(script).unwrap();
     let ircodes = lang_to_ircode(script).unwrap();
     ensure_ir_roundtrip(&ircodes);
 
-    let decompiled = ircodes.ircode_print(true).unwrap();
+    let decompiled = ircodes.bytecode_print(true).unwrap();
     if let Ok(ircodes_roundtrip) = lang_to_ircode(&decompiled) {
         let ircodes_roundtrip = unwrap_root_block(ircodes_roundtrip);
         ensure_ir_roundtrip(&ircodes_roundtrip);

@@ -346,18 +346,18 @@ pub fn execute_code(
             UPLIST   => { let i = ops.pop()?.checked_u8()?; unpack_list(i, locals, ops.compo()?.list_ref()?)?; ops.pop()?; }
             // heap
             HGROW    => gas += heap.grow(pu8!())?,
-            HWRITE   => heap.write(ops_pop_to_u16!(), ops.pop()?)?,
-            HREAD    => { let n = ops.pop()?; *ops.peek()? = heap.read(ops.peek()?, n)? }
+            HWRITE   => { let v = ops.pop()?; heap.write(ops_pop_to_u16!(), v)? },
+            HREAD    => { let n = ops.pop()?; let peek = ops.peek()?; *peek = heap.read(peek, n)?; }
             HWRITEX  => heap.write(pu8_as_u16!(),  ops.pop()?)?,
             HWRITEXL => heap.write(pu16!(), ops.pop()?)?,
             HREADU   => ops.push(heap.read_u(  pu8!())?)?,
             HREADUL  => ops.push(heap.read_ul(pu16!())?)?,
-            HSLICE   => *ops.peek()? = heap.slice(ops.pop()?, ops.peek()?)?,
+            HSLICE   => { let p = ops.pop()?; let peek = ops.peek()?; *peek = heap.slice(p, peek)?; }
             // locals & heap & global & memory
             XLG   => local_logic(pu8!(), locals, ops.peek()?)?,
             XOP   => local_operand(pu8!(), locals, ops.pop()?)?,
             ALLOC => { gas += gst.local_one_alloc * locals.alloc(pu8!())? as i64 } 
-            PUTX   => locals.save(ops_pop_to_u16!(), ops.pop()?)?,
+            PUTX   => { let v = ops.pop()?; locals.save(ops_pop_to_u16!(), v)? },
             GETX   => *ops.peek()? = locals.load(ops_peek_to_u16!() as usize)?,
             PUT   => locals.save(pu8_as_u16!(), ops.pop()?)?,
             GET   => ops.push(locals.load(pu8!() as usize)?)?,
