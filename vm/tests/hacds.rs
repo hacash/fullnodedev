@@ -45,7 +45,7 @@ mod hacds {
             assert hacd > 0 && hacd <= 200
             var hk = "out_hacds"
             assert memory_get(hk) is nil
-            let hacds = (hacd as u64) * 1_0000_0000
+            bind hacds = (hacd as u64) * 1_0000_0000
             memory_put(hk, hacds)
             return 0
         "##,

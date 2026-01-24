@@ -122,7 +122,7 @@ mod deploy {
             adr = pms[3]
             // assert type_is(12, adr)
 
-            let bdt = pms + adr
+            bind bdt = pms + adr
             res = 1 + 2
             assert bdt
 

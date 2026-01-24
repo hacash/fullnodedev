@@ -41,8 +41,8 @@ mod storage {
                 tt_shares = total as u64
             }
             var ctxadr = buf_left_drop(4, balance(context_address()))
-            let tt_sat = buf_left(8, ctxadr) as u64
-            let tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
+            bind tt_sat = buf_left(8, ctxadr) as u64
+            bind tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
             storage_save(tt_k,   2000000)
             return [tt_shares + 1000000, tt_sat + 100000000, tt_zhu + 10000000000]
         "##;

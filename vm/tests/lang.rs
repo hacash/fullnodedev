@@ -30,11 +30,11 @@ fn t1() {
 }
 
 #[test]
-fn let_slot_and_cache_print() {
+fn bind_slot_and_cache_print() {
     let script = r##"
         var x $0 = 1
-        let foo = $0
-        let bar = foo
+        bind foo = $0
+        bind bar = foo
         print bar
         print bar
     "##;
@@ -95,12 +95,12 @@ fn var_cannot_rebind_param_slot() {
 }
 
 #[test]
-fn let_var_interleave_print() {
+fn bind_var_interleave_print() {
     let script = r##"
         var x $0 = 10
-        let aux = x
+        bind aux = x
         var y = aux
-        let cache = y
+        bind cache = y
         print x
         print cache
     "##;
@@ -113,16 +113,16 @@ fn let_var_interleave_print() {
 }
 
 #[test]
-fn print_decomp_let_alias_clones_expression() {
+fn print_decomp_bind_alias_clones_expression() {
     let script = r##"
-        let base = {
+        bind base = {
             if true {
                 { 1 }
             } else {
                 { 2 }
             }
         }
-        let alias = base
+        bind alias = base
         print base
         print alias
     "##;
@@ -175,7 +175,7 @@ fn nested_expression_contexts_emit_expr_opcodes() {
     let script = r##"
         print {
             if true {
-                let inner = if false {
+                bind inner = if false {
                     { if false { 10 } else { 11 } }
                 } else {
                     { { 12 } }
@@ -183,7 +183,7 @@ fn nested_expression_contexts_emit_expr_opcodes() {
                 inner
             } else {
                 {
-                    let deep = { if true { { 13 } } else { { 14 } } }
+                    bind deep = { if true { { 13 } } else { { 14 } } }
                     deep
                 }
             }
@@ -210,7 +210,7 @@ fn var_rhs_block_expression_emits_expr_opcodes() {
     let script = r##"
         var holder = {
             if true {
-                let inner = if false {
+                bind inner = if false {
                     {
                         if true { 1 } else { 2 }
                     }
@@ -260,7 +260,7 @@ fn fitsh_ir_roundtrip_suite() {
                 while counter > 0 {
                     counter -= 1
                 }
-                let sum = {
+                bind sum = {
                     var builder = counter
                     builder += amt
                     builder
@@ -276,8 +276,8 @@ fn fitsh_ir_roundtrip_suite() {
         ),
         (
             r##"
-                let numbers = [1, 2, 3]
-                let info = map {
+                bind numbers = [1, 2, 3]
+                bind info = map {
                     "numbers": numbers
                     "total": 3
                 }
@@ -290,12 +290,12 @@ fn fitsh_ir_roundtrip_suite() {
         (
             r##"
                 var x $0 = 42
-                let aux = {
-                    let inner = x
+                bind aux = {
+                    bind inner = x
                     inner + 1
                 }
                 var y = aux
-                let result = {
+                bind result = {
                     var staged = y
                     staged * x
                 }

@@ -27,7 +27,7 @@ mod hrc20 {
             assert cur_hei > prev_hei
             // release tokens
             var bls = self.balance_of(addr)
-            let bk = "b_" ++ addr
+            bind bk = "b_" ++ addr
             storage_save(bk, bls + 1000000000) // give 10 token
             storage_save(phk, cur_hei)
             return 0
@@ -69,7 +69,7 @@ mod hrc20 {
                     .public()
                     .fitsh(
                         r##"
-            let tk = "total"
+            bind tk = "total"
             var total = storage_load(tk)
             if size(total) != 8 {
                 total = 0 as u64
@@ -87,7 +87,7 @@ mod hrc20 {
                         r##"
             param { addr }
             assert addr is address
-            let bk = "b_" ++ addr
+            bind bk = "b_" ++ addr
             var balance = storage_load(bk)
             if balance is nil {
                 balance = 0 as u64
@@ -120,13 +120,13 @@ mod hrc20 {
             param{ period }
             assert period is u64
             
-            let addr = tx_main_address()
-            let bk = "b_" ++ addr
-            let bkr = storage_rest(bk)
+            bind addr = tx_main_address()
+            bind bk = "b_" ++ addr
+            bind bkr = storage_rest(bk)
             assert bkr is not nil
             var new_bkr = bkr + period * 300
             storage_rent(bk, period)
-            let tk = "total"
+            bind tk = "total"
             storage_rent(tk, period)
             end
         "##,
@@ -149,7 +149,7 @@ mod hrc20 {
             assert cur_hei > prev_hei
             // release tokens
             var bls = self.balance_of(addr)
-            let bk = "b_" ++ addr
+            bind bk = "b_" ++ addr
             storage_save(bk, bls + 1000000000) // give 10 token
             storage_save(phk, cur_hei)
             end

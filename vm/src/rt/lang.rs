@@ -42,7 +42,7 @@ keyword_define!{
     Progma    : "progma"
     Use       : "use"
     Lib       : "lib"
-    Let       : "let"
+    Bind      : "bind"
     Var       : "var"
     Log       : "log"
     If        : "if"

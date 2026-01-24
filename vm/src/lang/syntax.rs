@@ -5,7 +5,7 @@ use hex;
 
 enum SymbolEntry {
     Var(u8),
-    Let(Box<dyn IRNode>),
+    Bind(Box<dyn IRNode>),
 }
 
 #[allow(dead_code)]
@@ -171,16 +171,16 @@ impl Syntax {
         Ok(())
     }
 
-    fn register_let_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
+    fn register_bind_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
         if let Some(SymbolEntry::Var(_)) = self.symbols.get(&s) {
-            return errf!("cannot rebind var '{}' with let", s)
+            return errf!("cannot rebind var '{}' with bind", s)
         }
         self.symbols.insert(s, entry);
         Ok(())
     }
 
-    pub fn bind_let(&mut self, s: String, v: Box<dyn IRNode>) -> Rerr {
-        self.register_let_symbol(s, SymbolEntry::Let(v))?;
+    pub fn bind_macro(&mut self, s: String, v: Box<dyn IRNode>) -> Rerr {
+        self.register_bind_symbol(s, SymbolEntry::Bind(v))?;
         Ok(())
     }
 
@@ -200,16 +200,16 @@ impl Syntax {
         }
     }
 
-    pub fn link_let(&self, s: &String) -> Ret<Box<dyn IRNode>> {
+    pub fn link_bind(&self, s: &String) -> Ret<Box<dyn IRNode>> {
         match self.symbols.get(s) {
-            Some(SymbolEntry::Let(expr)) => Ok(dyn_clone::clone_box(expr.as_ref())),
+            Some(SymbolEntry::Bind(expr)) => Ok(dyn_clone::clone_box(expr.as_ref())),
             _ => errf!("cannot find or relink symbol '{}'", s),
         }
     }
 
     pub fn link_symbol(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
         match self.symbols.get(s) {
-            Some(SymbolEntry::Let(_)) => self.link_let(s),
+            Some(SymbolEntry::Bind(_)) => self.link_bind(s),
             Some(SymbolEntry::Var(_)) => self.link_local(s),
             None => errf!("cannot find symbol '{}'", s),
         }
@@ -704,7 +704,7 @@ impl Syntax {
                 ifobj.subz = elseifobj;
                 Box::new(ifobj)
             }
-            Keyword(Var) => { // let foo = $0
+            Keyword(Var) => { // var foo = $0
                 let e = errf!("var statement format error");
                 let gidx = |nxt: &Token| {
                     let mut lcalc: Option<u8> = None;
@@ -740,8 +740,8 @@ impl Syntax {
                     _ => return e
                 }?
             }
-            Keyword(Let) => {
-                let e = errf!("let statement format error");
+            Keyword(Bind) => {
+                let e = errf!("bind statement format error");
                 let token = self.next()?;
                 let Identifier(name) = token else {
                     return e
@@ -752,7 +752,7 @@ impl Syntax {
                 };
                 let expr = self.item_must(0)?;
                 expr.checkretval()?; // must retv
-                self.bind_let(name.clone(), expr)?;
+                self.bind_macro(name.clone(), expr)?;
                 return Ok(Some(push_empty()));
             }
             /*
@@ -982,7 +982,7 @@ impl Syntax {
             Keyword(Print)  => {
                 let exp = self.item_must(0)?;
                 if !exp.hasretval() {
-                    return errf!("print 的参数必须是有返回值的表达式，不能直接使用 let/var 声明");
+                    return errf!("print arguments must be expressions with return values; do not use bind/var declarations directly");
                 }
                 Box::new(IRNodeSingle{hrtv: false, inst: PRT, subx: exp})
             },

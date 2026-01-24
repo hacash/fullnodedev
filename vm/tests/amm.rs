@@ -53,7 +53,7 @@ mod amm {
             var in_sat = memory_get("in_sat")
             assert sat == in_sat
             var akey = "in_addr"
-            let adr = memory_get(akey)
+            bind adr = memory_get(akey)
             assert adr is nil
             memory_put(akey, addr)
             return 0
@@ -72,10 +72,10 @@ mod amm {
             // deal deposit
             var zhu $2 = hac_to_zhu(amt) as u128
             assert zhu >= 10000
-            let in_zhu = memory_get("in_zhu") as u128
+            bind in_zhu = memory_get("in_zhu") as u128
             assert zhu == in_zhu
-            let akey = "in_addr"
-            let adr = memory_get(akey)
+            bind akey = "in_addr"
+            bind adr = memory_get(akey)
             assert adr == addr
             var sat = memory_get("in_sat")
             assert sat >= 1000
@@ -140,7 +140,7 @@ mod amm {
             var tt_zhu    $5 = 0
             unpack_list(self.total(), 3)
             tt_shares += (zhu as u64)
-            let tt_k = "total_shares"
+            bind tt_k = "total_shares"
             storage_save(tt_k, tt_shares)
             // 
             var lq_k $6 = addr ++ "_shares"
@@ -303,8 +303,8 @@ mod amm {
                 tt_shares = total as u64
             }
             var ctxadr = buf_left_drop(4, balance(context_address()))
-            let tt_sat = buf_left(8, ctxadr) as u64
-            let tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
+            bind tt_sat = buf_left(8, ctxadr) as u64
+            bind tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
             return [tt_shares, tt_sat, tt_zhu]
         "##,
         );
@@ -432,8 +432,8 @@ mod amm {
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var shares = 50000000000 as u64 // 500HAC
             var coins = HacSwap.withdraw(tx_main_address(), shares) // 1k HAC
-            let sat = item_get(coins, 0)
-            let zhu = item_get(coins, 1)
+            bind sat = item_get(coins, 0)
+            bind zhu = item_get(coins, 1)
             var adr = address_ptr(1)
             transfer_sat_from(adr, sat)
             transfer_hac_from(adr, zhu_to_hac(zhu))
