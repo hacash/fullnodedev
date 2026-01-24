@@ -197,7 +197,8 @@ pub fn execute_code(
     // let tail = codelen;
 
     macro_rules! check_gas { () => { if *gas_usable < 0 { return itr_err_code!(OutOfGas) } } }
-    macro_rules! nsw { () => { if let Static = mode { return itr_err_code!(InstDisabled) } } } // not write in static mode
+    macro_rules! nsr { () => { if let Static           = mode { return itr_err_code!(InstDisabled) } } } // not read  in static mode
+    macro_rules! nsw { () => { if let Static | Library = mode { return itr_err_code!(InstDisabled) } } } // not write in lib    mode
     macro_rules! pu8 { () => { itrparamu8!(codes, *pc) } }
     macro_rules! pty { () => { ops.peek()?.ty() } }
     macro_rules! ptyn { () => { ops.peek()?.ty_num() } }
@@ -227,12 +228,12 @@ pub fn execute_code(
         *gas_usable -= gas_table.gas(instbyte); // 
         // println!("gas usable {} cp: {}, inst: {:?}", *gas_usable, gas_table.gas(instbyte), instruction);
 
-        macro_rules! extcall { ($is_action: expr, $pass_body: expr, $have_retv: expr) => {
-            if $is_action && (mode != Main || depth > 0)  {
+        macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
+            if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
                 return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
             }
-            if mode == Static {
-                return itr_err_fmt!(ExtActDisabled, "extend call not support in static call")
+            if EXTENV == $act_kind &&Static == mode{
+                return itr_err_fmt!(ExtActDisabled, "extend env call not support in static call")
             }
             let idx = pu8!();
             let kid = u16::from_be_bytes([instbyte, idx]);
@@ -267,10 +268,16 @@ pub fn execute_code(
         }}
 
         let mut ntcall = |idx: u8| -> VmrtErr {
-            let argv = match idx {
+            let mut argv = match idx {
                 NativeCall::idx_context_address => context_addr.serialize(), // context_address
-                _ => ops.peek()?.canbe_ext_call_data(heap)?
+                _ => vec![]
             };
+            if Static == mode && !argv.is_empty() { 
+                return itr_err_code!(InstDisabled)
+            }
+            if argv.is_empty() {
+                argv = ops.peek()?.canbe_ext_call_data(heap)?;
+            }
             let (r, g) = NativeCall::call(hei, idx, &argv)?;
             *ops.peek()? = r; gas += g; 
             Ok(())
@@ -278,9 +285,9 @@ pub fn execute_code(
 
         match instruction {
             // ext action
-            EXTACTION => { extcall!(true,  true,  false); },
-            EXTENV    => { extcall!(false, false, true);  },
-            EXTFUNC   => { extcall!(false, true,  true);  },
+            EXTACTION => { extcall!(EXTACTION, true,  false); },
+            EXTENV    => { extcall!(EXTENV,    false, true);  },
+            EXTFUNC   => { extcall!(EXTFUNC,   true,  true);  },
             // native call
             NTCALL => ntcall(pu8!())?,
             // constant
@@ -357,7 +364,7 @@ pub fn execute_code(
             XLG   => local_logic(pu8!(), locals, ops.peek()?)?,
             XOP   => local_operand(pu8!(), locals, ops.pop()?)?,
             ALLOC => { gas += gst.local_one_alloc * locals.alloc(pu8!())? as i64 } 
-            PUTX   => { let v = ops.pop()?; locals.save(ops_pop_to_u16!(), v)? },
+            PUTX   => { let v = ops.pop()?; locals.save(ops_pop_to_u16!(), v)? }
             GETX   => *ops.peek()? = locals.load(ops_peek_to_u16!() as usize)?,
             PUT   => locals.save(pu8_as_u16!(), ops.pop()?)?,
             GET   => ops.push(locals.load(pu8!() as usize)?)?,
@@ -366,21 +373,21 @@ pub fn execute_code(
             GET2  => ops.push(locals.load(2)?)?,
             GET3  => ops.push(locals.load(3)?)?,
             // storage
-            SREST => *ops.peek()? = state.srest(hei, context_addr, ops.peek()?)?,
-            SLOAD => *ops.peek()? = state.sload(hei, context_addr, ops.peek()?)?,
-            SDEL  => { nsw!(); state.sdel(context_addr, ops.pop()?)?; },
-            SSAVE => { nsw!(); let v = ops.pop()?; state.ssave(hei, context_addr, ops.pop()?, v)?; },
-            SRENT => { nsw!(); let t = ops.pop()?; gas += state.srent(gst, hei, context_addr, ops.pop()?, t)?; },
+            SREST => { nsw!(); *ops.peek()? = state.srest(hei, context_addr, ops.peek()?)? }
+            SLOAD => { nsr!(); *ops.peek()? = state.sload(hei, context_addr, ops.peek()?)?}
+            SDEL  => { nsw!(); state.sdel(context_addr, ops.pop()?)?; }
+            SSAVE => { nsw!(); let v = ops.pop()?; state.ssave(hei, context_addr, ops.pop()?, v)?; }
+            SRENT => { nsw!(); let t = ops.pop()?; gas += state.srent(gst, hei, context_addr, ops.pop()?, t)?; }
             // global & memory
             GPUT => { nsw!(); let v = ops.pop()?; globals.put(ops.pop()?, v)?; },
-            GGET => *ops.peek()? = globals.get(ops.peek()?)?,
-            MPUT => { nsw!(); let v = ops.pop()?; memorys.entry(context_addr)?.put(ops.pop()?, v)?; },
-            MGET => *ops.peek()? = memorys.entry(context_addr)?.get(ops.peek()?)?,
+            GGET => { nsr!(); *ops.peek()? = globals.get(ops.peek()?)? }
+            MPUT => { nsw!(); let v = ops.pop()?; memorys.entry(context_addr)?.put(ops.pop()?, v)? }
+            MGET => { nsr!(); *ops.peek()? = memorys.entry(context_addr)?.get(ops.peek()?)? }
             // log (t1,[t2,t3,t4,]d)
-            LOG1 => { nsw!(); record_log(context_addr, log, ops.popn(2)?)?; },
-            LOG2 => { nsw!(); record_log(context_addr, log, ops.popn(3)?)?; },
-            LOG3 => { nsw!(); record_log(context_addr, log, ops.popn(4)?)?; },
-            LOG4 => { nsw!(); record_log(context_addr, log, ops.popn(5)?)?; },
+            LOG1 => { nsw!(); record_log(context_addr, log, ops.popn(2)?)?; }
+            LOG2 => { nsw!(); record_log(context_addr, log, ops.popn(3)?)?; }
+            LOG3 => { nsw!(); record_log(context_addr, log, ops.popn(4)?)?; }
+            LOG4 => { nsw!(); record_log(context_addr, log, ops.popn(5)?)?; }
             // logic
             AND  => binop_btw(ops, lgc_and)?,
             OR   => binop_btw(ops, lgc_or)?,
