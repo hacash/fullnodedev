@@ -373,7 +373,7 @@ pub fn execute_code(
             GET2  => ops.push(locals.load(2)?)?,
             GET3  => ops.push(locals.load(3)?)?,
             // storage
-            SREST => { nsw!(); *ops.peek()? = state.srest(hei, context_addr, ops.peek()?)? }
+            SREST => { nsr!(); *ops.peek()? = state.srest(hei, context_addr, ops.peek()?)? }
             SLOAD => { nsr!(); *ops.peek()? = state.sload(hei, context_addr, ops.peek()?)?}
             SDEL  => { nsw!(); state.sdel(context_addr, ops.pop()?)?; }
             SSAVE => { nsw!(); let v = ops.pop()?; state.ssave(hei, context_addr, ops.pop()?, v)?; }
