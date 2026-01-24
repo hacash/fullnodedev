@@ -25,6 +25,7 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 
 ## 4. Statement structure
 - `var name [$slot]? = expr`: evaluates immediately and stores the result in a local slot; the slot can be explicitly numbered (`syntax.rs:620-654`). Use this for mutable state or expressions with side effects.  
+- `let name = expr`: immutable slot binding that runs eagerly and cannot be reassigned; var declarations without further updates are decompiled into `let` statements.  
 - `bind name = expr`: lazy/cached macro binding; declarations store the expression template and never emit `PUT`/`GET`. Every reference to `name` clones the template, so it behaves like an inline macro. Because `bind` does not allocate slots, there is no `$slot` form anymore; use `var` whenever you need a reusable slot.
 - `lib Foo = idx [: address]?`: binds a short alias to an external library/contract, optionally with an explicit address, for use in `Foo.method(...)` calls.  
 - `param { a b c }`: declares function parameters at the top of the body; the implementation uses `PICK` and `UPLIST` to populate slots (`syntax.rs:412-452`).  
@@ -40,7 +41,7 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 - If a function call provides no arguments, Fitsh automatically pushes `nil` so the callee still sees at least one value. For interfaces with more than 15 parameters, wrap the payload in `list`/`map` instead.
 
 ## 6. High-risk misuse patterns
-1. **`bind` is not evaluated immediately**: Bindings with `storage_save`, `print`, or other side effects only execute when the `bind` variable is read; if never read, the effect never happens. Use `var` when you rely on immediate execution.  
+1. **`bind` is not evaluated immediately**: Bindings with `storage_save`, `print`, or other side effects only execute when the `bind` variable is read; if never read, the effect never happens. Use `var` (or `let` for read-only results) when you rely on immediate execution.  
 2. **Slot conflicts/reuse**: Slots can be manually assigned or automatically allocated by `var`. Because `bind` does not consume slots, these collisions now only occur through explicit `$N` or `var` allocations. Avoid reusing the same slot number across multiple `var` declarations or mixing manual numbering with automatic allocations.
 3. **Function arguments capped at 15**: The compiler only allows up to 15 arguments in `pack_func_argvs`. For complex DeFi interfaces, wrap inputs into `list` or `map` structures before calling.  
 4. **Function signature only hashes the name**: Overloading or adding a same-name function changes the selector globally—choose unique names to avoid accidental dispatch changes.  
@@ -49,7 +50,7 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 7. **`param` only parsed at the front**: `param {}` blocks must appear at the beginning of the function body; nested use triggers `bind_local` errors.
 
 ## 7. Recommended practices
-- For critical settlement state, prefer `var` to force eager evaluation; reserve `bind` for pure, side-effect-free computations or caching.  
+- For critical settlement state, prefer `var` when you need mutability; reserve `let` or `bind` for pure, side-effect-free computations or caching.  
 - Bind external libraries upfront with `lib Alias = idx [: address]` to avoid scattering hard-coded `CALL` indexes.  
 - Only use `bytecode`/`callcode` when you actually need low-level bytecode insertion, and document the purpose for audit trails.  
 - Append suffixes or namespaces to functions (`transfer_v1`, `withdraw_spot`) to avoid 4-byte selector collisions.  

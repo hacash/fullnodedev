@@ -95,6 +95,27 @@ fn var_cannot_rebind_param_slot() {
 }
 
 #[test]
+fn let_cannot_reassign() {
+    let script = r##"
+        let x = 1
+        x = 2
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("cannot assign to immutable symbol 'x'"));
+}
+
+#[test]
+fn var_without_reassign_prints_as_let() {
+    let script = r##"
+        var x $0 = 1
+        print x
+    "##;
+    let (block, source_map) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let printed = irnode_to_lang_with_sourcemap(block, &source_map).unwrap();
+    assert!(printed.contains("let x $0 ="));
+}
+
+#[test]
 fn bind_var_interleave_print() {
     let script = r##"
         var x $0 = 10
@@ -516,5 +537,5 @@ fn decompile_local_vars_use_slot_names() {
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
     assert!(printed.contains("print bar"));
-    assert!(printed.contains("var foo"));
+    assert!(printed.contains("let foo"));
 }

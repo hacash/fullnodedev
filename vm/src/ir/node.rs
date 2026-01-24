@@ -957,9 +957,16 @@ impl IRNode for IRNodeParam1Single {
                     let slot_name = opt.map.and_then(|s| s.slot(self.para)).cloned();
                     let is_first = opt.mark_slot_put(self.para);
                     let target = if is_first {
+                        let prefix = if opt.map.map(|m| m.slot_is_var(self.para)).unwrap_or(false) {
+                            "var"
+                        } else if opt.map.map(|m| m.slot_is_let(self.para)).unwrap_or(false) {
+                            "let"
+                        } else {
+                            "var"
+                        };
                         match slot_name {
-                            Some(name) => format!("var {} ${}", name, self.para),
-                            None => format!("var ${}", self.para),
+                            Some(name) => format!("{} {} ${}", prefix, name, self.para),
+                            None => format!("{} ${}", prefix, self.para),
                         }
                     } else {
                         slot_name.unwrap_or_else(|| format!("${}", self.para))

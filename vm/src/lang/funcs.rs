@@ -5,7 +5,7 @@ impl Syntax {
     pub fn item_get(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         let Some(_) = self.symbols.get(&id).and_then(|entry| match entry {
-            SymbolEntry::Var(_) => Some(()),
+            SymbolEntry::Slot(_, _) => Some(()),
             _ => None,
         }) else {
             return errf!("cannot find '{}' object in item get", id)

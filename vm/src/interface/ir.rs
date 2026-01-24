@@ -44,7 +44,6 @@ impl<'a> PrintOption<'a> {
 
     pub fn with_source_map(mut self, map: &'a SourceMap) -> Self {
         self.map = Some(map);
-        self.allocated = map.slot_puts();
         self
     }
 

@@ -51,7 +51,7 @@ fn source_map_recovery_records_symbols() {
     assert!(printed.contains("Fund::audit("));
     assert!(printed.contains("self.notify("));
     assert!(printed.contains("var total $0 ="));
-    assert!(printed.contains("var increment $1 ="));
+    assert!(printed.contains("let increment $1 ="));
 }
 
 #[test]
@@ -60,14 +60,17 @@ fn source_map_json_roundtrip() {
     map.register_lib(2, "Fund".to_string(), None).unwrap();
     let sig = extract_signature("deposit");
     map.register_func(sig, "deposit".to_string()).unwrap();
-    map.register_slot(0, "total".to_string()).unwrap();
-    map.mark_slot_put(0);
+    map.register_slot(0, "total".to_string(), SlotKind::Var).unwrap();
+    map.mark_slot_mutated(0);
+    assert!(map.slot_is_var(0));
+    assert!(!map.slot_is_let(0));
     let json = map.to_json().unwrap();
     let restored = SourceMap::from_json(&json).unwrap();
     assert_eq!(restored.lib(2).unwrap().name, "Fund");
     assert_eq!(restored.func(&sig).map(|s| s.as_str()), Some("deposit"));
     assert_eq!(restored.slot(0).map(|s| s.as_str()), Some("total"));
-    assert!(!restored.mark_slot_put(0)); // already marked
+    assert!(restored.slot_is_var(0));
+    assert!(!restored.slot_is_let(0));
 }
 
 #[test]

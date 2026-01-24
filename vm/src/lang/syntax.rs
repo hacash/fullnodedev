@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use hex;
 
 enum SymbolEntry {
-    Var(u8),
+    Slot(u8, bool),
     Bind(Box<dyn IRNode>),
 }
 
@@ -138,19 +138,57 @@ impl Syntax {
         None
     }
 
-    pub fn bind_local_assign(&mut self, s: String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
+    pub fn bind_local_assign(&mut self, s: String, v: Box<dyn IRNode>, kind: SlotKind) -> Ret<Box<dyn IRNode>> {
         let idx = self.local_alloc;
-        self.bind_local_assign_replace(s, idx, v)
+        self.bind_local_assign_replace(s, idx, v, kind)
     }
 
-    pub fn bind_local_assign_replace(&mut self, s: String, idx: u8, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
+    pub fn bind_local_assign_replace(&mut self, s: String, idx: u8, v: Box<dyn IRNode>, kind: SlotKind) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
-        self.bind_local(s, idx)?;
+        self.bind_local(s, idx, kind)?;
         Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: idx, subx: v}))
     }
 
+    fn parse_local_statement(&mut self, kind: SlotKind, err_msg: &str) -> Ret<Box<dyn IRNode>> {
+        use super::rt::Token::*;
+        let e = errf!("{}", err_msg);
+        let gidx = |nxt: &Token| {
+            let mut lcalc: Option<u8> = None;
+            if let Identifier(num) = nxt.clone() {
+                if start_with_char(&num, '$') {
+                    if let Ok(idx) = num.trim_start_matches('$').parse::<u8>() {
+                        lcalc = Some(idx);
+                    };
+                }
+            }
+            lcalc
+        };
+        let Identifier(id) = self.next()? else {
+            return e
+        };
+        let vk = id.clone();
+        let mut nxt = self.next()?;
+        let mut idx = None;
+        let mut val = None;
+        if let Some(i) = gidx(&nxt) {
+            idx = Some(i);
+            nxt = self.next()?;
+        }
+        if let Keyword(KwTy::Assign) = nxt {
+            val = Some(self.item_must(0)?);
+        } else {
+            self.idx -= 1;
+        }
+        match (idx, val) {
+            (Some(i), Some(v)) => self.bind_local_assign_replace(vk, i, v, kind),
+            (.., Some(v))      => self.bind_local_assign(vk, v, kind),
+            (Some(i), ..)      => self.bind_local(vk, i, kind),
+            _ => return e
+        }
+    }
+
     // ret empty
-    pub fn bind_local(&mut self, s: String, idx: u8) -> Ret<Box<dyn IRNode>> {
+    pub fn bind_local(&mut self, s: String, idx: u8, kind: SlotKind) -> Ret<Box<dyn IRNode>> {
         self.reserve_slot(idx)?;
         if idx >= self.local_alloc {
             if idx == u8::MAX {
@@ -158,22 +196,23 @@ impl Syntax {
             }
             self.local_alloc = idx + 1;
         }
-        self.register_var_symbol(s.clone(), SymbolEntry::Var(idx))?;
-        self.source_map.register_slot(idx, s)?;
+        let mutable = matches!(kind, SlotKind::Let) == false;
+        self.register_slot_symbol(s.clone(), idx, mutable)?;
+        self.source_map.register_slot(idx, s, kind)?;
         Ok(push_empty())
     }
 
-    fn register_var_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
+    fn register_slot_symbol(&mut self, s: String, idx: u8, mutable: bool) -> Rerr {
         if let Some(..) = self.symbols.get(&s) {
             return errf!("symbol '{}' already bound", s)
         }
-        self.symbols.insert(s, entry);
+        self.symbols.insert(s, SymbolEntry::Slot(idx, mutable));
         Ok(())
     }
 
     fn register_bind_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
-        if let Some(SymbolEntry::Var(_)) = self.symbols.get(&s) {
-            return errf!("cannot rebind var '{}' with bind", s)
+        if let Some(SymbolEntry::Slot(_, _)) = self.symbols.get(&s) {
+            return errf!("cannot rebind slot '{}' with bind", s)
         }
         self.symbols.insert(s, entry);
         Ok(())
@@ -195,8 +234,15 @@ impl Syntax {
     pub fn link_local(&self, s: &String) -> Ret<Box<dyn IRNode>> {
         let text = s.clone();
         match self.symbols.get(s) {
-            Some(SymbolEntry::Var(i)) => Ok(push_local_get(*i, text)),
+            Some(SymbolEntry::Slot(i, _)) => Ok(push_local_get(*i, text)),
             _ => return errf!("cannot find symbol '{}'", s),
+        }
+    }
+
+    fn slot_info(&self, s: &String) -> Ret<(u8, bool)> {
+        match self.symbols.get(s) {
+            Some(SymbolEntry::Slot(idx, mutable)) => Ok((*idx, *mutable)),
+            _ => errf!("cannot find symbol '{}'", s),
         }
     }
 
@@ -210,26 +256,29 @@ impl Syntax {
     pub fn link_symbol(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
         match self.symbols.get(s) {
             Some(SymbolEntry::Bind(_)) => self.link_bind(s),
-            Some(SymbolEntry::Var(_)) => self.link_local(s),
+            Some(SymbolEntry::Slot(_, _)) => self.link_local(s),
             None => errf!("cannot find symbol '{}'", s),
         }
     }
 
-    pub fn save_local(&self, s: &String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
+    pub fn save_local(&mut self, s: &String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
-        match self.symbols.get(s) {
-            Some(SymbolEntry::Var(i)) => Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: *i, subx: v })),
-            _ => return errf!("cannot find symbol '{}'", s),
+        let (i, mutable) = self.slot_info(s)?;
+        if !mutable {
+            return errf!("cannot assign to immutable symbol '{}'", s)
         }
+        self.source_map.mark_slot_mutated(i);
+        Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: i, subx: v }))
     }
     
-    pub fn assign_local(&self, s: &String, v: Box<dyn IRNode>, op: &Token) -> Ret<Box<dyn IRNode>> {
+    pub fn assign_local(&mut self, s: &String, v: Box<dyn IRNode>, op: &Token) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         use KwTy::*;
-        let i = match self.symbols.get(s) {
-            Some(SymbolEntry::Var(idx)) => *idx,
-            _ => return errf!("cannot find symbol '{}'", s),
-        };
+        let (i, mutable) = self.slot_info(s)?;
+        if !mutable {
+            return errf!("cannot assign to immutable symbol '{}'", s)
+        }
+        self.source_map.mark_slot_mutated(i);
         if i < 64 {
             let mark = i | match op {
                 Keyword(AsgAdd) => 0b00000000,
@@ -276,7 +325,7 @@ impl Syntax {
             if self.idx >= max {
                 return errf!("item with left get next token error")
             }
-            let nxt = &self.tokens[self.idx];
+            let nxt = self.tokens[self.idx].clone();
             self.idx += 1;
             nxt
         }}}
@@ -286,7 +335,7 @@ impl Syntax {
             }
             let nxt = next!();
             match nxt {
-                Keyword(Assign) 
+                Keyword(KwTy::Assign) 
                 | Keyword(AsgAdd) 
                 | Keyword(AsgSub)
                 | Keyword(AsgMul)
@@ -305,8 +354,8 @@ impl Syntax {
                     let v = unsafe { (&mut *sfptr).item_must(0)? };
                     v.checkretval()?; // must retv
                     left = match nxt {
-                        Keyword(Assign) => self.save_local(&id, v)?,
-                        _ => self.assign_local(&id, v, nxt)?,
+                        Keyword(KwTy::Assign) => self.save_local(&id, v)?,
+                        _ => self.assign_local(&id, v, &nxt)?,
                     };
                 }
                 Keyword(As) => {
@@ -493,7 +542,7 @@ impl Syntax {
             };
             if let Identifier(id) = nxt {
                 let name = id.clone();
-                self.bind_local(id, params)?;
+                self.bind_local(id, params, SlotKind::Param)?;
                 param_names.push(name);
                 params += 1;
             } 
@@ -704,42 +753,19 @@ impl Syntax {
                 ifobj.subz = elseifobj;
                 Box::new(ifobj)
             }
-            Keyword(Var) => { // var foo = $0
-                let e = errf!("var statement format error");
-                let gidx = |nxt: &Token| {
-                    let mut lcalc: Option<u8> = None;
-                    if let Identifier(num) = nxt.clone() {
-                        if start_with_char(&num, '$') {
-                            if let Ok(idx) = num.trim_start_matches('$').parse::<u8>() {
-                                lcalc = Some(idx);
-                            };
-                        }
-                    }
-                    lcalc
+            Keyword(KwTy::Var) | Keyword(KwTy::Let) => {
+                let kind = match nxt {
+                    Keyword(KwTy::Var) => SlotKind::Var,
+                    Keyword(KwTy::Let) => SlotKind::Let,
+                    _ => unreachable!(),
                 };
-                let Identifier(id) = next!() else {
-                    return e
+                let err_msg = match kind {
+                    SlotKind::Var => "var statement format error",
+                    SlotKind::Let => "let statement format error",
+                    _ => unreachable!(),
                 };
-                let vk = id.clone();
-                nxt = next!();
-                let mut idx = None;
-                let mut val = None;
-                if let Some(i) = gidx(nxt) {
-                    idx = Some(i);
-                    nxt = next!();
-                }
-                if let Keyword(Assign) = nxt {
-                    val = Some(self.item_must(0)?);
-                } else {
-                    self.idx -= 1;
-                }
-                match (idx, val) {
-                    (Some(i), Some(v)) => self.bind_local_assign_replace(vk, i, v),
-                    (.., Some(v))      => self.bind_local_assign(vk, v),
-                    (Some(i), ..)      => self.bind_local(vk, i),
-                    _ => return e
-                }?
-            }
+                self.parse_local_statement(kind, err_msg)?
+            },
             Keyword(Bind) => {
                 let e = errf!("bind statement format error");
                 let token = self.next()?;
@@ -747,7 +773,7 @@ impl Syntax {
                     return e
                 };
                 let token = self.next()?;
-                let Keyword(Assign) = token else {
+                let Keyword(KwTy::Assign) = token else {
                     return e
                 };
                 let expr = self.item_must(0)?;
@@ -763,7 +789,7 @@ impl Syntax {
                     return e
                 };
                 nxt = next!();
-                let Keyword(Assign) = nxt else {
+                let Keyword(KwTy::Assign) = nxt else {
                     return e
                 };
                 nxt = next!();
@@ -779,7 +805,7 @@ impl Syntax {
                 nxt = next!();
                 let Identifier(id) = nxt else { return e };
                 nxt = next!();
-                let Keyword(Assign) = nxt else { return e };
+                let Keyword(KwTy::Assign) = nxt else { return e };
                 nxt = next!();
                 let Integer(idx) = nxt else { return e };
                 nxt = next!();
