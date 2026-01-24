@@ -43,8 +43,10 @@ pub fn checked_compile_fitsh_to_ir(script: &str) -> Vec<u8> {
     };
     let (ircd2, _) = res1.unwrap();
     if ircd1 != ircd2 {
-        println!("-- Original Script:\n{}", script);
-        println!("-- Reconstructed Script:\n{}", lang1);
+        println!("Original Script:\n{}", script);
+        println!("Reconstructed Script:\n{}", lang1);
+        println!("-- {:?}", ircd1);
+        println!("-- {:?}", ircd2);
         panic!("Fitsh roundtrip IR mismatch");
     }
     assert_eq!(ircd1, ircd2);

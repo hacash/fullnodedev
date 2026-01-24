@@ -35,8 +35,8 @@ mod hacds {
         Address::from_readable(s).unwrap()
     }
 
-    // #[test]
-    fn _deploy() {
+    #[test]
+    fn deploy() {
         use vm::rt::AbstCall::*;
 
         let payable_hacd = checked_compile_fitsh_to_ir(

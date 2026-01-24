@@ -1,6 +1,6 @@
 use crate::PrintOption;
 use native::NativeCall;
-use super::rt::SourceMap;
+use super::rt::{Bytecode, SourceMap};
 
 
 
@@ -130,39 +130,16 @@ fn format_call_args(substr: &str) -> String {
     lines.join(", ")
 }
 
-fn clean_line_block(substr: &str) -> Vec<String> {
-    let lines: Vec<String> = substr
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .map(|line| line.to_string())
-        .collect();
-    lines
-}
-
-fn hide_packlist_in_args(substr: &str) -> String {
-    let mut lines = clean_line_block(substr);
-    while lines.last().map(|l| l == "}").unwrap_or(false) {
-        lines.pop();
-    }
-    if lines.len() >= 2 {
-        if lines.last().map(|l| l == "pack_list()").unwrap_or(false) {
-            if let Some(len_str) = lines.get(lines.len() - 2) {
-                if let Ok(len) = len_str.parse::<usize>() {
-                    if len == lines.len() - 2 {
-                        lines.truncate(lines.len() - 2);
-                    }
-                }
-            }
-        }
-    }
-    lines.join(", ")
-}
-
 fn collect_native_call_args(node: &dyn IRNode, opt: &PrintOption) -> Vec<String> {
     let mut args = Vec::new();
     let mut current: &dyn IRNode = node;
     loop {
+        if let Some(list) = current.as_any().downcast_ref::<IRNodeList>() {
+            if let Some(elements) = extract_packlist_elements(list.inst, &list.subs, opt) {
+                args.extend(elements);
+                return args;
+            }
+        }
         if let Some(double) = current.as_any().downcast_ref::<IRNodeDouble>() {
             if double.inst == Bytecode::CAT {
                 args.push(print_sub_inline!(opt, double.subx));
@@ -185,9 +162,122 @@ fn trim_nil_args(opt: &PrintOption, args: &mut Vec<String>, node: &dyn IRNode) {
 fn build_call_args(opt: &PrintOption, node: &dyn IRNode) -> String {
     let mut args_list = collect_native_call_args(node, opt);
     trim_nil_args(opt, &mut args_list, node);
-    let mut args_src = args_list.join("\n");
-    args_src = hide_packlist_in_args(&args_src);
+    let args_src = args_list.join("\n");
     format_call_args(&args_src)
+}
+
+fn extract_const_usize(node: &dyn IRNode) -> Option<usize> {
+    use Bytecode::*;
+    if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
+        return match leaf.inst {
+            P0 => Some(0),
+            P1 => Some(1),
+            P2 => Some(2),
+            P3 => Some(3),
+            _ => None,
+        };
+    }
+    if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
+        if param1.inst == PU8 {
+            return Some(param1.para as usize);
+        }
+    }
+    if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
+        if param2.inst == PU16 {
+            return Some(u16::from_be_bytes(param2.para) as usize);
+        }
+    }
+    if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
+        match single.inst {
+            CU32 | CU64 | CU128 => {
+                if let Some(params) = single.subx.as_any().downcast_ref::<IRNodeParams>() {
+                    let para = &params.para;
+                    if para.is_empty() {
+                        return None;
+                    }
+                    let len = para[0] as usize;
+                    if len > para.len().saturating_sub(1) {
+                        return None;
+                    }
+                    if len == 0 {
+                        return Some(0);
+                    }
+                    let mut value = 0u128;
+                    for &b in &para[1..=len] {
+                        value = (value << 8) | b as u128;
+                    }
+                    return Some(value as usize);
+                }
+                return None
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn extract_packlist_elements(inst: Bytecode, subs: &[Box<dyn IRNode>], opt: &PrintOption) -> Option<Vec<String>> {
+    use Bytecode::*;
+    if inst != IRLIST {
+        return None;
+    }
+    let num = subs.len();
+    if num < 2 {
+        return None;
+    }
+    let last = &subs[num - 1];
+    if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
+        if leaf.inst != PACKLIST {
+            return None;
+        }
+    } else {
+        return None;
+    }
+    let count_idx = num - 2;
+    let count = num - 2;
+    let expected = extract_const_usize(&*subs[count_idx])?;
+    if expected != count {
+        return None;
+    }
+    let mut elems = Vec::with_capacity(count);
+    for node in &subs[..count] {
+        elems.push(print_sub_inline!(opt, &**node));
+    }
+    Some(elems)
+}
+
+fn value_ty_name(ty: u8) -> &'static str {
+    match ty {
+        0 => "nil",
+        1 => "bool",
+        2 => "u8",
+        3 => "u16",
+        4 => "u32",
+        5 => "u64",
+        6 => "u128",
+        10 => "bytes",
+        11 => "address",
+        _ => "?",
+    }
+}
+
+fn format_is_components(opt: &PrintOption, node: &dyn IRNode) -> Option<(String, &'static str)> {
+    if let Some(inner) = node.as_any().downcast_ref::<IRNodeSingle>() {
+        let target = print_sub_inline!(opt, inner.subx);
+        return match inner.inst {
+            Bytecode::TNIL => Some((target, "nil")),
+            Bytecode::TLIST => Some((target, "list")),
+            Bytecode::TMAP => Some((target, "map")),
+            _ => None,
+        };
+    }
+    if let Some(inner) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
+        if inner.inst == Bytecode::TIS {
+            let target = print_sub_inline!(opt, inner.subx);
+            return Some((target, value_ty_name(inner.para)));
+        }
+    }
+    None
 }
 
 
@@ -632,7 +722,13 @@ impl IRNode for IRNodeSingle {
                         CU32  => buf.push_str(&format!("{} as u32", operand)),
                         CU64  => buf.push_str(&format!("{} as u64", operand)),
                         CU128 => buf.push_str(&format!("{} as u128", operand)),
-                        NOT   => buf.push_str(&format!("! {}", substr)),
+                        NOT   => {
+                            if let Some((target, ty)) = format_is_components(opt, &*self.subx) {
+                                buf.push_str(&format!("{} is not {}", target, ty));
+                            } else {
+                                buf.push_str(&format!("! {}", substr));
+                            }
+                        }
                         RET | ERR | AST => buf.push_str(&format!("{} {}", meta.intro, substr)),
                         _ => never!()
                     };
@@ -996,13 +1092,9 @@ impl IRNode for IRNodeBytecodes {
     }
     fn print(&self, opt: &PrintOption) -> String {
         let pre = opt.indent.repeat(opt.tab);
-        let mut buf = String::new();
-        if !opt.desc {
-            buf.push_str(&format!("{}bytecode {{ ", pre));
-        }
-        buf.push_str(&self.codes.bytecode_print(false).unwrap());
-        buf.push_str(" }}");
-        buf
+        let codes = self.codes.bytecode_print(false).unwrap();
+        let codes = codes.trim_end();
+        format!("{}bytecode {{ {} }}", pre, codes)
     }
 }
 
@@ -1071,6 +1163,9 @@ impl IRNode for $name {
         let num = self.subs.len();
         let mut buf = String::new();
         if opt.desc {
+            if let Some(elements) = extract_packlist_elements(self.inst, &self.subs, opt) {
+                return format!("{}[{}]", pre, elements.join(", "));
+            }
             let mut prefix = String::new();
             if opt.tab == 0 && self.inst == Bytecode::IRBLOCK {
                 if let Some(map) = opt.map {

@@ -32,8 +32,8 @@ mod amm {
         );
     }
 
-    // #[test]
-    fn _deploy() {
+    #[test]
+    fn deploy() {
         use vm::ir::*;
 
         /*

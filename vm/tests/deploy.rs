@@ -88,8 +88,8 @@ mod deploy {
         contract.testnet_update_print(_cadr, "8:244");
     }
 
-    // #[test]
-    fn _recursion() {
+    #[test]
+    fn recursion() {
         /*
             emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 
@@ -101,8 +101,8 @@ mod deploy {
                 PU8 1
                 PU8 2
             }
-            var foo $0
-            var bar $1
+            var foo $0 = 0
+            var bar $1 = 0
             if foo > 10 {
                 return 10
             }
@@ -118,7 +118,7 @@ mod deploy {
             var res $2 = 0
             assert type_id(pms) == 15
             assert type_is_list(pms)
-            adr = item_get(0, pms)
+            adr = item_get(pms, 0)
             adr = pms[3]
             // assert type_is(12, adr)
 

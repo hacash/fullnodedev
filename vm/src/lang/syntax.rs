@@ -663,6 +663,14 @@ impl Syntax {
                 self.idx -= 1;
                 Box::new(self.item_may_block(self.expect_retval)?)
             }
+            Token::Operator(op) => match op {
+                OpTy::NOT => {
+                    let expr = self.item_must(0)?;
+                    expr.checkretval()?; // must retv
+                    Box::new(IRNodeSingle{hrtv: true, inst: NOT, subx: expr})
+                }
+                _ => return errf!("operator {:?} cannot start expression", op)
+            },
             Keyword(While) => {
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
