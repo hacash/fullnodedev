@@ -17,6 +17,7 @@ include!("util.rs");
 include!("convert.rs");
 include!("compo.rs");
 include!("canbe.rs");
+include!("type.rs");
 include!("item.rs");
 include!("cast.rs");
 include!("cast_param.rs");

@@ -1,6 +1,7 @@
 use crate::PrintOption;
 use native::NativeCall;
 use super::rt::{Bytecode, SourceMap};
+use super::value::ValueTy;
 
 
 
@@ -246,35 +247,32 @@ fn extract_packlist_elements(inst: Bytecode, subs: &[Box<dyn IRNode>], opt: &Pri
     Some(elems)
 }
 
-fn value_ty_name(ty: u8) -> &'static str {
-    match ty {
-        0 => "nil",
-        1 => "bool",
-        2 => "u8",
-        3 => "u16",
-        4 => "u32",
-        5 => "u64",
-        6 => "u128",
-        10 => "bytes",
-        11 => "address",
-        _ => "?",
+enum TypeCheck {
+    Named(&'static str),
+    Unknown(u8),
+}
+
+fn resolve_type_check_name(ty: u8) -> TypeCheck {
+    match ValueTy::build(ty) {
+        Ok(vt) => TypeCheck::Named(vt.name()),
+        Err(_) => TypeCheck::Unknown(ty),
     }
 }
 
-fn format_is_components(opt: &PrintOption, node: &dyn IRNode) -> Option<(String, &'static str)> {
+fn format_is_components(opt: &PrintOption, node: &dyn IRNode) -> Option<(String, TypeCheck)> {
     if let Some(inner) = node.as_any().downcast_ref::<IRNodeSingle>() {
         let target = print_sub_inline!(opt, inner.subx);
         return match inner.inst {
-            Bytecode::TNIL => Some((target, "nil")),
-            Bytecode::TLIST => Some((target, "list")),
-            Bytecode::TMAP => Some((target, "map")),
+            Bytecode::TNIL => Some((target, TypeCheck::Named("nil"))),
+            Bytecode::TLIST => Some((target, TypeCheck::Named("list"))),
+            Bytecode::TMAP => Some((target, TypeCheck::Named("map"))),
             _ => None,
         };
     }
     if let Some(inner) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
         if inner.inst == Bytecode::TIS {
             let target = print_sub_inline!(opt, inner.subx);
-            return Some((target, value_ty_name(inner.para)));
+            return Some((target, resolve_type_check_name(inner.para)));
         }
     }
     None
@@ -724,7 +722,10 @@ impl IRNode for IRNodeSingle {
                         CU128 => buf.push_str(&format!("{} as u128", operand)),
                         NOT   => {
                             if let Some((target, ty)) = format_is_components(opt, &*self.subx) {
-                                buf.push_str(&format!("{} is not {}", target, ty));
+                                match ty {
+                                    TypeCheck::Named(name) => buf.push_str(&format!("{} is not {}", target, name)),
+                                    TypeCheck::Unknown(id) => buf.push_str(&format!("type_id({}) != {}", target, id)),
+                                }
                             } else {
                                 buf.push_str(&format!("! {}", substr));
                             }
@@ -946,19 +947,10 @@ impl IRNode for IRNodeParam1Single {
             match self.inst {
                 TIS => {
                     let substr = print_sub_inline!(opt, self.subx);
-                    let ty = match self.para {
-                        0 => "nil",
-                        1 => "bool",
-                        2 => "u8",
-                        3 => "u16",
-                        4 => "u32",
-                        5 => "u64",
-                        6 => "u128",
-                        10 => "bytes",
-                        11 => "address",
-                        _ => "?",
-                    };
-                    buf.push_str(&format!("{} is {}", substr, ty));
+                    match resolve_type_check_name(self.para) {
+                        TypeCheck::Named(name) => buf.push_str(&format!("{} is {}", substr, name)),
+                        TypeCheck::Unknown(id) => buf.push_str(&format!("type_id({}) == {}", substr, id)),
+                    }
                 }
                 PUT => {
                     let substr = &print_sub_inline!(opt, self.subx);
