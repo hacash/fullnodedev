@@ -151,118 +151,110 @@ impl<'a> Formater<'a> {
     }
 
     fn format_memory_put(&self, node: &dyn IRNode) -> Option<String> {
-        if let Some(double) = node.as_any().downcast_ref::<IRNodeDouble>() {
-            let code: Bytecode = std_mem_transmute!(node.bytecode());
-            if code == Bytecode::MPUT {
-                let key = self.print_inline(&*double.subx);
-                let value = self.print_inline(&*double.suby);
-                let meta = Bytecode::MPUT.metadata();
-                return Some(format!(
-                    "{}{}({}, {})",
-                    self.line_prefix(),
-                    meta.intro,
-                    key,
-                    value
-                ));
-            }
+        use Bytecode::*;
+        let double = node.as_any().downcast_ref::<IRNodeDouble>()?;
+        let code: Bytecode = std_mem_transmute!(node.bytecode());
+        if code != MPUT {
+            return None;
         }
-        None
+        let key = self.print_inline(&*double.subx);
+        let value = self.print_inline(&*double.suby);
+        let meta = MPUT.metadata();
+        Some(format!(
+            "{}{}({}, {})",
+            self.line_prefix(),
+            meta.intro,
+            key,
+            value
+        ))
     }
 
     fn format_array_block(&self, node: &dyn IRNode) -> Option<String> {
-        if let Some(arr) = node.as_any().downcast_ref::<IRNodeArray>() {
-            if arr.inst != Bytecode::IRLIST
-                && arr.inst != Bytecode::IRBLOCK
-                && arr.inst != Bytecode::IRBLOCKR
-            {
-                return None;
+        use Bytecode::*;
+        let arr = node.as_any().downcast_ref::<IRNodeArray>()?;
+        if arr.inst != IRLIST && arr.inst != IRBLOCK && arr.inst != IRBLOCKR {
+            return None;
+        }
+        if arr.inst == IRLIST {
+            if let Some(elements) = self.extract_packlist_elements(arr.inst, &arr.subs) {
+                return Some(format!(
+                    "{}[{}]",
+                    self.line_prefix(),
+                    elements.join(", ")
+                ));
             }
-            if arr.inst == Bytecode::IRLIST {
-                if let Some(elements) = self.extract_packlist_elements(arr.inst, &arr.subs) {
-                    return Some(format!(
-                        "{}[{}]",
-                        self.line_prefix(),
-                        elements.join(", ")
-                    ));
+        }
+        let mut prefix = String::new();
+        if self.opt.tab == 0 && arr.inst == IRBLOCK {
+            if let Some(map) = self.opt.map {
+                for (idx, info) in map.lib_entries() {
+                    let line = match &info.address {
+                        Some(addr) => format!("lib {} = {}: {}\n", info.name, idx, addr.readable()),
+                        None => format!("lib {} = {}:\n", info.name, idx),
+                    };
+                    prefix.push_str(&line);
                 }
             }
-            let mut prefix = String::new();
-            if self.opt.tab == 0 && arr.inst == Bytecode::IRBLOCK {
+        }
+        let mut buf = prefix;
+        if self.opt.trim_root_block && self.opt.tab == 0 && arr.inst == IRBLOCK {
+            let mut start_idx = 0;
+            if self.opt.trim_head_alloc {
+                if let Some(first) = arr.subs.first() {
+                    if first.bytecode() == ALLOC as u8 {
+                        start_idx = 1;
+                    }
+                }
+            }
+            let mut body_start_idx = start_idx;
+            let mut param_line = None;
+            if self.opt.trim_param_unpack {
                 if let Some(map) = self.opt.map {
-                    for (idx, info) in map.lib_entries() {
-                        let line = match &info.address {
-                            Some(addr) => {
-                                format!("lib {} = {}: {}\n", info.name, idx, addr.readable())
-                            }
-                            None => format!("lib {} = {}:\n", info.name, idx),
-                        };
-                        prefix.push_str(&line);
-                    }
-                }
-            }
-            let mut buf = prefix;
-            if self.opt.trim_root_block
-                && self.opt.tab == 0
-                && arr.inst == Bytecode::IRBLOCK
-            {
-                let mut start_idx = 0;
-                if self.opt.trim_head_alloc {
-                    if let Some(first) = arr.subs.first() {
-                        if first.bytecode() == Bytecode::ALLOC as u8 {
-                            start_idx = 1;
-                        }
-                    }
-                }
-                let mut body_start_idx = start_idx;
-                let mut param_line = None;
-                if self.opt.trim_param_unpack {
-                    if let Some(map) = self.opt.map {
-                        if let Some(names) = map.param_names() {
-                            if body_start_idx < arr.subs.len() {
-                                if let Some(double) =
-                                    arr.subs[body_start_idx].as_any().downcast_ref::<IRNodeDouble>()
-                                {
-                                    if double.inst == Bytecode::UPLIST {
-                                        let indent = self.opt.indent.repeat(self.opt.tab);
-                                        let params = names.join(", ");
-                                        param_line = Some(format!("{}param {{ {} }}", indent, params));
-                                        body_start_idx += 1;
-                                    }
+                    if let Some(names) = map.param_names() {
+                        if body_start_idx < arr.subs.len() {
+                            if let Some(double) = arr.subs[body_start_idx]
+                                .as_any()
+                                .downcast_ref::<IRNodeDouble>()
+                            {
+                                if double.inst == UPLIST {
+                                    let indent = self.opt.indent.repeat(self.opt.tab);
+                                    let params = names.join(", ");
+                                    param_line = Some(format!("{}param {{ {} }}", indent, params));
+                                    body_start_idx += 1;
                                 }
                             }
                         }
                     }
                 }
-                let has_body = param_line.is_some() || body_start_idx < arr.subs.len();
-                if has_body {
-                    buf.push('\n');
-                    if let Some(line) = param_line {
-                        buf.push_str(&line);
-                        buf.push('\n');
-                    }
-                    for a in &arr.subs[body_start_idx..] {
-                        buf.push_str(&self.child().print(&**a));
-                        buf.push('\n');
-                    }
-                    if buf.ends_with('\n') {
-                        buf.pop();
-                    }
-                    return Some(buf);
-                }
             }
-            buf.push('{');
-            if !arr.subs.is_empty() {
+            let has_body = param_line.is_some() || body_start_idx < arr.subs.len();
+            if has_body {
                 buf.push('\n');
-                for a in &arr.subs {
+                if let Some(line) = param_line {
+                    buf.push_str(&line);
+                    buf.push('\n');
+                }
+                for a in &arr.subs[body_start_idx..] {
                     buf.push_str(&self.child().print(&**a));
                     buf.push('\n');
                 }
-                buf.push_str(&self.opt.indent.repeat(self.opt.tab));
+                if buf.ends_with('\n') {
+                    buf.pop();
+                }
+                return Some(buf);
             }
-            buf.push('}');
-            return Some(buf);
         }
-        None
+        buf.push('{');
+        if !arr.subs.is_empty() {
+            buf.push('\n');
+            for a in &arr.subs {
+                buf.push_str(&self.child().print(&**a));
+                buf.push('\n');
+            }
+            buf.push_str(&self.opt.indent.repeat(self.opt.tab));
+        }
+        buf.push('}');
+        Some(buf)
     }
 
     fn format_call_instruction(&self, node: &dyn IRNode, code: Bytecode) -> Option<String> {
@@ -370,37 +362,30 @@ impl<'a> Formater<'a> {
     }
 
     fn format_opty_double(&self, code: Bytecode, node: &dyn IRNode) -> Option<String> {
-        if OpTy::from_bytecode(code).is_ok() {
-            if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
-                let sg = OpTy::from_bytecode(d.inst).unwrap().symbol();
-                let res = self.print_subx_suby_op(d, sg);
-                return Some(format!("{}{}", self.line_prefix(), res));
-            }
+        if OpTy::from_bytecode(code).is_err() {
+            return None;
         }
-        None
+        let d = node.as_any().downcast_ref::<IRNodeDouble>()?;
+        let sg = OpTy::from_bytecode(d.inst).unwrap().symbol();
+        let res = self.print_subx_suby_op(d, sg);
+        Some(format!("{}{}", self.line_prefix(), res))
     }
 
     fn format_unary_triple(&self, node: &dyn IRNode) -> Option<String> {
+        use Bytecode::*;
         if let Some(s) = node.as_any().downcast_ref::<IRNodeSingle>() {
             let pre = self.line_prefix();
             match s.inst {
-                Bytecode::TNIL | Bytecode::TLIST | Bytecode::TMAP => {
+                TNIL | TLIST | TMAP => {
                     let substr = self.print_inline(&*s.subx);
                     return Some(match s.inst {
-                        Bytecode::TNIL => format!("{}{} is nil", pre, substr),
-                        Bytecode::TLIST => format!("{}{} is list", pre, substr),
-                        Bytecode::TMAP => format!("{}{} is map", pre, substr),
+                        TNIL => format!("{}{} is nil", pre, substr),
+                        TLIST => format!("{}{} is list", pre, substr),
+                        TMAP => format!("{}{} is map", pre, substr),
                         _ => unreachable!(),
                     });
                 }
-                Bytecode::CU8
-                | Bytecode::CU16
-                | Bytecode::CU32
-                | Bytecode::CU64
-                | Bytecode::CU128
-                | Bytecode::RET
-                | Bytecode::ERR
-                | Bytecode::AST => {
+                CU8 | CU16 | CU32 | CU64 | CU128 | RET | ERR | AST => {
                     let substr = self.print_inline(&*s.subx);
                     let operand = if s.subx.level() > 0 {
                         let t = substr.trim();
@@ -413,31 +398,31 @@ impl<'a> Formater<'a> {
                         substr.clone()
                     };
                     return Some(match s.inst {
-                        Bytecode::CU8 => format!("{}{} as u8", pre, operand),
-                        Bytecode::CU16 => format!("{}{} as u16", pre, operand),
-                        Bytecode::CU32 => format!("{}{} as u32", pre, operand),
-                        Bytecode::CU64 => format!("{}{} as u64", pre, operand),
-                        Bytecode::CU128 => format!("{}{} as u128", pre, operand),
-                        Bytecode::RET | Bytecode::ERR | Bytecode::AST => {
+                        CU8 => format!("{}{} as u8", pre, operand),
+                        CU16 => format!("{}{} as u16", pre, operand),
+                        CU32 => format!("{}{} as u32", pre, operand),
+                        CU64 => format!("{}{} as u64", pre, operand),
+                        CU128 => format!("{}{} as u128", pre, operand),
+                        RET | ERR | AST => {
                             let meta = s.inst.metadata();
                             format!("{}{} {}", pre, meta.intro, substr)
                         }
                         _ => unreachable!(),
                     });
                 }
-                Bytecode::NOT => {
+                NOT => {
                     let substr = self.print_inline(&*s.subx);
                     if let Some((target, ty)) = self.format_is_components(&*s.subx) {
                         return Some(format!("{}{} is not {}", pre, target, ty));
                     }
                     return Some(format!("{}! {}", pre, substr));
                 }
-                Bytecode::PRT => {
+                PRT => {
                     let substr = self.print_inline(&*s.subx);
                     let meta = s.inst.metadata();
                     return Some(format!("{}{} {}", pre, meta.intro, substr));
                 }
-                Bytecode::MGET => {
+                MGET => {
                     let substr = self.print_inline(&*s.subx);
                     let meta = s.inst.metadata();
                     return Some(format!("{}{}({})", pre, meta.intro, substr));
@@ -446,7 +431,7 @@ impl<'a> Formater<'a> {
             }
         }
         if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
-            if d.inst == Bytecode::ITEMGET {
+            if d.inst == ITEMGET {
                 let subxstr = self.print_sub(&*d.subx);
                 let subystr = self.print_inline(&*d.suby);
                 return Some(format!(
@@ -458,7 +443,7 @@ impl<'a> Formater<'a> {
             }
         }
         if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
-            if t.inst == Bytecode::IRIF || t.inst == Bytecode::IRIFR {
+            if t.inst == IRIF || t.inst == IRIFR {
                 let subxstr = self.print_inline(&*t.subx);
                 let subystr = self.print_newline(&*t.suby);
                 let subzstr = self.print_newline(&*t.subz);
