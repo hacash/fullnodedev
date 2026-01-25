@@ -184,49 +184,10 @@ impl<'a> Formater<'a> {
                 ));
             }
         }
-        let mut prefix = String::new();
-        if self.opt.tab == 0 && arr.inst == IRBLOCK {
-            if let Some(map) = self.opt.map {
-                for (idx, info) in map.lib_entries() {
-                    let line = match &info.address {
-                        Some(addr) => format!("lib {} = {}: {}\n", info.name, idx, addr.readable()),
-                        None => format!("lib {} = {}:\n", info.name, idx),
-                    };
-                    prefix.push_str(&line);
-                }
-            }
-        }
-        let mut buf = prefix;
-        if self.opt.trim_root_block && self.opt.tab == 0 && arr.inst == IRBLOCK {
-            let mut start_idx = 0;
-            if self.opt.trim_head_alloc {
-                if let Some(first) = arr.subs.first() {
-                    if first.bytecode() == ALLOC as u8 {
-                        start_idx = 1;
-                    }
-                }
-            }
-            let mut body_start_idx = start_idx;
-            let mut param_line = None;
-            if self.opt.trim_param_unpack {
-                if let Some(map) = self.opt.map {
-                    if let Some(names) = map.param_names() {
-                        if body_start_idx < arr.subs.len() {
-                            if let Some(double) = arr.subs[body_start_idx]
-                                .as_any()
-                                .downcast_ref::<IRNodeDouble>()
-                            {
-                                if double.inst == UPLIST {
-                                    let indent = self.opt.indent.repeat(self.opt.tab);
-                                    let params = names.join(", ");
-                                    param_line = Some(format!("{}param {{ {} }}", indent, params));
-                                    body_start_idx += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        let helper = DecompilationHelper::new(&self.opt);
+        let mut buf = helper.block_prefix(arr);
+        if helper.should_trim_root_block(arr) {
+            let (body_start_idx, param_line) = helper.prepare_root_block(arr);
             let has_body = param_line.is_some() || body_start_idx < arr.subs.len();
             if has_body {
                 buf.push('\n');
@@ -526,30 +487,10 @@ impl<'a> Formater<'a> {
                 };
                 format!("{} = {}", target, substr)
             }
-            XOP => {
-                let substr = self.print_inline(&*node.subx);
-                let (op_str, idx) = local_operand_param_parse(node.para);
-                let target = self.slot_name_display(idx);
-                format!("{} {} {}", target, op_str, substr)
-            }
-            XLG => {
-                let substr = self.print_inline(&*node.subx);
-                let (opt_str, idx) = local_logic_param_parse(node.para);
-                let target = self.slot_name_display(idx);
-                format!("{} {} {}", target, opt_str, substr)
-            }
-            EXTFUNC => {
-                let substr = self.print_inline(&*node.subx);
-                let ary = CALL_EXTEND_FUNC_DEFS;
-                let f = search_ext_name_by_id(node.para, &ary);
-                format!("{}({})", f, substr)
-            }
-            EXTACTION => {
-                let args = self.build_call_args(&*node.subx);
-                let ary = CALL_EXTEND_ACTION_DEFS;
-                let f = search_ext_name_by_id(node.para, &ary);
-                format!("{}({})", f, args)
-            }
+            XOP => self.format_local_param(node, local_operand_param_parse),
+            XLG => self.format_local_param(node, local_logic_param_parse),
+            EXTFUNC => self.format_extend_call(node, &CALL_EXTEND_FUNC_DEFS, true),
+            EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS, false),
             NTCALL => {
                 let args = self.build_call_args(&*node.subx);
                 let ntcall: NativeCall = std_mem_transmute!(node.para);
@@ -561,6 +502,31 @@ impl<'a> Formater<'a> {
             }
         };
         format!("{}{}", pre, body)
+    }
+
+    fn format_extend_call(
+        &self,
+        node: &IRNodeParam1Single,
+        defs: &[(u8, &'static str, ValueTy)],
+        inline_arg: bool,
+    ) -> String {
+        let args = if inline_arg {
+            self.print_inline(&*node.subx)
+        } else {
+            self.build_call_args(&*node.subx)
+        };
+        let f = search_ext_name_by_id(node.para, defs);
+        format!("{}({})", f, args)
+    }
+
+    fn format_local_param<F>(&self, node: &IRNodeParam1Single, parser: F) -> String
+    where
+        F: Fn(u8) -> (String, u8),
+    {
+        let substr = self.print_inline(&*node.subx);
+        let (op_str, idx) = parser(node.para);
+        let target = self.slot_name_display(idx);
+        format!("{} {} {}", target, op_str, substr)
     }
 
     fn format_leaf(&self, leaf: &IRNodeLeaf) -> String {

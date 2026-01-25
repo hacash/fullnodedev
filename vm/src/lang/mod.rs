@@ -14,6 +14,7 @@ use super::rt::Token::*;
 use super::native::*;
 
 include! {"print_option.rs"}
+include! {"decompilation_helper.rs"}
 
 pub enum ArgvMode {
     Concat,
