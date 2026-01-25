@@ -187,7 +187,7 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
             let pklist = push_inst(PACKLIST);
             subs.push(num);
             subs.push(pklist);
-            Box::new(IRNodeList{subs, inst: Bytecode::IRLIST})
+            Box::new(IRNodeArray{subs, inst: Bytecode::IRLIST})
         },
         _ => return errf!("function argv length cannot more than 15"),
     })

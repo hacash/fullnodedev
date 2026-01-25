@@ -1,14 +1,13 @@
-
 /*
     parse ir list
 */
-pub fn parse_ir_list(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeList> {
+pub fn parse_ir_list(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeArray> {
     let u16max = u16::MAX as usize;
     let codelen = stuff.len();
     if codelen > u16max {
         return itr_err_code!(CodeTooLong)
     }
-    let mut list = IRNodeList::new();
+    let mut list = IRNodeArray::new_list();
     loop {
         let pres = parse_ir_node(stuff, seek)?;
         let Some(irnode) = pres else {
@@ -24,13 +23,13 @@ pub fn parse_ir_list(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeList> {
 /*
     parse ir block
 */
-pub fn parse_ir_block(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeBlock> {
+pub fn parse_ir_block(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeArray> {
     let u16max = u16::MAX as usize;
     let codelen = stuff.len();
     if codelen > u16max {
         return itr_err_code!(CodeTooLong)
     }
-    let mut block = IRNodeBlock::new();
+    let mut block = IRNodeArray::new_block();
     loop {
         let pres = parse_ir_node(stuff, seek)?;
         let Some(irnode) = pres else {
@@ -131,7 +130,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             Box::new(bts)
         }
         IRLIST => {
-            let mut list = IRNodeList::new();
+            let mut list = IRNodeArray::with_opcode(inst);
             let p = itrp2!();
             let n = u16::from_be_bytes(p);
             let ndp = depth + 1;
@@ -141,7 +140,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             Box::new(list)
         }
         IRBLOCK | IRBLOCKR => {
-            let mut block = IRNodeBlock::with_opcode(inst);
+            let mut block = IRNodeArray::with_opcode(inst);
             let p = itrp2!();
             let n = u16::from_be_bytes(p);
             let ndp = depth + 1;

@@ -343,7 +343,7 @@ fn param_block_prints_from_ir_roundtrip() {
     assert!(printed.contains("param { addr, sat }"));
 }
 
-fn find_print_expression(block: &IRNodeBlock) -> &Box<dyn IRNode> {
+fn find_print_expression(block: &IRNodeArray) -> &Box<dyn IRNode> {
     block
         .iter()
         .find_map(|node| {

@@ -11,7 +11,7 @@ macro_rules! define_func_codes {
             self.irnode(irnodes)
         }
 
-        pub fn irnode(self, irnodes: IRNodeBlock) -> Ret<Self> {
+        pub fn irnode(self, irnodes: IRNodeArray) -> Ret<Self> {
             let ircodes = irnodes.serialize();
             self.ircode(ircodes)
         }

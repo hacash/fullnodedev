@@ -135,7 +135,7 @@ fn collect_native_call_args(node: &dyn IRNode, opt: &PrintOption) -> Vec<String>
     let mut args = Vec::new();
     let mut current: &dyn IRNode = node;
     loop {
-        if let Some(list) = current.as_any().downcast_ref::<IRNodeList>() {
+        if let Some(list) = current.as_any().downcast_ref::<IRNodeArray>() {
             if let Some(elements) = extract_packlist_elements(list.inst, &list.subs, opt) {
                 args.extend(elements);
                 return args;
@@ -1100,35 +1100,32 @@ impl IRNode for IRNodeBytecodes {
 
 /*************************************/
 
-macro_rules! define_ir_list_or_block { ($name: ident, $inst: expr, $compile_fn: ident) => {
-     
-
 #[derive(Debug, Clone)]
-pub struct $name {
+pub struct IRNodeArray {
     pub subs: Vec<Box<dyn IRNode>>,
     pub inst: Bytecode,
 }
 
-impl Default for $name {
+impl Default for IRNodeArray {
     fn default() -> Self {
-        Self::new()
+        Self::new_list()
     }
 }
 
-impl std::ops::Deref for $name {
+impl std::ops::Deref for IRNodeArray {
     type Target = Vec<Box<dyn IRNode>>;
     fn deref(&self) -> &Vec<Box<dyn IRNode>> {
         &self.subs
     }
 }
 
-impl DerefMut for $name {
+impl std::ops::DerefMut for IRNodeArray {
     fn deref_mut(&mut self) -> &mut Vec<Box<dyn IRNode>> {
         &mut self.subs
     }
 }
 
-impl IRNode for $name {
+impl IRNode for IRNodeArray {
     fn as_any(&self) -> &dyn Any { self }
     fn subs(&self) -> usize { self.subs.len() }
     fn hasretval(&self) -> bool {
@@ -1139,10 +1136,18 @@ impl IRNode for $name {
     }
     fn bytecode(&self) -> u8 { self.inst as u8 }
     fn codegen(&self) -> VmrtRes<Vec<u8>> {
-        $compile_fn(self.inst, &self.subs)
+        match self.inst {
+            Bytecode::IRLIST => compile_list(self.inst, &self.subs),
+            Bytecode::IRBLOCK | Bytecode::IRBLOCKR => compile_block(self.inst, &self.subs),
+            _ => errf!("IRNodeArray invalid opcode {:?}", self.inst).map_ire(InstInvalid)
+        }
     }
     fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
-        let codes = $compile_fn(self.inst, &self.subs)?;
+        let codes = match self.inst {
+            Bytecode::IRLIST => compile_list(self.inst, &self.subs)?,
+            Bytecode::IRBLOCK | Bytecode::IRBLOCKR => compile_block(self.inst, &self.subs)?,
+            _ => return errf!("IRNodeArray invalid opcode {:?}", self.inst).map_ire(InstInvalid)
+        };
         buf.extend_from_slice(&codes);
         Ok(())
     }
@@ -1162,8 +1167,10 @@ impl IRNode for $name {
         let num = self.subs.len();
         let mut buf = String::new();
         if opt.desc {
-            if let Some(elements) = extract_packlist_elements(self.inst, &self.subs, opt) {
-                return format!("{}[{}]", pre, elements.join(", "));
+            if self.inst == Bytecode::IRLIST {
+                if let Some(elements) = extract_packlist_elements(self.inst, &self.subs, opt) {
+                    return format!("{}[{}]", pre, elements.join(", "));
+                }
             }
             let mut prefix = String::new();
             if opt.tab == 0 && self.inst == Bytecode::IRBLOCK {
@@ -1213,7 +1220,7 @@ impl IRNode for $name {
                         buf.push('\n');
                     }
                     for a in &self.subs[body_start_idx..] {
-                        buf.push_str(&a.print(opt));
+                        buf.push_str(&a.print(&opt.child()));
                         buf.push('\n');
                     }
                     buf.pop();
@@ -1246,13 +1253,23 @@ impl IRNode for $name {
     }
 }
 
-
-#[allow(dead_code)]
-impl $name {
-    pub fn new() -> Self {
+impl IRNodeArray {
+    pub fn new_list() -> Self {
         Self {
             subs: vec![],
-            inst: $inst,
+            inst: Bytecode::IRLIST,
+        }
+    }
+    pub fn new_block() -> Self {
+        Self {
+            subs: vec![],
+            inst: Bytecode::IRBLOCK,
+        }
+    }
+    pub fn new_block_expr() -> Self {
+        Self {
+            subs: vec![],
+            inst: Bytecode::IRBLOCKR,
         }
     }
     pub fn with_opcode(inst: Bytecode) -> Self {
@@ -1261,20 +1278,20 @@ impl $name {
             inst,
         }
     }
-    pub fn with_capacity(n: usize) -> Ret<Self> {
+    pub fn with_capacity(n: usize, inst: Bytecode) -> Ret<Self> {
         if n > u16::MAX as usize {
-            return errf!("{} length max {}", stringify!($name), u16::MAX)
+            return errf!("IRNodeArray length max {}", u16::MAX)
         }
         Ok(Self{
             subs: Vec::with_capacity(n),
-            inst: $inst,
+            inst,
         })
     }
-    pub fn from_vec(subs: Vec<Box<dyn IRNode>>) -> Ret<Self> {
+    pub fn from_vec(subs: Vec<Box<dyn IRNode>>, inst: Bytecode) -> Ret<Self> {
         if subs.len() > u16::MAX as usize {
-            return errf!("{} length max {}", stringify!($name), u16::MAX)
+            return errf!("IRNodeArray length max {}", u16::MAX)
         }
-        Ok(Self{subs, inst: $inst})
+        Ok(Self{subs, inst})
     }
     pub fn into_vec(self) -> Vec<Box<dyn IRNode>> {
         self.subs
@@ -1286,20 +1303,6 @@ impl $name {
         self.inst = inst;
     }
 }
-
-
-   
-} }
-
-
-define_ir_list_or_block!{ IRNodeList,  IRLIST,  compile_list }
-define_ir_list_or_block!{ IRNodeBlock, IRBLOCK, compile_block }
-
-
-/*******************************/
-
-
-
 
 fn literals(s: String) -> String {
     s.replace("\\", "\\\\")

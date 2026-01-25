@@ -1,4 +1,3 @@
-
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use hex;
@@ -20,7 +19,7 @@ pub struct Syntax {
     check_op: bool,
     expect_retval: bool,
     // leftv: Box<dyn AST>,
-    irnode: IRNodeBlock,
+    irnode: IRNodeArray, // replaced IRNodeArray -> IRNodeArray
     source_map: SourceMap,
 }
 
@@ -306,7 +305,7 @@ impl Syntax {
         tokens.push(Token::Partition('}'));
         Self {
             tokens,
-            irnode: IRNodeBlock::new(),
+            irnode: IRNodeArray::with_opcode(Bytecode::IRBLOCK), // was IRNodeArray::new()
             check_op: true,
             ..Default::default()
         }
@@ -473,14 +472,14 @@ impl Syntax {
         })
     }
     
-    pub fn item_may_block(&mut self, keep_retval: bool) -> Ret<IRNodeBlock> {
+    pub fn item_may_block(&mut self, keep_retval: bool) -> Ret<IRNodeArray> { // return type changed
         use Bytecode::*;
         let inst = if keep_retval {
             IRBLOCKR
         } else {
             IRBLOCK
         };
-        let mut block = IRNodeBlock::with_opcode(inst);
+        let mut block = IRNodeArray::with_opcode(inst); // was IRNodeArray::with_opcode(inst);
         let max = self.tokens.len() - 1;
         if self.idx >= max {
             return errf!("block format error")
@@ -703,7 +702,7 @@ impl Syntax {
                     subs.push(item);
                 }
                 let num = subs.len();
-                let mut list = IRNodeList{subs, inst: Bytecode::IRLIST};
+                let mut list = IRNodeArray{subs, inst: Bytecode::IRLIST};
                     list.push(push_num(num as u128));
                     list.push(push_inst(Bytecode::PACKLIST));
                 Box::new(list)
@@ -930,6 +929,7 @@ impl Syntax {
                 }
                 Box::new(IRNodeBytecodes{codes})
             },
+
             Keyword(List) => {
                 // let e = errf!("list format error");
                 let block = self.item_may_block(false)?;
@@ -940,7 +940,7 @@ impl Syntax {
                         let mut subs = block.subs;
                         subs.push(push_num(num as u128));
                         subs.push(push_inst(PACKLIST));
-                        let arys = IRNodeList::from_vec(subs)?;
+                        let arys = IRNodeArray::from_vec(subs, Bytecode::IRLIST)?; // changed
                         Box::new(arys)
                     }
                 }
@@ -976,7 +976,7 @@ impl Syntax {
                 }
                 subs.push(push_num(subs.len() as u128));
                 subs.push(push_inst(PACKMAP));
-                let arys = IRNodeList::from_vec(subs)?;
+                let arys = IRNodeArray::from_vec(subs, Bytecode::IRLIST)?; // changed
                 Box::new(arys)
             }
             Keyword(Log) => {
@@ -994,7 +994,7 @@ impl Syntax {
                         };
                         let mut subs = block.subs;
                         subs.push(push_inst_noret(inst));
-                        let arys = IRNodeList::from_vec(subs)?;
+                        let arys = IRNodeArray::from_vec(subs, Bytecode::IRLIST)?; // changed
                         Box::new(arys)
                     }
                     _ => return e
@@ -1022,7 +1022,7 @@ impl Syntax {
     }
 
 
-    pub fn parse(mut self) -> Ret<(IRNodeBlock, SourceMap)> {
+    pub fn parse(mut self) -> Ret<(IRNodeArray, SourceMap)> {
         // for local alloc
         self.irnode.push(push_empty());
         // bodys

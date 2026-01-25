@@ -26,14 +26,14 @@ include! {"funcs.rs"}
 include! {"syntax.rs"}
 include! {"test.rs"}
 
-pub fn lang_to_irnode_with_sourcemap(langscript: &str) -> Ret<(IRNodeBlock, SourceMap)> {
+pub fn lang_to_irnode_with_sourcemap(langscript: &str) -> Ret<(IRNodeArray, SourceMap)> {
     let tkr = Tokenizer::new(langscript.as_bytes());
     let tks = tkr.parse()?;
     let syx = Syntax::new(tks);
     syx.parse()
 }
 
-pub fn lang_to_irnode(langscript: &str) -> Ret<IRNodeBlock> {
+pub fn lang_to_irnode(langscript: &str) -> Ret<IRNodeArray> {
     let (block, _) = lang_to_irnode_with_sourcemap(langscript)?;
     Ok(block)
 }
@@ -48,7 +48,7 @@ pub fn lang_to_ircode_with_sourcemap(langscript: &str) -> Ret<(Vec<u8>, SourceMa
     Ok((ir.serialize().split_off(3), smap)) // drop block op and length bytes
 }
 
-pub fn irnode_to_lang_with_sourcemap(block: IRNodeBlock, smap: &SourceMap) -> Ret<String> {
+pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Ret<String> {
     let opt = PrintOption::new("  ", 0, true)
         .with_source_map(smap)
         .with_trim_root_block(true)
@@ -57,7 +57,7 @@ pub fn irnode_to_lang_with_sourcemap(block: IRNodeBlock, smap: &SourceMap) -> Re
     Ok(block.print(&opt))
 }
 
-pub fn irnode_to_lang(block: IRNodeBlock) -> Ret<String> {
+pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
     let opt = PrintOption::new("  ", 0, true)
         .with_trim_root_block(true)
         .with_trim_head_alloc(true)
