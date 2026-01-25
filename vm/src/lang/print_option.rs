@@ -13,6 +13,10 @@ pub struct PrintOption<'a> {
     pub trim_head_alloc: bool,
     pub trim_param_unpack: bool,
     pub hide_func_nil_argv: bool,
+    pub call_short_syntax: bool,
+    pub flatten_call_packlist: bool,
+    pub flatten_array_packlist: bool,
+    pub flatten_syscall_cat: bool,
     allocated: Rc<RefCell<PrintHashSet<u8>>>,
 }
 
@@ -26,6 +30,10 @@ impl<'a> PrintOption<'a> {
             trim_head_alloc: false,
             trim_param_unpack: false,
             hide_func_nil_argv: false,
+            call_short_syntax: false,
+            flatten_call_packlist: true,
+            flatten_array_packlist: true,
+            flatten_syscall_cat: true,
             allocated: Rc::new(RefCell::new(PrintHashSet::new())),
         }
     }
@@ -52,6 +60,26 @@ impl<'a> PrintOption<'a> {
 
     pub fn with_hide_func_nil_argv(mut self, hide: bool) -> Self {
         self.hide_func_nil_argv = hide;
+        self
+    }
+
+    pub fn with_call_short_syntax(mut self, enable: bool) -> Self {
+        self.call_short_syntax = enable;
+        self
+    }
+
+    pub fn with_flatten_call_packlist(mut self, flatten: bool) -> Self {
+        self.flatten_call_packlist = flatten;
+        self
+    }
+
+    pub fn with_flatten_array_packlist(mut self, flatten: bool) -> Self {
+        self.flatten_array_packlist = flatten;
+        self
+    }
+
+    pub fn with_flatten_syscall_cat(mut self, flatten: bool) -> Self {
+        self.flatten_syscall_cat = flatten;
         self
     }
 

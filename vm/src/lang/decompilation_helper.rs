@@ -67,4 +67,8 @@ impl<'a> DecompilationHelper<'a> {
         let params = names.join(", ");
         Some(format!("{}param {{ {} }}", indent, params))
     }
+
+    pub fn should_flatten_syscall_cat(&self) -> bool {
+        self.opt.flatten_syscall_cat
+    }
 }

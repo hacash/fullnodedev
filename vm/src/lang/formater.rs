@@ -112,19 +112,22 @@ impl<'a> Formater<'a> {
         lines.join(", ")
     }
 
-    fn collect_native_call_args(&self, node: &dyn IRNode) -> Vec<String> {
+    fn collect_native_call_args(&self, node: &dyn IRNode, system_call: bool) -> Vec<String> {
         use Bytecode::*;
         let mut args = Vec::new();
         let mut current: &dyn IRNode = node;
+        let helper = DecompilationHelper::new(&self.opt);
         loop {
-            if let Some(list) = current.as_any().downcast_ref::<IRNodeArray>() {
-                if let Some(elements) = self.extract_packlist_elements(list.inst, &list.subs) {
-                    args.extend(elements);
-                    return args;
+            if self.opt.flatten_call_packlist {
+                if let Some(list) = current.as_any().downcast_ref::<IRNodeArray>() {
+                    if let Some(elements) = self.extract_packlist_elements(list.inst, &list.subs) {
+                        args.extend(elements);
+                        return args;
+                    }
                 }
             }
             if let Some(double) = current.as_any().downcast_ref::<IRNodeDouble>() {
-                if double.inst == CAT {
+                if double.inst == CAT && (!system_call || helper.should_flatten_syscall_cat()) {
                     args.push(self.print_inline(&*double.subx));
                     current = &*double.suby;
                     continue;
@@ -143,8 +146,8 @@ impl<'a> Formater<'a> {
         }
     }
 
-    fn build_call_args(&self, node: &dyn IRNode) -> String {
-        let mut args_list = self.collect_native_call_args(node);
+    fn build_call_args(&self, node: &dyn IRNode, system_call: bool) -> String {
+        let mut args_list = self.collect_native_call_args(node, system_call);
         self.trim_nil_args(&mut args_list, node);
         let args_src = args_list.join("\n");
         self.format_call_args(&args_src)
@@ -172,19 +175,28 @@ impl<'a> Formater<'a> {
     fn format_array_block(&self, node: &dyn IRNode) -> Option<String> {
         use Bytecode::*;
         let arr = node.as_any().downcast_ref::<IRNodeArray>()?;
+        let helper = DecompilationHelper::new(&self.opt);
         if arr.inst != IRLIST && arr.inst != IRBLOCK && arr.inst != IRBLOCKR {
             return None;
         }
+        let prefix = self.line_prefix();
         if arr.inst == IRLIST {
             if let Some(elements) = self.extract_packlist_elements(arr.inst, &arr.subs) {
-                return Some(format!(
-                    "{}[{}]",
-                    self.line_prefix(),
-                    elements.join(", ")
-                ));
+                if self.opt.flatten_array_packlist {
+                    return Some(format!("{}[{}]", prefix, elements.join(", ")));
+                } else {
+                    let args = elements.join(", ");
+                    let mut buf = format!("{}packlist {{", prefix);
+                    if !args.is_empty() {
+                        buf.push(' ');
+                        buf.push_str(&args);
+                        buf.push(' ');
+                    }
+                    buf.push('}');
+                    return Some(buf);
+                }
             }
         }
-        let helper = DecompilationHelper::new(&self.opt);
         let mut buf = helper.block_prefix(arr);
         if helper.should_trim_root_block(arr) {
             let (body_start_idx, param_line) = helper.prepare_root_block(arr);
@@ -225,12 +237,17 @@ impl<'a> Formater<'a> {
             return None;
         }
         let pre = self.line_prefix();
-        let args = self.build_call_args(&*pss.subx);
-        let mut buf = pre;
+        let args = self.build_call_args(&*pss.subx, false);
         let meta = pss.inst.metadata();
-        match code {
+
+        let (default_body, short_body) = match code {
             CALL => {
-                if let Some((lib, func)) = (|| {
+                let default = {
+                    let idx = pss.para[0];
+                    let f = ::hex::encode(&pss.para[1..]);
+                    format!("call {}::0x{}({})", idx, f, args)
+                };
+                let short = (|| {
                     if pss.para.len() >= 5 {
                         let idx = pss.para[0];
                         let mut sig = [0u8; 4];
@@ -244,16 +261,17 @@ impl<'a> Formater<'a> {
                         }
                     }
                     None
-                })() {
-                    buf.push_str(&format!("{}.{}({})", lib, func, args));
-                } else {
-                    let idx = pss.para[0];
-                    let f = ::hex::encode(&pss.para[1..]);
-                    buf.push_str(&format!("call {}::{}({})", idx, f, args));
-                }
+                })()
+                .map(|(lib, func)| format!("{}.{}({})", lib, func, args));
+                (default, short)
             }
             CALLLIB => {
-                if let Some((lib, func)) = (|| {
+                let default = {
+                    let idx = pss.para[0];
+                    let f = ::hex::encode(&pss.para[1..]);
+                    format!("calllib {}::0x{}({})", idx, f, args)
+                };
+                let short = (|| {
                     if pss.para.len() >= 5 {
                         let idx = pss.para[0];
                         let mut sig = [0u8; 4];
@@ -267,16 +285,16 @@ impl<'a> Formater<'a> {
                         }
                     }
                     None
-                })() {
-                    buf.push_str(&format!("{}:{}({})", lib, func, args));
-                } else {
-                    let idx = pss.para[0];
-                    let f = ::hex::encode(&pss.para[1..]);
-                    buf.push_str(&format!("calllib {}:{}({})", idx, f, args));
-                }
+                })()
+                .map(|(lib, func)| format!("{}:{}({})", lib, func, args));
+                (default, short)
             }
             CALLINR => {
-                if let Some(func) = (|| {
+                let default = {
+                    let f = ::hex::encode(&pss.para);
+                    format!("callinr 0x{}({})", f, args)
+                };
+                let short = (|| {
                     if pss.para.len() == 4 {
                         let mut sig = [0u8; 4];
                         sig.copy_from_slice(&pss.para);
@@ -285,15 +303,17 @@ impl<'a> Formater<'a> {
                         }
                     }
                     None
-                })() {
-                    buf.push_str(&format!("self.{}({})", func, args));
-                } else {
-                    let f = ::hex::encode(&pss.para);
-                    buf.push_str(&format!("callinr {}({})", f, args));
-                }
+                })()
+                .map(|func| format!("self.{}({})", func, args));
+                (default, short)
             }
             CALLSTATIC => {
-                if let Some((lib, func)) = (|| {
+                let default = {
+                    let idx = pss.para[0];
+                    let f = ::hex::encode(&pss.para[1..]);
+                    format!("callstatic {}::0x{}({})", idx, f, args)
+                };
+                let short = (|| {
                     if pss.para.len() >= 5 {
                         let idx = pss.para[0];
                         let mut sig = [0u8; 4];
@@ -307,19 +327,24 @@ impl<'a> Formater<'a> {
                         }
                     }
                     None
-                })() {
-                    buf.push_str(&format!("{}::{}({})", lib, func, args));
-                } else {
-                    let idx = pss.para[0];
-                    let f = ::hex::encode(&pss.para[1..]);
-                    buf.push_str(&format!("callstatic {}::{}({})", idx, f, args));
-                }
+                })()
+                .map(|(lib, func)| format!("{}::{}({})", lib, func, args));
+                (default, short)
             }
-            _ => {
-                buf.push_str(&format!("{}({})", meta.intro, args));
+            _ => (format!("{}({})", meta.intro, args), None),
+        };
+
+        if self.opt.call_short_syntax {
+            if let Some(short) = short_body {
+                let mut out = String::new();
+                out.push_str(&pre);
+                out.push_str(&format!(" /*{}*/ ", meta.intro));
+                out.push_str(&short);
+                return Some(out);
             }
         }
-        Some(buf)
+
+        Some(format!("{}{}", pre, default_body))
     }
 
     fn format_opty_double(&self, code: Bytecode, node: &dyn IRNode) -> Option<String> {
@@ -492,7 +517,7 @@ impl<'a> Formater<'a> {
             EXTFUNC => self.format_extend_call(node, &CALL_EXTEND_FUNC_DEFS, true),
             EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS, false),
             NTCALL => {
-                let args = self.build_call_args(&*node.subx);
+                let args = self.build_call_args(&*node.subx, true);
                 let ntcall: NativeCall = std_mem_transmute!(node.para);
                 format!("{}({})", ntcall.name(), args)
             }
@@ -513,7 +538,7 @@ impl<'a> Formater<'a> {
         let args = if inline_arg {
             self.print_inline(&*node.subx)
         } else {
-            self.build_call_args(&*node.subx)
+            self.build_call_args(&*node.subx, false)
         };
         let f = search_ext_name_by_id(node.para, defs);
         format!("{}({})", f, args)
@@ -544,6 +569,7 @@ impl<'a> Formater<'a> {
             P1 => buf.push('1'),
             P0 => buf.push('0'),
             PNBUF => buf.push_str("\"\""),
+            NEWLIST => buf.push_str("[]"),
             ABT | END => buf.push_str(meta.intro),
             _ => {
                 buf.push_str(meta.intro);

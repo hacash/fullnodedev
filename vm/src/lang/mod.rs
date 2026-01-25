@@ -55,7 +55,10 @@ pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Re
         .with_source_map(smap)
         .with_trim_root_block(true)
         .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true);
+        .with_trim_param_unpack(true)
+        .with_flatten_call_packlist(true)
+        .with_flatten_array_packlist(true)
+        .with_flatten_syscall_cat(true);
     Ok(Formater::new(&opt).print(&block))
 }
 
@@ -63,7 +66,10 @@ pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
     let opt = PrintOption::new("  ", 0)
         .with_trim_root_block(true)
         .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true);
+        .with_trim_param_unpack(true)
+        .with_flatten_call_packlist(true)
+        .with_flatten_array_packlist(true)
+        .with_flatten_syscall_cat(true);
     Ok(Formater::new(&opt).print(&block))
 }
 
@@ -73,7 +79,10 @@ fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<S
     let mut opt = PrintOption::new("  ", 0)
         .with_trim_root_block(true)
         .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true);
+        .with_trim_param_unpack(true)
+        .with_flatten_call_packlist(true)
+        .with_flatten_array_packlist(true)
+        .with_flatten_syscall_cat(true);
     if let Some(map) = map {
         opt = opt.with_source_map(map);
     }

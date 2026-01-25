@@ -26,6 +26,17 @@ pub struct Syntax {
 
 #[allow(dead_code)]
 impl Syntax {
+    fn build_packlist_node(&mut self, mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+        let num = subs.len();
+        if num == 0 {
+            return Ok(push_inst(Bytecode::NEWLIST));
+        }
+        subs.push(push_num(num as u128));
+        subs.push(push_inst(Bytecode::PACKLIST));
+        let arys = IRNodeArray::from_vec(subs, Bytecode::IRLIST)?;
+        Ok(Box::new(arys))
+    }
+
 
 
     /*
@@ -689,7 +700,7 @@ impl Syntax {
                 };
                 Box::new(IRNodeWrapOne{node: exp})
             }
-            Partition('[') => { // pack_list
+            Partition('[') => {
                 let mut subs = vec![];
                 loop {
                     nxt = next!();
@@ -701,11 +712,7 @@ impl Syntax {
                     item.checkretval()?; // must retv
                     subs.push(item);
                 }
-                let num = subs.len();
-                let mut list = IRNodeArray{subs, inst: Bytecode::IRLIST};
-                    list.push(push_num(num as u128));
-                    list.push(push_inst(Bytecode::PACKLIST));
-                Box::new(list)
+                self.build_packlist_node(subs)?
             }
             Partition('{') => {
                 self.idx -= 1;
@@ -930,6 +937,23 @@ impl Syntax {
                 Box::new(IRNodeBytecodes{codes})
             },
 
+            Keyword(Packlist) => {
+                let e = errf!("packlist statement format error");
+                nxt = next!();
+                let Partition('{') = nxt else { return e };
+                let mut subs = vec![];
+                loop {
+                    nxt = next!();
+                    if let Partition('}') = nxt {
+                        break
+                    };
+                    self.idx -= 1;
+                    let item = self.item_must(0)?;
+                    item.checkretval()?; // must retv
+                    subs.push(item);
+                }
+                self.build_packlist_node(subs)?
+            }
             Keyword(List) => {
                 // let e = errf!("list format error");
                 let block = self.item_may_block(false)?;

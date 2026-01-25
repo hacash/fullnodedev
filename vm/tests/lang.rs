@@ -52,9 +52,9 @@ fn calllib_callinr_print() {
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
-    assert!(printed.contains("calllib 2:abcdef01("));
-    assert!(printed.contains("callinr 00ab4130("));
-    assert!(printed.contains("callstatic 3::deadbeef("));
+    assert!(printed.contains("calllib 2::0xabcdef01("));
+    assert!(printed.contains("callinr 0x00ab4130("));
+    assert!(printed.contains("callstatic 3::0xdeadbeef("));
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn call_keyword_print() {
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
-    assert!(printed.contains("call 1::abcdef01("));
+    assert!(printed.contains("call 1::0xabcdef01("));
 }
 
 #[test]
@@ -482,7 +482,7 @@ fn decompile_hacswap_sell_args_without_packlist() {
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(printed.contains("HacSwap.sell(sat, 0x0186a0 as u32, 300)"));
+    assert!(printed.contains("call 1::0x366f6a6e(sat, 0x0186a0 as u32, 300)"));
     assert!(!printed.contains("pack_list()"));
 }
 
@@ -498,6 +498,74 @@ fn decompile_native_transfer_args_flatten_cat() {
     let printed = ircode_to_lang(&ircode).unwrap();
     assert!(printed.contains("transfer_sat_to($0, $1)"));
     assert!(printed.contains("transfer_hac_from($0, zhu_to_hac($1))"));
+}
+
+#[test]
+fn packlist_keyword_roundtrip() {
+    let script = r##"
+        print [1, 2, 3]
+    "##;
+    let block = lang_to_irnode(script).unwrap();
+    let opt = PrintOption::new("  ", 0)
+        .with_trim_root_block(true)
+        .with_trim_head_alloc(true)
+        .with_trim_param_unpack(true)
+        .with_flatten_call_packlist(false)
+        .with_flatten_array_packlist(false);
+    let printed = Formater::new(&opt).print(&block);
+    assert!(printed.contains("packlist { 1, 2, 3 }"));
+    assert!(lang_to_ircode(&printed).is_ok());
+
+    let default_printed = irnode_to_lang(block.clone()).unwrap();
+    assert!(!default_printed.contains("packlist {"));
+    assert!(lang_to_ircode(&default_printed).is_ok());
+}
+
+#[test]
+fn packlist_keyword_literal_compiles() {
+    let script = r##"
+        var arr = packlist { 1 2 3 }
+        print arr
+    "##;
+    assert!(lang_to_ircode(script).is_ok());
+}
+
+#[test]
+fn packlist_keyword_empty_newlist() {
+    let script = r##"
+        var arr = packlist { }
+    "##;
+    let codes = lang_to_ircode(script).unwrap();
+    assert!(codes.contains(&(Bytecode::NEWLIST as u8)));
+}
+
+#[test]
+fn call_short_syntax_uses_comment_short_form() {
+    let script = r##"
+        lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
+        var sat = 4626909 as u64
+        var zhu = HacSwap.sell(sat, 100000, 300)
+        print zhu
+    "##;
+    let (block, smap) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let opt = PrintOption::new("  ", 0)
+        .with_source_map(&smap)
+        .with_trim_root_block(true)
+        .with_trim_head_alloc(true)
+        .with_trim_param_unpack(true)
+        .with_call_short_syntax(true);
+    let printed = Formater::new(&opt).print(&block);
+    assert!(printed.contains("/*call*/ HacSwap.sell("));
+    assert!(printed.contains("print"));
+}
+
+#[test]
+fn empty_array_generates_newlist() {
+    let script = r##"
+        var arr = []
+    "##;
+    let codes = lang_to_ircode(script).unwrap();
+    assert!(codes.contains(&(Bytecode::NEWLIST as u8)));
 }
 
 #[test]
