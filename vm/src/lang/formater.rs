@@ -34,6 +34,10 @@ impl<'a> Formater<'a> {
             .replace("\"", "\\\"")
     }
 
+    fn line_prefix(&self) -> String {
+        self.opt.indent.repeat(self.opt.tab)
+    }
+
     fn extract_const_usize(&self, node: &dyn IRNode) -> Option<usize> {
         use Bytecode::*;
         if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
@@ -144,6 +148,333 @@ impl<'a> Formater<'a> {
         self.trim_nil_args(&mut args_list, node);
         let args_src = args_list.join("\n");
         self.format_call_args(&args_src)
+    }
+
+    fn format_memory_put(&self, node: &dyn IRNode) -> Option<String> {
+        if let Some(double) = node.as_any().downcast_ref::<IRNodeDouble>() {
+            let code: Bytecode = std_mem_transmute!(node.bytecode());
+            if code == Bytecode::MPUT {
+                let key = self.print_inline(&*double.subx);
+                let value = self.print_inline(&*double.suby);
+                let meta = Bytecode::MPUT.metadata();
+                return Some(format!(
+                    "{}{}({}, {})",
+                    self.line_prefix(),
+                    meta.intro,
+                    key,
+                    value
+                ));
+            }
+        }
+        None
+    }
+
+    fn format_array_block(&self, node: &dyn IRNode) -> Option<String> {
+        if let Some(arr) = node.as_any().downcast_ref::<IRNodeArray>() {
+            if arr.inst != Bytecode::IRLIST
+                && arr.inst != Bytecode::IRBLOCK
+                && arr.inst != Bytecode::IRBLOCKR
+            {
+                return None;
+            }
+            if arr.inst == Bytecode::IRLIST {
+                if let Some(elements) = self.extract_packlist_elements(arr.inst, &arr.subs) {
+                    return Some(format!(
+                        "{}[{}]",
+                        self.line_prefix(),
+                        elements.join(", ")
+                    ));
+                }
+            }
+            let mut prefix = String::new();
+            if self.opt.tab == 0 && arr.inst == Bytecode::IRBLOCK {
+                if let Some(map) = self.opt.map {
+                    for (idx, info) in map.lib_entries() {
+                        let line = match &info.address {
+                            Some(addr) => {
+                                format!("lib {} = {}: {}\n", info.name, idx, addr.readable())
+                            }
+                            None => format!("lib {} = {}:\n", info.name, idx),
+                        };
+                        prefix.push_str(&line);
+                    }
+                }
+            }
+            let mut buf = prefix;
+            if self.opt.trim_root_block
+                && self.opt.tab == 0
+                && arr.inst == Bytecode::IRBLOCK
+            {
+                let mut start_idx = 0;
+                if self.opt.trim_head_alloc {
+                    if let Some(first) = arr.subs.first() {
+                        if first.bytecode() == Bytecode::ALLOC as u8 {
+                            start_idx = 1;
+                        }
+                    }
+                }
+                let mut body_start_idx = start_idx;
+                let mut param_line = None;
+                if self.opt.trim_param_unpack {
+                    if let Some(map) = self.opt.map {
+                        if let Some(names) = map.param_names() {
+                            if body_start_idx < arr.subs.len() {
+                                if let Some(double) =
+                                    arr.subs[body_start_idx].as_any().downcast_ref::<IRNodeDouble>()
+                                {
+                                    if double.inst == Bytecode::UPLIST {
+                                        let indent = self.opt.indent.repeat(self.opt.tab);
+                                        let params = names.join(", ");
+                                        param_line = Some(format!("{}param {{ {} }}", indent, params));
+                                        body_start_idx += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                let has_body = param_line.is_some() || body_start_idx < arr.subs.len();
+                if has_body {
+                    buf.push('\n');
+                    if let Some(line) = param_line {
+                        buf.push_str(&line);
+                        buf.push('\n');
+                    }
+                    for a in &arr.subs[body_start_idx..] {
+                        buf.push_str(&self.child().print(&**a));
+                        buf.push('\n');
+                    }
+                    if buf.ends_with('\n') {
+                        buf.pop();
+                    }
+                    return Some(buf);
+                }
+            }
+            buf.push('{');
+            if !arr.subs.is_empty() {
+                buf.push('\n');
+                for a in &arr.subs {
+                    buf.push_str(&self.child().print(&**a));
+                    buf.push('\n');
+                }
+                buf.push_str(&self.opt.indent.repeat(self.opt.tab));
+            }
+            buf.push('}');
+            return Some(buf);
+        }
+        None
+    }
+
+    fn format_call_instruction(&self, node: &dyn IRNode, code: Bytecode) -> Option<String> {
+        use Bytecode::*;
+        let pss = node.as_any().downcast_ref::<IRNodeParamsSingle>()?;
+        if !matches!(code, CALL | CALLLIB | CALLINR | CALLSTATIC) {
+            return None;
+        }
+        let pre = self.line_prefix();
+        let args = self.build_call_args(&*pss.subx);
+        let mut buf = pre;
+        let meta = pss.inst.metadata();
+        match code {
+            CALL => {
+                if let Some((lib, func)) = (|| {
+                    if pss.para.len() >= 5 {
+                        let idx = pss.para[0];
+                        let mut sig = [0u8; 4];
+                        sig.copy_from_slice(&pss.para[1..5]);
+                        if let Some(map) = self.opt.map {
+                            if let Some(libinfo) = map.lib(idx) {
+                                if let Some(fname) = map.func(&sig) {
+                                    return Some((libinfo.name.clone(), fname.clone()));
+                                }
+                            }
+                        }
+                    }
+                    None
+                })() {
+                    buf.push_str(&format!("{}.{}({})", lib, func, args));
+                } else {
+                    let idx = pss.para[0];
+                    let f = ::hex::encode(&pss.para[1..]);
+                    buf.push_str(&format!("call {}::{}({})", idx, f, args));
+                }
+            }
+            CALLLIB => {
+                if let Some((lib, func)) = (|| {
+                    if pss.para.len() >= 5 {
+                        let idx = pss.para[0];
+                        let mut sig = [0u8; 4];
+                        sig.copy_from_slice(&pss.para[1..5]);
+                        if let Some(map) = self.opt.map {
+                            if let Some(libinfo) = map.lib(idx) {
+                                if let Some(fname) = map.func(&sig) {
+                                    return Some((libinfo.name.clone(), fname.clone()));
+                                }
+                            }
+                        }
+                    }
+                    None
+                })() {
+                    buf.push_str(&format!("{}:{}({})", lib, func, args));
+                } else {
+                    let idx = pss.para[0];
+                    let f = ::hex::encode(&pss.para[1..]);
+                    buf.push_str(&format!("calllib {}:{}({})", idx, f, args));
+                }
+            }
+            CALLINR => {
+                if let Some(func) = (|| {
+                    if pss.para.len() == 4 {
+                        let mut sig = [0u8; 4];
+                        sig.copy_from_slice(&pss.para);
+                        if let Some(map) = self.opt.map {
+                            return map.func(&sig).cloned();
+                        }
+                    }
+                    None
+                })() {
+                    buf.push_str(&format!("self.{}({})", func, args));
+                } else {
+                    let f = ::hex::encode(&pss.para);
+                    buf.push_str(&format!("callinr {}({})", f, args));
+                }
+            }
+            CALLSTATIC => {
+                if let Some((lib, func)) = (|| {
+                    if pss.para.len() >= 5 {
+                        let idx = pss.para[0];
+                        let mut sig = [0u8; 4];
+                        sig.copy_from_slice(&pss.para[1..5]);
+                        if let Some(map) = self.opt.map {
+                            if let Some(libinfo) = map.lib(idx) {
+                                if let Some(fname) = map.func(&sig) {
+                                    return Some((libinfo.name.clone(), fname.clone()));
+                                }
+                            }
+                        }
+                    }
+                    None
+                })() {
+                    buf.push_str(&format!("{}::{}({})", lib, func, args));
+                } else {
+                    let idx = pss.para[0];
+                    let f = ::hex::encode(&pss.para[1..]);
+                    buf.push_str(&format!("callstatic {}::{}({})", idx, f, args));
+                }
+            }
+            _ => {
+                buf.push_str(&format!("{}({})", meta.intro, args));
+            }
+        }
+        Some(buf)
+    }
+
+    fn format_opty_double(&self, code: Bytecode, node: &dyn IRNode) -> Option<String> {
+        if OpTy::from_bytecode(code).is_ok() {
+            if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
+                let sg = OpTy::from_bytecode(d.inst).unwrap().symbol();
+                let res = self.print_subx_suby_op(d, sg);
+                return Some(format!("{}{}", self.line_prefix(), res));
+            }
+        }
+        None
+    }
+
+    fn format_unary_triple(&self, node: &dyn IRNode) -> Option<String> {
+        if let Some(s) = node.as_any().downcast_ref::<IRNodeSingle>() {
+            let pre = self.line_prefix();
+            match s.inst {
+                Bytecode::TNIL | Bytecode::TLIST | Bytecode::TMAP => {
+                    let substr = self.print_inline(&*s.subx);
+                    return Some(match s.inst {
+                        Bytecode::TNIL => format!("{}{} is nil", pre, substr),
+                        Bytecode::TLIST => format!("{}{} is list", pre, substr),
+                        Bytecode::TMAP => format!("{}{} is map", pre, substr),
+                        _ => unreachable!(),
+                    });
+                }
+                Bytecode::CU8
+                | Bytecode::CU16
+                | Bytecode::CU32
+                | Bytecode::CU64
+                | Bytecode::CU128
+                | Bytecode::RET
+                | Bytecode::ERR
+                | Bytecode::AST => {
+                    let substr = self.print_inline(&*s.subx);
+                    let operand = if s.subx.level() > 0 {
+                        let t = substr.trim();
+                        if t.starts_with('(') && t.ends_with(')') {
+                            substr.clone()
+                        } else {
+                            format!("({})", substr)
+                        }
+                    } else {
+                        substr.clone()
+                    };
+                    return Some(match s.inst {
+                        Bytecode::CU8 => format!("{}{} as u8", pre, operand),
+                        Bytecode::CU16 => format!("{}{} as u16", pre, operand),
+                        Bytecode::CU32 => format!("{}{} as u32", pre, operand),
+                        Bytecode::CU64 => format!("{}{} as u64", pre, operand),
+                        Bytecode::CU128 => format!("{}{} as u128", pre, operand),
+                        Bytecode::RET | Bytecode::ERR | Bytecode::AST => {
+                            let meta = s.inst.metadata();
+                            format!("{}{} {}", pre, meta.intro, substr)
+                        }
+                        _ => unreachable!(),
+                    });
+                }
+                Bytecode::NOT => {
+                    let substr = self.print_inline(&*s.subx);
+                    if let Some((target, ty)) = self.format_is_components(&*s.subx) {
+                        return Some(format!("{}{} is not {}", pre, target, ty));
+                    }
+                    return Some(format!("{}! {}", pre, substr));
+                }
+                Bytecode::PRT => {
+                    let substr = self.print_inline(&*s.subx);
+                    let meta = s.inst.metadata();
+                    return Some(format!("{}{} {}", pre, meta.intro, substr));
+                }
+                Bytecode::MGET => {
+                    let substr = self.print_inline(&*s.subx);
+                    let meta = s.inst.metadata();
+                    return Some(format!("{}{}({})", pre, meta.intro, substr));
+                }
+                _ => {}
+            }
+        }
+        if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
+            if d.inst == Bytecode::ITEMGET {
+                let subxstr = self.print_sub(&*d.subx);
+                let subystr = self.print_inline(&*d.suby);
+                return Some(format!(
+                    "{}{}[{}]",
+                    self.line_prefix(),
+                    subxstr,
+                    subystr
+                ));
+            }
+        }
+        if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
+            if t.inst == Bytecode::IRIF || t.inst == Bytecode::IRIFR {
+                let subxstr = self.print_inline(&*t.subx);
+                let subystr = self.print_newline(&*t.suby);
+                let subzstr = self.print_newline(&*t.subz);
+                let mut buf = format!(
+                    "{}if {} {{{}}}",
+                    self.line_prefix(),
+                    subxstr,
+                    subystr
+                );
+                if subzstr.len() > 0 {
+                    buf.push_str(&format!(" else {{{}}}", subzstr));
+                }
+                return Some(buf);
+            }
+        }
+        None
     }
 
     fn resolve_type_check_name(&self, ty: u8) -> Option<&'static str> {
@@ -394,335 +725,27 @@ impl<'a> Formater<'a> {
     }
 
     fn print_inner(&self, node: &dyn IRNode) -> String {
-        use Bytecode::*;
         if let Some(pss) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
             return self.print_param1_single(pss);
         }
-        let code: Bytecode = std_mem_transmute!(node.bytecode());
-        match code {
-            MPUT => {
-                if let Some(double) = node.as_any().downcast_ref::<IRNodeDouble>() {
-                    let key = self.print_inline(&*double.subx);
-                    let value = self.print_inline(&*double.suby);
-                    let meta = MPUT.metadata();
-                    return format!(
-                        "{}{}({}, {})",
-                        self.opt.indent.repeat(self.opt.tab),
-                        meta.intro,
-                        key,
-                        value
-                    );
-                }
-                return self.print_descriptive(node);
-            }
-            IRLIST | IRBLOCK | IRBLOCKR => {
-                if let Some(arr) = node.as_any().downcast_ref::<IRNodeArray>() {
-                    if arr.inst == IRLIST {
-                        if let Some(elements) = self.extract_packlist_elements(arr.inst, &arr.subs) {
-                            return format!("{}[{}]", self.opt.indent.repeat(self.opt.tab), elements.join(", "));
-                        }
-                    }
-                    let mut prefix = String::new();
-                    if self.opt.tab == 0 && arr.inst == IRBLOCK {
-                        if let Some(map) = self.opt.map {
-                            for (idx, info) in map.lib_entries() {
-                                let line = match &info.address {
-                                    Some(addr) => format!("lib {} = {}: {}\n", info.name, idx, addr.readable()),
-                                    None => format!("lib {} = {}:\n", info.name, idx),
-                                };
-                                prefix.push_str(&line);
-                            }
-                        }
-                    }
-                    let mut buf = prefix;
-                    if self.opt.trim_root_block && self.opt.tab == 0 && arr.inst == IRBLOCK {
-                        let mut start_idx = 0;
-                        if self.opt.trim_head_alloc {
-                            if let Some(first) = arr.subs.first() {
-                                if first.bytecode() == ALLOC as u8 {
-                                    start_idx = 1;
-                                }
-                            }
-                        }
-                        let mut body_start_idx = start_idx;
-                        let mut param_line = None;
-                        if self.opt.trim_param_unpack {
-                            if let Some(map) = self.opt.map {
-                                if let Some(names) = map.param_names() {
-                                    if body_start_idx < arr.subs.len() {
-                                        if let Some(double) = arr.subs[body_start_idx].as_any().downcast_ref::<IRNodeDouble>() {
-                                            if double.inst == UPLIST {
-                                                let indent = self.opt.indent.repeat(self.opt.tab);
-                                                let params = names.join(", ");
-                                                param_line = Some(format!("{}param {{ {} }}", indent, params));
-                                                body_start_idx += 1;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        let has_body = param_line.is_some() || body_start_idx < arr.subs.len();
-                        if has_body {
-                            buf.push('\n');
-                            if let Some(line) = param_line {
-                                buf.push_str(&line);
-                                buf.push('\n');
-                            }
-                            for a in &arr.subs[body_start_idx..] {
-                                buf.push_str(&self.child().print(&**a));
-                                buf.push('\n');
-                            }
-                            if buf.ends_with('\n') { buf.pop(); }
-                            return buf;
-                        }
-                    }
-                    buf.push('{');
-                    if !arr.subs.is_empty() {
-                        buf.push('\n');
-                        for a in &arr.subs {
-                            buf.push_str(&self.child().print(&**a));
-                            buf.push('\n');
-                        }
-                        buf.push_str(&self.opt.indent.repeat(self.opt.tab));
-                    }
-                    buf.push('}');
-                    return buf;
-                }else{
-                    panic!("IRNodeArray expected for IRLIST/IRBLOCK/IRBLOCKR")
-                }
-            }
-
-            _ if OpTy::from_bytecode(code).is_ok() => {
-                if code == NOT {
-                    if let Some(s) = node.as_any().downcast_ref::<IRNodeSingle>() {
-                        let pre = self.opt.indent.repeat(self.opt.tab);
-                        let substr = self.print_inline(&*s.subx);
-                        if let Some((target, ty)) = self.format_is_components(&*s.subx) {
-                            return format!("{}{} is not {}", pre, target, ty);
-                        } else {
-                            return format!("{}! {}", pre, substr);
-                        }
-                    }
-                }
-                if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
-                    let sg = OpTy::from_bytecode(d.inst).unwrap().symbol();
-                    let res = self.print_subx_suby_op(d, sg);
-                    let pre = self.opt.indent.repeat(self.opt.tab);
-                    return format!("{}{}", pre, res);
-                }
-                return self.print_descriptive(node)
-            }
-
-            PBUF | PBUFL | CALLCODE => {
-                if let Some(p) = node.as_any().downcast_ref::<IRNodeParams>() {
-                    let pre = self.opt.indent.repeat(self.opt.tab);
-                    match p.inst {
-                        PBUF | PBUFL => {
-                            let l = if p.inst == PBUF { 1usize } else { 2usize };
-                            let data = p.para[l..].to_vec();
-                            if let Some(s) = self.ascii_show_string(&data) {
-                                return format!("{}\"{}\"", pre, self.literals(s));
-                            }
-                            if data.len() == FieldAddress::SIZE {
-                                let addr = FieldAddress::must_vec(data.clone());
-                                if let Ok(..) = addr.check_version() {
-                                    return format!("{}{}", pre, addr.readable());
-                                }
-                            }
-                            return format!("{}0x{}", pre, ::hex::encode(&data));
-                        }
-                        CALLCODE => {
-                            let i = p.para[0];
-                            let f = ::hex::encode(&p.para[1..]);
-                            return format!("{}callcode {}::{}", self.opt.indent.repeat(self.opt.tab), i, f);
-                        }
-                        _ => {}
-                    }
-                    return self.print_descriptive(node)
-                } else { 
-                    return self.print_descriptive(node)
-                }
-            }
-
-            CALL | CALLLIB | CALLINR | CALLSTATIC => {
-                if let Some(pss) = node.as_any().downcast_ref::<IRNodeParamsSingle>() {
-                    let pre = self.opt.indent.repeat(self.opt.tab);
-                    let args = self.build_call_args(&*pss.subx);
-                    let mut buf = pre;
-                    let meta = pss.inst.metadata();
-                    match pss.inst {
-                        CALL => {
-                            if let Some((lib, func)) = (|| {
-                                if pss.para.len() >= 5 {
-                                    let idx = pss.para[0];
-                                    let mut sig = [0u8;4];
-                                    sig.copy_from_slice(&pss.para[1..5]);
-                                    if let Some(map) = self.opt.map {
-                                        if let Some(libinfo) = map.lib(idx) {
-                                            if let Some(fname) = map.func(&sig) {
-                                                return Some((libinfo.name.clone(), fname.clone()));
-                                            }
-                                        }
-                                    }
-                                }
-                                None
-                            })() {
-                                buf.push_str(&format!("{}.{}({})", lib, func, args));
-                            } else {
-                                let idx = pss.para[0];
-                                let f = ::hex::encode(&pss.para[1..]);
-                                buf.push_str(&format!("call {}::{}({})", idx, f, args));
-                            }
-                            return buf;
-                        }
-                        CALLLIB => {
-                            if let Some((lib, func)) = (|| {
-                                if pss.para.len() >= 5 {
-                                    let idx = pss.para[0];
-                                    let mut sig = [0u8;4];
-                                    sig.copy_from_slice(&pss.para[1..5]);
-                                    if let Some(map) = self.opt.map {
-                                        if let Some(libinfo) = map.lib(idx) {
-                                            if let Some(fname) = map.func(&sig) {
-                                                return Some((libinfo.name.clone(), fname.clone()));
-                                            }
-                                        }
-                                    }
-                                }
-                                None
-                            })() {
-                                buf.push_str(&format!("{}:{}({})", lib, func, args));
-                            } else {
-                                let idx = pss.para[0];
-                                let f = ::hex::encode(&pss.para[1..]);
-                                buf.push_str(&format!("calllib {}:{}({})", idx, f, args));
-                            }
-                            return buf;
-                        }
-                        CALLINR => {
-                            if let Some(func) = (|| {
-                                if pss.para.len() == 4 {
-                                    let mut sig = [0u8;4];
-                                    sig.copy_from_slice(&pss.para);
-                                    if let Some(map) = self.opt.map { return map.func(&sig).cloned(); }
-                                }
-                                None
-                            })() {
-                                buf.push_str(&format!("self.{}({})", func, args));
-                            } else {
-                                let f = ::hex::encode(&pss.para);
-                                buf.push_str(&format!("callinr {}({})", f, args));
-                            }
-                            return buf;
-                        }
-                        CALLSTATIC => {
-                            if let Some((lib, func)) = (|| {
-                                if pss.para.len() >= 5 {
-                                    let idx = pss.para[0];
-                                    let mut sig = [0u8;4];
-                                    sig.copy_from_slice(&pss.para[1..5]);
-                                    if let Some(map) = self.opt.map {
-                                        if let Some(libinfo) = map.lib(idx) {
-                                            if let Some(fname) = map.func(&sig) {
-                                                return Some((libinfo.name.clone(), fname.clone()));
-                                            }
-                                        }
-                                    }
-                                }
-                                None
-                            })() {
-                                buf.push_str(&format!("{}::{}({})", lib, func, args));
-                            } else {
-                                let idx = pss.para[0];
-                                let f = ::hex::encode(&pss.para[1..]);
-                                buf.push_str(&format!("callstatic {}::{}({})", idx, f, args));
-                            }
-                            return buf;
-                        }
-                        _ => {
-                            buf.push_str(&format!("{}({})", meta.intro, args));
-                            return buf;
-                        }
-                    }
-                }
-                return self.format_instruction_preview(node);
-            }
-
-            _ => {
-                // Unary/triple and other detailed cases
-                if let Some(s) = node.as_any().downcast_ref::<IRNodeSingle>() {
-                    let pre = self.opt.indent.repeat(self.opt.tab);
-                    match s.inst {
-                        TNIL | TLIST | TMAP => {
-                            let substr = self.print_inline(&*s.subx);
-                            return match s.inst {
-                                TNIL => format!("{}{} is nil", pre, substr),
-                                TLIST => format!("{}{} is list", pre, substr),
-                                TMAP  => format!("{}{} is map", pre, substr),
-                                _ => unreachable!(),
-                            };
-                        }
-                        CU8 | CU16 | CU32 | CU64 | CU128 |
-                        RET | ERR | AST => {
-                            let substr = self.print_inline(&*s.subx);
-                            let operand = if s.subx.level() > 0 {
-                                let t = substr.trim();
-                                if t.starts_with('(') && t.ends_with(')') { substr.clone() } else { format!("({})", substr) }
-                            } else { substr.clone() };
-                            match s.inst {
-                                CU8  => return format!("{}{} as u8", pre, operand),
-                                CU16 => return format!("{}{} as u16", pre, operand),
-                                CU32 => return format!("{}{} as u32", pre, operand),
-                                CU64 => return format!("{}{} as u64", pre, operand),
-                                CU128 => return format!("{}{} as u128", pre, operand),
-                                RET | ERR | AST => {
-                                    let meta = s.inst.metadata();
-                                    return format!("{}{} {}", pre, meta.intro, substr);
-                                }
-                                _ => {}
-                            }
-                        }
-                        PRT => {
-                            let substr = self.print_inline(&*s.subx);
-                            let meta = s.inst.metadata();
-                            return format!("{}{} {}", self.opt.indent.repeat(self.opt.tab), meta.intro, substr);
-                        }
-                        MGET => {
-                            let substr = self.print_inline(&*s.subx);
-                            let meta = s.inst.metadata();
-                            return format!("{}{}({})", pre, meta.intro, substr);
-                        }
-                        _ => {}
-                    }
-                }
-
-                if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
-                    if d.inst == ITEMGET {
-                        let subxstr = self.print_sub(&*d.subx);
-                        let subystr = self.print_inline(&*d.suby);
-                        return format!("{}{}[{}]", self.opt.indent.repeat(self.opt.tab), subxstr, subystr);
-                    }
-                }
-
-                if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
-                    if t.inst == IRIF || t.inst == IRIFR {
-                        let subxstr = self.print_inline(&*t.subx);
-                        let subystr = self.print_newline(&*t.suby);
-                        let subzstr = self.print_newline(&*t.subz);
-                        let mut buf = format!("{}if {} {{{}}}", self.opt.indent.repeat(self.opt.tab), subxstr, subystr);
-                        if subzstr.len() > 0 {
-                            buf.push_str(&format!(" else {{{}}}", subzstr));
-                        }
-                        return buf;
-                    }
-                }
-                return self.print_descriptive(node)
-            }
-            // _ => return self.print(node),
+        if let Some(line) = self.format_memory_put(node) {
+            return line;
         }
+        if let Some(line) = self.format_array_block(node) {
+            return line;
+        }
+        let code: Bytecode = std_mem_transmute!(node.bytecode());
+        if let Some(line) = self.format_call_instruction(node, code) {
+            return line;
+        }
+        if let Some(line) = self.format_opty_double(code, node) {
+            return line;
+        }
+        if let Some(line) = self.format_unary_triple(node) {
+            return line;
+        }
+        self.print_descriptive(node)
     }
-
     /// Inline printing (equivalent to `print_sub_inline`).
     pub fn print_inline(&self, node: &dyn IRNode) -> String {
         let inline = self.with_tab(0);
