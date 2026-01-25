@@ -7,6 +7,8 @@ pub mod hook;
 pub mod interpreter;
 pub mod ir;
 pub mod lang;
+
+pub use lang::PrintOption;
 pub mod machine;
 pub mod native;
 pub mod space;

@@ -76,8 +76,8 @@ fn var_put_print_roundtrip() {
         other = $1
     "##;
     let (block, source_map) = lang_to_irnode_with_sourcemap(script).unwrap();
-    let opt = PrintOption::new("    ", 0, true).with_source_map(&source_map);
-    let printed = block.print(&opt);
+    let opt = PrintOption::new("    ", 0).with_source_map(&source_map);
+    let printed = Formater::new(&opt).print(&block);
     assert!(printed.contains("var total $0 = 1"));
     assert!(printed.contains("total = "));
     assert!(printed.contains("var other $1 = total"));

@@ -41,10 +41,10 @@ fn codegen1() {
     println!("irbtx len = {}", irbts.len());
     let irnds = parse_ir_block(&irbts, &mut 0).unwrap();
     println!("{:?}", irnds);
-    let opt_plain = PrintOption::new("    ", 0, false);
-    println!("```ir byte codes:\n{}\n```", irnds.print(&opt_plain));
-    let opt_desc = PrintOption::new("    ", 0, true);
-    println!("```ir desc codes:\n{}\n```", irnds.print(&opt_desc));
+    let opt_plain = PrintOption::new("    ", 0);
+    println!("```ir byte codes:\n{}\n```", Formater::new(&opt_plain).print(&irnds));
+    let opt_desc = PrintOption::new("    ", 0);
+    println!("```ir desc codes:\n{}\n```", Formater::new(&opt_desc).print(&irnds));
     let codes = irnds.codegen().unwrap();
     println!("codes len = {}, {}", codes.len(), codes.bytecode_print(true).unwrap());
 }

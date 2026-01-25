@@ -1,8 +1,7 @@
 use field::Address;
-use vm::IRNode;
-use vm::PrintOption;
-use vm::lang::lang_to_irnode_with_sourcemap;
+use vm::lang::{Formater, lang_to_irnode_with_sourcemap};
 use vm::rt::*;
+use vm::PrintOption;
 
 fn extract_signature(name: &str) -> [u8; 4] {
     calc_func_sign(name)
@@ -45,8 +44,8 @@ fn source_map_recovery_records_symbols() {
         Some("notify")
     );
 
-    let opt = PrintOption::new("    ", 0, true).with_source_map(&source_map);
-    let printed = ir_block.print(&opt);
+    let opt = PrintOption::new("    ", 0).with_source_map(&source_map);
+    let printed = Formater::new(&opt).print(&ir_block);
     assert!(printed.contains("Fund.deposit("));
     assert!(printed.contains("Fund::audit("));
     assert!(printed.contains("self.notify("));

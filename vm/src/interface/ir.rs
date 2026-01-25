@@ -1,91 +1,16 @@
-use std::cell::RefCell;
-use std::collections::HashSet;
-use std::rc::Rc;
+use std::any::Any;
 
-use crate::rt::{Bytecode, SourceMap};
+use dyn_clone::{clone_trait_object, DynClone};
 
-#[derive(Clone)]
-pub struct PrintOption<'a> {
-    pub indent: &'a str,
-    pub tab: usize,
-    pub desc: bool,
-    pub map: Option<&'a SourceMap>,
-    pub trim_root_block: bool,
-    pub trim_head_alloc: bool,
-    pub trim_param_unpack: bool,
-    pub hide_func_nil_argv: bool,
-    allocated: Rc<RefCell<HashSet<u8>>>,
-}
-
-impl<'a> PrintOption<'a> {
-    pub fn new(indent: &'a str, tab: usize, desc: bool) -> Self {
-        Self {
-            indent,
-            tab,
-            desc,
-            map: None,
-            trim_root_block: false,
-            trim_head_alloc: false,
-            trim_param_unpack: false,
-            hide_func_nil_argv: false,
-            allocated: Rc::new(RefCell::new(HashSet::new())),
-        }
-    }
-
-    pub fn with_trim_root_block(mut self, trim: bool) -> Self {
-        self.trim_root_block = trim;
-        self
-    }
-
-    pub fn with_trim_head_alloc(mut self, trim: bool) -> Self {
-        self.trim_head_alloc = trim;
-        self
-    }
-
-    pub fn with_source_map(mut self, map: &'a SourceMap) -> Self {
-        self.map = Some(map);
-        self
-    }
-
-    pub fn with_trim_param_unpack(mut self, trim: bool) -> Self {
-        self.trim_param_unpack = trim;
-        self
-    }
-
-    pub fn with_hide_func_nil_argv(mut self, hide: bool) -> Self {
-        self.hide_func_nil_argv = hide;
-        self
-    }
-
-    pub fn with_tab(&self, tab: usize) -> Self {
-        let mut next = self.clone();
-        next.tab = tab;
-        next
-    }
-
-    pub fn child(&self) -> Self {
-        self.with_tab(self.tab + 1)
-    }
-
-    pub fn mark_slot_put(&self, slot: u8) -> bool {
-        self.allocated.borrow_mut().insert(slot)
-    }
-
-    pub fn clear_slot_put(&self, slot: u8) {
-        self.allocated.borrow_mut().remove(&slot);
-    }
-
-    pub fn clear_all_slot_puts(&self) {
-        self.allocated.borrow_mut().clear();
-    }
-}
+use crate::rt::Bytecode;
+use sys::Rerr;
 
 pub trait IRNode : DynClone {
     fn bytecode(&self) -> u8;
     fn hasretval(&self) -> bool;
     fn subs(&self) -> usize { 0 }
     fn level(&self) -> u8 { 0 }
-    fn checkretval(&self) -> Rerr { 
+    fn checkretval(&self) -> Rerr {
         match self.hasretval() {
             true => Ok(()),
             false => {
@@ -95,8 +20,9 @@ pub trait IRNode : DynClone {
             }
         }
     }
-    fn print(&self, _opt: &PrintOption) -> String {
-        "IRNode".to_owned()
+    fn print(&self) -> String {
+        let c: Bytecode = std_mem_transmute!(self.bytecode());
+        format!("{:?}", c)
     }
     // fn childx(&self) -> &dyn IRNode { panic_never_call_this!() }
     // fn childy(&self) -> &dyn IRNode { panic_never_call_this!() }

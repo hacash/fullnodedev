@@ -8,12 +8,12 @@ use super::ir::*;
 use super::rt::*;
 use super::value::*;
 use super::*;
-use crate::PrintOption;
-
 use super::rt::Token::*;
 // use super::rt::TokenType::*;
 
 use super::native::*;
+
+include! {"print_option.rs"}
 
 pub enum ArgvMode {
     Concat,
@@ -24,6 +24,7 @@ include! {"interface.rs"}
 include! {"tokenizer.rs"}
 include! {"funcs.rs"}
 include! {"syntax.rs"}
+include! {"formater.rs"}
 include! {"test.rs"}
 
 pub fn lang_to_irnode_with_sourcemap(langscript: &str) -> Ret<(IRNodeArray, SourceMap)> {
@@ -49,33 +50,33 @@ pub fn lang_to_ircode_with_sourcemap(langscript: &str) -> Ret<(Vec<u8>, SourceMa
 }
 
 pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Ret<String> {
-    let opt = PrintOption::new("  ", 0, true)
+    let opt = PrintOption::new("  ", 0)
         .with_source_map(smap)
         .with_trim_root_block(true)
         .with_trim_head_alloc(true)
         .with_trim_param_unpack(true);
-    Ok(block.print(&opt))
+    Ok(Formater::new(&opt).print(&block))
 }
 
 pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
-    let opt = PrintOption::new("  ", 0, true)
+    let opt = PrintOption::new("  ", 0)
         .with_trim_root_block(true)
         .with_trim_head_alloc(true)
         .with_trim_param_unpack(true);
-    Ok(block.print(&opt))
+    Ok(Formater::new(&opt).print(&block))
 }
 
 fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<String> {
     let mut seek = 0;
     let block = parse_ir_block(ircode, &mut seek)?;
-    let mut opt = PrintOption::new("  ", 0, true)
+    let mut opt = PrintOption::new("  ", 0)
         .with_trim_root_block(true)
         .with_trim_head_alloc(true)
         .with_trim_param_unpack(true);
     if let Some(map) = map {
         opt = opt.with_source_map(map);
     }
-    Ok(block.print(&opt))
+    Ok(Formater::new(&opt).print(&block))
 }
 
 pub fn ircode_to_lang_with_sourcemap(ircode: &Vec<u8>, smap: &SourceMap) -> Ret<String> {

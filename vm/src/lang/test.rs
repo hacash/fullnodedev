@@ -108,17 +108,17 @@ mod token_t {
         println!("asts len: {}", astblock.len());
 
         println!("irnodes: \n\n{}  len: {}\n\n", irnodes.hex(), irnodes.len());
-        let opt_plain = crate::PrintOption::new("  ", 0, false);
+        let opt_plain = crate::PrintOption::new("  ", 0);
         println!(
             "irnodes: \n\n{}\n\n{}\n\n",
-            astblock.print(&opt_plain),
+            Formater::new(&opt_plain).print(&astblock),
             ircode_to_lang(&irnodes).unwrap()
         );
-        let opt_desc = crate::PrintOption::new("    ", 0, true);
+        let opt_desc = crate::PrintOption::new("    ", 0);
         println!(
             "irnodes: \n\n{}\n\n{}\n\n{}\n",
             sss,
-            astblock.print(&opt_desc),
+            Formater::new(&opt_desc).print(&astblock),
             ircode_to_lang(&irnodes).unwrap()
         );
         let codes = astblock.codegen().unwrap();
