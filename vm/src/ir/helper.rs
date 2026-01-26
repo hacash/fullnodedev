@@ -4,7 +4,8 @@ pub fn push_empty() -> Box<dyn IRNode> {
 }
 
 pub fn push_nil() -> Box<dyn IRNode> {
-    push_inst(Bytecode::PNIL)
+    use Bytecode::*;
+    push_inst(PNIL)
 }
 
 pub fn push_local_get(i: u8, text: String) -> Box<dyn IRNode> {

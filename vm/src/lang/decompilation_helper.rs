@@ -36,20 +36,32 @@ impl<'a> DecompilationHelper<'a> {
 
     pub fn prepare_root_block(&self, arr: &IRNodeArray) -> (usize, Option<String>) {
         use Bytecode::*;
-        let mut start_idx = if self.opt.trim_head_alloc {
-            arr.subs
-                .first()
-                .map_or(0, |first| if first.bytecode() == ALLOC as u8 { 1 } else { 0 })
-        } else {
-            0
-        };
-        if self.opt.trim_param_unpack {
-            if let Some(line) = self.build_param_line(arr, start_idx) {
-                start_idx += 1;
-                return (start_idx, Some(line));
+        // locate alloc index if present (alloc could be at index 0 or 1 due to placeholder)
+        let mut alloc_index: Option<usize> = None;
+        for (i, s) in arr.subs.iter().enumerate().take(2) {
+            if s.bytecode() == ALLOC as u8 {
+                alloc_index = Some(i);
+                break;
             }
         }
-        (start_idx, None)
+
+        if self.opt.trim_param_unpack {
+            let param_idx = match alloc_index {
+                Some(ai) => ai + 1,
+                None => 0,
+            };
+            if let Some(line) = self.build_param_line(arr, param_idx) {
+                return (param_idx + 1, Some(line));
+            }
+        }
+
+        if self.opt.trim_head_alloc {
+            if let Some(ai) = alloc_index {
+                return (ai + 1, None);
+            }
+        }
+
+        (0, None)
     }
 
     fn build_param_line(&self, arr: &IRNodeArray, start_idx: usize) -> Option<String> {

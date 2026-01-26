@@ -31,9 +31,9 @@ impl<'a> PrintOption<'a> {
             trim_param_unpack: false,
             hide_func_nil_argv: false,
             call_short_syntax: false,
-            flatten_call_packlist: true,
-            flatten_array_packlist: true,
-            flatten_syscall_cat: true,
+            flatten_call_packlist: false,
+            flatten_array_packlist: false,
+            flatten_syscall_cat: false,
             allocated: Rc::new(RefCell::new(PrintHashSet::new())),
         }
     }

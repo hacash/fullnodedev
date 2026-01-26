@@ -1047,22 +1047,29 @@ impl Syntax {
 
 
     pub fn parse(mut self) -> Ret<(IRNodeArray, SourceMap)> {
-        // for local alloc
         self.irnode.push(push_empty());
-        // bodys
         while let Some(item) = self.item_may()? {
-                if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {} else {
-                    self.irnode.push(item);
-                };
-            }
-    // local alloc
+            if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {} else {
+                self.irnode.push(item);
+            };
+        }
+        let subs = &mut self.irnode.subs;
         if self.local_alloc > 0 {
-            let allocs = Box::new(IRNodeParam1{
-                hrtv: false, inst: Bytecode::ALLOC, para: self.local_alloc, text: s!("")
+            let allocs = Box::new(IRNodeParam1 {
+                hrtv: false,
+                inst: Bytecode::ALLOC,
+                para: self.local_alloc,
+                text: s!(""),
             });
-            self.irnode.subs[0] = allocs;
-        }else{
-            self.irnode.subs.remove(0); // no local var
+            let mut exist = false;
+            if subs.len() > 1 && subs[1].bytecode() == Bytecode::ALLOC as u8 {
+                exist = true;
+            }
+            if exist {
+                subs[1] = allocs;
+            } else {
+                subs[0] = allocs;
+            }
         }
         let block = self.irnode;
         let source_map = self.source_map;

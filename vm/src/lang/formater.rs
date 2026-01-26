@@ -530,9 +530,11 @@ impl<'a> Formater<'a> {
             P2 => buf.push('2'),
             P1 => buf.push('1'),
             P0 => buf.push('0'),
+            PNIL => buf.push_str("nil"),
             PNBUF => buf.push_str("\"\""),
             NEWLIST => buf.push_str("[]"),
-            ABT | END => buf.push_str(meta.intro),
+            ABT | END | RET | ERR | AST | PRT 
+                => buf.push_str(meta.intro),
             _ => {
                 buf.push_str(meta.intro);
                 buf.push_str("()");
@@ -612,6 +614,10 @@ impl<'a> Formater<'a> {
     }
 
     fn print_descriptive(&self, node: &dyn IRNode) -> String {
+        // treat empty IR nodes as invisible placeholders
+        if node.as_any().downcast_ref::<IRNodeEmpty>().is_some() {
+            return String::new();
+        }
         if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
             return self.format_leaf(leaf);
         }

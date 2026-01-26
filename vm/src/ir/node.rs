@@ -11,6 +11,7 @@ impl IRNode for IRNodeEmpty {
     fn bytecode(&self) -> u8 { 0 }
     fn codegen(&self) -> VmrtRes<Vec<u8>> { Ok(vec![]) }
     fn codegen_into(&self, _buf: &mut Vec<u8>) -> VmrtRes<()> { Ok(()) }
+    fn print(&self) -> String { String::new() }
 }
 
 
@@ -514,11 +515,18 @@ impl IRNode for IRNodeArray {
         if self.subs.len() > u16::MAX as usize {
             panic!("IRNode list or block length overflow")
         }
-        let mut bytes = iter::once(self.inst as u8)
-            .chain((self.subs.len() as u16).to_be_bytes()).collect::<Vec<_>>();
+        let mut children_bytes: Vec<u8> = Vec::new();
+        let mut count: usize = 0;
         for a in &self.subs {
-            bytes.append(&mut a.serialize());
+            let mut b = a.serialize();
+            if !b.is_empty() {
+                count += 1;
+                children_bytes.append(&mut b);
+            }
         }
+        let mut bytes = iter::once(self.inst as u8)
+            .chain((count as u16).to_be_bytes()).collect::<Vec<_>>();
+        bytes.append(&mut children_bytes);
         bytes
     }
     fn print(&self) -> String {

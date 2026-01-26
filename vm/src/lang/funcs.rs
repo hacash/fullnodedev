@@ -21,7 +21,6 @@ impl Syntax {
 
 
     pub fn must_get_func_argv(&mut self, md: ArgvMode) -> Ret<(usize, Box<dyn IRNode>)> {
-        // use Bytecode::*;
         let argvs = self.item_may_block(false)?.into_vec();
         let alen = argvs.len();
         for arg in &argvs {
@@ -165,11 +164,12 @@ fn pick_native_call(id: &str) -> Option<u8> {
 
 fn concat_func_argvs(mut list: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     // list.reverse();
+    use Bytecode::*;
     let Some(mut res) = list.pop() else {
-        return Ok(push_inst(Bytecode::PNBUF)) // not pass argv
+        return Ok(push_inst(PNBUF))
     };
     while let Some(x) = list.pop() {
-        res = Box::new(IRNodeDouble{hrtv:true, inst:Bytecode::CAT, subx: x, suby: res});
+        res = Box::new(IRNodeDouble{hrtv:true, inst:CAT, subx: x, suby: res});
     }
     Ok(res)
 }
@@ -187,7 +187,7 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
             let pklist = push_inst(PACKLIST);
             subs.push(num);
             subs.push(pklist);
-            Box::new(IRNodeArray{subs, inst: Bytecode::IRLIST})
+            Box::new(IRNodeArray{subs, inst: IRLIST})
         },
         _ => return errf!("function argv length cannot more than 15"),
     })
