@@ -26,6 +26,52 @@ impl<'a> Formater<'a> {
             .unwrap_or_else(|| format!("${}", slot))
     }
 
+    fn resolve_lib_func(&self, idx: u8, sig: &[u8]) -> Option<(String, String)> {
+        if sig.len() < 4 {
+            return None;
+        }
+        let map = self.opt.map?;
+        let libinfo = map.lib(idx)?;
+        let mut key = [0u8; 4];
+        key.copy_from_slice(&sig[0..4]);
+        let func = map.func(&key)?;
+        Some((libinfo.name.clone(), func.clone()))
+    }
+
+    fn resolve_func_name(&self, sig: &[u8]) -> Option<String> {
+        if sig.len() != 4 {
+            return None;
+        }
+        let map = self.opt.map?;
+        let mut key = [0u8; 4];
+        key.copy_from_slice(sig);
+        map.func(&key).cloned()
+    }
+
+    fn short_call_target(
+        &self,
+        code: Bytecode,
+        pss: &IRNodeParamsSingle,
+        args: &str,
+    ) -> Option<String> {
+        use Bytecode::*;
+        match code {
+            CALLINR => self
+                .resolve_func_name(&pss.para)
+                .map(|func| format!("self.{}({})", func, args)),
+            CALL => self
+                .resolve_lib_func(pss.para[0], &pss.para[1..])
+                .map(|(lib, func)| format!("{}.{}({})", lib, func, args)),
+            CALLLIB => self
+                .resolve_lib_func(pss.para[0], &pss.para[1..])
+                .map(|(lib, func)| format!("{}:{}({})", lib, func, args)),
+            CALLSTATIC => self
+                .resolve_lib_func(pss.para[0], &pss.para[1..])
+                .map(|(lib, func)| format!("{}::{}({})", lib, func, args)),
+            _ => None,
+        }
+    }
+
     fn literals(&self, s: String) -> String {
         s.replace("\\", "\\\\")
             .replace("\t", "\\t")
@@ -240,108 +286,24 @@ impl<'a> Formater<'a> {
         let args = self.build_call_args(&*pss.subx, false);
         let meta = pss.inst.metadata();
 
-        let (default_body, short_body) = match code {
-            CALL => {
-                let default = {
-                    let idx = pss.para[0];
-                    let f = ::hex::encode(&pss.para[1..]);
-                    format!("call {}::0x{}({})", idx, f, args)
-                };
-                let short = (|| {
-                    if pss.para.len() >= 5 {
-                        let idx = pss.para[0];
-                        let mut sig = [0u8; 4];
-                        sig.copy_from_slice(&pss.para[1..5]);
-                        if let Some(map) = self.opt.map {
-                            if let Some(libinfo) = map.lib(idx) {
-                                if let Some(fname) = map.func(&sig) {
-                                    return Some((libinfo.name.clone(), fname.clone()));
-                                }
-                            }
-                        }
-                    }
-                    None
-                })()
-                .map(|(lib, func)| format!("{}.{}({})", lib, func, args));
-                (default, short)
-            }
-            CALLLIB => {
-                let default = {
-                    let idx = pss.para[0];
-                    let f = ::hex::encode(&pss.para[1..]);
-                    format!("calllib {}::0x{}({})", idx, f, args)
-                };
-                let short = (|| {
-                    if pss.para.len() >= 5 {
-                        let idx = pss.para[0];
-                        let mut sig = [0u8; 4];
-                        sig.copy_from_slice(&pss.para[1..5]);
-                        if let Some(map) = self.opt.map {
-                            if let Some(libinfo) = map.lib(idx) {
-                                if let Some(fname) = map.func(&sig) {
-                                    return Some((libinfo.name.clone(), fname.clone()));
-                                }
-                            }
-                        }
-                    }
-                    None
-                })()
-                .map(|(lib, func)| format!("{}:{}({})", lib, func, args));
-                (default, short)
-            }
-            CALLINR => {
-                let default = {
-                    let f = ::hex::encode(&pss.para);
-                    format!("callinr 0x{}({})", f, args)
-                };
-                let short = (|| {
-                    if pss.para.len() == 4 {
-                        let mut sig = [0u8; 4];
-                        sig.copy_from_slice(&pss.para);
-                        if let Some(map) = self.opt.map {
-                            return map.func(&sig).cloned();
-                        }
-                    }
-                    None
-                })()
-                .map(|func| format!("self.{}({})", func, args));
-                (default, short)
-            }
+        let default_body = match code {
+            CALL => format!("call {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
+            CALLLIB => format!("calllib {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
+            CALLINR => format!("callinr 0x{}({})", ::hex::encode(&pss.para), args),
             CALLSTATIC => {
-                let default = {
-                    let idx = pss.para[0];
-                    let f = ::hex::encode(&pss.para[1..]);
-                    format!("callstatic {}::0x{}({})", idx, f, args)
-                };
-                let short = (|| {
-                    if pss.para.len() >= 5 {
-                        let idx = pss.para[0];
-                        let mut sig = [0u8; 4];
-                        sig.copy_from_slice(&pss.para[1..5]);
-                        if let Some(map) = self.opt.map {
-                            if let Some(libinfo) = map.lib(idx) {
-                                if let Some(fname) = map.func(&sig) {
-                                    return Some((libinfo.name.clone(), fname.clone()));
-                                }
-                            }
-                        }
-                    }
-                    None
-                })()
-                .map(|(lib, func)| format!("{}::{}({})", lib, func, args));
-                (default, short)
+                format!("callstatic {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args)
             }
-            _ => (format!("{}({})", meta.intro, args), None),
+            _ => format!("{}({})", meta.intro, args),
         };
 
-        if self.opt.call_short_syntax {
-            if let Some(short) = short_body {
-                let mut out = String::new();
-                out.push_str(&pre);
-                out.push_str(&format!(" /*{}*/ ", meta.intro));
-                out.push_str(&short);
-                return Some(out);
-            }
+        let short_body = if self.opt.call_short_syntax {
+            self.short_call_target(code, pss, &args)
+        } else {
+            None
+        };
+
+        if let Some(short) = short_body {
+            return Some(format!("{} /*{}*/ {}", pre, meta.intro, short));
         }
 
         Some(format!("{}{}", pre, default_body))

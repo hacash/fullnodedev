@@ -44,9 +44,9 @@ fn source_map_recovery_records_symbols() {
         Some("notify")
     );
 
-    let opt = PrintOption::new("    ", 0)
-        .with_source_map(&source_map)
-        .with_call_short_syntax(true);
+    let mut opt = PrintOption::new("    ", 0);
+    opt.map = Some(&source_map);
+    opt.call_short_syntax = true;
     let printed = Formater::new(&opt).print(&ir_block);
     assert!(printed.contains("Fund.deposit("));
     assert!(printed.contains("Fund::audit("));

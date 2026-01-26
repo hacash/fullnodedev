@@ -506,12 +506,12 @@ fn packlist_keyword_roundtrip() {
         print [1, 2, 3]
     "##;
     let block = lang_to_irnode(script).unwrap();
-    let opt = PrintOption::new("  ", 0)
-        .with_trim_root_block(true)
-        .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true)
-        .with_flatten_call_packlist(false)
-        .with_flatten_array_packlist(false);
+    let mut opt = PrintOption::new("  ", 0);
+    opt.trim_root_block = true;
+    opt.trim_head_alloc = true;
+    opt.trim_param_unpack = true;
+    opt.flatten_call_packlist = false;
+    opt.flatten_array_packlist = false;
     let printed = Formater::new(&opt).print(&block);
     assert!(printed.contains("packlist { 1, 2, 3 }"));
     assert!(lang_to_ircode(&printed).is_ok());
@@ -548,12 +548,12 @@ fn call_short_syntax_uses_comment_short_form() {
         print zhu
     "##;
     let (block, smap) = lang_to_irnode_with_sourcemap(script).unwrap();
-    let opt = PrintOption::new("  ", 0)
-        .with_source_map(&smap)
-        .with_trim_root_block(true)
-        .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true)
-        .with_call_short_syntax(true);
+    let mut opt = PrintOption::new("  ", 0);
+    opt.map = Some(&smap);
+    opt.trim_root_block = true;
+    opt.trim_head_alloc = true;
+    opt.trim_param_unpack = true;
+    opt.call_short_syntax = true;
     let printed = Formater::new(&opt).print(&block);
     assert!(printed.contains("/*call*/ HacSwap.sell("));
     assert!(printed.contains("print"));

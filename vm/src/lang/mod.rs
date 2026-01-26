@@ -51,40 +51,40 @@ pub fn lang_to_ircode_with_sourcemap(langscript: &str) -> Ret<(Vec<u8>, SourceMa
 }
 
 pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Ret<String> {
-    let opt = PrintOption::new("  ", 0)
-        .with_source_map(smap)
-        .with_trim_root_block(true)
-        .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true)
-        .with_flatten_call_packlist(true)
-        .with_flatten_array_packlist(true)
-        .with_flatten_syscall_cat(true);
+    let mut opt = PrintOption::new("  ", 0);
+    opt.map = Some(smap);
+    opt.trim_root_block = true;
+    opt.trim_head_alloc = true;
+    opt.trim_param_unpack = true;
+    opt.flatten_call_packlist = true;
+    opt.flatten_array_packlist = true;
+    opt.flatten_syscall_cat = true;
     Ok(Formater::new(&opt).print(&block))
 }
 
 pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
-    let opt = PrintOption::new("  ", 0)
-        .with_trim_root_block(true)
-        .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true)
-        .with_flatten_call_packlist(true)
-        .with_flatten_array_packlist(true)
-        .with_flatten_syscall_cat(true);
+    let mut opt = PrintOption::new("  ", 0);
+    opt.trim_root_block = true;
+    opt.trim_head_alloc = true;
+    opt.trim_param_unpack = true;
+    opt.flatten_call_packlist = true;
+    opt.flatten_array_packlist = true;
+    opt.flatten_syscall_cat = true;
     Ok(Formater::new(&opt).print(&block))
 }
 
 fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<String> {
     let mut seek = 0;
     let block = parse_ir_block(ircode, &mut seek)?;
-    let mut opt = PrintOption::new("  ", 0)
-        .with_trim_root_block(true)
-        .with_trim_head_alloc(true)
-        .with_trim_param_unpack(true)
-        .with_flatten_call_packlist(true)
-        .with_flatten_array_packlist(true)
-        .with_flatten_syscall_cat(true);
+    let mut opt = PrintOption::new("  ", 0);
+    opt.trim_root_block = true;
+    opt.trim_head_alloc = true;
+    opt.trim_param_unpack = true;
+    opt.flatten_call_packlist = true;
+    opt.flatten_array_packlist = true;
+    opt.flatten_syscall_cat = true;
     if let Some(map) = map {
-        opt = opt.with_source_map(map);
+        opt.map = Some(map);
     }
     Ok(Formater::new(&opt).print(&block))
 }

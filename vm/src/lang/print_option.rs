@@ -38,48 +38,8 @@ impl<'a> PrintOption<'a> {
         }
     }
 
-    pub fn with_trim_root_block(mut self, trim: bool) -> Self {
-        self.trim_root_block = trim;
-        self
-    }
-
-    pub fn with_trim_head_alloc(mut self, trim: bool) -> Self {
-        self.trim_head_alloc = trim;
-        self
-    }
-
     pub fn with_source_map(mut self, map: &'a SourceMap) -> Self {
         self.map = Some(map);
-        self
-    }
-
-    pub fn with_trim_param_unpack(mut self, trim: bool) -> Self {
-        self.trim_param_unpack = trim;
-        self
-    }
-
-    pub fn with_hide_func_nil_argv(mut self, hide: bool) -> Self {
-        self.hide_func_nil_argv = hide;
-        self
-    }
-
-    pub fn with_call_short_syntax(mut self, enable: bool) -> Self {
-        self.call_short_syntax = enable;
-        self
-    }
-
-    pub fn with_flatten_call_packlist(mut self, flatten: bool) -> Self {
-        self.flatten_call_packlist = flatten;
-        self
-    }
-
-    pub fn with_flatten_array_packlist(mut self, flatten: bool) -> Self {
-        self.flatten_array_packlist = flatten;
-        self
-    }
-
-    pub fn with_flatten_syscall_cat(mut self, flatten: bool) -> Self {
-        self.flatten_syscall_cat = flatten;
         self
     }
 
