@@ -62,7 +62,6 @@ keyword_define!{
     CallCode  : "callcode"
     ByteCode  : "bytecode"
     Param     : "param"
-    Packlist  : "packlist"
     And       : "and"
     Or        : "or"
     Not       : "not"

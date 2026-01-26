@@ -168,7 +168,29 @@ impl<'a> Formater<'a> {
         None
     }
 
-    fn extract_packlist_elements(&self, inst: Bytecode, subs: &[Box<dyn IRNode>]) -> Option<Vec<String>> {
+    fn extract_map_elements(&self, inst: Bytecode, subs: &[Box<dyn IRNode>]) -> Option<Vec<(String, String)>> {
+        use Bytecode::*;
+        if inst != IRLIST { return None; }
+        let num = subs.len();
+        if num < 2 { return None; }
+        let last = &subs[num - 1];
+        if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
+            if leaf.inst != PACKMAP { return None; }
+        } else { return None; }
+        let count_idx = num - 2;
+        let count = num - 2;
+        let expected = self.extract_const_usize(&*subs[count_idx])?;
+        if expected * 2 != count || count % 2 != 0 { return None; }
+        let mut pairs = Vec::with_capacity(expected);
+        for i in (0..count).step_by(2) {
+            let k = self.print_inline(&*subs[i]);
+            let v = self.print_inline(&*subs[i+1]);
+            pairs.push((k, v));
+        }
+        Some(pairs)
+    }
+
+    fn extract_list_elements(&self, inst: Bytecode, subs: &[Box<dyn IRNode>]) -> Option<Vec<String>> {
         use Bytecode::*;
         if inst != IRLIST { return None; }
         let num = subs.len();
@@ -204,9 +226,9 @@ impl<'a> Formater<'a> {
         let mut current: &dyn IRNode = node;
         let helper = DecompilationHelper::new(&self.opt);
         loop {
-            if self.opt.flatten_call_packlist {
+            if self.opt.flatten_call_list {
                 if let Some(list) = current.as_any().downcast_ref::<IRNodeArray>() {
-                    if let Some(elements) = self.extract_packlist_elements(list.inst, &list.subs) {
+                    if let Some(elements) = self.extract_list_elements(list.inst, &list.subs) {
                         args.extend(elements);
                         return args;
                     }
@@ -267,12 +289,12 @@ impl<'a> Formater<'a> {
         }
         let prefix = self.line_prefix();
         if arr.inst == IRLIST {
-            if let Some(elements) = self.extract_packlist_elements(arr.inst, &arr.subs) {
-                if self.opt.flatten_array_packlist {
+            if let Some(elements) = self.extract_list_elements(arr.inst, &arr.subs) {
+                if self.opt.flatten_array_list {
                     return Some(format!("{}[{}]", prefix, elements.join(", ")));
                 } else {
                     let args = elements.join(", ");
-                    let mut buf = format!("{}packlist {{", prefix);
+                    let mut buf = format!("{}list {{", prefix);
                     if !args.is_empty() {
                         buf.push(' ');
                         buf.push_str(&args);
@@ -281,6 +303,19 @@ impl<'a> Formater<'a> {
                     buf.push('}');
                     return Some(buf);
                 }
+            }
+            if let Some(pairs) = self.extract_map_elements(arr.inst, &arr.subs) {
+                let mut buf = format!("{}map {{", prefix);
+                if !pairs.is_empty() {
+                    buf.push('\n');
+                    let child = self.child();
+                    for (k, v) in pairs {
+                        buf.push_str(&format!("{}{}: {},\n", child.line_prefix(), k, v));
+                    }
+                    buf.push_str(&self.opt.indent.repeat(self.opt.tab));
+                }
+                buf.push('}');
+                return Some(buf);
             }
             if let Some(last) = arr.subs.last() {
                 let code: Bytecode = std_mem_transmute!(last.bytecode());
@@ -382,7 +417,7 @@ impl<'a> Formater<'a> {
                         _ => unreachable!(),
                     });
                 }
-                CU8 | CU16 | CU32 | CU64 | CU128 | RET | ERR | AST => {
+                CU8 | CU16 | CU32 | CU64 | CU128 | CBUF | RET | ERR | AST => {
                     let literal = self.literal_from_node(&*s.subx);
                     let substr = if let Some(ref lit) = literal {
                         lit.text.clone()
@@ -443,6 +478,9 @@ impl<'a> Formater<'a> {
                                 format!("{}{} as u128", pre, operand)
                             }
                         }
+                        CBUF => {
+                            format!("{}{} as bytes", pre, operand)
+                        }
                         RET | ERR | AST => {
                             let meta = s.inst.metadata();
                             format!("{}{} {}", pre, meta.intro, substr)
@@ -483,28 +521,43 @@ impl<'a> Formater<'a> {
             }
             if d.inst == IRWHILE {
                 let subxstr = self.print_inline(&*d.subx);
-                let subystr = self.print_newline(&*d.suby);
+                let subystr = self.print_inner(&*d.suby);
+                let body = if subystr.trim().starts_with('{') {
+                    subystr.trim().to_owned()
+                } else {
+                    format!("{{ {} }}", subystr.trim())
+                };
                 return Some(format!(
-                    "{}while {} {{{}}}",
+                    "{}while {} {}",
                     self.line_prefix(),
                     subxstr,
-                    subystr
+                    body
                 ));
             }
         }
         if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
             if t.inst == IRIF || t.inst == IRIFR {
                 let subxstr = self.print_inline(&*t.subx);
-                let subystr = self.print_newline(&*t.suby);
-                let subzstr = self.print_newline(&*t.subz);
+                let subystr = self.print_inner(&*t.suby);
+                let body = if subystr.trim().starts_with('{') {
+                    subystr.trim().to_owned()
+                } else {
+                    format!("{{ {} }}", subystr.trim())
+                };
                 let mut buf = format!(
-                    "{}if {} {{{}}}",
+                    "{}if {} {}",
                     self.line_prefix(),
                     subxstr,
-                    subystr
+                    body
                 );
-                if subzstr.len() > 0 {
-                    buf.push_str(&format!(" else {{{}}}", subzstr));
+                if t.subz.bytecode() != Bytecode::NOP as u8 {
+                    let subzstr = self.print_inner(&*t.subz);
+                    let elsebody = if subzstr.trim().starts_with('{') || subzstr.trim().starts_with("if ") {
+                        subzstr.trim().to_owned()
+                    } else {
+                        format!("{{ {} }}", subzstr.trim())
+                    };
+                    buf.push_str(&format!(" else {}", elsebody));
                 }
                 return Some(buf);
             }
@@ -536,7 +589,6 @@ impl<'a> Formater<'a> {
                 CU32 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U32),
                 CU64 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U64),
                 CU128 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U128),
-                CBUF => return self.literal_from_node(&*single.subx),
                 _ => {}
             }
         }
@@ -730,7 +782,6 @@ impl<'a> Formater<'a> {
             }
             PUT => {
                 let substr = self.print_inline(&*node.subx);
-                let slot_name = self.opt.map.and_then(|s| s.slot(node.para)).cloned();
                 let is_first = self.opt.mark_slot_put(node.para);
                 let target = if is_first {
                     let prefix = if self.opt.map.map(|m| m.slot_is_var(node.para)).unwrap_or(false) {
@@ -740,12 +791,11 @@ impl<'a> Formater<'a> {
                     } else {
                         "var"
                     };
-                    match slot_name {
-                        Some(name) => format!("{} {} ${}", prefix, name, node.para),
-                        None => format!("{} ${}", prefix, node.para),
-                    }
+                    let name = self.slot_name_display(node.para);
+                    let slot_id_str = format!("${}", node.para);
+                    format!("{} {} {}", prefix, name, slot_id_str)
                 } else {
-                    slot_name.unwrap_or_else(|| format!("${}", node.para))
+                    self.slot_name_display(node.para)
                 };
                 format!("{} = {}", target, substr)
             }
@@ -939,6 +989,9 @@ impl<'a> Formater<'a> {
     }
 
     fn print_inner(&self, node: &dyn IRNode) -> String {
+        if let Some(wrap) = node.as_any().downcast_ref::<IRNodeWrapOne>() {
+            return format!("({})", self.print_inline(&*wrap.node));
+        }
         if let Some(pss) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
             return self.print_param1_single(pss);
         }
@@ -949,6 +1002,16 @@ impl<'a> Formater<'a> {
             return line;
         }
         let code: Bytecode = std_mem_transmute!(node.bytecode());
+        if code == Bytecode::NEWLIST {
+            if self.opt.flatten_array_list {
+                return format!("{}[]", self.line_prefix());
+            } else {
+                return format!("{}list {{}}", self.line_prefix());
+            }
+        }
+        if code == Bytecode::NEWMAP {
+            return format!("{}map {{}}", self.line_prefix());
+        }
         if let Some(line) = self.format_call_instruction(node, code) {
             return line;
         }
@@ -1016,8 +1079,8 @@ impl<'a> Formater<'a> {
     // Added: local `ascii_show_string` implementation to avoid relying on external imports.
     fn ascii_show_string(&self, data: &[u8]) -> Option<String> {
         if data.is_empty() { return Some(String::new()); }
-        // Determine printable ASCII (common newline/tab are treated as non-printable by the caller).
-        if data.iter().all(|&b| b >= 0x20 && b <= 0x7E) {
+        // Determine printable ASCII (common newline/tab are allowed).
+        if data.iter().all(|&b| (b >= 0x20 && b <= 0x7E) || b == 0x0a || b == 0x0d || b == 0x09) {
             match std::str::from_utf8(data) {
                 Ok(s) => Some(s.to_string()),
                 Err(_) => None,

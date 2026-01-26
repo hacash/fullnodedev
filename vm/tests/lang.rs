@@ -474,7 +474,7 @@ fn decompile_preserves_multiply_parens() {
 }
 
 #[test]
-fn decompile_hacswap_sell_args_without_packlist() {
+fn decompile_hacswap_sell_args_without_list() {
     let script = r##"
         lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         var sat = 4626909 as u64
@@ -523,36 +523,36 @@ fn format_ircode_preserves_mismatched_cast() {
 }
 
 #[test]
-fn packlist_keyword_roundtrip() {
+fn list_keyword_roundtrip() {
     let script = r##"
         print [1, 2, 3]
     "##;
     let block = lang_to_irnode(script).unwrap();
     let mut opt = PrintOption::new("  ", 0);
     opt.call_short_syntax = true;
-    opt.flatten_array_packlist = true;
+    opt.flatten_array_list = true;
     let printed = Formater::new(&opt).print(&block);
     assert!(printed.contains("[1, 2, 3]"));
     assert!(lang_to_ircode(&printed).is_ok());
 
     let default_printed = irnode_to_lang(block.clone()).unwrap();
-    assert!(default_printed.contains("packlist {"));
+    assert!(default_printed.contains("list {"));
     assert!(lang_to_ircode(&default_printed).is_ok());
 }
 
 #[test]
-fn packlist_keyword_literal_compiles() {
+fn list_keyword_literal_compiles() {
     let script = r##"
-        var arr = packlist { 1 2 3 }
+        var arr = list { 1 2 3 }
         print arr
     "##;
     assert!(lang_to_ircode(script).is_ok());
 }
 
 #[test]
-fn packlist_keyword_empty_newlist() {
+fn list_keyword_empty_newlist() {
     let script = r##"
-        var arr = packlist { }
+        var arr = list { }
     "##;
     let codes = lang_to_ircode(script).unwrap();
     assert!(codes.contains(&(Bytecode::NEWLIST as u8)));

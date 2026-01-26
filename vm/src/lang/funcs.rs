@@ -28,7 +28,7 @@ impl Syntax {
         }
         let argv = match md {
             ArgvMode::Concat => concat_func_argvs(argvs)?,
-            ArgvMode::PackList => pack_func_argvs(argvs)?,
+            ArgvMode::List => pack_func_argvs(argvs)?,
         };
         Ok((alen, argv))
 

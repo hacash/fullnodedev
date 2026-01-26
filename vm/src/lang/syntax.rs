@@ -26,7 +26,7 @@ pub struct Syntax {
 
 #[allow(dead_code)]
 impl Syntax {
-    fn build_packlist_node(&mut self, mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+    fn build_list_node(&mut self, mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
         let num = subs.len();
         if num == 0 {
             return Ok(push_inst(Bytecode::NEWLIST));
@@ -631,7 +631,7 @@ impl Syntax {
     }
 
     fn deal_func_argv(&mut self) -> Ret<Box<dyn IRNode>> {
-        let (pms, mut subx) = self.must_get_func_argv(ArgvMode::PackList)?;
+        let (pms, mut subx) = self.must_get_func_argv(ArgvMode::List)?;
         if 0 == pms {
             // func() == func(nil)
             subx = push_nil()
@@ -756,7 +756,7 @@ impl Syntax {
                     item.checkretval()?; // must retv
                     subs.push(item);
                 }
-                self.build_packlist_node(subs)?
+                self.build_list_node(subs)?
             }
             Partition('{') => {
                 self.idx -= 1;
@@ -981,8 +981,8 @@ impl Syntax {
                 Box::new(IRNodeBytecodes{codes})
             },
 
-            Keyword(Packlist) => {
-                let e = errf!("packlist statement format error");
+            Keyword(List) => {
+                let e = errf!("list statement format error");
                 nxt = next!();
                 let Partition('{') = nxt else { return e };
                 let mut subs = vec![];
@@ -996,7 +996,7 @@ impl Syntax {
                     item.checkretval()?; // must retv
                     subs.push(item);
                 }
-                self.build_packlist_node(subs)?
+                self.build_list_node(subs)?
             }
             Keyword(Map) => {
                 let e = errf!("map format error");
@@ -1027,10 +1027,15 @@ impl Syntax {
                     subs.push(k);
                     subs.push(v);
                 }
-                subs.push(push_num(subs.len() as u128));
-                subs.push(push_inst(PACKMAP));
-                let arys = IRNodeArray::from_vec(subs, Bytecode::IRLIST)?; // changed
-                Box::new(arys)
+                let num = subs.len();
+                if num == 0 {
+                    push_inst(NEWMAP)
+                } else {
+                    subs.push(push_num((num / 2) as u128));
+                    subs.push(push_inst(PACKMAP));
+                    let arys = IRNodeArray::from_vec(subs, Bytecode::IRLIST)?; // changed
+                    Box::new(arys)
+                }
             }
             Keyword(Log) => {
                 let e = errf!("log argv number error");

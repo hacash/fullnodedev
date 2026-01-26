@@ -18,7 +18,7 @@ include! {"decompilation_helper.rs"}
 
 pub enum ArgvMode {
     Concat,
-    PackList,
+    List,
 }
 
 include! {"interface.rs"}
@@ -72,8 +72,8 @@ pub fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtR
     opt.trim_head_alloc = true;
     opt.trim_param_unpack = true;
     opt.call_short_syntax = true;
-    opt.flatten_call_packlist = true;
-    opt.flatten_array_packlist = true;
+    opt.flatten_call_list = true;
+    opt.flatten_array_list = true;
     opt.flatten_syscall_cat = true;
     opt.recover_literals = true;
     Ok(Formater::new(&opt).print(&block))
