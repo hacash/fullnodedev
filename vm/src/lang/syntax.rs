@@ -148,6 +148,37 @@ impl Syntax {
         None
     }
 
+    fn literal_value_type(node: &dyn IRNode) -> Option<ValueTy> {
+        use Bytecode::*;
+        if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
+            return match leaf.inst {
+                P0 | P1 | P2 | P3 => Some(ValueTy::U8),
+                _ => None,
+            };
+        }
+        if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
+            if param1.inst == PU8 {
+                return Some(ValueTy::U8);
+            }
+        }
+        if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
+            if param2.inst == PU16 {
+                return Some(ValueTy::U16);
+            }
+        }
+        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
+            return match single.inst {
+                CU8 => Some(ValueTy::U8),
+                CU16 => Some(ValueTy::U16),
+                CU32 => Some(ValueTy::U32),
+                CU64 => Some(ValueTy::U64),
+                CU128 => Some(ValueTy::U128),
+                _ => None,
+            };
+        }
+        None
+    }
+
     pub fn bind_local_assign(&mut self, s: String, v: Box<dyn IRNode>, kind: SlotKind) -> Ret<Box<dyn IRNode>> {
         let idx = self.local_alloc;
         self.bind_local_assign_replace(s, idx, v, kind)
@@ -373,23 +404,36 @@ impl Syntax {
                     let e = errf!("<as> express format error");
                     let nk = next!();
                     let hrtv = true;
+                    let target_ty = match nk {
+                        Keyword(U8) => Some(ValueTy::U8),
+                        Keyword(U16) => Some(ValueTy::U16),
+                        Keyword(U32) => Some(ValueTy::U32),
+                        Keyword(U64) => Some(ValueTy::U64),
+                        Keyword(U128) => Some(ValueTy::U128),
+                        _ => None,
+                    };
+                    let skip_cast = target_ty
+                        .and_then(|ty| Self::literal_value_type(&*left).filter(|lit| *lit == ty))
+                        .is_some();
                     macro_rules! cuto {($inst: expr) => { 
                         Box::new(IRNodeSingle{hrtv, inst: $inst, subx: left} )
                     }}
-                    let v: Box<dyn IRNode> = match nk {
-                        Keyword(U8)    => cuto!(CU8)  ,
-                        Keyword(U16)   => cuto!(CU16) ,
-                        Keyword(U32)   => cuto!(CU32) ,
-                        Keyword(U64)   => cuto!(CU64) ,
-                        Keyword(U128)  => cuto!(CU128),
-                        Keyword(Bytes) => cuto!(CBUF) ,
-                        Keyword(Address) => {
-                            let para = ValueTy::Address as u8;
-                            Box::new(IRNodeParam1Single{hrtv, inst: CTO, para, subx: left })       
-                        }
-                        _ => return e
-                    };
-                    left = v;
+                    if !skip_cast {
+                        let v: Box<dyn IRNode> = match nk {
+                            Keyword(U8) => cuto!(CU8),
+                            Keyword(U16) => cuto!(CU16),
+                            Keyword(U32) => cuto!(CU32),
+                            Keyword(U64) => cuto!(CU64),
+                            Keyword(U128) => cuto!(CU128),
+                            Keyword(Bytes) => cuto!(CBUF),
+                            Keyword(Address) => {
+                                let para = ValueTy::Address as u8;
+                                Box::new(IRNodeParam1Single{hrtv, inst: CTO, para, subx: left })
+                            }
+                            _ => return e,
+                        };
+                        left = v;
+                    }
                 }
                 Keyword(Is) => {
                     let e = errf!("<is> express format error");

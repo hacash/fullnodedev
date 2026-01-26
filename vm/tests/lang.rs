@@ -338,8 +338,8 @@ fn param_block_prints_from_ir_roundtrip() {
         print addr
         print sat
     "##;
-    let (block, source_map) = lang_to_irnode_with_sourcemap(script).unwrap();
-    let printed = irnode_to_lang_with_sourcemap(block, &source_map).unwrap();
+    let (block, source_map) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = format_ircode_to_lang(&block, Some(&source_map)).unwrap();
     assert!(printed.contains("param { addr, sat }"));
 }
 
@@ -481,9 +481,10 @@ fn decompile_hacswap_sell_args_without_packlist() {
         var zhu = HacSwap.sell(sat, 100000, 300)
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
-    let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(printed.contains("call 1::0x366f6a6e(sat, 0x0186a0 as u32, 300)"));
-    assert!(!printed.contains("pack_list()"));
+    let printed = format_ircode_to_lang(&ircode, Some(&smap)).unwrap();
+    // panic!("{}", printed);
+    assert!(printed.contains("HacSwap.sell(sat, 100000, 300)"));
+    assert!(!printed.contains("pack_list {"));
 }
 
 #[test]
@@ -506,8 +507,19 @@ fn format_ircode_rehydrates_numeric_literal() {
         print 70000 as u32
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let formatted = format_ircode_to_lang(&ircode, Some(&smap)).unwrap();
+    assert!(formatted.contains("70000"));
+    assert!(!formatted.contains("as u32"));
+}
+
+#[test]
+fn format_ircode_preserves_mismatched_cast() {
+    let script = r##"
+        print 1 as u64
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(formatted.contains("70000 as u32"));
+    assert!(formatted.contains("1 as u64"));
 }
 
 #[test]
@@ -517,17 +529,14 @@ fn packlist_keyword_roundtrip() {
     "##;
     let block = lang_to_irnode(script).unwrap();
     let mut opt = PrintOption::new("  ", 0);
-    opt.trim_root_block = true;
-    opt.trim_head_alloc = true;
-    opt.trim_param_unpack = true;
-    opt.flatten_call_packlist = false;
-    opt.flatten_array_packlist = false;
+    opt.call_short_syntax = true;
+    opt.flatten_array_packlist = true;
     let printed = Formater::new(&opt).print(&block);
-    assert!(printed.contains("packlist { 1, 2, 3 }"));
+    assert!(printed.contains("[1, 2, 3]"));
     assert!(lang_to_ircode(&printed).is_ok());
 
     let default_printed = irnode_to_lang(block.clone()).unwrap();
-    assert!(!default_printed.contains("packlist {"));
+    assert!(default_printed.contains("packlist {"));
     assert!(lang_to_ircode(&default_printed).is_ok());
 }
 

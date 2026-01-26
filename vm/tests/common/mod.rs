@@ -34,7 +34,7 @@ fn unwrap_root_block(bytes: Vec<u8>) -> Vec<u8> {
 pub fn checked_compile_fitsh_to_ir(script: &str) -> Vec<u8> {
     // check with sourcemap
     let (ircd1, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
-    let lang1 = ircode_to_lang_with_sourcemap(&ircd1, &smap).unwrap();
+    let lang1 = format_ircode_to_lang(&ircd1, Some(&smap)).unwrap();
     let res1 = lang_to_ircode_with_sourcemap(&lang1);
     if let Err(e) = &res1 {
         println!("Original Script:\n{}", script);

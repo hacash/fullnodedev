@@ -16,13 +16,15 @@ enum LiteralKind {
 struct RecoveredLiteral {
     text: String,
     kind: LiteralKind,
+    ty: Option<ValueTy>,
 }
 
 impl RecoveredLiteral {
-    fn numeric<S: Into<String>>(value: S) -> Self {
+    fn numeric<S: Into<String>>(value: S, ty: ValueTy) -> Self {
         Self {
             text: value.into(),
             kind: LiteralKind::Numeric,
+            ty: Some(ty),
         }
     }
 
@@ -30,6 +32,7 @@ impl RecoveredLiteral {
         Self {
             text: value.into(),
             kind: LiteralKind::Text,
+            ty: Some(ValueTy::Bytes),
         }
     }
 
@@ -37,6 +40,7 @@ impl RecoveredLiteral {
         Self {
             text: value.into(),
             kind: LiteralKind::Address,
+            ty: Some(ValueTy::Address),
         }
     }
 }
@@ -395,9 +399,13 @@ impl<'a> Formater<'a> {
                     } else {
                         substr.clone()
                     };
+                    let target_ty = Self::cast_value_ty(s.inst);
                     let use_literal = literal
                         .as_ref()
-                        .map(|lit| lit.kind == LiteralKind::Numeric)
+                        .filter(|lit| lit.kind == LiteralKind::Numeric)
+                        .and_then(|lit| lit.ty)
+                        .zip(target_ty)
+                        .map(|(lit_ty, target)| lit_ty == target)
                         .unwrap_or(false);
                     return Some(match s.inst {
                         CU8 => {
@@ -504,40 +512,63 @@ impl<'a> Formater<'a> {
         None
     }
 
+    fn cast_value_ty(inst: Bytecode) -> Option<ValueTy> {
+        use Bytecode::*;
+        match inst {
+            CU8 => Some(ValueTy::U8),
+            CU16 => Some(ValueTy::U16),
+            CU32 => Some(ValueTy::U32),
+            CU64 => Some(ValueTy::U64),
+            CU128 => Some(ValueTy::U128),
+            _ => None,
+        }
+    }
+
     fn literal_from_node(&self, node: &dyn IRNode) -> Option<RecoveredLiteral> {
         if !self.opt.recover_literals {
             return None;
         }
         use Bytecode::*;
+        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
+            match single.inst {
+                CU8 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U8),
+                CU16 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U16),
+                CU32 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U32),
+                CU64 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U64),
+                CU128 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U128),
+                CBUF => return self.literal_from_node(&*single.subx),
+                _ => {}
+            }
+        }
         if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
-            let literal = match leaf.inst {
-                P0 => "0",
-                P1 => "1",
-                P2 => "2",
-                P3 => "3",
-                _ => return None,
-            };
-            return Some(RecoveredLiteral::numeric(literal));
+            match leaf.inst {
+                P0 => return Some(RecoveredLiteral::numeric("0", ValueTy::U8)),
+                P1 => return Some(RecoveredLiteral::numeric("1", ValueTy::U8)),
+                P2 => return Some(RecoveredLiteral::numeric("2", ValueTy::U8)),
+                P3 => return Some(RecoveredLiteral::numeric("3", ValueTy::U8)),
+                _ => {}
+            }
         }
         if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
             if param1.inst == PU8 {
-                return Some(RecoveredLiteral::numeric(param1.para.to_string()));
+                return Some(RecoveredLiteral::numeric(
+                    param1.para.to_string(),
+                    ValueTy::U8,
+                ));
             }
         }
         if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
             if param2.inst == PU16 {
                 return Some(RecoveredLiteral::numeric(
                     u16::from_be_bytes(param2.para).to_string(),
+                    ValueTy::U16,
                 ));
             }
         }
         if let Some(params) = node.as_any().downcast_ref::<IRNodeParams>() {
-            if let Some(bytes) = self.params_to_bytes(params) {
-                if let Some(literal) = self.decode_bytes_literal(bytes) {
+            if let Some(data) = self.params_to_bytes(params) {
+                if let Some(literal) = self.decode_bytes_literal(data) {
                     return Some(literal);
-                }
-                if let Some(value) = self.bytes_to_u128(bytes) {
-                    return Some(RecoveredLiteral::numeric(value.to_string()));
                 }
             }
         }
@@ -546,12 +577,58 @@ impl<'a> Formater<'a> {
                 return self.literal_from_node(&*single.subx);
             }
         }
-        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
-            if single.inst == CBUF {
-                return self.literal_from_node(&*single.subx);
+        None
+    }
+
+    fn numeric_literal_from(&self, node: &dyn IRNode, ty: ValueTy) -> Option<RecoveredLiteral> {
+        use Bytecode::*;
+        if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
+            match leaf.inst {
+                P0 => return Some(RecoveredLiteral::numeric("0", ValueTy::U8)),
+                P1 => return Some(RecoveredLiteral::numeric("1", ValueTy::U8)),
+                P2 => return Some(RecoveredLiteral::numeric("2", ValueTy::U8)),
+                P3 => return Some(RecoveredLiteral::numeric("3", ValueTy::U8)),
+                _ => {}
+            }
+        }
+        if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
+            if param1.inst == PU8 {
+                return Some(RecoveredLiteral::numeric(
+                    param1.para.to_string(),
+                    ValueTy::U8,
+                ));
+            }
+        }
+        if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
+            if param2.inst == PU16 {
+                return Some(RecoveredLiteral::numeric(
+                    u16::from_be_bytes(param2.para).to_string(),
+                    ValueTy::U16,
+                ));
+            }
+        }
+        if let Some(params) = node.as_any().downcast_ref::<IRNodeParams>() {
+            if let Some(bytes) = self.params_to_bytes(params) {
+                if let Some(value) = self.bytes_to_u128(bytes) {
+                    return Some(RecoveredLiteral::numeric(value.to_string(), ty));
+                }
             }
         }
         None
+    }
+
+    fn numeric_literal_from_cast(
+        &self,
+        node: &dyn IRNode,
+        target: ValueTy,
+    ) -> Option<RecoveredLiteral> {
+        self.numeric_literal_from(node, target).and_then(|lit| {
+            if lit.ty == Some(target) {
+                Some(lit)
+            } else {
+                None
+            }
+        })
     }
 
     fn decode_bytes_literal(&self, data: &[u8]) -> Option<RecoveredLiteral> {

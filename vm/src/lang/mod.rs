@@ -53,27 +53,15 @@ pub fn lang_to_ircode_with_sourcemap(langscript: &str) -> Ret<(Vec<u8>, SourceMa
 pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Ret<String> {
     let mut opt = PrintOption::new("  ", 0);
     opt.map = Some(smap);
-    opt.trim_root_block = true;
-    opt.trim_head_alloc = true;
-    opt.trim_param_unpack = true;
-    opt.flatten_call_packlist = true;
-    opt.flatten_array_packlist = true;
-    opt.flatten_syscall_cat = true;
     Ok(Formater::new(&opt).print(&block))
 }
 
 pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
-    let mut opt = PrintOption::new("  ", 0);
-    opt.trim_root_block = true;
-    opt.trim_head_alloc = true;
-    opt.trim_param_unpack = true;
-    opt.flatten_call_packlist = true;
-    opt.flatten_array_packlist = true;
-    opt.flatten_syscall_cat = true;
+    let opt = PrintOption::new("  ", 0);
     Ok(Formater::new(&opt).print(&block))
 }
 
-fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<String> {
+pub fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<String> {
     let mut seek = 0;
     let block = parse_ir_block(ircode, &mut seek)?;
     let mut opt = PrintOption::new("  ", 0);
@@ -83,6 +71,7 @@ fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<S
     opt.trim_root_block = true;
     opt.trim_head_alloc = true;
     opt.trim_param_unpack = true;
+    opt.call_short_syntax = true;
     opt.flatten_call_packlist = true;
     opt.flatten_array_packlist = true;
     opt.flatten_syscall_cat = true;
@@ -91,7 +80,9 @@ fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<S
 }
 
 pub fn ircode_to_lang_with_sourcemap(ircode: &Vec<u8>, smap: &SourceMap) -> Ret<String> {
-    format_ircode_to_lang(ircode, Some(smap)).map_err(|e| e.to_string())
+    let mut seek = 0;
+    let block = parse_ir_block(ircode, &mut seek)?;
+    irnode_to_lang_with_sourcemap(block, smap).map_err(|e| e.to_string())
 }
 
 pub fn ircode_to_lang(ircode: &Vec<u8>) -> Ret<String> {
