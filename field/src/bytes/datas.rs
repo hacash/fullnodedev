@@ -45,18 +45,17 @@ macro_rules! datas_define {
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
                 let sk = self.count.parse(buf)?;
                 let sz = *self.count as usize;
-                let bts = bufeat(&buf[sk..], sz)?;
-                *self = Self::from(bts)?;
+                let bts = bufeat_ref(&buf[sk..], sz)?;
+                self.bytes.clear();
+                self.bytes.extend_from_slice(bts);
                 Ok(sk + sz)
             }
         }
 
         impl Serialize for $class {
-            fn serialize(&self) -> Vec<u8> {
-                vec![
-                    self.count.serialize(),
-                    self.bytes.to_vec()
-                ].concat()
+            fn serialize_to(&self, out: &mut Vec<u8>) {
+                self.count.serialize_to(out);
+                out.extend_from_slice(&self.bytes);
             }
             fn size(&self) -> usize {
                 <$sty>::SIZE + *self.count as usize

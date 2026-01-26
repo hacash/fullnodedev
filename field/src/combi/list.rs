@@ -42,13 +42,13 @@ impl std::ops::IndexMut<usize> for $class {
 
 impl Parse for $class {
 
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-        let mut seek = self.count.parse(buf)?;
+    fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
+        let mut seek = self.count.parse_from(buf)?;
         let count = *self.count as usize;
-        self.lists = Vec::new();
+        self.lists = Vec::with_capacity(count);
         for _ in 0..count {
-            let (obj, mvsk) = <$vty>::create(&buf[seek..])?;
-            seek += mvsk;
+            let mut obj = <$vty>::new();
+            seek += obj.parse_from(buf)?;
             self.lists.push(obj);
         }
         Ok(seek)
@@ -59,14 +59,12 @@ impl Parse for $class {
 
 impl Serialize for $class {
 
-    fn serialize(&self) -> Vec<u8> {
-        let mut resdt = self.count.serialize();
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        self.count.serialize_to(out);
         let count = *self.count as usize;
         for i in 0..count {
-            let mut vardt = self.lists[i].serialize();
-            resdt.append(&mut vardt);
+            self.lists[i].serialize_to(out);
         }
-        resdt
     }
 
     fn size(&self) -> usize {
@@ -192,4 +190,3 @@ impl $class {
 
 // test
 combi_list!(TestFieldList9375649365, Uint1, Uint1);
-

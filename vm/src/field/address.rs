@@ -37,8 +37,12 @@ impl ContractAddress {
         Self::from_addr(Address::from(bts)).unwrap()
     }
 
-    pub fn new(addr: Address) -> Self {
+    pub fn from_unchecked(addr: Address) -> Self {
         Self{addr}
+    }
+
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn check(&self) -> Rerr {

@@ -53,17 +53,17 @@ macro_rules! combi_revenum {
 
         impl Serialize for $class {
 
-            fn serialize(&self) -> Vec<u8> {
+            fn serialize_to(&self, out: &mut Vec<u8>) {
                 match self {
-                    Self::Val1(v1) => v1.serialize(),
+                    Self::Val1(v1) => v1.serialize_to(out),
                     Self::Val2(v2) => {
-                        let mut b = v2.serialize();
-                        let mxv = b[0] as usize + $swtv as usize;
+                        let start = out.len();
+                        v2.serialize_to(out);
+                        let mxv = out[start] as usize + $swtv as usize;
                         if mxv > 255 {
                             panic!("mark value too big")
                         }
-                        b[0] = mxv as u8;
-                        b
+                        out[start] = mxv as u8;
                     },
                 }
             }

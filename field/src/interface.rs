@@ -1,12 +1,27 @@
 
 pub trait Serialize {
-    fn serialize(&self) -> Vec<u8> { never!() }
+    fn serialize(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.size());
+        self.serialize_to(&mut out);
+        out
+    }
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.serialize());
+    }
     fn size(&self) -> usize { never!() }
 }
 
 pub trait Parse {
     // return: use length
-    fn parse(&mut self, _: &[u8]) -> Ret<usize> { never!() }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        let mut buf = buf;
+        self.parse_from(&mut buf)
+    }
+    fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
+        let used = self.parse(buf)?;
+        *buf = &buf[used..];
+        Ok(used)
+    }
 }
 
 
@@ -102,8 +117,5 @@ pub trait Float : Field {
     fn parse_f32(&mut self, _: f32) -> Rerr { never!(); }
     fn parse_f64(&mut self, _: f64) -> Rerr { never!(); }
 }
-
-
-
 
 

@@ -74,7 +74,9 @@ impl Parse for Amount {
         }
         self.dist = dist as i8;
         let btlen = self.dist.abs() as usize;
-        self.byte = bufeat(&buf[2..], btlen)?;
+        let bts = bufeat_ref(&buf[2..], btlen)?;
+        self.byte.clear();
+        self.byte.extend_from_slice(bts);
         let rbtl = self.byte.len();
         if btlen != rbtl {
             return errf!("dist and byte len not match")
@@ -90,11 +92,10 @@ impl Parse for Amount {
 }
 
 impl Serialize for Amount {
-    fn serialize(&self) -> Vec<u8> {
-        vec![
-            vec![self.unit, self.dist as u8],
-            self.byte.clone()
-        ].concat()
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        out.push(self.unit);
+        out.push(self.dist as u8);
+        out.extend_from_slice(&self.byte);
     }
     fn size(&self) -> usize {
         1 + 1 + self.dist.abs() as usize

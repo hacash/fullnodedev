@@ -20,15 +20,12 @@ macro_rules! combi_optional {
 
         impl Parse for $class {
 
-            fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-                // println!("{}", hex::encode(buf));
-                // println!("StructFieldOptional parse exist {} {}", buf.len(), seek);
-                let mut seek = self.exist.parse(buf) ?;
-                // println!("StructFieldOptional parse {}", seek);
+            fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
+                let mut seek = self.exist.parse_from(buf) ?;
                 if self.is_exist() {
-                    let (val, mvsk) = <$vty>::create(&buf[seek..]) ?;
+                    let mut val = <$vty>::new();
+                    seek += val.parse_from(buf) ?;
                     self.$item = Some(val);
-                    seek += mvsk
                 }
                 Ok(seek)
             }
@@ -36,13 +33,11 @@ macro_rules! combi_optional {
 
         impl Serialize for $class {
 
-            fn serialize(&self) -> Vec<u8> {
-                let mut resdt = self.exist.serialize();
+            fn serialize_to(&self, out: &mut Vec<u8>) {
+                self.exist.serialize_to(out);
                 if self.is_exist() {
-                    let mut vardt = self.$item.as_ref().unwrap().serialize();
-                    resdt.append(&mut vardt);
+                    self.$item.as_ref().unwrap().serialize_to(out);
                 }
-                resdt
             }
 
             fn size(&self) -> usize {

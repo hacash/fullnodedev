@@ -13,16 +13,16 @@ macro_rules! combi_struct {
         }
 
         impl Parse for $class {
-            fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+            fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
                 let mut mv = 0;
-                $( mv += self.$item.parse(&buf[mv..])?; )+
+                $( mv += self.$item.parse_from(buf)?; )+
                 Ok(mv)
             }
         }
 
         impl Serialize for $class {
-            fn serialize(&self) -> Vec<u8> {
-                vec![ $( self.$item.serialize() ),+ ].concat()
+            fn serialize_to(&self, out: &mut Vec<u8>) {
+                $( self.$item.serialize_to(out); )+
             }
             fn size(&self) -> usize {
                 [ $( self.$item.size() ),+ ].iter().sum()
@@ -71,6 +71,10 @@ macro_rules! combi_struct_with_parse_serialize {
             fn serialize(&$this) -> Vec<u8> {
                 $serialize
             }
+            fn serialize_to(&$this, out: &mut Vec<u8>) {
+                let v = $serialize;
+                out.extend_from_slice(&v);
+            }
             fn size(&$this) -> usize {
                 $size
             }
@@ -114,11 +118,11 @@ macro_rules! combi_struct_field_more_than_condition {
 
         impl Parse for $class {
 
-            fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+            fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
                 let mut mv = 0;
-                $( mv += self.$item.parse(&buf[mv..])?; )+
+                $( mv += self.$item.parse_from(buf)?; )+
                 if *self.$cdn > $cdv {
-                    mv += self.$mrn.parse(&buf[mv..])?;
+                    mv += self.$mrn.parse_from(buf)?;
                 }
                 Ok(mv)
             }
@@ -127,12 +131,11 @@ macro_rules! combi_struct_field_more_than_condition {
 
         impl Serialize for $class {
 
-            fn serialize(&self) -> Vec<u8> {
-                let mut sers = vec![ $( self.$item.serialize() ),+ ];
+            fn serialize_to(&self, out: &mut Vec<u8>) {
+                $( self.$item.serialize_to(out); )+
                 if *self.$cdn > $cdv {
-                    sers.push(self.$mrn.serialize());
+                    self.$mrn.serialize_to(out);
                 }
-                sers.concat()
             }
 
             fn size(&self) -> usize {
@@ -149,4 +152,3 @@ macro_rules! combi_struct_field_more_than_condition {
 
     )
 }
-

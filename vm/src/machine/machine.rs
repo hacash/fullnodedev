@@ -173,8 +173,8 @@ impl Machine {
 
     pub fn main_call(&mut self, env: &mut ExecEnv, ctype: CodeType, codes: Vec<u8>) -> Ret<Value> {
         let fnobj = FnObj{ ctype, codes, confs: 0, agvty: None};
-        let ctx_adr = ContractAddress::new(env.ctx.tx().main());
-        let lib_adr = env.ctx.env().tx.addrs.iter().map(|a|ContractAddress::new(*a)).collect();
+        let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
+        let lib_adr = env.ctx.env().tx.addrs.iter().map(|a|ContractAddress::from_unchecked(*a)).collect();
         let rv = self.do_call(env, CallMode::Main, fnobj, ctx_adr, Some(lib_adr), None)?;
         Ok(rv)
     }
@@ -196,7 +196,7 @@ impl Machine {
     fn p2sh_call(&mut self, env: &mut ExecEnv, p2sh_addr: Address, libs: Vec<ContractAddress>, codes: Vec<u8>, param: Value) -> Ret<Value> {
         let ctype = CodeType::Bytecode;
         let fnobj = FnObj{ ctype, codes, confs: 0, agvty: None};
-        let ctx_adr = ContractAddress::new(p2sh_addr);
+        let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
         let rv = self.do_call(env, CallMode::P2sh, fnobj, ctx_adr, Some(libs), Some(param))?;
         if rv.check_true() {
             return errf!("p2sh call return error code {}", rv.to_uint())

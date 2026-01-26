@@ -73,7 +73,7 @@ action_define!{AssetCreate, 16,
         ttcount.asset_issue_burn_mei += pfee.to_mei_u64().unwrap();
         sta.set_total_count(&ttcount);
         // do mint
-        let mut asset_obj = AssetAmt::new(amd.serial);
+        let mut asset_obj = AssetAmt::from_serial(amd.serial);
         asset_obj.amount = amd.supply; // total supply
         // issue
         let mut bls = sta.balance( &amd.issuer ).unwrap_or_default();

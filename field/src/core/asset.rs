@@ -64,7 +64,11 @@ impl AssetAmt {
 
 impl AssetAmt {
 
-    pub fn new(serial: Fold64) -> Self {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_serial(serial: Fold64) -> Self {
         Self {
             serial,
             ..Default::default()

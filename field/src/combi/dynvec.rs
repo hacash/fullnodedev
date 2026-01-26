@@ -29,12 +29,13 @@ impl Eq for $class {}
 
 impl Parse for $class {
 
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+    fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
         let mut seek = 0;
         let count = *self.count as usize;
-        self.vlist = Vec::new();
+        self.vlist = Vec::with_capacity(count);
         for _ in 0..count {
-            let(obj, mvsk) = $parseobjfunc(&buf[seek..]) ?;
+            let(obj, mvsk) = $parseobjfunc(*buf) ?;
+            *buf = &(*buf)[mvsk..];
             seek += mvsk;
             self.vlist.push(obj);
         }
@@ -44,12 +45,10 @@ impl Parse for $class {
 
 impl Serialize for $class {
     
-    fn serialize(&self) -> Vec<u8> {
-        let mut bts = vec![];
+    fn serialize_to(&self, out: &mut Vec<u8>) {
         for v in &self.vlist {
-            bts.push(v.serialize());
+            v.serialize_to(out);
         }
-        bts.concat()
     }
 
     fn size(&self) -> usize {
@@ -130,9 +129,6 @@ fn test_create_838464857639363(_a:&[u8])->Ret<(Box<dyn Test78756388732645>, usiz
 combi_dynvec!{ Test294635492624,
     Uint1, Test78756388732645, test_create_838464857639363
 }
-
-
-
 
 
 

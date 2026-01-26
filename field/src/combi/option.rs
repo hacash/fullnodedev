@@ -43,12 +43,17 @@ macro_rules! combi_option {
 
         impl Serialize for $class {
 
-            fn serialize(&self) -> Vec<u8> {
-                let bts = match self {
-                    Self::Val1(v1) => (0u8, v1.serialize()),
-                    Self::Val2(v2) => (1u8, v2.serialize()),
+            fn serialize_to(&self, out: &mut Vec<u8>) {
+                match self {
+                    Self::Val1(v1) => {
+                        out.push(0u8);
+                        v1.serialize_to(out);
+                    },
+                    Self::Val2(v2) => {
+                        out.push(1u8);
+                        v2.serialize_to(out);
+                    },
                 };
-                vec![vec![bts.0], bts.1].concat()
             }
 
             fn size(&self) -> usize {

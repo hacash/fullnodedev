@@ -64,7 +64,7 @@ impl Balance {
 	}
 
 	pub fn asset_must(&self, seri: Fold64) -> AssetAmt {
-		self.asset(seri).unwrap_or(AssetAmt::new(seri))
+		self.asset(seri).unwrap_or(AssetAmt::from_serial(seri))
 	}
 
 	pub fn asset_set(&mut self, amt: AssetAmt) -> Rerr {

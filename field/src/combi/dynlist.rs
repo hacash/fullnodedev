@@ -43,12 +43,13 @@ impl Eq for $class {}
 
 impl Parse for $class {
 
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-        let mut seek = self.count.parse(buf) ?;
+    fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
+        let mut seek = self.count.parse_from(buf) ?;
         let count = *self.count as usize;
-        self.vlist = Vec::new();
+        self.vlist = Vec::with_capacity(count);
         for _ in 0..count {
-            let(obj, mvsk) = $createfn(&buf[seek..]) ?;
+            let(obj, mvsk) = $createfn(*buf) ?;
+            *buf = &(*buf)[mvsk..];
             seek += mvsk;
             self.vlist.push(obj);
         }
@@ -58,15 +59,11 @@ impl Parse for $class {
 
 impl Serialize for $class {
     
-    fn serialize(&self) -> Vec<u8> {
-        let mut bts = vec![];
-        let bt1 = self.count.serialize();
-        bts.push(bt1);
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        self.count.serialize_to(out);
         for i in 0 .. *self.count as usize {
-            let bt = self.vlist[i].as_ref().serialize();
-            bts.push(bt);
+            self.vlist[i].as_ref().serialize_to(out);
         }
-        bts.concat()
     }
 
     fn size(&self) -> usize {
@@ -155,9 +152,6 @@ fn test_create_823646394734(_a:&[u8])->Ret<(Box<dyn Test7354846353856>, usize)>{
 combi_dynlist!{ Test8364856695623,
     Uint1, Test7354846353856, test_create_823646394734
 }
-
-
-
 
 
 

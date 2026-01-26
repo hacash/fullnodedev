@@ -40,22 +40,22 @@ macro_rules! uint_define {
 
         impl Parse for $class {
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-                let mut bts = bufeat(buf, $size)?;
-                let pdn = $numlen - $size; // left zero
-                if pdn > 0 {
-                    bts = vec![ vec![0u8; pdn], bts ].concat();
-                }
-                self.value = <$vty>::from_be_bytes(bts.try_into().unwrap());
+                let bts = bufeat_ref(buf, $size)?;
+                let mut full = [0u8; $numlen];
+                let start = $numlen - $size;
+                full[start..].copy_from_slice(bts);
+                self.value = <$vty>::from_be_bytes(full);
                 Ok($size)
             }
         }
 
         impl Serialize for $class {
-            fn serialize(&self) -> Vec<u8> {
+            fn serialize_to(&self, out: &mut Vec<u8>) {
                 if self.value > Self::MAX {
                     never!() // fatal error!!!
                 }
-                self.to_bytes().to_vec()
+                let bts = self.to_bytes();
+                out.extend_from_slice(&bts);
             }
             fn size(&self) -> usize {
                 $size
@@ -256,6 +256,4 @@ mod uint_tests {
 
 
 }
-
-
 

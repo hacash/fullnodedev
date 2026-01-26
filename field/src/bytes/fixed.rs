@@ -63,15 +63,15 @@ macro_rules! fixed_define {
 
         impl Parse for $class {
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-                let bts = bufeat(buf, $size)?;
-                self.bytes = bts.try_into().unwrap();
+                let bts = bufeat_ref(buf, $size)?;
+                self.bytes.copy_from_slice(bts);
                 Ok($size)
             }
         }
 
         impl Serialize for $class {
-            fn serialize(&self) -> Vec<u8> {
-                self.to_vec()
+            fn serialize_to(&self, out: &mut Vec<u8>) {
+                out.extend_from_slice(&self.bytes);
             }
             fn size(&self) -> usize {
                 $size
@@ -219,4 +219,3 @@ impl Bool {
     }
 
 }
-
