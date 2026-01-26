@@ -58,13 +58,9 @@ impl Syntax {
                     id, args_len, num
                 )
             }
-            if args_len == 0 {
-                return Ok(Box::new(IRNodeParam1{
-                    hrtv: true, inst: Bytecode::NTCALL, para: idx, text: s!("")
-                }))
-            }
+            let subx = if Bytecode::NTCALL.metadata().input == 0 { push_empty() } else { argvs };
             return Ok(Box::new(IRNodeParam1Single{
-                hrtv: true, inst: Bytecode::NTCALL, para: idx, subx: argvs
+                hrtv: true, inst: Bytecode::NTCALL, para: idx, subx
             }))
         }
 
@@ -76,11 +72,8 @@ impl Syntax {
                     id, args_len, num
                 )
             }
-            if num == 0 {
-                return Ok(Box::new(IRNodeParam1{hrtv, inst, para, text: s!("")}))
-            } else {
-                return Ok(Box::new(IRNodeParam1Single{hrtv, inst, para, subx: argvres}))
-            }
+            let subx = if inst.metadata().input == 0 { push_empty() } else { argvres };
+            return Ok(Box::new(IRNodeParam1Single{hrtv, inst, para, subx}))
         }
 
         // not find

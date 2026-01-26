@@ -463,12 +463,11 @@ impl<'a> Formater<'a> {
                     return Some(format!("{}! {}", pre, substr));
                 }
                 _ => {
-                    let mut substr = self.print_inline(&*s.subx);
                     let meta = s.inst.metadata();
-                    if meta.input == 0 {
-                        substr = "".to_string(); // no argv
-                    }
-                    return Some(format!("{}{}({})", pre, meta.intro, substr));
+                    let argv = maybe!(meta.input == 0, s!(""), 
+                        self.print_inline(&*s.subx)
+                    );
+                    return Some(format!("{}{}({})", pre, meta.intro, argv));
                 }
             }
         }
@@ -545,10 +544,10 @@ impl<'a> Formater<'a> {
         use Bytecode::*;
         if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
             match single.inst {
-                CU8 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U8),
-                CU16 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U16),
-                CU32 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U32),
-                CU64 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U64),
+                CU8   => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U8),
+                CU16  => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U16),
+                CU32  => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U32),
+                CU64  => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U64),
                 CU128 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U128),
                 _ => {}
             }
@@ -756,15 +755,19 @@ impl<'a> Formater<'a> {
             }
             XOP => self.format_local_param(node, local_operand_param_parse),
             XLG => self.format_local_param(node, local_logic_param_parse),
+            EXTENV => self.format_extend_call(node, &CALL_EXTEND_ENV_DEFS),
             EXTFUNC => self.format_extend_call(node, &CALL_EXTEND_FUNC_DEFS),
             EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS),
             NTCALL => {
-                let args = self.build_call_args(&*node.subx, true);
                 let ntcall: NativeCall = std_mem_transmute!(node.para);
-                format!("{}({})", ntcall.name(), args)
+                let args = NativeCall::args_len(node.para);
+                let argv = maybe!(args==0, s!(""), 
+                    self.build_call_args(&*node.subx, true)
+                );
+                format!("{}({})", ntcall.name(), argv)
             }
             _ => {
-                let substr = self.print_sub(&*node.subx);
+                let substr = self.print_inline(&*node.subx);
                 format!("{}({}, {})", meta.intro, node.para, substr)
             }
         };
@@ -783,9 +786,14 @@ impl<'a> Formater<'a> {
         node: &IRNodeParam1Single,
         defs: &[(u8, &'static str, ValueTy, usize)],
     ) -> String {
-        let args = self.build_call_args(&*node.subx, true);
-        let f = search_ext_name_by_id(node.para, defs);
-        format!("{}({})", f, args)
+        let id = node.para;
+        let Some(f) = search_ext_by_id(id, defs) else {
+            return format!("/* unknown external call id: {} */ __unknown_ext_{}_()", id, id)
+        };
+        let argv = maybe!(f.3 == 0, s!(""),
+            self.build_call_args(&*node.subx, true)
+        );
+        format!("{}({})", f.1, argv)
     }
 
     fn format_local_param<F>(&self, node: &IRNodeParam1Single, parser: F) -> String
@@ -832,10 +840,6 @@ impl<'a> Formater<'a> {
         match node.inst {
             PU8 => buf.push_str(&format!("{}", node.para)),
             GET => buf.push_str(&self.slot_name_display(node.para)),
-            NTCALL => {
-                let ntcall: NativeCall = std_mem_transmute!(node.para);
-                buf.push_str(&format!("{}()", ntcall.name()));
-            }
             EXTENV => {
                 let ary = CALL_EXTEND_ENV_DEFS;
                 let f = search_ext_name_by_id(node.para, &ary);

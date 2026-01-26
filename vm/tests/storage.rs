@@ -40,7 +40,7 @@ mod storage {
             if 8 == size(total) {
                 tt_shares = total as u64
             }
-            var ctxadr = buf_left_drop(4, balance(context_address()))
+            var ctxadr = buf_left_drop(4, balance(tx_main_address()))
             bind tt_sat = buf_left(8, ctxadr) as u64
             bind tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
             storage_save(tt_k,   2000000)

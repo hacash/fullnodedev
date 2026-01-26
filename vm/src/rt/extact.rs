@@ -3,7 +3,7 @@ use protocol::action::*;
 use super::action::*;
 use ValueTy::*;
 
-pub type ExtDefTy = (u8, &'static str, ValueTy, usize);
+type ExtDefTy = (u8, &'static str, ValueTy, usize);
 
 const CALL_EXTEND_UNKNOWN_NAME: &'static str = "__unknown__";
 

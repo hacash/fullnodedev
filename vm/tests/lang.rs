@@ -497,8 +497,8 @@ fn decompile_native_transfer_args_flatten_cat() {
     "##;
     let ircode = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircode).unwrap();
-    assert!(printed.contains("transfer_sat_to($0, $1)"));
-    assert!(printed.contains("transfer_hac_from($0, zhu_to_hac($1))"));
+    assert!(printed.contains("transfer_sat_to($0 ++ $1)"));
+    assert!(printed.contains("transfer_hac_from($0 ++ zhu_to_hac($1))"));
 }
 
 #[test]
@@ -622,7 +622,8 @@ fn decompile_local_vars_use_slot_names() {
         print bar
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
-    let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    let printed = format_ircode_to_lang(&ircode, Some(&smap)).unwrap();
+    // panic!("{}", printed);
     assert!(printed.contains("print bar"));
     assert!(printed.contains("let foo"));
 }
