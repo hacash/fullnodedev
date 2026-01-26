@@ -40,10 +40,10 @@ impl Address {
     }}
     concat_idents::concat_idents!{ must_version = must_, $name {
     pub fn must_version(&self) -> Rerr {
-        match self.version() == Self::$key {
-            true => Ok(()),
-            false => errf!("address {} is not {} type", self.readable(), stringify!($key))
-        }
+        maybe!(self.version() == Self::$key,
+            Ok(()),
+            errf!("address {} is not {} type", self.readable(), stringify!($key))
+        )
     }
     }}
     concat_idents::concat_idents!{ creat_by_version = create_, $name {
@@ -194,10 +194,7 @@ impl AddrOrPtr {
                     return errf!("addr ptr index error")
                 }
                 let i = (ix - ADDR_OR_PTR_DIV_NUM) as usize;
-                match i < addrs.len() {
-                    true => Ok(addrs[i].clone()),
-                    false => errf!("addr ptr index overflow")
-                }
+                maybe!(i < addrs.len(), Ok(addrs[i].clone()), errf!("addr ptr index overflow"))
             },
         }
     }

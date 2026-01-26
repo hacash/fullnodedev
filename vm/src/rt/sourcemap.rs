@@ -95,9 +95,13 @@ impl SourceMap {
     pub fn register_slot(&mut self, slot: u8, name: String, kind: SlotKind) -> Rerr {
         self.slots.insert(slot, SlotInfo { name, kind });
         match kind {
-            SlotKind::Var | SlotKind::Let => {
+            SlotKind::Let => {
                 self.vars.remove(&slot);
                 self.lets.insert(slot);
+            }
+            SlotKind::Var => {
+                self.lets.remove(&slot);
+                self.vars.insert(slot);
             }
             SlotKind::Param => {}
         }

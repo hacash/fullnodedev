@@ -15,10 +15,7 @@ fn mrkl_merge(list: &Vec<Hash>) -> Vec<Hash> {
     let mut x = 0usize;
     loop {
         let lh = list[x].to_vec();
-        let rh = match x+1 < num {
-            true => list[x+1].to_vec(),
-            false => lh.clone(),
-        };
+        let rh = maybe!(x+1 < num, list[x+1].to_vec(), lh.clone());
         let hx = sys::calculate_hash(vec![lh, rh].concat());
         res.push(Hash::must(&hx));
         x += 2;

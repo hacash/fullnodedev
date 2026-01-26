@@ -51,30 +51,36 @@ impl Syntax {
         }
 
         // native call
-        if let Some(id) = pick_native_call(&id) {
-            let (_, argvs) = self.must_get_func_argv(ArgvMode::Concat)?;
+        if let Some((idx, args_len)) = pick_native_call(&id) {
+            let (num, argvs) = self.must_get_func_argv(ArgvMode::Concat)?;
+            if num != args_len {
+                return errf!("native call '{}' argv length must {} but got {}", 
+                    id, args_len, num
+                )
+            }
+            if args_len == 0 {
+                return Ok(Box::new(IRNodeParam1{
+                    hrtv: true, inst: Bytecode::NTCALL, para: idx, text: s!("")
+                }))
+            }
             return Ok(Box::new(IRNodeParam1Single{
-                hrtv: true, inst: Bytecode::NTCALL, para: id, subx: argvs
+                hrtv: true, inst: Bytecode::NTCALL, para: idx, subx: argvs
             }))
         }
 
         // extend action
-        if let Some((hrtv, argv, inst, para)) = pick_ext_func(&id) {
+        if let Some((hrtv, inst, para, args_len)) = pick_ext_func(&id) {
             let (num, argvres) = self.must_get_func_argv(ArgvMode::Concat)?;
-            return Ok(match argv {
-                false => {
-                    if num > 0 {
-                        return errf!("function '{}' cannot give argv", id)
-                    }
-                    Box::new(IRNodeParam1{hrtv, inst, para, text: s!("")})
-                },
-                true => {
-                    if num == 0 {
-                        return errf!("function '{}' must give argv", id)
-                    }
-                    Box::new(IRNodeParam1Single{hrtv, inst, para, subx: argvres})
-                },
-            })
+            if num != args_len {
+                 return errf!("extend function/action '{}' argv length must {} but got {}", 
+                    id, args_len, num
+                )
+            }
+            if num == 0 {
+                return Ok(Box::new(IRNodeParam1{hrtv, inst, para, text: s!("")}))
+            } else {
+                return Ok(Box::new(IRNodeParam1Single{hrtv, inst, para, subx: argvres}))
+            }
         }
 
         // not find
@@ -106,8 +112,10 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
             para = i16::from_be_bytes(n.para);
         } else if let Some(n) = ag.as_any().downcast_ref::<IRNodeLeaf>() {
             para = match n.inst {
-                P0 => 0,
-                P1 => 1,
+                P0 | GET0 => 0,
+                P1 | GET1 => 1,
+                P2 | GET2 => 2,
+                P3 | GET3 => 3,
                 _ => return e
             }
         }
@@ -157,8 +165,8 @@ fn pick_ir_func(id: &str) -> Option<(IrFn, Bytecode, usize, usize, usize)> {
 }
 
 
-fn pick_native_call(id: &str) -> Option<u8> {
-    NativeCall::from_name(id).map(|d|d.0) // only id
+fn pick_native_call(id: &str) -> Option<(u8, usize)> {
+    NativeCall::from_name(id).map(|d|(d.0, d.1)) // (id, argv_count)
 }
 
 
@@ -203,17 +211,17 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
 
 
 /*
-    return (hav_revt, hav_argv, code, )
+    return (hav_revt, code, para, args_len)
 */
-fn pick_ext_func(id: &str) -> Option<(bool, bool, Bytecode, u8)> {
+fn pick_ext_func(id: &str) -> Option<(bool, Bytecode, u8, usize)> {
     if let Some(x) = CALL_EXTEND_ENV_DEFS.iter().find(|f|f.1==id) {
-        return Some((true, false, Bytecode::EXTENV,  x.0))
+        return Some((true, Bytecode::EXTENV,  x.0, x.3))
     }
     if let Some(x) = CALL_EXTEND_FUNC_DEFS.iter().find(|f|f.1==id) {
-        return Some((true, true,  Bytecode::EXTFUNC, x.0))
+        return Some((true, Bytecode::EXTFUNC, x.0, x.3))
     }
     if let Some(x) = CALL_EXTEND_ACTION_DEFS.iter().find(|f|f.1==id) {
-        return Some((false, true,  Bytecode::EXTACTION, x.0))
+        return Some((false, Bytecode::EXTACTION, x.0, x.3))
     }
     None
 }

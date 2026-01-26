@@ -6,10 +6,7 @@ macro_rules! s {
 
 
 pub fn start_with_char(s: &str, c: char) -> bool {
-    match s.len() > 0 {
-        true => s.as_bytes()[0] == c as u8,
-        _ => false
-    }
+    maybe!(s.len() > 0, s.as_bytes()[0] == c as u8, false)
 }
 
 pub fn bytes_to_readable_string(bts: &[u8]) -> String {
@@ -47,10 +44,7 @@ pub fn bytes_try_to_readable_string(bts: &[u8]) -> Option<String> {
 
 
 pub fn bytes_to_readable_string_or_hex(bts: &[u8]) -> String {
-    match check_readable_string(bts) {
-        true => String::from_utf8(bts.to_vec()).ok().unwrap().to_string(),
-        false => hex::encode(bts),
-    }
+    maybe!(check_readable_string(bts), String::from_utf8(bts.to_vec()).ok().unwrap().to_string(), hex::encode(bts))
 }
 
 

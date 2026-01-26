@@ -88,16 +88,13 @@ macro_rules! q_body_data_may_hex {
         { 
             q_must!($q, hexbody, false);
             let bddt = $d.to_vec();
-            match hexbody {
-                false => bddt,
-                true => {
-                    let res = hex::decode(&bddt);
-                    if let Err(_) = res {
-                        return api_error("hex format error")
-                    }
-                    res.unwrap()
+            maybe!(hexbody, {
+                let res = hex::decode(&bddt);
+                if let Err(_) = res {
+                    return api_error("hex format error")
                 }
-            }
+                res.unwrap()
+            }, bddt)
         }
     )
 }

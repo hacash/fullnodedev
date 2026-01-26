@@ -29,18 +29,15 @@ macro_rules! combi_option {
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
                 let swt = Uint1::build(buf)?;
                 let buf = &buf[1..];
-                Ok(1 + match *swt == 0 {
-                    true => {
-                        let (v, sk) = <$t1>::create(buf)?;
-                        *self = Self::Val1( v );
-                        sk
-                    },
-                    false => {
-                        let (v, sk) = <$t2>::create(buf)?;
-                        *self = Self::Val2( v );
-                        sk
-                    }
-                })
+                Ok(1 + maybe!(*swt == 0, {
+                    let (v, sk) = <$t1>::create(buf)?;
+                    *self = Self::Val1( v );
+                    sk
+                }, {
+                    let (v, sk) = <$t2>::create(buf)?;
+                    *self = Self::Val2( v );
+                    sk
+                }))
             }
         }
 

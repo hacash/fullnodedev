@@ -272,10 +272,10 @@ async fn diamond_engrave(State(ctx): State<ApiCtx>, q: Query<Q5733>) -> impl Int
         Some(res)
     };
 
-    let tx_ary = match txposi >= 0 {
-        true => { let i=txposi as usize; &trs[1..][i..i+1] },
-        false => &trs[1..],
-    };
+    let tx_ary = maybe!(txposi >= 0,
+        { let i=txposi as usize; &trs[1..][i..i+1] },
+        &trs[1..]
+    );
 
     // ignore coinbase tx
     for tx in tx_ary {

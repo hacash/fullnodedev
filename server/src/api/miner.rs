@@ -52,10 +52,7 @@ fn get_miner_pending_block_stuff(is_detail: bool, is_transaction: bool, is_stuff
 
     macro_rules! hex_or_hase64 {
         ($v: expr) => {
-            match is_base64 {
-                true => $v.to_base64(),
-                false => $v.to_hex(),
-            }
+            maybe!(is_base64, $v.to_base64(), $v.to_hex())
         }
     }
 
@@ -114,10 +111,10 @@ fn miner_reset_next_new_block(engine: Arc<dyn Engine>, txpool: &dyn TxPool) {
     let block = engine.minter().packing_next_block(engine.as_read(), txpool);
     let block = *block.downcast::<BlockV1>().unwrap(); //
     let cbtx: Box<dyn Transaction> = block.transactions()[0].clone();
-    let cbtx: TransactionCoinbase = match cbtx.ty() == 0 {
-        true => TransactionCoinbase::must(&cbtx.serialize()),
-        false => never!(),
-    };
+    let cbtx: TransactionCoinbase = maybe!(cbtx.ty() == 0,
+        TransactionCoinbase::must(&cbtx.serialize()),
+        never!()
+    );
     update_miner_pending_block(block, cbtx);
 }
 

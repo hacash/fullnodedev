@@ -310,8 +310,8 @@ irfn_define!{
     HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
     HREADU     : 1, 0, 1,     heap_read_uint
-    HWRITEXL   : 2, 0, 1,     heap_write_xl
-    HWRITEX    : 1, 0, 1,     heap_write_x
+    HWRITEXL   : 2, 1, 0,     heap_write_xl
+    HWRITEX    : 1, 1, 0,     heap_write_x
     HREAD      : 0, 2, 1,     heap_read
     HWRITE     : 0, 2, 0,     heap_write
     HGROW      : 1, 0, 0,     heap_grow

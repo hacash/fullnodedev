@@ -275,11 +275,17 @@ pub fn execute_code(
             if Static == mode && !argv.is_empty() { 
                 return itr_err_code!(InstDisabled)
             }
-            if argv.is_empty() {
+            let argl = NativeCall::args_len(idx);
+            if argl > 0 {
                 argv = ops.peek()?.canbe_ext_call_data(heap)?;
             }
             let (r, g) = NativeCall::call(hei, idx, &argv)?;
-            *ops.peek()? = r; gas += g; 
+            if argl > 0 {
+                *ops.peek()? = r; 
+            } else {
+                ops.push(r)?;
+            }
+            gas += g; 
             Ok(())
         };
 

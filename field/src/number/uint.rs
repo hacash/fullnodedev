@@ -66,11 +66,10 @@ macro_rules! uint_define {
 
         impl $class {
 
-            pub const MAX: $vty = if $size == $numlen {
-                <$vty>::MAX
-            } else {
+            pub const MAX: $vty = maybe!($size == $numlen,
+                <$vty>::MAX,
                 ((1u128 << ($size * 8)) - 1) as $vty
-            };
+            );
             pub const SIZE: usize = $size as usize;
 
             pub fn zero_ref() -> &'static Self {

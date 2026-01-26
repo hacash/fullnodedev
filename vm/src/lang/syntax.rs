@@ -274,17 +274,23 @@ impl Syntax {
 
     pub fn link_local(&self, s: &String) -> Ret<Box<dyn IRNode>> {
         let text = s.clone();
-        match self.symbols.get(s) {
-            Some(SymbolEntry::Slot(i, _)) => Ok(push_local_get(*i, text)),
-            _ => return errf!("cannot find symbol '{}'", s),
+        if let Some(SymbolEntry::Slot(i, _)) = self.symbols.get(s) {
+            return Ok(push_local_get(*i, text));
         }
+        if let Some(idx) = Self::parse_slot_str(s) {
+            return Ok(push_local_get(idx, text));
+        }
+        errf!("cannot find symbol '{}'", s)
     }
 
     fn slot_info(&self, s: &String) -> Ret<(u8, bool)> {
-        match self.symbols.get(s) {
-            Some(SymbolEntry::Slot(idx, mutable)) => Ok((*idx, *mutable)),
-            _ => errf!("cannot find symbol '{}'", s),
+        if let Some(SymbolEntry::Slot(idx, mutable)) = self.symbols.get(s) {
+            return Ok((*idx, *mutable));
         }
+        if let Some(idx) = Self::parse_slot_str(s) {
+            return Ok((idx, true));
+        }
+        errf!("cannot find symbol '{}'", s)
     }
 
     pub fn link_bind(&self, s: &String) -> Ret<Box<dyn IRNode>> {
@@ -295,11 +301,10 @@ impl Syntax {
     }
 
     pub fn link_symbol(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
-        match self.symbols.get(s) {
-            Some(SymbolEntry::Bind(_)) => self.link_bind(s),
-            Some(SymbolEntry::Slot(_, _)) => self.link_local(s),
-            None => errf!("cannot find symbol '{}'", s),
+        if let Some(SymbolEntry::Bind(_)) = self.symbols.get(s) {
+            return self.link_bind(s);
         }
+        self.link_local(s)
     }
 
     pub fn save_local(&mut self, s: &String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
@@ -677,17 +682,14 @@ impl Syntax {
                     let fnsg = calc_func_sign(&func);
                     self.source_map.register_func(fnsg, func.clone())?;
                     let fnpm = self.deal_func_argv()?;
-                    return Ok(match &id=="self" {
-                        true => { // CALLINR
-                            let para: Vec<u8> = fnsg.to_vec(); // fnsig
-                            Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLINR, para, subx: fnpm})
-                        },
-                        false => { // CALL
-                            let libi = self.link_lib(&id)?;
-                            let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
-                            Box::new(IRNodeParamsSingle{hrtv: true, inst: CALL, para,  subx: fnpm})
-                        },
-                    })
+                    return Ok(maybe!(&id=="self", { // CALLINR
+                        let para: Vec<u8> = fnsg.to_vec(); // fnsig
+                        Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLINR, para, subx: fnpm})
+                    }, { // CALL
+                        let libi = self.link_lib(&id)?;
+                        let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
+                        Box::new(IRNodeParamsSingle{hrtv: true, inst: CALL, para,  subx: fnpm})
+                    }))
                 }else if Keyword(Colon) == *nxt || Keyword(DColon) == *nxt {
                     let is_static = Keyword(DColon) == *nxt;
                     nxt = next!();
@@ -766,7 +768,7 @@ impl Syntax {
                 OpTy::NOT => {
                     let expr = self.item_must(0)?;
                     expr.checkretval()?; // must retv
-                    Box::new(IRNodeSingle{hrtv: true, inst: NOT, subx: expr})
+                    push_single(NOT, expr)
                 }
                 _ => return errf!("operator {:?} cannot start expression", op)
             },
@@ -1068,11 +1070,11 @@ impl Syntax {
                 if !exp.hasretval() {
                     return errf!("print arguments must be expressions with return values; do not use bind/var declarations directly");
                 }
-                Box::new(IRNodeSingle{hrtv: false, inst: PRT, subx: exp})
+                push_single_noret(PRT, exp)
             },
-            Keyword(Assert) => Box::new(IRNodeSingle{hrtv: false, inst: AST, subx: self.item_must(0)?}),
-            Keyword(Throw)  => Box::new(IRNodeSingle{hrtv: false, inst: ERR, subx: self.item_must(0)?}),
-            Keyword(Return) => Box::new(IRNodeSingle{hrtv: false, inst: RET, subx: self.item_must(0)?}),
+            Keyword(Assert) => push_single_noret(AST, self.item_must(0)?),
+            Keyword(Throw)  => push_single_noret(ERR, self.item_must(0)?),
+            Keyword(Return) => push_single_noret(RET, self.item_must(0)?),
             _ => return errf!("unsupport token '{:?}'", nxt),
         };
         item = self.item_with_left(item)?;

@@ -51,21 +51,18 @@ async fn fee_raise(State(ctx): State<ApiCtx>, q: Query<Q5396>, body: Bytes) -> i
     let acc = q_data_acc!(q, fee_prikey);
 
     let txhxstr = &hash;
-    let bddts = match txhxstr.len() > 0 {
+    let bddts = maybe!(txhxstr.len() > 0, {
         // find from tx pool
-        true => {
-            let txhx = q_data_hash!(txhxstr);
-            let txf = ctx.hcshnd.txpool().find(&txhx);
-            let Some(tx) = txf else {
-                return api_error(&format!("cannot find tx by hash {} in tx pool", &txhxstr))
-            };
-            tx.data
-        },
+        let txhx = q_data_hash!(txhxstr);
+        let txf = ctx.hcshnd.txpool().find(&txhx);
+        let Some(tx) = txf else {
+            return api_error(&format!("cannot find tx by hash {} in tx pool", &txhxstr))
+        };
+        tx.data
+    }, {
         // tx body data
-        false => {
-            q_body_data_may_hex!(q, body).into()
-        }
-    };
+        q_body_data_may_hex!(q, body).into()
+    });
     
     // parse
     let txb = transaction::transaction_create(&bddts);

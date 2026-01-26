@@ -38,10 +38,10 @@ impl Roller {
             self.head = Arc::downgrade(&new_head); // update pointer
             mv_head = Some(new_head.clone());
             // root
-            let new_root_hei = match chunk_hei > self.unstable && old_root_hei < chunk_hei-self.unstable {
-                true => old_root_hei + 1,
-                false => 0, // first height
-            };
+            let new_root_hei = maybe!(chunk_hei > self.unstable && old_root_hei < chunk_hei-self.unstable,
+                old_root_hei + 1,
+                0 // first height
+            );
             if new_root_hei > old_root_hei { // set new root
                 let nrt = trace_upper_chunk(new_head, new_root_hei);
                 self.root = nrt.clone(); // update stat
@@ -97,10 +97,10 @@ fn insert_to_roller(roller: &mut Roller, parent: Arc<Chunk>, mut chunk: Chunk) -
         roller.head = Arc::downgrade(&new_chunk); // update pointer
         mv_curr = Some(new_chunk.clone());
         // root
-        let new_root_hei = match new_hei > roller.unstable && root_hei < new_hei-roller.unstable {
-            true => root_hei + 1,
-            false => 0, // first height
-        };
+        let new_root_hei = maybe!(new_hei > roller.unstable && root_hei < new_hei-roller.unstable,
+            root_hei + 1,
+            0 // first height
+        );
         if new_root_hei > root_hei { // set new root
             let nrt = trace_upper_chunk(new_chunk, new_root_hei, &mut tc_path);
             roller.root = nrt.clone(); // update stat

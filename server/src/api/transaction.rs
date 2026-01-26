@@ -31,43 +31,40 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
         return api_error("transaction body error")
     };
 
-    let (address, signobj) = match prikey.len() == 64 {
-        true => {
-            let Ok(prik) = hex::decode(&prikey) else {
-                return api_error("prikey format error")
-            };
-            let Ok(acc) = Account::create_by_secret_key_value(prik.try_into().unwrap()) else {
-                return api_error("prikey data error")
-            };
-            let fres = tx.fill_sign(&acc);
-            if let Err(e) = fres {
-                return api_error(&format!("fill sign error: {}", e))
-            }
-            (Address::from(*acc.address()), fres.unwrap())
-        },
-        false => {
-            // replace
-            if pubkey.len() != 33*2 || sigdts.len() != 64*2 {
-                return api_error("pubkey or signature data error")
-            }
-            let Ok(pbk) = hex::decode(&pubkey) else {
-                return api_error("pubkey format error")
-            };
-            let Ok(sig) = hex::decode(&sigdts) else {
-                return api_error("sigdts format error")
-            };
-            let pbk: [u8; 33] = pbk.try_into().unwrap();
-            let sig: [u8; 64] = sig.try_into().unwrap();
-            let signobj = Sign{
-                publickey: Fixed33::from( pbk ),
-                signature: Fixed64::from( sig ),
-            };
-            if let Err(e) = tx.push_sign(signobj.clone()) {
-                return api_error(&format!("fill sign error: {}", e))
-            }
-            (Address::from(Account::get_address_by_public_key(pbk)), signobj)
-        },
-    };
+    let (address, signobj) = maybe!(prikey.len() == 64, {
+        let Ok(prik) = hex::decode(&prikey) else {
+            return api_error("prikey format error")
+        };
+        let Ok(acc) = Account::create_by_secret_key_value(prik.try_into().unwrap()) else {
+            return api_error("prikey data error")
+        };
+        let fres = tx.fill_sign(&acc);
+        if let Err(e) = fres {
+            return api_error(&format!("fill sign error: {}", e))
+        }
+        (Address::from(*acc.address()), fres.unwrap())
+    }, {
+        // replace
+        if pubkey.len() != 33*2 || sigdts.len() != 64*2 {
+            return api_error("pubkey or signature data error")
+        }
+        let Ok(pbk) = hex::decode(&pubkey) else {
+            return api_error("pubkey format error")
+        };
+        let Ok(sig) = hex::decode(&sigdts) else {
+            return api_error("sigdts format error")
+        };
+        let pbk: [u8; 33] = pbk.try_into().unwrap();
+        let sig: [u8; 64] = sig.try_into().unwrap();
+        let signobj = Sign{
+            publickey: Fixed33::from( pbk ),
+            signature: Fixed64::from( sig ),
+        };
+        if let Err(e) = tx.push_sign(signobj.clone()) {
+            return api_error(&format!("fill sign error: {}", e))
+        }
+        (Address::from(Account::get_address_by_public_key(pbk)), signobj)
+    });
 
     // return info
     let mut data = render_tx_info(tx.as_read(), None, lasthei, &unit, true, signature, false, description);
@@ -214,10 +211,7 @@ async fn transaction_check(State(_ctx): State<ApiCtx>, q: Query<Q9764>, bodydata
     // sign_address
     if sign_address.len() > 0 {
         let addr = q_addr!(sign_address);
-        let sign_hash = match main_addr == addr {
-            true => tx.hash_with_fee(),
-            false => tx.hash(),
-        };
+        let sign_hash = maybe!(main_addr == addr, tx.hash_with_fee(), tx.hash());
         data.insert("sign_hash", json!(sign_hash.hex()));
     }
 

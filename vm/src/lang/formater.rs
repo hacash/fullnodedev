@@ -290,19 +290,20 @@ impl<'a> Formater<'a> {
         let prefix = self.line_prefix();
         if arr.inst == IRLIST {
             if let Some(elements) = self.extract_list_elements(arr.inst, &arr.subs) {
-                if self.opt.flatten_array_list {
-                    return Some(format!("{}[{}]", prefix, elements.join(", ")));
-                } else {
-                    let args = elements.join(", ");
-                    let mut buf = format!("{}list {{", prefix);
-                    if !args.is_empty() {
-                        buf.push(' ');
-                        buf.push_str(&args);
-                        buf.push(' ');
+                return Some(maybe!(self.opt.flatten_array_list,
+                    format!("{}[{}]", prefix, elements.join(", ")),
+                    {
+                        let args = elements.join(", ");
+                        let mut buf = format!("{}list {{", prefix);
+                        if !args.is_empty() {
+                            buf.push(' ');
+                            buf.push_str(&args);
+                            buf.push(' ');
+                        }
+                        buf.push('}');
+                        buf
                     }
-                    buf.push('}');
-                    return Some(buf);
-                }
+                ));
             }
             if let Some(pairs) = self.extract_map_elements(arr.inst, &arr.subs) {
                 let mut buf = format!("{}map {{", prefix);
@@ -380,11 +381,10 @@ impl<'a> Formater<'a> {
             _ => format!("{}({})", meta.intro, args),
         };
 
-        let short_body = if self.opt.call_short_syntax {
-            self.short_call_target(code, pss, &args)
-        } else {
+        let short_body = maybe!(self.opt.call_short_syntax,
+            self.short_call_target(code, pss, &args),
             None
-        };
+        );
 
         if let Some(short) = short_body {
             return Some(format!("{} /*{}*/ {}", pre, meta.intro, short));
@@ -417,23 +417,22 @@ impl<'a> Formater<'a> {
                         _ => unreachable!(),
                     });
                 }
-                CU8 | CU16 | CU32 | CU64 | CU128 | CBUF | RET | ERR | AST => {
+                CU8 | CU16 | CU32 | CU64 | CU128 | CBUF | RET | ERR | AST | PRT => {
                     let literal = self.literal_from_node(&*s.subx);
-                    let substr = if let Some(ref lit) = literal {
-                        lit.text.clone()
-                    } else {
+                    let substr = maybe!(literal.is_some(),
+                        literal.as_ref().unwrap().text.clone(),
                         self.print_inline(&*s.subx)
-                    };
-                    let operand = if s.subx.level() > 0 {
-                        let t = substr.trim();
-                        if t.starts_with('(') && t.ends_with(')') {
-                            substr.clone()
-                        } else {
-                            format!("({})", substr)
-                        }
-                    } else {
+                    );
+                    let operand = maybe!(s.subx.level() > 0,
+                        {
+                            let t = substr.trim();
+                            maybe!(t.starts_with('(') && t.ends_with(')') ,
+                                substr.clone(),
+                                format!("({})", substr)
+                            )
+                        },
                         substr.clone()
-                    };
+                    );
                     let target_ty = Self::cast_value_ty(s.inst);
                     let use_literal = literal
                         .as_ref()
@@ -443,45 +442,13 @@ impl<'a> Formater<'a> {
                         .map(|(lit_ty, target)| lit_ty == target)
                         .unwrap_or(false);
                     return Some(match s.inst {
-                        CU8 => {
-                            if use_literal {
-                                format!("{}{}", pre, substr.trim())
-                            } else {
-                                format!("{}{} as u8", pre, operand)
-                            }
-                        }
-                        CU16 => {
-                            if use_literal {
-                                format!("{}{}", pre, substr.trim())
-                            } else {
-                                format!("{}{} as u16", pre, operand)
-                            }
-                        }
-                        CU32 => {
-                            if use_literal {
-                                format!("{}{}", pre, substr.trim())
-                            } else {
-                                format!("{}{} as u32", pre, operand)
-                            }
-                        }
-                        CU64 => {
-                            if use_literal {
-                                format!("{}{}", pre, substr.trim())
-                            } else {
-                                format!("{}{} as u64", pre, operand)
-                            }
-                        }
-                        CU128 => {
-                            if use_literal {
-                                format!("{}{}", pre, substr.trim())
-                            } else {
-                                format!("{}{} as u128", pre, operand)
-                            }
-                        }
-                        CBUF => {
-                            format!("{}{} as bytes", pre, operand)
-                        }
-                        RET | ERR | AST => {
+                        CU8   => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u8",   operand))),
+                        CU16  => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u16",  operand))),
+                        CU32  => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u32",  operand))),
+                        CU64  => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u64",  operand))),
+                        CU128 => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u128", operand))),
+                        CBUF =>  format!("{}{} as bytes", pre, operand),
+                        RET | ERR | AST | PRT => {
                             let meta = s.inst.metadata();
                             format!("{}{} {}", pre, meta.intro, substr)
                         }
@@ -495,17 +462,14 @@ impl<'a> Formater<'a> {
                     }
                     return Some(format!("{}! {}", pre, substr));
                 }
-                PRT => {
-                    let substr = self.print_inline(&*s.subx);
+                _ => {
+                    let mut substr = self.print_inline(&*s.subx);
                     let meta = s.inst.metadata();
-                    return Some(format!("{}{} {}", pre, meta.intro, substr));
-                }
-                MGET => {
-                    let substr = self.print_inline(&*s.subx);
-                    let meta = s.inst.metadata();
+                    if meta.input == 0 {
+                        substr = "".to_string(); // no argv
+                    }
                     return Some(format!("{}{}({})", pre, meta.intro, substr));
                 }
-                _ => {}
             }
         }
         if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
@@ -522,11 +486,10 @@ impl<'a> Formater<'a> {
             if d.inst == IRWHILE {
                 let subxstr = self.print_inline(&*d.subx);
                 let subystr = self.print_inner(&*d.suby);
-                let body = if subystr.trim().starts_with('{') {
-                    subystr.trim().to_owned()
-                } else {
+                let body = maybe!(subystr.trim().starts_with('{'),
+                    subystr.trim().to_owned(),
                     format!("{{ {} }}", subystr.trim())
-                };
+                );
                 return Some(format!(
                     "{}while {} {}",
                     self.line_prefix(),
@@ -539,11 +502,10 @@ impl<'a> Formater<'a> {
             if t.inst == IRIF || t.inst == IRIFR {
                 let subxstr = self.print_inline(&*t.subx);
                 let subystr = self.print_inner(&*t.suby);
-                let body = if subystr.trim().starts_with('{') {
-                    subystr.trim().to_owned()
-                } else {
+                let body = maybe!(subystr.trim().starts_with('{'),
+                    subystr.trim().to_owned(),
                     format!("{{ {} }}", subystr.trim())
-                };
+                );
                 let mut buf = format!(
                     "{}if {} {}",
                     self.line_prefix(),
@@ -552,11 +514,10 @@ impl<'a> Formater<'a> {
                 );
                 if t.subz.bytecode() != Bytecode::NOP as u8 {
                     let subzstr = self.print_inner(&*t.subz);
-                    let elsebody = if subzstr.trim().starts_with('{') || subzstr.trim().starts_with("if ") {
-                        subzstr.trim().to_owned()
-                    } else {
+                    let elsebody = maybe!(subzstr.trim().starts_with('{') || subzstr.trim().starts_with("if "),
+                        subzstr.trim().to_owned(),
                         format!("{{ {} }}", subzstr.trim())
-                    };
+                    );
                     buf.push_str(&format!(" else {}", elsebody));
                 }
                 return Some(buf);
@@ -675,11 +636,7 @@ impl<'a> Formater<'a> {
         target: ValueTy,
     ) -> Option<RecoveredLiteral> {
         self.numeric_literal_from(node, target).and_then(|lit| {
-            if lit.ty == Some(target) {
-                Some(lit)
-            } else {
-                None
-            }
+            maybe!(lit.ty == Some(target), Some(lit), None)
         })
     }
 
@@ -783,26 +740,24 @@ impl<'a> Formater<'a> {
             PUT => {
                 let substr = self.print_inline(&*node.subx);
                 let is_first = self.opt.mark_slot_put(node.para);
-                let target = if is_first {
-                    let prefix = if self.opt.map.map(|m| m.slot_is_var(node.para)).unwrap_or(false) {
-                        "var"
-                    } else if self.opt.map.map(|m| m.slot_is_let(node.para)).unwrap_or(false) {
-                        "let"
-                    } else {
-                        "var"
-                    };
-                    let name = self.slot_name_display(node.para);
-                    let slot_id_str = format!("${}", node.para);
-                    format!("{} {} {}", prefix, name, slot_id_str)
-                } else {
+                let target = maybe!(is_first,
+                    {
+                        let prefix = maybe!(self.opt.map.map(|m| m.slot_is_var(node.para)).unwrap_or(false),
+                            "var",
+                            maybe!(self.opt.map.map(|m| m.slot_is_let(node.para)).unwrap_or(false), "let", "var")
+                        );
+                        let name = self.slot_name_display(node.para);
+                        let slot_id_str = format!("${}", node.para);
+                        format!("{} {} {}", prefix, name, slot_id_str)
+                    },
                     self.slot_name_display(node.para)
-                };
+                );
                 format!("{} = {}", target, substr)
             }
             XOP => self.format_local_param(node, local_operand_param_parse),
             XLG => self.format_local_param(node, local_logic_param_parse),
-            EXTFUNC => self.format_extend_call(node, &CALL_EXTEND_FUNC_DEFS, true),
-            EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS, false),
+            EXTFUNC => self.format_extend_call(node, &CALL_EXTEND_FUNC_DEFS),
+            EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS),
             NTCALL => {
                 let args = self.build_call_args(&*node.subx, true);
                 let ntcall: NativeCall = std_mem_transmute!(node.para);
@@ -816,17 +771,19 @@ impl<'a> Formater<'a> {
         format!("{}{}", pre, body)
     }
 
+    fn print_param2_single(&self, node: &IRNodeParam2Single) -> String {
+        let pre = self.opt.indent.repeat(self.opt.tab);
+        let meta = node.inst.metadata();
+        let substr = self.print_sub(&*node.subx);
+        format!("{}{}({}, {}, {})", pre, meta.intro, node.para[0], node.para[1], substr)
+    }
+
     fn format_extend_call(
         &self,
         node: &IRNodeParam1Single,
-        defs: &[(u8, &'static str, ValueTy)],
-        inline_arg: bool,
+        defs: &[(u8, &'static str, ValueTy, usize)],
     ) -> String {
-        let args = if inline_arg {
-            self.print_inline(&*node.subx)
-        } else {
-            self.build_call_args(&*node.subx, false)
-        };
+        let args = self.build_call_args(&*node.subx, true);
         let f = search_ext_name_by_id(node.para, defs);
         format!("{}({})", f, args)
     }
@@ -874,7 +831,11 @@ impl<'a> Formater<'a> {
         let meta = node.inst.metadata();
         match node.inst {
             PU8 => buf.push_str(&format!("{}", node.para)),
-            GET => buf.push_str(&format!("${}", node.para)),
+            GET => buf.push_str(&self.slot_name_display(node.para)),
+            NTCALL => {
+                let ntcall: NativeCall = std_mem_transmute!(node.para);
+                buf.push_str(&format!("{}()", ntcall.name()));
+            }
             EXTENV => {
                 let ary = CALL_EXTEND_ENV_DEFS;
                 let f = search_ext_name_by_id(node.para, &ary);
@@ -894,8 +855,7 @@ impl<'a> Formater<'a> {
         match node.inst {
             PU16 => buf.push_str(&format!("{}", u16::from_be_bytes(node.para))),
             _ => {
-                let para = hex::encode(node.para);
-                buf.push_str(&format!("{}(0x{})", meta.intro, para));
+                buf.push_str(&format!("{}({}, {})", meta.intro, node.para[0], node.para[1]));
             }
         };
         buf
@@ -995,6 +955,9 @@ impl<'a> Formater<'a> {
         if let Some(pss) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
             return self.print_param1_single(pss);
         }
+        if let Some(pss) = node.as_any().downcast_ref::<IRNodeParam2Single>() {
+            return self.print_param2_single(pss);
+        }
         if let Some(line) = self.format_memory_put(node) {
             return line;
         }
@@ -1003,11 +966,10 @@ impl<'a> Formater<'a> {
         }
         let code: Bytecode = std_mem_transmute!(node.bytecode());
         if code == Bytecode::NEWLIST {
-            if self.opt.flatten_array_list {
-                return format!("{}[]", self.line_prefix());
-            } else {
-                return format!("{}list {{}}", self.line_prefix());
-            }
+            return maybe!(self.opt.flatten_array_list,
+                format!("{}[]", self.line_prefix()),
+                format!("{}list {{}}", self.line_prefix())
+            );
         }
         if code == Bytecode::NEWMAP {
             return format!("{}map {{}}", self.line_prefix());

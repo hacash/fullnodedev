@@ -3,7 +3,7 @@ use protocol::action::*;
 use super::action::*;
 use ValueTy::*;
 
-type ExtDefTy = (u8, &'static str, ValueTy);
+pub type ExtDefTy = (u8, &'static str, ValueTy, usize);
 
 const CALL_EXTEND_UNKNOWN_NAME: &'static str = "__unknown__";
 
@@ -12,22 +12,22 @@ const CALL_EXTEND_UNKNOWN_NAME: &'static str = "__unknown__";
 
 
 pub const CALL_EXTEND_ACTION_DEFS: [ExtDefTy; 4] = [
-    (HacToTrs::IDX,   "transfer_hac_to",      Nil),
-    (SatToTrs::IDX,   "transfer_sat_to",      Nil),
-    (HacFromTrs::IDX, "transfer_hac_from",    Nil),
-    (SatFromTrs::IDX, "transfer_sat_from",    Nil),
+    (HacToTrs::IDX,   "transfer_hac_to",      Nil,      2),
+    (SatToTrs::IDX,   "transfer_sat_to",      Nil,      2),
+    (HacFromTrs::IDX, "transfer_hac_from",    Nil,      2),
+    (SatFromTrs::IDX, "transfer_sat_from",    Nil,      2),
 ];
 
 
 pub const CALL_EXTEND_ENV_DEFS: [ExtDefTy; 2] = [
-    (EnvHeight::IDX,   "block_height",             U64),
-    (EnvMainAddr::IDX, "tx_main_address", ValueTy::Address),
+    (EnvHeight::IDX,   "block_height",             U64,  0),
+    (EnvMainAddr::IDX, "tx_main_address", ValueTy::Address,  0),
 ];
 
 
 pub const CALL_EXTEND_FUNC_DEFS: [ExtDefTy; 2] = [
-    (FuncCheckSign::IDX, "check_signature",         Bool),
-    (FuncBalance::IDX,   "balance",                 Bytes),
+    (FuncCheckSign::IDX, "check_signature",         Bool,  1),
+    (FuncBalance::IDX,   "balance",                 Bytes, 1),
 ];
 
 

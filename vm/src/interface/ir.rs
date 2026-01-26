@@ -11,14 +11,11 @@ pub trait IRNode : DynClone {
     fn subs(&self) -> usize { 0 }
     fn level(&self) -> u8 { 0 }
     fn checkretval(&self) -> Rerr {
-        match self.hasretval() {
-            true => Ok(()),
-            false => {
-                let c: Bytecode = std_mem_transmute!( self.bytecode() );
-                let n = c.metadata().intro;
-                errf!("ir build error: Inst {:?} ({}) not have return value", c, n)
-            }
-        }
+        maybe!(self.hasretval(), Ok(()), {
+            let c: Bytecode = std_mem_transmute!( self.bytecode() );
+            let n = c.metadata().intro;
+            errf!("ir build error: Inst {:?} ({}) not have return value", c, n)
+        })
     }
     fn print(&self) -> String {
         let c: Bytecode = std_mem_transmute!(self.bytecode());

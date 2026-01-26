@@ -30,10 +30,10 @@ pub fn local_logic_param_parse(mark: u8) -> (String, u8) {
 
 
 pub fn ascii_show_string(s: &[u8]) -> Option<String> {
-    match s.iter().any(|&a|a!=10&&(a<32||a>126)) {
-        false => Some(String::from_utf8(s.to_vec()).unwrap()),
-        true => None,
-    }
+    maybe!(s.iter().any(|&a|a!=10&&(a<32||a>126)),
+        None,
+        Some(String::from_utf8(s.to_vec()).unwrap())
+    )
 }
 
 

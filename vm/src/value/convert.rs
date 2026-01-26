@@ -71,18 +71,12 @@ impl Value {
 
     pub fn ___checked_bytes(&self) -> VmrtRes<Vec<u8>> {
         let canto = self.is_bytes() || self.is_addr() || self.is_uint();
-        match canto {
-            true => Ok(self.raw()),
-            _ => itr_err_fmt!(CastParamFail, "cannot cast {:?} to buf", self)
-        }
+        maybe!(canto, Ok(self.raw()), itr_err_fmt!(CastParamFail, "cannot cast {:?} to buf", self))
     }
 
     pub fn checked_bool(&self) -> VmrtRes<bool> {
         let canto = self.is_nil() || self.is_uint() || self.is_bytes();
-        match canto {
-            true => Ok(self.to_bool()),
-            _ => itr_err_fmt!(CastParamFail, "cannot cast {:?} to bool", self)
-        }
+        maybe!(canto, Ok(self.to_bool()), itr_err_fmt!(CastParamFail, "cannot cast {:?} to bool", self))
     }
 
     pub fn checked_bool_not(&self) -> VmrtRes<bool> {

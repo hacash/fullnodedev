@@ -87,10 +87,7 @@ macro_rules! combi_optional {
             
             // clone
             pub fn value(&self) -> $vty {
-                match self.exist.check() {
-                    true => self.$item.as_ref().unwrap().clone(),
-                    false => <$vty>::default(),
-                }
+                maybe!(self.exist.check(), self.$item.as_ref().unwrap().clone(), <$vty>::default())
             }
             
 

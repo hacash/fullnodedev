@@ -27,6 +27,14 @@ pub fn push_inst(inst: Bytecode) -> Box<dyn IRNode> {
     Box::new(IRNodeLeaf::notext(true, inst))
 }
 
+pub fn push_single(inst: Bytecode, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
+    Box::new(IRNodeSingle{inst, hrtv: true, subx})
+}
+
+pub fn push_single_noret(inst: Bytecode, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
+    Box::new(IRNodeSingle{inst, hrtv: false, subx})
+}
+
 pub fn push_num(n: u128) -> Box<dyn IRNode> {
     use Bytecode::*;
     macro_rules! push_uint {
@@ -92,12 +100,8 @@ pub fn push_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
         return errf!("bytes data too long");
     }
     let isl = bl > u8::MAX as usize;
-    let inst = if isl { PBUFL } else { PBUF };
-    let size = if isl {
-        (bl as u16).to_be_bytes().to_vec()
-    } else {
-        vec![bl as u8]
-    };
+    let inst = maybe!(isl, PBUFL, PBUF);
+    let size = maybe!(isl, (bl as u16).to_be_bytes().to_vec(), vec![bl as u8]);
     let para = std::iter::empty().chain(size).chain(b.clone()).collect::<Vec<_>>();
     Ok(Box::new(IRNodeParams {
         hrtv: true,

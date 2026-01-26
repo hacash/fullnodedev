@@ -113,10 +113,7 @@ macro_rules! fixed_define {
                self.to_readable().trim().to_owned()
             }
             fn to_readable_or_hex(&self) -> String {
-                match check_readable_string(&self.bytes) {
-                    true => self.to_readable(),
-                    false => self.to_hex(),
-                }
+                maybe!(check_readable_string(&self.bytes), self.to_readable(), self.to_hex())
             }
         }
 

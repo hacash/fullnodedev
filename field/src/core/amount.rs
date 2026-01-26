@@ -249,10 +249,7 @@ impl Amount {
                 ret_amtfmte!{"unsupported characters", String::from(a)}
             }
         }
-        match v.contains(":") {
-            true  => Self::from_fin(v),
-            false => Self::from_mei(v),
-        } 
+        maybe!(v.contains(":"), Self::from_fin(v), Self::from_mei(v))
     }
 
     fn from_fin(v: String) -> Ret<Self> {
@@ -297,7 +294,7 @@ impl Amount {
             ret_amtfmte!{"value", v}
         }
         let int_part = parts[0];
-        let frac_part = if parts.len() == 2 { parts[1] } else { "" };
+        let frac_part = maybe!(parts.len() == 2, parts[1], "");
         if int_part.is_empty() && frac_part.is_empty() {
             ret_amtfmte!{"value", v}
         }
@@ -387,10 +384,7 @@ impl Amount {
 
 
     pub fn sign(&self) -> String {
-        match self.dist < 0 {
-            true => "-",
-            false => "",
-        }.to_string()
+        maybe!(self.dist < 0, "-", "").to_string()
     }
 
     pub fn to_string(&self) -> String {
@@ -405,13 +399,13 @@ impl Amount {
 
     pub fn to_string_part(&self) -> (String, String, String) {
         let blen = self.tail_len();
-        let s2 = match blen > U128S {
-            true => BigInt::from_bytes_be(Plus, &self.byte).to_string(),
-            false => match blen > U64S {
-                true => u128::from_be_bytes(add_left_padding(&self.byte, U128S).try_into().unwrap()).to_string(),
-                false => u64::from_be_bytes(add_left_padding(&self.byte,  U64S).try_into().unwrap()).to_string(),
-            }
-        };
+        let s2 = maybe!(blen > U128S, 
+            BigInt::from_bytes_be(Plus, &self.byte).to_string(),
+            maybe!(blen > U64S,
+                u128::from_be_bytes(add_left_padding(&self.byte, U128S).try_into().unwrap()).to_string(),
+                u64::from_be_bytes(add_left_padding(&self.byte,  U64S).try_into().unwrap()).to_string()
+            )
+        );
         (self.sign(), s2, self.unit.to_string())
     }
 
@@ -419,10 +413,7 @@ impl Amount {
         if self.is_zero() {
             return 0u64.into();
         }
-        let sig = match self.dist > 0 { // sign
-            true => Plus,
-            false => Minus,
-        };
+        let sig = maybe!(self.dist > 0, Plus, Minus); // sign
         let bignum = BigInt::from_bytes_be(sig, &self.byte[..]);
         let base: BigInt = 10u64.into();
         let powv = base.pow(self.unit as u32);
@@ -454,10 +445,7 @@ impl Amount {
                 _ => 0,
             }
         }
-        match unit > 0 {
-            true => unsafe { self.to_unit_float(unit).to_string() },
-            false => self.to_fin_string(),
-        }
+        maybe!(unit > 0, unsafe { self.to_unit_float(unit).to_string() }, self.to_fin_string())
     }
 
 }
@@ -508,24 +496,18 @@ impl Amount {
             return 0f64
         }
         let chax = (base_unit as i64 - (self.unit as i64)).abs();
-        let tv = match self.tail_len() <= U128S {
-            true => self.tail_u128().unwrap() as f64, // u128
-            false => match BigInt::from_bytes_be(Plus, &self.byte[..]).to_f64() {
+        let tv = maybe!(self.tail_len() <= U128S,
+            self.tail_u128().unwrap() as f64, // u128
+            match BigInt::from_bytes_be(Plus, &self.byte[..]).to_f64() {
                 Some(v) => v,
                 None => return f64::NAN,
-            },
-        };
+            }
+        );
         // by f64
         let base = 10f64.powf(chax as f64);
-        let resv = match self.unit > base_unit {
-            true => tv * base,
-            false => tv / base,
-        };
+        let resv = maybe!(self.unit > base_unit, tv * base, tv / base);
         // sign
-        return match self.dist > 0 {
-            true => resv,
-            false => resv * -1f64,
-        }
+        return maybe!(self.dist > 0, resv, resv * -1f64);
 
     }
 

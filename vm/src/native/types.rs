@@ -7,7 +7,7 @@
 
 
 macro_rules! native_call_define {
-    ( $( $name:ident = $v:expr, $gas:expr, $rty: expr)+ ) => {
+    ( $( $name:ident = $v:expr, $args:expr, $gas:expr, $rty: expr)+ ) => {
         
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -51,13 +51,22 @@ impl NativeCall {
         }
     }
 
-    pub fn from_name(name: &str) -> Option<(u8, NativeCall)> {
+    pub fn from_name(name: &str) -> Option<(u8, usize, NativeCall)> {
         Some(match name {
             $(
-                stringify!($name) => (Self::$name as u8, Self::$name),
+                stringify!($name) => (Self::$name as u8, $args, Self::$name),
             )+
             _ => return None
         })
+    }
+
+    pub fn args_len(idx: u8) -> usize {
+        match idx {
+            $(
+                $v => $args,
+            )+
+            _ => 1,
+        }
     }
 
 

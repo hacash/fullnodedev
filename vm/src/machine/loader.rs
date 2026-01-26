@@ -32,7 +32,7 @@ impl Resoure {
         let mut visited = std::collections::HashSet::new();
         let res = self.load_fn_by_search_inherits_rec(vmsta, addr, &fnkey, &mut visiting, &mut visited)?;
         Ok(res.map(|(owner, func)| {
-            let change = if &owner == addr { None } else { Some(owner) };
+            let change = maybe!(&owner == addr, None, Some(owner));
             (change, func)
         }))
     }

@@ -255,10 +255,10 @@ fn do_diamond_group_mining(number: u32, prevblockhash: &Hash,
     let empthbytes = [0u8; 0];
     let prevhash: &[u8; HASH_WIDTH] = prevblockhash;
     let address: &[u8; 21] = rwdaddr;
-    let custom_nonce: &[u8] = match number > DIAMOND_ABOVE_NUMBER_OF_CREATE_BY_CUSTOM_MESSAGE {
-        true => custom_message.as_bytes(),
-        false => &empthbytes,
-    };
+    let custom_nonce: &[u8] = maybe!(number > DIAMOND_ABOVE_NUMBER_OF_CREATE_BY_CUSTOM_MESSAGE,
+        custom_message.as_bytes(),
+        &empthbytes
+    );
     let mut most = DiamondMiningResult {
         number,
         nonce_start,

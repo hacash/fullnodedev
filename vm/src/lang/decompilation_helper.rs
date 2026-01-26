@@ -51,6 +51,13 @@ impl<'a> DecompilationHelper<'a> {
                 None => 0,
             };
             if let Some(line) = self.build_param_line(arr, param_idx) {
+                if let Some(map) = self.opt.map {
+                    if let Some(names) = map.param_names() {
+                        for i in 0..names.len() as u8 {
+                            self.opt.mark_slot_put(i);
+                        }
+                    }
+                }
                 return (param_idx + 1, Some(line));
             }
         }
@@ -71,8 +78,15 @@ impl<'a> DecompilationHelper<'a> {
         }
         let map = self.opt.map?;
         let names = map.param_names()?;
-        let double = arr.subs[start_idx].as_any().downcast_ref::<IRNodeDouble>()?;
-        if double.inst != UPLIST {
+        let node = &arr.subs[start_idx];
+        let is_param_unpack = if let Some(double) = node.as_any().downcast_ref::<IRNodeDouble>() {
+            double.inst == UPLIST
+        } else if let Some(pss) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
+            pss.inst == PUT && pss.para == 0
+        } else {
+            false
+        };
+        if !is_param_unpack {
             return None;
         }
         let indent = self.opt.indent.repeat(self.opt.tab);

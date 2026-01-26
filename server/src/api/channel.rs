@@ -49,10 +49,7 @@ async fn channel(State(ctx): State<ApiCtx>, q: Query<Q7542>) -> impl IntoRespons
     // if status == 1 // closed  status == 2 || status == 3 
     if let Some(challenging) = channel.if_challenging.if_value() {
         let l_or_r = challenging.assert_address_is_left_or_right.check();
-        let assaddr = match l_or_r {
-            true => channel.left_bill.address.readable(),
-            false => channel.right_bill.address.readable(),
-        };
+        let assaddr = maybe!(l_or_r, channel.left_bill.address.readable(), channel.right_bill.address.readable());
         data.insert("challenging", json!(jsondata!{
             "launch_height", *challenging.challenge_launch_height,
             "assert_bill_auto_number", *challenging.assert_bill_auto_number,
