@@ -954,21 +954,6 @@ impl Syntax {
                 }
                 self.build_packlist_node(subs)?
             }
-            Keyword(List) => {
-                // let e = errf!("list format error");
-                let block = self.item_may_block(false)?;
-                let num = block.subs.len();
-                match num {
-                    0 => push_inst(NEWLIST),
-                    _ => {
-                        let mut subs = block.subs;
-                        subs.push(push_num(num as u128));
-                        subs.push(push_inst(PACKLIST));
-                        let arys = IRNodeArray::from_vec(subs, Bytecode::IRLIST)?; // changed
-                        Box::new(arys)
-                    }
-                }
-            }
             Keyword(Map) => {
                 let e = errf!("map format error");
                 nxt = next!();

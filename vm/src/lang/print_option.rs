@@ -17,6 +17,7 @@ pub struct PrintOption<'a> {
     pub flatten_call_packlist: bool,
     pub flatten_array_packlist: bool,
     pub flatten_syscall_cat: bool,
+    pub recover_literals: bool,
     allocated: Rc<RefCell<PrintHashSet<u8>>>,
 }
 
@@ -34,6 +35,7 @@ impl<'a> PrintOption<'a> {
             flatten_call_packlist: false,
             flatten_array_packlist: false,
             flatten_syscall_cat: false,
+            recover_literals: false,
             allocated: Rc::new(RefCell::new(PrintHashSet::new())),
         }
     }

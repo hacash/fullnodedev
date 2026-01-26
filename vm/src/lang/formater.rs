@@ -5,6 +5,42 @@ pub struct Formater<'a> {
     opt: PrintOption<'a>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LiteralKind {
+    Numeric,
+    Text,
+    Address,
+}
+
+#[derive(Clone)]
+struct RecoveredLiteral {
+    text: String,
+    kind: LiteralKind,
+}
+
+impl RecoveredLiteral {
+    fn numeric<S: Into<String>>(value: S) -> Self {
+        Self {
+            text: value.into(),
+            kind: LiteralKind::Numeric,
+        }
+    }
+
+    fn text<S: Into<String>>(value: S) -> Self {
+        Self {
+            text: value.into(),
+            kind: LiteralKind::Text,
+        }
+    }
+
+    fn address<S: Into<String>>(value: S) -> Self {
+        Self {
+            text: value.into(),
+            kind: LiteralKind::Address,
+        }
+    }
+}
+
 impl<'a> Formater<'a> {
     pub fn new(opt: &PrintOption<'a>) -> Self {
         Self { opt: opt.clone() }
@@ -242,6 +278,15 @@ impl<'a> Formater<'a> {
                     return Some(buf);
                 }
             }
+            if let Some(last) = arr.subs.last() {
+                let code: Bytecode = std_mem_transmute!(last.bytecode());
+                if matches!(code, LOG1 | LOG2 | LOG3 | LOG4) {
+                    let args: Vec<String> = arr.subs[0..arr.subs.len()-1].iter()
+                        .map(|s| self.print_inline(&**s))
+                        .collect();
+                    return Some(format!("{}log({})", prefix, args.join(", ")));
+                }
+            }
         }
         let mut buf = helper.block_prefix(arr);
         if helper.should_trim_root_block(arr) {
@@ -334,7 +379,12 @@ impl<'a> Formater<'a> {
                     });
                 }
                 CU8 | CU16 | CU32 | CU64 | CU128 | RET | ERR | AST => {
-                    let substr = self.print_inline(&*s.subx);
+                    let literal = self.literal_from_node(&*s.subx);
+                    let substr = if let Some(ref lit) = literal {
+                        lit.text.clone()
+                    } else {
+                        self.print_inline(&*s.subx)
+                    };
                     let operand = if s.subx.level() > 0 {
                         let t = substr.trim();
                         if t.starts_with('(') && t.ends_with(')') {
@@ -345,12 +395,46 @@ impl<'a> Formater<'a> {
                     } else {
                         substr.clone()
                     };
+                    let use_literal = literal
+                        .as_ref()
+                        .map(|lit| lit.kind == LiteralKind::Numeric)
+                        .unwrap_or(false);
                     return Some(match s.inst {
-                        CU8 => format!("{}{} as u8", pre, operand),
-                        CU16 => format!("{}{} as u16", pre, operand),
-                        CU32 => format!("{}{} as u32", pre, operand),
-                        CU64 => format!("{}{} as u64", pre, operand),
-                        CU128 => format!("{}{} as u128", pre, operand),
+                        CU8 => {
+                            if use_literal {
+                                format!("{}{}", pre, substr.trim())
+                            } else {
+                                format!("{}{} as u8", pre, operand)
+                            }
+                        }
+                        CU16 => {
+                            if use_literal {
+                                format!("{}{}", pre, substr.trim())
+                            } else {
+                                format!("{}{} as u16", pre, operand)
+                            }
+                        }
+                        CU32 => {
+                            if use_literal {
+                                format!("{}{}", pre, substr.trim())
+                            } else {
+                                format!("{}{} as u32", pre, operand)
+                            }
+                        }
+                        CU64 => {
+                            if use_literal {
+                                format!("{}{}", pre, substr.trim())
+                            } else {
+                                format!("{}{} as u64", pre, operand)
+                            }
+                        }
+                        CU128 => {
+                            if use_literal {
+                                format!("{}{}", pre, substr.trim())
+                            } else {
+                                format!("{}{} as u128", pre, operand)
+                            }
+                        }
                         RET | ERR | AST => {
                             let meta = s.inst.metadata();
                             format!("{}{} {}", pre, meta.intro, substr)
@@ -389,6 +473,16 @@ impl<'a> Formater<'a> {
                     subystr
                 ));
             }
+            if d.inst == IRWHILE {
+                let subxstr = self.print_inline(&*d.subx);
+                let subystr = self.print_newline(&*d.suby);
+                return Some(format!(
+                    "{}while {} {{{}}}",
+                    self.line_prefix(),
+                    subxstr,
+                    subystr
+                ));
+            }
         }
         if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
             if t.inst == IRIF || t.inst == IRIFR {
@@ -408,6 +502,110 @@ impl<'a> Formater<'a> {
             }
         }
         None
+    }
+
+    fn literal_from_node(&self, node: &dyn IRNode) -> Option<RecoveredLiteral> {
+        if !self.opt.recover_literals {
+            return None;
+        }
+        use Bytecode::*;
+        if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
+            let literal = match leaf.inst {
+                P0 => "0",
+                P1 => "1",
+                P2 => "2",
+                P3 => "3",
+                _ => return None,
+            };
+            return Some(RecoveredLiteral::numeric(literal));
+        }
+        if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
+            if param1.inst == PU8 {
+                return Some(RecoveredLiteral::numeric(param1.para.to_string()));
+            }
+        }
+        if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
+            if param2.inst == PU16 {
+                return Some(RecoveredLiteral::numeric(
+                    u16::from_be_bytes(param2.para).to_string(),
+                ));
+            }
+        }
+        if let Some(params) = node.as_any().downcast_ref::<IRNodeParams>() {
+            if let Some(bytes) = self.params_to_bytes(params) {
+                if let Some(literal) = self.decode_bytes_literal(bytes) {
+                    return Some(literal);
+                }
+                if let Some(value) = self.bytes_to_u128(bytes) {
+                    return Some(RecoveredLiteral::numeric(value.to_string()));
+                }
+            }
+        }
+        if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
+            if single.inst == CTO && single.para == ValueTy::Address as u8 {
+                return self.literal_from_node(&*single.subx);
+            }
+        }
+        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
+            if single.inst == CBUF {
+                return self.literal_from_node(&*single.subx);
+            }
+        }
+        None
+    }
+
+    fn decode_bytes_literal(&self, data: &[u8]) -> Option<RecoveredLiteral> {
+        if let Some(text) = self.ascii_show_string(data) {
+            return Some(RecoveredLiteral::text(format!(
+                "\"{}\"",
+                self.literals(text)
+            )));
+        }
+        if data.len() == FieldAddress::SIZE {
+            let addr = FieldAddress::must_vec(data.to_vec());
+            if addr.check_version().is_ok() {
+                return Some(RecoveredLiteral::address(addr.readable()));
+            }
+        }
+        None
+    }
+
+    fn params_to_bytes<'b>(&self, params: &'b IRNodeParams) -> Option<&'b [u8]> {
+        use Bytecode::*;
+        let header_len = match params.inst {
+            PBUF => 1,
+            PBUFL => 2,
+            _ => return None,
+        };
+        if params.para.len() < header_len {
+            return None;
+        }
+        let data_len = match header_len {
+            1 => params.para[0] as usize,
+            2 => {
+                let hi = params.para[0];
+                let lo = params.para[1];
+                u16::from_be_bytes([hi, lo]) as usize
+            }
+            _ => unreachable!(),
+        };
+        let start = header_len;
+        let end = start + data_len;
+        if params.para.len() < end {
+            return None;
+        }
+        Some(&params.para[start..end])
+    }
+
+    fn bytes_to_u128(&self, data: &[u8]) -> Option<u128> {
+        if data.len() > 16 {
+            return None;
+        }
+        let mut value = 0u128;
+        for &b in data {
+            value = (value << 8) | b as u128;
+        }
+        Some(value)
     }
 
     fn resolve_type_check_name(&self, ty: u8) -> Option<&'static str> {
@@ -577,19 +775,13 @@ impl<'a> Formater<'a> {
     }
 
     fn format_data_bytes(&self, node: &IRNodeParams) -> String {
-        use Bytecode::*;
-        let l = if node.inst == PBUF { 1usize } else { 2usize };
-        let data = node.para[l..].to_vec();
-        if let Some(s) = self.ascii_show_string(&data) {
-            return format!("\"{}\"", self.literals(s));
-        }
-        if data.len() == FieldAddress::SIZE {
-            let addr = FieldAddress::must_vec(data.clone());
-            if addr.check_version().is_ok() {
-                return addr.readable();
+        if let Some(data) = self.params_to_bytes(node) {
+            if let Some(literal) = self.decode_bytes_literal(data) {
+                return literal.text;
             }
+            return format!("0x{}", hex::encode(data));
         }
-        format!("0x{}", hex::encode(&data))
+        format!("0x{}", hex::encode(&node.para))
     }
 
     fn format_params(&self, node: &IRNodeParams) -> String {
@@ -693,6 +885,9 @@ impl<'a> Formater<'a> {
     }
     /// Inline printing (equivalent to `print_sub_inline`).
     pub fn print_inline(&self, node: &dyn IRNode) -> String {
+        if let Some(literal) = self.literal_from_node(node) {
+            return literal.text;
+        }
         let inline = self.with_tab(0);
         let substr = inline.print(node);
         if substr.contains('\n') {

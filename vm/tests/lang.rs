@@ -4,11 +4,11 @@
 // use vm::ir::IRCodePrint;
 // use vm::lang::{Tokenizer, Syntax};
 
-use vm::IRNode;
-use vm::PrintOption;
 use vm::ir::*;
 use vm::lang::*;
 use vm::rt::*;
+use vm::IRNode;
+use vm::PrintOption;
 
 #[test]
 fn t1() {
@@ -498,6 +498,16 @@ fn decompile_native_transfer_args_flatten_cat() {
     let printed = ircode_to_lang(&ircode).unwrap();
     assert!(printed.contains("transfer_sat_to($0, $1)"));
     assert!(printed.contains("transfer_hac_from($0, zhu_to_hac($1))"));
+}
+
+#[test]
+fn format_ircode_rehydrates_numeric_literal() {
+    let script = r##"
+        print 70000 as u32
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(formatted.contains("70000 as u32"));
 }
 
 #[test]

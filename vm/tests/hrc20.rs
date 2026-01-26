@@ -45,7 +45,7 @@ mod hrc20 {
                     .public()
                     .fitsh(
                         r##"
-            var ary1 = list[1, 2, 3, 4]
+            var ary1 = [1, 2, 3, 4]
             var inf2 = map{
                 "symbol":  "THT",
                 "name":    "Test HRC20 Token",
