@@ -1,0 +1,13 @@
+[package]
+name = "chainew"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+sys            = {path = "../sys"}
+field          = {path = "../field"}
+basis          = {path = "../basis"}
+protocol       = {path = "../protocol"}
+hex = "0.4.3"
+dyn-clone = "1.0.17"

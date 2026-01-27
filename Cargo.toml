@@ -13,6 +13,7 @@ db             = {path = "./db", default-features = false}
 protocol       = {path = "./protocol"}
 vm             = {path = "./vm", optional = true }
 chain          = {path = "./chain"}
+chainew        = {path = "./chainew"}
 mint           = {path = "./mint"}
 server         = {path = "./server"}
 node           = {path = "./node"}
