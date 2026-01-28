@@ -6,7 +6,7 @@ impl Engine for ChainEngine {
         let _isrtlock = inserting_lock(self, ISRT_STAT_DISCOVER,
             "the blockchain is syncing and cannot insert newly discovered block"
         )?;
-        // let _lk = self.isrtlk.lock().unwrap();
+        let _lk = self.syncing.lock().unwrap();
         let mut tree = self.tree.write().unwrap();
         let rid = insert_by(self, tree.deref_mut(), blk)?;
         let became_head = rid.head_change.is_some();
@@ -27,19 +27,20 @@ impl Engine for ChainEngine {
     }
 
     fn synchronize(&self, datas: Vec<u8>) -> Rerr {
+        let _lk = self.syncing.lock().unwrap();
         synchronize(self, datas.into(), BlkOrigin::Sync)
     }
 
     fn exit(&self) { 
-        print!("Engine ::  fn exit(&self) start");
-        let _lk = self.rebuilding.lock().unwrap();
-        print!("Engine ::  fn exit(&self) end");
+        let _lk = self.syncing.lock().unwrap();
         self.minter.exit();
         self.scaner.exit();
+        println!("[Engine] exit.");
     }
 }
 
 impl EngineRead for ChainEngine {
+
     fn config(&self) -> &EngineConf { &self.cnf }
 
     fn latest_block(&self) -> Arc<dyn Block> {

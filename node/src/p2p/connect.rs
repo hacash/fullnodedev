@@ -4,7 +4,7 @@ impl P2PManage {
 
     pub async fn connect_boot_nodes(&self) -> Rerr {
 
-        print!("[P2P] Connect {} boot nodes", self.cnf.boot_nodes.len());
+        print!("[P2P] connect {} boot nodes", self.cnf.boot_nodes.len());
         for ndip in &self.cnf.boot_nodes {
             print!(", {}", &ndip);
         }
@@ -15,7 +15,7 @@ impl P2PManage {
         for addr in &self.cnf.boot_nodes {
             // println!("&&&& connect_boot_nodes addr {} ...", addr);
             if let Err(e) = self.connect_node(*addr).await {
-                println!("[P2P Error] Connect to {}, {}", &addr, e);
+                println!("[P2P Error] connect to {}, {}", &addr, e);
             }
             // println!("&&&& connect_boot_nodes addr {} ok.", addr);
         }

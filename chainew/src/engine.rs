@@ -12,7 +12,7 @@ pub struct ChainEngine {
     pub(crate) logs: Arc<BlockLogs>,
     pub(crate) disk: Arc<dyn DiskDB>,
     pub(crate) tree: RwLock<Roller>,
-    pub(crate) rebuilding: Mutex<()>,
+    pub(crate) syncing: Mutex<()>,
     pub(crate) inserting: AtomicUsize,
     // Caches
     pub(crate) recent_blocks: Mutex<VecDeque<Arc<RecentBlockInfo>>>,
@@ -67,7 +67,7 @@ impl ChainEngine {
                 blogs.clone(), 
                 cnf.unstable_block
             )),
-            rebuilding: ().into(),
+            syncing: ().into(),
             inserting: AtomicUsize::new(0),
             recent_blocks: Mutex::new(VecDeque::new()),
             avgfees: Mutex::new(VecDeque::new()),

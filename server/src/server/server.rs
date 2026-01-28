@@ -50,12 +50,12 @@ async fn server_listen(ser: &HttpServer, worker: Worker) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = TcpListener::bind(addr).await;
     if let Err(ref e) = listener {
-        println!("\n[Error] Api Server bind port {} error: {}\n", port, e);
+        println!("\n[Error] api server bind port {} error: {}\n", port, e);
         worker.end();
         return
     }
     let listener = listener.unwrap();
-    println!("[Http Api Server] Listening on http://{addr}");
+    println!("[Api Server] listening on http://{addr}");
     /* let app = route(ApiCtx::new(
         ser.engine.clone(),
         ser.hcshnd.clone(),
@@ -69,7 +69,7 @@ async fn server_listen(ser: &HttpServer, worker: Worker) {
         .await {
         println!("{e}");
     }
-    println!("[Http Server] serve end.");
+    println!("[Server] serve exit.");
     worker.end();
 }
 

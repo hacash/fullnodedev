@@ -47,7 +47,7 @@ pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
         panic!("");
     }
 
-    println!("[Diamond Auto Bidding] Start with account {} min fee {} and max fee {}.",
+    println!("[Diamond Auto Bidding] start with account {} min fee {} and max fee {}.",
         &cnf.dmer_bid_account.readable(), &bidmin, &bidmax
     );
     

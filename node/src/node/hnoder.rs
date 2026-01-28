@@ -59,6 +59,8 @@ impl HNoder for HacashNode {
     fn exit(&self) {
         self.msghdl.exit();
         self.p2p.exit();
+        self.engine.exit();
+        println!("[Node] network exit.");
         // wait something to finish
         // std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
     }

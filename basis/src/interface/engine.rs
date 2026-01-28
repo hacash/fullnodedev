@@ -1,6 +1,5 @@
 
 pub trait EngineRead: Send + Sync {
-    
     fn config(&self) -> &EngineConf { never!() }
 
     fn state(&self) -> Arc<Box<dyn State>> { never!() }

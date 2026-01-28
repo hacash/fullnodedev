@@ -23,7 +23,7 @@ impl MsgHandler {
                 }
             }
         }
-        println!("[MsgHandler] loop end.");
+        println!("[P2P] handler loop end.");
         worker.end();
     }
 }

@@ -42,7 +42,7 @@ async fn do_insert_new_nodes(this: &P2PManage, mearest_addrs: Vec<SocketAddr>, f
 
 
 async fn do_find_nodes(this: &P2PManage) {
-    print!("[P2P] Searching nodes...");
+    print!("[P2P] searching nodes...");
     let mut allfindnodes = HashMap::<PeerKey, SocketAddr>::new();
     // search form backbone nodes
     let mut willdropeds = vec![ this.cnf.node_key.clone() ];

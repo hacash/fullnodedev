@@ -52,6 +52,7 @@ impl Server for NilServer {}
 
 #[allow(dead_code)]
 pub struct Builder {
+    pub exiter: Exiter,
     cnfini: IniObj,
     datdir: PathBuf,
     engcnf: Arc<EngineConf>,
@@ -75,7 +76,13 @@ impl Builder {
         let engcnf = Arc::new(EngineConf::new(&cnfini, HACASH_STATE_DB_UPDT));
         let nodcnf = Arc::new(NodeConf::new(&cnfini));
         let build_nil_db: FnDBCreater = |_|Box::new(NilKVDB{});
+        let exiter = Exiter::new();
+        let exitdo = exiter.clone();
+        let _ = ctrlc::set_handler(move||{
+            exitdo.exit();
+        });
         Self {
+            exiter,
             cnfini,
             datdir,
             engcnf,
@@ -160,11 +167,7 @@ impl Builder {
 
 fn run_fullnode(builder: Builder) {
 
-    let exiter = Exiter::new();
-    let exitdo = exiter.clone();
-    let _ = ctrlc::set_handler(move||{
-        exitdo.exit();
-    });
+    let exiter = builder.exiter.clone();
 
     // unpack
     // let _txpool = builder.txpool.clone();
@@ -175,6 +178,7 @@ fn run_fullnode(builder: Builder) {
     let scanr1 = builder.scaner.clone();
     let scanr2 = builder.scaner.clone();
     let hnoder = builder.hnoder.clone();
+    let hnode2 = builder.hnoder.clone();
 
     // start server
     let wkr1 = exiter.worker();
@@ -196,9 +200,9 @@ fn run_fullnode(builder: Builder) {
         let hnoder = builder.hnoder.clone();
         spawn(move||{ app(wkr, hnoder) });
     }
-
     // start all and wait them exit
     exiter.wait();
+    hnode2.exit();
     println!("[Exit] Hacash fullnode closed.");
 
 }

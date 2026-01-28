@@ -29,7 +29,7 @@ impl HacashNode {
         if is_multi_thread {
             imtip = " with multi thread."
         }
-        println!("[P2P] Start and listening on {}{}", self.cnf.listen, imtip);
+        println!("[P2P] start and listening on {}{}", self.cnf.listen, imtip);
         let _ = new_tokio_rt(is_multi_thread).block_on(async move {
             P2PManage::start(p2p, worker).await
         });

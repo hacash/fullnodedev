@@ -1,5 +1,8 @@
 
 pub fn initialize(engine: &ChainEngine, state_db: Arc<dyn DiskDB>, no_sta_dir: bool) {
+      
+    let _lk = engine.syncing.lock().unwrap();
+
     // store
     let store = engine.store.as_ref();
     let status = store.status();
@@ -64,8 +67,6 @@ fn rebuild_all_blocks(engine: &ChainEngine) {
     }
     println!("[Database] scan all {} blocks to upgrade state db version, plase waiting...", finish_height);
     const STUFFCAP: usize = 20*1000*1000; // 20 mb
-
-    let _lk = engine.rebuilding.lock().unwrap();
 
     std::thread::scope(|s| {
         let chsize = engine.cnf.unstable_block as usize;

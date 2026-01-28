@@ -45,13 +45,13 @@ pub fn load_config(mut cnfilestr: String) -> IniObj {
     // check exists
     if ! cnf_file.exists() {
         // error
-        println!("[Config Error] Cannot find config file {}", cnfilestr);
+        println!("[Config Error] cannot find config file {}", cnfilestr);
         return IniObj::new()
     }
 
     cnfilestr = cnf_file.canonicalize().unwrap().to_str().unwrap().to_string();
     // println!("{:?} {:?}", args, exedir);
-    println!("[Config] Load: {} {}.", cnfilestr, ctshow());
+    println!("[Config] load: {} {}.", cnfilestr, ctshow());
     
     // load file
     ini::ini!(&cnfilestr)

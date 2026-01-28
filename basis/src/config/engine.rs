@@ -113,7 +113,7 @@ impl EngineConf {
             let lfepr = ini_must_amount(sec_server, "lowest_fee").compress(2, AmtCpr::Grow)
                 .unwrap().to_238_u64().unwrap() / 166; //  =6024, simple hac trs size
             cnf.lowest_fee_purity = lfepr;
-            println!("[Config] Node accepted lowest fee purity {}.", lfepr);
+            println!("[Config] node accepted lowest fee purity {}.", lfepr);
         }
 
         let sec = &ini_section(ini, "node");
