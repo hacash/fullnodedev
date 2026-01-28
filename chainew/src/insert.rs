@@ -69,24 +69,24 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
 pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     let InsertResult { root_change, head_change, hash, block, old_root_height } = rid;
     let mut batch = MemKV::new();
-    let is_sync    = block.orgi == BlkOrigin::Sync;
+    let is_sync     = block.orgi == BlkOrigin::Sync;
     let not_rebuild = block.orgi != BlkOrigin::Rebuild;
     if not_rebuild {
     // put block datas
         batch.put(hash.to_vec(), block.copy_data());
     }
 
-    if let Some(new_head) = head_change.clone() {
-        let real_root_hei: u64 = match root_change.clone() {
+    if let Some(new_head) = &head_change {
+        let real_root_hei: u64 = match &root_change {
             Some(rt) => rt.height,
-            None => old_root_height,
+            _ => old_root_height,
         };
         if not_rebuild {
             batch.put(BlockStore::CSK.to_vec(), ChainStatus{
                 root_height: BlockHeight::from(real_root_hei),
                 last_height: BlockHeight::from(new_head.height),
             }.serialize());
-            let mut skchk = new_head;
+            let mut skchk = new_head.clone();
             let mut skhei = BlockHeight::from(skchk.height);
             if is_sync {
                 batch.put(skhei.to_vec(), skchk.hash.to_vec());

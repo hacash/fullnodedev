@@ -25,8 +25,9 @@ impl Engine for ChainEngine {
     }
 
     fn exit(&self) { 
+        print!("Engine ::  fn exit(&self) start");
         let _lk = self.rebuilding.lock().unwrap();
-        print!("Engine ::  fn exit(&self)");
+        print!("Engine ::  fn exit(&self) end");
         self.minter.exit();
         self.scaner.exit();
     }
