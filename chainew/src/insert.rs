@@ -89,11 +89,23 @@ pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     let mut batch = MemKV::new();
     let is_sync     = block.orgi == BlkOrigin::Sync;
     let not_rebuild = block.orgi != BlkOrigin::Rebuild;
-    if not_rebuild {
-    // put block datas
+    if not_rebuild { // put block datas
         batch.put(hash.to_vec(), block.copy_data());
     }
-
+    // if change root
+    if let Some(new_root) = &root_change {
+        // Commit state/logs only after store batch is durable.
+        // This avoids: state advanced but CSK/block data not persisted (crash between insert_by and roll_by).
+        new_root.state.write_to_disk();
+        if is_open_vmlog(eng, new_root.logs.height()) {
+            new_root.logs.write_to_disk();
+        }
+        eng.scaner.roll(new_root.block.clone(), new_root.state.clone(), eng.disk.clone());
+        // Keep the old root alive until after state/logs are committed.
+        // See InsertResult::old_root_hold comment for the rationale.
+        let _old_root_hold = old_root_hold;
+    }
+    // if change head
     if let Some(new_head) = &head_change {
         let real_root_hei: u64 = match &root_change {
             Some(rt) => rt.height,
@@ -123,20 +135,6 @@ pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     // println!("roll_by eng.store.save_batch = {}", batch.len());
     if not_rebuild {
         eng.store.save_batch(&batch);
-    }
-    // println!("eng.store.save_batch ok");
-    if let Some(new_root) = root_change {
-        // Commit state/logs only after store batch is durable.
-        // This avoids: state advanced but CSK/block data not persisted (crash between insert_by and roll_by).
-        new_root.state.write_to_disk();
-        if is_open_vmlog(eng, new_root.logs.height()) {
-            new_root.logs.write_to_disk();
-        }
-        eng.scaner.roll(new_root.block.clone(), new_root.state.clone(), eng.disk.clone());
-
-        // Keep the old root alive until after state/logs are committed.
-        // See InsertResult::old_root_hold comment for the rationale.
-        let _old_root_hold = old_root_hold;
     }
     Ok(())
 }

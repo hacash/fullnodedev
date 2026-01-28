@@ -7,6 +7,7 @@ dist/
 *.loc/
 
 chainv*/
+node2/
 
 fullnode
 poworker
