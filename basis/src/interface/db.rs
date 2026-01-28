@@ -2,6 +2,7 @@
 
 pub trait MemDB : Send + Sync {
     fn new() -> Self where Self: Sized { never!() }
+    fn len(&self) -> usize { 0 }
     fn del(&mut self, _: Vec<u8>) {}
     fn put(&mut self, _: Vec<u8>, _: Vec<u8>) {}
     fn get(&self, _: &Vec<u8>) -> Option<&Option<Vec<u8>>> { None }

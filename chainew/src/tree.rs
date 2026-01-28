@@ -3,7 +3,7 @@ pub struct Roller {
     pub level: u64,
     pub root: Arc<Chunk>,
     pub head: Arc<Chunk>,
-    pub tree: HashMap<Hash, Arc<Chunk>>,
+    // pub tree: HashMap<Hash, Arc<Chunk>>,
 }
 
 impl Roller {
@@ -15,19 +15,19 @@ impl Roller {
         level: u64
     ) -> Self {
         let root = Arc::new(Chunk::new(root_blk, root_sta, root_log, None));
-        let mut tree = HashMap::new();
-        tree.insert(root.hash.clone(), root.clone());
+        // let mut tree = HashMap::new();
+        // tree.insert(root.hash.clone(), root.clone());
         Self {
             level,
             head: root.clone(),
             root,
-            tree,
+            // tree,
         }
     }
 
     pub fn insert(&mut self, parent: &Arc<Chunk>, child: Arc<Chunk>) -> (Option<Arc<Chunk>>, Option<Arc<Chunk>>) {
-        self.tree.insert(child.hash.clone(), child.clone());
-        parent.children.write().unwrap().push(child.clone());
+        // self.tree.insert(child.hash.clone(), child.clone());
+        parent.append(child.clone());
         let mut head_change: Option<Arc<Chunk>> = None;
         let mut root_change: Option<Arc<Chunk>> = None;
         // if change head
@@ -41,7 +41,7 @@ impl Roller {
                     panic!("cannot trace root height {}", new_root_height)
                 };
                 self.root = new_root.clone();
-                self.rebuild_index_from_root();
+                // self.rebuild_tree_from_root();
                 root_change = Some(new_root);
             }
         }
@@ -51,8 +51,18 @@ impl Roller {
     pub fn quick_find(&self, hash: &Hash) -> Option<Arc<Chunk>> {
         if self.head.hash == *hash {
             return Some(self.head.clone())
+        }        
+        let mut stack = vec![self.root.clone()];
+        while let Some(node) = stack.pop() {
+            if node.hash == *hash {
+                return Some(node);
+            }
+            let childs = node.childs.read().unwrap();
+            for child in childs.iter() {
+                stack.push(child.clone());
+            }
         }
-        self.tree.get(hash).cloned()
+        None
     }
 
 
@@ -61,18 +71,20 @@ impl Roller {
 
 impl Roller {
 
-    fn rebuild_index_from_root(&mut self) {
+    /*
+    fn rebuild_tree_from_root(&mut self) {
         let mut ntree = HashMap::new();
         let mut stack = vec![self.root.clone()];
         while let Some(node) = stack.pop() {
             ntree.insert(node.hash.clone(), node.clone());
-            let children = node.children.read().unwrap();
-            for child in children.iter() {
+            let childs = node.childs.read().unwrap();
+            for child in childs.iter() {
                 stack.push(child.clone());
             }
         }
         self.tree = ntree;
     }
+    */
 
 
     fn trace_parent(mut seek: Arc<Chunk>, parent_hei: u64) -> Option<Arc<Chunk>> {

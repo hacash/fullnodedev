@@ -13,6 +13,16 @@ pub fn load_block(store: &dyn Store, hx: &Hash) -> Option<(Vec<u8>, Box<dyn Bloc
     
 
 
+pub fn load_block_data_by_height(store: &dyn Store, hei: &BlockHeight) -> Option<Vec<u8>> {
+	let Some(hx) = store.block_hash(hei) else {
+		return None
+	};	
+	let Some(data) = store.block_data(&hx) else {
+		return None
+	};
+	Some(data)
+}
+
 pub fn load_block_by_height(store: &dyn Store, hei: &BlockHeight) -> Option<(Hash, Vec<u8>, Box<dyn Block>)> {
 	let Some(hx) = store.block_hash(hei) else {
 		return None

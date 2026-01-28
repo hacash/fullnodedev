@@ -169,7 +169,7 @@ fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_heigh
     }
     
     // raise fee
-    let mut my_tx = my_bid_txp.into();
+    let mut my_tx = my_bid_txp.objc;
     my_tx.set_fee(new_bid_fee.clone());
     let _ = my_tx.fill_sign(&engcnf.dmer_bid_account);
     let txp = TxPkg::create(my_tx);

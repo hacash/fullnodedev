@@ -5,7 +5,7 @@ pub struct InsertResult {
     pub root_change: Option<Arc<Chunk>>,
     pub head_change: Option<Arc<Chunk>>,
     pub hash: Hash,
-    pub data: Vec<u8>,
+    pub block: BlkPkg,
     pub old_root_height: u64,
 }
 
@@ -28,7 +28,7 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
     }
 
     if !fast_sync {
-        if parent.children.read().unwrap().iter().any(|c| c.hash == hash) {
+        if parent.childs.read().unwrap().iter().any(|c| c.hash == hash) {
             return errf!("repetitive block <{}, {}>", height, hash);
         }
         let parent_blk = parent.block.as_read();
@@ -57,44 +57,58 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
         eng.minter.blk_insert(&blk, new_state.as_ref(), prev_state.as_ref().as_ref())?;
     }
 
-    let (hash, objc, data) = blk.apart();
-    let item = Arc::new(Chunk::new(objc.into(), Arc::new(new_state), new_logs.into(), Some(&parent)));
+    let item = Arc::new(Chunk::new(blk.objc.clone(), Arc::new(new_state), new_logs.into(), Some(&parent)));
     let (root_change, head_change) = tree.insert(&parent, item);
-
-    Ok(InsertResult { root_change, head_change, hash, data, old_root_height })
+    if let Some(new_root) = &root_change {
+        new_root.state.write_to_disk();
+    }
+    Ok(InsertResult { root_change, head_change, hash, block: blk, old_root_height })
 }
 
 
 pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
-    let InsertResult { root_change, head_change, hash, data, old_root_height } = rid;
+    let InsertResult { root_change, head_change, hash, block, old_root_height } = rid;
     let mut batch = MemKV::new();
-    batch.put(hash.to_vec(), data);
+    let is_sync    = block.orgi == BlkOrigin::Sync;
+    let not_rebuild = block.orgi != BlkOrigin::Rebuild;
+    if not_rebuild {
+    // put block datas
+        batch.put(hash.to_vec(), block.copy_data());
+    }
 
     if let Some(new_head) = head_change.clone() {
         let real_root_hei: u64 = match root_change.clone() {
             Some(rt) => rt.height,
             None => old_root_height,
         };
-        batch.put(BlockStore::CSK.to_vec(), ChainStatus{
-            root_height: BlockHeight::from(real_root_hei),
-            last_height: BlockHeight::from(new_head.height),
-        }.serialize());
-        let mut skchk = new_head;
-        let mut skhei = BlockHeight::from(skchk.height);
-        for _ in 0..eng.cnf.unstable_block + 1 {
-            batch.put(skhei.to_vec(), skchk.hash.to_vec());
-            skchk = match skchk.parent.upgrade() {
-                Some(h) => h,
-                _ => break,
-            };
-            skhei -= 1;
+        if not_rebuild {
+            batch.put(BlockStore::CSK.to_vec(), ChainStatus{
+                root_height: BlockHeight::from(real_root_hei),
+                last_height: BlockHeight::from(new_head.height),
+            }.serialize());
+            let mut skchk = new_head;
+            let mut skhei = BlockHeight::from(skchk.height);
+            if is_sync {
+                batch.put(skhei.to_vec(), skchk.hash.to_vec());
+            } else {
+                for _ in 0..eng.cnf.unstable_block + 1 {
+                    batch.put(skhei.to_vec(), skchk.hash.to_vec());
+                    skchk = match skchk.parent.upgrade() {
+                        Some(h) => h,
+                        _ => break,
+                    };
+                    skhei -= 1;
+                }
+            }
         }
     }
-
-    eng.store.save_batch(&batch);
-
+    // println!("roll_by eng.store.save_batch = {}", batch.len());
+    if not_rebuild {
+        eng.store.save_batch(&batch);
+    }
+    // println!("eng.store.save_batch ok");
     if let Some(new_root) = root_change {
-        new_root.state.write_to_disk();
+        // state write on inert_by
         if is_open_vmlog(eng, new_root.logs.height()) {
             new_root.logs.write_to_disk();
         }

@@ -50,22 +50,21 @@ impl ChainEngine {
             self.minter.blk_insert(&blk, sub_state.as_ref(), prev_state.as_ref().as_ref())?;
         }
         // create chunk
-        let (hx, objc, data) = blk.apart();
-        let chunk = Chunk::create(hx, objc.into(), sub_state.into(), sub_log.into());
+        let chunk = Chunk::create(hx, blk.objc.clone(), sub_state.into(), sub_log.into());
         // insert chunk
         roller.insert(prev_chunk, chunk).map(|(a,b)|(
-            a, b, hx, data, roller.root.height
+            a, b, blk, roller.root.height
         ))
     }
 
     // justckhd = just check head
     fn roll_by(&self, rid: RollerInsertData) -> Rerr {
 
-        let (root_change, head_change, hx, data, old_root_hei) = rid;
+        let (root_change, head_change, blkpkg, old_root_hei) = rid;
     
         let mut store_batch = MemKV::new();
         // save block data to disk
-        store_batch.put(hx.to_vec(), data); // block data
+        store_batch.put(blkpkg.hash.to_vec(), blkpkg.copy_data()); // block data
         // if head change
         if let Some(new_head) = head_change {
             let real_root_hei: u64 = match root_change.clone() {

@@ -17,6 +17,10 @@ impl MemDB for MemKV {
         }
     }
 
+    fn len(&self) -> usize {
+        self.memry.len()
+    }
+
     fn del(&mut self, k: Vec<u8>) {
         self.memry.insert(k, None);
     }

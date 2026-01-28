@@ -5,7 +5,7 @@ pub struct BlkPkg {
     pub seek: usize,
     pub size: usize,
     pub orgi: BlkOrigin,
-    pub objc: Box<dyn Block>,
+    pub objc: Arc<dyn Block>,
     pub hash: Hash,
     pub hein: u64, // block height
 }
@@ -15,17 +15,20 @@ impl_pkg_common!{ BlkPkg, Block, BlkOrigin }
 
 impl BlkPkg {
 
-    pub fn new(objc: Box<dyn Block>, data: Vec<u8>) -> Self {
-        let size = data.len();
+    pub fn from(objc: Box<dyn Block>, data: Arc<Vec<u8>>, seek: usize, size: usize) -> Self {
         Self {
             orgi: BlkOrigin::Unknown,
             hein: objc.height().uint(),
             hash: objc.hash(),
-            data: data.into(),
-            seek: 0,
+            data,
+            seek,
             size,
-            objc,
+            objc: objc.into(),
         }
+    }
+
+    pub fn new(objc: Box<dyn Block>, data: Vec<u8>) -> Self {
+        Self::from(objc, Arc::new(data), 0, 0)
     }
 
 }

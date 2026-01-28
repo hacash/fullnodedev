@@ -3,7 +3,10 @@ use basis::interface::{DiskDB};
 
 #[allow(dead_code)]
 pub fn dev_count_switch_print(idx: usize, db: &dyn DiskDB) {
-    if idx == 1 { count_all_address_balance(db) }
+    match idx {
+        1 => count_all_address_balance(db),
+        _ => {}
+    }
 }
 
 

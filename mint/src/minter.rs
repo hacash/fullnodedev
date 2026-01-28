@@ -22,7 +22,7 @@ impl HacashMinter {
         Self {
             cnf: cnf,
             difficulty: dgnr,
-            genesis_block: genesis::genesis_block_pkg().into().into(),
+            genesis_block: genesis::genesis_block_pkg().objc,
             bidding_prove: Mutex::default(),
         }
     }
