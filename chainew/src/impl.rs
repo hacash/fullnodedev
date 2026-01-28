@@ -3,20 +3,26 @@ impl Engine for ChainEngine {
     fn as_read(&self) -> &dyn EngineRead { self }
     
     fn discover(&self, blk: BlkPkg) -> Rerr {
-        if self.cnf.recent_blocks {
-            record_recent(self, blk.objc.as_read());
-        }
-        if self.cnf.average_fee_purity {
-            record_avgfee(self, blk.objc.as_read());
-        }
-
         let _isrtlock = inserting_lock(self, ISRT_STAT_DISCOVER,
             "the blockchain is syncing and cannot insert newly discovered block"
         )?;
         // let _lk = self.isrtlk.lock().unwrap();
         let mut tree = self.tree.write().unwrap();
         let rid = insert_by(self, tree.deref_mut(), blk)?;
+        let became_head = rid.head_change.is_some();
         roll_by(self, rid)?;
+
+        // Update runtime caches only after the block is fully accepted and rolled.
+        // Also only track canonical(head) progression to avoid pollution by side-chain/invalid blocks.
+        if became_head {
+            let head = tree.head.block.as_read();
+            if self.cnf.recent_blocks {
+                record_recent(self, head);
+            }
+            if self.cnf.average_fee_purity {
+                record_avgfee(self, head);
+            }
+        }
         Ok(())
     }
 

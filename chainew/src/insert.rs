@@ -1,12 +1,27 @@
 
 
 
-pub struct InsertResult {
+pub struct InsertResult {    
+    /*
+    Keep the previous root alive while roll_by is pending.
+    
+    Why this is necessary:
+    - Chunk::parent is a Weak pointer, so the new root does NOT strongly own its ancestors.
+    - StateInst also uses a Weak parent chain.
+    - During bulk sync, insert_by and roll_by are pipelined via channels; root may advance
+      multiple times before the corresponding root state is committed.
+    - If the old root is dropped early, the Weak parent chain can break and subsequent
+      block execution may fall back to disk reads that are not yet populated, causing
+      incorrect state.
+    By sending the old root through the same channel as the InsertResult, we keep it
+    alive exactly until roll_by consumes and commits the new root.
+    */
+    old_root_hold: Option<Arc<Chunk>>,
+    pub old_root_height: u64,
     pub root_change: Option<Arc<Chunk>>,
     pub head_change: Option<Arc<Chunk>>,
     pub hash: Hash,
     pub block: BlkPkg,
-    pub old_root_height: u64,
 }
 
 pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<InsertResult> {
@@ -57,17 +72,20 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
         eng.minter.blk_insert(&blk, new_state.as_ref(), prev_state.as_ref().as_ref())?;
     }
 
+    // Snapshot current root. If root advances, we must keep this Arc alive until roll_by.
+    let prev_root = tree.root.clone();
+
     let item = Arc::new(Chunk::new(blk.objc.clone(), Arc::new(new_state), new_logs.into(), Some(&parent)));
     let (root_change, head_change) = tree.insert(&parent, item);
-    if let Some(new_root) = &root_change {
-        new_root.state.write_to_disk();
-    }
-    Ok(InsertResult { root_change, head_change, hash, block: blk, old_root_height })
+
+    // Only carry old root when root actually advances.
+    let old_root_hold = maybe!(root_change.is_some(), Some(prev_root), None);
+    Ok(InsertResult { old_root_hold, old_root_height, root_change, head_change, hash, block: blk })
 }
 
 
 pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
-    let InsertResult { root_change, head_change, hash, block, old_root_height } = rid;
+    let InsertResult { old_root_hold, old_root_height, root_change, head_change, hash, block } = rid;
     let mut batch = MemKV::new();
     let is_sync     = block.orgi == BlkOrigin::Sync;
     let not_rebuild = block.orgi != BlkOrigin::Rebuild;
@@ -108,11 +126,17 @@ pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     }
     // println!("eng.store.save_batch ok");
     if let Some(new_root) = root_change {
-        // state write on inert_by
+        // Commit state/logs only after store batch is durable.
+        // This avoids: state advanced but CSK/block data not persisted (crash between insert_by and roll_by).
+        new_root.state.write_to_disk();
         if is_open_vmlog(eng, new_root.logs.height()) {
             new_root.logs.write_to_disk();
         }
         eng.scaner.roll(new_root.block.clone(), new_root.state.clone(), eng.disk.clone());
+
+        // Keep the old root alive until after state/logs are committed.
+        // See InsertResult::old_root_hold comment for the rationale.
+        let _old_root_hold = old_root_hold;
     }
     Ok(())
 }
