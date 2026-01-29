@@ -6,6 +6,7 @@ use std::sync::{ Arc, Mutex as StdMutex };
 
 use tokio::net::*;
 use tokio::net::tcp::*;
+use tokio::sync::Notify;
 
 use sys::*;
 use field::*;
@@ -24,4 +25,3 @@ include!{"trait.rs"}
 include!{"know.rs"}
 include!{"peer.rs"}
 include!{"send.rs"}
-

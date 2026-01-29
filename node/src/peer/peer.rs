@@ -13,6 +13,7 @@ pub struct Peer {
     // will change
     pub active: StdMutex<SystemTime>,
     pub conn_write: StdMutex<Option<OwnedWriteHalf>>,
+    pub close_notify: Arc<Notify>,
     // data
     pub knows: Knowledge,
 }
@@ -43,16 +44,13 @@ impl Peer {
 
     pub async fn disconnect(&self) {
         // println!("----- call fn disconnect peer: {}", self.nick());
+        self.close_notify.notify_one();
         let mayconn = self.take_conn_write();
-        if let None = mayconn {
-            return // already closed, do nothing
+        if let Some(mut w) = mayconn {
+            let close_msg = tcp_create_msg(MSG_CLOSE, vec![]);
+            let _ = tcp_send(&mut w, &close_msg).await; // send close mark
+            // drop write half to close
         }
-        let mut w = mayconn.unwrap();
-        // drop conn obj to close
-        // do close
-        let close_msg = tcp_create_msg(MSG_CLOSE, vec![]);
-        let _ = tcp_send(&mut w, &close_msg).await; // send close mark
-        w.forget();
     }
 
     pub async fn create_with_msg(mut stream: TcpStream, ty: u8, msg: Vec<u8>, mynodeinfo: Vec<u8>) -> Ret<(Arc<Peer>, OwnedReadHalf)> {
@@ -126,6 +124,7 @@ impl Peer {
             addr: addr,
             active: SystemTime::now().into(),
             conn_write: Some(write_half).into(),
+            close_notify: Arc::new(Notify::new()),
             knows: Knowledge::new(50),
         };
         let pptr = Arc::new(peer);

@@ -20,7 +20,7 @@ impl Knowledge {
     pub fn add(&self, key: KnowKey) {
         let mut dt = self.data.lock().unwrap();
         if dt.len() >= self.size {
-            dt.back(); // drop tail
+            dt.pop_back(); // drop tail
         }
         dt.push_front(key);
     }

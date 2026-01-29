@@ -43,7 +43,12 @@ async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler
     }
     // run loop
     loop {
-        let rdres = tcp_read_msg(&mut conn_read, 0).await; // no timoout
+        let rdres = tokio::select! {
+            _ = peer.close_notify.notified() => {
+                break // locally requested close
+            }
+            rd = tcp_read_msg(&mut conn_read, 0) => rd, // no timeout
+        };
         if let Err(_) = rdres {
             break // closed
         }
