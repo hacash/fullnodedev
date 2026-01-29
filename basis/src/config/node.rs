@@ -5,11 +5,13 @@ pub struct NodeConf {
     pub node_key: [u8; 16],
     pub node_name: String,
     pub listen: u16,
-    pub findnodes: bool,
-    pub acceptnodes: bool,
+    pub find_nodes: bool,
+    pub accept_nodes: bool,
     pub boot_nodes: Vec<SocketAddr>,
     pub offshoot_peers: usize, // private IP
     pub backbone_peers: usize, // public IP
+    pub use_stable_nodes: bool,
+    pub data_dir: PathBuf,
     
     pub multi_thread: bool,
 
@@ -40,6 +42,7 @@ impl NodeConf {
         // off_find
         let find = ini_must_bool(sec, "not_find_nodes", false) == false;
         let accept = ini_must_bool(sec, "not_accept_nodes", false) == false;
+        let use_stable_nodes = ini_must_bool(sec, "use_stable_nodes", true);
 
         // boots
         let boots = ini_must(sec, "boots", "");
@@ -58,12 +61,14 @@ impl NodeConf {
             node_key: node_key,
             node_name: node_name,
             listen: port as u16,
-            findnodes: find,
-            acceptnodes: accept,
+            find_nodes: find,
+            accept_nodes: accept,
             boot_nodes: ipts,
             // connect peers
             offshoot_peers: 200,
             backbone_peers: 4,
+            use_stable_nodes: use_stable_nodes,
+            data_dir: get_mainnet_data_dir(ini),
             multi_thread:  ini_must_bool(sec, "multi_thread", false),
         };
 

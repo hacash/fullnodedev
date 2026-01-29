@@ -44,3 +44,73 @@ fn parse_public_nodes(bts: &[u8]) -> Vec<(PeerKey, SocketAddr)> {
     addr
 }
 
+
+fn stable_nodes_path_from_conf(cnf: &NodeConf) -> PathBuf {
+    join_path(&cnf.data_dir, "stable.nodes")
+}
+
+
+fn read_stable_nodes_file(path: &PathBuf, max: usize) -> Vec<SocketAddr> {
+    if max == 0 {
+        return vec![];
+    }
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return vec![];
+    };
+    let mut res: Vec<SocketAddr> = Vec::new();
+    let mut seen = std::collections::HashSet::<SocketAddr>::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(addr) = line.parse::<SocketAddr>() else {
+            continue;
+        };
+        if seen.insert(addr) {
+            res.push(addr);
+            if res.len() >= max {
+                break;
+            }
+        }
+    }
+    res
+}
+
+
+fn persist_stable_nodes_file(path: &PathBuf, peers: &PeerList, max: usize) {
+    let mut out = String::new();
+    if max > 0 {
+        let list = peers.lock().unwrap();
+        let mut count = 0usize;
+        for p in list.iter() {
+            if count >= max {
+                break;
+            }
+            if !p.is_public {
+                continue;
+            }
+            out.push_str(&format!("{}\n", p.addr));
+            count += 1;
+        }
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut tmp_path = path.clone();
+    tmp_path.set_extension("nodes.tmp");
+    if std::fs::write(&tmp_path, out).is_ok() {
+        let _ = std::fs::rename(&tmp_path, path);
+    } else {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+}
+
+
+fn persist_stable_nodes_from_conf(cnf: &NodeConf, peers: &PeerList) {
+    if !cnf.use_stable_nodes {
+        return;
+    }
+    let path = stable_nodes_path_from_conf(cnf);
+    persist_stable_nodes_file(&path, peers, cnf.backbone_peers);
+}

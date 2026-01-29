@@ -5,7 +5,13 @@ pub type KnowKey = [u8; KNOWLEDGE_SIZE];
 #[derive(Debug)]
 pub struct Knowledge {
     size: usize,
-    data: StdMutex<VecDeque<KnowKey>>,
+    data: StdMutex<KnowledgeInner>,
+}
+
+#[derive(Debug)]
+struct KnowledgeInner {
+    order: VecDeque<KnowKey>,
+    set: std::collections::HashSet<KnowKey>,
 }
 
 
@@ -13,20 +19,32 @@ impl Knowledge {
     pub fn new(sz: usize) -> Knowledge {
         Knowledge{
             size: sz,
-            data: VecDeque::with_capacity(sz+1).into(),
+            data: KnowledgeInner{
+                order: VecDeque::with_capacity(sz+1),
+                set: std::collections::HashSet::with_capacity(sz*2+1),
+            }.into(),
         }
     }
 
     pub fn add(&self, key: KnowKey) {
-        let mut dt = self.data.lock().unwrap();
-        if dt.len() >= self.size {
-            dt.pop_back(); // drop tail
+        if self.size == 0 {
+            return;
         }
-        dt.push_front(key);
+        let mut dt = self.data.lock().unwrap();
+        if dt.set.contains(&key) {
+            return;
+        }
+        if dt.order.len() >= self.size {
+            if let Some(old) = dt.order.pop_back() {
+                dt.set.remove(&old);
+            }
+        }
+        dt.order.push_front(key);
+        dt.set.insert(key);
     }
 
     pub fn check(&self, key: &KnowKey) -> bool {
-        self.data.lock().unwrap().iter().any(|a|a==key)
+        self.data.lock().unwrap().set.contains(key)
     }
 
 

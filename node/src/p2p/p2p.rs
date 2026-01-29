@@ -53,6 +53,9 @@ impl P2PManage {
             list = self.backbones.clone();
         }
         let droped = insert_peer_to_dht_list(list, lmax, mypid, peer.clone());
+        if peer.is_public {
+            persist_stable_nodes_from_conf(&self.cnf, &self.backbones);
+        }
         if droped.is_none() {
             return None // insert ok
         }
@@ -108,4 +111,3 @@ impl P2PManage {
     }
 
 }
-

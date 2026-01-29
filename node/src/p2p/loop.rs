@@ -22,12 +22,12 @@ impl P2PManage {
                 },
                 _ = reconnect_tkr.tick() => {
                     let no_nodes = this.backbones().len() < 2;
-                    if no_nodes && this.cnf.findnodes {
-                        let _ = this.connect_boot_nodes().await; // connect boots
+                    if no_nodes && this.cnf.find_nodes {
+                        let _ = this.connect_stable_then_boot().await; // connect stable or boots
                     }
                 },
                 _ = findnodes_tkr.tick() => {
-                    if this.cnf.findnodes {
+                    if this.cnf.find_nodes {
                         this.find_nodes().await; // do find nodes
                     }
                 },
@@ -38,14 +38,14 @@ impl P2PManage {
                 _ = boostndes_tkr.tick() => {
                     this.boost_public().await;
                     if this.backbones().len() == 0 {
-                        let _ = this.connect_boot_nodes().await; // connect boots
+                        let _ = this.connect_stable_then_boot().await; // connect stable or boots
                     }
                 },
                 client = server_listener.accept() => {
                     let Ok((client, _)) = errunbox!( client ) else {
                         continue
                     };
-                    if !this.cnf.acceptnodes {
+                    if !this.cnf.accept_nodes {
                         continue // not accept nodes
                     }
                     let tobj = this.clone();
@@ -64,4 +64,3 @@ impl P2PManage {
     }
 
 }
-

@@ -9,12 +9,13 @@ impl P2PManage {
         let peer3 = peer.clone();
         let pary1 = self.backbones.clone();
         let pary2 = self.offshoots.clone();
+        let cnf = self.cnf.clone();
         let hdl1 = self.msghandler.clone();
         let hdl2 = self.msghandler.clone();
         let hdl3 = self.msghandler.clone();
         tokio::spawn(async move {
             // handle msg
-            do_handle_pmsg(pary1, pary2, hdl2, peer2, conn_read).await;
+            do_handle_pmsg(pary1, pary2, hdl2, peer2, conn_read, cnf).await;
             // on disconnect
             let hdlcp = hdl3;
             tokio::spawn(async move {
@@ -33,7 +34,7 @@ impl P2PManage {
 }
 
 async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler>, 
-    peer: Arc<Peer>, mut conn_read: OwnedReadHalf
+    peer: Arc<Peer>, mut conn_read: OwnedReadHalf, cnf: NodeConf
 ) {
     {   // print connect tips
         let ps1 = pary1.lock().unwrap();
@@ -87,12 +88,13 @@ async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler
     // close the conn
     peer.disconnect().await;
     // remove from list
-    if remove_peer_from_dht_list(pary2, peer.clone()) {
+    if remove_peer_from_dht_list(pary2.clone(), peer.clone()) {
         // println!("remove from pary2");
         return;
     }
-    if remove_peer_from_dht_list(pary1, peer.clone()) {
+    if remove_peer_from_dht_list(pary1.clone(), peer.clone()) {
         // println!("remove from pary1");
+        persist_stable_nodes_from_conf(&cnf, &pary1);
         return;
     }
 }

@@ -2,13 +2,46 @@
 
 impl P2PManage {
 
+    pub async fn connect_stable_then_boot(&self) -> Rerr {
+        if self.cnf.use_stable_nodes {
+            let _ = self.connect_stable_nodes().await;
+            if self.backbones().len() < self.cnf.backbone_peers {
+                let _ = self.connect_boot_nodes().await;
+            }
+        }else{
+            let _ = self.connect_boot_nodes().await;
+        }
+        Ok(())
+    }
+
+    pub async fn connect_stable_nodes(&self) -> Rerr {
+        if !self.cnf.use_stable_nodes {
+            return Ok(())
+        }
+        let addrs = self.load_stable_nodes();
+        if addrs.len() == 0 {
+            return Ok(())
+        }
+        print!("[P2P] connect {} stable nodes", addrs.len());
+        for ndip in &addrs {
+            print!(", {}", &ndip);
+        }
+        println!(".");
+        for addr in addrs {
+            if let Err(e) = self.connect_node(addr).await {
+                println!("[P2P Error] connect to {}, {}", &addr, e);
+            }
+        }
+        Ok(())
+    }
+
     pub async fn connect_boot_nodes(&self) -> Rerr {
 
         print!("[P2P] connect {} boot nodes", self.cnf.boot_nodes.len());
         for ndip in &self.cnf.boot_nodes {
             print!(", {}", &ndip);
         }
-        if !self.cnf.findnodes {
+        if !self.cnf.find_nodes {
             print!(", don't search nodes");
         }
         println!(".");
@@ -119,6 +152,33 @@ impl P2PManage {
         });
     }
 
+    fn load_stable_nodes(&self) -> Vec<SocketAddr> {
+        if !self.cnf.use_stable_nodes {
+            return Vec::new();
+        }
+        let max = self.cnf.backbone_peers;
+        let mut res = Vec::new();
+        if max == 0 {
+            return res
+        }
+        let mut seen = std::collections::HashSet::<SocketAddr>::new();
+        for addr in &self.cnf.boot_nodes {
+            seen.insert(*addr);
+        }
+        for p in self.backbones() {
+            seen.insert(p.addr);
+        }
+        for p in self.offshoots() {
+            seen.insert(p.addr);
+        }
+        let path = stable_nodes_path_from_conf(&self.cnf);
+        let addrs = read_stable_nodes_file(&path, max);
+        for addr in addrs {
+            if seen.insert(addr) {
+                res.push(addr);
+            }
+        }
+        res
+    }
+
 }
-
-

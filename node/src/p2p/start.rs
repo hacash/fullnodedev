@@ -15,11 +15,11 @@ impl P2PManage {
         tokio::spawn(async move{
             asleep(0.25).await;
             // println!("&&&& connect_boot_nodes");
-            p2p.connect_boot_nodes().await
+            let _ = p2p.connect_stable_then_boot().await;
         });
 
         // do once find nodes
-        if this.cnf.findnodes {
+        if this.cnf.find_nodes {
             let p2p = this.clone();
             tokio::spawn(async move{
                 asleep(15.0).await;
