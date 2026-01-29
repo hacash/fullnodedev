@@ -49,11 +49,8 @@ impl Peer {
         }
         let mut w = mayconn.unwrap();
         // drop conn obj to close
-        // do close first
-        let close_msg = vec![0u8,0,0,1,MSG_REQUEST_NEAREST_PUBLIC_NODES];
-        let _ = tcp_send(&mut w, &close_msg).await; // send close mark
-        // do close two
-        let close_msg = vec![0u8,0,0,1,MSG_CLOSE]; // close
+        // do close
+        let close_msg = tcp_create_msg(MSG_CLOSE, vec![]);
         let _ = tcp_send(&mut w, &close_msg).await; // send close mark
         w.forget();
     }

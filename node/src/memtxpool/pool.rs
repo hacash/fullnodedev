@@ -28,7 +28,7 @@ impl MemTxPool {
 
 
     fn check_group_id(&self, wgi: usize) -> Rerr {
-        if wgi > self.groups.len() {
+        if wgi >= self.groups.len() {
             return errf!("tx pool group overflow")
         }
         Ok(())
@@ -102,7 +102,9 @@ impl TxPool for MemTxPool {
 
     // from group id
     fn find_at(&self, gi: usize, hx: &Hash) -> Option<TxPkg> {
-        self.check_group_id(gi).unwrap();
+        if self.check_group_id(gi).is_err() {
+            return None;
+        }
         // do clean
         let grp = self.groups[gi].lock().unwrap();
         match grp.find(hx) {
@@ -162,4 +164,3 @@ impl TxPool for MemTxPool {
 
 
 }
-

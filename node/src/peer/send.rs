@@ -31,10 +31,12 @@ impl Peer {
                 Some(w) => w,
             };
         }
-        let _ = tcp_send(&mut w, buf).await;
-        {
-            *self.conn_write.lock().unwrap() = Some(w);
+        let send_res = tcp_send(&mut w, buf).await;
+        if let Err(e) = send_res {
+            *self.conn_write.lock().unwrap() = None;
+            return Err(e)
         }
+        *self.conn_write.lock().unwrap() = Some(w);
         Ok(())
     }
 

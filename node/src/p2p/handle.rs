@@ -52,6 +52,9 @@ async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler
         // msg handle
         if MSG_CUSTOMER == ty {
             // on customer message
+            if msg.len() < 2 {
+                continue // ignore invalid msg
+            }
             let prcp = peer.clone();
             let ty = u16::from_be_bytes( bufcut!(msg,0,2) );
             let body = msg[2..].to_vec();
