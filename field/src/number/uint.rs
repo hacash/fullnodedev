@@ -64,6 +64,23 @@ macro_rules! uint_define {
 
         impl_field_only_new!{$class}
 
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+                self.value.to_string()
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json: &str) -> Ret<()> {
+                let s = json_expect_unquoted(json)?;
+                if let Ok(v) = s.parse::<$vty>() {
+                    self.value = v;
+                    return Ok(());
+                }
+                errf!("cannot parse uint from: {}", s)
+            }
+        }
+
         impl $class {
 
             pub const MAX: $vty = maybe!($size == $numlen,
@@ -256,4 +273,3 @@ mod uint_tests {
 
 
 }
-

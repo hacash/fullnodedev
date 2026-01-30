@@ -148,9 +148,9 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
     }
     // finish
     Ok(CoinTransferResult{
-        hash: trsobj.hash().hex(),
-        hash_with_fee: trsobj.hash_with_fee().hex(),
-        body: trsobj.serialize().hex(),
+        hash: trsobj.hash().to_hex(),
+        hash_with_fee: trsobj.hash_with_fee().to_hex(),
+        body: trsobj.serialize().to_hex(),
         timestamp: ts,
     })
 }

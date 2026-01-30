@@ -44,7 +44,7 @@ impl CellExec for $class {
 }
 
 
-impl TexCell for $class {}
+impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
      
 }}
@@ -101,7 +101,7 @@ impl CellExec for $class {
 }
 
 
-impl TexCell for $class {}
+impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
      
 }}
@@ -152,7 +152,7 @@ impl CellExec for CellTrsDiaPay {
 }
 
 
-impl TexCell for CellTrsDiaPay {}
+impl TexCell for CellTrsDiaPay { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 
 
@@ -186,7 +186,7 @@ impl CellExec for CellTrsDiaGet {
 }
 
 
-impl TexCell for CellTrsDiaGet {}
+impl TexCell for CellTrsDiaGet { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 
 
@@ -235,7 +235,7 @@ impl CellExec for $class {
 }
 
 
-impl TexCell for $class {}
+impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
      
 }}

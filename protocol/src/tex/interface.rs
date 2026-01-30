@@ -6,7 +6,7 @@ pub trait CellExec {
 
 
 pub trait TexCell: Send + Sync + DynClone + Field + CellExec {
-    
+    fn kind(&self) -> u16;
 }
 
 

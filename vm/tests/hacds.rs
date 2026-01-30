@@ -207,7 +207,7 @@ mod hacds {
             addr1.readable(),
             caddr.readable(),
             Uint4::default().uint(),
-            Uint4::default().serialize().hex()
+            Uint4::default().serialize().to_hex()
         );
 
         let cadr = addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS");

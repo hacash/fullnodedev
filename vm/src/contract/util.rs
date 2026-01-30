@@ -68,7 +68,7 @@ pub fn curl_trs_fee(mut trs: TransactionType3, acts: Vec<Box<dyn Action>>, acc: 
 
     // print
     println!("\n");
-    println!(r#"curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "{}""#, trs.serialize().hex());
+    println!(r#"curl "http://127.0.0.1:8088/submit/transaction?hexbody=true" -X POST -d "{}""#, trs.serialize().to_hex());
     // println!("\n");
 }
 

@@ -12,6 +12,18 @@ pub fn action_create(buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
     do_action_create(kid, buf)
 }
 
+
+pub fn action_json_decode(json: &str) -> Ret<Option<Box<dyn Action>>> {
+    let obj = json_decode_object(json)?;
+    let kind_str = obj.get("kind").ok_or_else(|| "action object JSON must have 'kind'".to_string())?;
+    let kind = kind_str.parse::<u16>().map_err(|_| format!("invalid action kind: {}", kind_str))?;
+    do_action_json_decode(kind, json)
+}
+
+pub fn action_json_create(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>> {
+    do_action_json_decode(kind, json)
+}
+
 /*
 pub fn _create_old(buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
     let kid = cut_kind(buf)?;
@@ -33,11 +45,11 @@ pub fn _create_old(buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
 * list defind
 */
 combi_dynlist!{ DynListActionW1,
-    Uint1, Action, action_create
+    Uint1, Action, action_create, action_json_decode
 }
 
 combi_dynlist!{ DynListActionW2,
-    Uint2, Action, action_create
+    Uint2, Action, action_create, action_json_decode
 }
 
 

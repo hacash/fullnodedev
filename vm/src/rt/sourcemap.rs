@@ -4,7 +4,6 @@ use hex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use sys::*;
 use field::Address;
 
 

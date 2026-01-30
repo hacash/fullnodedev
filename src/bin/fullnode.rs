@@ -35,19 +35,19 @@ pub fn run_with_config(cnfpath: &str) {
 pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
     // setup
     protocol::setup::block_hasher(x16rs::block_hash);
-    protocol::setup::action_register(protocol::action::try_create);
-    protocol::setup::action_register(mint::action::try_create);
+    protocol::setup::action_register(protocol::action::try_create, protocol::action::try_json_decode);
+    protocol::setup::action_register(mint::action::try_create, mint::action::try_json_decode);
     // let mut server_apis: Vec<Router<ApiCtx>> = vec![];
 
     // tex feature
     #[cfg(feature = "tex")]
     {
-        protocol::setup::action_register(protocol::tex::try_create);
+        protocol::setup::action_register(protocol::tex::try_create, protocol::tex::try_json_decode);
     }
     // hvm feature
     #[cfg(feature = "hvm")]
     {
-        protocol::setup::action_register(vm::action::try_create);
+        protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
         protocol::setup::action_hooker(vm::hook::try_action_hook);
     }
 

@@ -15,6 +15,30 @@ fn tex_cell_create(buf: &[u8])->Ret<(Box<dyn TexCell>, usize)>{
     })
 }
 
+fn tex_cell_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn TexCell>>> {
+    match kind {
+        $(
+        i if i == <$ty>::CID as u16 => {
+            let mut obj = <$ty>::default();
+            obj.from_json(json)?;
+            Ok(Some(Box::new(obj)))
+        }
+        )+
+        _ => Ok(None)
+    }
+}
+
+fn tex_cell_json_decode(json: &str) -> Ret<Option<Box<dyn TexCell>>> {
+    let obj = json_decode_object(json)?;
+    let kind_str = if let Some(k) = obj.get("kind") {
+        k
+    } else {
+        obj.get("cellid").ok_or_else(|| "tex cell object JSON must have 'kind' or 'cellid'".to_string())?
+    };
+    let kind = kind_str.parse::<u16>().map_err(|_| format!("invalid tex cell kind: {}", kind_str))?;
+    tex_cell_try_json_decode(kind, json)
+}
+
    
 }}
 
@@ -52,7 +76,7 @@ define_tex_cell_create!{ tex_cell_create,
 
 
 
-combi_dynlist!{ DnyTexCellW1, Uint1, TexCell, tex_cell_create}
+combi_dynlist!{ DnyTexCellW1, Uint1, TexCell, tex_cell_create, tex_cell_json_decode}
 
 
 

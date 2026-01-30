@@ -96,7 +96,7 @@ impl CallFrame {
                     if let Outer = fnptr.mode {
                         let cadr = chgsrcadr.as_ref().unwrap();
                         if ! fn_is_public {
-                            return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.readable(), fnptr.fnsign.hex())
+                            return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.readable(), fnptr.fnsign.to_hex())
                         }
                     }
                     // call next frame                    

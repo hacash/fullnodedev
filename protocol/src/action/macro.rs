@@ -58,6 +58,36 @@ macro_rules! action_define {
             }
         }
 
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                let mut res = String::from("{");
+                res.push_str(&format!("\"kind\":{}", self.kind.to_json_fmt(fmt)));
+                $(
+                    res.push(',');
+                    res.push_str(&format!("\"{}\":{}", stringify!($item), self.$item.to_json_fmt(fmt)));
+                )*
+                res.push('}');
+                res
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json_str: &str) -> Ret<()> {
+                let pairs = json_split_object(json_str);
+                for (k, v) in pairs {
+                    if k == "kind" {
+                        self.kind.from_json(v)?;
+                    }
+                    $(
+                        if k == stringify!($item) {
+                            self.$item.from_json(v)?;
+                        }
+                    )*
+                }
+                Ok(())
+            }
+        }
+
         impl ActExec for $class {
             fn execute(&$pself, $pctx: &mut dyn Context) -> Ret<(u32, Vec<u8>)> {
                 use std::any::Any;
@@ -113,6 +143,16 @@ macro_rules! action_register {
                 _ => Ok(None)
             }
         }
+        pub fn try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>> {
+            match kind {
+                $(<$kty>::KIND => {
+                    let mut act = <$kty>::default();
+                    act.from_json(json)?;
+                    Ok(Some(Box::new(act)))
+                },)+
+                _ => Ok(None)
+            }
+        }    
     };
 }
 

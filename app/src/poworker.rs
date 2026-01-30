@@ -378,7 +378,7 @@ fn may_print_turn_to_nex_block_mining(curr_hei: u64, most_hash: Option<&mut Vec<
         *most_hash = vec![255u8; 32]; // reset 
     }
     let stuff = MINING_BLOCK_STUFF.read().unwrap();
-    let tarhx = hash_left_zero_pad3(&stuff.target_hash.as_bytes()).hex();
+    let tarhx = hash_left_zero_pad3(&stuff.target_hash.as_bytes()).to_hex();
 
     println!("\n[{}] req height {} target {} to mining ... ", 
         &ctshow()[5..], mining_hei, tarhx
@@ -486,13 +486,13 @@ fn pull_pending_block_stuff(cnf: &PoWorkConf) {
 fn push_block_mining_success(cnf: &PoWorkConf, success: &BlockMiningResult) {
     let urlapi_success = format!(
         "http://{}/submit/miner/success?height={}&block_nonce={}&coinbase_nonce={}&t={}", 
-        &cnf.rpcaddr, success.height, success.head_nonce, success.coinbase_nonce.hex(), sys::curtimes()
+        &cnf.rpcaddr, success.height, success.head_nonce, success.coinbase_nonce.to_hex(), sys::curtimes()
     );
     let _ = HttpClient::new().get(&urlapi_success).send();
     println!("{} {}", &urlapi_success, HttpClient::new().get(&urlapi_success).send().unwrap().text().unwrap());
     // print
     println!("\n\n████████████████ [MINING SUCCESS] Find a block height {},\n██ hash {} to submit.",
-        success.height, success.result_hash.hex()
+        success.height, success.result_hash.to_hex()
     );
     println!("▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔")
 }

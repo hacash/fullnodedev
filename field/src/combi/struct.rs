@@ -31,8 +31,33 @@ macro_rules! combi_struct {
 
         impl_field_only_new!{$class}
 
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                let mut res = String::from("{");
+                let mut _first = true;
+                $(
+                    if !_first { res.push(','); }
+                    res.push_str(&format!("\"{}\":{}", stringify!($item), self.$item.to_json_fmt(fmt)));
+                    _first = false;
+                )+
+                res.push('}');
+                res
+            }
+        }
 
-
+        impl FromJSON for $class {
+            fn from_json(&mut self, json_str: &str) -> Ret<()> {
+                let pairs = json_split_object(json_str);
+                for (k, v) in pairs {
+                    $(
+                        if k == stringify!($item) {
+                            self.$item.from_json(v)?;
+                        }
+                    )+
+                }
+                Ok(())
+            }
+        }
     )
 }
 
@@ -81,6 +106,34 @@ macro_rules! combi_struct_with_parse_serialize {
         }
 
         impl_field_only_new!{$class}
+
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                let mut res = String::from("{");
+                let mut _first = true;
+                $(
+                    if !_first { res.push(','); }
+                    res.push_str(&format!("\"{}\":{}", stringify!($item), self.$item.to_json_fmt(fmt)));
+                    _first = false;
+                )+
+                res.push('}');
+                res
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json_str: &str) -> Ret<()> {
+                let pairs = json_split_object(json_str);
+                for (k, v) in pairs {
+                    $(
+                        if k == stringify!($item) {
+                            self.$item.from_json(v)?;
+                        }
+                    )+
+                }
+                Ok(())
+            }
+        }
 
     )
 }
@@ -149,6 +202,41 @@ macro_rules! combi_struct_field_more_than_condition {
         }
 
         impl_field_only_new!{$class}
+
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                let mut res = String::from("{");
+                let mut _first = true;
+                $(
+                    if !_first { res.push(','); }
+                    res.push_str(&format!("\"{}\":{}", stringify!($item), self.$item.to_json_fmt(fmt)));
+                    _first = false;
+                )+
+                if *self.$cdn > $cdv {
+                    if !_first { res.push(','); }
+                    res.push_str(&format!("\"{}\":{}", stringify!($mrn), self.$mrn.to_json_fmt(fmt)));
+                }
+                res.push('}');
+                res
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json_str: &str) -> Ret<()> {
+                let pairs = json_split_object(json_str);
+                for (k, v) in pairs {
+                    $(
+                        if k == stringify!($item) {
+                            self.$item.from_json(v)?;
+                        }
+                    )+
+                    if k == stringify!($mrn) {
+                        self.$mrn.from_json(v)?;
+                    }
+                }
+                Ok(())
+            }
+        }
 
     )
 }

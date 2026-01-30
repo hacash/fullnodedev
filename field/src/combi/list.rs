@@ -80,6 +80,32 @@ impl Serialize for $class {
 
 impl_field_only_new!{$class}
 
+impl ToJSON for $class {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        let mut res = String::from("[");
+        for i in 0..self.lists.len() {
+            if i > 0 { res.push(','); }
+            res.push_str(&self.lists[i].to_json_fmt(fmt));
+        }
+        res.push(']');
+        res
+    }
+}
+
+impl FromJSON for $class {
+    fn from_json(&mut self, json_str: &str) -> Ret<()> {
+        let items = json_split_array(json_str);
+        self.lists = Vec::with_capacity(items.len());
+        self.count = <$cty>::from_usize(items.len())?;
+        for item in items {
+            let mut obj = <$vty>::new();
+            obj.from_json(item)?;
+            self.lists.push(obj);
+        }
+        Ok(())
+    }
+}
+
 impl $class {
 
 	pub fn length(&self) -> usize {

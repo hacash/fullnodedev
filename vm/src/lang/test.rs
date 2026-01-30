@@ -107,7 +107,7 @@ mod token_t {
         let irnodes = astblock.serialize().split_off(3);
         println!("asts len: {}", astblock.len());
 
-        println!("irnodes: \n\n{}  len: {}\n\n", irnodes.hex(), irnodes.len());
+        println!("irnodes: \n\n{}  len: {}\n\n", irnodes.to_hex(), irnodes.len());
         let opt_plain = crate::PrintOption::new("  ", 0);
         println!(
             "irnodes: \n\n{}\n\n{}\n\n",
@@ -122,7 +122,7 @@ mod token_t {
             ircode_to_lang(&irnodes).unwrap()
         );
         let codes = astblock.codegen().unwrap();
-        println!("bytecode: \n\n{}  len: {}\n\n", codes.hex(), codes.len());
+        println!("bytecode: \n\n{}  len: {}\n\n", codes.to_hex(), codes.len());
         println!("bytecode: \n\n{}\n\n", codes.bytecode_print(false).unwrap());
         println!("bytecode: \n\n{}\n\n", codes.bytecode_print(true).unwrap());
 

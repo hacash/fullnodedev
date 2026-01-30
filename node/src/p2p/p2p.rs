@@ -54,7 +54,6 @@ impl P2PManage {
         }
         let droped = insert_peer_to_dht_list(list, lmax, mypid, peer.clone());
         if peer.is_public {
-            persist_stable_nodes_from_conf(&self.cnf, &self.backbones);
         }
         if droped.is_none() {
             return None // insert ok
@@ -97,11 +96,11 @@ impl P2PManage {
         let p1 = self.backbones.lock().unwrap();
         let mut l1names = vec![];
         for li in p1.iter() {
-            l1names.push(format!("{}({})", li.nick(), li.key[0..2].to_vec().hex()));
+            l1names.push(format!("{}({})", li.nick(), li.key[0..2].to_vec().to_hex()));
         }
         let l1 = p1.len();
         let l2 = self.offshoots.lock().unwrap().len();
-        let mykp = self.cnf.node_key[0..2].to_vec().hex();
+        let mykp = self.cnf.node_key[0..2].to_vec().to_hex();
         flush!("[P2P] {} public {} subnet nodes connected, key({}) => {}.\n", 
             l1, l2, mykp, l1names.join(", "));
     }

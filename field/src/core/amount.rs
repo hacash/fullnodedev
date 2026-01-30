@@ -105,6 +105,23 @@ impl Serialize for Amount {
 
 impl_field_only_new!{Amount}
 
+impl ToJSON for Amount {
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        format!("\"{}\"", self.to_fin_string())
+    }
+}
+
+impl FromJSON for Amount {
+    fn from_json(&mut self, json_str: &str) -> Ret<()> {
+        let s = json_expect_quoted(json_str)?;
+        let amt = Amount::from(s)?;
+        self.unit = amt.unit;
+        self.dist = amt.dist;
+        self.byte = amt.byte;
+        Ok(())
+    }
+}
+
 
 impl Amount {
 

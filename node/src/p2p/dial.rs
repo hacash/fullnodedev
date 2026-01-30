@@ -91,7 +91,7 @@ pub async fn tcp_read_msg(conn: &mut (impl AsyncRead + std::marker::Unpin), outs
     // println!("&&&& tcp_read_msg outsec={} ...", outsec);
     // println!("&&&& tcp_read(conn, 4, outsec) ...");
     let size = tcp_read(conn, 4, outsec).await?;
-    // println!("&&&& tcp_read(conn, 4, outsec) ok. size={}", size.hex());
+    // println!("&&&& tcp_read(conn, 4, outsec) ok. size={}", size.to_hex());
     let size = u32::from_be_bytes( bufcut!(size, 0, 4) );
     if size < 1 || size > P2P_MSG_DATA_MAX_SIZE {
         return errf!("tcp msg size error")

@@ -130,6 +130,19 @@ impl Serialize for FuncArgvTypes {
     }
 }
 
+impl ToJSON for FuncArgvTypes {
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        format!("\"{}\"", hex::encode(self.serialize()))
+    }
+}
+impl FromJSON for FuncArgvTypes {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let data = hex::decode(json_unquote(json)).map_err(|_| format!("cannot decode hex"))?;
+        self.parse(&data)?;
+        Ok(())
+    }
+}
+
 impl_field_only_new!{FuncArgvTypes}
 
 

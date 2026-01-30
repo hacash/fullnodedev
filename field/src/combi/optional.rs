@@ -52,6 +52,33 @@ macro_rules! combi_optional {
 
         impl_field_only_new!{$class}
 
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                if self.is_exist() {
+                    self.$item.as_ref().unwrap().to_json_fmt(fmt)
+                } else {
+                    "null".to_string()
+                }
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json_str: &str) -> Ret<()> {
+                let raw = json_str.trim();
+                if raw == "null" {
+                    self.exist = Bool::new(false);
+                    self.$item = None;
+                } else if raw.is_empty() {
+                    return errf!("json value empty");
+                } else {
+                    self.exist = Bool::new(true);
+                    let mut val = <$vty>::new();
+                    val.from_json(raw)?; // Pass original if it contains nested JSON
+                    self.$item = Some(val);
+                }
+                Ok(())
+            }
+        }
 
         impl $class {
             

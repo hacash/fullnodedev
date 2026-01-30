@@ -2,7 +2,7 @@
 
 #[macro_export]
 macro_rules! combi_dynlist {
-    ($class:ident, $lenty:ty, $dynty:ident, $createfn:path) => (
+    ($class:ident, $lenty:ty, $dynty:ident, $createfn:path, $json_createfn:path) => (
 
 
 #[derive(Default, Clone)]
@@ -78,6 +78,35 @@ impl Serialize for $class {
 
 impl_field_only_new!{$class}
 
+impl ToJSON for $class {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        let mut res = String::from("[");
+        for i in 0..self.vlist.len() {
+            if i > 0 { res.push(','); }
+            res.push_str(&self.vlist[i].as_ref().to_json_fmt(fmt));
+        }
+        res.push(']');
+        res
+    }
+}
+
+impl FromJSON for $class {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let (list, _) = $crate::json_decode_array(json)?;
+        let mut vlist: Vec<Box<dyn $dynty>> = Vec::with_capacity(list.len());
+        for item_json in list {
+            if let Some(item) = $json_createfn(&item_json)? {
+                vlist.push(item);
+            } else {
+                return errf!("dynamic object JSON decode error from: {}", item_json);
+            }
+        }
+        self.vlist = vlist;
+        self.count = <$lenty>::from_usize(self.vlist.len())?;
+        Ok(())
+    }
+}
+
 impl $class {
 
     pub fn from_list(list: Vec<Box<dyn $dynty>>) -> Ret<Self> {
@@ -149,8 +178,9 @@ pub trait Test7354846353856 : Field + DynClone {
 clone_trait_object!{Test7354846353856}
 
 fn test_create_823646394734(_a:&[u8])->Ret<(Box<dyn Test7354846353856>, usize)>{errf!("")}
+fn test_json_create_823646394734(_b:&str)->Ret<Option<Box<dyn Test7354846353856>>>{errf!("")}
 combi_dynlist!{ Test8364856695623,
-    Uint1, Test7354846353856, test_create_823646394734
+    Uint1, Test7354846353856, test_create_823646394734, test_json_create_823646394734
 }
 
 

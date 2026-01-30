@@ -70,8 +70,8 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
     let mut data = render_tx_info(tx.as_read(), None, lasthei, &unit, true, signature, false, description);
     data.insert("sign_data", json!(jsondata!{
         "address", address.readable(),
-        "pubkey", signobj.publickey.hex(),
-        "sigdts", signobj.signature.hex(),
+        "pubkey", signobj.publickey.to_hex(),
+        "sigdts", signobj.signature.to_hex(),
     }));
     api_data(data)
 
@@ -212,7 +212,7 @@ async fn transaction_check(State(_ctx): State<ApiCtx>, q: Query<Q9764>, bodydata
     if sign_address.len() > 0 {
         let addr = q_addr!(sign_address);
         let sign_hash = maybe!(main_addr == addr, tx.hash_with_fee(), tx.hash());
-        data.insert("sign_hash", json!(sign_hash.hex()));
+        data.insert("sign_hash", json!(sign_hash.to_hex()));
     }
 
     // return info
@@ -323,8 +323,8 @@ fn render_tx_info(tx: &dyn TransactionRead,
     let main_addr = tx.main().readable();
     let mut data = jsondata!{
         // tx
-        "hash", tx.hash().hex(),
-        "hash_with_fee", tx.hash_with_fee().hex(),
+        "hash", tx.hash().to_hex(),
+        "hash_with_fee", tx.hash_with_fee().to_hex(),
         "type", tx.ty(),
         "timestamp", tx.timestamp().uint(),
         "fee", fee_str,
@@ -334,7 +334,7 @@ fn render_tx_info(tx: &dyn TransactionRead,
     };
 
     if body {
-        data.insert("body", json!(tx.serialize().hex()));
+        data.insert("body", json!(tx.serialize().to_hex()));
     }
 
     if signature {

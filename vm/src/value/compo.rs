@@ -45,7 +45,7 @@ impl Compo {
             },
             Self::Map(b)  => { 
                 let mmm: Vec<_> = b.iter().map(|(k,v)|{
-                    format!("0x{}:{}", k.hex(), v.to_string())
+                    format!("0x{}:{}", k.to_hex(), v.to_string())
                 }).collect();
                 format!("{{{}}}", mmm.join(","))
             }

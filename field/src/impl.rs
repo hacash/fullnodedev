@@ -28,17 +28,18 @@ impl Field for Vec<u8> {
     }
 }
 
-
-
-
-impl Hex for Vec<u8> {
-    fn to_hex(&self) -> String {
-        hex::encode(self)
+impl ToJSON for Vec<u8> {
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        format!("\"0x{}\"", hex::encode(self))
     }
 }
 
-impl Base64 for Vec<u8> {
-    fn to_base64(&self) -> String {
-        BASE64_STANDARD.encode(self)
+impl FromJSON for Vec<u8> {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let b = json_decode_binary(json)?;
+        *self = b;
+        Ok(())
     }
 }
+
+

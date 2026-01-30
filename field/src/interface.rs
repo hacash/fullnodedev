@@ -28,7 +28,7 @@ pub trait Parse {
 /*
 * #[derive(Default)]
 */
-pub trait Field : Serialize + Parse { 
+pub trait Field : Serialize + Parse + ToJSON + FromJSON { 
     // customizable new() func will change something
     fn new() -> Self where Self: Sized { never!() }
 
@@ -70,10 +70,33 @@ pub trait Base64 : Field {
     fn parse_base64(&mut self, _buf: &[u8]) -> Rerr { never!() }
 }
 
-pub trait Json : Field {
-    fn to_json(&self) -> String { never!() }
-    fn from_json(_: &[u8]) -> Ret<Self> where Self: Sized { never!() }
-    fn parse_json(&mut self, _: &[u8]) -> Rerr { never!() }
+pub trait FromJSON {
+    fn from_json(&mut self, json: &str) -> Ret<()>;
+}
+
+pub enum JSONBinaryFormat {
+    Hex,
+    Base58Check,
+    Base64,
+}
+
+pub struct JSONFormater {
+    pub binary: JSONBinaryFormat,
+}
+
+impl Default for JSONFormater {
+    fn default() -> Self {
+        Self {
+            binary: JSONBinaryFormat::Hex,
+        }
+    }
+}
+
+pub trait ToJSON {
+    fn to_json(&self) -> String {
+        self.to_json_fmt(&JSONFormater::default())
+    }
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String;
 }
 
 pub trait Readable : Field {

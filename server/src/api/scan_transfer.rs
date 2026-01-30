@@ -37,9 +37,9 @@ async fn scan_coin_transfer(State(ctx): State<ApiCtx>, q: Query<Q4538>) -> impl 
     }
     // ok
     let data = jsondata!{
-        "tx_hash", tartrs.hash().hex(),
+        "tx_hash", tartrs.hash().to_hex(),
         "tx_timestamp", tartrs.timestamp().uint(),
-        "block_hash", blkobj.hash().hex(),
+        "block_hash", blkobj.hash().to_hex(),
         "block_timestamp", blkobj.timestamp().uint(),
         "main_address", mainaddr_readable,
         "transfers", dtlist,

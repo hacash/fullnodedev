@@ -432,9 +432,9 @@ pub fn action_to_json_desc(tx: &dyn TransactionRead, act: &Box<dyn Action>,
             "name", name,
             "number", *act.number,
             "miner", miner,
-            "nonce", act.nonce.hex(),
-            "prev_hash", act.prev_hash.hex(), // prev block hash
-            "custom_message", act.custom_message.hex(),
+            "nonce", act.nonce.to_hex(),
+            "prev_hash", act.prev_hash.to_hex(), // prev block hash
+            "custom_message", act.custom_message.to_hex(),
         };
         append_description!(
             "Mint HACD ({}) to {}", name, miner
@@ -483,7 +483,7 @@ pub fn action_to_json_desc(tx: &dyn TransactionRead, act: &Box<dyn Action>,
 
     }else if let Some(a) = ChannelOpen::downcast(act) {
 
-        let cid =   a.channel_id.hex();
+        let cid =   a.channel_id.to_hex();
         let l_adr = a.left_bill.address.readable();
         let l_amt = a.left_bill.amount.to_unit_string(unit);
         let r_adr = a.right_bill.address.readable();
@@ -507,7 +507,7 @@ pub fn action_to_json_desc(tx: &dyn TransactionRead, act: &Box<dyn Action>,
 
     }else if let Some(a) = ChannelClose::downcast(act) {
 
-        let cid = a.channel_id.hex();
+        let cid = a.channel_id.to_hex();
         set_jsonobj!{
             "channel_id", cid,
         };

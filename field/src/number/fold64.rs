@@ -106,6 +106,23 @@ impl Serialize for Fold64 {
 
 impl_field_only_new!{Fold64}
 
+impl ToJSON for Fold64 {
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        self.value.to_string()
+    }
+}
+
+impl FromJSON for Fold64 {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let s = json_expect_unquoted(json)?;
+        if let Ok(v) = s.parse::<u64>() {
+            self.value = v;
+            return Ok(());
+        }
+        errf!("cannot parse fold64 from: {}", s)
+    }
+}
+
 
 impl Fold64 {
 
@@ -542,7 +559,6 @@ mod fold64_tests {
         errf!("leb128 unterminated")
     }
 }
-
 
 
 

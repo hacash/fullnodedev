@@ -18,13 +18,13 @@ pub fn bytes_from_hex(stuff: &[u8], len: usize) -> Ret<Vec<u8>> {
 
 
 pub trait ToHex {
-    fn hex(&self) -> String;
+    fn to_hex(&self) -> String;
 }
 
 
 impl ToHex for Vec<u8> {
 
-    fn hex(&self) -> String {
+    fn to_hex(&self) -> String {
         hex::encode(self)
     }
 

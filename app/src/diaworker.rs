@@ -418,7 +418,7 @@ fn push_diamond_mining_success(cnf: &DiaWorkConf, success: DiamondMint) {
     let urlapi_success = format!("http://{}/submit/diamondminer/success", &cnf.rpcaddr);
     spawn(move || {
         let actionbody = success.serialize();
-        // println!("\n\ncurl {}?hexbody=true -X POST -d '{}'", &urlapi_success, &actionbody.hex());
+        // println!("\n\ncurl {}?hexbody=true -X POST -d '{}'", &urlapi_success, &actionbody.to_hex());
         let res = HttpClient::new().post(&urlapi_success).body(actionbody).send();
         let Ok(repv) = res else {
             return // err

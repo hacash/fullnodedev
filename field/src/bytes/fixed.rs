@@ -2,7 +2,7 @@
 
 
 
-macro_rules! fixed_define {
+macro_rules! fixed_define_body {
     ($class:ident, $size: expr) => {
 
         concat_idents!{ fixed_zero = ZERO_, $class {
@@ -61,6 +61,13 @@ macro_rules! fixed_define {
             }
         }
 
+        impl $class {
+            pub fn is_zero(&self) -> bool { self.bytes.iter().all(|&x| x == 0) }
+            pub fn not_zero(&self) -> bool { !self.is_zero() }
+            pub fn to_vec(&self) -> Vec<u8> { self.bytes.to_vec() }
+            pub fn must_vec(v: Vec<u8>) -> Self { Self::must(&v) }
+        }
+
         impl Parse for $class {
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
                 let bts = bufeat_ref(buf, $size)?;
@@ -81,6 +88,47 @@ macro_rules! fixed_define {
 
         impl_field_only_new!{$class}
 
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                if $size == 1 {
+                    return self.bytes[0].to_string();
+                }
+                let body = match fmt.binary {
+                    JSONBinaryFormat::Hex => format!("0x{}", hex::encode(&self.bytes)),
+                    JSONBinaryFormat::Base58Check => {
+                        if $size == 21 {
+                            // Hacash address: first byte is version
+                            let version = self.bytes[0];
+                            let data = &self.bytes[1..];
+                            data.to_base58check(version)
+                        } else {
+                            format!("0x{}", hex::encode(&self.bytes))
+                        }
+                    },
+                    JSONBinaryFormat::Base64 => BASE64_STANDARD.encode(&self.bytes),
+                };
+                format!("\"{}\"", body)
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json: &str) -> Ret<()> {
+                if $size == 1 {
+                    let s = json_expect_unquoted(json)?;
+                    if let Ok(v) = s.parse::<u8>() {
+                        self.bytes[0] = v; return Ok(());
+                    }
+                    return errf!("cannot parse {} from: {}", stringify!($class), s);
+                }
+                // generic binary
+                let data = json_decode_binary(json)?;
+                if data.len() != $size {
+                    return errf!("{} size error, need {}, but got {}", stringify!($class), $size, data.len());
+                }
+                self.bytes.copy_from_slice(&data);
+                Ok(())
+            }
+        }
 
         impl Hex for $class {
             fn from_hex(buf: &[u8]) -> Ret<Self> {
@@ -118,7 +166,6 @@ macro_rules! fixed_define {
         }
 
 
-
         impl $class {
 
             pub const SIZE: usize = $size as usize;
@@ -130,23 +177,7 @@ macro_rules! fixed_define {
                 }}
             }
 
-            pub fn not_zero(&self) -> bool {
-                self.bytes.iter().any(|a|*a>0)
-            }
-
-            pub fn hex(&self) -> String {
-                self.to_hex()
-            }
-
-            pub fn to_vec(&self) -> Vec<u8> {
-                self.bytes.to_vec()
-            }
-
-            pub fn must_vec(v: Vec<u8>) -> Self where Self: Sized {
-                Self::from(v.try_into().unwrap())
-            }
-
-            pub const fn from(v: [u8; $size]) -> Self where Self: Sized {
+            pub const fn from(v: [u8; $size]) -> Self {
                 Self {
                     bytes: v
                 }
@@ -175,6 +206,12 @@ macro_rules! fixed_define {
         }
 
 
+    }
+}
+
+macro_rules! fixed_define {
+    ($class:ident, $size: expr) => {
+        fixed_define_body!{$class, $size}
     }
 }
 

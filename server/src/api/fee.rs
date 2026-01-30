@@ -92,10 +92,10 @@ async fn fee_raise(State(ctx): State<ApiCtx>, q: Query<Q5396>, body: Bytes) -> i
     }
     // ok
     let data = jsondata!{
-        "hash", txhash.hex(),
-        "hash_with_fee", txhashwf.hex(),
+        "hash", txhash.to_hex(),
+        "hash_with_fee", txhashwf.to_hex(),
         "fee", fee.to_fin_string(),
-        "tx_body", txpkg.objc.serialize().hex(),
+        "tx_body", txpkg.objc.serialize().to_hex(),
     };
     api_data(data)
 }

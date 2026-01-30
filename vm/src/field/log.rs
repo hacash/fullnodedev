@@ -14,11 +14,11 @@ impl VmLog {
     pub fn render(&self, append: &str) -> String {
         let mut res = format!(r#""address":"{}","topic0":"{}","topic1":"{}","topic2":"{}","topic3":"{}","data":"{}""#, 
             self.addr.readable(),
-            self.topic0.raw().hex(),
-            self.topic1.raw().hex(),
-            self.topic2.raw().hex(),
-            self.topic3.raw().hex(),
-            self.data.raw().hex(),
+            self.topic0.raw().to_hex(),
+            self.topic1.raw().to_hex(),
+            self.topic2.raw().to_hex(),
+            self.topic3.raw().to_hex(),
+            self.data.raw().to_hex(),
         );
         if append != "" {
             res += &(s!(",") + append);

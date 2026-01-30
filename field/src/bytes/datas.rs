@@ -64,6 +64,34 @@ macro_rules! datas_define {
 
         impl_field_only_new!{$class}
 
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                let body = match fmt.binary {
+                    JSONBinaryFormat::Hex => format!("0x{}", hex::encode(&self.bytes)),
+                    JSONBinaryFormat::Base58Check => {
+                        if self.bytes.len() > 0 {
+                            let version = self.bytes[0];
+                            let data = &self.bytes[1..];
+                            data.to_base58check(version)
+                        } else {
+                            "".to_string()
+                        }
+                    },
+                    JSONBinaryFormat::Base64 => BASE64_STANDARD.encode(&self.bytes),
+                };
+                format!("\"{}\"", body)
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json: &str) -> Ret<()> {
+                let data = json_decode_binary(json)?;
+                self.count = <$sty>::from_usize(data.len())?;
+                self.bytes = data;
+                Ok(())
+            }
+        }
+
         impl Hex for $class {
             fn to_hex(&self) -> String {
                 hex::encode(&self.bytes)

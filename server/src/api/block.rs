@@ -32,13 +32,13 @@ async fn block_intro(State(ctx): State<ApiCtx>, q: Query<Q2953>) -> impl IntoRes
     // return data
     let txnum = blkobj.transaction_count().uint() as usize - 1; // drop coinbase
     let mut data = jsondata!{
-        "hash", blkpkg.hash.hex(),
+        "hash", blkpkg.hash.to_hex(),
         // head
         "version", blkobj.version().uint(),
         "height", blkobj.height().uint(),
         "timestamp", blkobj.timestamp().uint(),
-        "mrklroot", blkobj.mrklroot().hex(),
-        "prevhash", blkobj.prevhash().hex(),
+        "mrklroot", blkobj.mrklroot().to_hex(),
+        "prevhash", blkobj.prevhash().to_hex(),
         // meta
         "nonce", blkobj.nonce().uint(),
         "difficulty", blkobj.difficulty().uint(),
@@ -55,7 +55,7 @@ async fn block_intro(State(ctx): State<ApiCtx>, q: Query<Q2953>) -> impl IntoRes
         let mut txhxs: Vec<String> = vec![];
         let alltrs = blkobj.transactions();
         for i in 1..txnum+1 {
-            txhxs.push( alltrs[i].hash().hex() );
+            txhxs.push( alltrs[i].hash().to_hex() );
         }
         data.insert("tx_hash_list", json!(txhxs));
     }
@@ -79,8 +79,8 @@ async fn block_recents(State(ctx): State<ApiCtx>, q: Query<Q7456>) -> impl IntoR
     for li in  ctx.engine.recent_blocks() {
         datalist.push(jsondata!{
             "height", li.height,
-            "hash", li.hash.hex(),
-            "prev", li.prev.hex(),
+            "hash", li.hash.to_hex(),
+            "prev", li.prev.to_hex(),
             "txs", li.txs - 1,
             "miner", li.miner.readable(),
             "message", li.message,
@@ -142,7 +142,7 @@ async fn block_views(State(ctx): State<ApiCtx>, q: Query<Q4935>) -> impl IntoRes
         };
         let data = jsondata!{
             "height", intro.height().uint(),
-            "hash", blkhx.hex(),
+            "hash", blkhx.to_hex(),
             "msg", cbtx.message().to_readable_left(),
             "reward", cbtx.reward().to_unit_string(&unit),
             "miner", cbtx.main().readable(),
@@ -215,9 +215,9 @@ async fn block_datas(State(ctx): State<ApiCtx>, q: Query<Q8538>) -> impl IntoRes
 
     // convert
     if hexbody {
-        alldatas = alldatas.hex().into_bytes();
+        alldatas = alldatas.to_hex().into_bytes();
     }else if base64body {
-        alldatas = alldatas.base64().into_bytes();
+        alldatas = alldatas.to_base64().into_bytes();
     }
 
     // return raw data

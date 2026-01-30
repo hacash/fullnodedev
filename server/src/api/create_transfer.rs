@@ -121,10 +121,10 @@ async fn create_coin_transfer(State(_ctx): State<ApiCtx>, q: Query<Q9374>) -> im
     */
     // ok ret
     let data = jsondata!{
-        "hash", trsobj.hash().hex(),
-        "hash_with_fee", trsobj.hash_with_fee().hex(),
+        "hash", trsobj.hash().to_hex(),
+        "hash_with_fee", trsobj.hash_with_fee().to_hex(),
         "timestamp", trsobj.timestamp().uint(),
-        "body", trsobj.serialize().hex(),
+        "body", trsobj.serialize().to_hex(),
     };
     api_data(data)
 }

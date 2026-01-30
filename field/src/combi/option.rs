@@ -67,6 +67,39 @@ macro_rules! combi_option {
 
         impl_field_only_new!{$class}
 
+        impl ToJSON for $class {
+            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+                match self {
+                    Self::Val1(v) => format!("{{\"type\":0,\"value\":{}}}", v.to_json_fmt(fmt)),
+                    Self::Val2(v) => format!("{{\"type\":1,\"value\":{}}}", v.to_json_fmt(fmt)),
+                }
+            }
+        }
+
+        impl FromJSON for $class {
+            fn from_json(&mut self, json: &str) -> Ret<()> {
+                let pairs = json_split_object(json);
+                let mut ty: i32 = -1;
+                let mut val_str = "";
+                for (k, v) in pairs {
+                    if k == "type" { ty = v.parse::<i32>().map_err(|e| e.to_string())?; }
+                    else if k == "value" { val_str = v; }
+                }
+                if ty == 0 {
+                    let mut v = <$t1>::new();
+                    v.from_json(val_str)?;
+                    *self = Self::Val1(v);
+                } else if ty == 1 {
+                    let mut v = <$t2>::new();
+                    v.from_json(val_str)?;
+                    *self = Self::Val2(v);
+                } else {
+                    return errf!("invalid option type: {}", ty);
+                }
+                Ok(())
+            }
+        }
+
 
         impl $class {
             

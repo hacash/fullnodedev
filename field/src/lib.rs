@@ -22,8 +22,12 @@ include!{"interface.rs"}
 
 include!{"ini.rs"}
 include!{"util.rs"}
+include!{"json_util.rs"}
 include!{"impl.rs"}
 include!{"empty.rs"}
+
+#[cfg(test)]
+include!{"tests.rs"}
 
 // number
 include!{"number/macro_compute.rs"}

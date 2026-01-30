@@ -32,9 +32,9 @@ pub fn checked_func_sign(s: &[u8]) -> VmrtRes<FnSign> {
 
 
  
-pub trait ToHex { fn hex(&self) -> String; }
+pub trait ToHex { fn to_hex(&self) -> String; }
 impl ToHex for [u8; FN_SIGN_WIDTH] {
-    fn hex(&self) -> String {
+    fn to_hex(&self) -> String {
         hex::encode(self)
     }
 }

@@ -103,7 +103,7 @@ async fn diamondminer_success(State(ctx): State<ApiCtx>, q: Query<Q6396>, body: 
         return api_error(&e)
     }
 
-    let hxstr = txhx.hex();
+    let hxstr = txhx.to_hex();
     println!("▒▒▒▒ DIAMOND SUCCESS: {}({}), tx hash: {}.", mint_name, mint_number, &hxstr);
 
     let data = jsondata!{

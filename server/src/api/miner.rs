@@ -48,7 +48,7 @@ fn get_miner_pending_block_stuff(is_detail: bool, is_transaction: bool, is_stuff
     let cbhx = stuff.coinbase_tx.hash();
     let mkrl = calculate_mrkl_coinbase_update(cbhx, &stuff.mrklrts);
     stuff.block.set_mrklroot( mkrl );
-    let intro_data = stuff.block.intro.serialize().hex();
+    let intro_data = stuff.block.intro.serialize().to_hex();
 
     macro_rules! hex_or_hase64 {
         ($v: expr) => {
@@ -297,7 +297,7 @@ async fn miner_success(State(ctx): State<ApiCtx>, q: Query<Q9347>) -> impl IntoR
         if 1 == hash_diff(&blkhx, &tarstf.target_hash) {
             return api_error(&format!(
                 "difficulty check fail: at least need {} but got {}", 
-                &tarstf.target_hash.hex(), &blkhx.hex(),
+                &tarstf.target_hash.to_hex(), &blkhx.to_hex(),
             ));
         }
         

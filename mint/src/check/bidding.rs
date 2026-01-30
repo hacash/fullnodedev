@@ -119,7 +119,7 @@ impl BiddingProve {
         let bids = self.biddings.entry(dianum).or_default();
         bids.retain_mut(|a|{
             if a.txhx == hx {            
-                // println!("---- remove_tx fee: {}, hx: {}", a.fee, a.txhx.hex());
+                // println!("---- remove_tx fee: {}, hx: {}", a.fee, a.txhx.to_hex());
                 a.usable = false; // not usable may be not in txpool
             }
             true // keep all

@@ -95,7 +95,7 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
         let thsx = blkp.objc.transaction_hash_list(false); // hash no fee
         if let Err(e) = engptr.discover(blkp) {
             println!("Error: {}, failed.", e);
-            // println!("- error block data hex: {}", body.hex());
+            // println!("- error block data hex: {}", body.to_hex());
         }else{
             println!("ok.");
             mintckr.tx_pool_refresh(engptr.as_ref().as_read(), txpool.as_ref(), thsx, blkhei);

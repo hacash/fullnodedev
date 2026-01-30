@@ -55,10 +55,10 @@ pub fn sign_transaction(param: SignTxParam) -> Ret<SignTxResult> {
     };
     // ok finish
     Ok(SignTxResult {
-        hash:          trs.hash().hex(),
-        hash_with_fee: trs.hash_with_fee().hex(),
-        body:          trs.serialize().hex(), 
-        signature:     signature.signature.hex(),
+        hash:          trs.hash().to_hex(),
+        hash_with_fee: trs.hash_with_fee().to_hex(),
+        body:          trs.serialize().to_hex(), 
+        signature:     signature.signature.to_hex(),
         timestamp:     trs.timestamp().uint(),
     })
 }

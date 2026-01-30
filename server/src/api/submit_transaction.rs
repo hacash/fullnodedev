@@ -39,6 +39,6 @@ async fn submit_transaction(State(ctx): State<ApiCtx>, q: Query<Q4396>, body: By
     }
     // ok
     api_data(jsondata!{
-        "hash", txpkg.hash.hex(),
+        "hash", txpkg.hash.to_hex(),
     })
 }

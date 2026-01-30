@@ -30,6 +30,18 @@ impl Field for Empty {
     }
 }
 
+impl ToJSON for Empty {
+    fn to_json_fmt(&self, _: &JSONFormater) -> String {
+        "{}".to_string()
+    }
+}
+
+impl FromJSON for Empty {
+    fn from_json(&mut self, _: &str) -> Ret<()> {
+        Ok(())
+    }
+}
+
 
 
 ///////////////////////
@@ -70,5 +82,19 @@ impl Field for VecWrap {
         Self {
             data: Vec::new()
         }
+    }
+}
+
+impl ToJSON for VecWrap {
+    fn to_json_fmt(&self, _: &JSONFormater) -> String {
+        format!("\"0x{}\"", hex::encode(&self.data))
+    }
+}
+
+impl FromJSON for VecWrap {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let b = json_decode_binary(json)?;
+        self.data = b;
+        Ok(())
     }
 }
