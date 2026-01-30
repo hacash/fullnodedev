@@ -12,7 +12,18 @@ action_define!{ DiamondInscription, 32,
         engraved_type    : Uint1
         engraved_content : BytesW1  
     },
-    (self, format!("Inscription to {} diamonds", self.diamonds.length())),
+    (self, {
+        let a = self;
+        let dia_num = a.diamonds.length();
+        let cost_str = a.protocol_cost.to_fin_string();
+        let ins_str = a.engraved_content.to_readable_or_hex();
+        let mut desc = format!("Inscript {} HACD ({}) with \"{}\"",
+            dia_num, a.diamonds.splitstr(), ins_str);
+        if a.protocol_cost.is_positive() {
+            desc += &format!(" cost {} HAC fee", cost_str);
+        }
+        desc
+    }),
     (self, ctx, _gas {
         diamond_inscription(self, ctx)
     })
@@ -87,7 +98,15 @@ action_define!{ DiamondInscriptionClear, 33,
         diamonds      : DiamondNameListMax200    
         protocol_cost : Amount
     },
-    (self, format!("Clear Inscription of {} diamonds", self.diamonds.length())),
+    (self, {
+        let a = self;
+        let dia_num = a.diamonds.length();
+        let cost_str = a.protocol_cost.to_fin_string();
+        format!(
+            "Clean inscript {} HACD ({}) cost {} HAC fee",
+            dia_num, a.diamonds.splitstr(), cost_str
+        )
+    }),
     (self, ctx, _gas {
         diamond_inscription_clean(self, ctx)
     })
