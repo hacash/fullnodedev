@@ -2,6 +2,7 @@
 pub mod rt;
 pub mod action;
 pub mod contract;
+pub mod fitshc;
 pub mod frame;
 pub mod hook;
 pub mod interpreter;

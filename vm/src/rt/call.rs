@@ -169,7 +169,7 @@ pub struct Funcptr {
 
 
 macro_rules! abst_call_type_define {
-    ( $( $k:ident : $v:expr )+ ) => {
+    ( $( $k:ident : $v:expr , [ $( $atk:ident ),* ] )+ ) => {
 
         #[allow(non_camel_case_types)]
         #[repr(u8)]
@@ -194,6 +194,13 @@ macro_rules! abst_call_type_define {
                     _ => return itr_err_fmt!(ItrErrCode::AbstTypeError, "AbstCall name {} not find", name)
                 })
             }
+            pub fn param_types(&self) -> Vec<ValueTy> {
+                match self {
+                    $(
+                    Self::$k => vec![ $( ValueTy::$atk ),* ],
+                    )+
+                }
+            }
         }
 
     }
@@ -209,19 +216,19 @@ impl AbstCall {
 
 
 abst_call_type_define! {
-    Construct    : 0u8
-    Change       : 1
-    Append       : 2
+    Construct    : 0u8 , [ Bytes ]
+    Change       : 1   , [ ]
+    Append       : 2   , [ ]
 
-    PermitHAC    : 15
-    PermitSAT    : 16
-    PermitHACD   : 17
-    PermitAsset  : 18
+    PermitHAC    : 15  , [ Address, Bytes ]
+    PermitSAT    : 16  , [ Address, U64 ]
+    PermitHACD   : 17  , [ Address, U32, Bytes ]
+    PermitAsset  : 18  , [ Address, U64, U64 ]
 
-    PayableHAC   : 25
-    PayableSAT   : 26
-    PayableHACD  : 27
-    PayableAsset : 28
+    PayableHAC   : 25  , [ Address, Bytes ]
+    PayableSAT   : 26  , [ Address, U64 ]
+    PayableHACD  : 27  , [ Address, U32, Bytes ]
+    PayableAsset : 28  , [ Address, U64, U64 ]
 
 }
 

@@ -1,0 +1,126 @@
+{
+  "name": "Fitsh",
+  "scopeName": "source.fitsh",
+  "fileTypes": ["fitsh"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#string-literal" },
+    { "include": "#number-literal" },
+    { "include": "#address-literal" },
+    { "include": "#keyword.pragma" },
+    { "include": "#keyword.declaration" },
+    { "include": "#keyword.control" },
+    { "include": "#keyword.expression" },
+    { "include": "#keyword.types" },
+    { "include": "#builtin.deploy" },
+    { "include": "#builtin.storage" },
+    { "include": "#builtin.buffer" },
+    { "include": "#builtin.native" },
+    { "include": "#self-method" },
+    { "include": "#self-access" },
+    { "include": "#operators" },
+    { "include": "#colon" },
+    { "include": "#dot-accessor" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "include": "#line-comment" },
+        { "include": "#block-comment" }
+      ]
+    },
+    "line-comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.fitsh"
+    },
+    "block-comment": {
+      "begin": "/\\*",
+      "end": "\\*/",
+      "name": "comment.block.fitsh"
+    },
+    "string-literal": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.fitsh",
+      "patterns": [
+        { "match": "\\\\.", "name": "constant.character.escape.fitsh" }
+      ]
+    },
+    "number-literal": {
+      "patterns": [
+        {
+          "match": "\\b0x[0-9A-Fa-f_]+\\b",
+          "name": "constant.numeric.hex.fitsh"
+        },
+        {
+          "match": "\\b0b[01_]+\\b",
+          "name": "constant.numeric.binary.fitsh"
+        },
+        {
+          "match": "\\b[0-9][0-9_]*\\b",
+          "name": "constant.numeric.decimal.fitsh"
+        }
+      ]
+    },
+    "address-literal": {
+      "match": "\\b[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{30,34}\\b",
+      "name": "constant.other.address.fitsh"
+    },
+    "keyword.pragma": {
+      "match": "\\bpragma\\b",
+      "name": "keyword.other.directive.fitsh"
+    },
+    "keyword.declaration": {
+      "match": "\\b(?:contract|function|library|inherit|abstract|deploy|public|private|param|callcode|calllib|callstatic|callinr|call|bytecode|ircode|bind|const|var|let|use)\\b",
+      "name": "keyword.other.declaration.fitsh"
+    },
+    "keyword.control": {
+      "match": "\\b(?:if|else|while|return|abort|throw|assert|print|log|end)\\b",
+      "name": "keyword.control.flow.fitsh"
+    },
+    "keyword.expression": {
+      "match": "\\b(?:and|or|not|as|is)\\b",
+      "name": "keyword.operator.logical.fitsh"
+    },
+    "keyword.types": {
+      "match": "\\b(?:nil|bool|bytes|address|list|map|struct|tuple|u8|u16|u32|u64|u128|u256|uint|true|false)\\b",
+      "name": "storage.type.fitsh"
+    },
+    "builtin.deploy": {
+      "match": "\\b(?:protocol_cost|nonce|construct_argv)\\b",
+      "name": "support.constant.deploy.fitsh"
+    },
+    "builtin.storage": {
+      "match": "\\bstorage_(?:save|load|del|rest|rent)\\b",
+      "name": "support.function.storage.fitsh"
+    },
+    "builtin.buffer": {
+      "match": "\\bbuf(?:_left(?:_drop)?|_right(?:_drop)?)\\b",
+      "name": "support.function.buffer.fitsh"
+    },
+    "builtin.native": {
+      "match": "\\b(?:context_address|hac_to_mei|hac_to_zhu|mei_to_hac|zhu_to_hac|address_ptr|sha2|sha3|ripemd160)\\b",
+      "name": "support.function.native.fitsh"
+    },
+    "self-method": {
+      "match": "\\bself\\.[A-Za-z_][A-Za-z0-9_]*\\b",
+      "name": "support.function.method.self.fitsh"
+    },
+    "self-access": {
+      "match": "\\bself\\b",
+      "name": "variable.language.self.fitsh"
+    },
+    "operators": {
+      "match": "(->|::|\\+\\+|\\+=|-=|\\*=|/=|==|!=|<=|>=|&&|\\|\\||[+\\-*/%!=<>])",
+      "name": "keyword.operator.arithmetic.fitsh"
+    },
+    "colon": {
+      "match": ":",
+      "name": "punctuation.separator.colon.fitsh"
+    },
+    "dot-accessor": {
+      "match": "\\.",
+      "name": "punctuation.accessor.dot.fitsh"
+    }
+  }
+}

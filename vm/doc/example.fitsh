@@ -22,6 +22,14 @@ use pragma 0.1.0
 */
 contract TestToken {
 
+    
+    deploy {
+        protocol_cost: "1:248",
+        nonce: 1,
+        construct_argv: "0xaabb2244" // or "construct argv string"
+    }
+    
+
     /*
         Define the name and address of the library used by the contract. Its position in the array is the libidx. Note that the comma is not required.
     */
@@ -85,7 +93,7 @@ contract TestToken {
     /*
         Private (non-public) internal functions of a contract
     */
-    function do_transfer(from_addr: address, to_addr: address, amount: u64) -> u32 {
+    function do_transfer(addr_from: address, addr_to: address, amount: u64) -> u32 {
         
         assert addr_from is address
         assert addr_to is address

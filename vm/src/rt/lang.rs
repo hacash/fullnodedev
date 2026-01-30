@@ -28,6 +28,7 @@ impl KwTy {
 
 
 keyword_define!{
+    Arrow     : "->"
     DColon    : "::"
     Colon     : ":"
     Dot       : "."
@@ -62,6 +63,15 @@ keyword_define!{
     CallStatic: "callstatic"
     CallCode  : "callcode"
     ByteCode  : "bytecode"
+    IrCode    : "ircode"
+    Contract  : "contract"
+    Library   : "library"
+    Inherit   : "inherit"
+    Abstract  : "abstract"
+    Function  : "function"
+    Public    : "public"
+    Private   : "private"
+    Deploy    : "deploy"
     Param     : "param"
     And       : "and"
     Or        : "or"

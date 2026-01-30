@@ -22,6 +22,9 @@ pub struct Syntax {
     // leftv: Box<dyn AST>,
     irnode: IRNodeArray, // replaced IRNodeArray -> IRNodeArray
     source_map: SourceMap,
+    // External injected
+    ext_params: Option<Vec<(String, ValueTy)>>,
+    ext_libs: Option<Vec<(String, u8, Option<field::Address>)>>,
 }
 
 
@@ -1120,7 +1123,34 @@ impl Syntax {
     }
 
 
+    pub fn with_params(mut self, params: Vec<(String, ValueTy)>) -> Self {
+        self.ext_params = Some(params);
+        self
+    }
+
     pub fn parse(mut self) -> Ret<(IRNodeArray, SourceMap)> {
+        // External Libs
+        if let Some(libs) = self.ext_libs.take() {
+            for (name, idx, addr) in libs {
+                self.bind_lib(name, idx, addr)?;
+            }
+        }
+        // External Params
+        if let Some(mut params) = self.ext_params.take() {
+            params.reverse();
+            for (name, _ty) in params {
+                let idx = self.local_alloc;
+                self.bind_local(name, idx, SlotKind::Var)?;
+                let store = Box::new(IRNodeParam1Single {
+                    hrtv: false,
+                    inst: Bytecode::PUT,
+                    para: idx,
+                    subx: Box::new(IRNodeEmpty{}),
+                });
+                self.irnode.push(store);
+            }
+        }
+
         self.irnode.push(push_empty());
         while let Some(item) = self.item_may()? {
             if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {} else {

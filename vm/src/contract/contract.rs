@@ -1,5 +1,6 @@
 
 
+#[derive(Clone)]
 pub struct Contract {
     argv: BytesW1,
     ctrt: ContractSto
@@ -44,6 +45,10 @@ impl Contract {
     pub fn argv(mut self, a: Vec<u8>) -> Self {
         self.argv = BytesW1::from(a).unwrap();
         self
+    }
+
+    pub fn into_sto(self) -> ContractSto {
+        self.ctrt
     }
 
     pub fn testnet_deploy_print_by_nonce(&self, fee: &str, nonce: u32) {
