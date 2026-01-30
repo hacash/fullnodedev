@@ -5,6 +5,11 @@
         contract
         library
         inherit
+        abstract
+        function
+        public
+        ircode
+        bytecode
 */
 
 
@@ -26,12 +31,109 @@ contract TestToken {
     ]
 
     /*
-        Define the name and address of the library used by the contract. Its position in the array is the libidx. Note that the comma is not required.
+        Define the name and address of the inherit used by the contract. The order of the array is the inherited query order. Note that the comma is not required.
     */
     inherit [
         BaseToken:   emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS,
         TokenHelper: bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
     ]
+
+
+    
+    /*
+        abstract indicates the definition of a system abstract function
+        Call AbstCall::from_name() to parse and locate the specific AbstCall; if it does not exist, an error is reported.
+        The parameter list needs to be checked to ensure it is consistent with the definition. All abstract methods' return values are fixed as numeric error codes, where returning 0 indicates success or authorized permission, and returning a non-zero value indicates disallowed action or failure. Returning any other non-numeric type will directly throw an error.
+        
+    */
+    abstract PayableHACD(from_addr: address, dianum: u32, diamonds: bytes) {
+
+    }
+
+    /*
+        When no parameters are used, the parameter list can be omitted, and accordingly, no code for unpacking parameters will be added in the function body. Instead, a POP instruction is directly inserted to clear the arguments on the stack.
+        When a function has no parameter definitions, it will automatically receive a nil as a placeholder for the parameter, and a POP also needs to be automatically inserted to clear the unused parameter.
+    */
+    abstract PayableAsset() {
+        return 0 // not allow
+    }
+
+    abstract PermitAsset(to_addr: address, serial: u64, amount: u64) {
+        if to_addr == 1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9 {
+            return 0 // allow by this addr
+        }
+        return 1 // not allow
+    }
+
+
+
+
+    /*
+        The source code of the contract function body calls the existing vm/src/lang/syntax.rs to compile
+        Automatically parse the parameter list and return value, and place them into each FuncArgvTypes object of the contract
+        Automatically add the public modifier and automatically perform a hash sign calculation on the function name transfer_to
+        return errcode, type u32
+    */
+    function public transfer_to(addr: address, amt: u64) -> u32 {
+        // The lib statement is now uniformly defined through the contract.
+        // lib TokenHelper = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
+
+
+    }
+
+
+    /*
+        Private (non-public) internal functions of a contract
+    */
+    function do_transfer(from_addr: address, to_addr: address, amount: u64) -> u32 {
+        
+        assert addr_from is address
+        assert addr_to is address
+        assert amount is u64
+        // check all addr type is private key
+        assert 0 == (buf_left(1, addr_from) + buf_left(1, addr_to))
+        // load balance
+        var bls_from = self.balance_of(addr_from)
+        assert amount <= bls_from
+        // update from
+        bls_from -= amount
+        var bk_from = "b_" ++ addr_from
+        if bls_from > 0 {
+            storage_save(bk_from, bls_from)
+        } else {
+            storage_del(bk_from)
+        }
+        // update to
+        var bls_to = self.balance_of(addr_to)
+        bls_to += amount
+        var bk_to = "b_" ++ addr_to
+        if bls_to > 0 {
+            storage_save(bk_to, bls_to)
+        } else {
+            storage_del(bk_to)
+        }
+        // finish
+        end
+
+    }
+
+
+    /*
+        Check the account balance
+        ircode indicates that the compilation target is IRcode. The default is bytecode, so it can be omitted, but you can also include it.
+    */
+    function public ircode balance_of(addr: address) -> u64 {
+        // The param statement is now uniformly defined through the parameter table. 
+        // param { addr }
+        assert addr is address
+        bind bk = "b_" ++ addr
+        var balance = storage_load(bk)
+        if balance is nil {
+            balance = 0 as u64
+        }
+        return balance
+    }
+
 
 
 }

@@ -186,6 +186,14 @@ macro_rules! abst_call_type_define {
                 }
                 itr_err_fmt!(ItrErrCode::AbstTypeError, "AbstCall type {} not find", n)
             }
+            pub fn from_name(name: &str) -> VmrtRes<Self> {
+                Ok(match name {
+                    $(
+                    stringify!($k) => Self::$k,
+                    )+
+                    _ => return itr_err_fmt!(ItrErrCode::AbstTypeError, "AbstCall name {} not find", name)
+                })
+            }
         }
 
     }
