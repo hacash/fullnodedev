@@ -11,6 +11,7 @@ action_define!{AstIf, 22,
         br_if:   AstSelect
         br_else: AstSelect
     },
+    (self, "Asset if-else execute".to_owned()),
     (self, ctx, gas {
         #[cfg(not(feature = "ast"))]
         if true {

@@ -12,6 +12,7 @@ action_define!{ DiamondInscription, 32,
         engraved_type    : Uint1
         engraved_content : BytesW1  
     },
+    (self, format!("Inscription to {} diamonds", self.diamonds.length())),
     (self, ctx, _gas {
         diamond_inscription(self, ctx)
     })
@@ -86,6 +87,7 @@ action_define!{ DiamondInscriptionClear, 33,
         diamonds      : DiamondNameListMax200    
         protocol_cost : Amount
     },
+    (self, format!("Clear Inscription of {} diamonds", self.diamonds.length())),
     (self, ctx, _gas {
         diamond_inscription_clean(self, ctx)
     })

@@ -24,6 +24,7 @@ action_define!{ DiamondMint, 4,
     {
         d: DiamondMintData
     },
+    (self, format!("Mint diamond <{}> number {}", self.d.diamond.to_readable(), *self.d.number)),
     (self, ctx, _gas {
         diamond_mint(self, ctx)      
     })

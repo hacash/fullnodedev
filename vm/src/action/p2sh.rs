@@ -30,6 +30,7 @@ action_define!{UnlockScriptProve, 97,
         merkels: MerkelStuffs
         _marks_: Fixed2
     },
+    (self, "Prove P2SH unlock script".to_owned()),
     (self, ctx, _gas {
         #[cfg(not(feature = "p2sh"))]
         if true {

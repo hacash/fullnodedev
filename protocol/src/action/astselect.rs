@@ -11,6 +11,8 @@ action_define!{AstSelect, 21,
         exe_max: Uint1
         actions: DynListActionW1
     },
+    (self, format!("Execute select {} to {} in {} actions", 
+        *self.exe_min, *self.exe_max, self.actions.length())),
     (self, ctx, gas {
         #[cfg(not(feature = "ast"))]
         if true {

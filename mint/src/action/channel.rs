@@ -14,6 +14,7 @@ action_define!{ ChannelOpen, 2,
         left_bill      : AddrHac
         right_bill     : AddrHac
     },
+    (self, format!("Open channel {} for {} and {}", self.channel_id, self.left_bill.address, self.right_bill.address)),
     (self, ctx, _gas {
         channel_open(self, ctx)
     })
@@ -116,6 +117,7 @@ action_define!{ ChannelClose, 3,
     {
         channel_id     : ChannelId 
     },
+    (self, format!("Close channel {}", self.channel_id)),
     (self, ctx, _gas {
         channel_close(self, ctx)
     })

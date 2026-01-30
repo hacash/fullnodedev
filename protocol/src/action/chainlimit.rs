@@ -10,6 +10,8 @@ action_define!{ SubmitHeightLimit, 29,
         start: BlockHeight
         end:   BlockHeight
     },
+    (self, format!("Limit height range ({}, {})", 
+        *self.start, if *self.end == 0 { "Unlimited".to_owned() } else { self.end.to_string() })),
     (self, ctx, _gas {
         let pdhei = ctx.env().block.height;
         let left = *self.start;
@@ -29,15 +31,14 @@ action_define!{ SubmitHeightLimit, 29,
 }
 
 
-
-
-action_define!{ SubChainID, 30, 
+action_define!{ ValidChainID, 30, 
     ActLv::TopUnique, // level
     false, // burn 90 fee
     [], // need sign
     {
         chain_id: Uint4
     },
+    (self, format!("Valid chain ID {}", *self.chain_id)),
     (self, ctx, _gas {
         let lid = ctx.env().chain.id;
         let sid = *self.chain_id;

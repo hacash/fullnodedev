@@ -21,6 +21,7 @@ action_define!{ContractDeploy, 99,
         _marks_:   Fixed4 // zero
         contract: ContractSto
     },
+    (self, format!("Deploy smart contract with nonce {}", *self.nonce)),
     (self, ctx, _gas {
         if self._marks_.not_zero() { // compatibility for future
             return errf!("marks byte error")
@@ -73,6 +74,7 @@ action_define!{ContractUpdate, 98,
         _marks_: Fixed2 // zero
         contract: ContractSto
     },
+    (self, format!("Update smart contract {}", self.address)),
     (self, ctx, _gas {
         use AbstCall::*;
         if self._marks_.not_zero() {

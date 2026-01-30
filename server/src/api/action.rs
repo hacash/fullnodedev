@@ -225,7 +225,7 @@ pub fn action_from_json(_main_addr: &Address, jsonv: &serde_json::Value) -> Ret<
         end,           j_uint5
     }
 
-    if_ret_act_ns!{ SubChainID,
+    if_ret_act_ns!{ ValidChainID,
         chain_id,      j_uint4
     }
 
@@ -535,7 +535,7 @@ pub fn action_to_json_desc(tx: &dyn TransactionRead, act: &Box<dyn Action>,
             s_hei, e_hei
         );
 
-    }else if let Some(a) = SubChainID::downcast(act) {
+    }else if let Some(a) = ValidChainID::downcast(act) {
         
         let cid = *a.chain_id;
         set_jsonobj!{

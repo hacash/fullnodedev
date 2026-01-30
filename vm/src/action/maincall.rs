@@ -10,6 +10,7 @@ action_define!{ContractMainCall, 100,
         ctype: Uint1
         codes: BytesW2
     },
+    (self, format!("Call smart contract codes with type {}", *self.ctype)),
     (self, ctx, _gas {
         if self.marks.not_zero() {
             return errf!("marks bytes format error")

@@ -23,6 +23,7 @@ action_define!{AssetCreate, 16,
         metadata: AssetSmelt
         protocol_fee: Amount
     },
+    (self, format!("Register asset <{}>", self.metadata.ticket)),
     (self, ctx, _gas {
         let amd = self.metadata.clone();
         let serial = *amd.serial;

@@ -207,6 +207,13 @@ impl AddrOrPtr {
         Self::Val2(Addrptr::from(i + ADDR_OR_PTR_DIV_NUM))
     } 
 
+    pub fn readable(&self) -> String {
+        match self {
+            Self::Val1(v) => v.readable(),
+            Self::Val2(v) => format!("<address pointer {}>", v.uint() - ADDR_OR_PTR_DIV_NUM),
+        }
+    }
+
 }
 
 

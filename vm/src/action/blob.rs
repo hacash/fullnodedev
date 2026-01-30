@@ -6,6 +6,7 @@ action_define!{TxMessage, 96,
     {
         data:    BytesW1
     },
+    (self, "Transaction message".to_owned()),
     (self, ctx, gas {
         Ok(vec![])
     })
@@ -18,6 +19,7 @@ action_define!{TxBlob, 97,
     {
         data:    BytesW2
     },
+    (self, "Transaction blob data".to_owned()),
     (self, ctx, gas {
         Ok(vec![])
     })

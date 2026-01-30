@@ -11,6 +11,7 @@ action_define!{ TexCellAct, 35,
         cells : DnyTexCellW1
         sign  : Sign
     },
+    (self, format!("Execute {} tex cells by {}", self.cells.length(), self.addr)),
     (self, ctx, _gas {
         self.addr.must_privakey()?;
         // check signature

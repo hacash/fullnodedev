@@ -6,6 +6,7 @@
 macro_rules! action_define {
     ($class:ident, $kid:expr, $lv:expr, $burn90:expr, $reqsign:expr, 
         { $( $item:ident : $ty:ty )* },
+        ($dself:ident, $desc:expr),
         ($pself:ident, $pctx:ident, $pgas:ident $exec:expr)
     ) => {
 
@@ -107,6 +108,10 @@ macro_rules! action_define {
             }
         }
 
+        impl Description for $class {
+            fn to_description(&$dself) -> String { $desc }
+        }
+
         impl Action for $class {
             fn kind(&self) -> u16 { *self.kind }
             fn level(&self) -> ActLv { $lv }
@@ -127,6 +132,17 @@ macro_rules! action_define {
         }
 
         
+    };
+
+    ($class:ident, $kid:expr, $lv:expr, $burn90:expr, $reqsign:expr, 
+        { $( $item:ident : $ty:ty )* },
+        ($pself:ident, $pctx:ident, $pgas:ident $exec:expr)
+    ) => {
+        action_define!{ 
+            $class, $kid, $lv, $burn90, $reqsign, { $( $item : $ty )* },
+            (self, "".to_owned()),
+            ($pself, $pctx, $pgas $exec)
+        }
     };
 }
 
@@ -220,6 +236,7 @@ action_define!{Test63856464969364, 9527,
         id: Uint1
         addr: Address
     },
+    (self, "Test action".to_owned()),
     (self, _ctx, gas {
         errf!("never call")
         // Ok(vec![])

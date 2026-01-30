@@ -25,7 +25,7 @@ macro_rules! fixed_define_body {
 
         impl Display for $class {
             fn fmt(&self,f: &mut Formatter) -> Result {
-                write!(f,"{}",hex::encode(&self.bytes))
+                write!(f,"{}", hex::encode(&self.bytes))
             }
         }
 
