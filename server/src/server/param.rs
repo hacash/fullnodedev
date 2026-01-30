@@ -37,29 +37,93 @@ pub struct CoinKind {
     pub hacash: bool,
     pub satoshi: bool,
     pub diamond: bool,
+    pub assets: Vec<u64>,
+    pub assets_all: bool,
 }
 impl CoinKind {
     pub fn new(s: String) -> CoinKind {
-        match s.to_lowercase().as_str() {
-            "all" | "hsd" => CoinKind {
+        let sl = s.to_lowercase();
+        match sl.as_str() {
+            "all" | "hsda" => CoinKind {
                 hacash: true,
                 satoshi: true,
                 diamond: true,
+                assets: vec![],
+                assets_all: true,
             },
             _ => CoinKind {
-                hacash: s.contains("h"),
-                satoshi: s.contains("s"),
-                diamond: s.contains("d"),
+                hacash: sl.contains("h"),
+                satoshi: sl.contains("s"),
+                diamond: sl.contains("d"),
+                assets: vec![],
+                assets_all: sl.contains("a"),
             }
         }
+    }
+
+    pub fn parse(s: String) -> Ret<CoinKind> {
+        let lower = s.to_lowercase();
+        let compact: String = lower.chars().filter(|c| !c.is_whitespace()).collect();
+        let mut kind_part = compact.as_str();
+        let mut assets_part = "";
+        if let Some(start) = compact.find('(') {
+            let Some(end) = compact.rfind(')') else {
+                return errf!("coinkind assets list format error")
+            };
+            if end <= start {
+                return errf!("coinkind assets list format error")
+            }
+            assets_part = &compact[start + 1..end];
+            kind_part = compact[..start].trim_matches(|c: char| c == ',' || c == '|' || c == ';');
+        }
+        let mut ck = CoinKind::new(kind_part.to_string());
+        if !assets_part.trim().is_empty() {
+            if !kind_part.contains('a') {
+                return errf!("coinkind assets list requires 'a'")
+            }
+            ck.assets = CoinKind::parse_assets_list(assets_part)?;
+            if ck.assets.is_empty() {
+                return errf!("coinkind assets list empty")
+            }
+            ck.assets_all = false;
+        }
+        Ok(ck)
+    }
+
+    pub fn parse_assets_list(s: &str) -> Ret<Vec<u64>> {
+        let mut end = s.len();
+        for (i, c) in s.char_indices() {
+            if !(c.is_ascii_digit() || c == ',' || c == '|' || c.is_whitespace()) {
+                end = i;
+                break;
+            }
+        }
+        let list = s[..end].trim();
+        if list.is_empty() {
+            return Ok(vec![])
+        }
+        let mut out = Vec::new();
+        for part in list.split(|c| c == ',' || c == '|') {
+            let p = part.trim();
+            if p.is_empty() {
+                continue;
+            }
+            let v = p.parse::<u64>().map_err(|_| format!("asset serial {} format error", p))?;
+            let _ = Fold64::from(v)?;
+            out.push(v);
+        }
+        Ok(out)
     }
 }
 
 #[macro_export]
 macro_rules! q_coinkind {
     ( $q: ident, $k: ident ) => (
-        q_must!($q, $k, s!("hsd"));
-        let $k = CoinKind::new( $k );
+        q_must!($q, $k, s!("hsda"));
+        let $k = match CoinKind::parse($k) {
+            Ok(v) => v,
+            Err(e) => return api_error(&e),
+        };
     )
 }
 

@@ -15,6 +15,14 @@ struct SourceMapJson {
     lets: Vec<u8>,
     vars: Vec<u8>,
     params: Vec<String>,
+    #[serde(default)]
+    consts: Vec<ConstJson>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ConstJson {
+    name: String,
+    value: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -59,6 +67,8 @@ pub struct SourceMap {
     params: Vec<String>,
     lets: HashSet<u8>,
     vars: HashSet<u8>,
+    const_val_to_name: HashMap<String, String>,
+    const_name_to_val: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +86,8 @@ impl Default for SourceMap {
             params: Vec::new(),
             lets: HashSet::new(),
             vars: HashSet::new(),
+            const_val_to_name: HashMap::new(),
+            const_name_to_val: HashMap::new(),
         }
     }
 }
@@ -96,6 +108,20 @@ impl SourceMap {
         self.vars.remove(&slot);
         self.lets.insert(slot);
         Ok(())
+    }
+
+    pub fn register_const(&mut self, name: String, value: String) -> Rerr {
+        self.const_val_to_name.insert(value.clone(), name.clone());
+        self.const_name_to_val.insert(name, value);
+        Ok(())
+    }
+
+    pub fn get_const_name(&self, value: &str) -> Option<&String> {
+        self.const_val_to_name.get(value)
+    }
+
+    pub fn get_const_value(&self, name: &str) -> Option<&String> {
+        self.const_name_to_val.get(name)
     }
 
     pub fn register_param_names(&mut self, names: Vec<String>) -> Rerr {
@@ -171,7 +197,13 @@ impl SourceMap {
         let mut vars: Vec<u8> = self.vars.iter().copied().collect();
         vars.sort_unstable();
 
-        let doc = SourceMapJson { libs, funcs, slots, lets, vars, params: self.params.clone() };
+        let mut consts: Vec<ConstJson> = self.const_name_to_val.iter().map(|(name, value)| ConstJson {
+            name: name.clone(),
+            value: value.clone(),
+        }).collect();
+        consts.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let doc = SourceMapJson { libs, funcs, slots, lets, vars, params: self.params.clone(), consts };
         serde_json::to_string(&doc).map_err(|_| s!("source map serialize failed"))
     }
 
@@ -197,6 +229,9 @@ impl SourceMap {
         for slot in doc.slots {
             let kind = slot_kind_from_str(&slot.kind)?;
             map.register_slot(slot.slot, slot.name, kind)?;
+        }
+        for cnst in doc.consts {
+            map.register_const(cnst.name, cnst.value)?;
         }
         map.lets.clear();
         map.vars.clear();

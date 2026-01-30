@@ -1,4 +1,37 @@
 
+
+
+
+pub enum JSONBinaryFormat {
+    Hex,
+    Base58Check,
+    Base64,
+}
+
+pub struct JSONFormater {
+    pub binary: JSONBinaryFormat,
+    pub unit: String,
+}
+
+impl Default for JSONFormater {
+    fn default() -> Self {
+        Self {
+            binary: JSONBinaryFormat::Hex,
+            unit: String::new(),
+        }
+    }
+}
+
+impl JSONFormater {
+    pub fn new_unit(unit: &str) -> Self {
+        Self {
+            binary: JSONBinaryFormat::Hex,
+            unit: unit.to_owned(),
+        }
+    }
+}
+
+
 // No imports needed, as this file is included via include! in lib.rs
 // which already has the necessary imports.
 

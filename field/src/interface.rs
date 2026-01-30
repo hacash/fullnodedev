@@ -74,24 +74,6 @@ pub trait FromJSON {
     fn from_json(&mut self, json: &str) -> Ret<()>;
 }
 
-pub enum JSONBinaryFormat {
-    Hex,
-    Base58Check,
-    Base64,
-}
-
-pub struct JSONFormater {
-    pub binary: JSONBinaryFormat,
-}
-
-impl Default for JSONFormater {
-    fn default() -> Self {
-        Self {
-            binary: JSONBinaryFormat::Hex,
-        }
-    }
-}
-
 pub trait ToJSON {
     fn to_json(&self) -> String {
         self.to_json_fmt(&JSONFormater::default())

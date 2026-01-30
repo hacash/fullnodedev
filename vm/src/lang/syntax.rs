@@ -5,6 +5,7 @@ use hex;
 enum SymbolEntry {
     Slot(u8, bool),
     Bind(Box<dyn IRNode>),
+    Const(Box<dyn IRNode>),
 }
 
 #[allow(dead_code)]
@@ -301,10 +302,11 @@ impl Syntax {
     }
 
     pub fn link_symbol(&mut self, s: &String) -> Ret<Box<dyn IRNode>> {
-        if let Some(SymbolEntry::Bind(_)) = self.symbols.get(s) {
-            return self.link_bind(s);
+        match self.symbols.get(s) {
+            Some(SymbolEntry::Bind(_)) => self.link_bind(s),
+            Some(SymbolEntry::Const(node)) => Ok(dyn_clone::clone_box(node.as_ref())),
+            _ => self.link_local(s),
         }
-        self.link_local(s)
     }
 
     pub fn save_local(&mut self, s: &String, v: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
@@ -804,6 +806,42 @@ impl Syntax {
                 let elseifobj = self.item_must(0)?;
                 ifobj.subz = elseifobj;
                 Box::new(ifobj)
+            }
+            Keyword(KwTy::Const) => {
+                let e = errf!("const statement format error");
+                let token = self.next()?;
+                let Identifier(name) = token else {
+                    return e
+                };
+                let token = self.next()?;
+                let Keyword(KwTy::Assign) = token else {
+                    return e
+                };
+                let val_token = self.next()?;
+                let val_node: Box<dyn IRNode> = match &val_token {
+                    Token::Integer(n) => push_num(*n),
+                    Token::Bytes(b) => push_bytes(b)?,
+                    Token::Address(a) => push_addr(*a),
+                    _ => return e,
+                };
+                let val_str = match val_token {
+                    Token::Integer(n) => n.to_string(),
+                    Token::Bytes(b) => {
+                        if let Ok(s) = String::from_utf8(b.clone()) {
+                            format!("\"{}\"", s.escape_default())
+                        } else {
+                            format!("0x{}", hex::encode(b))
+                        }
+                    },
+                    Token::Address(a) => a.readable(),
+                    _ => unreachable!(),
+                };
+                if self.symbols.contains_key(&name) {
+                    return errf!("symbol '{}' already defined", name)
+                }
+                self.symbols.insert(name.clone(), SymbolEntry::Const(dyn_clone::clone_box(val_node.as_ref())));
+                self.source_map.register_const(name, val_str)?;
+                return Ok(Some(push_empty()));
             }
             Keyword(KwTy::Var) | Keyword(KwTy::Let) => {
                 let kind = match nxt {

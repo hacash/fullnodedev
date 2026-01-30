@@ -8,6 +8,9 @@ fn test_fitsh_comprehensive_roundtrip() {
 param { owner amount fee } // Parameter unpacking
 
 // 2. Declarations and Assignments
+const MAX_COUNT = 5000
+const APP_NAME = "hacash-vm"
+const ADMIN_ADDR = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 lib Token = 1 : emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS // Library declaration
 bind PI = 314 // Bind macro
 var counter = 100 // Var declaration
@@ -18,12 +21,15 @@ total += 10 // Compound assignment ADD
 total -= 5  // Compound assignment SUB
 total *= 2  // Compound assignment MUL
 total /= 3  // Compound assignment DIV
+let use_const_num = MAX_COUNT
+let use_const_str = APP_NAME
+let use_const_addr = ADMIN_ADDR
 
 // 3. Direct slot access (Special test case)
 $0 = "new owner" // Write to raw slot 0 (owner)
 let first_arg = $0 // Read from raw slot 0
 $4 = 999 // Write to raw slot 4 (total)
-var opt $7 = 123 // Explicit slot assignment and recovery
+var opt $10 = 123 // Explicit slot assignment and recovery
 
 // 4. Literals
 let hex_data = 0xABC123 // Hex bytes

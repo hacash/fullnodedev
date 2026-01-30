@@ -106,8 +106,12 @@ impl Serialize for Amount {
 impl_field_only_new!{Amount}
 
 impl ToJSON for Amount {
-    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-        format!("\"{}\"", self.to_fin_string())
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        if fmt.unit.is_empty() {
+            format!("\"{}\"", self.to_fin_string())
+        } else {
+            format!("\"{}\"", self.to_unit_string(&fmt.unit))
+        }
     }
 }
 

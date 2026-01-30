@@ -150,7 +150,7 @@ async fn transaction_build(State(_ctx): State<ApiCtx>, q: Query<Q2856>, body: By
         return api_error("actions format error")
     };
     for act in acts {
-        let a = action_from_json(&main_addr, &act);
+        let a = action_from_json(&act.to_string());
         if let Err(e) = a {
             return api_error(&format!("push action error: {}", &e))
         }
@@ -363,7 +363,7 @@ fn render_tx_info(tx: &dyn TransactionRead,
         let acts = tx.actions();
         let mut actobjs = Vec::with_capacity(acts.len());
         for act in acts {
-            actobjs.push( action_to_json_desc(tx, act, unit, true, description) );
+            actobjs.push( action_to_json_desc(tx, act, unit, description) );
         }
         data.insert("actions", json!(actobjs));
     }

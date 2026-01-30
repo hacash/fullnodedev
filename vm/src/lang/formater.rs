@@ -949,7 +949,23 @@ impl<'a> Formater<'a> {
 
     /// Main entry for descriptive printing.
     pub fn print(&self, node: &dyn IRNode) -> String {
-        self.print_inner(node)
+        let res = self.print_inner(node);
+        let pending = self.opt.take_pending_consts();
+        if !pending.is_empty() {
+            let mut defs = String::new();
+            let prefix = self.line_prefix();
+            if let Some(map) = self.opt.map {
+                for name in pending {
+                    if self.opt.mark_const_printed(name.clone()) {
+                        if let Some(value) = map.get_const_value(&name) {
+                            defs.push_str(&format!("{}const {} = {}\n", prefix, name, value));
+                        }
+                    }
+                }
+            }
+            return format!("{}{}", defs, res);
+        }
+        res
     }
 
     fn print_inner(&self, node: &dyn IRNode) -> String {
@@ -992,6 +1008,14 @@ impl<'a> Formater<'a> {
     /// Inline printing (equivalent to `print_sub_inline`).
     pub fn print_inline(&self, node: &dyn IRNode) -> String {
         if let Some(literal) = self.literal_from_node(node) {
+            if let Some(map) = self.opt.map {
+                if let Some(name) = map.get_const_name(&literal.text) {
+                    if !self.opt.is_const_printed(name) {
+                        self.opt.add_pending_const(name.clone());
+                    }
+                    return name.clone();
+                }
+            }
             return literal.text;
         }
         let inline = self.with_tab(0);

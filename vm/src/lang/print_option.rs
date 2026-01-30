@@ -19,6 +19,8 @@ pub struct PrintOption<'a> {
     pub flatten_syscall_cat: bool,
     pub recover_literals: bool,
     allocated: Rc<RefCell<PrintHashSet<u8>>>,
+    printed_consts: Rc<RefCell<PrintHashSet<String>>>,
+    pending_consts: Rc<RefCell<Vec<String>>>,
 }
 
 impl<'a> PrintOption<'a> {
@@ -37,6 +39,8 @@ impl<'a> PrintOption<'a> {
             flatten_syscall_cat: false,
             recover_literals: false,
             allocated: Rc::new(RefCell::new(PrintHashSet::new())),
+            printed_consts: Rc::new(RefCell::new(PrintHashSet::new())),
+            pending_consts: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -65,5 +69,25 @@ impl<'a> PrintOption<'a> {
 
     pub fn clear_all_slot_puts(&self) {
         self.allocated.borrow_mut().clear();
+    }
+
+    pub fn mark_const_printed(&self, name: String) -> bool {
+        self.printed_consts.borrow_mut().insert(name)
+    }
+
+    pub fn is_const_printed(&self, name: &str) -> bool {
+        self.printed_consts.borrow_mut().contains(name)
+    }
+
+    pub fn add_pending_const(&self, name: String) {
+        let mut pending = self.pending_consts.borrow_mut();
+        if !pending.contains(&name) {
+            pending.push(name);
+        }
+    }
+
+    pub fn take_pending_consts(&self) -> Vec<String> {
+        let mut pending = self.pending_consts.borrow_mut();
+        std::mem::take(&mut *pending)
     }
 }

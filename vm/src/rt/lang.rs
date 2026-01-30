@@ -44,6 +44,7 @@ keyword_define!{
     Lib       : "lib"
     Let       : "let"
     Bind      : "bind"
+    Const     : "const"
     Var       : "var"
     Log       : "log"
     If        : "if"

@@ -1,0 +1,38 @@
+/*
+    Fitsh Contract Example, 
+    Added some keyword:
+        use
+        contract
+        library
+        inherit
+*/
+
+
+// Indicates that the compiler version used is 0.1.0
+use pragma 0.1.0
+
+
+/*
+    Define a contract named TestToken
+*/
+contract TestToken {
+
+    /*
+        Define the name and address of the library used by the contract. Its position in the array is the libidx. Note that the comma is not required.
+    */
+    library [
+        Lib1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS,
+        Lib2: bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
+    ]
+
+    /*
+        Define the name and address of the library used by the contract. Its position in the array is the libidx. Note that the comma is not required.
+    */
+    inherit [
+        BaseToken:   emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS,
+        TokenHelper: bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
+    ]
+
+
+}
+
