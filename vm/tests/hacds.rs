@@ -37,6 +37,7 @@ mod hacds {
 
     #[test]
     fn deploy() {
+        use sys::*;
         use vm::rt::AbstCall::*;
 
         let payable_hacd = checked_compile_fitsh_to_ir(

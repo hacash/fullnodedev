@@ -11,7 +11,7 @@ use field::Address;
 struct SourceMapJson {
     libs: Vec<LibJson>,
     funcs: Vec<FuncJson>,
-    slots: Vec<SlotJson>,
+    slots: Vec<String>,
     lets: Vec<u8>,
     vars: Vec<u8>,
     params: Vec<String>,
@@ -38,13 +38,6 @@ struct FuncJson {
     name: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct SlotJson {
-    slot: u8,
-    name: String,
-    kind: String,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlotKind {
     Param,
@@ -63,7 +56,7 @@ pub struct LibInfo {
 pub struct SourceMap {
     libs: HashMap<u8, LibInfo>,
     funcs: HashMap<FnSign, String>,
-    slots: HashMap<u8, SlotInfo>,
+    slots: HashMap<u8, String>,
     params: Vec<String>,
     lets: HashSet<u8>,
     vars: HashSet<u8>,
@@ -71,11 +64,6 @@ pub struct SourceMap {
     const_name_to_val: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone)]
-struct SlotInfo {
-    name: String,
-    kind: SlotKind,
-}
 
 impl Default for SourceMap {
     fn default() -> Self {
@@ -103,8 +91,8 @@ impl SourceMap {
         Ok(())
     }
 
-    pub fn register_slot(&mut self, slot: u8, name: String, kind: SlotKind) -> Rerr {
-        self.slots.insert(slot, SlotInfo { name, kind });
+    pub fn register_slot(&mut self, slot: u8, name: String, _kind: SlotKind) -> Rerr {
+        self.slots.insert(slot, name);
         self.vars.remove(&slot);
         self.lets.insert(slot);
         Ok(())
@@ -146,7 +134,7 @@ impl SourceMap {
     }
 
     pub fn slot(&self, slot: u8) -> Option<&String> {
-        self.slots.get(&slot).map(|info| &info.name)
+        self.slots.get(&slot)
     }
 
     pub fn lib_entries(&self) -> Vec<(u8, LibInfo)> {
@@ -185,12 +173,18 @@ impl SourceMap {
         }).collect();
         funcs.sort_by(|a, b| a.sig.cmp(&b.sig));
 
-        let mut slots: Vec<SlotJson> = self.slots.iter().map(|(&slot, info)| SlotJson {
-            slot,
-            name: info.name.clone(),
-            kind: slot_kind_to_str(info.kind).to_owned(),
-        }).collect();
-        slots.sort_by_key(|entry| entry.slot);
+        // slots
+        let max_slot = self.slots.keys().max().copied().unwrap_or(0);
+        let mut slots = Vec::new();
+        if !self.slots.is_empty() {
+             for i in 0..=max_slot {
+                if let Some(name) = self.slots.get(&i) {
+                    slots.push(name.clone());
+                } else {
+                    slots.push(String::new());
+                }
+             }
+        }
 
         let mut lets: Vec<u8> = self.lets.iter().copied().collect();
         lets.sort_unstable();
@@ -226,13 +220,10 @@ impl SourceMap {
             sig.copy_from_slice(&bytes);
             map.register_func(sig, func.name)?;
         }
-        for slot in doc.slots {
-            let kind = slot_kind_from_str(&slot.kind)?;
-            map.register_slot(slot.slot, slot.name, kind)?;
-        }
         for cnst in doc.consts {
             map.register_const(cnst.name, cnst.value)?;
         }
+
         map.lets.clear();
         map.vars.clear();
         for slot in doc.lets {
@@ -242,24 +233,15 @@ impl SourceMap {
             map.vars.insert(slot);
             map.lets.remove(&slot);
         }
+
+        for (i, name) in doc.slots.into_iter().enumerate() {
+            if name.is_empty() { continue; }
+            let slot = i as u8;
+            map.slots.insert(slot, name);
+        }
+        
         map.params = doc.params;
         Ok(map)
     }
 }
 
-fn slot_kind_to_str(kind: SlotKind) -> &'static str {
-    match kind {
-        SlotKind::Param => "param",
-        SlotKind::Var => "var",
-        SlotKind::Let => "let",
-    }
-}
-
-fn slot_kind_from_str(kind: &str) -> Ret<SlotKind> {
-    match kind.to_ascii_lowercase().as_str() {
-        "param" => Ok(SlotKind::Param),
-        "var" => Ok(SlotKind::Var),
-        "let" => Ok(SlotKind::Let),
-        _ => errf!("slot kind '{}' unsupported", kind),
-    }
-}

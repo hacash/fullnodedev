@@ -273,10 +273,10 @@ irfn_define!{
     DUPN       : 1, 0, 1,     dump_n
     // POP        : 0, 255, 0,   pop
     // POPN       : 1, 255, 0,   pop_n
+    PICK0      : 0, 0, 1,     pick_0
     PICK       : 1, 0, 1,     pick
     SWAP       : 0, 2, 2,     swap
     // REV        : 1, 255, 255, reverse
-    CHOISE     : 0, 3, 1,     choise
     CAT        : 0, 2, 1,     concat
     // JOIN       : 1, 255, 1,   join
     BYTE       : 0, 2, 1,     byte
@@ -286,6 +286,7 @@ irfn_define!{
     LDROP      : 1, 1, 1,     buf_left_drop
     RDROP      : 1, 1, 1,     buf_right_drop
     SIZE       : 0, 1, 1,     size
+    CHOISE     : 0, 3, 1,     choise
 
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map

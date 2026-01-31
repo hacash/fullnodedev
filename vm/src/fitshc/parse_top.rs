@@ -2,11 +2,13 @@ use sys::{Ret, errf};
 use sys::*;
 use crate::rt::{KwTy, AbstCall};
 use crate::contract::{Abst};
+use crate::value::ValueTy;
 use crate::Token::*;
 use field::Address;
 use super::state::ParseState;
 use super::parse_deploy::{parse_deploy};
-use super::parse_func::{parse_function};
+use super::parse_func::{parse_function, parse_func_sig, parse_func_body_tokens};
+use super::compile_body::{compile_body, CompiledCode};
 
 pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
     // optional pragma
@@ -15,7 +17,15 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
         if let Some(Identifier(p)) = state.current() {
             if p == "pragma" {
                 state.advance();
-                state.advance(); // version
+                // consume version tokens like 0.1.0 or v0.1.0
+                loop {
+                    match state.current() {
+                        Some(Integer(_)) |
+                        Some(Identifier(_)) |
+                        Some(Keyword(KwTy::Dot)) => state.advance(),
+                        _ => break,
+                    }
+                }
             }
         }
     }
@@ -55,7 +65,9 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
         Some(Keyword(KwTy::Library)) => {
             state.advance();
             let libs = parse_addr_list(state)?;
-            for (_name, addr) in libs {
+            for (name, addr) in libs {
+                // libidx is 0-based order
+                state.libs.push((name, addr));
                 state.contract = state.contract.clone().lib(addr);
             }
         },
@@ -68,10 +80,57 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
         },
         Some(Keyword(KwTy::Abstract)) => {
             state.advance(); // consume abstract
-            let (_func, _smap, name) = parse_function(state, false)?;
-            if let Ok(aid) = AbstCall::from_name(&name) {
-                state.contract = state.contract.clone().syst(Abst::new(aid));
+            
+            // Check for ircode/bytecode modifier
+            let mut is_ircode = false;
+            while let Some(tk) = state.current() {
+                match tk {
+                    Keyword(KwTy::IrCode) => {
+                        is_ircode = true;
+                        state.advance();
+                    },
+                    Keyword(KwTy::ByteCode) => {
+                        state.advance();
+                    },
+                    _ => break,
+                }
             }
+            
+            let (name, args, ret_ty) = parse_func_sig(state)?;
+            // return type must be integer error code if declared
+            if let Some(rty) = ret_ty {
+                let ok = matches!(rty, ValueTy::U8 | ValueTy::U16 | ValueTy::U32 | ValueTy::U64 | ValueTy::U128);
+                if !ok {
+                    return errf!("abstract '{}' return type must be integer error code", name);
+                }
+            }
+            // parse body for abstract code
+            let body_tokens = parse_func_body_tokens(state)?;
+            let aid = AbstCall::from_name(&name).map_err(|e| e.to_string())?;
+            // validate param types
+            let expect = aid.param_types();
+            if expect.len() != args.len() {
+                return errf!("abstract '{}' params length mismatch: expect {}, got {}", name, expect.len(), args.len());
+            }
+            for (i, (_, ty)) in args.iter().enumerate() {
+                if *ty != expect[i] {
+                    return errf!(
+                        "abstract '{}' param {} type mismatch: expect {:?}, got {:?}",
+                        name, i, expect[i], ty
+                    );
+                }
+            }
+            
+            // compile abstract body using shared compile function
+            let (_irnodes, compiled, source_map) = compile_body(body_tokens, args.clone(), &state.libs, is_ircode)?;
+            
+            let abst = match compiled {
+                CompiledCode::IrCode(ircodes) => Abst::new(aid).ircode(ircodes)?,
+                CompiledCode::Bytecode(bts) => Abst::new(aid).bytecode(bts)?,
+            };
+            
+            state.contract = state.contract.clone().syst(abst);
+            state.source_maps.push((format!("abstract::{}", name), source_map));
         },
         Some(Keyword(KwTy::Function)) => {
             // consume 'function' inside parse_function

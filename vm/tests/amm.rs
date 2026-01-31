@@ -4,6 +4,7 @@ mod common;
 #[allow(unused)]
 mod amm {
 
+    use sys::*;
     use field::*;
     use protocol::action::*;
 

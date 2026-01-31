@@ -12,11 +12,13 @@ macro_rules! define_func_codes {
         }
 
         pub fn irnode(self, irnodes: IRNodeArray) -> Ret<Self> {
-            let ircodes = irnodes.serialize();
+            // split_off(3) removes IRBLOCK opcode (1 byte) + length (2 bytes)
+            let ircodes = irnodes.serialize().split_off(3);
             self.ircode(ircodes)
         }
 
         pub fn ircode(mut self, ircodes: Vec<u8>) -> Ret<Self> {
+            // ircodes should be raw block content (without IRBLOCK header)
             let cds = convert_ir_to_bytecode(&ircodes)?;
             verify_bytecodes(&cds)?;
             self.func.cdty[0] |= CodeType::IRNode as u8;

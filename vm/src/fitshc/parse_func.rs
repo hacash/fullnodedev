@@ -1,13 +1,12 @@
 use sys::{Ret, errf};
 use sys::*;
-use crate::rt::{Token, KwTy, Bytecode};
+use crate::rt::{Token, KwTy};
 use crate::value::ValueTy;
 use crate::Token::*;
 use crate::contract::Func;
-use crate::lang::Syntax;
 use crate::rt::SourceMap;
-use crate::IRNode;
 use super::state::ParseState;
+use super::compile_body::{compile_body, CompiledCode};
 
 pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, SourceMap, String)> {
     // function public/private/ircode Name(...) -> Ret { ... }
@@ -49,29 +48,20 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
     let arg_types: Vec<ValueTy> = args.iter().map(|(_, t)| *t).collect();
     func = func.types(ret_ty, arg_types);
     
-    // Compile body
-    let mut syntax = Syntax::new(body_tokens);
-    // Inject params
-    syntax = syntax.with_params(args);
-
-    let (irnodes, source_map) = syntax.parse()?; 
+    // Compile body using shared compile function
+    let (irnodes, compiled, source_map) = compile_body(body_tokens, args, &state.libs, is_ircode)?;
     
-    if is_ircode {
-         func = func.irnode(irnodes)?;
-    } else {
-         // Default to bytecode
-         let mut bts = irnodes.codegen().map_err(|e| e.to_string())?;
-         // Append END if not present? 
-         bts.push(Bytecode::END as u8);
-         func = func.bytecode(bts)?;
-    }
+    func = match compiled {
+        CompiledCode::IrCode(_) => func.irnode(irnodes)?,
+        CompiledCode::Bytecode(bts) => func.bytecode(bts)?,
+    };
 
     Ok((func, source_map, name))
 }
 
 
 pub fn parse_func_sig(state: &mut ParseState) -> Ret<(String, Vec<(String, ValueTy)>, Option<ValueTy>)> {
-    // Name(args) -> Ret
+    // Name(args?) -> Ret
     let name = if let Some(Identifier(n)) = state.current() {
         let n = n.clone();
         state.advance();
@@ -80,41 +70,42 @@ pub fn parse_func_sig(state: &mut ParseState) -> Ret<(String, Vec<(String, Value
         return errf!("expected function name but got {:?}", state.current())
     };
     
-    state.eat_partition('(')?;
-    
     let mut args = Vec::new();
-    loop {
-        if let Some(Partition(')')) = state.current() {
-            state.advance();
-            break;
-        }
-        if state.idx >= state.max { return errf!("args not closed") }
+    if let Some(Partition('(')) = state.current() {
+        state.advance();
+        loop {
+            if let Some(Partition(')')) = state.current() {
+                state.advance();
+                break;
+            }
+            if state.idx >= state.max { return errf!("args not closed") }
 
-        // arg: type
-        let arg_name = if let Some(Identifier(n)) = state.current() {
-             let n = n.clone();
-             state.advance();
-             n
-        } else {
-             return errf!("expected arg name")
-        };
+            // arg: type
+            let arg_name = if let Some(Identifier(n)) = state.current() {
+                 let n = n.clone();
+                 state.advance();
+                 n
+            } else {
+                 return errf!("expected arg name")
+            };
 
-        // :
-        if let Some(Keyword(KwTy::Colon)) = state.current() {
-            state.advance();
-        }
-        
-        // type
-        let rtype = parse_type(state);
-        let aty = match rtype {
-            Some(t) => t,
-            None => return errf!("unknown type")
-        };
-        args.push((arg_name, aty));
-        
-        // comma
-        if let Some(Partition(',')) = state.current() {
-             state.advance();
+            // :
+            if let Some(Keyword(KwTy::Colon)) = state.current() {
+                state.advance();
+            }
+            
+            // type
+            let rtype = parse_type(state);
+            let aty = match rtype {
+                Some(t) => t,
+                None => return errf!("unknown type")
+            };
+            args.push((arg_name, aty));
+            
+            // comma
+            if let Some(Partition(',')) = state.current() {
+                 state.advance();
+            }
         }
     }
     
@@ -179,7 +170,7 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
     ty
 }
 
-fn parse_func_body_tokens(state: &mut ParseState) -> Ret<Vec<Token>> {
+pub fn parse_func_body_tokens(state: &mut ParseState) -> Ret<Vec<Token>> {
     state.eat_partition('{')?;
     let mut inner = Vec::new();
     let mut depth = 1;

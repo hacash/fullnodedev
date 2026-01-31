@@ -42,7 +42,12 @@ pub fn parse_ir_block(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeArray> {
 }
 
 
-
+/**
+* parse one node (public interface for serialized IR)
+*/
+pub fn parse_ir_node_one(stuff: &[u8], seek: &mut usize) -> VmrtRes<Box<dyn IRNode>> {
+    parse_ir_node_must(stuff, seek, 0, false)
+}
 
 
 /**

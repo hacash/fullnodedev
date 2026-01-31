@@ -31,7 +31,7 @@ include! {"test.rs"}
 pub fn lang_to_irnode_with_sourcemap(langscript: &str) -> Ret<(IRNodeArray, SourceMap)> {
     let tkr = Tokenizer::new(langscript.as_bytes());
     let tks = tkr.parse()?;
-    let syx = Syntax::new(tks);
+    let syx = Syntax::new(tks).with_ircode(true);
     syx.parse()
 }
 

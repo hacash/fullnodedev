@@ -19,6 +19,7 @@ pub struct Syntax {
     local_alloc: u8,
     check_op: bool,
     expect_retval: bool,
+    is_ircode: bool,  // true for ircode mode, false for bytecode mode
     // leftv: Box<dyn AST>,
     irnode: IRNodeArray, // replaced IRNodeArray -> IRNodeArray
     source_map: SourceMap,
@@ -623,12 +624,7 @@ impl Syntax {
                 hrtv: true,
                 inst: PUT,
                 para: 0,
-                subx: Box::new(IRNodeParam1{
-                    hrtv: true,
-                    inst: PICK,
-                    para: 0,
-                    text: s!("")
-                })
+                subx: push_inst(PICK0)
             }),
             // unpack list
             _ => Box::new(IRNodeDouble{
@@ -1128,7 +1124,20 @@ impl Syntax {
         self
     }
 
+    pub fn with_libs(mut self, libs: Vec<(String, u8, Option<field::Address>)>) -> Self {
+        self.ext_libs = Some(libs);
+        self
+    }
+
+    pub fn with_ircode(mut self, is_ircode: bool) -> Self {
+        self.is_ircode = is_ircode;
+        self
+    }
+
     pub fn parse(mut self) -> Ret<(IRNodeArray, SourceMap)> {
+        // reserve head for ALLOC
+        self.irnode.push(push_empty());
+
         // External Libs
         if let Some(libs) = self.ext_libs.take() {
             for (name, idx, addr) in libs {
@@ -1136,22 +1145,63 @@ impl Syntax {
             }
         }
         // External Params
-        if let Some(mut params) = self.ext_params.take() {
-            params.reverse();
-            for (name, _ty) in params {
-                let idx = self.local_alloc;
-                self.bind_local(name, idx, SlotKind::Var)?;
-                let store = Box::new(IRNodeParam1Single {
-                    hrtv: false,
-                    inst: Bytecode::PUT,
-                    para: idx,
-                    subx: Box::new(IRNodeEmpty{}),
-                });
-                self.irnode.push(store);
+        if let Some(params) = self.ext_params.take() {
+            let mut param_names = Vec::new();
+            for (i, (name, _ty)) in params.iter().enumerate() {
+                if i > u8::MAX as usize {
+                    return errf!("param index {} overflow", i);
+                }
+                let idx = i as u8;
+                self.bind_local(name.clone(), idx, SlotKind::Var)?;
+                param_names.push(name.clone());
+            }
+            if !param_names.is_empty() {
+                self.source_map.register_param_names(param_names)?;
+            }
+
+            match params.len() {
+                0 => {
+                    // pop implicit nil argument (auto-inserted by caller)
+                    self.irnode.push(push_inst_noret(Bytecode::POP));
+                }
+                1 => {
+                    if self.is_ircode {
+                        // ircode mode: use PICK0 to get stack top value, then PUT 0 to store
+                        let store = Box::new(IRNodeParam1Single {
+                            hrtv: false,
+                            inst: Bytecode::PUT,
+                            para: 0,
+                            subx: push_inst(Bytecode::PICK0),
+                        });
+                        self.irnode.push(store);
+                    } else {
+                        // bytecode mode: argument already on stack top, just PUT 0
+                        // IRNodeEmpty generates no code, PUT consumes stack top directly
+                        let store = Box::new(IRNodeParam1Single {
+                            hrtv: false,
+                            inst: Bytecode::PUT,
+                            para: 0,
+                            subx: Box::new(IRNodeEmpty{}),
+                        });
+                        self.irnode.push(store);
+                    }
+                }
+                _ => {
+                    // unpack list arguments into locals starting at 0
+                    // Stack has the argument list on top
+                    // Use PICK0 to consume the value (same as single param handling)
+                    // UPLIST needs: [list][slot_index] -> pops both, unpacks list into locals
+                    let unpack = Box::new(IRNodeDouble {
+                        hrtv: false,
+                        inst: Bytecode::UPLIST,
+                        subx: push_inst(Bytecode::PICK0),
+                        suby: push_inst(Bytecode::P0),   // slot index 0
+                    });
+                    self.irnode.push(unpack);
+                }
             }
         }
 
-        self.irnode.push(push_empty());
         while let Some(item) = self.item_may()? {
             if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {} else {
                 self.irnode.push(item);

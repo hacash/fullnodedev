@@ -79,10 +79,10 @@ pub enum Bytecode {
     DUPN                = 0x41, // *+     copy u8
     POP                 = 0x42, // a      pop top
     POPN                = 0x43, // *a...b pop n
-    PICK                = 0x44, // *      pick
-    SWAP                = 0x45, // a,b++  swap  b,a = a,b
-    REV                 = 0x46, // a...b  reverse u8
-    CHOISE              = 0x47, // a,b,c+ (x ? a : b)
+    PICK0               = 0x44, // +      pick0 
+    PICK                = 0x45, // *+     pick
+    SWAP                = 0x46, // a,b++  swap  b,a = a,b
+    REV                 = 0x47, // a...b  reverse u8
     CAT                 = 0x48, // a,b+   buf: b + a
     JOIN                = 0x49, // a...bn+
     BYTE                = 0x4a, // a,b+   val[n] = u8
@@ -92,7 +92,7 @@ pub enum Bytecode {
     LDROP               = 0x4e, // *&     drop buf left *
     RDROP               = 0x4f, // *&     drop buf right *
     SIZE                = 0x50, // &      size (u16)
-    ________________81  = 0x51,
+    CHOISE              = 0x51, // a,b,c+ (x ? a : b)
     ________________82  = 0x52,
     ________________83  = 0x53,
     ________________84  = 0x54,
@@ -367,10 +367,10 @@ bytecode_metadata_define!{
     DUPN       : 1, 0, 1,     dump_n
     POP        : 0, 255, 0,   pop
     POPN       : 1, 255, 0,   pop_n
+    PICK0      : 0, 0, 1,     pick_0
     PICK       : 1, 0, 1,     pick
     SWAP       : 0, 2, 2,     swap
     REV        : 1, 255, 255, reverse
-    CHOISE     : 0, 3, 1,     choise
     CAT        : 0, 2, 1,     concat
     JOIN       : 1, 255, 1,   join
     BYTE       : 0, 2, 1,     byte
@@ -380,6 +380,7 @@ bytecode_metadata_define!{
     LDROP      : 1, 1, 1,     buf_left_drop
     RDROP      : 1, 1, 1,     buf_right_drop
     SIZE       : 0, 1, 1,     size
+    CHOISE     : 0, 3, 1,     choise
 
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map

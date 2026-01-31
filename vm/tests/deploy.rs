@@ -90,6 +90,9 @@ mod deploy {
 
     #[test]
     fn recursion() {
+
+        use sys::*;
+        
         /*
             emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
 

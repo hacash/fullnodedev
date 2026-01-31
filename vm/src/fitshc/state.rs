@@ -5,6 +5,7 @@ use crate::contract::Contract;
 use crate::rt::SourceMap;
 use crate::Token::*;
 use super::parse_deploy::DeployInfo;
+use field::Address;
 
 pub struct ParseState {
     pub tokens: Vec<Token>,
@@ -12,6 +13,7 @@ pub struct ParseState {
     pub max: usize,
     pub contract: Contract,
     pub contract_name: String,
+    pub libs: Vec<(String, Address)>,
     pub deploy: Option<DeployInfo>,
     pub source_maps: Vec<(String, SourceMap)>,
 }
@@ -25,6 +27,7 @@ impl ParseState {
             max,
             contract: Contract::new(),
             contract_name: String::new(),
+            libs: Vec::new(),
             deploy: None,
             source_maps: Vec::new(),
         }

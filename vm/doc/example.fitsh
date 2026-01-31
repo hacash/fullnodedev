@@ -55,18 +55,25 @@ contract TestToken {
         
     */
     abstract PayableHACD(from_addr: address, dianum: u32, diamonds: bytes) {
-
+        return 1 // not allow by default
     }
 
     /*
-        When no parameters are used, the parameter list can be omitted, and accordingly, no code for unpacking parameters will be added in the function body. Instead, a POP instruction is directly inserted to clear the arguments on the stack.
-        When a function has no parameter definitions, it will automatically receive a nil as a placeholder for the parameter, and a POP also needs to be automatically inserted to clear the unused parameter.
+        PayableAsset abstract function handles incoming asset payments.
+        Parameters must match the AbstCall::PayableAsset definition: [Address, U64, U64]
+        - to_addr: the destination address
+        - serial: asset serial number  
+        - amount: asset amount
+        Return 0 to allow, non-zero to reject.
     */
-    abstract PayableAsset() {
+    abstract PayableAsset(to_addr: address, serial: u64, amount: u64) {
         return 0 // not allow
     }
 
-    abstract PermitAsset(to_addr: address, serial: u64, amount: u64) {
+    /*
+        Also supports ircode mark
+    */
+    abstract ircode PermitAsset(to_addr: address, serial: u64, amount: u64) {
         if to_addr == 1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9 {
             return 0 // allow by this addr
         }
@@ -85,8 +92,7 @@ contract TestToken {
     function public transfer_to(addr: address, amt: u64) -> u32 {
         // The lib statement is now uniformly defined through the contract.
         // lib TokenHelper = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
-
-
+        return self.do_transfer(addr, addr, amt)
     }
 
 
