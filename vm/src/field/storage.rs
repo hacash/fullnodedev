@@ -30,14 +30,30 @@ impl ValueSto {
 
     fn update(mut self, chei: u64, v: Value) -> Self {
         let (is_expire, _, due) = self.check(chei);
+        let rest = due.saturating_sub(chei);
         // save new
-        if is_expire || due <= STORAGE_PERIOD {
+        if is_expire || rest <= STORAGE_PERIOD {
             self.data = v;
             self.expire = BlockHeight::from( chei + STORAGE_PERIOD );
             return self
         }
         // update
-        let (ml, vl) = (v.can_get_size().unwrap() as u64, self.data.can_get_size().unwrap() as u64);
+        let (ml, vl) = (v.can_get_size(), self.data.can_get_size());
+        let (ml, vl) = match (ml, vl) {
+            (Ok(ml), Ok(vl)) => (ml as u64, vl as u64),
+            _ => {
+                // should not happen for storable values, but keep consensus safe
+                self.data = v;
+                self.expire = BlockHeight::from( chei + STORAGE_PERIOD );
+                return self
+            }
+        };
+        if vl == 0 {
+            // avoid divide-by-zero; treat as fresh save with minimum lease
+            self.data = v;
+            self.expire = BlockHeight::from( chei + STORAGE_PERIOD );
+            return self
+        }
         if ml != vl {
             let mut rest = (due - chei) * ml / vl;
             up_in_range!(rest, STORAGE_PERIOD, STORAGE_SAVE_MAX); // at least 1 day, less than 10 years
@@ -73,7 +89,7 @@ impl ValueSto {
         self.expire = BlockHeight::from(exp);
         // gas
         let vbasesz = gst.storege_value_base_size;
-        let gas = (self.data.can_get_size().unwrap() as i64 + vbasesz) * period as i64;
+        let gas = (self.data.can_get_size().unwrap_or(0) as i64 + vbasesz) * period as i64;
         Ok(gas)
     }
 

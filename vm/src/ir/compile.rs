@@ -6,6 +6,13 @@ type IRNRef<'a> = &'a Box<dyn IRNode>;
 const JMP_INST_LEN: usize = 3; //u8 + u16
 const BLOCK_CODES_MAX_LEN: usize = i16::MAX as usize - JMP_INST_LEN - 64;
 
+fn is_stmt_block(n: IRNRef) -> bool {
+    if let Some(arr) = n.as_any().downcast_ref::<IRNodeArray>() {
+        return arr.inst == Bytecode::IRBLOCK;
+    }
+    false
+}
+
 
 fn compile_block(inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
     let is_expr = inst == Bytecode::IRBLOCKR;
@@ -54,7 +61,9 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
     x.codegen_into(&mut cond)?;
     let mut body = Vec::new();
     y.codegen_into(&mut body)?;
-    if y.hasretval() {
+    // IRBLOCK already discards return values of its internal statements.
+    // Only append a POP when the body is NOT a statement block container.
+    if y.hasretval() && !is_stmt_block(y) {
         body.push(POP as u8); // pop inst
     }
     let body_l = body.len() + JIL;
@@ -97,7 +106,8 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     if is_expr && !y.hasretval() {
         return itr_err_fmt!(ComplieError, "if expression branch must return value");
     }
-    if !is_expr && y.hasretval() {
+    // IRBLOCK already discards return values internally.
+    if !is_expr && y.hasretval() && !is_stmt_block(y) {
         if_br.push(POP as u8); // pop inst
     }
     let mut el_br = Vec::new();
@@ -105,7 +115,7 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     if is_expr && !z.hasretval() {
         return itr_err_fmt!(ComplieError, "if expression branch must return value");
     }
-    if !is_expr && z.hasretval() {
+    if !is_expr && z.hasretval() && !is_stmt_block(z) {
         el_br.push(POP as u8); // pop inst
     }
     let if_l = if_br.len();

@@ -12,8 +12,8 @@ macro_rules! define_func_codes {
         }
 
         pub fn irnode(self, irnodes: IRNodeArray) -> Ret<Self> {
-            // split_off(3) removes IRBLOCK opcode (1 byte) + length (2 bytes)
-            let ircodes = irnodes.serialize().split_off(3);
+            // Store raw block content (without IRBLOCK/IRBLOCKR wrapper)
+            let ircodes = crate::ir::drop_irblock_wrap(irnodes.serialize())?;
             self.ircode(ircodes)
         }
 

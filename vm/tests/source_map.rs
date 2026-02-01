@@ -16,7 +16,7 @@ fn source_map_recovery_records_symbols() {
         total = total + increment
         Fund.deposit(total, increment)
         Fund::audit(increment)
-        self.notify(total)
+        this.notify(total)
     "##;
 
     let (ir_block, source_map) = lang_to_irnode_with_sourcemap(script).unwrap();
@@ -50,7 +50,7 @@ fn source_map_recovery_records_symbols() {
     let printed = Formater::new(&opt).print(&ir_block);
     assert!(printed.contains("Fund.deposit("));
     assert!(printed.contains("Fund::audit("));
-    assert!(printed.contains("self.notify("));
+    assert!(printed.contains("this.notify("));
     assert!(printed.contains("var total $0 ="));
     assert!(printed.contains("let increment $1 ="));
 }

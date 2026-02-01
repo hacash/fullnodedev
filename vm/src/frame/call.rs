@@ -1,8 +1,10 @@
+                        // println!("CALLCODE() ctxadr={}, curadr={}", ctxadr.prefix(7), curadr.prefix(7));
 
 impl CallFrame {
 
-    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: CallMode, code: FnObj, 
+    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj, 
         entry_addr: ContractAddress, 
+        code_owner: Option<ContractAddress>,
         libs: Option<Vec<ContractAddress>>, 
         param: Option<Value>
     ) -> VmrtRes<Value> {
@@ -15,7 +17,7 @@ impl CallFrame {
             }};
         }
         use CallExit::*;
-        use CallMode::*;
+        use ExecMode::*;
         let libs_none: Option<Vec<ContractAddress>> = None;
         // to spend gas
         self.contract_count = r.contracts.len();
@@ -26,10 +28,10 @@ impl CallFrame {
             _ => never!(),
         };
         curf.ctxadr = entry_addr.clone();
-        curf.curadr = entry_addr;
+        curf.curadr = code_owner.unwrap_or(entry_addr);
         self.push(curf);
         // compile irnode and push func argv ...
-        curr!().prepare(mode, code, param)?;
+        curr!().prepare(mode, false, code, param)?;
         // exec codes
         loop {
             let exit = { curr!().execute(r, env)? }; // call frame
@@ -85,12 +87,12 @@ impl CallFrame {
                     // check gas
                     self.check_load_new_contract_and_gas(r, env)?;
                     // if call code
-                    if let CodeCopy = fnptr.mode {
-                        // println!("CodeCopy() ctxadr={}, curadr={}", ctxadr.prefix(7), curadr.prefix(7));
+                    if fnptr.is_callcode {
+                        // println!("CALLCODE() ctxadr={}, curadr={}", ctxadr.prefix(7), curadr.prefix(7));
                         // curadr tracks code owner for library resolution
                         let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
                         curr!().curadr = owner;
-                        curr!().prepare(CodeCopy, fnobj, None)?; // no param
+                        curr!().prepare(fnptr.mode, true, fnobj, None)?; // no param
                         continue // do execute
                     }
                     if let Outer = fnptr.mode {
@@ -104,11 +106,16 @@ impl CallFrame {
                     let param = Some(curr!().pop_value()?);
                     let next = self.increase(r)?;
                     self.push(next);
-                    curr!().prepare(fnptr.mode, fnobj, param)?;
+                    curr!().prepare(fnptr.mode, false, fnobj, param)?;
                     match fnptr.mode {
-                        Inner | Library | Static => {
+                        Inner | View | Pure => {
                             // curadr follows resolved code owner (child/parent or library)
-                            let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
+                            let default_owner = match fnptr.target {
+                                CallTarget::This => ctxadr.clone(),
+                                CallTarget::Self_ | CallTarget::Super => curadr.clone(),
+                                CallTarget::Libidx(_) => ctxadr.clone(),
+                            };
+                            let owner = chgsrcadr.as_ref().cloned().unwrap_or(default_owner);
                             curr!().curadr = owner;
                             // continue to do next call
                         }

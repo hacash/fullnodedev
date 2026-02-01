@@ -20,7 +20,7 @@ action_define!{ContractMainCall, 100,
         let cty = CodeType::parse(self.ctype.to_uint())?;
         convert_and_check(&cap, cty, &self.codes)?;
         let depth = 0; // main call depth is 0
-        setup_vm_run(depth, ctx, CallMode::Main as u8, *self.ctype, &self.codes, Value::Nil)?;
+        setup_vm_run(depth, ctx, ExecMode::Main as u8, *self.ctype, &self.codes, Value::Nil)?;
         Ok(vec![])
     })
 }

@@ -109,3 +109,24 @@ pub fn push_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
         para,
     }))
 }
+
+/// Drop the outer IR block wrapper from `IRNodeArray::serialize()` output.
+///
+/// The serialized form for a top-level block is:
+/// `[IRBLOCK|IRBLOCKR][child_count:u16][children...]`.
+///
+/// For stored ircode we keep only `children...` (no outer wrapper), so that
+/// `parse_ir_block()` can parse nodes until EOF.
+pub fn drop_irblock_wrap(mut serialized: Vec<u8>) -> Ret<Vec<u8>> {
+    if serialized.len() < 3 {
+        return errf!("invalid serialized IR: length {} < 3", serialized.len());
+    }
+    let op = serialized[0];
+    if op != Bytecode::IRBLOCK as u8 && op != Bytecode::IRBLOCKR as u8 {
+        return errf!(
+            "invalid serialized IR: expected IRBLOCK/IRBLOCKR header, got opcode {}",
+            op
+        );
+    }
+    Ok(serialized.split_off(3))
+}

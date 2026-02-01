@@ -9,10 +9,20 @@ pub struct PrintOption<'a> {
     pub indent: &'a str,
     pub tab: usize,
     pub map: Option<&'a SourceMap>,
+    /// When enabled, emits source-map-derived `lib ...` declarations as a prelude.
+    /// This should only be enabled for top-level printing. Inline printing must disable
+    /// it to avoid injecting file-level declarations into expressions.
+    pub emit_lib_prelude: bool,
     pub trim_root_block: bool,
     pub trim_head_alloc: bool,
     pub trim_param_unpack: bool,
-    pub hide_func_nil_argv: bool,
+    /// When enabled, hides the compiler-injected "default" argument used to satisfy calling conventions.
+    /// - For contract/function-style calls (list argv), this is typically `nil`.
+    /// - For system calls (native/ext, concat argv), this is typically an empty bytes `""`.
+    ///
+    /// This is intentionally opt-in: unless explicitly enabled, decompilation preserves the placeholder
+    /// so callers can distinguish "no args" vs "default arg inserted".
+    pub hide_default_call_argv: bool,
     pub call_short_syntax: bool,
     pub flatten_call_list: bool,
     pub flatten_array_list: bool,
@@ -29,10 +39,11 @@ impl<'a> PrintOption<'a> {
             indent,
             tab,
             map: None,
+            emit_lib_prelude: true,
             trim_root_block: false,
             trim_head_alloc: false,
             trim_param_unpack: false,
-            hide_func_nil_argv: false,
+            hide_default_call_argv: false,
             call_short_syntax: false,
             flatten_call_list: false,
             flatten_array_list: false,

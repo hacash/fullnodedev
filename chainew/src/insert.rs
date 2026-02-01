@@ -48,14 +48,14 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
         }
         let parent_blk = parent.block.as_read();
         eng.minter.blk_verify(blk.objc.as_read(), parent_blk, eng.store.as_ref())?;
-        block_verify(&eng.cnf, blk.objc.as_read(), blk.data.len(), parent_blk)?;
+        block_verify(&eng.cnf, blk.objc.as_read(), blk.data().len(), parent_blk)?;
     }
 
     let prev_state = parent.state.clone();
     let mut sub_state = prev_state.fork_sub(Arc::downgrade(&prev_state));
 
     if height == 1 {
-        eng.minter.initialize(sub_state.as_mut()).unwrap();
+        eng.minter.initialize(sub_state.as_mut())?;
     }
 
     let chain_info = ChainInfo {

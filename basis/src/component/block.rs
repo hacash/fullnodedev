@@ -28,7 +28,8 @@ impl BlkPkg {
     }
 
     pub fn new(objc: Box<dyn Block>, data: Vec<u8>) -> Self {
-        Self::from(objc, Arc::new(data), 0, 0)
+        let size = data.len();
+        Self::from(objc, Arc::new(data), 0, size)
     }
 
 }

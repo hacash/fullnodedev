@@ -126,7 +126,9 @@ pub enum CallExit {
 
 #[derive(Debug, Clone)]
 pub enum CallTarget {
-    Inner,
+    This,
+    Self_,
+    Super,
     Libidx(u8),
     // Addr(ContractAddress),
 }
@@ -142,24 +144,24 @@ impl CallTarget {
 
 /*
     Entry mode: Main, P2sh, Abst 
-    Call  mode: Outer, Inner, Library, Static, CodeCopy
+    Call  mode: Outer, Inner, View, Pure
 */
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum CallMode {
+pub enum ExecMode {
     #[default] Main, // tx main call
     P2sh, // p2sh script verify
     Abst, // contract abstract call
     Outer, 
     Inner,
-    Library,
-    Static,
-    CodeCopy,
+    View,  // read-only (can read state, cannot write)
+    Pure,  // no-state (cannot read or write state)
 }
 
 
 #[derive(Debug, Clone)]
 pub struct Funcptr {
-    pub mode: CallMode,
+    pub mode: ExecMode,
+    pub is_callcode: bool,
     pub target: CallTarget,
     pub fnsign: FnSign,
 }

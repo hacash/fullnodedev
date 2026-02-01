@@ -17,11 +17,37 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 - Literals and identifiers support numbers, `nil`, booleans, `bytes`, `address`, and slot references (`$N`) (`syntax.rs:348-520`).  
 - Function/method calls:  
   * `foo(...)` first checks IR functions, native calls, and extension hooks before emitting `CALL` et al. (`vm/src/lang/funcs.rs:83-214`).  
-  * `self.bar(...)` becomes `CALLINR`; `lib_name.func(...)` and `lib_name::func` generate `CALL` and `CALLSTATIC`, respectively (`syntax.rs:464-520`).  
+  * `this.bar(...)` becomes `CALLTHIS`; `lib_name.func(...)` and `lib_name::func` generate `CALL` and `CALLPURE`, respectively (`syntax.rs`).
   * Parameter-less calls automatically pack a `nil` argument to keep the expectation of arguments in sync (`deal_func_argv`, `pack_func_argvs`).  
 - Type checks/conversions: `expr is Type` and `expr as Type` emit `TIS`/`CU*` instructions and are valid only in expression positions (`syntax.rs:216-325`).  
 - Control structures double as expressions: `if` and `while` blocks can produce values, mapped to `IRIFR` and `IRWHILE` when used as expressions (`syntax.rs:296-420`).  
 - Containers: `list[...]` builds `PACKLIST`, `map{...}` pushes key/value pairs, and `log{...}` requires 2~5 arguments (`syntax.rs:780-851`).
+
+### 3.1 IR container nodes and stack semantics (IRLIST vs IRBLOCK)
+
+Fitsh source compiles into an IR tree which is then code-generated into bytecode. Some IR nodes are *containers* that primarily control evaluation order and stack cleanup.
+
+- `IRLIST` is a **sequence container** that simply concatenates the codegen of its children **without injecting `POP`**.
+  - It does **not** require every element to have a return value.
+  - Whether `IRLIST` itself “returns a value” depends on its **last child**:
+    - if the last child returns a value, the whole `IRLIST` is a value-producing expression (e.g., `a b n PACKLIST`).
+    - if the last child returns nothing, the whole `IRLIST` is a statement-like sequence (e.g., `log(...)` ends with `LOG1..LOG4`).
+  - Practical implication: if you place multiple value-producing expressions inside an `IRLIST` and never consume them, the values remain on the VM stack unless later instructions pop them.
+
+- `IRBLOCK` is a **statement block** container.
+  - It evaluates its children in order and automatically inserts `POP` to discard intermediate values when needed.
+  - Use it when you want “evaluate statements, don’t leak stack values”.
+
+- `IRBLOCKR` is a **block expression** container.
+  - It behaves like `IRBLOCK`, but requires the **last statement to return a value** and preserves that value as the block’s result.
+  - Empty `IRBLOCKR` is invalid.
+
+- `IRIFR` is an **if-expression** container.
+  - Both branches must return a value; otherwise it is invalid as an expression.
+
+Rule of thumb:
+- Use `IRLIST` when you are building an expression pipeline and you explicitly control stack effects via the final instruction.
+- Use `IRBLOCK/IRBLOCKR` when you want block semantics with automatic cleanup (and optional “return last value”).
 
 ## 4. Statement structure
 - `var name [$slot]? = expr`: evaluates immediately and stores the result in a local slot; the slot can be explicitly numbered (`syntax.rs:620-654`). Use this for mutable state or expressions with side effects.  

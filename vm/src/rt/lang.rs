@@ -58,9 +58,11 @@ keyword_define!{
     Assert    : "assert"
     Print     : "print"
     Call      : "call"
-    CallInr   : "callinr"
-    CallLib   : "calllib"
-    CallStatic: "callstatic"
+    CallThis  : "callthis"
+    CallSelf  : "callself"
+    CallSuper : "callsuper"
+    CallView  : "callview"
+    CallPure  : "callpure"
     CallCode  : "callcode"
     ByteCode  : "bytecode"
     IrCode    : "ircode"
@@ -71,8 +73,12 @@ keyword_define!{
     Function  : "function"
     Public    : "public"
     Private   : "private"
+    Virtual   : "virtual"
     Deploy    : "deploy"
     Param     : "param"
+    This      : "this"
+    Self_     : "self"
+    Super     : "super"
     And       : "and"
     Or        : "or"
     Not       : "not"
@@ -240,9 +246,11 @@ irfn_define!{
 
     // CALLDYN    :   0, 3, 1,   call_dynamic
     // CALL       : 1+4, 1, 1,   call
-    // CALLINR    :   4, 1, 1,   call_inner
-    // CALLLIB    : 1+4, 1, 1,   call_library
-    // CALLSTATIC : 1+4, 1, 1,   call_static
+    // CALLTHIS   :   4, 1, 1,   call_this
+    // CALLSELF   :   4, 1, 1,   call_self
+    // CALLSUPER  :   4, 1, 1,   call_super
+    // CALLVIEW   : 1+4, 1, 1,   call_view
+    // CALLPURE   : 1+4, 1, 1,   call_pure
     // CALLCODE   : 1+4, 0, 0,   call_code
 
     PU8        : 1, 0, 1,     push_u8

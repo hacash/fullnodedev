@@ -2,6 +2,12 @@
 
 impl Syntax {
 
+    fn parse_paren_argv_items(&mut self) -> Ret<Vec<Box<dyn IRNode>>> {
+        // Parse `(...)` argument lists as a sequence of value expressions.
+        // Note: the tokenizer ignores commas, so argument separation is by expression boundaries.
+        self.parse_delimited_value_exprs('(', ')', "call argv format error")
+    }
+
     pub fn item_get(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         let Some(_) = self.symbols.get(&id).and_then(|entry| match entry {
@@ -11,6 +17,7 @@ impl Syntax {
             return errf!("cannot find '{}' object in item get", id)
         };
         let k = self.item_must(1)?;  // over [
+        k.checkretval()?; // ITEMGET consumes a key value from the stack
         let Partition(']') = self.next()? else {
             return errf!("item get statement format error")
         };
@@ -21,11 +28,8 @@ impl Syntax {
 
 
     pub fn must_get_func_argv(&mut self, md: ArgvMode) -> Ret<(usize, Box<dyn IRNode>)> {
-        let argvs = self.item_may_block(false)?.into_vec();
+        let argvs = self.parse_paren_argv_items()?;
         let alen = argvs.len();
-        for arg in &argvs {
-            arg.checkretval()?;
-        }
         let argv = match md {
             ArgvMode::Concat => concat_func_argvs(argvs)?,
             ArgvMode::List => pack_func_argvs(argvs)?,
@@ -37,7 +41,7 @@ impl Syntax {
     pub fn item_func_call(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
         // ir func
         if let Some((_, inst, pms, args, rs)) = pick_ir_func(&id) {
-            let argvs = self.item_may_block(false)?.into_vec();
+            let argvs = self.parse_paren_argv_items()?;
             for arg in &argvs {
                 arg.checkretval()?;
             }
@@ -53,7 +57,13 @@ impl Syntax {
         // native call
         if let Some((idx, args_len)) = pick_native_call(&id) {
             let (num, argvs) = self.must_get_func_argv(ArgvMode::Concat)?;
-            if num != args_len {
+            let allow_empty_placeholder = args_len == 0
+                && num == 1
+                && argvs
+                    .as_any()
+                    .downcast_ref::<IRNodeLeaf>()
+                    .is_some_and(|leaf| leaf.inst == Bytecode::PNBUF);
+            if num != args_len && !allow_empty_placeholder {
                 return errf!("native call '{}' argv length must {} but got {}", 
                     id, args_len, num
                 )
@@ -67,7 +77,13 @@ impl Syntax {
         // extend action
         if let Some((hrtv, inst, para, args_len)) = pick_ext_func(&id) {
             let (num, argvres) = self.must_get_func_argv(ArgvMode::Concat)?;
-            if num != args_len {
+            let allow_empty_placeholder = args_len == 0
+                && num == 1
+                && argvres
+                    .as_any()
+                    .downcast_ref::<IRNodeLeaf>()
+                    .is_some_and(|leaf| leaf.inst == Bytecode::PNBUF);
+            if num != args_len && !allow_empty_placeholder {
                  return errf!("extend function/action '{}' argv length must {} but got {}", 
                     id, args_len, num
                 )
@@ -181,14 +197,14 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     // list.reverse();
     let argv_len = subs.len();
     Ok(match argv_len {
-        0 => Box::new(IRNodeEmpty{}),// errf!("function argv length cannot be 0"),
+        0 => push_nil(),
         1 => subs.pop().unwrap(),
         2..=15 => {
             let num = push_num(argv_len as u128);
             let pklist = push_inst(PACKLIST);
             subs.push(num);
             subs.push(pklist);
-            Box::new(IRNodeArray{subs, inst: IRLIST})
+            Box::new(Syntax::build_irlist(subs)?)
         },
         _ => return errf!("function argv length cannot more than 15"),
     })

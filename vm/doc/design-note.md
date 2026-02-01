@@ -88,33 +88,38 @@ Gas Calculation:
 
 Call Kind:
 
-    - DynCall                    (addr, fnsig, argv)
     - Call        <libidx, fnsig>(argv)
-    - InrCall             <fnsig>(argv)
-    - LibCall     <libidx, fnsig>(argv)
-    - StaticCall  <libidx, fnsig>(argv)
-    - CodeCopyCall<libidx, fnsig>(argv)
+    - ThisCall            <fnsig>(argv)
+    - SelfCall            <fnsig>(argv)
+    - SuperCall           <fnsig>(argv)
+    - ViewCall    <libidx, fnsig>(argv)
+    - PureCall    <libidx, fnsig>(argv)
+    - CallCode     <libidx, fnsig>(argv)   // run callee code, inherit current ExecMode privileges, and forbid any nested call
 
 
 Call Privileges:
 
-    - Main           => Outer,             Static, Code
-    - Abst           =>        Inner, Lib, Static, Code
-    - P2sh           =>                    Static, Code
-    - Library        =>               Lib, Static, Code
-    - Static         =>                    Static, Code
-    - Code           =>                               -
-    - Outer | Inner  => Outer, Inner, Lib, Static, Code (All types)
+    State is Global Value, Memory Value, Storage Data, Log Data.
+    CallCode is NOT an ExecMode: it inherits the upper-level ExecMode privileges, and execution enters an "in_callcode" state where any CALL* instruction is forbidden.
+    Ext actions are still gated by (mode, depth) rules.
+
+    - Main          (State Write) => Outer,        View, Pure, Code
+    - Abst          (State Write) =>        Inner, View, Pure, Code
+    - P2sh          (State Write) =>               View, Pure, Code
+    - View          (State Read ) =>               View, Pure, Code
+    - Pure          (           ) =>                    Pure, Code
+    - Code          (- inherit -) =>                               -
+    - Outer | Inner (State Write) => Outer, Inner, View, Pure, Code (All types)
 
 
 Call Context Change:
 
     - ctxadr (storage/log context) changes only on Outer
-    - curadr (code owner for library resolution) follows resolved owner:
-      Outer => callee, Inner => resolved child/parent, Lib/Static/CodeCopy => library
+        - curadr (code owner for library resolution) follows resolved owner:
+            Outer => callee, Inner => resolved child/parent, View/Pure => library; CallCode updates curadr to the resolved code owner
 
 
-Inheritance Resolution (CALLINR):
+Inheritance Resolution (CALLTHIS/CALLSELF/CALLSUPER):
 
     - DFS search in inherits list order (current => parent => grandparent)
     - First match wins; inherits list order defines conflict priority

@@ -57,7 +57,8 @@ impl CallFrame {
 #[derive(Debug, Default)]
 pub struct Frame {
     pub pc: usize,
-    pub mode: CallMode,
+    pub mode: ExecMode,
+    pub in_callcode: bool,
     pub depth: isize,
     pub types: Option<FuncArgvTypes>,
     pub codes: Vec<u8>,
@@ -122,7 +123,7 @@ impl Frame {
     /*
         compile irnode
     */
-    pub fn prepare(&mut self, mode: CallMode, fnobj: FnObj, param: Option<Value>) -> VmrtErr {
+    pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: FnObj, param: Option<Value>) -> VmrtErr {
         use CodeType::*;
         if let Some(mut p) = param {
             p.canbe_func_argv()?;
@@ -134,6 +135,7 @@ impl Frame {
         self.types = fnobj.agvty.clone(); // func argv types define
         self.pc = 0;
         self.mode = mode;
+        self.in_callcode = in_callcode;
         self.codes = match fnobj.ctype {
             Bytecode => fnobj.into_array(),
             IRNode => runtime_irs_to_bytecodes(&fnobj.codes)?,
@@ -148,6 +150,7 @@ impl Frame {
             &mut self.pc,
             &self.codes,
             self.mode,
+            self.in_callcode,
             self.depth,
             env.gas,
             &r.gas_table,

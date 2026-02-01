@@ -92,7 +92,210 @@ contract TestToken {
     function public transfer_to(addr: address, amt: u64) -> u32 {
         // The lib statement is now uniformly defined through the contract.
         // lib TokenHelper = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
-        return self.do_transfer(addr, addr, amt)
+        return this.do_transfer(addr, addr, amt)
+    }
+
+
+    /*
+        Comprehensive syntax coverage entry.
+        This function is intentionally written to touch as much fitsh syntax as possible,
+        including: this/self/super calls, explicit call* instructions, complex expressions,
+        list/map literals, indexing, nested blocks, casts, and type checks.
+    */
+    function public ircode coverage_entry(
+        a0: u8,
+        a1: u16,
+        a2: u32,
+        a3: u64,
+        a4: u128,
+        a5: bytes,
+        a6: address,
+        a7: bytes,
+        a8: u64
+    ) -> u32 {
+
+        // --- const / bind (macro) ---
+        const ONE = 1
+        const HELLO = "hello"
+        bind inc = a0 + ONE
+        bind mkkey = "k_" ++ a6
+
+        // --- tokenizer extras: char literal + 0b bytes literal ---
+        // char literal is tokenized as Integer(byte)
+        var ch = 'A'
+        // 0b must be 8*n bits, tokenized as bytes
+        var bbytes = 0b11110000
+        print ch
+        print bbytes
+
+        // --- basic arithmetic / precedence / bit ops ---
+        var x = (a3 + 2 * 3) / 2 % 7
+        var y = (a0 << 1) | (a0 >> 2) ^ (1 & 0xff)
+        var z = (a2 as u64 + a3) as u128 + a4
+        var pw = 2 ** 3
+        // cover let + compound assignments
+        let lx = 1
+        x += 1
+        x *= 2
+        x /= 2
+        assert x is u64
+        assert y is u64
+        assert z is u128
+        assert pw is u64
+        assert lx is u64
+
+        // --- strings/bytes concat & cast ---
+        var msg = HELLO ++ " \"world\" \n"
+        var data = (msg ++ a5) as bytes
+        assert data is bytes
+
+        // --- list/map literals + nesting ---
+        var li = [1, 2, a0, a1 as u32, a2, a3 as u128]
+        var li_empty = []
+        var li2 = list { 1 2 3 }
+        var mp = map {
+            "k": "v",
+            1: a6,
+            "msg": msg,
+            "li": li,
+        }
+        var mp_empty = map { }
+        assert li is list
+        assert li_empty is list
+        assert li2 is list
+        assert mp is map
+        assert mp_empty is map
+
+        // --- indexing ---
+        var first = li[0]
+        var kv = mp["k"]
+        print first
+        print kv
+
+        // --- direct slot reference ($0) ---
+        // $0 should refer to the first local slot (a0)
+        var s0 = $0
+        print s0
+
+        // --- storage/memory/global/heap operations (runtime ops) ---
+        var st_key = mkkey
+        storage_save(st_key, a8)
+        var st_val = storage_load(st_key)
+        assert st_val is not nil
+        memory_put(0, a7)
+        var mem_val = memory_get(0)
+        global_put(1, a2)
+        var g_val = global_get(1)
+        heap_grow(1)
+        heap_write(0, a7)
+        var h_val = heap_read(0, 4)
+        print st_val
+        print mem_val
+        print g_val
+        print h_val
+
+        // --- nested blocks as expressions (IRBLOCKR) ---
+        var blk = {
+            var inner = {
+                if a0 > 0 {
+                    print "inner-if"
+                    10
+                } else {
+                    20
+                }
+            }
+            inner + 1
+        }
+        print blk
+
+        // --- logic nesting ---
+        var ok = (a0 > 0 || a1 > 0) && ! (a2 == 0)
+        // cover more comparisons
+        var cmp = (a0 != 0) && (a1 <= 2) && (a1 >= 1) && (a2 < 999) && (a2 > 0)
+        print cmp
+        if ok {
+            print "ok"
+        } else {
+            print "no"
+        }
+
+        // --- throw/abort branches (should compile; kept unreachable) ---
+        if false {
+            throw 123
+        }
+        if false {
+            abort
+        }
+
+        // --- this/self/super dot-call sugar ---
+        // (These compile to CALLTHIS/CALLSELF/CALLSUPER respectively.)
+        var _r1 = this.balance_of(a6)
+        var _r2 = self.balance_of(a6)
+        var _r3 = super.balance_of(a6)
+        print _r1
+        print _r2
+        print _r3
+
+        // --- explicit call instructions (hash/sign forms) ---
+        // Use explicit 0x function signatures to avoid tokenizer ambiguity.
+        var c1 = call 1::0x01020304(10, 20)
+        var c2 = callthis 0::0x11223344(30, 40)
+        var c3 = callself 0::0x55667788(50)
+        var c4 = callsuper 0::0x99aabbcc(60)
+        var c5 = callpure 2::0xdeadbeef(70)
+        // callview coverage + signature token variants (hex, u32 decimal, 4-byte literal)
+        var cl1 = callview 1::0x01020304(1)
+        var cl2 = callview 1::305419896(2) // 0x12345678
+        var cl3 = callview 1::"ABCD"(3)
+        print c1
+        print c2
+        print c3
+        print c4
+        print c5
+        print cl1
+        print cl2
+        print cl3
+
+        // --- syscall list flattening stress ---
+        print sha3("data")
+        print sha2("data")
+        print ripemd160("data")
+        print context_address("")
+        print block_height()
+
+        // --- log statement (2..=5 args) ---
+        log(1, 2)
+        log[1, 2, 3, 4, 5]
+
+        // --- bytecode literal block ---
+        bytecode { POP DUP SWAP }
+
+        // --- loops ---
+        var cnt = 3
+        while cnt > 0 {
+            cnt -= 1
+            if cnt == 1 {
+                print "loop"
+            }
+        }
+
+        return 0
+    }
+
+    /*
+        CALLCODE is special in bytecode verification: it must be followed by END unless
+        it is the final instruction. Keep it as a tail call in a dedicated function.
+    */
+    function public ircode coverage_tail_callcode() -> u32 {
+        callcode 0::0xabcdef01
+        end
+    }
+
+    function public ircode coverage_tail_callcode_libid() -> u32 {
+        // cover: lib statement + callcode lib-index by identifier
+        lib TmpLib = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
+        callcode TmpLib::0xabcdef01
+        end
     }
 
 
@@ -107,7 +310,7 @@ contract TestToken {
         // check all addr type is private key
         assert 0 == (buf_left(1, addr_from) + buf_left(1, addr_to))
         // load balance
-        var bls_from = self.balance_of(addr_from)
+        var bls_from = this.balance_of(addr_from)
         assert amount <= bls_from
         // update from
         bls_from -= amount
@@ -118,7 +321,7 @@ contract TestToken {
             storage_del(bk_from)
         }
         // update to
-        var bls_to = self.balance_of(addr_to)
+        var bls_to = this.balance_of(addr_to)
         bls_to += amount
         var bk_to = "b_" ++ addr_to
         if bls_to > 0 {
@@ -146,6 +349,46 @@ contract TestToken {
             balance = 0 as u64
         }
         return balance
+    }
+
+
+    /*
+        Extra internal helpers to cover more call shapes and parameter unpack lengths.
+    */
+    function helper0() -> u32 {
+        return 0
+    }
+
+    function private helper_private() -> u32 {
+        return 0
+    }
+
+    function helper1(a: u64) -> u64 {
+        return a
+    }
+
+    function helper_many(a: u8, b: u16, c: u32, d: u64, e: u128, f: bytes, g: address) -> u32 {
+        // Ensure many-parameter unpack path is exercised.
+        assert g is address
+        print a
+        print b
+        print c
+        print d
+        print e
+        print f
+        print g
+        return 0
+    }
+
+    function public ircode coverage_dispatch(addr: address, amt: u64) -> u32 {
+        // call local helpers
+        var a = this.helper0()
+        var b = this.helper1(amt)
+        var c = this.helper_many(1, 2, 3, 4, 5, "bytes", addr)
+        print a
+        print b
+        print c
+        return 0
     }
 
 

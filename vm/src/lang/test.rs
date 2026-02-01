@@ -104,7 +104,7 @@ mod token_t {
 
         let sytax1 = Syntax::new(tkmng2.parse().unwrap());
         let (astblock, _) = sytax1.parse().unwrap();
-        let irnodes = astblock.serialize().split_off(3);
+        let irnodes = drop_irblock_wrap(astblock.serialize()).unwrap();
         println!("asts len: {}", astblock.len());
 
         println!("irnodes: \n\n{}  len: {}\n\n", irnodes.to_hex(), irnodes.len());

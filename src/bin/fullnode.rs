@@ -44,8 +44,8 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
     {
         protocol::setup::action_register(protocol::tex::try_create, protocol::tex::try_json_decode);
     }
-    // hvm feature
-    #[cfg(feature = "hvm")]
+    // vm feature (contracts and/or p2sh)
+    #[cfg(any(feature = "hvm", feature = "p2sh"))]
     {
         protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
         protocol::setup::action_hooker(vm::hook::try_action_hook);

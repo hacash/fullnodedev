@@ -44,7 +44,9 @@ fn impl_packing_next_block(this: &HacashMinter, engine: &dyn EngineRead, txpool:
     // test end*/
     // trs with cbtx
     let mut trslen: usize = 1;
-    let mut trshxs: Vec<Hash> = vec![cbtx.hash()];
+    // MerkleRoot consensus uses tx hash WITH fee.
+    // Must keep consistent with chain-side verification (transaction_hash_list(true)).
+    let mut trshxs: Vec<Hash> = vec![cbtx.hash_with_fee()];
     // trs
     let mut transactions = DynVecTransaction::default();
     transactions.push(Box::new(cbtx.clone())).unwrap();
@@ -103,7 +105,7 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
     macro_rules! ok_push_one_tx {
         ($a: expr) => {
             trs.push($a.objc.clone()).unwrap();
-            trshxs.push($a.hash.clone());
+            trshxs.push($a.objc.as_ref().as_read().hash_with_fee());
             *trslen += 1; 
         }
     }
@@ -159,6 +161,182 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
         let _ = txpool.drain(&invalidtxhxs);
     }
     // ok
+}
+
+
+
+/********************************************/
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use basis::config::EngineConf;
+
+    use std::collections::HashMap;
+
+    struct DummyStore;
+    impl Store for DummyStore {
+        fn status(&self) -> ChainStatus { ChainStatus::default() }
+        fn save_block_data(&self, _: &Hash, _: &Vec<u8>) {}
+        fn save_block_hash(&self, _: &BlockHeight, _: &Hash) {}
+        fn save_block_hash_path(&self, _: &dyn MemDB) {}
+        fn save_batch(&self, _: &dyn MemDB) {}
+        fn block_data(&self, _: &Hash) -> Option<Vec<u8>> { None }
+        fn block_hash(&self, _: &BlockHeight) -> Option<Hash> { None }
+        fn block_data_by_height(&self, _: &BlockHeight) -> Option<(Hash, Vec<u8>)> { None }
+    }
+
+    struct DummyState;
+    impl State for DummyState {
+        fn fork_sub(&self, _: Weak<Box<dyn State>>) -> Box<dyn State> { Box::new(DummyState) }
+        fn merge_sub(&mut self, _: Box<dyn State>) {}
+        fn detach(&mut self) {}
+        fn clone_state(&self) -> Box<dyn State> { Box::new(DummyState) }
+        fn as_mem(&self) -> &MemMap {
+            static EMPTY: std::sync::LazyLock<MemMap> = std::sync::LazyLock::new(HashMap::new);
+            &EMPTY
+        }
+        fn disk(&self) -> Arc<dyn DiskDB> { never!() }
+        fn write_to_disk(&self) {}
+        fn get(&self, _: Vec<u8>) -> Option<Vec<u8>> { None }
+        fn set(&mut self, _: Vec<u8>, _: Vec<u8>) {}
+        fn del(&mut self, _: Vec<u8>) {}
+    }
+
+    struct OneTxPool {
+        tx: TxPkg,
+    }
+    impl TxPool for OneTxPool {
+        fn iter_at(&self, gid: usize, each: &mut dyn FnMut(&TxPkg) -> bool) -> Rerr {
+            match gid {
+                TXGID_NORMAL => {
+                    let _ = each(&self.tx);
+                }
+                TXGID_DIAMINT => {}
+                _ => {}
+            }
+            Ok(())
+        }
+        fn drain(&self, _: &[Hash]) -> Ret<Vec<TxPkg>> { Ok(vec![]) }
+        fn print(&self) -> String { s!("OneTxPool") }
+    }
+
+    struct TestEngine {
+        cnf: EngineConf,
+        latest: Arc<dyn Block>,
+        store: Arc<dyn Store>,
+    }
+
+    impl EngineRead for TestEngine {
+        fn config(&self) -> &EngineConf { &self.cnf }
+        fn latest_block(&self) -> Arc<dyn Block> { self.latest.clone() }
+        fn store(&self) -> Arc<dyn Store> { self.store.clone() }
+        fn fork_sub_state(&self) -> Box<dyn State> { Box::new(DummyState) }
+        fn try_execute_tx_by(&self, _: &dyn TransactionRead, _: u64, _: &mut Box<dyn State>) -> Rerr { Ok(()) }
+    }
+
+    #[test]
+    fn packing_merkle_root_uses_hash_with_fee() {
+        // HacashMinter::create() constructs the genesis block, which validates against a
+        // hard-coded mainnet hash. That requires the global block hasher to be configured.
+        protocol::setup::block_hasher(x16rs::block_hash);
+
+        // Keep test independent from genesis init checks (which require the global block hasher
+        // to be configured by the binary).
+        let prev_blk = {
+            let cbtx = TransactionCoinbase {
+                ty: Uint1::from(0),
+                address: Address::default(),
+                reward: Amount::small_mei(1),
+                message: Fixed16::default(),
+                extend: CoinbaseExtend::default(),
+            };
+            let intro = BlockIntro {
+                head: BlockHead {
+                    version: Uint1::from(1),
+                    height: BlockHeight::from(0),
+                    timestamp: Timestamp::from(1549250700),
+                    prevhash: Hash::default(),
+                    mrklroot: Hash::default(),
+                    transaction_count: Uint4::from(1),
+                },
+                meta: BlockMeta {
+                    nonce: Uint4::default(),
+                    difficulty: Uint4::from(0),
+                    witness_stage: Fixed2::default(),
+                },
+            };
+
+            let mut txs = DynVecTransaction::default();
+            txs.push(Box::new(cbtx)).unwrap();
+
+            let mut blk = BlockV1 { intro, transactions: txs };
+            blk.update_mrklroot();
+            blk
+        };
+
+        // Build a tx where hash() != hash_with_fee() (fee is non-zero).
+        let acc = Account::create_by_password("merkle-test").unwrap();
+        let main = Address::from(*acc.address());
+
+        let mut tx = TransactionType2::new_by(main, Amount::small(1, 248), curtimes());
+        tx.fill_sign(&acc).unwrap();
+        let txp = TxPkg::create(Box::new(tx));
+
+        let tp = OneTxPool { tx: txp };
+
+        let mut cnf = EngineConf {
+            max_block_txs: 1000,
+            max_block_size: 1024 * 1024,
+            max_tx_size: 1024 * 16,
+            max_tx_actions: 200,
+            chain_id: 0,
+            unstable_block: 4,
+            fast_sync: false,
+            sync_maxh: 0,
+            data_dir: "/tmp".to_string(),
+            block_data_dir: std::path::PathBuf::from("/tmp/hacash_test_block"),
+            state_data_dir: std::path::PathBuf::from("/tmp/hacash_test_state"),
+            blogs_data_dir: std::path::PathBuf::from("/tmp/hacash_test_logs"),
+            show_miner_name: false,
+            vmlogs_enable: false,
+            vmlogs_open_height: 0,
+            vmlogs_can_delete: false,
+            dev_count_switch: 0,
+            diamond_form: true,
+            recent_blocks: false,
+            average_fee_purity: false,
+            lowest_fee_purity: 0,
+            miner_enable: false,
+            miner_reward_address: Address::default(),
+            miner_message: Fixed16::default(),
+            dmer_enable: false,
+            dmer_reward_address: Address::default(),
+            dmer_bid_account: Account::create_by_password("123456").unwrap(),
+            dmer_bid_min: Amount::small_mei(1),
+            dmer_bid_max: Amount::small_mei(31),
+            dmer_bid_step: Amount::small(5, 247),
+            txpool_maxs: Vec::default(),
+        };
+        // Make sure we set miner message/reward (pack uses these).
+        cnf.miner_message = Fixed16::default();
+        cnf.miner_reward_address = Address::default();
+
+        let engine = TestEngine {
+            cnf,
+            latest: Arc::new(prev_blk),
+            store: Arc::new(DummyStore),
+        };
+
+        let minter = HacashMinter::create(&IniObj::default());
+        let blk_any = minter.packing_next_block(&engine, &tp);
+        let blk = *blk_any.downcast::<BlockV1>().unwrap();
+
+        let want = calculate_mrklroot(&blk.transaction_hash_list(true));
+        assert_eq!(*blk.mrklroot(), want);
+    }
 }
 
 

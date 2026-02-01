@@ -13,7 +13,7 @@ fn address_ptr(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 }
 
 fn context_address(_: u64, buf: &[u8]) -> VmrtRes<Value> {
-    let ctxadr = field::Address::from_bytes(buf).unwrap();
+    let ctxadr = field::Address::from_bytes(buf).map_ire(NativeCallError)?;
     Ok(Value::Address(ctxadr))
 }
 

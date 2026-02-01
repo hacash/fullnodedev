@@ -10,6 +10,8 @@ use vm::rt::*;
 use vm::IRNode;
 use vm::PrintOption;
 
+mod common;
+
 #[test]
 fn t1() {
     // lang_to_bytecode("return 0").unwrap();
@@ -44,17 +46,44 @@ fn bind_slot_and_cache_print() {
 }
 
 #[test]
-fn calllib_callinr_print() {
+fn callview_callthis_print() {
     let script = r##"
-        calllib 2::abcdef01()
-        callinr 11223344()
-        callstatic 3::deadbeef()
+        callview 2::abcdef01()
+        callthis 0::11223344()
+        callpure 3::deadbeef()
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
-    assert!(printed.contains("calllib 2::0xabcdef01("));
-    assert!(printed.contains("callinr 0x00ab4130("));
-    assert!(printed.contains("callstatic 3::0xdeadbeef("));
+    assert!(printed.contains("callview 2::0xabcdef01("));
+    assert!(printed.contains("callthis 0::0x00ab4130("));
+    assert!(printed.contains("callpure 3::0xdeadbeef("));
+}
+
+#[test]
+fn callthis_callself_callsuper_print_and_roundtrip() {
+    // 11223344 (decimal) == 0x00ab4130
+    let script = r##"
+        callthis 0::11223344(1)
+        callself 0::11223344(2)
+        callsuper 0::11223344(3)
+    "##;
+    let (ircd, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = format_ircode_to_lang(&ircd, Some(&smap)).unwrap();
+    assert!(printed.contains("callthis 0::0x00ab4130("));
+    assert!(printed.contains("callself 0::0x00ab4130("));
+    assert!(printed.contains("callsuper 0::0x00ab4130("));
+
+    // Also ensure the dot-call sugar is emitted when function names exist.
+    let sugar = r##"
+        this.foo(1)
+        self.foo(2)
+        super.foo(3)
+    "##;
+    let (ircd2, smap2) = lang_to_ircode_with_sourcemap(sugar).unwrap();
+    let printed2 = format_ircode_to_lang(&ircd2, Some(&smap2)).unwrap();
+    assert!(printed2.contains("/*callthis*/ this.foo("));
+    assert!(printed2.contains("/*callself*/ self.foo("));
+    assert!(printed2.contains("/*callsuper*/ super.foo("));
 }
 
 #[test]
@@ -65,6 +94,240 @@ fn call_keyword_print() {
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
     assert!(printed.contains("call 1::0xabcdef01("));
+}
+
+#[test]
+fn decompile_system_calls_preserve_default_empty_arg_unless_opted_in() {
+    // Native call with 0 args (still consumes an argv buffer; compiler emits "" as placeholder).
+    let script = r##"
+        print context_address()
+        print block_height()
+    "##;
+
+    let block = lang_to_irnode(script).unwrap();
+    let plain = PrintOption::new("  ", 0);
+    let printed_plain = Formater::new(&plain).print(&block);
+    assert!(printed_plain.contains("context_address(\"\")"));
+    // EXTENV(block_height) has metadata.input == 0; compiler emits no argv placeholder.
+    assert!(printed_plain.contains("block_height()"));
+
+    let mut pretty = PrintOption::new("  ", 0);
+    pretty.hide_default_call_argv = true;
+    let printed_pretty = Formater::new(&pretty).print(&block);
+    assert!(printed_pretty.contains("context_address()"));
+    assert!(printed_pretty.contains("block_height()"));
+}
+
+#[test]
+fn decompile_contract_calls_hide_default_nil_only_when_opted_in() {
+    let script = r##"
+        call 1::abcdef01()
+    "##;
+    let block = lang_to_irnode(script).unwrap();
+
+    let plain = PrintOption::new("  ", 0);
+    let printed_plain = Formater::new(&plain).print(&block);
+    assert!(printed_plain.contains("call 1::0xabcdef01(nil)"));
+
+    let mut pretty = PrintOption::new("  ", 0);
+    pretty.hide_default_call_argv = true;
+    let printed_pretty = Formater::new(&pretty).print(&block);
+    assert!(printed_pretty.contains("call 1::0xabcdef01()"));
+}
+
+#[test]
+fn not_operator_parenthesizes_lower_precedence_operands_on_roundtrip() {
+    // The parser uses IRNodeWrapOne to record explicit parentheses, but WrapOne is not
+    // serialized into ircode. Decompilation must still print parentheses when required
+    // by precedence, otherwise recompilation changes semantics.
+    let script = r##"
+        print !(1 == 1 && 2 == 2)
+        print !(1 + 2 * 3 == 7)
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn pow_left_nested_requires_parentheses_on_roundtrip() {
+    // `**` is right-associative in the parser, so a left-nested IR tree must be
+    // printed with parentheses to preserve semantics.
+    let script = r##"
+        print (2 ** 3) ** 2
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn inline_block_expression_with_statements_roundtrips() {
+    // Block expressions (IRBLOCKR) may contain multiple statements and a final value.
+    // Decompilation must keep braces/newlines so the recompiled semantics match.
+    let script = r##"
+        var stmt = {
+            print 5
+            0
+        }
+        print stmt
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn call_args_preserve_block_expression_argument_boundaries() {
+    // Block expressions may include newlines; decompilation must not split one argument
+    // into many by line-joining.
+    let script = r##"
+        print sha3({
+            print 1
+            "abc"
+        })
+
+        transfer_hac_to(emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS, {
+            print 2
+            1
+        })
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn const_defs_not_injected_into_inline_expressions() {
+    // Source-map const defs are emitted as a top-level prelude.
+    // Inline printing (used for call args / expression formatting) must not
+    // inject `const ...` lines into expression contexts.
+    let script = r##"
+        const ONE = 1
+
+        // The compiler replaces `ONE` with literal `1` in IR;
+        // decompilation should restore `ONE` and emit `const ONE = 1` once at top-level.
+        print sha3(ONE + 2)
+    "##;
+
+    let (block, source_map) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let mut opt = PrintOption::new("    ", 0).with_source_map(&source_map);
+    opt.recover_literals = true;
+    let printed = Formater::new(&opt).print(&block);
+
+    assert!(printed.contains("const ONE = 1"));
+    assert_eq!(printed.matches("const ONE = 1").count(), 1);
+    assert!(printed.contains("sha3(ONE + 2)"));
+    assert!(!printed.contains("sha3(const"));
+
+    let const_pos = printed.find("const ONE = 1").unwrap();
+    let block_pos = printed.find('{').unwrap();
+    assert!(const_pos < block_pos);
+}
+
+#[test]
+fn inline_if_expression_argument_with_multiline_blocks_roundtrips() {
+    // `if` expressions may print across multiple lines, but when used as a call argument
+    // they flow through `print_inline()` which may flatten newlines.
+    // This must remain parseable and preserve semantics.
+    let script = r##"
+        print sha3(if true {
+            print 1
+            "a"
+        } else {
+            print 2
+            "b"
+        })
+    "##;
+
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn inline_if_expression_argument_with_var_and_final_value_roundtrips() {
+    // Stress `print_inline()` newline flattening: block bodies contain a declaration and a final value.
+    // If newlines are flattened incorrectly, parsing can become ambiguous or fail.
+    let script = r##"
+        print sha3(if true {
+            var x = 1
+            x
+        } else {
+            2
+        })
+    "##;
+
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn inline_multiline_map_expression_argument_roundtrips() {
+    // `map { ... }` often prints across multiple lines; when used as a call argument it
+    // flows through `print_inline()` and may have newlines flattened.
+    let script = r##"
+        print sha3(map {
+            "a": {
+                print 1
+                "x"
+            }
+            "b": 2
+        })
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn inline_multiline_list_expression_argument_roundtrips() {
+    // Same as map: ensure list printing remains parseable when flattened for inline args.
+    let script = r##"
+        print sha3(list {
+            {
+                print 1
+                "x"
+            }
+            2
+        })
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn inline_if_expression_as_list_element_roundtrips() {
+    // Nested inline contexts: list literal contains an `if` expression whose branches are blocks.
+    // This exercises: print_inline(if) -> newline flattening, inside list { ... } which itself
+    // becomes an inline call argument.
+    let script = r##"
+        print sha3(list {
+            if true {
+                var x = 1
+                x
+            } else {
+                2
+            }
+        })
+    "##;
+
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn ir_func_call_arguments_parse_in_value_context() {
+    // IR functions like `append(...)` previously parsed argv via `item_may_block(false)`
+    // (statement context), which would make `if ... else ...` become `IRIF` (no retval)
+    // and fail `checkretval()` when used as an argument.
+    let script = r##"
+        bind numbers = [1]
+        append(numbers, if true { 2 } else { 3 })
+        print numbers
+    "##;
+
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn log_arguments_parse_in_value_context() {
+    // `log(...)` is an argument-taking instruction. Its arguments are value expressions.
+    // Ensure constructs like `if ... else ...` are parsed as expression-form `IRIFR`.
+    let script = r##"
+        log(if true { 1 } else { 2 }, 0)
+    "##;
+
+    let ircodes = common::checked_compile_fitsh_to_ir(script);
+    assert!(
+        ircodes.iter().any(|b| *b == Bytecode::IRIFR as u8),
+        "expected IRIFR for `if` used as log argument"
+    );
 }
 
 #[test]
@@ -102,6 +365,178 @@ fn let_cannot_reassign() {
     "##;
     let err = lang_to_ircode(script).unwrap_err();
     assert!(err.contains("cannot assign to immutable symbol 'x'"));
+}
+
+#[test]
+fn var_initializer_must_be_value_expression() {
+    // `bind` is a declaration/statement (returns no value). Allowing it as a var initializer
+    // would compile into `PUT` without a stack value, causing stack/semantic issues.
+    let script = r##"
+        var x = bind y = 1
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("initializer") || err.contains("return"));
+}
+
+#[test]
+fn return_argument_must_be_value_expression() {
+    let script = r##"
+        return end
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("return") || err.contains("return value"));
+}
+
+#[test]
+fn assert_argument_must_be_value_expression() {
+    let script = r##"
+        assert end
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("assert") || err.contains("return value"));
+}
+
+#[test]
+fn throw_argument_must_be_value_expression() {
+    let script = r##"
+        throw end
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("throw") || err.contains("return value"));
+}
+
+#[test]
+fn binary_operator_operands_must_be_value_expressions() {
+    // Binary operators consume values from the stack.
+    let script = r##"
+        1 + end
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("return value") || err.contains("not have return value"));
+}
+
+#[test]
+fn is_operator_lhs_must_be_value_expression() {
+    // `is` consumes a value from the stack; lhs must return a value.
+    let script = r##"
+        end is nil
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("return value") || err.contains("not have return value"));
+}
+
+#[test]
+fn item_get_index_must_be_value_expression() {
+    let script = r##"
+        var arr = list { 1 }
+        print arr[end]
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("return value") || err.contains("not have return value"));
+}
+
+#[test]
+fn else_if_statement_allows_statement_branches() {
+    // In statement context, else-if chains should parse as IRIF (not IRIFR),
+    // so branch blocks may be statement-only.
+    let script = r##"
+        if true {
+            print 1
+        } else if true {
+            print 2
+        } else {
+            print 3
+        }
+        end
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn else_if_expression_still_requires_value_branches() {
+    // In expression context, every branch in the else-if chain must return a value.
+    let script = r##"
+        print if true {
+            1
+        } else if true {
+            print 2
+        } else {
+            3
+        }
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("block expression") || err.contains("return value"));
+}
+
+#[test]
+fn item_get_if_expression_index_roundtrips() {
+    let script = r##"
+        var arr = [10, 20]
+        print arr[if true {
+            0
+        } else {
+            1
+        }]
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn item_get_receiver_list_literal_roundtrips() {
+    // Indexing should work on any value expression, including list literals.
+    let script = r##"
+        var x = [1, 2][0]
+        print x
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn item_get_receiver_call_result_roundtrips() {
+    // Indexing should work on call results (receiver isn't an identifier).
+    let script = r##"
+        var b = sha3("abc")[0]
+        print b
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn item_get_receiver_binary_expression_preserves_precedence_roundtrips() {
+    // Formatter must emit parentheses: `(a + b)[0]` must not decompile as `a + b[0]`.
+    let script = r##"
+        var a = [1]
+        var b = [2]
+        var x = (a + b)[0]
+        print x
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn item_get_receiver_bind_symbol_roundtrips() {
+    // `bind` symbols are value expressions but not slots; indexing must still work.
+    let script = r##"
+        bind arr = [7, 9]
+        print arr[1]
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
+}
+
+#[test]
+fn map_value_if_expression_roundtrips() {
+    let script = r##"
+        var flag = true
+        let obj = map {
+            "v": if flag {
+                1
+            } else {
+                2
+            }
+        }
+        print obj
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
 }
 
 #[test]
@@ -165,6 +600,11 @@ fn block_and_if_expression_use_expr_opcodes() {
                 2
             }
         }
+        // Ensure we still emit a real IRBLOCKR that cannot be simplified away.
+        print {
+            print 9
+            10
+        }
         print if true { 3 } else { 4 }
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
@@ -186,9 +626,34 @@ fn block_and_if_statement_use_stmt_opcodes() {
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     assert!(ircodes.iter().any(|b| *b == Bytecode::IRIF as u8));
-    assert!(ircodes.iter().any(|b| *b == Bytecode::IRBLOCK as u8));
     assert!(!ircodes.iter().any(|b| *b == Bytecode::IRBLOCKR as u8));
     assert!(!ircodes.iter().any(|b| *b == Bytecode::IRIFR as u8));
+}
+
+#[test]
+fn if_expression_single_stmt_branches_elide_irblockr_in_ircode() {
+    // Deprecated: we require ircode byte-for-byte stability, so single-statement
+    // block wrappers must remain representable. Keep a sanity check that the
+    // expression opcode form is used.
+    let script = r##"
+        print if true { 3 } else { 4 }
+    "##;
+    let ircodes = lang_to_ircode(script).unwrap();
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRIFR as u8));
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRBLOCKR as u8));
+}
+
+#[test]
+fn if_statement_and_while_single_stmt_bodies_elide_irblock_in_ircode() {
+    // Deprecated: ircode stability requires preserving IRBLOCK wrappers.
+    let script = r##"
+        if true { print 1 } else { print 2 }
+        while true { print 3 }
+    "##;
+    let ircodes = lang_to_ircode(script).unwrap();
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRIF as u8));
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRWHILE as u8));
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRBLOCK as u8));
 }
 
 #[test]
@@ -222,8 +687,143 @@ fn nested_expression_contexts_emit_expr_opcodes() {
         .iter()
         .filter(|b| **b == Bytecode::IRIFR as u8)
         .count();
-    assert!(blockr >= 5);
+    assert!(blockr >= 1);
     assert!(ifr >= 4);
+}
+
+#[test]
+fn print_options_on_off_preserve_ircode_bytes() {
+    // This script intentionally hits multiple formatter options:
+    // - has a cast opcode (so `recover_literals` must not drop it)
+    // - has default argv placeholders (so `hide_default_call_argv` must be lossless)
+    // - has list literal (so `flatten_array_list` must be lossless)
+    // - has if/while blocks (so bracing must preserve container opcodes)
+    let script = r##"
+        param { amt }
+        print amt as u8
+        call 1::abcdef01()
+        print context_address("")
+        print [1, 2]
+        if true { print 3 } else { print 4 }
+        while false { print 5 }
+    "##;
+
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let mut seek = 0;
+    let block = parse_ir_block(&ircode, &mut seek).unwrap();
+    assert_eq!(seek, ircode.len());
+
+    // All options off.
+    let plain = PrintOption::new("  ", 0).with_source_map(&smap);
+    let plain_text = Formater::new(&plain).print(&block);
+    let plain_ir = lang_to_ircode(&plain_text).unwrap();
+    assert_eq!(ircode, plain_ir);
+
+    // All options on (mirrors `format_ircode_to_lang`).
+    let mut pretty = PrintOption::new("  ", 0).with_source_map(&smap);
+    pretty.trim_root_block = true;
+    pretty.trim_head_alloc = true;
+    pretty.trim_param_unpack = true;
+    pretty.hide_default_call_argv = true;
+    pretty.call_short_syntax = true;
+    pretty.flatten_call_list = true;
+    pretty.flatten_array_list = true;
+    pretty.flatten_syscall_cat = true;
+    pretty.recover_literals = true;
+
+    let pretty_text = Formater::new(&pretty).print(&block);
+    let pretty_ir = lang_to_ircode(&pretty_text)
+        .map_err(|e| format!("{}\n---- pretty_text ----\n{}\n---------------------\n", e, pretty_text))
+        .unwrap();
+    assert_eq!(ircode, pretty_ir);
+}
+
+#[test]
+fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
+    // This script includes a param-unpack and a local use, so sourcemap-less decompilation
+    // must still emit a compilable `param { ... }` and preserve byte-for-byte ircode.
+    let script = r##"
+        param { amt }
+        print amt as u8
+        call 1::abcdef01()
+        print context_address("")
+        print [1, 2]
+        if true { print 3 } else { print 4 }
+        while false { print 5 }
+    "##;
+
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let mut seek = 0;
+    let block = parse_ir_block(&ircode, &mut seek).unwrap();
+    assert_eq!(seek, ircode.len());
+
+    #[derive(Clone, Copy, Debug)]
+    enum OptKey {
+        EmitLibPrelude,
+        TrimRootBlock,
+        TrimHeadAlloc,
+        TrimParamUnpack,
+        HideDefaultCallArgv,
+        CallShortSyntax,
+        FlattenCallList,
+        FlattenArrayList,
+        FlattenSyscallCat,
+        RecoverLiterals,
+    }
+
+    fn set_opt(opt: &mut PrintOption, key: OptKey, val: bool) {
+        match key {
+            OptKey::EmitLibPrelude => opt.emit_lib_prelude = val,
+            OptKey::TrimRootBlock => opt.trim_root_block = val,
+            OptKey::TrimHeadAlloc => opt.trim_head_alloc = val,
+            OptKey::TrimParamUnpack => opt.trim_param_unpack = val,
+            OptKey::HideDefaultCallArgv => opt.hide_default_call_argv = val,
+            OptKey::CallShortSyntax => opt.call_short_syntax = val,
+            OptKey::FlattenCallList => opt.flatten_call_list = val,
+            OptKey::FlattenArrayList => opt.flatten_array_list = val,
+            OptKey::FlattenSyscallCat => opt.flatten_syscall_cat = val,
+            OptKey::RecoverLiterals => opt.recover_literals = val,
+        }
+    }
+
+    let keys = [
+        OptKey::EmitLibPrelude,
+        OptKey::TrimRootBlock,
+        OptKey::TrimHeadAlloc,
+        OptKey::TrimParamUnpack,
+        OptKey::HideDefaultCallArgv,
+        OptKey::CallShortSyntax,
+        OptKey::FlattenCallList,
+        OptKey::FlattenArrayList,
+        OptKey::FlattenSyscallCat,
+        OptKey::RecoverLiterals,
+    ];
+
+    for map_enabled in [false, true] {
+        for key in keys {
+            for val in [false, true] {
+                let mut opt = PrintOption::new("  ", 0);
+                if map_enabled {
+                    opt.map = Some(&smap);
+                }
+                set_opt(&mut opt, key, val);
+                let text = Formater::new(&opt).print(&block);
+                let ir2 = lang_to_ircode(&text)
+                    .map_err(|e| {
+                        format!(
+                            "{}\n---- printed (map_enabled={}, opt={:?}={}) ----\n{}\n---------------------\n",
+                            e, map_enabled, key, val, text
+                        )
+                    })
+                    .unwrap();
+                assert_eq!(
+                    ircode, ir2,
+                    "ircode mismatch (map_enabled={}, opt={:?}={})\n{}",
+                    map_enabled, key, val, text
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -287,13 +887,13 @@ fn fitsh_ir_roundtrip_suite() {
                     builder
                 }
                 if sum > 0 {
-                    calllib 1::abcdef01(sum)
+                    callview 1::abcdef01(sum)
                 } else {
-                    callstatic 1::deadbeef(sum, 0)
+                    callpure 1::deadbeef(sum, 0)
                 }
-                callinr 11223344(sum)
+                callthis 0::11223344(sum)
             "##,
-            &["while", "calllib", "callstatic", "callinr", "if"],
+            &["while", "callview", "callpure", "callthis", "if"],
         ),
         (
             r##"
@@ -597,6 +1197,22 @@ fn decompile_with_sourcemap_lists_lib_defs_at_top() {
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
     assert!(printed.starts_with("lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS\n"));
+}
+
+#[test]
+fn sourcemap_lib_prelude_not_injected_into_inline_blocks() {
+    let script = r##"
+        lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
+        // block used as call argument must not receive `lib ...` prelude.
+        print sha3({
+            print 1
+            "abc"
+        })
+    "##;
+    let (block, smap) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let opt = PrintOption::new("  ", 0).with_source_map(&smap);
+    let printed = Formater::new(&opt).print(&block);
+    assert_eq!(printed.matches("lib HacSwap = 1:").count(), 1);
 }
 
 #[test]

@@ -91,7 +91,7 @@ impl Resoure {
         let librarys = adrlist;
         let libidx = lib as usize;
         if libidx >= librarys.len() {
-            return itr_err_code!(CallLibOverflow)
+            return itr_err_code!(CallViewOverflow)
         }
         let taradr = librarys.get(libidx).unwrap();
         taradr.check().map_ire(ContractAddrErr)?; // check must contract addr
@@ -101,6 +101,27 @@ impl Resoure {
 
     pub fn load_userfn(&mut self, vmsta: &mut VMState, addr: &ContractAddress, fnsg: FnSign) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
         self.load_fn_by_search_inherits(vmsta, addr, FnKey::User(fnsg))
+    }
+
+
+    pub fn load_userfn_super(
+        &mut self,
+        vmsta: &mut VMState,
+        curadr: &ContractAddress,
+        fnsg: FnSign,
+    ) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
+        // Start from direct inherits of current code owner, skipping itself.
+        let csto = self.load_contract(vmsta, curadr)?;
+        let mut visiting = std::collections::HashSet::new();
+        let mut visited = std::collections::HashSet::new();
+        let fnkey = FnKey::User(fnsg);
+        for ih in csto.sto.inherits.list() {
+            if let Some((owner, func)) = self.load_fn_by_search_inherits_rec(vmsta, ih, &fnkey, &mut visiting, &mut visited)? {
+                let change = maybe!(&owner == curadr, None, Some(owner));
+                return Ok(Some((change, func)));
+            }
+        }
+        Ok(None)
     }
 
 
@@ -119,8 +140,20 @@ impl Resoure {
         use CallTarget::*;
         use ItrErrCode::*;
         match match fptr.target {
-            Inner         => {
+            This => {
                 let Some((a, b)) = self.load_userfn(vmsta, dstadr, fptr.fnsign)? else {
+                    return itr_err_code!(CallNotExist)
+                };
+                (a, Some(b))
+            }
+            Self_ => {
+                let Some((a, b)) = self.load_userfn(vmsta, srcadr, fptr.fnsign)? else {
+                    return itr_err_code!(CallNotExist)
+                };
+                (a, Some(b))
+            }
+            Super => {
+                let Some((a, b)) = self.load_userfn_super(vmsta, srcadr, fptr.fnsign)? else {
                     return itr_err_code!(CallNotExist)
                 };
                 (a, Some(b))

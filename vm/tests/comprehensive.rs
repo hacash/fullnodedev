@@ -88,8 +88,8 @@ let bal = Token:balance_of(target_addr) // Lib call (colon)
 let info = Token::info() // Lib static call (double colon)
 let res = self.internal_func(1, 2) // Inner call
 call 1::0x01020304(10, 20) // Direct call (index + hash)
-callinr 0x11223344(30, 40) // Direct inner call
-callstatic 2::0x55667788(50) // Direct static call
+callthis 0::0x11223344(30, 40) // Direct inner call
+callpure 2::0x55667788(50) // Direct pure call
 
 // 10. Special Instructions
 memory_put(0, "data") // Memory put
@@ -173,7 +173,7 @@ return true // Return
             opt.trim_root_block = true;
             opt.trim_head_alloc = true;
             opt.trim_param_unpack = true;
-            opt.hide_func_nil_argv = true;
+            opt.hide_default_call_argv = true;
             opt.call_short_syntax = true;
             opt.flatten_call_list = true;
             opt.flatten_syscall_cat = true;

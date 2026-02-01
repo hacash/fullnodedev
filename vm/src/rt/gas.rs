@@ -42,10 +42,10 @@ impl GasTable {
         gst.set(5,  &[POW, KEYS, VALUES]);
         gst.set(6,  &[HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND]);
         gst.set(8,  &[MGET, JOIN, REV, NEWLIST, NEWMAP]);
-        gst.set(12, &[EXTENV, MPUT, CALLINR, PACKLIST, PACKMAP, UPLIST, CLONE]);
+        gst.set(12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, PACKLIST, PACKMAP, UPLIST, CLONE]);
         gst.set(16, &[EXTFUNC,GGET, CALLCODE]);
         gst.set(20, &[LOG1]);
-        gst.set(24, &[LOG2, EXTACTION, GPUT, CALLLIB, CALLSTATIC]);
+        gst.set(24, &[LOG2, EXTACTION, GPUT, CALLVIEW, CALLPURE]);
         gst.set(28, &[LOG3]);
         gst.set(32, &[LOG4, SLOAD, SREST, CALL]); // CALLDYN
         gst.set(64, &[SSAVE, SRENT]);

@@ -27,6 +27,10 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
             Keyword(KwTy::Private) => {
                 state.advance();
             },
+            Keyword(KwTy::Virtual) => {
+                // Reserved modifier; currently has no semantic effect in codegen.
+                state.advance();
+            },
             Keyword(KwTy::IrCode) => {
                 is_ircode = true;
                 state.advance();

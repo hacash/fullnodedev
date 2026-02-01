@@ -12,6 +12,7 @@ enum LiteralKind {
     Address,
 }
 
+#[allow(unused)]
 #[derive(Clone)]
 struct RecoveredLiteral {
     text: String,
@@ -46,6 +47,15 @@ impl RecoveredLiteral {
 }
 
 impl<'a> Formater<'a> {
+    fn ensure_braced_block(&self, s: &str) -> String {
+        let t = s.trim();
+        maybe!(t.starts_with('{'), t.to_owned(), format!("{{ {} }}", t))
+    }
+
+    fn ensure_else_body(&self, s: &str) -> String {
+        let t = s.trim();
+        maybe!(t.starts_with('{') || t.starts_with("if "), t.to_owned(), format!("{{ {} }}", t))
+    }
     pub fn new(opt: &PrintOption<'a>) -> Self {
         Self { opt: opt.clone() }
     }
@@ -96,18 +106,34 @@ impl<'a> Formater<'a> {
     ) -> Option<String> {
         use Bytecode::*;
         match code {
-            CALLINR => self
-                .resolve_func_name(&pss.para)
-                .map(|func| format!("self.{}({})", func, args)),
-            CALL => self
-                .resolve_lib_func(pss.para[0], &pss.para[1..])
-                .map(|(lib, func)| format!("{}.{}({})", lib, func, args)),
-            CALLLIB => self
-                .resolve_lib_func(pss.para[0], &pss.para[1..])
-                .map(|(lib, func)| format!("{}:{}({})", lib, func, args)),
-            CALLSTATIC => self
-                .resolve_lib_func(pss.para[0], &pss.para[1..])
-                .map(|(lib, func)| format!("{}::{}({})", lib, func, args)),
+            CALLTHIS | CALLSELF | CALLSUPER => self.resolve_func_name(&pss.para).and_then(|func| {
+                let sig = calc_func_sign(&func);
+                if pss.para.as_slice() != &sig[..] {
+                    return None;
+                }
+                Some(match code {
+                    CALLTHIS => format!("this.{}({})", func, args),
+                    CALLSELF => format!("self.{}({})", func, args),
+                    CALLSUPER => format!("super.{}({})", func, args),
+                    _ => return None,
+                })
+            }),
+            CALL | CALLVIEW | CALLPURE => {
+                let (lib, func) = self.resolve_lib_func(pss.para[0], &pss.para[1..])?;
+                let sig = calc_func_sign(&func);
+                if pss.para.len() != 1 + sig.len() {
+                    return None;
+                }
+                if &pss.para[1..] != &sig[..] {
+                    return None;
+                }
+                Some(match code {
+                    CALL => format!("{}.{}({})", lib, func, args),
+                    CALLVIEW => format!("{}:{}({})", lib, func, args),
+                    CALLPURE => format!("{}::{}({})", lib, func, args),
+                    _ => return None,
+                })
+            }
             _ => None,
         }
     }
@@ -210,14 +236,15 @@ impl<'a> Formater<'a> {
         Some(elems)
     }
 
-    fn format_call_args(&self, substr: &str) -> String {
-        let lines: Vec<String> = substr
-            .lines()
-            .map(|line| line.trim())
-            .filter(|line| !line.is_empty())
-            .map(|line| line.to_string())
-            .collect();
-        lines.join(", ")
+    fn format_call_args(&self, args: &[String]) -> String {
+        // Join on argument boundaries (not line boundaries).
+        // Some expressions (e.g. `{ ... }` blocks) legitimately contain newlines; splitting
+        // by lines would corrupt the argument list and break roundtrip semantics.
+        args.iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn collect_native_call_args(&self, node: &dyn IRNode, system_call: bool) -> Vec<String> {
@@ -226,7 +253,11 @@ impl<'a> Formater<'a> {
         let mut current: &dyn IRNode = node;
         let helper = DecompilationHelper::new(&self.opt);
         loop {
-            if self.opt.flatten_call_list {
+            // `IRLIST` is used both for "packed argv lists" and for actual list/map literals.
+            // For system/native/ext calls we use concat-argv mode; the argument node can
+            // legitimately be a list literal, so flattening IRLIST here would corrupt
+            // argument boundaries and even change call arity.
+            if self.opt.flatten_call_list && !system_call {
                 if let Some(list) = current.as_any().downcast_ref::<IRNodeArray>() {
                     if let Some(elements) = self.extract_list_elements(list.inst, &list.subs) {
                         args.extend(elements);
@@ -247,18 +278,22 @@ impl<'a> Formater<'a> {
         args
     }
 
-    fn trim_nil_args(&self, args: &mut Vec<String>, node: &dyn IRNode) {
+    fn trim_default_call_args(&self, args: &mut Vec<String>, node: &dyn IRNode, system_call: bool) {
         use Bytecode::*;
-        if self.opt.hide_func_nil_argv && node.bytecode() == PNIL as u8 {
-            args.clear();
+        if !self.opt.hide_default_call_argv {
+            return;
+        }
+        match node.bytecode() {
+            x if x == PNIL as u8 => args.clear(),
+            x if system_call && x == PNBUF as u8 => args.clear(),
+            _ => {}
         }
     }
 
     fn build_call_args(&self, node: &dyn IRNode, system_call: bool) -> String {
         let mut args_list = self.collect_native_call_args(node, system_call);
-        self.trim_nil_args(&mut args_list, node);
-        let args_src = args_list.join("\n");
-        self.format_call_args(&args_src)
+        self.trim_default_call_args(&mut args_list, node, system_call);
+        self.format_call_args(&args_list)
     }
 
     fn format_memory_put(&self, node: &dyn IRNode) -> Option<String> {
@@ -337,6 +372,35 @@ impl<'a> Formater<'a> {
                 if let Some(line) = param_line {
                     buf.push_str(&line);
                     buf.push('\n');
+                } else {
+                    // If we are trimming the file-level root block but not trimming param-unpack,
+                    // the decompiled code may still use SourceMap parameter names (e.g. `amt`),
+                    // which would be unbound without a `param { ... }` statement.
+                    // Emit a lightweight slot-binding prelude: `var <name> $<i>` (no assignment).
+                    let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
+                    if is_file_level_irblock && self.opt.map.is_some() {
+                        // alloc could be at index 0 or 1
+                        let mut alloc_index: Option<usize> = None;
+                        for (i, s) in arr.subs.iter().enumerate().take(2) {
+                            if s.bytecode() == ALLOC as u8 {
+                                alloc_index = Some(i);
+                                break;
+                            }
+                        }
+                        let param_idx = alloc_index.map(|ai| ai + 1).unwrap_or(0);
+                        if let Some(names) = helper.infer_param_names(arr, param_idx) {
+                            for (i, name) in names.iter().enumerate() {
+                                self.opt.mark_slot_put(i as u8);
+                                buf.push_str(&format!(
+                                    "{}var {} ${}",
+                                    self.opt.indent.repeat(self.opt.tab + 1),
+                                    name,
+                                    i
+                                ));
+                                buf.push('\n');
+                            }
+                        }
+                    }
                 }
                 for a in &arr.subs[body_start_idx..] {
                     buf.push_str(&self.child().print(&**a));
@@ -348,10 +412,72 @@ impl<'a> Formater<'a> {
                 return Some(buf);
             }
         }
+
+        // Even when `trim_root_block` / `trim_param_unpack` are disabled, we still must keep
+        // decompile->recompile closed.
+        // IMPORTANT: when `trim_param_unpack == false`, we must NEVER emit `param { ... }`.
+        // Instead, we keep the raw `UPLIST(PICK0,P0)` instruction in output, and (when SourceMap
+        // provides parameter names) we emit lightweight slot-binding lines: `var <name> $<i>`.
+        let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
+        // If `trim_param_unpack=true`, we may rewrite the canonical UPLIST node into `param { ... }`.
+        // If `trim_param_unpack=false`, we must never emit `param { ... }`.
+        let (param_rewrite_idx, param_rewrite_line) = if is_file_level_irblock && self.opt.trim_param_unpack {
+            // alloc could be at index 0 or 1 (depending on placeholder insertion patterns)
+            let mut alloc_index: Option<usize> = None;
+            for (i, s) in arr.subs.iter().enumerate().take(2) {
+                if s.bytecode() == ALLOC as u8 {
+                    alloc_index = Some(i);
+                    break;
+                }
+            }
+            let idx = alloc_index.map(|ai| ai + 1).unwrap_or(0);
+            // Mark param slots so later PUTs don't print as `var ...`.
+            if let Some(names) = helper.infer_param_names(arr, idx) {
+                for i in 0..names.len() as u8 {
+                    self.opt.mark_slot_put(i);
+                }
+            }
+            (Some(idx), helper.try_build_param_line(arr, idx))
+        } else {
+            (None, None)
+        };
+
+        let file_level_param_names = if is_file_level_irblock && !self.opt.trim_param_unpack {
+            self.opt
+                .map
+                .and_then(|m| m.param_names().cloned())
+                .filter(|n| !n.is_empty())
+        } else {
+            None
+        };
+
         buf.push('{');
         if !arr.subs.is_empty() {
             buf.push('\n');
-            for a in &arr.subs {
+
+            if let Some(names) = file_level_param_names {
+                // Bind param names to their canonical slots without changing runtime semantics.
+                // Also pre-mark these slots so a later `PUT $i ...` does not print as a `var` declaration.
+                for (i, name) in names.iter().enumerate() {
+                    self.opt.mark_slot_put(i as u8);
+                    buf.push_str(&format!(
+                        "{}var {} ${}",
+                        self.opt.indent.repeat(self.opt.tab + 1),
+                        name,
+                        i
+                    ));
+                    buf.push('\n');
+                }
+            }
+
+            for (i, a) in arr.subs.iter().enumerate() {
+                if let (Some(pidx), Some(line)) = (param_rewrite_idx, &param_rewrite_line) {
+                    if i == pidx {
+                        buf.push_str(line);
+                        buf.push('\n');
+                        continue;
+                    }
+                }
                 buf.push_str(&self.child().print(&**a));
                 buf.push('\n');
             }
@@ -364,7 +490,7 @@ impl<'a> Formater<'a> {
     fn format_call_instruction(&self, node: &dyn IRNode, code: Bytecode) -> Option<String> {
         use Bytecode::*;
         let pss = node.as_any().downcast_ref::<IRNodeParamsSingle>()?;
-        if !matches!(code, CALL | CALLLIB | CALLINR | CALLSTATIC) {
+        if !matches!(code, CALL | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLPURE) {
             return None;
         }
         let pre = self.line_prefix();
@@ -372,12 +498,14 @@ impl<'a> Formater<'a> {
         let meta = pss.inst.metadata();
 
         let default_body = match code {
+            // IMPORTANT: keep `0x` prefix so the tokenizer parses it as bytes (0x....),
+            // not as a decimal integer. Otherwise the recompiled 4-byte signature differs.
             CALL => format!("call {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
-            CALLLIB => format!("calllib {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
-            CALLINR => format!("callinr 0x{}({})", ::hex::encode(&pss.para), args),
-            CALLSTATIC => {
-                format!("callstatic {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args)
-            }
+            CALLTHIS => format!("callthis 0::0x{}({})", ::hex::encode(&pss.para), args),
+            CALLSELF => format!("callself 0::0x{}({})", ::hex::encode(&pss.para), args),
+            CALLSUPER => format!("callsuper 0::0x{}({})", ::hex::encode(&pss.para), args),
+            CALLVIEW => format!("callview {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
+            CALLPURE => format!("callpure {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
             _ => format!("{}({})", meta.intro, args),
         };
 
@@ -398,7 +526,10 @@ impl<'a> Formater<'a> {
             return None;
         }
         let d = node.as_any().downcast_ref::<IRNodeDouble>()?;
-        let sg = OpTy::from_bytecode(d.inst).unwrap().symbol();
+        let sg = match OpTy::from_bytecode(d.inst) {
+            Ok(t) => t.symbol(),
+            Err(_) => return None,
+        };
         let res = self.print_subx_suby_op(d, sg);
         Some(format!("{}{}", self.line_prefix(), res))
     }
@@ -419,10 +550,10 @@ impl<'a> Formater<'a> {
                 }
                 CU8 | CU16 | CU32 | CU64 | CU128 | CBUF | RET | ERR | AST | PRT => {
                     let literal = self.literal_from_node(&*s.subx);
-                    let substr = maybe!(literal.is_some(),
-                        literal.as_ref().unwrap().text.clone(),
-                        self.print_inline(&*s.subx)
-                    );
+                    let substr = match &literal {
+                        Some(lit) => lit.text.clone(),
+                        None => self.print_inline(&*s.subx),
+                    };
                     let operand = maybe!(s.subx.level() > 0,
                         {
                             let t = substr.trim();
@@ -433,20 +564,13 @@ impl<'a> Formater<'a> {
                         },
                         substr.clone()
                     );
-                    let target_ty = Self::cast_value_ty(s.inst);
-                    let use_literal = literal
-                        .as_ref()
-                        .filter(|lit| lit.kind == LiteralKind::Numeric)
-                        .and_then(|lit| lit.ty)
-                        .zip(target_ty)
-                        .map(|(lit_ty, target)| lit_ty == target)
-                        .unwrap_or(false);
                     return Some(match s.inst {
-                        CU8   => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u8",   operand))),
-                        CU16  => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u16",  operand))),
-                        CU32  => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u32",  operand))),
-                        CU64  => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u64",  operand))),
-                        CU128 => format!("{}{}", pre, maybe!(use_literal, format!("{}{}", pre, substr.trim()), format!("{} as u128", operand))),
+                        // Never elide cast opcodes; roundtrip must preserve ircode bytes.
+                        CU8   => format!("{}{}", pre, format!("{} as u8",   operand)),
+                        CU16  => format!("{}{}", pre, format!("{} as u16",  operand)),
+                        CU32  => format!("{}{}", pre, format!("{} as u32",  operand)),
+                        CU64  => format!("{}{}", pre, format!("{} as u64",  operand)),
+                        CU128 => format!("{}{}", pre, format!("{} as u128", operand)),
                         CBUF =>  format!("{}{} as bytes", pre, operand),
                         RET | ERR | AST | PRT => {
                             let meta = s.inst.metadata();
@@ -456,10 +580,25 @@ impl<'a> Formater<'a> {
                     });
                 }
                 NOT => {
-                    let substr = self.print_inline(&*s.subx);
+                    let mut substr = self.print_inline(&*s.subx);
                     if let Some((target, ty)) = self.format_is_components(&*s.subx) {
                         return Some(format!("{}{} is not {}", pre, target, ty));
                     }
+
+                    // `!` has the highest precedence in fitsh (see `OpTy::NOT`),
+                    // so when the operand is a lower-precedence expression we must
+                    // parenthesize it to preserve semantics.
+                    let need_wrap = {
+                        let lv = s.subx.level();
+                        lv > 0 && lv < OpTy::NOT.level()
+                    };
+                    if need_wrap {
+                        let t = substr.trim();
+                        if !(t.starts_with('(') && t.ends_with(')')) {
+                            substr = format!("({})", substr);
+                        }
+                    }
+
                     return Some(format!("{}! {}", pre, substr));
                 }
                 _ => {
@@ -473,7 +612,16 @@ impl<'a> Formater<'a> {
         }
         if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
             if d.inst == ITEMGET {
-                let subxstr = self.print_sub(&*d.subx);
+                // `ITEMGET` is an expression; receiver must be printed inline.
+                // Using `print_sub()` can inject newlines/indentation and break parsing.
+                // Also, receiver precedence must be preserved: `(a + b)[0]` is not `a + b[0]`.
+                let mut subxstr = self.print_inline(&*d.subx);
+                if d.subx.level() > 0 {
+                    let t = subxstr.trim();
+                    if !(t.starts_with('(') && t.ends_with(')')) {
+                        subxstr = format!("({})", t);
+                    }
+                }
                 let subystr = self.print_inline(&*d.suby);
                 return Some(format!(
                     "{}{}[{}]",
@@ -485,10 +633,7 @@ impl<'a> Formater<'a> {
             if d.inst == IRWHILE {
                 let subxstr = self.print_inline(&*d.subx);
                 let subystr = self.print_inner(&*d.suby);
-                let body = maybe!(subystr.trim().starts_with('{'),
-                    subystr.trim().to_owned(),
-                    format!("{{ {} }}", subystr.trim())
-                );
+                let body = self.ensure_braced_block(&subystr);
                 return Some(format!(
                     "{}while {} {}",
                     self.line_prefix(),
@@ -501,10 +646,7 @@ impl<'a> Formater<'a> {
             if t.inst == IRIF || t.inst == IRIFR {
                 let subxstr = self.print_inline(&*t.subx);
                 let subystr = self.print_inner(&*t.suby);
-                let body = maybe!(subystr.trim().starts_with('{'),
-                    subystr.trim().to_owned(),
-                    format!("{{ {} }}", subystr.trim())
-                );
+                let body = self.ensure_braced_block(&subystr);
                 let mut buf = format!(
                     "{}if {} {}",
                     self.line_prefix(),
@@ -513,10 +655,7 @@ impl<'a> Formater<'a> {
                 );
                 if t.subz.bytecode() != Bytecode::NOP as u8 {
                     let subzstr = self.print_inner(&*t.subz);
-                    let elsebody = maybe!(subzstr.trim().starts_with('{') || subzstr.trim().starts_with("if "),
-                        subzstr.trim().to_owned(),
-                        format!("{{ {} }}", subzstr.trim())
-                    );
+                    let elsebody = self.ensure_else_body(&subzstr);
                     buf.push_str(&format!(" else {}", elsebody));
                 }
                 return Some(buf);
@@ -525,7 +664,7 @@ impl<'a> Formater<'a> {
         None
     }
 
-    fn cast_value_ty(inst: Bytecode) -> Option<ValueTy> {
+    fn _cast_value_ty(inst: Bytecode) -> Option<ValueTy> {
         use Bytecode::*;
         match inst {
             CU8 => Some(ValueTy::U8),
@@ -760,10 +899,7 @@ impl<'a> Formater<'a> {
             EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS),
             NTCALL => {
                 let ntcall: NativeCall = std_mem_transmute!(node.para);
-                let args = NativeCall::args_len(node.para);
-                let argv = maybe!(args==0, s!(""), 
-                    self.build_call_args(&*node.subx, true)
-                );
+                let argv = self.build_call_args(&*node.subx, true);
                 format!("{}({})", ntcall.name(), argv)
             }
             _ => {
@@ -790,9 +926,7 @@ impl<'a> Formater<'a> {
         let Some(f) = search_ext_by_id(id, defs) else {
             return format!("/* unknown external call id: {} */ __unknown_ext_{}_()", id, id)
         };
-        let argv = maybe!(f.3 == 0, s!(""),
-            self.build_call_args(&*node.subx, true)
-        );
+        let argv = self.build_call_args(&*node.subx, true);
         format!("{}({})", f.1, argv)
     }
 
@@ -887,7 +1021,9 @@ impl<'a> Formater<'a> {
             CALLCODE => {
                 let i = node.para[0];
                 let f = ::hex::encode(&node.para[1..]);
-                buf.push_str(&format!("callcode {}::{}", i, f));
+                // IMPORTANT: keep `0x` prefix so tokenizer parses it as bytes (0x....),
+                // not as a decimal integer/identifier.
+                buf.push_str(&format!("callcode {}::0x{}", i, f));
             }
             _ => {
                 buf.push_str(&format!("{}(0x{})", meta.intro, parastr));
@@ -901,13 +1037,19 @@ impl<'a> Formater<'a> {
         if node.as_any().downcast_ref::<IRNodeEmpty>().is_some() {
             return String::new();
         }
+        // codegen-only placeholder must never appear in decompilation
+        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+            panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
+        }
         if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
             return self.format_leaf(leaf);
         }
         if let Some(bytecodes) = node.as_any().downcast_ref::<IRNodeBytecodes>() {
             let buf = self.opt.indent.repeat(self.opt.tab);
-            let codes = bytecodes.codes.bytecode_print(false).unwrap();
-            let codes = codes.trim_end();
+            let codes = match bytecodes.codes.bytecode_print(false) {
+                Ok(s) => s.trim_end().to_owned(),
+                Err(_) => format!("0x{}", hex::encode(&bytecodes.codes)),
+            };
             return format!("{}bytecode {{ {} }}", buf, codes);
         }
         if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
@@ -949,26 +1091,77 @@ impl<'a> Formater<'a> {
 
     /// Main entry for descriptive printing.
     pub fn print(&self, node: &dyn IRNode) -> String {
-        let res = self.print_inner(node);
-        let pending = self.opt.take_pending_consts();
-        if !pending.is_empty() {
-            let mut defs = String::new();
-            let prefix = self.line_prefix();
+        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+            panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
+        }
+
+        // Emit file-level `lib ...` declarations once, at the top-level.
+        // Do NOT rely on `tab == 0 && IRBLOCK` injection during block formatting, because
+        // inline contexts may also print with `tab == 0`.
+        let is_top_level = self.opt.tab == 0;
+        let is_file_level_irblock = is_top_level
+            && node
+                .as_any()
+                .downcast_ref::<IRNodeArray>()
+                .is_some_and(|arr| arr.inst == Bytecode::IRBLOCK);
+
+        let prelude = if self.opt.emit_lib_prelude && is_file_level_irblock {
             if let Some(map) = self.opt.map {
-                for name in pending {
-                    if self.opt.mark_const_printed(name.clone()) {
-                        if let Some(value) = map.get_const_value(&name) {
-                            defs.push_str(&format!("{}const {} = {}\n", prefix, name, value));
+                let mut prefix = String::new();
+                for (idx, info) in map.lib_entries() {
+                    let line = match &info.address {
+                        Some(addr) => format!(
+                            "lib {} = {}: {}\n",
+                            info.name,
+                            idx,
+                            addr.readable()
+                        ),
+                        None => format!("lib {} = {}\n", info.name, idx),
+                    };
+                    prefix.push_str(&line);
+                }
+                prefix
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        let res = self.print_inner(node);
+
+        // Emit source-map-derived `const ...` definitions only at file-level.
+        // Nested `print()` calls are used to render block items with indentation;
+        // draining and emitting `const` there would change scoping/ordering and may
+        // break roundtrip semantics.
+        if is_top_level {
+            let pending = self.opt.take_pending_consts();
+            if !pending.is_empty() {
+                let mut defs = String::new();
+                let prefix = self.line_prefix();
+                if let Some(map) = self.opt.map {
+                    for name in pending {
+                        if self.opt.mark_const_printed(name.clone()) {
+                            if let Some(value) = map.get_const_value(&name) {
+                                defs.push_str(&format!(
+                                    "{}const {} = {}\n",
+                                    prefix, name, value
+                                ));
+                            }
                         }
                     }
                 }
+                return format!("{}{}{}", prelude, defs, res);
             }
-            return format!("{}{}", defs, res);
         }
-        res
+
+        format!("{}{}", prelude, res)
     }
 
     fn print_inner(&self, node: &dyn IRNode) -> String {
+        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+            panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
+        }
         if let Some(wrap) = node.as_any().downcast_ref::<IRNodeWrapOne>() {
             return format!("({})", self.print_inline(&*wrap.node));
         }
@@ -1007,6 +1200,9 @@ impl<'a> Formater<'a> {
     }
     /// Inline printing (equivalent to `print_sub_inline`).
     pub fn print_inline(&self, node: &dyn IRNode) -> String {
+        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+            panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
+        }
         if let Some(literal) = self.literal_from_node(node) {
             if let Some(map) = self.opt.map {
                 if let Some(name) = map.get_const_name(&literal.text) {
@@ -1018,12 +1214,25 @@ impl<'a> Formater<'a> {
             }
             return literal.text;
         }
-        let inline = self.with_tab(0);
-        let substr = inline.print(node);
+        // Inline contexts must not apply root-block trimming or emit lib prelude.
+        // Otherwise, an `IRBLOCK` printed with `tab == 0` may lose its `{}` wrapper,
+        // which can break parsing/semantics when used as an expression (e.g. call args).
+        let mut opt = self.opt.with_tab(0);
+        opt.trim_root_block = false;
+        opt.emit_lib_prelude = false;
+        let inline = Self { opt };
+        // IMPORTANT: inline printing must never emit file-level prelude or const
+        // definitions. Those are handled by the outer/top-level `print()` only.
+        // Using `print()` here would drain `pending consts` and inject `const ...`
+        // lines into expression contexts (e.g. call args), breaking parsing/semantics.
+        let substr = inline.print_inner(node);
         if substr.contains('\n') {
             let t = substr.trim();
+            // Preserve block braces for expression blocks.
+            // Stripping `{ ... }` breaks roundtrip for multi-statement blocks
+            // used in inline contexts (e.g. `var x = { print 1; 0 }`).
             if t.starts_with('{') && t.ends_with('}') && t.len() >= 2 {
-                return t[1..t.len()-1].trim().to_owned();
+                return t.to_owned();
             }
             return t.replace('\n', " ");
         }
@@ -1057,12 +1266,31 @@ impl<'a> Formater<'a> {
         let mut suby = inline_opt.print_inline(&*dbl.suby);
         let wrapx = dbl.subx.as_any().downcast_ref::<IRNodeWrapOne>().is_some();
         let wrapy = dbl.suby.as_any().downcast_ref::<IRNodeWrapOne>().is_some();
-        let clv = match OpTy::from_bytecode(dbl.inst) { Ok(t) => t.level(), _ => 0 };
+        let (clv, is_right_assoc) = match OpTy::from_bytecode(dbl.inst) {
+            Ok(t) => (t.level(), t.is_right_assoc()),
+            _ => (0, false),
+        };
         let llv = dbl.subx.level();
         let rlv = dbl.suby.level();
-        if clv>0 && llv>0 && clv>llv && !wrapx { subx = format!("({})", &subx); }
-        let need_wrap_right = clv>0 && rlv>0 && !wrapy && (clv>rlv || clv==rlv);
-        if need_wrap_right { suby = format!("({})", &suby); }
+
+        // Parenthesize children to preserve the original IR tree semantics.
+        // - For left-associative ops, wrap the right child on equal precedence.
+        // - For right-associative ops (currently only `**`), wrap the left child on equal precedence.
+        let need_wrap_left = clv > 0
+            && llv > 0
+            && !wrapx
+            && (clv > llv || (is_right_assoc && clv == llv));
+        if need_wrap_left {
+            subx = format!("({})", &subx);
+        }
+
+        let need_wrap_right = clv > 0
+            && rlv > 0
+            && !wrapy
+            && (clv > rlv || (!is_right_assoc && clv == rlv));
+        if need_wrap_right {
+            suby = format!("({})", &suby);
+        }
         format!("{} {} {}", subx, op, suby)
     }
 

@@ -26,7 +26,7 @@ action_define!{UnlockScriptProve, 97,
         // calc hash: script + calibs
         argvkey: BytesW2 // unlock bytecodes
         lockbox: BytesW2 // verify bytecodes
-        adrlibs: ContractAddressW1 // lib address list for static and codecopy call
+        adrlibs: ContractAddressW1 // lib address list for pure and callcode call
         merkels: MerkelStuffs
         _marks_: Fixed2
     },
@@ -85,7 +85,7 @@ impl UnlockScriptProve {
                 LOG1 | LOG2 | LOG3 | LOG4 |
                 HWRITE | HWRITEX | HWRITEXL | HGROW |
                 ALLOC | PUT | PUTX | XOP | XLG | UPLIST |
-                CALL | CALLINR | CALLLIB | CALLCODE | CALLSTATIC |
+                CALL | CALLTHIS | CALLSELF | CALLSUPER | CALLVIEW | CALLCODE | CALLPURE |
                 EXTACTION => true,
                 _ => false,
             }

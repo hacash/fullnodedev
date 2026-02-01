@@ -16,7 +16,7 @@ fn test_irnds() -> Vec<u8> {
         IRWHILE GT PU8 100 GET 0
             PUT 0 ADD P1 GET 0 
         PUT 0
-            CALLINR 0 0 0 0 GET 
+            CALLTHIS 0 0 0 0 GET 
                 EXTACTION 1 GET 0
         PUT 1
             EXTACTION 1 GET 0

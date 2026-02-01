@@ -15,8 +15,9 @@ fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr 
     if hei_start < hei_min || hei_start > hei_max {
         return sync_warning(format!("insert height need between {} and {} but got {}", hei_min, hei_max, hei_start))
     }
-    // error channel
-    let (errch, errcv) = std::sync::mpsc::channel();
+    // error channel (send only real errors; channel close means success)
+    let (errch, errcv) = std::sync::mpsc::channel::<String>();
+    let errch_parse = errch.clone();
     let errch1 = errch.clone();
     let errch2 = errch.clone();
     // data channel
@@ -37,14 +38,14 @@ fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr 
                 let (blkobj, size) = match block::block_create(&datas.as_ref()[seek..]) {
                     Ok((b, s)) => (b, s),
                     Err(e) => {
-                        errch.send(format!("block parse error: {}", e)).unwrap();
+                        let _ = errch_parse.send(format!("block parse error: {}", e));
                         break;
                     }
                 };
                 let mut pkg = BlkPkg::from(blkobj, datas.clone(), seek, size);
                 seek += size;
                 if pkg.hein != need_blk_hei {
-                    let _ = errch.send(format!("need block height {} but got {}", need_blk_hei, pkg.hein));
+                    let _ = errch_parse.send(format!("need block height {} but got {}", need_blk_hei, pkg.hein));
                     break;
                 }                
                 pkg.set_origin(ori); // Sync or Rebuild
@@ -76,11 +77,10 @@ fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr 
                 break
             }
         }
-        let _ = errch2.send("".to_string());
     });
 
-    let e: String = errcv.recv().unwrap();
-    if e.len() > 0 {
+    drop(errch);
+    if let Some(e) = errcv.into_iter().next() {
         return sync_warning(e)
     }
     Ok(())

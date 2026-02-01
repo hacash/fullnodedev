@@ -1,6 +1,6 @@
 use sys::Ret;
 use crate::rt::{Token, verify_bytecodes, SourceMap};
-use crate::ir::{convert_ir_to_bytecode, IRNodeArray};
+use crate::ir::{convert_ir_to_bytecode, drop_irblock_wrap, IRNodeArray};
 use crate::value::ValueTy;
 use crate::lang::Syntax;
 use crate::IRNode;
@@ -47,9 +47,8 @@ pub fn compile_body(
     
     // Generate code based on mode
     let compiled = if is_ircode {
-        // IR mode: serialize IR (without IRBLOCK header) for storage
-        // split_off(3) removes IRBLOCK opcode (1 byte) + length (2 bytes)
-        let ircodes = irnodes.serialize().split_off(3);
+        // IR mode: store raw block content (without IRBLOCK/IRBLOCKR wrapper)
+        let ircodes = drop_irblock_wrap(irnodes.serialize())?;
         
         // Verify by converting to bytecode
         let codes = convert_ir_to_bytecode(&ircodes).map_err(|e| e.to_string())?;

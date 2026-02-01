@@ -111,7 +111,8 @@ impl BlockLogs {
     // write
 
     fn update_len(&self, n: usize) {
-        self.disk.save(&self.lnk(), &self.nk(n));
+        let num = Uint8::from(n as u64);
+        self.disk.save(&self.lnk(), &num.serialize());
     }
 
 

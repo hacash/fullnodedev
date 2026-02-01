@@ -138,6 +138,7 @@ macro_rules! funcptr {
             let sig = itrbuf!($codes, $pc, FN_SIGN_WIDTH);
             Call(Funcptr{
                 mode: $mode,
+                is_callcode: false,
                 target: CallTarget::Libidx(idx),
                 fnsign: sig,
             })
@@ -153,7 +154,8 @@ pub fn execute_code(
 
     pc: &mut usize, // pc
     codes: &[u8], // max len = 65536
-    mode: CallMode,
+    mode: ExecMode,
+    in_callcode: bool,
     depth: isize,
 
     gas_usable: &mut i64, // max gas can be use
@@ -182,7 +184,7 @@ pub fn execute_code(
 ) -> VmrtRes<CallExit> {
 
     use Value::*;
-    use CallMode::*;
+    use ExecMode::*;
     use CallExit::*;
     use ItrErrCode::*;
     use Bytecode::*;
@@ -197,8 +199,8 @@ pub fn execute_code(
     // let tail = codelen;
 
     macro_rules! check_gas { () => { if *gas_usable < 0 { return itr_err_code!(OutOfGas) } } }
-    macro_rules! nsr { () => { if let Static           = mode { return itr_err_code!(InstDisabled) } } } // not read  in static mode
-    macro_rules! nsw { () => { if let Static | Library = mode { return itr_err_code!(InstDisabled) } } } // not write in lib    mode
+    macro_rules! nsr { () => { if let Pure        = mode { return itr_err_code!(InstDisabled) } } } // not read  in pure mode
+    macro_rules! nsw { () => { if let Pure | View = mode { return itr_err_code!(InstDisabled) } } } // not write in view/pure mode
     macro_rules! pu8 { () => { itrparamu8!(codes, *pc) } }
     macro_rules! pty { () => { ops.peek()?.ty() } }
     macro_rules! ptyn { () => { ops.peek()?.ty_num() } }
@@ -229,11 +231,14 @@ pub fn execute_code(
         // println!("gas usable {} cp: {}, inst: {:?}", *gas_usable, gas_table.gas(instbyte), instruction);
 
         macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
+            if in_callcode && EXTACTION == $act_kind {
+                return itr_err_fmt!(ExtActDisabled, "extend action not allowed in callcode")
+            }
             if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
                 return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
             }
-            if EXTENV == $act_kind &&Static == mode{
-                return itr_err_fmt!(ExtActDisabled, "extend env call not support in static call")
+            if EXTENV == $act_kind && Pure == mode{
+                return itr_err_fmt!(ExtActDisabled, "extend env call not support in pure call")
             }
             let idx = pu8!();
             let kid = u16::from_be_bytes([instbyte, idx]);
@@ -268,13 +273,15 @@ pub fn execute_code(
         }}
 
         let mut ntcall = |idx: u8| -> VmrtErr {
+            // Special native calls that read execution/state-like context should follow the same
+            // read privilege as state reads (nsr!): disallow in Pure(callpure).
             let mut argv = match idx {
-                NativeCall::idx_context_address => context_addr.serialize(), // context_address
-                _ => vec![]
+                NativeCall::idx_context_address => {
+                    nsr!();
+                    context_addr.serialize() // context_address
+                }
+                _ => vec![],
             };
-            if Static == mode && !argv.is_empty() { 
-                return itr_err_code!(InstDisabled)
-            }
             let argl = NativeCall::args_len(idx);
             if argl > 0 {
                 argv = ops.peek()?.canbe_ext_call_data(heap)?;
@@ -441,18 +448,41 @@ pub fn execute_code(
             AST => { if ops.pop()?.check_false() { exit = Abort;  break } }, // assert(..)
             PRT => { debug_print_value(context_addr, current_addr, mode, depth, ops.pop()?) }
             // call CALLDYN
-            CALLCODE | CALLSTATIC | CALLLIB | CALLINR | CALL => {
+            CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALL => {
                 let ist = instruction;
-                check_call_mode(mode, ist)?;
+                check_call_mode(mode, ist, in_callcode)?;
                 // ok return
                 match ist {
-                    CALLCODE =>   exit = funcptr!(codes, *pc, CodeCopy),
-                    CALLSTATIC => exit = funcptr!(codes, *pc, Static),
-                    CALLLIB =>    exit = funcptr!(codes, *pc, Library),
+                    CALLCODE => {
+                        // CALLCODE inherits current mode permissions, and marks in_callcode
+                        let idx = itrparamu8!(codes, *pc);
+                        let sig = itrbuf!(codes, *pc, FN_SIGN_WIDTH);
+                        exit = Call(Funcptr{
+                            mode,
+                            is_callcode: true,
+                            target: CallTarget::Libidx(idx),
+                            fnsign: sig,
+                        })
+                    },
+                    CALLPURE => exit = funcptr!(codes, *pc, Pure),
+                    CALLVIEW => exit = funcptr!(codes, *pc, View),
                     CALL =>       exit = funcptr!(codes, *pc, Outer),
-                    CALLINR =>    exit = Call(Funcptr{
+                    CALLTHIS =>   exit = Call(Funcptr{
                         mode: Inner,
-                        target: CallTarget::Inner,
+                        is_callcode: false,
+                        target: CallTarget::This,
+                        fnsign: pcutbuf!(FN_SIGN_WIDTH),
+                    }),
+                    CALLSELF =>   exit = Call(Funcptr{
+                        mode: Inner,
+                        is_callcode: false,
+                        target: CallTarget::Self_,
+                        fnsign: pcutbuf!(FN_SIGN_WIDTH),
+                    }),
+                    CALLSUPER =>  exit = Call(Funcptr{
+                        mode: Inner,
+                        is_callcode: false,
+                        target: CallTarget::Super,
                         fnsign: pcutbuf!(FN_SIGN_WIDTH),
                     }),
                     /* CALLDYN =>    exit = Call(Funcptr{ // Outer
@@ -482,21 +512,24 @@ pub fn execute_code(
 }
 
 
-fn check_call_mode(mode: CallMode, inst: Bytecode) -> VmrtErr {
-    use CallMode::*;
+fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr {
+    use ExecMode::*;
     use Bytecode::*;
+    if in_callcode {
+        // In CALLCODE execution, no further call instructions are allowed.
+        return itr_err_code!(CallInCallcode)
+    }
     macro_rules! not_ist {
         ( $( $ist: expr ),+ ) => {
             ![$( $ist ),+].contains(&inst)
         }
     }
     match mode {
-        Main    if not_ist!(CALL,             CALLSTATIC, CALLCODE) => itr_err_code!(CallOtherInMain),
-        P2sh    if not_ist!(                  CALLSTATIC, CALLCODE) => itr_err_code!(CallOtherInP2sh),
-        Abst    if not_ist!(CALLINR, CALLLIB, CALLSTATIC, CALLCODE) => itr_err_code!(CallInAbst),
-        Library if not_ist!(         CALLLIB, CALLSTATIC, CALLCODE) => itr_err_code!(CallLocInLib),
-        Static  if not_ist!(                  CALLSTATIC          ) => itr_err_code!(CallLibInStatic),
-        CodeCopy                         /* not allowed any call */ => itr_err_code!(CallInCodeCopy),
+        Main    if not_ist!(CALL, CALLVIEW,   CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInMain),
+        P2sh    if not_ist!(                  CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInP2sh),
+        Abst    if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
+        View    if not_ist!(         CALLVIEW, CALLPURE,  CALLCODE) => itr_err_code!(CallLocInView),
+        Pure    if not_ist!(                  CALLPURE            ) => itr_err_code!(CallInPure),
         _ => Ok(()), // Outer | Inner support all call instructions
     }
 }
@@ -566,7 +599,7 @@ fn record_log(adr: &ContractAddress, log: &mut dyn Logs, tds: Vec<Value>) -> Vmr
 
 
 fn debug_print_value(_ctx: &ContractAddress, _cur: &ContractAddress 
-, _mode: CallMode, _depth: isize, _val: Value) {
+, _mode: ExecMode, _depth: isize, _val: Value) {
     debug_println!("{}-{} {} {:?} => {:?}", 
         _ctx.prefix(7), _cur.prefix(7), _depth, _mode, _val);
 }

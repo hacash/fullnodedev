@@ -5,6 +5,9 @@ dist/
 *.config.ini
 *.loc.*
 *.loc/
+*.contractmap.json
+*.deploy.json
+
 
 chainv*/
 node2/

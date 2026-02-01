@@ -29,12 +29,12 @@ pub enum Bytecode {
     ________________15  = 0x0f,
     ________________16  = 0x10,
     CALL                = 0x11, // *,****@ 
-    CALLINR             = 0x12, //   ****@ 
-    CALLLIB             = 0x13, // *,****@ 
-    CALLSTATIC          = 0x14, // *,****@ 
-    CALLCODE            = 0x15, // *,****  
-    ________________22  = 0x16,
-    ________________23  = 0x17,
+    CALLTHIS            = 0x12, //   ****@ 
+    CALLSELF            = 0x13, //   ****@ 
+    CALLSUPER           = 0x14, //   ****@ 
+    CALLVIEW            = 0x15, // *,****@ 
+    CALLPURE            = 0x16, // *,****@ 
+    CALLCODE            = 0x17, // *,****  
     ________________24  = 0x18,
     ________________25  = 0x19,
     ________________26  = 0x1a,
@@ -150,8 +150,8 @@ pub enum Bytecode {
     HSLICE              = 0x88, // a,b+  create heap slice
     HREADUL             = 0x89, // **+   heap read ul
     HREADU              = 0x8a, // *+    heap read u
-    HWRITEXL            = 0x8b, // **+   heap write xl
-    HWRITEX             = 0x8c, // *+    heap write x
+    HWRITEXL            = 0x8b, // **a   heap write xl
+    HWRITEX             = 0x8c, // *a    heap write x
     HREAD               = 0x8d, // a,b+  heap read
     HWRITE              = 0x8e, // a,b   heap write
     HGROW               = 0x8f, // *     heap grow
@@ -334,9 +334,11 @@ bytecode_metadata_define!{
 
     // CALLDYN    :   0, 3, 1,   call_dynamic
     CALL       : 1+4, 1, 1,   call
-    CALLINR    :   4, 1, 1,   call_inner
-    CALLLIB    : 1+4, 1, 1,   call_library
-    CALLSTATIC : 1+4, 1, 1,   call_static
+    CALLTHIS   :   4, 1, 1,   callthis
+    CALLSELF   :   4, 1, 1,   callself
+    CALLSUPER  :   4, 1, 1,   callsuper
+    CALLVIEW   : 1+4, 1, 1,   call_view
+    CALLPURE   : 1+4, 1, 1,   call_pure
     CALLCODE   : 1+4, 0, 0,   call_code
 
     PU8        : 1, 0, 1,     push_u8
@@ -416,8 +418,8 @@ bytecode_metadata_define!{
     HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
     HREADU     : 1, 0, 1,     heap_read_uint
-    HWRITEXL   : 2, 0, 1,     heap_write_xl
-    HWRITEX    : 1, 0, 1,     heap_write_x
+    HWRITEXL   : 2, 1, 0,     heap_write_xl
+    HWRITEX    : 1, 1, 0,     heap_write_x
     HREAD      : 0, 2, 1,     heap_read
     HWRITE     : 0, 2, 0,     heap_write
     HGROW      : 1, 0, 0,     heap_grow

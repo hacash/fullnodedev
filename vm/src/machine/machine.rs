@@ -53,8 +53,8 @@ impl MachineBox {
         Ok(())
     }
 
-    fn check_cost(&self, cty: CallMode, mut cost: i64) -> Ret<i64> {
-        use CallMode::*;
+    fn check_cost(&self, cty: ExecMode, mut cost: i64) -> Ret<i64> {
+        use ExecMode::*;
         assert!(cost > 0, "gas cost error");
         // min use
         let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
@@ -93,7 +93,7 @@ impl VM for MachineBox {
         ctx: &mut dyn Context, sta: &mut dyn State,
         ty: u8, kd: u8, data: &[u8], param: Box<dyn Any>
     ) -> Ret<(i64, Vec<u8>)> {
-        use CallMode::*;
+        use ExecMode::*;
         // init gas & check balance
         self.check_gas(ctx)?;
         let gas = &mut self.gas;
@@ -103,7 +103,7 @@ impl VM for MachineBox {
         let not_in_calling = ! machine.is_in_calling();
         let sta = &mut VMState::wrap(sta);
         let exenv = &mut ExecEnv{ ctx, sta, gas };
-        let cty: CallMode = std_mem_transmute!(ty);
+        let cty: ExecMode = std_mem_transmute!(ty);
         let resv = match cty {
             Main => {
                 let cty = CodeType::parse(kd)?;
@@ -175,18 +175,18 @@ impl Machine {
         let fnobj = FnObj{ ctype, codes, confs: 0, agvty: None};
         let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
         let lib_adr = env.ctx.env().tx.addrs.iter().map(|a|ContractAddress::from_unchecked(*a)).collect();
-        let rv = self.do_call(env, CallMode::Main, fnobj, ctx_adr, Some(lib_adr), None)?;
+        let rv = self.do_call(env, ExecMode::Main, fnobj, ctx_adr, None, Some(lib_adr), None)?;
         Ok(rv)
     }
 
     pub fn abst_call(&mut self, env: &mut ExecEnv, cty: AbstCall, contract_addr: ContractAddress, param: Value) -> Ret<Value> {
         let adr = contract_addr.readable();
-        let Some((.., fnobj)) = self.r.load_abstfn(env.sta, &contract_addr, cty)? else {
+        let Some((owner, fnobj)) = self.r.load_abstfn(env.sta, &contract_addr, cty)? else {
             // return Ok(Value::Nil) // not find call
             return errf!("abst call {:?} not find in {}", cty, adr) // not find call
         };
         let fnobj = fnobj.as_ref().clone();
-        let rv = self.do_call(env, CallMode::Abst, fnobj, contract_addr, None, Some(param))?;
+        let rv = self.do_call(env, ExecMode::Abst, fnobj, contract_addr, owner, None, Some(param))?;
         if rv.check_true() {
             return errf!("call {}.{:?} return error code {}", adr, cty, rv.to_uint())
         }
@@ -197,16 +197,16 @@ impl Machine {
         let ctype = CodeType::Bytecode;
         let fnobj = FnObj{ ctype, codes, confs: 0, agvty: None};
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
-        let rv = self.do_call(env, CallMode::P2sh, fnobj, ctx_adr, Some(libs), Some(param))?;
+        let rv = self.do_call(env, ExecMode::P2sh, fnobj, ctx_adr, None, Some(libs), Some(param))?;
         if rv.check_true() {
             return errf!("p2sh call return error code {}", rv.to_uint())
         }
         Ok(rv)
     }
 
-    fn do_call(&mut self, env: &mut ExecEnv, mode: CallMode, code: FnObj, entry_addr: ContractAddress, libs: Option<Vec<ContractAddress>>, param: Option<Value>) -> VmrtRes<Value> {
+    fn do_call(&mut self, env: &mut ExecEnv, mode: ExecMode, code: FnObj, entry_addr: ContractAddress, code_owner: Option<ContractAddress>, libs: Option<Vec<ContractAddress>>, param: Option<Value>) -> VmrtRes<Value> {
         self.frames.push(CallFrame::new()); // for reclaim
-        let res = self.frames.last_mut().unwrap().start_call(&mut self.r, env, mode, code, entry_addr, libs, param);
+        let res = self.frames.last_mut().unwrap().start_call(&mut self.r, env, mode, code, entry_addr, code_owner, libs, param);
         self.frames.pop().unwrap().reclaim(&mut self.r); // do reclaim
         res
     }
@@ -218,6 +218,165 @@ impl Machine {
 
 #[cfg(test)]
 mod machine_test {
+
+    use super::*;
+    use crate::contract::{Contract, Func};
+    use crate::lang::lang_to_bytecode;
+    use crate::rt::CodeType;
+
+    use basis::component::Env;
+    use basis::interface::{Context, State, TransactionRead};
+    use field::{Address, Amount, Hash, Uint4};
+    use protocol::context::{ContextInst, EmptyState};
+    use protocol::state::EmptyLogs;
+
+    #[derive(Default, Clone)]
+    struct StateMem {
+        mem: basis::component::MemKV,
+    }
+
+    impl State for StateMem {
+        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+            match self.mem.get(&k) {
+                Some(v) => v.clone(),
+                None => None,
+            }
+        }
+        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+            self.mem.put(k, v)
+        }
+        fn del(&mut self, k: Vec<u8>) {
+            self.mem.del(k)
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct DummyTx {
+        main: Address,
+        addrs: Vec<Address>,
+    }
+
+    impl field::Serialize for DummyTx {
+        fn size(&self) -> usize {
+            0
+        }
+        fn serialize(&self) -> Vec<u8> {
+            vec![]
+        }
+    }
+
+    impl basis::interface::TxExec for DummyTx {}
+
+    impl TransactionRead for DummyTx {
+        fn ty(&self) -> u8 {
+            0
+        }
+        fn hash(&self) -> Hash {
+            Hash::default()
+        }
+        fn hash_with_fee(&self) -> Hash {
+            Hash::default()
+        }
+        fn main(&self) -> Address {
+            self.main
+        }
+        fn addrs(&self) -> Vec<Address> {
+            self.addrs.clone()
+        }
+        fn fee(&self) -> &Amount {
+            Amount::zero_ref()
+        }
+        fn fee_purity(&self) -> u64 {
+            1
+        }
+        fn fee_extend(&self) -> Ret<(u16, Amount)> {
+            Ok((1, Amount::zero()))
+        }
+    }
+
+    #[test]
+    fn calltargets_resolve_under_callview_and_inherits() {
+        // Arrange addresses.
+        let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(1));
+        let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(2));
+        let contract_base = crate::ContractAddress::calculate(&base_addr, &Uint4::from(3));
+
+        // Build an inheritance chain: Child -> Parent -> Base.
+        // The key trick is: `super.f()` moves curadr (code owner) to Parent, while ctxadr stays Child.
+        // Then inside Parent.f(), `this.g()` must resolve in ctxadr (Child), `self.g()` in curadr (Parent),
+        // and `super.g()` in Parent's direct base (Base).
+
+        let base = Contract::new().func(Func::new("g").fitsh("return 3").unwrap());
+
+        let parent = Contract::new()
+            .inh(contract_base.to_addr())
+            .func(Func::new("g").fitsh("return 2").unwrap())
+            .func(
+                Func::new("f")
+                    .fitsh(
+                        r##"
+                        return this.g() * 10000 + self.g() * 100 + super.g()
+                        "##,
+                    )
+                    .unwrap(),
+            );
+
+        let child = Contract::new()
+            .inh(contract_parent.to_addr())
+            .func(Func::new("g").fitsh("return 1").unwrap())
+            .func(
+                Func::new("run")
+                    .public()
+                    .fitsh(
+                        r##"
+                        return super.f()
+                        "##,
+                    )
+                    .unwrap(),
+            );
+
+        // Put contracts into VM state.
+        let mut ext_state = StateMem::default();
+        let mut vmsta = crate::VMState::wrap(&mut ext_state);
+        vmsta.contract_set(&contract_base, &base.into_sto());
+        vmsta.contract_set(&contract_parent, &parent.into_sto());
+        vmsta.contract_set(&contract_child, &child.into_sto());
+
+        // Main script calls contract_main.run() using tx-provided libs (index 0).
+        let main_script = r##"
+            lib C = 0
+            return C.run()
+        "##;
+        let main_codes = lang_to_bytecode(main_script).unwrap();
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+        env.tx.addrs = vec![contract_child.into_addr()];
+
+        let tx = DummyTx {
+            main: base_addr,
+            addrs: env.tx.addrs.clone(),
+        };
+        let mut ctx = ContextInst::new(env, Box::new(EmptyState {}), Box::new(EmptyLogs {}), &tx);
+
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            sta: &mut vmsta,
+            gas: &mut gas,
+        };
+
+        let mut machine = Machine::create(Resoure::create(1));
+        let rv = machine
+            .main_call(&mut exec, CodeType::Bytecode, main_codes)
+            .unwrap();
+
+        // Expected: inside Parent.f(), ctxadr=Child, curadr=Parent.
+        // this.g()=1 (Child), self.g()=2 (Parent), super.g()=3 (Base).
+        assert_eq!(rv.to_uint(), 10_203);
+    }
 
 /*
     i64::MAX  = 9223372036854775807

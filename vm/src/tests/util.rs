@@ -34,7 +34,8 @@ fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -
     super::interpreter::execute_code(
         &mut pc,
         &codes,
-        CallMode::Main,
+        ExecMode::Main,
+        false,
         0,
         &mut gas,
         &GasTable::new(1),

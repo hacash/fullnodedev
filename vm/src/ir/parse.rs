@@ -120,10 +120,6 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
     // parse
     let meta = inst.metadata();
     let hrtv = meta.otput == 1;
-    // check return value
-    if isrtv && !hrtv {
-        return itr_err_fmt!(InstInvalid, "irnode {} check return value failed", inst as u8)
-    }
     // parse
     irnode = match inst {
         // BYTECODE LIST BLOCK IF WHILE
@@ -140,6 +136,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             let n = u16::from_be_bytes(p);
             let ndp = depth + 1;
             for _i in 0..n {
+                // IRLIST is a sequence container; whether it yields a value depends on its last item.
                 list.push( subdph!(ndp, false) );
             }
             Box::new(list)
@@ -149,17 +146,25 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             let p = itrp2!();
             let n = u16::from_be_bytes(p);
             let ndp = depth + 1;
-            for _i in 0..n {
-                block.push( subdph!(ndp, false) );
+            if inst == IRBLOCKR && n == 0 {
+                return itr_err_fmt!(InstInvalid, "empty block expr");
+            }
+            for i in 0..n {
+                // block statement items do not need to produce values, except:
+                // - IRBLOCKR (block expression) requires the last item to produce a value.
+                let need_rtv = inst == IRBLOCKR && i + 1 == n;
+                block.push( subdph!(ndp, need_rtv) );
             }
             Box::new(block)
         }
         IRIF | IRIFR => {
             let ndp = depth + 1;
+            let need_branch_rtv = inst == IRIFR;
             Box::new(IRNodeTriple{ hrtv, inst,
                 subx: subdph!(ndp, true),
-                suby: subdph!(ndp, false),
-                subz: subdph!(ndp, false),
+                // if-expression requires both branches to produce values
+                suby: subdph!(ndp, need_branch_rtv),
+                subz: subdph!(ndp, need_branch_rtv),
             })
         }
         IRWHILE => {
@@ -205,6 +210,50 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             }
         }
     };
-    let node = irnode;
-    Ok(node)
+    // check return value based on the actual parsed node (not just bytecode metadata).
+    // This is important for container nodes like IRLIST/IRBLOCK whose return-value-ness is contextual.
+    if isrtv && !irnode.hasretval() {
+        return itr_err_fmt!(InstInvalid, "irnode {} check return value failed", inst as u8)
+    }
+    Ok(irnode)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn irlist_allows_noret_when_not_required() {
+        // IRLIST: [P0, P0, LOG1] is a valid statement sequence (LOG1 consumes args and returns no value).
+        let bytes: Vec<u8> = vec![
+            IRLIST as u8,
+            0x00,
+            0x03,
+            P0 as u8,
+            P0 as u8,
+            LOG1 as u8,
+        ];
+        let mut seek = 0usize;
+        let node = parse_ir_node_one(&bytes, &mut seek).expect("parse IRLIST");
+        assert!(!node.hasretval());
+        assert_eq!(seek, bytes.len());
+    }
+
+    #[test]
+    fn irlist_must_return_value_in_value_context() {
+        // RET requires its child to produce a value.
+        // If we put an IRLIST that ends with LOG1 (no retval) there, parsing must fail.
+        let bytes: Vec<u8> = vec![
+            RET as u8,
+            IRLIST as u8,
+            0x00,
+            0x03,
+            P0 as u8,
+            P0 as u8,
+            LOG1 as u8,
+        ];
+        let mut seek = 0usize;
+        assert!(parse_ir_node_one(&bytes, &mut seek).is_err());
+    }
 }

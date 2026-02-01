@@ -34,7 +34,7 @@ fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn A
     let mut to = from.clone();
     let mut argvs: VecDeque<Value>;
     let calldpt: i8 = CallDepth::new(1).into();
-    let absty = CallMode::Abst as u8;
+    let absty = ExecMode::Abst as u8;
     let asset_param = |asset: &AssetAmt| {
         VecDeque::from([ 
             Value::U64(asset.serial.uint()), 
@@ -108,7 +108,7 @@ fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn A
         argvs.push_front( Value::Address(to) );
         let param = Value::Compo(CompoItem::list(argvs)?);
         let codes = ctx.p2sh(&from)?.code_stuff();
-        let cm = CallMode::P2sh as u8;
+        let cm = ExecMode::P2sh as u8;
         setup_vm_run(calldpt, ctx.clone_mut(), cm, 0, codes, param)?;
     }
 

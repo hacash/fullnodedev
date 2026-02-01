@@ -16,6 +16,30 @@ impl IRNode for IRNodeEmpty {
 
 
 #[derive(Debug, Clone)]
+pub struct IRNodeTopStackValue {}
+
+impl IRNode for IRNodeTopStackValue {
+    fn as_any(&self) -> &dyn Any { self }
+    fn hasretval(&self) -> bool { true }
+
+    // This node is an internal, codegen-only placeholder that represents:
+    // “a value is already on the top of the stack”. It must never be serialized
+    // into ircode; if it ever leaks into serialization, it would create
+    // ambiguous/shifted IR streams.
+    fn bytecode(&self) -> u8 { 0 }
+
+    fn codegen(&self) -> VmrtRes<Vec<u8>> { Ok(vec![]) }
+    fn codegen_into(&self, _buf: &mut Vec<u8>) -> VmrtRes<()> { Ok(()) }
+
+    fn serialize(&self) -> Vec<u8> {
+        panic!("IRNodeTopStackValue is codegen-only and cannot be serialized")
+    }
+
+    fn print(&self) -> String { "<TopStackValue>".to_string() }
+}
+
+
+#[derive(Debug, Clone)]
 pub struct IRNodeText {
     pub text: String
 }
@@ -48,6 +72,10 @@ impl IRNode for IRNodeLeaf {
     fn as_any(&self) -> &dyn Any { self }
     fn hasretval(&self) -> bool { self.hrtv }
     fn bytecode(&self) -> u8 { self.inst as u8 }
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        buf.push(self.bytecode());
+        Ok(())
+    }
     fn serialize(&self) -> Vec<u8> { vec![self.inst as u8] }
     fn print(&self) -> String {
         format!("{:?}", self.inst)
@@ -92,7 +120,8 @@ impl IRNode for IRNodeParam1 {
         Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
-        self.codegen().unwrap()
+        // IR serialized form is prefix-coded: [opcode][param...]
+        vec![self.bytecode(), self.para]
     }
     fn print(&self) -> String {
         format!("{:?} {}", self.inst, self.para)
@@ -130,7 +159,10 @@ impl IRNode for IRNodeParam2 {
         Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
-        self.codegen().unwrap()
+        // IR serialized form is prefix-coded: [opcode][param...]
+        iter::once(self.bytecode())
+            .chain(self.para)
+            .collect()
     }
     fn print(&self) -> String {
         format!("{:?} {} {}", self.inst, self.para[0], self.para[1])
@@ -155,7 +187,10 @@ impl IRNode for IRNodeParams {
         Ok(())
     }
     fn serialize(&self) -> Vec<u8> {
-        self.codegen().unwrap()
+        // IR serialized form is prefix-coded: [opcode][param...]
+        iter::once(self.bytecode())
+            .chain(self.para.iter().copied())
+            .collect()
     }
     fn print(&self) -> String {
         let parastr = hex::encode(&self.para);
@@ -451,8 +486,10 @@ impl IRNode for IRNodeBytecodes {
             .collect::<Vec<_>>()
     }
     fn print(&self) -> String {
-        let codes = self.codes.bytecode_print(false).unwrap();
-        let codes = codes.trim_end();
+        let codes = match self.codes.bytecode_print(false) {
+            Ok(s) => s.trim_end().to_owned(),
+            Err(_) => format!("0x{}", hex::encode(&self.codes)),
+        };
         format!("bytecode {{ {} }}", codes)
     }
 }
@@ -489,9 +526,13 @@ impl IRNode for IRNodeArray {
     fn as_any(&self) -> &dyn Any { self }
     fn subs(&self) -> usize { self.subs.len() }
     fn hasretval(&self) -> bool {
-        match self.subs.last() {
-            None => false,
-            Some(s) => s.hasretval(),
+        match self.inst {
+            // Statement blocks compile by popping any produced values; they do not yield a value.
+            Bytecode::IRBLOCK => false,
+            _ => match self.subs.last() {
+                None => false,
+                Some(s) => s.hasretval(),
+            },
         }
     }
     fn bytecode(&self) -> u8 { self.inst as u8 }

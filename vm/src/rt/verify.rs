@@ -40,7 +40,7 @@ pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
 fn check_tail_end(c: u8) -> VmrtErr {
     let tail: Bytecode = std_mem_transmute!(c);
     if let RET | END | ERR | ABT |
-        CALLCODE | CALLSTATIC | CALLLIB | CALLINR | CALL // CALLDYN
+        CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALL // CALLDYN
     = tail {
         return Ok(())
     };
