@@ -54,7 +54,7 @@ impl Debug for Amount {
 
 impl Ord for Amount {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.cmp(other)
+        Amount::cmp(self, other)
     }
 }
 
@@ -82,10 +82,13 @@ impl Parse for Amount {
             return errf!("dist and byte len not match")
         }
         if self.dist != 0 && rbtl == 0 {
-            return errf!("dist and byte zore not match")
+            return errf!("dist and byte zero not match")
         }
         if rbtl > 1 && bytes_is_zero(&self.byte)  {
-            return errf!("byte cannot much zore ")
+            return errf!("multi-byte amount cannot be all zero")
+        }
+        if bytes_is_zero(&self.byte) && (self.unit != 0 || self.dist != 0 || !self.byte.is_empty()) {
+            return errf!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte_len={})", self.unit, self.dist, self.byte.len())
         }
         Ok(2 + btlen)
     }
@@ -93,12 +96,26 @@ impl Parse for Amount {
 
 impl Serialize for Amount {
     fn serialize_to(&self, out: &mut Vec<u8>) {
+        if self.is_zero() {
+            if self.unit != 0 || self.dist != 0 || !self.byte.is_empty() {
+                panic!("amount: semantic zero in non-canonical form (unit={}, dist={}, byte_len={}) - check historical data", self.unit, self.dist, self.byte.len());
+            }
+            out.push(0);
+            out.push(0);
+            return;
+        }
         out.push(self.unit);
         out.push(self.dist as u8);
         out.extend_from_slice(&self.byte);
     }
     fn size(&self) -> usize {
-        1 + 1 + self.dist.abs() as usize
+        if self.is_zero() {
+            if self.unit != 0 || self.dist != 0 || !self.byte.is_empty() {
+                panic!("amount: semantic zero in non-canonical form (unit={}, dist={}, byte_len={}) - check historical data", self.unit, self.dist, self.byte.len());
+            }
+            return 2;
+        }
+        1 + 1 + self.byte.len()
     }
 }
 
@@ -267,7 +284,7 @@ impl Amount {
     pub fn from(v: &str) -> Ret<Self> {
         let v = v.replace(",", "").replace(" ", "").replace("\n", "");
         for a in v.chars() {
-            if ! FROM_CHARS.contains(&(a as u8)) {
+            if !a.is_ascii() || !FROM_CHARS.contains(&(a as u8)) {
                 ret_amtfmte!{"unsupported characters", String::from(a)}
             }
         }
@@ -276,7 +293,7 @@ impl Amount {
 
     fn from_fin(v: String) -> Ret<Self> {
         let amt: Vec<&str> = v.split(":").collect();
-        if amt.len() > 2 {
+        if amt.len() != 2 {
             ret_amtfmte!{"amt", v}
         }
         let Ok(u) = amt[1].parse::<u8>() else {
@@ -285,7 +302,7 @@ impl Amount {
         let Ok(v) = amt[0].parse::<i128>() else {
             // from bigint
             let Ok(bign) = BigInt::from_str_radix(&amt[0], 10) else {
-                return errf!("amount '{}' overflow BigInt::from_str_radix", &v)
+                return errf!("amount '{}' overflow BigInt::from_str_radix", amt[0])
             };
             let powv = BigInt::from(10u64).pow(u as u32);
             let bign = bign * powv;
@@ -391,9 +408,17 @@ impl Amount {
         if bl == 0 || bytes_is_zero(&byte) {
             return Ok(Self::zero())
         }
+        let byte = drop_left_zero(&byte);
+        if byte.is_empty() {
+            return Ok(Self::zero())
+        }
+        let dist = byte.len();
+        if dist > 127 {
+            return Err("amount bytes len overflow 127.".to_string())
+        }
         Ok(Amount{
             unit: unit,
-            dist: bl as i8,
+            dist: dist as i8,
             byte: byte,
         })
     }
@@ -655,8 +680,11 @@ impl Amount {
     }
 
     pub fn unit_sub(&self, sub: u8) -> Ret<Self> {
+        if sub == 0 {
+            return Ok(self.clone())
+        }
         if sub >= self.unit {
-            return errf!("unit_sub error: unit must big than {}", sub)
+            return errf!("unit_sub error: unit must be greater than {}", sub)
         }
         let mut res = self.clone();
         res.unit -= sub;
@@ -721,7 +749,10 @@ impl Amount {
             amt.dist = nbts.len() as i8;
             amt.byte = nbts;
         }
-        // ok
+        // Normalize semantic zero to canonical so (unit,0,[]) never produced
+        if amt.is_zero() {
+            return Ok(Self::zero());
+        }
         Ok(amt)
     }
 
@@ -739,7 +770,7 @@ macro_rules! rte_ovfl {
 }
 macro_rules! rte_cneg {
     ($tip: expr) => {
-        return Err(format!("amount {} cannot between negative", $tip));
+        return Err(format!("amount {}: operands cannot be negative", $tip));
     };
 }
 
@@ -752,8 +783,9 @@ fn bytes_is_zero(v: &[u8]) -> bool {
 }
 
 fn add_left_padding(v: &Vec<u8>, n: usize) -> Vec<u8> {
+    assert!(v.len() <= n, "add_left_padding: byte len {} > {}", v.len(), n);
     vec![
-        vec![0u8; n-v.len()],
+        vec![0u8; n - v.len()],
         v.clone(),
     ].concat()
 }
@@ -1064,5 +1096,64 @@ mod amount_tests {
         assert_eq!(amt.to_bigint(), BigInt::from(0));
     }
 
+    #[test]
+    fn test_from_unit_byte_strips_leading_zeros() {
+        let with_leading = Amount::from_unit_byte(UNIT_MEI, vec![0, 0, 1]).unwrap();
+        let canonical = Amount::mei(1);
+        assert!(with_leading.equal(&canonical), "from_unit_byte with leading zeros must match coin/mei");
+        assert_eq!(with_leading.to_bigint(), canonical.to_bigint());
+    }
 
+    #[test]
+    fn test_zero_serialize_parse_canonical_only() {
+        let canonical = Amount::zero();
+        let bytes = canonical.serialize();
+        assert_eq!(bytes, &[0u8, 0], "zero must serialize to exactly [0, 0]");
+        let mut parsed = Amount::default();
+        parsed.parse(&bytes).unwrap();
+        assert!(parsed.unit() == 0 && parsed.dist() == 0 && parsed.byte().is_empty(),
+            "parse of [0,0] must yield canonical (0,0,[])");
+        assert!(parsed.equal(&canonical));
+        let alt_zero = Amount { unit: 0, dist: 1, byte: vec![0] };
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { alt_zero.serialize(); }));
+        assert!(r.is_err(), "serialize of semantic zero (0,1,[0]) must panic to detect historical data");
+        let non_canonical_zero_bytes = vec![0u8, 1, 0];
+        let mut parsed = Amount::default();
+        assert!(parsed.parse(&non_canonical_zero_bytes).is_err(), "parse of non-canonical zero [0,1,0] must return error");
+    }
+
+    #[test]
+    fn test_compress_zero_yields_canonical() {
+        let small = Amount::mei(5);
+        let compressed = small.compress(0, AmtCpr::Discard).unwrap();
+        assert!(compressed.is_zero(), "5/10 rounds to 0");
+        assert!(compressed.unit() == 0 && compressed.dist() == 0 && compressed.byte().is_empty(),
+            "compress that yields zero must return canonical (0,0,[])");
+    }
+
+    #[test]
+    fn test_unit_sub_zero_is_noop() {
+        let a = Amount::mei(100);
+        let b = a.unit_sub(0).unwrap();
+        assert!(a.equal(&b));
+        let z = Amount::zero();
+        let z2 = z.unit_sub(0).unwrap();
+        assert!(z2.is_zero());
+    }
+
+    #[test]
+    fn test_from_rejects_non_ascii() {
+        assert!(Amount::from("1\u{012e}2:248").is_err(), "non-ASCII char must be rejected");
+        assert!(Amount::from("100：248").is_err(), "fullwidth colon must be rejected");
+    }
+
+    #[test]
+    fn test_serialize_size_matches_len() {
+        let zero = Amount::zero();
+        assert_eq!(zero.serialize().len(), zero.size());
+        let a = Amount::from("123:248").unwrap();
+        assert_eq!(a.serialize().len(), a.size());
+        let b = Amount::mei(1);
+        assert_eq!(b.serialize().len(), b.size());
+    }
 }
