@@ -683,7 +683,7 @@ impl Amount {
         if sub == 0 {
             return Ok(self.clone())
         }
-        if sub >= self.unit {
+        if sub > self.unit {
             return errf!("unit_sub error: unit must be greater than {}", sub)
         }
         let mut res = self.clone();
@@ -1142,6 +1142,15 @@ mod amount_tests {
     }
 
     #[test]
+    fn test_unit_sub_eq_unit_yields_zero_unit() {
+        // unit_sub(self.unit) should succeed and yield unit 0 (valid)
+        let a = Amount::mei(1); // unit=248
+        let b = a.unit_sub(UNIT_MEI).unwrap();
+        assert_eq!(b.unit(), 0, "unit_sub(248) on unit 248 should yield unit 0");
+        assert!(b.equal(&Amount::from("1:0").unwrap()));
+    }
+
+    #[test]
     fn test_from_rejects_non_ascii() {
         assert!(Amount::from("1\u{012e}2:248").is_err(), "non-ASCII char must be rejected");
         assert!(Amount::from("100：248").is_err(), "fullwidth colon must be rejected");
@@ -1155,5 +1164,23 @@ mod amount_tests {
         assert_eq!(a.serialize().len(), a.size());
         let b = Amount::mei(1);
         assert_eq!(b.serialize().len(), b.size());
+    }
+
+    #[test]
+    fn test_bigint_negative_roundtrip() {
+        let neg = BigInt::from(-12300);
+        let amt = Amount::from_bigint(&neg).unwrap();
+        assert_eq!(amt.to_bigint(), neg);
+        let roundtrip = Amount::from_bigint(&amt.to_bigint()).unwrap();
+        assert_eq!(roundtrip.to_bigint(), neg);
+        let neg2 = Amount::from("-123:248").unwrap();
+        assert_eq!(neg2.to_bigint(), BigInt::from(-123) * BigInt::from(10u64).pow(248u32));
+    }
+
+    #[test]
+    fn test_bigint_unit_cap_roundtrip() {
+        let huge = BigInt::from(10u64).pow(300u32);
+        let amt = Amount::from_bigint(&huge).unwrap();
+        assert_eq!(amt.to_bigint(), huge, "unit>255 cap must preserve value");
     }
 }

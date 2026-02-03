@@ -116,6 +116,9 @@ impl FromJSON for Fold64 {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let s = json_expect_unquoted(json)?;
         if let Ok(v) = s.parse::<u64>() {
+            if v > Fold64::MAX {
+                return errf!("Fold64 value {} overflow max {}", v, Fold64::MAX)
+            }
             self.value = v;
             return Ok(());
         }
@@ -128,8 +131,8 @@ impl Fold64 {
 
     pub const MAX: u64 = FOLDU64SX8 - 1;
 
-    pub const fn max() -> Self {
-        Self{ value: Self::MAX }
+    pub fn max() -> Self {
+        Self::from(Self::MAX).expect("Fold64::MAX is valid")
     }
 
     pub fn is_zero(&self) -> bool {
@@ -434,6 +437,161 @@ mod fold64_tests {
         assert!(Fold64::try_from(-1i64).is_err());
         let big = (u64::MAX as u128) + 1;
         assert!(Fold64::try_from(big).is_err());
+    }
+
+    #[test]
+    fn test_from_json_rejects_overflow() {
+        let mut f = Fold64::default();
+        assert!(f.from_json("2305843009213693952").is_err());
+    }
+
+    #[test]
+    fn test_max_roundtrip() {
+        let m = Fold64::max();
+        assert_eq!(m.uint(), Fold64::MAX);
+        let serialized = m.serialize();
+        let mut decoded = Fold64::default();
+        decoded.parse(&serialized).unwrap();
+        assert_eq!(decoded, m);
+    }
+
+    /// 每个字节增长边界：size-1, size, size+1 的序列化与解析
+    #[test]
+    fn test_byte_growth_boundaries_roundtrip() {
+        let boundaries: [(u64, usize); 8] = [
+            (31, 1),           // 1 byte max
+            (32, 2),           // 2 byte min
+            (8191, 2),         // 2 byte max
+            (8192, 3),         // 3 byte min
+            (2_097_151, 3),    // 3 byte max
+            (2_097_152, 4),    // 4 byte min
+            (5_368_709_11, 4), // 4 byte max (注意下划线分隔)
+            (5_368_709_12, 5), // 5 byte min
+        ];
+        for (v, expected_size) in boundaries {
+            let fu = Fold64::from(v).unwrap();
+            assert_eq!(fu.size(), expected_size, "value {} size", v);
+            let ser = fu.serialize();
+            assert_eq!(ser.len(), expected_size, "value {} serialized len", v);
+            let mut dec = Fold64::default();
+            let n = dec.parse(&ser).unwrap();
+            assert_eq!(n, expected_size, "value {} parse consumed", v);
+            assert_eq!(dec.uint(), v, "value {} roundtrip", v);
+        }
+    }
+
+    /// 所有 7 个字节增长边界的完整 roundtrip
+    #[test]
+    fn test_all_byte_boundaries_roundtrip() {
+        let cases = [
+            (30u64, 1usize),
+            (31u64, 1usize),
+            (32u64, 2usize),
+            (33u64, 2usize),
+            (8190u64, 2usize),
+            (8191u64, 2usize),
+            (8192u64, 3usize),
+            (8193u64, 3usize),
+            (2_097_150u64, 3usize),
+            (2_097_151u64, 3usize),
+            (2_097_152u64, 4usize),
+            (2_097_153u64, 4usize),
+            (5_368_709_10u64, 4usize),
+            (5_368_709_11u64, 4usize),
+            (5_368_709_12u64, 5usize),
+            (5_368_709_13u64, 5usize),
+            (1_374_389_534_70u64, 5usize),
+            (1_374_389_534_71u64, 5usize),
+            (1_374_389_534_72u64, 6usize),
+            (351_843_720_888_30u64, 6usize),
+            (351_843_720_888_31u64, 6usize),
+            (351_843_720_888_32u64, 7usize),
+            (90_071_992_547_409_90u64, 7usize),
+            (90_071_992_547_409_91u64, 7usize),
+            (90_071_992_547_409_92u64, 8usize),
+            (230_584_300_921_369_395_0u64, 8usize),
+            (Fold64::MAX, 8usize),
+        ];
+        for (v, size) in cases {
+            let fu = Fold64::from(v).unwrap();
+            assert_eq!(fu.size(), size, "value {} expected size {}", v, size);
+            let ser = fu.serialize();
+            assert_eq!(ser.len(), size);
+            let mut dec = Fold64::default();
+            dec.parse(&ser).unwrap();
+            assert_eq!(dec.uint(), v, "value {} roundtrip", v);
+        }
+    }
+
+    /// 非规范编码应被拒绝：小值用大 size 编码
+    #[test]
+    fn test_parse_rejects_non_canonical_at_boundaries() {
+        // value 0 用 size=2 编码 [0x20, 0x00]
+        let buf = vec![0b0010_0000, 0x00];
+        let mut p = Fold64::default();
+        assert!(p.parse(&buf).is_err());
+
+        // value 31 用 size=2 编码
+        let buf = vec![0b0010_0000, 0x1F];
+        let mut p = Fold64::default();
+        assert!(p.parse(&buf).is_err());
+
+        // value 32 用 size=3 编码（应为 2 字节）
+        let buf = vec![0b0100_0000, 0x00, 0x20];
+        let mut p = Fold64::default();
+        assert!(p.parse(&buf).is_err());
+    }
+
+    /// 解析截断的 buffer 应失败
+    #[test]
+    fn test_parse_rejects_truncated_buffer() {
+        let full = Fold64::from(8192).unwrap().serialize();
+        assert_eq!(full.len(), 3);
+        let mut p = Fold64::default();
+        assert!(p.parse(&full[..1]).is_err());
+        assert!(p.parse(&full[..2]).is_err());
+    }
+
+    /// 解析后 consume 的字节数正确
+    #[test]
+    fn test_parse_consumes_correct_length() {
+        let v = Fold64::from(9007199254740992).unwrap();
+        let ser = v.serialize();
+        let mut p = Fold64::default();
+        let n = p.parse(&ser).unwrap();
+        assert_eq!(n, ser.len());
+        assert_eq!(p.uint(), 9007199254740992);
+    }
+
+    /// 解析时 buffer 后有额外字节，只消费正确长度
+    #[test]
+    fn test_parse_with_trailing_bytes_consumes_only_self() {
+        let v = Fold64::from(32).unwrap();
+        let ser = v.serialize();
+        assert_eq!(ser.len(), 2);
+        let mut buf = ser.clone();
+        buf.extend_from_slice(&[0xFF, 0xFF, 0xFF]);
+        let mut p = Fold64::default();
+        let n = p.parse(&buf).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(p.uint(), 32);
+    }
+
+    /// 连续解析多个 Fold64
+    #[test]
+    fn test_parse_concatenated() {
+        let a = Fold64::from(31).unwrap();
+        let b = Fold64::from(8192).unwrap();
+        let mut buf = a.serialize();
+        buf.extend_from_slice(&b.serialize());
+        let mut p1 = Fold64::default();
+        let n1 = p1.parse(&buf).unwrap();
+        assert_eq!(n1, 1);
+        assert_eq!(p1.uint(), 31);
+        let mut p2 = Fold64::default();
+        let n2 = p2.parse(&buf[n1..]).unwrap();
+        assert_eq!(n2, 3);
+        assert_eq!(p2.uint(), 8192);
     }
 
     #[test]
