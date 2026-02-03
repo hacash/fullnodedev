@@ -1,14 +1,132 @@
 use base58check::*;
+use std::ops::DerefMut;
 
 pub const ADDR_OR_PTR_DIV_NUM: u8 = 20;
 
-pub type Address = Fixed21;
-pub type Addrptr = Uint1;
- 
+#[repr(transparent)]
+#[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
+pub struct Address(Fixed21);
 
-pub static ADDRESS_ZERO: Address = Fixed21::from([0u8; Address::SIZE]);
-pub static ADDRESS_ONEX: Address = Fixed21::from([0u8, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]);
-pub static ADDRESS_TWOX: Address = Fixed21::from([0u8, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]);
+pub type Addrptr = Uint1;
+
+impl Address {
+    pub const SIZE: usize = 21;
+}
+
+impl Default for Address {
+    fn default() -> Self {
+        Address(Fixed21::default())
+    }
+}
+
+impl Deref for Address {
+    type Target = Fixed21;
+    fn deref(&self) -> &Fixed21 {
+        &self.0
+    }
+}
+
+impl DerefMut for Address {
+    fn deref_mut(&mut self) -> &mut Fixed21 {
+        &mut self.0
+    }
+}
+
+impl From<[u8; 21]> for Address {
+    fn from(v: [u8; 21]) -> Self {
+        Address(Fixed21::from(v))
+    }
+}
+
+impl From<Fixed21> for Address {
+    fn from(v: Fixed21) -> Self {
+        Address(v)
+    }
+}
+
+impl Index<usize> for Address {
+    type Output = u8;
+    fn index(&self, idx: usize) -> &u8 {
+        &self.0[idx]
+    }
+}
+
+impl IndexMut<usize> for Address {
+    fn index_mut(&mut self, idx: usize) -> &mut u8 {
+        &mut self.0[idx]
+    }
+}
+
+impl Parse for Address {
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.0.parse(buf)
+    }
+}
+
+impl Serialize for Address {
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        self.0.serialize_to(out);
+    }
+    fn size(&self) -> usize {
+        self.0.size()
+    }
+}
+
+impl_field_only_new!{Address}
+
+impl ToJSON for Address {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        match fmt.binary {
+            JSONBinaryFormat::Base58Check => {
+                let version = self.0[0];
+                let data = &self.0.as_ref()[1..];
+                format!("\"{}\"", data.to_base58check(version))
+            }
+            _ => self.0.to_json_fmt(fmt),
+        }
+    }
+}
+
+impl FromJSON for Address {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let raw = json_expect_quoted(json)?;
+        let trimmed = raw.trim();
+        // Try bare base58check first (Address-specific, no prefix)
+        if let Ok(addr) = Self::from_readable(trimmed) {
+            *self = addr;
+            return Ok(());
+        }
+        // Fall back to generic binary (0x, b64:, b58:, plain)
+        let data = json_decode_binary(json)?;
+        if data.len() != Self::SIZE {
+            return errf!("Address size error, need {}, but got {}", Self::SIZE, data.len());
+        }
+        *self = Address(Fixed21::from(data.try_into().unwrap()));
+        Ok(())
+    }
+}
+
+impl AsRef<[u8]> for Address {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl Address {
+    pub fn must_vec(v: Vec<u8>) -> Self {
+        Self::must(&v)
+    }
+}
+
+impl Display for Address {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+pub static ADDRESS_ZERO: Address = Address(Fixed21::from([0u8; 21]));
+pub static ADDRESS_ONEX: Address = Address(Fixed21::from([0u8, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]));
+pub static ADDRESS_TWOX: Address = Address(Fixed21::from([0u8, 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]));
 
 
 macro_rules! address_version_define {
@@ -49,7 +167,7 @@ impl Address {
     concat_idents::concat_idents!{ creat_by_version = create_, $name {
     pub fn creat_by_version(hx: [u8; 20]) -> Self {
         let data = vec![vec![Self::$key], hx.to_vec()].concat();
-        Self::from(data.try_into().unwrap())
+        Self::from(<Vec<u8> as TryInto<[u8; 21]>>::try_into(data).unwrap())
     }
     }}
     )+
@@ -58,7 +176,7 @@ impl Address {
         if stuff.len() != Self::SIZE {
             return errf!("address size not match")
         }
-        let addr = Self::from(stuff.to_vec().try_into().unwrap());
+        let addr = Self::from(<Vec<u8> as TryInto<[u8; 21]>>::try_into(stuff.to_vec()).unwrap());
         addr.check_version()?;
         Ok(addr)
     }
@@ -93,7 +211,7 @@ address_version_define!{
 */
 impl Address {
     
-    pub const UNKNOWN: Self = Fixed21::DEFAULT;
+    pub const UNKNOWN: Self = Address(Fixed21::DEFAULT);
 
     pub const fn zero() -> Self {
         Self::UNKNOWN

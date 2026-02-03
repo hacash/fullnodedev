@@ -97,15 +97,14 @@ macro_rules! fixed_define_body {
                     JSONBinaryFormat::Hex => format!("0x{}", hex::encode(&self.bytes)),
                     JSONBinaryFormat::Base58Check => {
                         if $size == 21 {
-                            // Hacash address: first byte is version
                             let version = self.bytes[0];
                             let data = &self.bytes[1..];
-                            data.to_base58check(version)
+                            format!("b58:{}", data.to_base58check(version))
                         } else {
                             format!("0x{}", hex::encode(&self.bytes))
                         }
                     },
-                    JSONBinaryFormat::Base64 => BASE64_STANDARD.encode(&self.bytes),
+                    JSONBinaryFormat::Base64 => format!("b64:{}", BASE64_STANDARD.encode(&self.bytes)),
                 };
                 format!("\"{}\"", body)
             }

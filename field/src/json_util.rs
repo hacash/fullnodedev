@@ -161,36 +161,34 @@ pub fn json_split_object(s: &str) -> Vec<(&str, &str)> {
 }
 
 pub fn json_decode_binary(s: &str) -> Ret<Vec<u8>> {
-    let s = json_expect_quoted(s)?;
-    // 0. hex must be prefixed with 0x / 0X
-    if s.starts_with("0x") || s.starts_with("0X") {
-        let hx = &s[2..];
+    let raw = json_expect_quoted(s)?;
+    let trimmed = raw.trim();
+    // 0x / 0X: hex (trim content)
+    if trimmed.len() >= 2 && (trimmed.starts_with("0x") || trimmed.starts_with("0X")) {
+        let hx = trimmed[2..].trim();
         if hx.len() % 2 != 0 || !hx.chars().all(|c| c.is_ascii_hexdigit()) {
             return errf!("invalid hex string");
         }
         let b = hex::decode(hx).map_err(|e| e.to_string())?;
         return Ok(b);
     }
-    // 0. Hacash specific: if it looks like an address (starts with '1' or '3')
-    // or has length around 34, try base58check first
-    if (s.starts_with('1') || s.starts_with('3')) && s.len() >= 26 && s.len() <= 35 {
-        if let Ok((_ver, b)) = s.from_base58check() {
-            let mut full = vec![_ver];
-            full.extend(b);
-            return Ok(full);
-        }
+    // b64: / B64:: base64 (trim content)
+    if trimmed.len() >= 4 && (trimmed.starts_with("b64:") || trimmed.starts_with("B64:")) {
+        let rest = trimmed[4..].trim();
+        let b = BASE64_STANDARD.decode(rest).map_err(|e| e.to_string())?;
+        return Ok(b);
     }
-
-    // 1. try base58check again (for non-address data)
-    if let Ok((_ver, b)) = s.from_base58check() {
+    // b58: / B58:: base58check (trim content)
+    if trimmed.len() >= 4 && (trimmed.starts_with("b58:") || trimmed.starts_with("B58:")) {
+        let rest = trimmed[4..].trim();
+        if rest.is_empty() {
+            return Ok(vec![]);
+        }
+        let (_ver, b) = rest.from_base58check().map_err(|e| format!("base58check error: {:?}", e))?;
         let mut full = vec![_ver];
         full.extend(b);
         return Ok(full);
     }
-
-    // 2. try base64
-    if let Ok(b) = BASE64_STANDARD.decode(s) {
-        return Ok(b);
-    }
-    errf!("cannot decode binary string: {}", s)
+    // no prefix: plain string (UTF-8 bytes, no trim)
+    Ok(raw.as_bytes().to_vec())
 }

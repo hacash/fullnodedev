@@ -70,10 +70,7 @@ impl ContractAddress {
     }
 
     pub fn parse(dts: &[u8]) -> Ret<Self> {
-        if dts.len() != Address::SIZE {
-            return errf!("contract address length error")
-        }
-        let cadr = Address::from(dts.try_into().unwrap());
+        let cadr = Address::from_bytes(dts)?;
         ContractAddress::from_addr(cadr)
     } 
 

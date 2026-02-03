@@ -72,12 +72,12 @@ macro_rules! datas_define {
                         if self.bytes.len() > 0 {
                             let version = self.bytes[0];
                             let data = &self.bytes[1..];
-                            data.to_base58check(version)
+                            format!("b58:{}", data.to_base58check(version))
                         } else {
                             "".to_string()
                         }
                     },
-                    JSONBinaryFormat::Base64 => BASE64_STANDARD.encode(&self.bytes),
+                    JSONBinaryFormat::Base64 => format!("b64:{}", BASE64_STANDARD.encode(&self.bytes)),
                 };
                 format!("\"{}\"", body)
             }

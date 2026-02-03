@@ -75,19 +75,73 @@ mod tests {
     fn test_binary_auto_recognition() {
         let mut d = BytesW1::default();
         
-        // hex
+        // hex (0x prefix)
         d.from_json(r#""0x010203""#).unwrap();
         assert_eq!(d.to_vec(), vec![1, 2, 3]);
 
-        // base64
-        d.from_json(r#""AQIDBA==""#).unwrap();
+        // base64 (b64: prefix)
+        d.from_json(r#""b64:AQIDBA==""#).unwrap();
         assert_eq!(d.to_vec(), vec![1, 2, 3, 4]);
 
-        // base58check address
+        // base58check address (b58: prefix)
         let addr = "1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS";
         let mut f21 = Fixed21::default();
-        f21.from_json(&format!(r#""{}""#, addr)).unwrap();
+        f21.from_json(&format!(r#""b58:{}""#, addr)).unwrap();
         assert_eq!(f21.to_hex(), "00681990afd226b1cbc6c5f085cfdc2092d0843241");
+
+        // plain string (no prefix, no trim)
+        d.from_json(r#""hello""#).unwrap();
+        assert_eq!(d.to_vec(), b"hello");
+        d.from_json(r#""  hello  ""#).unwrap();
+        assert_eq!(d.to_vec(), b"  hello  ");
+
+        // hex/b64 with trim
+        d.from_json(r#""  0x010203  ""#).unwrap();
+        assert_eq!(d.to_vec(), vec![1, 2, 3]);
+        d.from_json(r#""  b64:AQIDBA==  ""#).unwrap();
+        assert_eq!(d.to_vec(), vec![1, 2, 3, 4]);
+
+        // roundtrip: to_json then from_json
+        let d2 = BytesW1::from(vec![1, 2, 3, 4, 5]).unwrap();
+        let json = d2.to_json();
+        let mut d3 = BytesW1::default();
+        d3.from_json(&json).unwrap();
+        assert_eq!(d2.to_vec(), d3.to_vec());
+    }
+
+    combi_struct! { TestStructWithAddress,
+        addr: Address
+    }
+
+    #[test]
+    fn test_address_bare_base58check() {
+        let addr_str = "1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS";
+        let hex_expected = "00681990afd226b1cbc6c5f085cfdc2092d0843241";
+
+        // Address accepts bare base58check (no b58: prefix)
+        let mut addr = Address::default();
+        addr.from_json(&format!(r#""{}""#, addr_str)).unwrap();
+        assert_eq!(addr.to_hex(), hex_expected);
+
+        // Address also accepts b58: prefix (backward compatibility)
+        let mut addr2 = Address::default();
+        addr2.from_json(&format!(r#""b58:{}""#, addr_str)).unwrap();
+        assert_eq!(addr2.to_hex(), hex_expected);
+
+        // Address ToJSON outputs bare base58check when Base58Check format (no prefix)
+        let fmt_58 = JSONFormater { unit: "HAC".to_string(), binary: JSONBinaryFormat::Base58Check };
+        let json = addr.to_json_fmt(&fmt_58);
+        assert_eq!(json, format!(r#""{}""#, addr_str));
+
+        // Roundtrip: struct with Address field
+        let mut s = TestStructWithAddress::default();
+        s.addr = Address::from_readable(addr_str).unwrap();
+        let json = s.to_json_fmt(&fmt_58);
+        assert!(json.contains(addr_str));
+        assert!(!json.contains("b58:"));
+        let mut s2 = TestStructWithAddress::default();
+        s2.from_json(&json).unwrap();
+        assert_eq!(s.addr.to_hex(), s2.addr.to_hex());
     }
 
     #[test]
