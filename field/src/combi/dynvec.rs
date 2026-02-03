@@ -34,7 +34,7 @@ impl Parse for $class {
         let count = *self.count as usize;
         self.vlist = Vec::with_capacity(count);
         for _ in 0..count {
-            let(obj, mvsk) = $parseobjfunc(*buf) ?;
+            let (obj, mvsk) = $parseobjfunc(*buf)?;
             *buf = &(*buf)[mvsk..];
             seek += mvsk;
             self.vlist.push(obj);

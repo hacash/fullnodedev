@@ -24,6 +24,14 @@ pub trait Parse {
     }
 }
 
+/// Parse from prefix bytes + rest slice without copying. Used by combi_revenum for zero-copy Val2 parsing.
+/// Implement for t2 types used in combi_revenum. Future revenum t2 types should implement this for zero-copy.
+pub trait ParsePrefix {
+    /// Parse from (prefix, rest). Returns (value, total_bytes_consumed).
+    fn create_with_prefix(prefix: &[u8], rest: &[u8]) -> Ret<(Self, usize)>
+    where
+        Self: Sized;
+}
 
 /*
 * #[derive(Default)]

@@ -14,13 +14,7 @@ pub struct $class {
 impl Iterator for $class {
     type Item = Box<dyn $dynty>;
     fn next(&mut self) -> Option<Box<dyn $dynty>> {
-        match self.pop() {
-            Some(d) => {
-                self.count -= 1;
-                Some(d)
-            }
-            _ => None,
-        }
+        self.pop()
     }
 }
 
@@ -44,11 +38,11 @@ impl Eq for $class {}
 impl Parse for $class {
 
     fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
-        let mut seek = self.count.parse_from(buf) ?;
+        let mut seek = self.count.parse_from(buf)?;
         let count = *self.count as usize;
         self.vlist = Vec::with_capacity(count);
         for _ in 0..count {
-            let(obj, mvsk) = $createfn(*buf) ?;
+            let (obj, mvsk) = $createfn(*buf)?;
             *buf = &(*buf)[mvsk..];
             seek += mvsk;
             self.vlist.push(obj);

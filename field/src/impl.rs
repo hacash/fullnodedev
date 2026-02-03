@@ -6,7 +6,9 @@ impl Parse for Vec<u8> {
         let sl = self.len();
         if sl > s.len() {
             return errf!("buffer too short")
-        } 
+        }
+        self.clear();
+        self.extend_from_slice(&s[..sl]);
         Ok(sl)
     }
 }

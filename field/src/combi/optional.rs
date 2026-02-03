@@ -21,11 +21,13 @@ macro_rules! combi_optional {
         impl Parse for $class {
 
             fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
-                let mut seek = self.exist.parse_from(buf) ?;
+                let mut seek = self.exist.parse_from(buf)?;
                 if self.is_exist() {
                     let mut val = <$vty>::new();
-                    seek += val.parse_from(buf) ?;
+                    seek += val.parse_from(buf)?;
                     self.$item = Some(val);
+                } else {
+                    self.$item = None;
                 }
                 Ok(seek)
             }

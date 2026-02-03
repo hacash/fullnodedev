@@ -25,13 +25,12 @@ impl Field for ValueKey {}
 
 impl ToJSON for ValueKey {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-        format!("\"{}\"", hex::encode(&self.bytes))
+        format!("\"0x{}\"", hex::encode(&self.bytes))
     }
 }
 impl FromJSON for ValueKey {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let hx = json_unquote(json);
-        self.bytes = hex::decode(hx).map_err(|_| format!("cannot decode hex"))?;
+        self.bytes = field::json_decode_binary(json)?;
         Ok(())
     }
 }

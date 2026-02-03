@@ -136,6 +136,24 @@ impl Address {
 */
 combi_list!{ AddressW1, Uint1, Address }
 
+impl ParsePrefix for AddressW1 {
+    fn create_with_prefix(prefix: &[u8], rest: &[u8]) -> Ret<(Self, usize)> {
+        if prefix.is_empty() {
+            return errf!("AddressW1 prefix empty");
+        }
+        let count_byte = prefix[0];
+        let count = count_byte as usize;
+        let mut v = AddressW1::new();
+        v.count = Uint1::from(count_byte);
+        let mut seek = 0;
+        for _ in 0..count {
+            let mut addr = Address::new();
+            seek += addr.parse(&rest[seek..])?;
+            v.lists.push(addr);
+        }
+        Ok((v, 1 + seek))
+    }
+}
 
 /*
 *

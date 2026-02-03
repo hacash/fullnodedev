@@ -35,16 +35,10 @@ macro_rules! combi_revenum {
                     *self = Self::Val1( v );
                     Ok(sk)
                 }else{
-                    // For performance, we directly modify the raw data in an unsafe way.
-                    let old = buf[0];
-                    let chg = old - $swtv;
-                    let head = buf.as_ptr() as *mut u8;
-                    macro_rules! modify_head{ ($chg: expr) => { 
-                        unsafe { *head = $chg; } } 
-                    }
-                    modify_head!{ chg } // change
-                    let (v, sk) = <$t2>::create(buf)?;
-                    modify_head!{ old } // recover
+                    let first = buf[0].checked_sub($swtv)
+                        .ok_or_else(|| "revenum first byte invalid".to_owned())?;
+                    let prefix = [first];
+                    let (v, sk) = <$t2 as $crate::ParsePrefix>::create_with_prefix(&prefix, &buf[1..])?;
                     *self = Self::Val2( v );
                     Ok(sk)
                 }

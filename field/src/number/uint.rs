@@ -171,7 +171,15 @@ uint_define!{Uint6, 6, 8, u64}
 uint_define!{Uint7, 7, 8, u64}
 uint_define!{Uint8, 8, 8, u64}
 
-
+impl ParsePrefix for Uint1 {
+    fn create_with_prefix(prefix: &[u8], _rest: &[u8]) -> Ret<(Self, usize)> {
+        if prefix.is_empty() {
+            return errf!("Uint1 prefix empty");
+        }
+        let v = Uint1::from(prefix[0]);
+        Ok((v, 1))
+    }
+}
 
 
 /************************ test ************************/

@@ -224,13 +224,15 @@ macro_rules! combi_struct_field_more_than_condition {
         impl FromJSON for $class {
             fn from_json(&mut self, json_str: &str) -> Ret<()> {
                 let pairs = json_split_object(json_str);
-                for (k, v) in pairs {
+                for (k, v) in &pairs {
                     $(
-                        if k == stringify!($item) {
+                        if *k == stringify!($item) {
                             self.$item.from_json(v)?;
                         }
                     )+
-                    if k == stringify!($mrn) {
+                }
+                for (k, v) in pairs {
+                    if k == stringify!($mrn) && *self.$cdn > $cdv {
                         self.$mrn.from_json(v)?;
                     }
                 }
