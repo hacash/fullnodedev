@@ -54,8 +54,15 @@ impl $class {
 
     pub fn one(dia: DiamondName) -> Self {        
         let mut obj = Self::default();
-        obj.push(dia).unwrap();
+        obj.push_checked(dia).unwrap();
         obj
+    }
+
+    pub fn push_checked(&mut self, dia: DiamondName) -> Rerr {
+        if self.contains(dia.as_ref()) {
+            return errf!("diamond name {} is duplicate", dia.to_readable())
+        }
+        self.push(dia)
     }
 
     pub fn check(&self) -> Ret<usize> {
@@ -123,7 +130,7 @@ impl $class {
         for i in 0 .. num {
             let x = i*6;
             let name = DiamondName::from( bufcut!(bs, x, x+6) );
-            obj.push(name).unwrap();
+            obj.push_checked(name)?;
         }
         obj.check()?;
         Ok(obj)
@@ -131,16 +138,39 @@ impl $class {
 
     
     pub fn checked_append(&mut self, dias: Vec<DiamondName>) -> Rerr {
+        for d in &dias {
+            if self.contains(d.as_ref()) {
+                return errf!("diamond name {} is duplicate", d.to_readable())
+            }
+        }
         let n = self.lists.len() + dias.len();
         if n > $max {
             return errf!("diamond list max {} overflow", $max)
         }
-        self.append(dias)?;
-        // check repeat
-        if self.hashset().len() != self.length() {
+        let set: std::collections::HashSet<_> = dias.iter().collect();
+        if set.len() != dias.len() {
             return errf!("diamond name list contains duplicates")
         }
+        self.append(dias)?;
         Ok(())
+    }
+
+    pub fn from_list_checked(v: Vec<DiamondName>) -> Ret<Self> {
+        let num = v.len();
+        if num > $max {
+            return errf!("diamond list max {} overflow", $max)
+        }
+        for i in 0..num {
+            for j in (i+1)..num {
+                if v[i] == v[j] {
+                    return errf!("diamond name list contains duplicates")
+                }
+            }
+        }
+        Ok(Self{
+            count: <$nty>::from_usize(num)?,
+            lists: v,
+        })
     }
     
 

@@ -15,7 +15,7 @@ pub fn do_settlement(ctx: &mut dyn Context) -> Rerr {
     }
     // settle diamonds
     for (adr, dn) in &t.diatrs {
-        let dialist = DiamondNameListMax200::from_list(t.diamonds.fetch_list(*dn)?)?;
+        let dialist = DiamondNameListMax200::from_list_checked(t.diamonds.fetch_list(*dn)?)?;
         do_diamonds_transfer(&dialist, &SETTLEMENT_ADDR, adr, ctx.clone_mut())?;
     }
     // check

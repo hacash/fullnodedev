@@ -5,6 +5,7 @@ use std::collections::*;
 // Contract Head
 combi_struct!{ ContractMeta, 
     vrsn: Fixed1 // 4bit16 = version
+	revision: Uint2
 	mark: Fixed3
 	mext: Fixed4
 }
@@ -272,10 +273,6 @@ impl ContractSto {
 		Ok(obj)
 	}
 }
-
-
-
-
 
 
 

@@ -142,6 +142,13 @@ mod tests {
         let mut s2 = TestStructWithAddress::default();
         s2.from_json(&json).unwrap();
         assert_eq!(s.addr.to_hex(), s2.addr.to_hex());
+
+        // Zero address roundtrip
+        let zero_addr = Address::UNKNOWN;
+        let json_zero = zero_addr.to_json_fmt(&fmt_58);
+        let mut zero_parsed = Address::default();
+        zero_parsed.from_json(&json_zero).unwrap();
+        assert_eq!(zero_addr.to_hex(), zero_parsed.to_hex());
     }
 
     #[test]
@@ -152,5 +159,17 @@ mod tests {
         b.from_json("0").unwrap();
         assert!(!b.check());
         assert!(b.from_json("\"1\"").is_err());
+    }
+
+    #[test]
+    fn test_diamond_list_rejects_duplicates() {
+        // from_readable rejects duplicate diamond names
+        assert!(DiamondNameListMax200::from_readable("WTYUIA,WTYUIA").is_err());
+        assert!(DiamondNameListMax200::from_readable("WTYUIA,HYXYHY,WTYUIA").is_err());
+        // valid: no duplicates
+        assert!(DiamondNameListMax200::from_readable("WTYUIA,HYXYHY").is_ok());
+        // from_list_checked rejects duplicates
+        let dup = vec![DiamondName::from(*b"WTYUIA"), DiamondName::from(*b"WTYUIA")];
+        assert!(DiamondNameListMax200::from_list_checked(dup).is_err());
     }
 }

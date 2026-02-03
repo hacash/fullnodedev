@@ -143,3 +143,48 @@ fn test_complex_json_structure() {
     assert_eq!(tx.serialize(), tx2.serialize());
     assert_eq!(tx2.actions.length(), 20);
 }
+
+#[test]
+fn test_transaction_base58check_format_roundtrip() {
+    init_test_registry();
+
+    // Round-trip with Base58Check format (Address outputs bare, no b58: prefix)
+    let mut tx = TransactionType2::default();
+    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.timestamp = Timestamp::from(1730000000);
+    tx.fee = Amount::small(1, 244);
+    tx.addrlist = AddrOrList::from_addr(Address::from_readable("1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS").unwrap());
+
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(Address::from_readable("1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS").unwrap());
+    act.hacash = Amount::small(5, 244);
+    tx.actions.push(Box::new(act)).unwrap();
+
+    let fmt_58 = field::JSONFormater {
+        unit: "HAC".to_string(),
+        binary: field::JSONBinaryFormat::Base58Check,
+    };
+    let json = tx.to_json_fmt(&fmt_58);
+
+    // Verify Address is output without b58: prefix
+    assert!(json.contains("1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS"));
+    assert!(!json.contains("b58:1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS"));
+
+    let mut tx2 = TransactionType2::default();
+    tx2.from_json(&json).expect("Base58Check format JSON parse failed");
+    assert_eq!(tx.serialize(), tx2.serialize());
+}
+
+#[test]
+fn test_address_bare_base58check_in_protocol() {
+    // Verify Address can parse from JSON with bare base58check (no b58: prefix)
+    let addr_str = "1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS";
+    let mut addr = Address::default();
+    addr.from_json(&format!(r#""{}""#, addr_str)).unwrap();
+    assert_eq!(addr.readable(), addr_str);
+
+    // Verify AddrOrPtr with Address parses bare base58check
+    let mut ptr = AddrOrPtr::default();
+    ptr.from_json(&format!(r#"{{"type":1,"value":"{}"}}"#, addr_str)).unwrap();
+    assert_eq!(ptr.readable(), addr_str);
+}

@@ -132,10 +132,6 @@ macro_rules! datas_define {
                 &self.bytes
             }
 
-            pub fn as_mut(&mut self) -> &mut Vec<u8> {
-                &mut self.bytes
-            }
-
             pub fn update_count(&mut self) -> Rerr {
                 let l = self.bytes.len();
                 if l > <$lty>::MAX as usize {
@@ -174,6 +170,9 @@ macro_rules! datas_define {
             }
         
             pub fn append(&mut self, tar: &mut Vec<u8>) -> Rerr {
+                if self.bytes.len() + tar.len() > <$lty>::MAX as usize {
+                    return errf!("append size overflow")
+                }
                 self.count += tar.len() as $lty;
                 self.bytes.append(tar);
                 Ok(())

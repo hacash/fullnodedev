@@ -89,7 +89,7 @@ impl DiamondOwnedForm {
 	// return balance quantity
 	pub fn drop(&mut self, dian: &DiamondNameListMax200) -> Ret<usize> {
 		const DS: usize = DiamondName::SIZE;
-		let form: &mut Vec<u8> = self.names.as_mut(); 
+		let mut form = std::mem::take(&mut self.names).into_vec();
 		let mut mstep = form.len() / DS;
 		let mut istep = 0usize;
 		let mut dropn = 0usize; // drop count
@@ -114,11 +114,11 @@ impl DiamondOwnedForm {
 		}
 		// check
 		let ndlen = dian.length();
-		assert!(dropn == ndlen, "DiamondOwnedForm need drop {} but do {}, drop {} in {}", 
-			ndlen, dropn, dian.readable(), self.names.to_readable());
+		assert!(dropn == ndlen, "DiamondOwnedForm need drop {} but do {}, drop {}", 
+			ndlen, dropn, dian.readable());
 		// ok
 		let _ = form.split_off(mstep * DS); // drop tail
-		self.names.update_count()?;
+		self.names = BytesW4::from(form)?;
 		Ok(dropn)
 	}
 
