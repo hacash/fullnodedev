@@ -32,30 +32,12 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
     verify_bytecodes(&codes)?;
 
     // do call
-    let sta = ctx.clone_mut().state();
-    let sta = &mut VMState::wrap(sta);
-    let ctx = ctx.clone_mut();
-    let mut exenv = ExecEnv{ ctx, sta, gas };
+    let mut exenv = ExecEnv{ ctx, gas };
     let mut vmb = global_machine_manager().assign(hei);
     let res = vmb.machine.as_mut().unwrap().main_call(&mut exenv, CodeType::Bytecode, codes);
     res.map(|v|(
         gas_limit-*gas, v.to_json()
     ))
-    /*
-    unsafe {
-        let ctxptr = ctx as *mut dyn Context;
-        let staptr = ctx.state() as *mut dyn State;
-        let ctx: &mut dyn Context = &mut *ctxptr;
-        let sta: &mut dyn State = &mut *staptr;  
-        let sta = &mut VMState::wrap(sta);
-        let mut exenv = ExecEnv{ ctx, sta, gas };
-        // do execute
-        let mut vmb = global_machine_manager().assign(hei);
-        vmb.machine.as_mut().unwrap().main_call(&mut exenv, CodeType::Bytecode, codes)
-    }.map(|v|(
-        gas_limit-*gas, v.to_json()
-    ))
-    */
 
 }
 

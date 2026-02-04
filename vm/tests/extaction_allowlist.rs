@@ -2,14 +2,18 @@
 mod tests {
     use std::collections::HashMap;
 
-    use basis::interface::{ActCall, State};
+    use basis::component::Env;
+    use basis::interface::{Context, State, TransactionRead};
     use protocol::state::EmptyLogs;
     use sys::Ret;
     use vm::rt::{Bytecode, ExecMode, GasExtra, GasTable, ItrErrCode};
     use vm::rt::SpaceCap;
     use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
     use vm::ContractAddress;
-    use vm::{interpreter::execute_code, VMState};
+    use vm::host::CtxHost;
+    use vm::interpreter::execute_code;
+    use field::{Address, Amount, Hash};
+    use protocol::context::ContextInst;
 
     #[derive(Default)]
     struct MemState {
@@ -28,16 +32,23 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct PanicActCall;
+    #[derive(Default, Clone, Debug)]
+    struct DummyTx;
 
-    impl ActCall for PanicActCall {
-        fn height(&self) -> u64 {
-            1
-        }
-        fn action_call(&mut self, _: u16, _: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
-            panic!("action_call should not be invoked for unknown EXTACTION id")
-        }
+    impl field::Serialize for DummyTx {
+        fn size(&self) -> usize { 0 }
+        fn serialize(&self) -> Vec<u8> { vec![] }
+    }
+    impl basis::interface::TxExec for DummyTx {}
+    impl TransactionRead for DummyTx {
+        fn ty(&self) -> u8 { 3 }
+        fn hash(&self) -> Hash { Hash::default() }
+        fn hash_with_fee(&self) -> Hash { Hash::default() }
+        fn main(&self) -> Address { Address::default() }
+        fn addrs(&self) -> Vec<Address> { vec![Address::default()] }
+        fn fee(&self) -> &Amount { Amount::zero_ref() }
+        fn fee_purity(&self) -> u64 { 1 }
+        fn fee_extend(&self) -> Ret<(u16, Amount)> { Ok((1, Amount::zero())) }
     }
 
     #[test]
@@ -53,14 +64,17 @@ mod tests {
         let mut gas: i64 = 10_000;
         let cadr = ContractAddress::default();
 
-        let mut raw_state = MemState::default();
-        let mut sta = VMState::wrap(&mut raw_state);
-        let mut ctx = PanicActCall::default();
+        let tx = DummyTx::default();
+        let mut env = Env::default();
+        env.block.height = 1;
+        let mut ctx = ContextInst::new(env, Box::new(MemState::default()), Box::new(EmptyLogs {}), &tx);
+        let ctx: &mut dyn Context = &mut ctx;
 
         let mut ops = Stack::new(16);
         let mut locals = Stack::new(16);
         let mut heap = Heap::new(16);
 
+        let mut host = CtxHost::new(ctx);
         let res = execute_code(
             &mut pc,
             &codes,
@@ -76,9 +90,7 @@ mod tests {
             &mut heap,
             &mut GKVMap::new(4),
             &mut CtcKVMap::new(4),
-            &mut ctx,
-            &mut EmptyLogs {},
-            &mut sta,
+            &mut host,
             &cadr,
             &cadr,
         );

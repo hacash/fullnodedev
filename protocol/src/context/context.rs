@@ -72,13 +72,6 @@ impl Context for ContextInst<'_> {
         self.tex_ledger = TexLedger::default();
         self.vm_replace(VMNil::empty());
     }
-
-    fn clone_mut(&self) -> &mut dyn Context {
-        let ptr: *const ContextInst<'_> = self as *const ContextInst<'_>;
-        let ptr_mut = ptr as *mut ContextInst<'_>;
-        #[allow(invalid_reference_casting)]
-        unsafe{ &mut *ptr_mut }
-    }
     fn as_ext_caller(&mut self) -> &mut dyn ActCall { self }
     fn env(&self) -> &Env { &self.env }
     

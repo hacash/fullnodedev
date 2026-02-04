@@ -90,7 +90,7 @@ impl MachineBox {
 impl VM for MachineBox {
     fn usable(&self) -> bool { true }
     fn call(&mut self, 
-        ctx: &mut dyn Context, sta: &mut dyn State,
+        ctx: &mut dyn Context,
         ty: u8, kd: u8, data: &[u8], param: Box<dyn Any>
     ) -> Ret<(i64, Vec<u8>)> {
         use ExecMode::*;
@@ -101,8 +101,7 @@ impl VM for MachineBox {
         // env & do call
         let machine = self.machine.as_mut().unwrap();
         let not_in_calling = ! machine.is_in_calling();
-        let sta = &mut VMState::wrap(sta);
-        let exenv = &mut ExecEnv{ ctx, sta, gas };
+        let exenv = &mut ExecEnv{ ctx, gas };
         let cty: ExecMode = std_mem_transmute!(ty);
         let resv = match cty {
             Main => {
@@ -182,7 +181,7 @@ impl Machine {
 
     pub fn abst_call(&mut self, env: &mut ExecEnv, cty: AbstCall, contract_addr: ContractAddress, param: Value) -> Ret<Value> {
         let adr = contract_addr.readable();
-        let Some((owner, fnobj)) = self.r.load_abstfn(env.sta, &contract_addr, cty)? else {
+        let Some((owner, fnobj)) = self.r.load_abstfn(env.ctx, &contract_addr, cty)? else {
             return errf!("abst call {:?} not find in {}", cty, adr)
         };
         let fnobj = fnobj.as_ref().clone();
@@ -332,12 +331,14 @@ mod machine_test {
                     .unwrap(),
             );
 
-        // Put contracts into VM state.
+        // Put contracts into state, then move it into Context.
         let mut ext_state = StateMem::default();
-        let mut vmsta = crate::VMState::wrap(&mut ext_state);
-        vmsta.contract_set(&contract_base, &base.into_sto());
-        vmsta.contract_set(&contract_parent, &parent.into_sto());
-        vmsta.contract_set(&contract_child, &child.into_sto());
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_base, &base.into_sto());
+            vmsta.contract_set(&contract_parent, &parent.into_sto());
+            vmsta.contract_set(&contract_child, &child.into_sto());
+        }
 
         // Main script calls contract_main.run() using tx-provided libs (index 0).
         let main_script = r##"
@@ -355,12 +356,11 @@ mod machine_test {
             main: base_addr,
             addrs: env.tx.addrs.clone(),
         };
-        let mut ctx = ContextInst::new(env, Box::new(EmptyState {}), Box::new(EmptyLogs {}), &tx);
+        let mut ctx = ContextInst::new(env, Box::new(ext_state), Box::new(EmptyLogs {}), &tx);
 
         let mut gas: i64 = 1_000_000;
         let mut exec = crate::frame::ExecEnv {
             ctx: &mut ctx as &mut dyn Context,
-            sta: &mut vmsta,
             gas: &mut gas,
         };
 

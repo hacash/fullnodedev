@@ -220,9 +220,10 @@ impl $class {
 impl CellExec for $class {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        let sta = ctx.clone_mut().state();
-        let state = &mut CoreState::wrap(sta);
-        $asset_op(state, taradr, &self.asset)?;
+        {
+            let state = &mut CoreState::wrap(ctx.state());
+            $asset_op(state, taradr, &self.asset)?;
+        }
         // tex add
         let tex = ctx.tex_ledger();
         let rcd = tex.assets.entry(self.asset.serial).or_insert(0);

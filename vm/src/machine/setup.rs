@@ -41,10 +41,23 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value)
     let old_depth = ctx.depth().clone();
     ctx.depth_set(CallDepth::new(depth));
 
-    let sta = ctx.clone_mut().state();
-    let vmi = ctx.clone_mut().vm();
-    let ctx = ctx.clone_mut();
-    let res = vmi.call(ctx, sta, ty, mk, cd, Box::new(pm));
+    // IMPORTANT: VM execution is re-entrant through EXTACTION -> action.execute() -> setup_vm_run().
+    // We must keep the same VM instance visible via `ctx.vm()` during the whole tx/call chain;
+    // otherwise nested setup_vm_run() would allocate a new VM and then be silently overwritten.
+    //
+    // To avoid Rust borrow aliasing (`&mut ctx` + `&mut ctx.vm()`), we perform a *single* localized
+    // raw-pointer call here, keeping the VM in-place inside Context.
+    //
+    // Safety assumptions (consensus-critical):
+    // - Single-threaded execution.
+    // - No code path replaces `ctx.vm` while `VM::call` is running (only `setup_vm_run` does setup).
+    // - The VM implementation may re-enter `setup_vm_run` via EXTACTION, and that re-entry must
+    //   observe the same VM instance to preserve gas accounting and call-stack invariants.
+    let ctxptr = ctx as *mut dyn Context;
+    let res = unsafe {
+        let vm = (*ctxptr).vm() as *mut dyn VM;
+        (*vm).call(&mut *ctxptr, ty, mk, cd, Box::new(pm))
+    };
     ctx.depth_set(old_depth);
     let (cost, rv) = res?;
     Ok((cost, Value::bytes(rv)))

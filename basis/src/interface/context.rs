@@ -14,7 +14,6 @@ pub trait StateOperat {
 }
 
 pub trait Context : StateOperat + ActCall {
-    fn clone_mut(&self) -> &mut dyn Context;
     /// Reset per-transaction caches/state inside Context.
     /// This must be called whenever the underlying tx/env is replaced for a new transaction.
     fn reset_for_new_tx(&mut self);

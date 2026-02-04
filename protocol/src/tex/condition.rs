@@ -24,8 +24,7 @@ impl $class {
 impl CellExec for $class {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        let sta = ctx.clone_mut().state();
-        let bls = CoreState::wrap(sta).balance(taradr).unwrap_or_default();
+        let bls = CoreState::wrap(ctx.state()).balance(taradr).unwrap_or_default();
         let err = ||errf!("cell condition zhu check failed");
         let Some(zhu) = bls.hacash.to_zhu_u128() else {
             return err();
@@ -81,8 +80,7 @@ impl $class {
 impl CellExec for $class {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        let sta = ctx.clone_mut().state();
-        let sat = CoreState::wrap(sta).balance(taradr).unwrap_or_default().satoshi.uint();
+        let sat = CoreState::wrap(ctx.state()).balance(taradr).unwrap_or_default().satoshi.uint();
         let err = ||errf!("cell condition sat check failed");
         let cnd = self.satoshi.uint().$check_op(&sat);
         maybe!(cnd, Ok(()), err())
@@ -131,8 +129,7 @@ impl $class {
 impl CellExec for $class {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        let sta = ctx.clone_mut().state();
-        let dia = CoreState::wrap(sta).balance(taradr).unwrap_or_default().diamond.uint();
+        let dia = CoreState::wrap(ctx.state()).balance(taradr).unwrap_or_default().diamond.uint();
         let err = ||errf!("cell condition dia check failed");
         let cnd = self.diamond.uint().$check_op(&dia);
         maybe!(cnd, Ok(()), err())
@@ -186,8 +183,7 @@ impl $class {
 impl CellExec for $class {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        let sta = ctx.clone_mut().state();
-        let bls = CoreState::wrap(sta).balance(taradr).unwrap_or_default();
+        let bls = CoreState::wrap(ctx.state()).balance(taradr).unwrap_or_default();
         let aid = self.asset.serial;
         let ast = bls.asset_must(aid);
         let err = ||errf!("cell condition asset <{}> check failed", aid.uint());

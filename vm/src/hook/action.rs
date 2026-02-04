@@ -106,11 +106,10 @@ fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn A
         let mut argvs = argvs.clone();
         argvs.push_front( Value::Address(to) );
         let param = Value::Compo(CompoItem::list(argvs)?);
-        let ctx1 = ctx.clone_mut();
-        let ctx  = ctx1.clone_mut();
-        let codes = ctx1.p2sh(&from)?.code_stuff();
+        // Copy codes out to avoid holding an immutable borrow of ctx across VM execution.
+        let codes = ctx.p2sh(&from)?.code_stuff().to_vec();
         let cm = ExecMode::P2sh as u8;
-        setup_vm_run(ctx, cm, 0, codes, param)?;
+        setup_vm_run(ctx, cm, 0, &codes, param)?;
         // return value checked inside p2sh_call
     }
 

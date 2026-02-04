@@ -3,6 +3,8 @@
 * parse bytecode params
 */
 
+use crate::host::VmHost;
+
 #[inline(always)]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn read_arr<const N: usize>(codes: &[u8], pc: usize) -> [u8; N] {
@@ -171,9 +173,7 @@ pub fn execute_code(
     globals: &mut GKVMap,
     memorys: &mut CtcKVMap,
 
-    ctx: &mut dyn ActCall,
-    log: &mut dyn Logs,
-    state: &mut VMState,
+    host: &mut dyn VmHost,
 
     context_addr: &ContractAddress, 
     current_addr: &ContractAddress, 
@@ -192,7 +192,7 @@ pub fn execute_code(
     let cap = space_cap;
     let ops = operands;
     let gst = gas_extra;
-    let hei: u64 = ctx.height();
+    let hei: u64 = host.height();
 
     // check code length
     // let codelen = codes.len();
@@ -245,7 +245,7 @@ pub fn execute_code(
                 let mut bdv = ops.peek()?.canbe_ext_call_data(heap)?;
                 actbody.append(&mut bdv);
             }
-            let (bgasu, cres) = ctx.action_call(kid, actbody).map_err(|e|
+            let (bgasu, cres) = host.ext_action_call(kid, actbody).map_err(|e|
                 ItrErr::new(ExtActCallError, e.as_str()))?;
             gas += bgasu as i64;
             let resv;
@@ -383,21 +383,21 @@ pub fn execute_code(
             GET2  => ops.push(locals.load(2)?)?,
             GET3  => ops.push(locals.load(3)?)?,
             // storage
-            SREST => { nsr!(); *ops.peek()? = state.srest(hei, context_addr, ops.peek()?)? }
-            SLOAD => { nsr!(); *ops.peek()? = state.sload(hei, context_addr, ops.peek()?)?}
-            SDEL  => { nsw!(); state.sdel(context_addr, ops.pop()?)?; }
-            SSAVE => { nsw!(); let v = ops.pop()?; state.ssave(hei, context_addr, ops.pop()?, v)?; }
-            SRENT => { nsw!(); let t = ops.pop()?; gas += state.srent(gst, hei, context_addr, ops.pop()?, t)?; }
+            SREST => { nsr!(); let k = ops.peek()?.clone(); *ops.peek()? = host.srest(hei, context_addr, &k)?; }
+            SLOAD => { nsr!(); let k = ops.peek()?.clone(); *ops.peek()? = host.sload(hei, context_addr, &k)?; }
+            SDEL  => { nsw!(); host.sdel(context_addr, ops.pop()?)?; }
+            SSAVE => { nsw!(); let v = ops.pop()?; let k = ops.pop()?; host.ssave(hei, context_addr, k, v)?; }
+            SRENT => { nsw!(); let t = ops.pop()?; let k = ops.pop()?; gas += host.srent(gst, hei, context_addr, k, t)?; }
             // global & memory
             GPUT => { nsw!(); let v = ops.pop()?; globals.put(ops.pop()?, v)?; },
             GGET => { nsr!(); *ops.peek()? = globals.get(ops.peek()?)? }
             MPUT => { nsw!(); let v = ops.pop()?; memorys.entry(context_addr)?.put(ops.pop()?, v)? }
             MGET => { nsr!(); *ops.peek()? = memorys.entry(context_addr)?.get(ops.peek()?)? }
             // log (t1,[t2,t3,t4,]d)
-            LOG1 => { nsw!(); record_log(context_addr, log, ops.popn(2)?)?; }
-            LOG2 => { nsw!(); record_log(context_addr, log, ops.popn(3)?)?; }
-            LOG3 => { nsw!(); record_log(context_addr, log, ops.popn(4)?)?; }
-            LOG4 => { nsw!(); record_log(context_addr, log, ops.popn(5)?)?; }
+            LOG1 => { nsw!(); host.log_push(context_addr, ops.popn(2)?)?; }
+            LOG2 => { nsw!(); host.log_push(context_addr, ops.popn(3)?)?; }
+            LOG3 => { nsw!(); host.log_push(context_addr, ops.popn(4)?)?; }
+            LOG4 => { nsw!(); host.log_push(context_addr, ops.popn(5)?)?; }
             // logic
             AND  => binop_btw(ops, lgc_and)?,
             OR   => binop_btw(ops, lgc_or)?,
@@ -576,21 +576,6 @@ fn unpack_list(mut i: u8, locals: &mut Stack, list: &VecDeque<Value>) -> VmrtErr
         *locals.edit(i)? = item.clone();
         i += 1;
     }
-    Ok(())
-}
-
-
-fn record_log(adr: &ContractAddress, log: &mut dyn Logs, tds: Vec<Value>) -> VmrtErr {
-    /*
-    print!("record_log: ");
-    for i in (0 .. tds.len()).rev() {
-        print!("{}: {}, ", i, tds[i].to_string());
-    }
-    println!("tds: {}", tds.len());
-    */
-    // save
-    let lgdt = VmLog::new(adr.to_addr(), tds)?;
-    log.push(&lgdt); // record
     Ok(())
 }
 

@@ -4,6 +4,8 @@
 
 */
 
+use basis::interface::Context;
+
 
 impl Resoure {
 
@@ -125,43 +127,45 @@ impl Resoure {
     }
 
 
-    pub fn load_abstfn(&mut self, vmsta: &mut VMState, addr: &ContractAddress, scty: AbstCall) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
-        self.load_fn_by_search_inherits(vmsta, addr, FnKey::Abst(scty))
+    pub fn load_abstfn(&mut self, ctx: &mut dyn Context, addr: &ContractAddress, scty: AbstCall) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
+        let mut vmsta = VMState::wrap(ctx.state());
+        self.load_fn_by_search_inherits(&mut vmsta, addr, FnKey::Abst(scty))
     }
 
     /*
         return (change current address, fnobj)
     */
     pub fn load_must_call(&mut self, 
-        vmsta: &mut VMState, fptr: Funcptr, 
+        ctx: &mut dyn Context, fptr: Funcptr, 
         dstadr: &ContractAddress, srcadr: &ContractAddress,
         adrlibs: &Option<Vec<ContractAddress>>
     ) -> VmrtRes<(Option<ContractAddress>, Arc<FnObj>)> {
+        let mut vmsta = VMState::wrap(ctx.state());
         use CallTarget::*;
         use ItrErrCode::*;
         match match fptr.target {
             This => {
-                let Some((a, b)) = self.load_userfn(vmsta, dstadr, fptr.fnsign)? else {
+                let Some((a, b)) = self.load_userfn(&mut vmsta, dstadr, fptr.fnsign)? else {
                     return itr_err_code!(CallNotExist)
                 };
                 (a, Some(b))
             }
             Self_ => {
-                let Some((a, b)) = self.load_userfn(vmsta, srcadr, fptr.fnsign)? else {
+                let Some((a, b)) = self.load_userfn(&mut vmsta, srcadr, fptr.fnsign)? else {
                     return itr_err_code!(CallNotExist)
                 };
                 (a, Some(b))
             }
             Super => {
-                let Some((a, b)) = self.load_userfn_super(vmsta, srcadr, fptr.fnsign)? else {
+                let Some((a, b)) = self.load_userfn_super(&mut vmsta, srcadr, fptr.fnsign)? else {
                     return itr_err_code!(CallNotExist)
                 };
                 (a, Some(b))
             }
             // Addr(ctxadr)  => (Some(ctxadr.clone()), self.load_userfn(vmsta, &ctxadr, fptr.fnsign)?),
             Libidx(lib)   => match adrlibs {
-                Some(ads) => self.load_fn_by_search_list(vmsta, &ads, lib, fptr.fnsign),
-                _ => self.load_fn_by_search_librarys(vmsta, srcadr, lib, fptr.fnsign),
+                Some(ads) => self.load_fn_by_search_list(&mut vmsta, &ads, lib, fptr.fnsign),
+                _ => self.load_fn_by_search_librarys(&mut vmsta, srcadr, lib, fptr.fnsign),
             }.map(|(a,b)|(Some(a), b))?,
         }  {
             (b, Some(c))  => Ok((b, c)),

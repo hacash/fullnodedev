@@ -77,7 +77,7 @@ impl CallFrame {
                     };
                     // depth==0: entry layer (Main/P2sh) uses tx libs; depth>0: nested/Abst uses no libs
                     let libs_ptr = maybe!(depth == 0, &libs, &libs_none);
-                    let (chgsrcadr, fnobj) = r.load_must_call(env.sta, fnptr.clone(), 
+                    let (chgsrcadr, fnobj) = r.load_must_call(env.ctx, fnptr.clone(), 
                         &ctxadr, &curadr, libs_ptr)?;
                     let fnobj = fnobj.as_ref().clone();
                     let fn_is_public = fnobj.check_conf(FnConf::Public);
