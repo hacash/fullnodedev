@@ -55,7 +55,7 @@ pub struct RecentBlockInfo {
 
 
 pub fn create_recent_block_info(blk: &dyn BlockRead) -> RecentBlockInfo {
-    let coinbase = &blk.transactions()[0];
+    let coinbase = blk.coinbase_transaction().expect("block must have coinbase");
     RecentBlockInfo {
         height:  blk.height().uint(),
         hash:    blk.hash(),

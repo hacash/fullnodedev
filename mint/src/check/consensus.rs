@@ -48,7 +48,7 @@ fn impl_blk_found(this: &HacashMinter, curblkhead: &dyn BlockRead, sto: &dyn Sto
         let (_, difnum, _) = this.difficulty.req_cycle_block(curhei - 1, sto);
         let bign = u32_to_biguint(difnum).mul(4usize); // max is 4 times
         let mindiffhx = biguint_to_hash(&bign);
-        if hash_big_than(cblkhx.as_ref(), &mindiffhx) {
+        if hash_bigger_than(cblkhx.as_ref(), &mindiffhx) {
             return errf!("block found {} PoW hashrates check failed cannot more than {} but got {}", 
                 curhei, hex::encode(mindiffhx),  hex::encode(cblkhx))
         }
@@ -59,7 +59,7 @@ fn impl_blk_found(this: &HacashMinter, curblkhead: &dyn BlockRead, sto: &dyn Sto
     if difnum != curdifnum {
         return errf!("found block {} PoW difficulty must be {} but got {}", curhei, difnum, curdifnum)
     }
-    if hash_big_than(cblkhx.as_ref(), &diffhx) {
+    if hash_bigger_than(cblkhx.as_ref(), &diffhx) {
         return errf!("found block {} PoW hashrates check failed cannot more than {} but got {}", 
             curhei, hex::encode(diffhx),  hex::encode(cblkhx))
     }
@@ -101,7 +101,7 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
         return errf!("height {} PoW difficulty check failed must be {} but got {}", curhei, tarn, curn)
     }
     // must check hashrates cuz impl_prepare not do check
-    if hash_big_than(curblk.hash().as_ref(), &tarhx) {
+    if hash_bigger_than(curblk.hash().as_ref(), &tarhx) {
         return errf!("height {} PoW hashrates check failed cannot more than {} but got {}", 
             curhei, hex::encode(tarhx),  hex::encode(curblk.hash()))
     }

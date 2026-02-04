@@ -44,7 +44,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         hac_sub(ctx, right_addr, right_amt)?;
     }
     // check id size
-    check_vaild_store_item_key("channel", &cid, ChannelId::SIZE)?;
+    check_valid_store_item_key("channel", &cid, ChannelId::SIZE)?;
     // check format
     if left_addr == right_addr {
         return errf!("left address cannot equal with right address")
@@ -127,7 +127,7 @@ action_define!{ ChannelClose, 3,
 fn channel_close(this: &ChannelClose, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     
     let cid = &this.channel_id;
-    check_vaild_store_item_key("channel", cid, ChannelId::SIZE)?;
+    check_valid_store_item_key("channel", cid, ChannelId::SIZE)?;
 
     let pending_height = ctx.env().block.height;
     let state = MintState::wrap(ctx.state());

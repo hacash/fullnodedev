@@ -186,7 +186,7 @@ pub fn engraved_one_diamond(pending_height: u64, state: &mut CoreState, addr :&A
 	}
 	// do engraved
     diasto.prev_engraved_height = BlockHeight::from(pending_height);
-    diasto.inscripts.push(content.clone()).unwrap();
+    diasto.inscripts.push(content.clone())?;
 	// save
 	state.diamond_set(diamond, &diasto);
 	// ok finish
@@ -203,7 +203,7 @@ pub fn engraved_clean_one_diamond(_pending_height: u64, state: &mut CoreState, a
     let mut diasto = check_diamond_status(state, addr, diamond)?;
     let diaslt = must_have!(format!("diamond {}", diamond.to_readable()), state.diamond_smelt(&diamond));
     // check
-    if diasto.inscripts.length() <= 0 {
+    if diasto.inscripts.length() == 0 {
         return errf!("cannot find any inscriptions in HACD {}", diamond.to_readable())    
     }
     // burning cost bid fee

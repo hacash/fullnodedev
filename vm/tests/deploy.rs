@@ -19,8 +19,8 @@ mod deploy {
         let _cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
 
         let contract = Contract::new()
-            .func(Func::new("f1").public().fitsh(" return 1 ").unwrap())
-            .func(Func::new("f2").public().fitsh(" return 2 ").unwrap());
+            .func(Func::new("f1").unwrap().public().fitsh(" return 1 ").unwrap())
+            .func(Func::new("f2").unwrap().public().fitsh(" return 2 ").unwrap());
         contract.testnet_deploy_print("8:244");
 
         let contract = Contract::new()
@@ -29,8 +29,8 @@ mod deploy {
                     .bytecode(build_codes!(P1 RET))
                     .unwrap(),
             )
-            .func(Func::new("f4").public().fitsh(" return 4 ").unwrap());
-        contract.testnet_update_print(_cadr, "8:244");
+            .func(Func::new("f4").unwrap().public().fitsh(" return 4 ").unwrap());
+        contract.testnet_update_print(_cadr, "8:244", 1);
     }
 
     #[test]
@@ -51,14 +51,14 @@ mod deploy {
                     .bytecode(build_codes!(P0 RET))
                     .unwrap(),
             )
-            .func(Func::new("f1").public().fitsh(" return 1 ").unwrap())
-            .func(Func::new("f2").public().fitsh(" return 2 ").unwrap());
+            .func(Func::new("f1").unwrap().public().fitsh(" return 1 ").unwrap())
+            .func(Func::new("f2").unwrap().public().fitsh(" return 2 ").unwrap());
         contract.testnet_deploy_print("8:244");
 
         let contract = Contract::new()
-            .func(Func::new("f2").public().fitsh(" return 2 ").unwrap())
-            .func(Func::new("f3").public().fitsh(" return 3 ").unwrap());
-        contract.testnet_update_print(_cadr, "8:244");
+            .func(Func::new("f2").unwrap().public().fitsh(" return 2 ").unwrap())
+            .func(Func::new("f3").unwrap().public().fitsh(" return 3 ").unwrap());
+        contract.testnet_update_print(_cadr, "8:244", 1);
 
         let contract = Contract::new()
             .syst(
@@ -66,14 +66,14 @@ mod deploy {
                     .bytecode(build_codes!(P1 RET))
                     .unwrap(),
             )
-            .func(Func::new("f4").public().fitsh(" return 4 ").unwrap());
-        contract.testnet_update_print(_cadr, "8:244");
+            .func(Func::new("f4").unwrap().public().fitsh(" return 4 ").unwrap());
+        contract.testnet_update_print(_cadr, "8:244", 2);
 
-        let contract = Contract::new().func(Func::new("f5").public().fitsh(" return 5 ").unwrap());
-        contract.testnet_update_print(_cadr, "8:244");
+        let contract = Contract::new().func(Func::new("f5").unwrap().public().fitsh(" return 5 ").unwrap());
+        contract.testnet_update_print(_cadr, "8:244", 3);
 
-        let contract = Contract::new().func(Func::new("f4").public().fitsh(" return 41 ").unwrap());
-        contract.testnet_update_print(_cadr, "8:244");
+        let contract = Contract::new().func(Func::new("f4").unwrap().public().fitsh(" return 41 ").unwrap());
+        contract.testnet_update_print(_cadr, "8:244", 4);
 
         let contract = Contract::new()
             .syst(
@@ -81,11 +81,11 @@ mod deploy {
                     .bytecode(build_codes!(P1 RET))
                     .unwrap(),
             )
-            .func(Func::new("f6").public().fitsh(" return 6 ").unwrap());
-        contract.testnet_update_print(_cadr, "8:244");
+            .func(Func::new("f6").unwrap().public().fitsh(" return 6 ").unwrap());
+        contract.testnet_update_print(_cadr, "8:244", 5);
 
-        let contract = Contract::new().func(Func::new("f4").public().fitsh(" return 42 ").unwrap());
-        contract.testnet_update_print(_cadr, "8:244");
+        let contract = Contract::new().func(Func::new("f4").unwrap().public().fitsh(" return 42 ").unwrap());
+        contract.testnet_update_print(_cadr, "8:244", 6);
     }
 
     #[test]
@@ -162,7 +162,7 @@ mod deploy {
             )
             .syst(Abst::new(PermitHAC).bytecode(permit_hac).unwrap())
             .syst(Abst::new(PayableHAC).bytecode(payable_hac_codes).unwrap())
-            .func(Func::new("recursion").fitsh(recursion_fnstr).unwrap());
+            .func(Func::new("recursion").unwrap().fitsh(recursion_fnstr).unwrap());
         // println!("\n\n{}\n\n", contract.serialize().to_hex());
         contract.testnet_deploy_print("2:244");
     }

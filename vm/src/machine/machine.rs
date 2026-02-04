@@ -307,13 +307,13 @@ mod machine_test {
         // Then inside Parent.f(), `this.g()` must resolve in ctxadr (Child), `self.g()` in curadr (Parent),
         // and `super.g()` in Parent's direct base (Base).
 
-        let base = Contract::new().func(Func::new("g").fitsh("return 3").unwrap());
+        let base = Contract::new().func(Func::new("g").unwrap().fitsh("return 3").unwrap());
 
         let parent = Contract::new()
             .inh(contract_base.to_addr())
-            .func(Func::new("g").fitsh("return 2").unwrap())
+            .func(Func::new("g").unwrap().fitsh("return 2").unwrap())
             .func(
-                Func::new("f")
+                Func::new("f").unwrap()
                     .fitsh(
                         r##"
                         return this.g() * 10000 + self.g() * 100 + super.g()
@@ -324,9 +324,9 @@ mod machine_test {
 
         let child = Contract::new()
             .inh(contract_parent.to_addr())
-            .func(Func::new("g").fitsh("return 1").unwrap())
+            .func(Func::new("g").unwrap().fitsh("return 1").unwrap())
             .func(
-                Func::new("run")
+                Func::new("run").unwrap()
                     .public()
                     .fitsh(
                         r##"

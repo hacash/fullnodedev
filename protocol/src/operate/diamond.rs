@@ -99,69 +99,6 @@ pub fn check_diamond_status(state: &mut CoreState, addr_from: &Address, hacd_nam
 }
 
 
-
-/**
-* 
-* return total cost
-*/
-pub fn engraved_one_diamond(pending_height: u64, state: &mut CoreState, addr :&Address, diamond: &DiamondName, content: &BytesW1) -> Ret<Amount> {
-    let mut diasto = check_diamond_status(state, addr, diamond)?;
-    // check height
-    let prev_insc_hei = *diasto.prev_engraved_height;
-    let check_prev_block = 1000u64;
-    if prev_insc_hei + check_prev_block > pending_height {
-        return errf!("only one inscription can be made every {} blocks", check_prev_block)
-    }
-
-    // check insc
-    let haveng = diasto.inscripts.length();
-    if haveng >= 200 {
-        return errf!("maximum inscriptions for one diamond is 200")
-    }
-
-    let diaslt = must_have!(format!("diamond smelt {}", diamond.to_readable()), state.diamond_smelt(&diamond));
-
-    // cost
-    let mut cost = Amount::default(); // zero
-	if haveng >= 10 {
-		// burning cost bid fee 1/10 from 11 insc
-		cost = Amount::coin(*diaslt.average_bid_burn as u64, 247);
-	}
-
-	// do engraved
-    diasto.prev_engraved_height = BlockHeight::from(pending_height);
-    diasto.inscripts.push(content.clone())?;
-	// save
-	state.diamond_set(diamond, &diasto);
-
-	// ok finish
-	Ok(cost)
-}
-
-/* 
-* return total cost
-*/
-pub fn engraved_clean_one_diamond(_pending_height: u64, state: &mut CoreState, addr :&Address, diamond: &DiamondName) -> Ret<Amount> {
-
-    let mut diasto = check_diamond_status(state, addr, diamond)?;
-    let diaslt = must_have!(format!("diamond smelt {}", diamond.to_readable()), state.diamond_smelt(&diamond));
-    // check
-    if diasto.inscripts.length() <= 0 {
-        return errf!("cannot find any inscriptions in HACD {}", diamond.to_readable())    }
-
-    // burning cost bid fee
-    let cost = Amount::mei(*diaslt.average_bid_burn as u64);
-	// do clean
-    diasto.prev_engraved_height = BlockHeight::from(0);
-    diasto.inscripts = Inscripts::default();
-	// save
-	state.diamond_set(diamond, &diasto);
-
-	// ok finish
-	Ok(cost)
-}
-
-
 /**
 * diamond owned push or drop
 */
@@ -185,14 +122,17 @@ pub fn diamond_owned_append(state: &mut CoreState, address: &Address, list: Diam
 
 
 pub fn diamond_owned_move(state: &mut CoreState, from: &Address, to: &Address, list: &DiamondNameListMax200) -> Rerr {
+    if from == to {
+        return errf!("cannot transfer to self")
+    }
     // do drop
     let from_owned = state.diamond_owned(from);
     if let None = from_owned {
         return errf!("from diamond owned form not find")
     }
     let mut from_owned = from_owned.unwrap();
-    let blsnum = from_owned.drop(list)?;
-    if blsnum > 0 {
+    let _blsnum = from_owned.drop(list)?;
+    if from_owned.names.length() > 0 {
         state.diamond_owned_set(from, &from_owned);
     }else{
         state.diamond_owned_del(from);

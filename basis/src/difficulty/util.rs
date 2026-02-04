@@ -60,7 +60,7 @@ pub fn hash_to_u32(hx: &[u8; HXS]) -> u32 {
 
 /******************/
 
-pub fn hash_big_than(src: &[u8], tar: &[u8]) -> bool {
+pub fn hash_bigger_than(src: &[u8], tar: &[u8]) -> bool {
     let mut sz = src.len();
     if sz > tar.len() {
         sz = tar.len();

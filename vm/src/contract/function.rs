@@ -69,10 +69,16 @@ pub struct Func {
 #[allow(dead_code)]
 impl Func {
     
-    pub fn new(fname: &str) -> Self {
+    pub fn new(fname: &str) -> Ret<Self> {
+        let Some(c0) = fname.as_bytes().first().copied() else {
+            return errf!("userfunc name cannot be empty")
+        };
+        if c0.is_ascii_uppercase() {
+            return errf!("userfunc name '{}' cannot start with uppercase", fname)
+        }
         let mut func = ContractUserFunc::new();
         func.sign = Fixed4::from(calc_func_sign(fname));
-        Self { func }
+        Ok(Self { func })
     }
 
     define_func_codes!{}

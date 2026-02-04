@@ -46,7 +46,7 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
     let body_tokens = parse_func_body_tokens(state)?;
 
     // Setup Func
-    let mut func = Func::new(&name);
+    let mut func = Func::new(&name)?;
     if is_public { func = func.public(); }
     
     let arg_types: Vec<ValueTy> = args.iter().map(|(_, t)| *t).collect();

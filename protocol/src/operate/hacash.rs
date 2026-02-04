@@ -20,7 +20,7 @@ macro_rules! amount_op_func_define {
             let newhac = $exec; // do add or sub
             if newhac.size() > 12 {
                 return errf!("address {} amount {} size {} over 12 can not to store", 
-                    $addr.readable(), newhac.size(), newhac)
+                    $addr.readable(), newhac, newhac.size())
             }
             bls.hacash = newhac.clone();
             state.balance_set($addr, &bls);

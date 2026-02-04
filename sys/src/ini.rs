@@ -58,11 +58,10 @@ pub fn ini_must_bool(sec: &HashMap<String, Option<String>>, key: &str, dv: bool)
     }
     let val = ini_must(sec, key, dfv);
     match val.as_str() {
-        "_" => false,
-        "false" => false,
-        "False" => false,
-        "FALSE" => false,
-        "0" => false,
+        "false"|"False"|"FALSE"|
+        "none"|"None"|"NONE"|
+        "null"|"Null"|"NULL"|
+        "0"|"_"|""=> false,
         _ => true,
     }
 }
@@ -71,7 +70,7 @@ pub fn ini_must_bool(sec: &HashMap<String, Option<String>>, key: &str, dv: bool)
 pub fn ini_must_account(sec: &HashMap<String, Option<String>>, key: &str) -> Account {
     let pass = ini_must(sec, key, "123456");
     let Ok(acc) = Account::create_by(&pass) else {
-        panic!("[Config Error] account password {} error.", &pass)
+        panic!("[Config Error] account password for key '{}' is invalid.", key)
     };
     acc
 }

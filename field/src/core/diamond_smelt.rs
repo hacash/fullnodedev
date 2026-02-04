@@ -90,34 +90,39 @@ impl DiamondOwnedForm {
 	pub fn drop(&mut self, dian: &DiamondNameListMax200) -> Ret<usize> {
 		const DS: usize = DiamondName::SIZE;
 		let mut form = std::mem::take(&mut self.names).into_vec();
-		let mut mstep = form.len() / DS;
-		let mut istep = 0usize;
-		let mut dropn = 0usize; // drop count
+		if form.len() % DS != 0 {
+			return errf!("DiamondOwnedForm names length {} is not divisible by {}", form.len(), DS)
+		}
+		let mut len = form.len() / DS;
+		let mut i = 0;
+		let mut dropn = 0;
 		let mut delst = dian.hashset();
-		// loop
-		while istep < mstep {
-			let ix = istep * DS;
-			let id = DiamondName::from(form[ix .. ix+DS].try_into().unwrap());
+		while i < len {
+			let id = DiamondName::from(form[i*DS..i*DS+DS].try_into().unwrap());
 			if delst.contains(&id) {
-				mstep -= 1;
 				dropn += 1;
 				delst.remove(&id);
-				let tail = mstep*DS .. mstep*DS+DS;
-				form.copy_within(tail, ix);
-				if delst.is_empty() {
-					break // all finish
+				len -= 1;
+				// Only copy if i < len (there's a valid element after deletion)
+				// When deleting the last element (i == len-1), len becomes len-1, and i == len, so no copy needed
+				if i < len {
+					form.copy_within(len*DS..len*DS+DS, i*DS);
 				}
-			}else{
-				// next
-				istep += 1;
+				if delst.is_empty() { break }
+				// Note: Don't increment i here because the element at position i has been replaced
+				// We need to check the new element at position i again
+			} else {
+				i += 1;
 			}
 		}
-		// check
-		let ndlen = dian.length();
-		assert!(dropn == ndlen, "DiamondOwnedForm need drop {} but do {}, drop {}", 
-			ndlen, dropn, dian.readable());
-		// ok
-		let _ = form.split_off(mstep * DS); // drop tail
+		// System-level invariant: all requested diamonds must be found
+		if !delst.is_empty() {
+			return errf!("DiamondOwnedForm drop: some diamonds {} not found in form, found {}, requested {}", 
+				dian.readable(), dropn, dian.length())
+		}
+		assert!(dropn == dian.length(), "DiamondOwnedForm need drop {} but do {}, drop {}", 
+			dian.length(), dropn, dian.readable());
+		form.truncate(len * DS);
 		self.names = BytesW4::from(form)?;
 		Ok(dropn)
 	}

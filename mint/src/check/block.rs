@@ -104,9 +104,11 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
 
     macro_rules! ok_push_one_tx {
         ($a: expr) => {
-            trs.push($a.objc.clone()).unwrap();
+            if trs.push($a.objc.clone()).is_err() {
+                return false
+            }
             trshxs.push($a.objc.as_ref().as_read().hash_with_fee());
-            *trslen += 1; 
+            *trslen += 1;
         }
     }
 

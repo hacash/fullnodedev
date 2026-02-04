@@ -72,7 +72,7 @@ impl Balance {
 		for i in 0..assets.len() {
 			let ast = assets.get_mut(i).unwrap();
 			if ast.serial == amt.serial {
-				if 0 == *amt.amount {
+				if amt.amount.is_zero() {
 					self.assets.drop(i).unwrap();// delete
 				} else {
 					*ast = amt; // update
@@ -83,10 +83,11 @@ impl Balance {
 		if amt.amount.is_zero() {
 			return Ok(()) // zero do nothing
 		}
-		self.assets.push(amt)?;
-		if self.assets.length() > BALANCE_ASSET_MAX {
+		// Fix: Check length before push to avoid inconsistent state
+		if self.assets.length() >= BALANCE_ASSET_MAX {
 			return errf!("balance asset item quantity cannot big than {}", BALANCE_ASSET_MAX)
 		}
+		self.assets.push(amt)?;
 		Ok(())
 	}
 

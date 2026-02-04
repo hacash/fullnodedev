@@ -20,14 +20,14 @@ mod call {
     fn inh1() {
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-            .func(Func::new("f1").public().fitsh("return 1").unwrap())
+            .func(Func::new("f1").unwrap().public().fitsh("return 1").unwrap())
             .testnet_deploy_print_by_nonce("8:244", 0);
 
         // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         Contract::new()
             .lib(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
             .func(
-                Func::new("f2")
+                Func::new("f2").unwrap()
                     .fitsh(
                         "
             lib C = 0
@@ -42,7 +42,7 @@ mod call {
         Contract::new()
             .lib(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
             .func(
-                Func::new("f3")
+                Func::new("f3").unwrap()
                     .fitsh(
                         "
             lib C = 0
@@ -58,7 +58,7 @@ mod call {
             .lib(addr("WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm"))
             .inh(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
             .func(
-                Func::new("f4")
+                Func::new("f4").unwrap()
                     .public()
                     .fitsh(
                         "
@@ -112,7 +112,7 @@ mod call {
         );
 
         let contract =
-            Contract::new().func(Func::new("recursion").public().fitsh(recursion_fn).unwrap());
+            Contract::new().func(Func::new("recursion").unwrap().public().fitsh(recursion_fn).unwrap());
         // println!("\n\n{}\n\n", contract.serialize().to_hex());
         contract.testnet_deploy_print("8:244");
     }

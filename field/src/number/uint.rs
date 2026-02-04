@@ -109,7 +109,7 @@ macro_rules! uint_define {
             }
 
             pub fn from_usize(v: usize) -> Ret<Self> {
-                // 使用 u128 比较，避免 32 位平台上 Self::MAX as usize 截断导致误判
+                // Use u128 comparison to avoid truncation on 32-bit platforms
                 if (v as u128) > (Self::MAX as u128) {
                     return errf!("{} value {} overflow max {}", stringify!($class), v, Self::MAX)
                 }

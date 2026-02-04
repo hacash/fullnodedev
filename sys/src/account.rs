@@ -67,7 +67,11 @@ impl Account {
         // is private key
         if pass.len() == PRIVATE_SIZE * 2 {
             if let Ok(bts) = hex::decode(pass) {
-                return Account::create_by_secret_key_value(bts.try_into().unwrap())
+                if bts.len() == PRIVATE_SIZE {
+                    if let Ok(key) = bts.try_into() {
+                        return Account::create_by_secret_key_value(key);
+                    }
+                }
             }
         }
         // is passward
@@ -122,7 +126,7 @@ impl Account {
 
     pub fn to_base58check(s: &[u8]) -> String {
         let v = maybe!(s.len() > 0, s[0], 0);
-        let b = maybe!(s.len() > 1, &s[1..], &s[..]);
+        let b = maybe!(s.len() > 0, &s[1..], &[] as &[u8]);
         b.to_base58check(v)
     }
 

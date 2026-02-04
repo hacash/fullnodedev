@@ -46,18 +46,18 @@ mod inherit {
     fn deploy() {
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         let contract = Contract::new()
-            .func(Func::new("f1").public().fitsh("return 1").unwrap())
+            .func(Func::new("f1").unwrap().public().fitsh("return 1").unwrap())
             // .func(Func::new("f2").fitsh(" return 2 ").unwrap())
-            .func(Func::new("f3").fitsh("return 3").unwrap());
+            .func(Func::new("f3").unwrap().fitsh("return 3").unwrap());
         contract.testnet_deploy_print("8:244");
 
         // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         let contract = Contract::new()
             .inh(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
-            .func(Func::new("f3").fitsh("return 31").unwrap())
-            .func(Func::new("f4").fitsh("return 4").unwrap())
+            .func(Func::new("f3").unwrap().fitsh("return 31").unwrap())
+            .func(Func::new("f4").unwrap().fitsh("return 4").unwrap())
             .func(
-                Func::new("f5")
+                Func::new("f5").unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -77,15 +77,15 @@ mod inherit {
     fn deploy2() {
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-            .func(Func::new("f1").public().fitsh("return 1").unwrap())
-            .func(Func::new("f2").fitsh("return 2").unwrap())
-            .func(Func::new("f3").fitsh("return 3").unwrap())
+            .func(Func::new("f1").unwrap().public().fitsh("return 1").unwrap())
+            .func(Func::new("f2").unwrap().fitsh("return 2").unwrap())
+            .func(Func::new("f3").unwrap().fitsh("return 3").unwrap())
             .testnet_deploy_print("8:244");
 
         // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
         Contract::new()
-            .func(Func::new("f3").fitsh("return 33").unwrap())
-            .func(Func::new("f4").fitsh("return 44").unwrap())
+            .func(Func::new("f3").unwrap().fitsh("return 33").unwrap())
+            .func(Func::new("f4").unwrap().fitsh("return 44").unwrap())
             .testnet_deploy_print_by_nonce("8:244", 1);
 
         // WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
@@ -94,7 +94,7 @@ mod inherit {
             .inh(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
             .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
             .func(
-                Func::new("f5")
+                Func::new("f5").unwrap()
                     .public()
                     .fitsh(
                         "
@@ -111,17 +111,17 @@ mod inherit {
 
         // bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
         Contract::new()
-            .func(Func::new("f6").fitsh("return 6").unwrap())
+            .func(Func::new("f6").unwrap().fitsh("return 6").unwrap())
             .testnet_deploy_print_by_nonce("8:244", 3);
 
         // ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz
         Contract::new()
-            .func(Func::new("f7").fitsh("return 7").unwrap())
+            .func(Func::new("f7").unwrap().fitsh("return 7").unwrap())
             .testnet_deploy_print_by_nonce("8:244", 4);
 
         // bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe
         Contract::new()
-            .func(Func::new("f8").fitsh("return 8").unwrap())
+            .func(Func::new("f8").unwrap().fitsh("return 8").unwrap())
             .testnet_deploy_print_by_nonce("8:244", 5);
 
         //
@@ -131,7 +131,7 @@ mod inherit {
             .inh(addr("ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz"))
             // .inh(addr("bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe"))
             .func(
-                Func::new("f9")
+                Func::new("f9").unwrap()
                     .public()
                     .fitsh(
                         "
@@ -148,7 +148,7 @@ mod inherit {
                     )
                     .unwrap(),
             )
-            .testnet_update_print(adr, "8:244");
+            .testnet_update_print(adr, "8:244", 1);
     }
 
     #[test]

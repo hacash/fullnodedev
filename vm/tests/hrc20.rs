@@ -41,7 +41,7 @@ mod hrc20 {
         Contract::new()
             // info
             .func(
-                Func::new("info")
+                Func::new("info").unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -65,7 +65,7 @@ mod hrc20 {
             )
             // total_supply
             .func(
-                Func::new("total_supply")
+                Func::new("total_supply").unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -81,7 +81,7 @@ mod hrc20 {
             )
             // balance_of
             .func(
-                Func::new("balance_of")
+                Func::new("balance_of").unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -99,7 +99,7 @@ mod hrc20 {
             )
             // transfer
             .func(
-                Func::new("transfer")
+                Func::new("transfer").unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -113,7 +113,7 @@ mod hrc20 {
             )
             // extend
             .func(
-                Func::new("renewal")
+                Func::new("renewal").unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -134,7 +134,7 @@ mod hrc20 {
                     .unwrap(),
             )
             .func(
-                Func::new("offering")
+                Func::new("offering").unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -159,7 +159,7 @@ mod hrc20 {
             )
             // private
             .func(
-                Func::new("do_transfer")
+                Func::new("do_transfer").unwrap()
                     .fitsh(
                         r##"
             param { addr_from, addr_to, amount }

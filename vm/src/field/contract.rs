@@ -41,6 +41,27 @@ combi_list!(ContractAbstCallList, Uint1, ContractAbstCall);
 combi_list!(ContractUserFuncList, Uint2, ContractUserFunc);
 
 
+// Replace At
+combi_struct!{ LibReplaceAt,
+	idx: Uint1
+	addr: ContractAddress
+}
+
+combi_list!(LibReplaceAtList, Uint1, LibReplaceAt);
+
+
+// Contract Edit
+combi_struct!{ ContractEdit,
+	expect_revision: Uint2
+	inherits_add:  ContractAddrsssW1
+	inherits_replace_at: LibReplaceAtList
+	librarys_add:  ContractAddrsssW1
+	librarys_replace_at: LibReplaceAtList
+	abstcalls: ContractAbstCallList
+	userfuncs: ContractUserFuncList
+}
+
+
 impl ContractMeta {
 
 	fn check(&self, _hei: u64) -> VmrtErr {
@@ -133,6 +154,154 @@ combi_struct!{ ContractSto,
 
 impl ContractSto {
 
+	pub fn apply_edit(&mut self, edit: &ContractEdit, hei: u64) -> VmrtRes<(bool, bool)> {
+		use ItrErrCode::*;
+		let cap = SpaceCap::new(hei);
+
+		let old_rev = self.metas.revision.uint();
+		if old_rev == Uint2::MAX {
+			return itr_err_fmt!(ContractError, "contract revision reach max");
+		}
+		let Some(next_rev) = old_rev.checked_add(1) else {
+			return itr_err_fmt!(ContractError, "contract revision overflow");
+		};
+		if edit.expect_revision.uint() != next_rev {
+			return itr_err_fmt!(ContractError, "contract revision expect {} but need {}", edit.expect_revision.uint(), next_rev);
+		}
+
+		let edit_empty = edit.inherits_add.length() == 0
+			&& edit.inherits_replace_at.length() == 0
+			&& edit.librarys_add.length() == 0
+			&& edit.librarys_replace_at.length() == 0
+			&& edit.abstcalls.length() == 0
+			&& edit.userfuncs.length() == 0;
+		if edit_empty {
+			return itr_err_fmt!(ContractError, "contract edit empty");
+		}
+
+		let mut did_append = false;
+		let mut did_change = false;
+
+		let inh_len = self.inherits.length();
+		let lib_len = self.librarys.length();
+
+		if edit.inherits_replace_at.length() > 0 {
+			did_change = true;
+			let mut idxs = HashSet::new();
+			for r in edit.inherits_replace_at.list() {
+				r.addr.check().map_ire(ContractAddrErr)?;
+				let idx = r.idx.uint() as usize;
+				if !idxs.insert(r.idx.uint()) {
+					return itr_err_fmt!(InheritsError, "inherits replace index duplicated")
+				}
+				if idx >= inh_len {
+					return itr_err_fmt!(InheritsError, "inherits replace index overflow")
+				}
+				self.inherits.replace(idx, r.addr.clone()).map_ire(InheritsError)?;
+			}
+		}
+		if edit.librarys_replace_at.length() > 0 {
+			did_change = true;
+			let mut idxs = HashSet::new();
+			for r in edit.librarys_replace_at.list() {
+				r.addr.check().map_ire(ContractAddrErr)?;
+				let idx = r.idx.uint() as usize;
+				if !idxs.insert(r.idx.uint()) {
+					return itr_err_fmt!(LibrarysError, "librarys replace index duplicated")
+				}
+				if idx >= lib_len {
+					return itr_err_fmt!(LibrarysError, "librarys replace index overflow")
+				}
+				self.librarys.replace(idx, r.addr.clone()).map_ire(LibrarysError)?;
+			}
+		}
+
+		if self.inherits.length() + edit.inherits_add.length() > cap.inherits_parent {
+			return itr_err_fmt!(InheritsError, "inherits number overflow")
+		}
+		if self.librarys.length() + edit.librarys_add.length() > cap.librarys_link {
+			return itr_err_fmt!(LibrarysError, "librarys link number overflow")
+		}
+
+		if edit.inherits_add.length() > 0 {
+			for a in edit.inherits_add.list() {
+				a.check().map_ire(ContractAddrErr)?;
+			}
+			self.inherits.append(edit.inherits_add.lists.clone()).unwrap();
+			did_append = true;
+		}
+		if edit.librarys_add.length() > 0 {
+			for a in edit.librarys_add.list() {
+				a.check().map_ire(ContractAddrErr)?;
+			}
+			self.librarys.append(edit.librarys_add.lists.clone()).unwrap();
+			did_append = true;
+		}
+
+		// check repeat after edit
+		let mut inhset: HashSet<ContractAddress> = HashSet::new();
+		for a in self.inherits.list() {
+			if !inhset.insert(a.clone()) {
+				return itr_err_fmt!(InheritsError, "inherits cannot repeat")
+			}
+		}
+		let mut libset: HashSet<ContractAddress> = HashSet::new();
+		for a in self.librarys.list() {
+			if !libset.insert(a.clone()) {
+				return itr_err_fmt!(LibrarysError, "librarys cannot repeat")
+			}
+		}
+
+		if edit.abstcalls.length() > 0 {
+			did_change = true;
+			{
+				let mut seen = HashSet::new();
+				for a in edit.abstcalls.list() {
+					if !seen.insert(a.sign[0]) {
+						return itr_err_fmt!(ContractUpgradeErr, "abstcall sign repeat in edit")
+					}
+				}
+			}
+			for a in edit.abstcalls.list() {
+				a.check(hei)?;
+				AbstCall::check(a.sign[0])?;
+				let ctype = CodeType::parse(a.cdty[0])?;
+				convert_and_check(&cap, ctype, &a.code)?;
+			}
+			self.abstcalls.check_merge(&edit.abstcalls)?;
+		}
+
+		if edit.userfuncs.length() > 0 {
+			{
+				let mut seen = HashSet::new();
+				for a in edit.userfuncs.list() {
+					let key = a.sign.to_array();
+					if !seen.insert(key) {
+						return itr_err_fmt!(ContractUpgradeErr, "userfunc sign repeat in edit")
+					}
+				}
+			}
+			for a in edit.userfuncs.list() {
+				a.check(hei)?;
+				let ctype = CodeType::parse(a.cdty[0])?;
+				convert_and_check(&cap, ctype, &a.code)?;
+			}
+			let replaced = self.userfuncs.check_merge(&edit.userfuncs)?;
+			if replaced {
+				did_change = true;
+			} else {
+				did_append = true;
+			}
+		}
+
+		if self.size() > cap.max_contract_size {
+			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.max_contract_size)
+		}
+
+		self.metas.revision = Uint2::from(next_rev);
+		Ok((did_append, did_change))
+	}
+
 
 	pub fn have_abst_call(&self, ac: AbstCall) -> bool {
 		for a in self.abstcalls.list() {
@@ -218,7 +387,32 @@ impl ContractSto {
 		if self.librarys.length() > cap.librarys_link {
 			return itr_err_fmt!(LibrarysError, "librarys link number overflow")
 		}
+		// inherits/librarys address version & no-duplicate check
+		{
+			let mut inhset: HashSet<ContractAddress> = HashSet::new();
+			for a in self.inherits.list() {
+				a.check().map_ire(ContractAddrErr)?;
+				if !inhset.insert(a.clone()) {
+					return itr_err_fmt!(InheritsError, "inherits cannot repeat")
+				}
+			}
+			let mut libset: HashSet<ContractAddress> = HashSet::new();
+			for a in self.librarys.list() {
+				a.check().map_ire(ContractAddrErr)?;
+				if !libset.insert(a.clone()) {
+					return itr_err_fmt!(LibrarysError, "librarys cannot repeat")
+				}
+			}
+		}
 		// abst call
+		{
+			let mut seen = HashSet::new();
+			for a in self.abstcalls.list() {
+				if !seen.insert(a.sign[0]) {
+					return itr_err_fmt!(ContractError, "abstcall sign repeat")
+				}
+			}
+		}
 		for a in self.abstcalls.list() {
 			a.check(hei)?;
 			AbstCall::check(a.sign[0])?;
@@ -226,6 +420,15 @@ impl ContractSto {
 			convert_and_check(&cap, ctype, &a.code)?; // // check compile
 		}
 		// usrfun call
+		{
+			let mut seen = HashSet::new();
+			for a in self.userfuncs.list() {
+				let key = a.sign.to_array();
+				if !seen.insert(key) {
+					return itr_err_fmt!(ContractError, "userfunc sign repeat")
+				}
+			}
+		}
 		for a in self.userfuncs.list() {
 			a.check(hei)?;
 			let ctype = CodeType::parse(a.cdty[0])?;
@@ -273,15 +476,5 @@ impl ContractSto {
 		Ok(obj)
 	}
 }
-
-
-
-
-
-
-
-
-
-
 
 

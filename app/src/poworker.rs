@@ -281,8 +281,8 @@ fn run_block_mining_item(_cnf: &PoWorkConf, _thrid: usize,
         }
         let Some(nst) = nonce_start.checked_add(nonce_space) else {
             nonce_finish = true;
-            nonce_space = u32::MAX - nonce_start - 1;
-            continue // // u32 nonce space finish
+            nonce_space = u32::MAX.saturating_sub(nonce_start);
+            continue // u32 nonce space finish
         };
         nonce_start = nst;
         // check next height

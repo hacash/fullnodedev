@@ -51,6 +51,16 @@ impl Contract {
         self.ctrt
     }
 
+    pub fn into_edit(self, expect_revision: u16) -> ContractEdit {
+        let mut edit = ContractEdit::new();
+        edit.expect_revision = Uint2::from(expect_revision);
+        edit.inherits_add = self.ctrt.inherits;
+        edit.librarys_add = self.ctrt.librarys;
+        edit.abstcalls = self.ctrt.abstcalls;
+        edit.userfuncs = self.ctrt.userfuncs;
+        edit
+    }
+
     pub fn testnet_deploy_print_by_nonce(&self, fee: &str, nonce: u32) {
         let txfee = Amount::from(fee).unwrap();
         let mut act = ContractDeploy::new();
@@ -66,10 +76,10 @@ impl Contract {
         self.testnet_deploy_print_by_nonce(fee, 0)
     } 
 
-    pub fn testnet_update_print(&self, cadr: Address, fee: &str) {
+    pub fn testnet_update_print(&self, cadr: Address, fee: &str, expect_revision: u16) {
         let txfee = Amount::from(fee).unwrap();
         let mut act = ContractUpdate::new();
-        act.contract = self.ctrt.clone();
+        act.edit = self.clone().into_edit(expect_revision);
         act.address = cadr;
         act.protocol_cost = txfee.dist_mul(CONTRACT_STORE_FEE_MUL as u128).unwrap();
         // print

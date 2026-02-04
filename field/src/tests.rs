@@ -33,8 +33,8 @@ mod tests {
         main.sub.age = Uint1::from(25);
         main.sub.is_ok = Bool::new(true);
         
-        main.tags.push(Uint2::from(100));
-        main.tags.push(Uint2::from(200));
+        let _ = main.tags.push(Uint2::from(100));
+        let _ = main.tags.push(Uint2::from(200));
         
         main.opt = TestOptional::must(BytesW1::from(vec![1, 2, 3, 4]).unwrap());
 

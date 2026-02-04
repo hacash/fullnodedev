@@ -35,10 +35,20 @@ action_define!{ContractDeploy, 99,
         if vmsto!(ctx).contract_exist(&caddr) {
             return errf!("contract {} already exist", (*caddr).readable())
         }
+        // cannot inherit self or link self as library
+        if self.contract.inherits.list().iter().any(|a| a == &caddr) {
+            return errf!("contract cannot inherit itself {}", (*caddr).readable())
+        }
+        if self.contract.librarys.list().iter().any(|a| a == &caddr) {
+            return errf!("contract cannot link itself as library {}", (*caddr).readable())
+        }
         // spend protocol fee
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost)?;
         // check
         self.contract.check(hei)?;
+        if self.contract.metas.revision.uint() != 0 {
+            return errf!("contract revision must be 0 on deploy")
+        }
         let accf  = AbstCall::Construct;
         let hvaccf = self.contract.have_abst_call(accf);
         // save the contract
@@ -74,7 +84,7 @@ action_define!{ContractUpdate, 98,
         protocol_cost: Amount
         address: Address // contract address
         _marks_: Fixed2 // zero
-        contract: ContractSto
+        edit: ContractEdit
     },
     (self, format!("Update smart contract {}", self.address)),
     (self, ctx, _gas {
@@ -85,20 +95,20 @@ action_define!{ContractUpdate, 98,
         let hei = ctx.env().block.height;
         // load old
         let caddr = ContractAddress::from_addr(self.address)?;
-        let Some(mut contract) = vmsto!(ctx).contract(&caddr) else {
+        let Some(contract) = vmsto!(ctx).contract(&caddr) else {
             return errf!("contract {} not exist", (*caddr).readable())
         };
         // spend protocol fee
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost)?;
-        // merge and check
-		self.contract.check(hei)?;
-        let is_edit = contract.merge(&self.contract, hei)?;
+        // apply edit (in memory)
+		let mut new_contract = contract.clone();
+        let (_did_append, did_change) = new_contract.apply_edit(&self.edit, hei)?;
         let depth = 1; // sys call depth is 1
         let cty = ExecMode::Abst as u8;
-        let sys = maybe!(is_edit, Change, Append) as u8; // Upgrade or Append
+        let sys = maybe!(did_change, Change, Append) as u8; // Change or Append
         setup_vm_run(depth, ctx, cty, sys, caddr.as_bytes(), Value::Nil)?;
         // save the new
-        vmsto!(ctx).contract_set(&caddr, &contract);
+        vmsto!(ctx).contract_set(&caddr, &new_contract);
         Ok(vec![]) 
     })
 }

@@ -6,7 +6,7 @@ macro_rules! satoshi_operate_define {
         pub fn $func_name(ctx: &mut dyn Context, $addr: &Address, $sat: &Satoshi) -> Ret<Satoshi> {
             $addr.check_version()?;
             if $sat.uint() == 0 {
-                return errf!("satoshi value cannot zore")
+                return errf!("satoshi value cannot be zero")
             }    
             let mut state = CoreState::wrap(ctx.state());
             let mut userbls = state.balance( $addr ).unwrap_or_default();
