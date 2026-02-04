@@ -3,7 +3,28 @@
 /*
     return gas, val
 */
-pub fn setup_vm_run(depth: i8, ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value) -> Ret<(i64, Value)> {
+/// Depth from exec mode: 0=entry layer (Main,P2sh, not in contract), 1=in contract (Abst)
+pub fn depth_from_exec_mode(ty: u8) -> Ret<i8> {
+    use crate::rt::*;
+    use crate::rt::ExecMode::*;
+    let mode: ExecMode = std_mem_transmute!(ty);
+    match mode {
+        Main | P2sh => Ok(0),
+        Abst        => Ok(1),
+        _ => errf!("unknown exec mode {}", ty),
+    }
+}
+
+/// Check VM return value: only nil or 0 is considered success.
+/// Any other value indicates execution failure.
+pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
+    if rv.check_true() {
+        return errf!("{} return error code {}", err_msg, rv.to_uint())
+    }
+    Ok(())
+}
+
+pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value) -> Ret<(i64, Value)> {
     // check tx type
     const TY3: u8 = TransactionType3::TYPE;
     let txty = ctx.env().tx.ty;
@@ -15,30 +36,18 @@ pub fn setup_vm_run(depth: i8, ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8],
         let vmb = global_machine_manager().assign(ctx.env().block.height);
         ctx.vm_replace(Box::new(vmb));
     }
-    // depth
+    let depth = depth_from_exec_mode(ty)?;
+    // Set ctx.depth (0=Main/P2sh, 1=Abst) before VM call, restored after (even on error)
     let old_depth = ctx.depth().clone();
     ctx.depth_set(CallDepth::new(depth));
 
     let sta = ctx.clone_mut().state();
     let vmi = ctx.clone_mut().vm();
     let ctx = ctx.clone_mut();
-    let (cost, rv) = vmi.call(ctx, sta, ty, mk, cd, Box::new(pm))?;
-    /*let (cost, rv) = unsafe {
-        // ctx
-        let ctxptr = ctx as *mut dyn Context;
-        let ctxmut1: &mut dyn Context = &mut *ctxptr;
-        let ctxmut2: &mut dyn Context = &mut *ctxptr;
-        // sta
-        let staptr = ctx.state() as *mut dyn State;
-        let stamut: &mut dyn State = &mut *staptr;  
-        // vmi
-        let vmiptr = ctxmut1.vm() as *mut dyn VM;
-        let vmimut: &mut dyn VM = &mut *vmiptr;  
-        // do call
-        vmimut.call(ctxmut2, stamut, ty, mk, cd, Box::new(pm))?
-    }; */
+    let res = vmi.call(ctx, sta, ty, mk, cd, Box::new(pm));
     ctx.depth_set(old_depth);
-    Ok((cost,  Value::bytes(rv)))
+    let (cost, rv) = res?;
+    Ok((cost, Value::bytes(rv)))
 }
 
 

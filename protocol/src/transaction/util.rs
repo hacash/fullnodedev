@@ -56,7 +56,7 @@ pub fn verify_target_signature(adr: &Address, tx: &dyn TransactionRead) -> Ret<b
     // let ddrs = tx.req_sign();
     let main_addr = tx.main();
     let mut ckhx = &hx;
-    if *adr == main_addr{
+    if *adr == main_addr && tx.ty() != TransactionType1::TYPE {
         ckhx = &hxwf;
     }
     verify_one_sign(ckhx, adr, signs)

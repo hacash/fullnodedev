@@ -237,10 +237,8 @@ pub fn execute_code(
             if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
                 return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
             }
-            if EXTENV == $act_kind && Pure == mode{
-                return itr_err_fmt!(ExtActDisabled, "extend env call not support in pure call")
-            }
             let idx = pu8!();
+            ensure_extend_call_allowed(mode, $act_kind, idx)?;
             let kid = u16::from_be_bytes([instbyte, idx]);
             let mut actbody = vec![];
             if $pass_body {
@@ -276,15 +274,14 @@ pub fn execute_code(
             // Special native calls that read execution/state-like context should follow the same
             // read privilege as state reads (nsr!): disallow in Pure(callpure).
             let mut argv = match idx {
-                NativeCall::idx_context_address => {
-                    nsr!();
-                    context_addr.serialize() // context_address
-                }
+                NativeCall::idx_context_address => context_addr.serialize(), // context_address
                 _ => vec![],
             };
             let argl = NativeCall::args_len(idx);
             if argl > 0 {
                 argv = ops.peek()?.canbe_ext_call_data(heap)?;
+            } else {
+                nsr!{};
             }
             let (r, g) = NativeCall::call(hei, idx, &argv)?;
             if argl > 0 {
@@ -526,7 +523,7 @@ fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr
     }
     match mode {
         Main    if not_ist!(CALL, CALLVIEW,   CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInMain),
-        P2sh    if not_ist!(                  CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInP2sh),
+        P2sh    if not_ist!(         CALLVIEW, CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInP2sh),
         Abst    if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
         View    if not_ist!(         CALLVIEW, CALLPURE,  CALLCODE) => itr_err_code!(CallLocInView),
         Pure    if not_ist!(                  CALLPURE            ) => itr_err_code!(CallInPure),

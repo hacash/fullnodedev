@@ -11,11 +11,24 @@ const CALL_EXTEND_UNKNOWN_NAME: &'static str = "__unknown__";
 /********************************************/
 
 
-pub const CALL_EXTEND_ACTION_DEFS: [ExtDefTy; 4] = [
-    (HacToTrs::IDX,   "transfer_hac_to",      Nil,      2),
-    (SatToTrs::IDX,   "transfer_sat_to",      Nil,      2),
-    (HacFromTrs::IDX, "transfer_hac_from",    Nil,      2),
-    (SatFromTrs::IDX, "transfer_sat_from",    Nil,      2),
+pub const CALL_EXTEND_ACTION_DEFS: [ExtDefTy; 13] = [
+    // HAC
+    (HacToTrs::IDX,      "transfer_hac_to",         Nil, 2),
+    (HacFromTrs::IDX,    "transfer_hac_from",       Nil, 2),
+    (HacFromToTrs::IDX,  "transfer_hac_from_to",    Nil, 3),
+    // SAT
+    (SatToTrs::IDX,      "transfer_sat_to",         Nil, 2),
+    (SatFromTrs::IDX,    "transfer_sat_from",       Nil, 2),
+    (SatFromToTrs::IDX,  "transfer_sat_from_to",    Nil, 3),
+    // HACD
+    (DiaSingleTrs::IDX,  "transfer_hacd_single_to", Nil, 2),
+    (DiaToTrs::IDX,      "transfer_hacd_to",        Nil, 2),
+    (DiaFromTrs::IDX,    "transfer_hacd_from",      Nil, 2),
+    (DiaFromToTrs::IDX,  "transfer_hacd_from_to",   Nil, 3),
+    // Asset
+    (AssetToTrs::IDX,    "transfer_asset_to",       Nil, 2),
+    (AssetFromTrs::IDX,  "transfer_asset_from",     Nil, 2),
+    (AssetFromToTrs::IDX,"transfer_asset_from_to",  Nil, 3),
 ];
 
 
@@ -49,4 +62,44 @@ pub fn search_ext_name_by_id(id: u8, exts: &[ExtDefTy]) -> &'static str {
         Some(a) => a.1,
         _ => CALL_EXTEND_UNKNOWN_NAME
     }
+}
+
+pub fn ensure_extend_call_id(act_kind: Bytecode, id: u8) -> VmrtErr {
+    // Runtime allowlist: bytecode can be crafted directly, so we must reject unknown ids here
+    // (compile-time checks in the language layer are not sufficient).
+    let ok = match act_kind {
+        Bytecode::EXTACTION => search_ext_by_id(id, &CALL_EXTEND_ACTION_DEFS).is_some(),
+        Bytecode::EXTENV    => search_ext_by_id(id, &CALL_EXTEND_ENV_DEFS).is_some(),
+        Bytecode::EXTFUNC   => search_ext_by_id(id, &CALL_EXTEND_FUNC_DEFS).is_some(),
+        _ => false,
+    };
+    if !ok {
+        return Err(ItrErr::new(
+            ItrErrCode::ExtActCallError,
+            &format!("extend id {} not found", id),
+        ));
+    }
+    Ok(())
+}
+
+pub fn ensure_extend_call_allowed(mode: ExecMode, act_kind: Bytecode, id: u8) -> VmrtErr {
+    ensure_extend_call_id(act_kind, id)?;
+    if mode == ExecMode::Pure {
+        match act_kind {
+            Bytecode::EXTENV => {
+                return Err(ItrErr::new(
+                    ItrErrCode::ExtActDisabled,
+                    "extend env call not support in pure call",
+                ));
+            }
+            Bytecode::EXTFUNC => {
+                return Err(ItrErr::new(
+                    ItrErrCode::ExtActDisabled,
+                    "extend func call not support in pure call",
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }

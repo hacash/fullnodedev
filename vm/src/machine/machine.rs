@@ -176,20 +176,18 @@ impl Machine {
         let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
         let lib_adr = env.ctx.env().tx.addrs.iter().map(|a|ContractAddress::from_unchecked(*a)).collect();
         let rv = self.do_call(env, ExecMode::Main, fnobj, ctx_adr, None, Some(lib_adr), None)?;
+        check_vm_return_value(&rv, "main call")?;
         Ok(rv)
     }
 
     pub fn abst_call(&mut self, env: &mut ExecEnv, cty: AbstCall, contract_addr: ContractAddress, param: Value) -> Ret<Value> {
         let adr = contract_addr.readable();
         let Some((owner, fnobj)) = self.r.load_abstfn(env.sta, &contract_addr, cty)? else {
-            // return Ok(Value::Nil) // not find call
-            return errf!("abst call {:?} not find in {}", cty, adr) // not find call
+            return errf!("abst call {:?} not find in {}", cty, adr)
         };
         let fnobj = fnobj.as_ref().clone();
         let rv = self.do_call(env, ExecMode::Abst, fnobj, contract_addr, owner, None, Some(param))?;
-        if rv.check_true() {
-            return errf!("call {}.{:?} return error code {}", adr, cty, rv.to_uint())
-        }
+        check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
     }
 
@@ -198,9 +196,7 @@ impl Machine {
         let fnobj = FnObj{ ctype, codes, confs: 0, agvty: None};
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
         let rv = self.do_call(env, ExecMode::P2sh, fnobj, ctx_adr, None, Some(libs), Some(param))?;
-        if rv.check_true() {
-            return errf!("p2sh call return error code {}", rv.to_uint())
-        }
+        check_vm_return_value(&rv, "p2sh call")?;
         Ok(rv)
     }
 

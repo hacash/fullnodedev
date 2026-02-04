@@ -1,4 +1,5 @@
 vscode-*/
+.vscode/
 .cursor/
 
 dist/

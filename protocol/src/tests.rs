@@ -121,6 +121,54 @@ fn test_block_json_full_cycle() {
 }
 
 #[test]
+fn test_ctx_action_call_must_check_req_sign() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    // tx without any signatures
+    let tx = TransactionType2::default();
+
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+
+    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+
+    // HacFromTrs requires signature of `from`, but since this action is executed via ctx.action_call,
+    // it would bypass tx.req_sign unless ctx_action_call enforces it.
+    let mut act = HacFromTrs::new();
+    act.from = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    act.hacash = Amount::mei(1);
+    let bytes = act.serialize();
+
+    let err = ctx.action_call(HacFromTrs::KIND, bytes[2..].to_vec()).unwrap_err();
+    assert!(err.contains("signature") || err.contains("failed") || err.contains("verify"));
+}
+
+#[test]
+fn test_tx_req_sign_must_be_privakey_address() {
+    init_test_registry();
+
+    use crate::transaction::TransactionType2;
+
+    let mut tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    // scriptmh address (non-privakey, cannot sign) - should be ignored by tx.req_sign()
+    let scriptmh_addr = Address::create_scriptmh([1u8; 20]);
+
+    let mut act = HacFromTrs::new();
+    act.from = AddrOrPtr::from_addr(scriptmh_addr);
+    act.hacash = Amount::mei(1);
+    tx.actions.push(Box::new(act)).unwrap();
+
+    let signset = tx.req_sign().unwrap();
+    assert!(signset.contains(&tx.main()));
+    assert!(!signset.contains(&scriptmh_addr));
+}
+
+#[test]
 fn test_complex_json_structure() {
     init_test_registry();
 

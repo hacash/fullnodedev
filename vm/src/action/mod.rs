@@ -25,6 +25,7 @@ include! {"contract.rs"}
 include! {"maincall.rs"}
 include! {"envfunc.rs"}
 include! {"p2sh.rs"}
+include! {"p2sh_tool.rs"}
 
 /*
     action register

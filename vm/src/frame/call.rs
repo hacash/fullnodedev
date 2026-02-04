@@ -22,11 +22,8 @@ impl CallFrame {
         // to spend gas
         self.contract_count = r.contracts.len();
         let mut curf = self.increase(r)?; // current frame
-        curf.depth = match mode { // set depth 0 or 1
-            Main | P2sh => 0,
-            Abst => 1,
-            _ => never!(),
-        };
+        // Root frame depth from ctx.depth (0=Main/P2sh, 1=Abst). Nested CALLs use Frame::next().
+        curf.depth = env.ctx.depth().to_isize() as isize;
         curf.ctxadr = entry_addr.clone();
         curf.curadr = code_owner.unwrap_or(entry_addr);
         self.push(curf);
@@ -78,7 +75,7 @@ impl CallFrame {
                         let curr = curr_ref!();
                         (curr.ctxadr.clone(), curr.curadr.clone(), curr.depth)
                     };
-                    // only main-call frame uses tx-provided libs
+                    // depth==0: entry layer (Main/P2sh) uses tx libs; depth>0: nested/Abst uses no libs
                     let libs_ptr = maybe!(depth == 0, &libs, &libs_none);
                     let (chgsrcadr, fnobj) = r.load_must_call(env.sta, fnptr.clone(), 
                         &ctxadr, &curadr, libs_ptr)?;
@@ -88,8 +85,8 @@ impl CallFrame {
                     self.check_load_new_contract_and_gas(r, env)?;
                     // if call code
                     if fnptr.is_callcode {
+                        // CALLCODE: execute in current frame, depth unchanged, inherits mode permissions
                         // println!("CALLCODE() ctxadr={}, curadr={}", ctxadr.prefix(7), curadr.prefix(7));
-                        // curadr tracks code owner for library resolution
                         let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
                         curr!().curadr = owner;
                         curr!().prepare(fnptr.mode, true, fnobj, None)?; // no param
@@ -101,7 +98,7 @@ impl CallFrame {
                             return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.readable(), fnptr.fnsign.to_hex())
                         }
                     }
-                    // call next frame                    
+                    // call next frame (nested CALL: increase() uses Frame::next() which sets depth = parent.depth + 1)
                     // println!("{:?}() ctxadr={}, curadr={}", fnptr.mode, ctxadr.prefix(7), curadr.prefix(7));
                     let param = Some(curr!().pop_value()?);
                     let next = self.increase(r)?;

@@ -65,6 +65,14 @@ impl Context for ContextInst<'_> {
         self.log.as_mut()
     }
 
+    fn reset_for_new_tx(&mut self) {
+        // Per-tx caches must not leak across transactions.
+        self.psh.clear();
+        self.check_sign_cache.clear();
+        self.tex_ledger = TexLedger::default();
+        self.vm_replace(VMNil::empty());
+    }
+
     fn clone_mut(&self) -> &mut dyn Context {
         let ptr: *const ContextInst<'_> = self as *const ContextInst<'_>;
         let ptr_mut = ptr as *mut ContextInst<'_>;
@@ -109,10 +117,15 @@ impl Context for ContextInst<'_> {
     }
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
         adr.must_scriptmh()?;
+        // Avoid ambiguity: a tx should not be able to "re-prove" the same scriptmh address with
+        // different code. Keeping a single, unique proof per address makes tx validation and
+        // mempool simulation deterministic and easier to audit.
+        if self.psh.contains_key(&adr) {
+            return errf!("p2sh '{}' already proved in current tx", adr.readable())
+        }
         self.psh.insert(adr, p2sh);
         Ok(())
     }
     // psh: HashMap<Address, Box<dyn P2sh>>,
 
 }
-

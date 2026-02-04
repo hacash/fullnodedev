@@ -99,11 +99,11 @@ macro_rules! action_define {
                 #[allow(unused_mut)] 
                 let burn90fee10times = maybe!($pself.burn_90(), 10, 1);
                 let mut $pgas: u32 = $pself.size() as u32 * burn90fee10times;
+                // call action hook (pre-hook)
+                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx, &mut $pgas)?;
                 // execute action body
                 let res: Ret<Vec<u8>> = $exec;
                 let res = res?;
-                // call action hook
-                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx, &mut $pgas)?;
                 Ok(($pgas, res))
             }
         }
@@ -175,11 +175,9 @@ macro_rules! action_register {
 
 
 // check action level
+// Note: depth here is ctx.depth (mode level: 0=Main/P2sh, 1=Abst), not Frame.depth (call stack depth)
 pub fn check_action_level(depth: CallDepth, act: &dyn Action, actions: &Vec<Box<dyn Action>>) -> Rerr {
         let depth: i8 = depth.into();
-        if depth > 8 {
-            return errf!("action depth cannot over {}", 8)
-        }
         let kid = act.kind();
         let alv = act.level();
         let alvn: i8 = alv.clone().into();
@@ -191,10 +189,16 @@ pub fn check_action_level(depth: CallDepth, act: &dyn Action, actions: &Vec<Box<
             return errf!("action length {} is 0 or one transaction max actions is 200", actlen)
         }
         if alv == ActLv::TopOnly {
+            if depth >= 0 {
+                return errf!("action {} just can execute on TOP_ONLY", kid)
+            }
             if actlen > 1 {
                 return errf!("action {} just can execute on TOP_ONLY", kid)
             }
         } else if alv == ActLv::TopUnique {
+            if depth >= 0 {
+                return errf!("action {} just can execute on level TOP_UNIQUE", kid)
+            }
             let mut smalv = 0;
             for act in actions {
                 if act.kind() == kid {
@@ -242,4 +246,3 @@ action_define!{Test63856464969364, 9527,
         // Ok(vec![])
     })
 }
-

@@ -59,9 +59,8 @@ action_define!{ContractDeploy, 99,
             return errf!("construct argv size overflow")
         }
         if hvaccf { // have Construct func
-            let depth = 1; // sys call depth is 1
             let cty = ExecMode::Abst as u8;
-            setup_vm_run(depth, ctx, cty, accf as u8, caddr.as_bytes(), Value::Bytes(cargv))?;
+            setup_vm_run(ctx, cty, accf as u8, caddr.as_bytes(), Value::Bytes(cargv))?;
             // drop Construct func
             let mut contract = self.contract.clone();
             contract.drop_abst_call(accf);
@@ -103,10 +102,16 @@ action_define!{ContractUpdate, 98,
         // apply edit (in memory)
 		let mut new_contract = contract.clone();
         let (_did_append, did_change) = new_contract.apply_edit(&self.edit, hei)?;
-        let depth = 1; // sys call depth is 1
+        // cannot inherit self or link self as library
+        if new_contract.inherits.list().iter().any(|a| a == &caddr) {
+            return errf!("contract cannot inherit itself {}", (*caddr).readable())
+        }
+        if new_contract.librarys.list().iter().any(|a| a == &caddr) {
+            return errf!("contract cannot link itself as library {}", (*caddr).readable())
+        }
         let cty = ExecMode::Abst as u8;
         let sys = maybe!(did_change, Change, Append) as u8; // Change or Append
-        setup_vm_run(depth, ctx, cty, sys, caddr.as_bytes(), Value::Nil)?;
+        setup_vm_run(ctx, cty, sys, caddr.as_bytes(), Value::Nil)?;
         // save the new
         vmsto!(ctx).contract_set(&caddr, &new_contract);
         Ok(vec![]) 

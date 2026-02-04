@@ -91,8 +91,10 @@ impl TransactionRead for $class {
         for act in self.actions() {
             for ptr in act.req_sign() {
                 let adr = ptr.real(addrs)?; 
+                // Only PRIVAKEY addresses can provide signatures.
+                // Non-privakey addresses (contract/scriptmh) must be authorized by VM hooks instead.
                 if adr.is_privakey() {
-                    adrsets.insert(adr); // just PRIVAKEY
+                    adrsets.insert(adr);
                 }
             }
         }
@@ -293,8 +295,8 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         }
     }
     */
-    // reset the vm
-    ctx.vm_replace(VMNil::empty());
+    // reset the vm and other caches
+    ctx.reset_for_new_tx();
     // execute actions
     for action in tx.actions() {
         ctx.depth_set(CallDepth::new(-1)); // set depth
@@ -309,4 +311,3 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     // ok finish
     Ok(())
 }
-
