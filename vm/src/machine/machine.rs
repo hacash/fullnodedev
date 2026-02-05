@@ -53,35 +53,39 @@ impl MachineBox {
         Ok(())
     }
 
-    fn check_cost(&self, cty: ExecMode, mut cost: i64) -> Ret<i64> {
-        use ExecMode::*;
-        assert!(cost > 0, "gas cost error");
-        // min use
-        let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
-        let min_use = match cty {
-            Main | P2sh => gsext.main_call_min,
-            Abst => gsext.abst_call_min,
-            _ => never!()
-        };
-        up_in_range!(cost, min_use, i64::MAX);
-        Ok(cost)
-    }
-
-
     fn spend_gas(&self, ctx: &mut dyn Context, cost: i64) -> Rerr {
-        assert!(self.gas_price > 0, "gas price error");
-        // do spend
-        let cost_per = cost * (self.gas_price / GSCU as i64);
-        assert!(cost_per > 0, "gas cost error");
-        let cost_amt = Amount::unit238(cost_per as u64);
+        if self.gas_price <= 0 {
+            return errf!("gas price invalid {}", self.gas_price);
+        }
+        if cost <= 0 {
+            return errf!("gas cost invalid {}", cost);
+        }
+        // Monetary gas cost in UNIT_238:
+        // cost_amt = cost * gas_price / GSCU
+        // (keep precision by dividing at the end; avoid `gas_price / GSCU == 0` panic/DoS)
+        let cost_per_i128 = (cost as i128)
+            .checked_mul(self.gas_price as i128)
+            .ok_or_else(|| format!("gas cost overflow: cost={} gas_price={}", cost, self.gas_price))?
+            / (GSCU as i128);
+        if cost_per_i128 <= 0 {
+            return errf!("tx fee too low for gas: cost={} gas_price={}", cost, self.gas_price);
+        }
+        if cost_per_i128 > u64::MAX as i128 {
+            return errf!("gas cost overflow: {}", cost_per_i128);
+        }
+        let cost_amt = Amount::unit238(cost_per_i128 as u64);
         let main = ctx.env().tx.main;
         protocol::operate::hac_sub(ctx, &main, &cost_amt)?;
         Ok(())
     }
 
     fn gas_price(ctx: &dyn Context) -> i64 {
-        let gs = ctx.tx().fee_purity() as i64;
-        gs // calc by fee got
+        let gs = ctx.tx().fee_purity();
+        if gs > i64::MAX as u64 {
+            i64::MAX
+        } else {
+            gs as i64
+        }
     }
 
 
@@ -96,6 +100,14 @@ impl VM for MachineBox {
         use ExecMode::*;
         // init gas & check balance
         self.check_gas(ctx)?;
+        let min_cost = {
+            let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
+            match std_mem_transmute!(ty) {
+                Main | P2sh => gsext.main_call_min,
+                Abst => gsext.abst_call_min,
+                _ => never!(),
+            }
+        };
         let gas = &mut self.gas;
         let gas_record = *gas;
         // env & do call
@@ -130,7 +142,20 @@ impl VM for MachineBox {
         }.map(|a|a.raw())?;
         let gas_current = *gas;
         let mut cost = gas_record - gas_current;
-        cost = self.check_cost(cty, cost)?;
+        if cost <= 0 {
+            return errf!("gas cost error {}", cost);
+        }
+        // Enforce per-call minimum gas *by consuming it from the shared gas counter*.
+        // This keeps re-entrant calls (which don't immediately `spend_gas`) correctly
+        // accounted in the outermost call's final cost.
+        if cost < min_cost {
+            let extra = min_cost - cost;
+            *gas -= extra;
+            if *gas < 0 {
+                return errf!("gas has run out");
+            }
+            cost = min_cost;
+        }
         // spend gas, but in calling do not spend
         if not_in_calling {
             self.spend_gas(ctx, cost)?;
@@ -222,7 +247,7 @@ mod machine_test {
     use basis::component::Env;
     use basis::interface::{Context, State, TransactionRead};
     use field::{Address, Amount, Hash, Uint4};
-    use protocol::context::{ContextInst, EmptyState};
+    use protocol::context::ContextInst;
     use protocol::state::EmptyLogs;
 
     #[derive(Default, Clone)]
@@ -325,7 +350,9 @@ mod machine_test {
                     .public()
                     .fitsh(
                         r##"
-                        return super.f()
+                        let v = super.f()
+                        assert v == 10203
+                        return 0
                         "##,
                     )
                     .unwrap(),
@@ -369,9 +396,157 @@ mod machine_test {
             .main_call(&mut exec, CodeType::Bytecode, main_codes)
             .unwrap();
 
-        // Expected: inside Parent.f(), ctxadr=Child, curadr=Parent.
-        // this.g()=1 (Child), self.g()=2 (Parent), super.g()=3 (Base).
-        assert_eq!(rv.to_uint(), 10_203);
+        assert!(!rv.check_true(), "main call should return success (nil/0)");
+    }
+
+    #[test]
+    fn min_call_gas_is_consumed_from_shared_counter() {
+        use crate::rt::Bytecode;
+
+        // Prepare a state with enough HAC for gas spending.
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        #[derive(Clone, Debug)]
+        struct GasTx {
+            main: Address,
+            addrs: Vec<Address>,
+            fee: Amount,
+        }
+
+        impl field::Serialize for GasTx {
+            fn size(&self) -> usize {
+                128
+            }
+            fn serialize(&self) -> Vec<u8> {
+                vec![]
+            }
+        }
+
+        impl basis::interface::TxExec for GasTx {}
+
+        impl TransactionRead for GasTx {
+            fn ty(&self) -> u8 {
+                TransactionType3::TYPE
+            }
+            fn hash(&self) -> Hash {
+                Hash::default()
+            }
+            fn hash_with_fee(&self) -> Hash {
+                Hash::default()
+            }
+            fn main(&self) -> Address {
+                self.main
+            }
+            fn addrs(&self) -> Vec<Address> {
+                self.addrs.clone()
+            }
+            fn fee(&self) -> &Amount {
+                &self.fee
+            }
+            fn fee_purity(&self) -> u64 {
+                3200
+            }
+            fn fee_extend(&self) -> Ret<(u16, Amount)> {
+                Ok((1, Amount::unit238(10_000_000)))
+            }
+        }
+
+        let tx = GasTx {
+            main,
+            addrs: vec![main],
+            fee: Amount::unit238(10_000_000),
+        };
+        let mut ctx = ContextInst::new(env, Box::new(StateMem::default()), Box::new(EmptyLogs {}), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+
+        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        // END is a minimal "return nil" program; actual instruction gas is tiny.
+        let codes = vec![Bytecode::END as u8];
+
+        vm.call(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, &codes, Box::new(Value::Nil))
+            .unwrap();
+
+        let gsext = GasExtra::new(1);
+        let min = gsext.main_call_min;
+        // The min-call cost must be reflected in the shared gas counter.
+        assert!(vm.gas <= (tx.size() as i64 - min), "vm.gas should include min cost deduction");
+    }
+
+    #[test]
+    fn low_fee_does_not_panic_in_spend_gas() {
+        use crate::rt::Bytecode;
+
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        #[derive(Clone, Debug)]
+        struct LowFeeTx {
+            main: Address,
+            addrs: Vec<Address>,
+            fee: Amount,
+        }
+
+        impl field::Serialize for LowFeeTx {
+            fn size(&self) -> usize {
+                128
+            }
+            fn serialize(&self) -> Vec<u8> {
+                vec![]
+            }
+        }
+
+        impl basis::interface::TxExec for LowFeeTx {}
+
+        impl TransactionRead for LowFeeTx {
+            fn ty(&self) -> u8 {
+                TransactionType3::TYPE
+            }
+            fn hash(&self) -> Hash {
+                Hash::default()
+            }
+            fn hash_with_fee(&self) -> Hash {
+                Hash::default()
+            }
+            fn main(&self) -> Address {
+                self.main
+            }
+            fn addrs(&self) -> Vec<Address> {
+                self.addrs.clone()
+            }
+            fn fee(&self) -> &Amount {
+                &self.fee
+            }
+            fn fee_purity(&self) -> u64 {
+                1
+            }
+            fn fee_extend(&self) -> Ret<(u16, Amount)> {
+                Ok((1, Amount::unit238(1)))
+            }
+        }
+
+        let tx = LowFeeTx {
+            main,
+            addrs: vec![main],
+            fee: Amount::unit238(1),
+        };
+        let mut ctx = ContextInst::new(env, Box::new(StateMem::default()), Box::new(EmptyLogs {}), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+
+        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let codes = vec![Bytecode::END as u8];
+
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            vm.call(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, &codes, Box::new(Value::Nil))
+        }));
+        assert!(res.is_ok(), "spend_gas must not panic");
+        let _ = res.unwrap();
     }
 
 /*

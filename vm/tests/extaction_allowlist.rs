@@ -10,7 +10,7 @@ mod tests {
     use vm::rt::SpaceCap;
     use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
     use vm::ContractAddress;
-    use vm::host::CtxHost;
+    use vm::machine::CtxHost;
     use vm::interpreter::execute_code;
     use field::{Address, Amount, Hash};
     use protocol::context::ContextInst;

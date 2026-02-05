@@ -12,7 +12,7 @@ macro_rules! vmsto {
 
 
 action_define!{ContractDeploy, 99, 
-    ActLv::TopUnique,
+    ActLv::TopOnly,
     false, [],
     {   
         protocol_cost: Amount
@@ -77,7 +77,7 @@ action_define!{ContractDeploy, 99,
 
 
 action_define!{ContractUpdate, 98, 
-    ActLv::TopUnique, // level
+    ActLv::TopOnly, // level
     false, [], // burn 90% fee
     {   
         protocol_cost: Amount
