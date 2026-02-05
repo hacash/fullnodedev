@@ -3,7 +3,8 @@
 #[derive(Default)]
 pub struct MachineManage {
     lock: Mutex<()>,
-    resoures: UnsafeCell<Vec<Resoure>>
+    resoures: UnsafeCell<Vec<Resoure>>,
+    contract_cache: ContractCachePool,
 }
 
 unsafe impl Sync for MachineManage {}
@@ -36,6 +37,10 @@ impl MachineManage {
         res.push(r);
         drop(lk);
     } 
+
+    pub fn contract_cache(&self) -> &ContractCachePool {
+        &self.contract_cache
+    }
 
 
 }

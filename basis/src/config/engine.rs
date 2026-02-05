@@ -42,6 +42,9 @@ pub struct EngineConf {
     pub dmer_bid_step: Amount,
     // tx pool
     pub txpool_maxs: Vec<usize>,
+    // VM contract cache (performance-only, consensus-neutral)
+    // Unit: MB. `0` disables cache.
+    pub contract_cache_size: f64,
 }
 
 
@@ -107,6 +110,8 @@ impl EngineConf {
             dmer_bid_step: Amount::small(5, 247),
             // tx pool
             txpool_maxs: Vec::default(),
+            // vm cache
+            contract_cache_size: 0.0,
         };
         // setup lowest_fee
         if ini_must(sec_server, "lowest_fee", "").len() > 0 {
@@ -161,10 +166,12 @@ impl EngineConf {
             }
         }).collect();
 
+        // vm contract cache (performance-only), unit: MB
+        let sec_vm = &ini_section(ini, "vm");
+        cnf.contract_cache_size = ini_must_f64(sec_vm, "contract_cache_size", 0.0);
+
         // ok
         cnf
     }
     
 }
-
-

@@ -3,7 +3,6 @@ use sys::*;
 use super::rt::*;
 
 use super::interpreter::*;
-use super::ir::*;
 use super::space::*;
 use super::value::*;
 use super::*;

@@ -1,7 +1,3 @@
-use std::cell::*;
-use std::collections::*;
-use std::sync::*;
-
 use basis::component::*;
 use basis::interface::*;
 use basis::*;
@@ -14,6 +10,7 @@ use super::space::*;
 use super::*;
 
 include! {"host.rs"}
+include! {"cachepool.rs"}
 include! {"manage.rs"}
 include! {"machine.rs"}
 include!("resource.rs");

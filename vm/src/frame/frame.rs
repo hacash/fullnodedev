@@ -127,7 +127,6 @@ impl Frame {
         compile irnode
     */
     pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: FnObj, param: Option<Value>) -> VmrtErr {
-        use CodeType::*;
         if let Some(mut p) = param {
             p.canbe_func_argv()?;
             if let Some(vtys) = &fnobj.agvty {
@@ -139,10 +138,7 @@ impl Frame {
         self.pc = 0;
         self.mode = mode;
         self.in_callcode = in_callcode;
-        self.codes = match fnobj.ctype {
-            Bytecode => fnobj.into_array(),
-            IRNode => runtime_irs_to_bytecodes(&fnobj.codes)?,
-        };
+        self.codes = fnobj.exec_bytecodes()?;
         Ok(())
     }
 

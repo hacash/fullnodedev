@@ -15,14 +15,21 @@ impl Resoure {
         if self.contracts.len() >= self.space_cap.load_contract {
             return itr_err_code!(OutOfLoadContract)
         }
-        match vmsta.contract(addr) {
-            Some(c) => {
-                let cobj = Arc::new(c.into_obj()?);
-                self.contracts.insert(addr.clone(), cobj.clone()); // cache
-                Ok(cobj)
-            },
-            None => itr_err_fmt!(NotFindContract, "cannot find contract {}", addr.readable())
+        let Some(c) = vmsta.contract(addr) else {
+            return itr_err_fmt!(NotFindContract, "cannot find contract {}", addr.readable());
+        };
+        let rev = c.metas.revision.uint();
+        if let Some(obj) = global_machine_manager()
+            .contract_cache()
+            .get(addr, rev)
+        {
+            self.contracts.insert(addr.clone(), obj.clone()); // tx-local cache
+            return Ok(obj);
         }
+        let cobj = Arc::new(c.clone().into_obj()?);
+        self.contracts.insert(addr.clone(), cobj.clone()); // tx-local cache
+        global_machine_manager().contract_cache().insert(addr, &c, cobj.clone());
+        Ok(cobj)
     }
 
 

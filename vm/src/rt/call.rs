@@ -1,4 +1,6 @@
 
+use std::sync::Arc;
+
 
 /* 
 
@@ -85,12 +87,13 @@ pub enum FnConf {
 
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FnObj {
     pub confs: u8, // binary switch
     pub agvty: Option<FuncArgvTypes>,
     pub ctype: CodeType,
     pub codes: Vec<u8>,
+    compiled: Arc<std::sync::OnceLock<Vec<u8>>>,
 }
 
 impl FnObj {
@@ -102,7 +105,38 @@ impl FnObj {
 
     pub fn create(mks: u8, codes: Vec<u8>, agvty: Option<FuncArgvTypes>) -> VmrtRes<Self> {
         let ctype = CodeType::parse(mks)?;
-        Ok(Self {confs: mks & 0b11111000, agvty, ctype, codes })
+        Ok(Self {
+            confs: mks & 0b11111000,
+            agvty,
+            ctype,
+            codes,
+            compiled: Arc::new(std::sync::OnceLock::new()),
+        })
+    }
+
+    pub fn plain(ctype: CodeType, codes: Vec<u8>, confs: u8, agvty: Option<FuncArgvTypes>) -> Self {
+        Self {
+            confs,
+            agvty,
+            ctype,
+            codes,
+            compiled: Arc::new(std::sync::OnceLock::new()),
+        }
+    }
+
+    pub fn exec_bytecodes(&self) -> VmrtRes<Vec<u8>> {
+        use CodeType::*;
+        Ok(match self.ctype {
+            Bytecode => self.codes.clone(),
+            IRNode => {
+                if let Some(cached) = self.compiled.get() {
+                    return Ok(cached.clone());
+                }
+                let compiled = runtime_irs_to_bytecodes(&self.codes)?;
+                let _ = self.compiled.set(compiled.clone());
+                compiled
+            }
+        })
     }
 
     pub fn into_array(self) -> Vec<u8> {
@@ -233,5 +267,3 @@ abst_call_type_define! {
     PayableAsset : 28  , [ Address, U64, U64 ]
 
 }
-
-

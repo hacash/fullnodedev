@@ -196,7 +196,7 @@ impl Machine {
     }
 
     pub fn main_call(&mut self, env: &mut ExecEnv, ctype: CodeType, codes: Vec<u8>) -> Ret<Value> {
-        let fnobj = FnObj{ ctype, codes, confs: 0, agvty: None};
+        let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
         let lib_adr = env.ctx.env().tx.addrs.iter().map(|a|ContractAddress::from_unchecked(*a)).collect();
         let rv = self.do_call(env, ExecMode::Main, fnobj, ctx_adr, None, Some(lib_adr), None)?;
@@ -217,7 +217,7 @@ impl Machine {
 
     fn p2sh_call(&mut self, env: &mut ExecEnv, p2sh_addr: Address, libs: Vec<ContractAddress>, codes: Vec<u8>, param: Value) -> Ret<Value> {
         let ctype = CodeType::Bytecode;
-        let fnobj = FnObj{ ctype, codes, confs: 0, agvty: None};
+        let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
         let rv = self.do_call(env, ExecMode::P2sh, fnobj, ctx_adr, None, Some(libs), Some(param))?;
         check_vm_return_value(&rv, "p2sh call")?;

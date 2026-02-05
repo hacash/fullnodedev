@@ -103,6 +103,10 @@ impl Builder {
         self
     }
 
+    pub fn engine_conf(&self) -> Arc<EngineConf> {
+        self.engcnf.clone()
+    }
+
     pub fn txpool(&mut self, f: fn(_: &EngineConf)->Box<dyn TxPool>) -> &mut Self {
         self.txpool = f(&self.engcnf).into();
         self
@@ -206,4 +210,3 @@ fn run_fullnode(builder: Builder) {
     println!("[Exit] Hacash fullnode closed.");
 
 }
-

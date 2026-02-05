@@ -54,6 +54,22 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
     // build & setup
     let mut builder = Builder::new(cnfpath);
 
+    // Configure global VM contract cache pool (performance-only).
+    #[cfg(any(feature = "hvm", feature = "p2sh"))]
+    {
+        let engcnf = builder.engine_conf();
+        let size_mb = engcnf.contract_cache_size;
+        let bytes = if size_mb.is_finite() && size_mb > 0.0 {
+            (size_mb * 1024.0 * 1024.0) as usize
+        } else {
+            0
+        };
+        vm::configure_contract_cache(vm::machine::ContractCacheConfig {
+            max_bytes: bytes,
+            ..Default::default()
+        });
+    }
+
     builder
         .diskdb(|dir| Box::new(db::DiskKV::open(dir)))
         .scaner(scan)
