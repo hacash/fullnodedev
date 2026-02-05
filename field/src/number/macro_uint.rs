@@ -1,5 +1,6 @@
 
 
+#[allow(unused)]
 macro_rules! from_uint {
     ($class:ident, $vn:ident, $vt:ty, $tt:ty) => (
         impl From<$tt> for $class {
@@ -70,6 +71,7 @@ macro_rules! from_uint_signed_i128 {
     )
 }
 
+#[allow(unused)]
 macro_rules! from_uint_ary {
     ($class:ident, $vn:ident, $vt:ty, $( $tt:ty ),+) => (
         $(

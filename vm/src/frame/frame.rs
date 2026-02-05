@@ -147,7 +147,7 @@ impl Frame {
     }
 
     pub fn execute(&mut self, r: &mut Resoure, env: &mut ExecEnv) -> VmrtRes<CallExit> {
-        let mut host = crate::host::CtxHost::new(env.ctx);
+        let mut host = crate::machine::CtxHost::new(env.ctx);
         execute_code(
             &mut self.pc,
             &self.codes,

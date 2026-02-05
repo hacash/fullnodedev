@@ -19,6 +19,7 @@ macro_rules! ord_impl {
 }
     
 
+#[allow(unused)]
 macro_rules! compute_opt_impl {
     ($class:ident, $vn: ident, $op: ident, $opt: ident ) => (   
         impl $op for $class {
@@ -65,6 +66,7 @@ macro_rules! compute_opt_impl_checked_div {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_other_impl {
     ($class:ident, $vn: ident, $op: ident, $opt: ident, $vty:ty, $eqty:ty) => (   
         impl $op<$eqty> for $class {
@@ -112,6 +114,7 @@ macro_rules! compute_other_impl_checked_div {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_assign_impl {
     ($class:ident, $vn:ident, $op:ident, $opt: ident) => (
         concat_idents!{opa = $op, Assign {
@@ -145,6 +148,7 @@ macro_rules! compute_assign_impl_checked {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_assign_other_impl {
     ($class:ident, $vn:ident, $op:ident, $opt:ident, $vty:ty, $eqty:ty) => (
         concat_idents!{opa = $op, Assign {
@@ -176,6 +180,7 @@ macro_rules! compute_assign_other_impl_checked {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_other_list_impl {
     ($class:ident, $vn:ident, $op:ident, $opt:ident, $vty:ty, $( $eqtys:ty ),+) => (   
         $(
@@ -201,6 +206,7 @@ macro_rules! compute_other_list_impl_checked_div {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_other_all_impl {
     ($class:ident, $vn:ident, $op:ident, $opt:ident, $vty:ty) => ( 
         compute_other_list_impl!{$class, $vn, $op, $opt, $vty, 
@@ -210,6 +216,7 @@ macro_rules! compute_other_all_impl {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_assign_other_list_impl {
     ($class:ident, $vn:ident, $op:ident, $opt:ident, $vty:ty, $( $eqtys:ty ),+) => (   
         $(
@@ -227,6 +234,7 @@ macro_rules! compute_assign_other_list_impl_checked {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_assign_other_all_impl {
     ($class:ident, $vn:ident, $op:ident, $opt:ident, $vty:ty) => ( 
         compute_assign_other_list_impl!{$class, $vn, $op, $opt, $vty, 
@@ -236,6 +244,7 @@ macro_rules! compute_assign_other_all_impl {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_one_impl {
     ($class:ident, $vn:ident, $op:ident, $opt:ident, $vty:ty) => ( 
         compute_opt_impl!{$class, $vn, $op, $opt}
@@ -246,6 +255,7 @@ macro_rules! compute_one_impl {
 }
 
 
+#[allow(unused)]
 macro_rules! compute_impl {
     ($class:ident, $vn:ident, $vty:ty) => ( 
         compute_one_impl!{$class,$vn, Add, add, $vty}

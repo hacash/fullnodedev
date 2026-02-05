@@ -21,6 +21,7 @@ impl State for StateMem {
 }
 
 
+#[allow(unused)]
 #[derive(Default)]
 pub struct ExtCallMem {
     hei: u64,

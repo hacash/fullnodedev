@@ -1,7 +1,6 @@
 use std::any::*;
 use std::collections::*;
 
-use basis::component::*;
 use basis::interface::*;
 use field::*;
 use protocol::action::*;

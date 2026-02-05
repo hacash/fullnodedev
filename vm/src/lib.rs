@@ -5,7 +5,6 @@ pub mod contract;
 pub mod fitshc;
 pub mod frame;
 pub mod hook;
-pub mod host;
 pub mod interpreter;
 pub mod ir;
 pub mod lang;

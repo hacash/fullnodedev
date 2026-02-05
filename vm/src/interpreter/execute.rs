@@ -3,7 +3,7 @@
 * parse bytecode params
 */
 
-use crate::host::VmHost;
+use crate::machine::VmHost;
 
 #[inline(always)]
 #[allow(unsafe_op_in_unsafe_fn)]

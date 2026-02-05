@@ -6,7 +6,7 @@ use protocol::context::ContextInst;
 use protocol::state::EmptyLogs;
 use space::{CtcKVMap, GKVMap, Heap, Stack};
 use sys::Ret;
-use crate::host::CtxHost;
+use crate::machine::CtxHost;
 
 pub type VmTestExecRes = (CallExit, i64, Vec<Value>, Heap);
 

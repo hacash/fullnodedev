@@ -13,6 +13,7 @@ use super::rt::*;
 use super::space::*;
 use super::*;
 
+include! {"host.rs"}
 include! {"manage.rs"}
 include! {"machine.rs"}
 include!("resource.rs");

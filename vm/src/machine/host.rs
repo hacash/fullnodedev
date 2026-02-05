@@ -1,8 +1,3 @@
-use basis::interface::{Context, Logs};
-use sys::Ret;
-
-use crate::rt::{GasExtra, VmrtErr, VmrtRes};
-use crate::{ContractAddress, Value};
 
 /// VM host interface: the interpreter depends only on this trait.
 ///
