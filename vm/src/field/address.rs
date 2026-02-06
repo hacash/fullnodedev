@@ -74,8 +74,12 @@ impl ContractAddress {
         ContractAddress::from_addr(cadr)
     } 
 
+    pub fn to_readable(&self) -> String {
+        self.addr.to_readable()
+    }
+
     pub fn readable(&self) -> String {
-        self.addr.readable()
+        self.to_readable()
     }
 
     
@@ -86,4 +90,3 @@ impl ContractAddress {
 combi_list!{ContractAddressW1,
     Uint1, ContractAddress
 }
-

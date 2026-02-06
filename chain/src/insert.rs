@@ -52,7 +52,7 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
     }
 
     let prev_state = parent.state.clone();
-    let mut sub_state = prev_state.fork_sub(Arc::downgrade(&prev_state));
+    let sub_state = prev_state.fork_sub(Arc::downgrade(&prev_state));
 
     let chain_info = ChainInfo {
         fast_sync,

@@ -162,7 +162,7 @@ fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_heigh
         let dfee = new_bid_fee.to_fin_string();
         if *bidding_number != dnum {
             *bidding_number = dnum;
-            flush!("✵✵✵✵ Diamond Auto Bid {}({}) by {} raise fee to ⇨ {}", dia, dnum, my_addr.readable(), dfee);
+            flush!("✵✵✵✵ Diamond Auto Bid {}({}) by {} raise fee to ⇨ {}", dia, dnum, my_addr, dfee);
         }else{
             flush!(" ⇨ {}", dfee);
         }
@@ -214,6 +214,4 @@ fn pick_first_bid_tx(tx_pool: &dyn TxPool) -> Option<TxPkg> {
     // ok
     first
 }
-
-
 

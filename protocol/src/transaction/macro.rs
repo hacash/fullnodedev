@@ -224,7 +224,7 @@ impl $class {
             }
         }
         // verify error
-        errf!("address {} verify signature failed", curaddr.readable())
+        errf!("address {} verify signature failed", curaddr)
     }
 
 

@@ -163,7 +163,7 @@ impl SourceMap {
         let mut libs: Vec<LibJson> = self.libs.iter().map(|(&idx, info)| LibJson {
             idx,
             name: info.name.clone(),
-            address: info.address.as_ref().map(|a| a.readable()),
+            address: info.address.as_ref().map(|a| a.to_readable()),
         }).collect();
         libs.sort_by_key(|entry| entry.idx);
 
@@ -244,4 +244,3 @@ impl SourceMap {
         Ok(map)
     }
 }
-

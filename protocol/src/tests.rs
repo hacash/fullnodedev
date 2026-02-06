@@ -229,10 +229,10 @@ fn test_address_bare_base58check_in_protocol() {
     let addr_str = "1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS";
     let mut addr = Address::default();
     addr.from_json(&format!(r#""{}""#, addr_str)).unwrap();
-    assert_eq!(addr.readable(), addr_str);
+    assert_eq!(addr.to_readable(), addr_str);
 
     // Verify AddrOrPtr with Address parses bare base58check
     let mut ptr = AddrOrPtr::default();
     ptr.from_json(&format!(r#"{{"type":1,"value":"{}"}}"#, addr_str)).unwrap();
-    assert_eq!(ptr.readable(), addr_str);
+    assert_eq!(ptr.to_readable(), addr_str);
 }

@@ -29,7 +29,7 @@ async fn scan_coin_transfer(State(ctx): State<ApiCtx>, q: Query<Q4538>) -> impl 
         return api_error("txposi overflow")
     }
     let tartrs = trs[txposi].as_read();
-    let mainaddr_readable = tartrs.main().readable();
+    let mainaddr_readable = tartrs.main().to_readable();
     let mut dtlist = Vec::new();
     // scan actions
     for act in tartrs.actions()  {
@@ -86,10 +86,10 @@ fn append_transfer_scan(tx: &dyn TransactionRead, act: &Box<dyn Action>,
     // append
     let mut obj = action_to_json_desc(tx, act, unit, false);
     let adrs = tx.addrs();
-    let main_addr = tx.main().readable();
+    let main_addr = tx.main().to_readable();
     macro_rules! must_addr {
         ( $k:expr ) => {{
-            $k.real(&adrs).unwrap().readable()
+            $k.real(&adrs).unwrap().to_readable()
         }}
     }
     macro_rules! set_from_to {

@@ -20,7 +20,7 @@ macro_rules! amount_op_func_define {
             let newhac = $exec; // do add or sub
             if newhac.size() > 12 {
                 return errf!("address {} amount {} size {} over 12 can not to store", 
-                    $addr.readable(), newhac, newhac.size())
+                    $addr, newhac, newhac.size())
             }
             bls.hacash = newhac.clone();
             state.balance_set($addr, &bls);
@@ -34,7 +34,7 @@ macro_rules! amount_op_func_define {
 amount_op_func_define!{do_hac_sub, hac, addr, amt, {
     if hac < *amt {
         return errf!("address {} balance {} is insufficient, at least {}", 
-            addr.readable(), hac, amt)
+            addr, hac, amt)
     }
     hac.sub_mode_u128(amt)?
 }}
@@ -61,7 +61,7 @@ pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &A
     /*test debug
     let tadr = Address::from_readable("1EuGe2GU8tDKnHLNfBsgyffx66buK7PP6g").unwrap();
     if *from == tadr || *to == tadr {
-        println!("-------- {} ---- {} => {}  {}", ctx.env().block.height, from.readable(), to.readable(), amt);
+        println!("-------- {} ---- {} => {}  {}", ctx.env().block.height, from.to_readable(), to.to_readable(), amt);
     }*/
     // do trs
     check_amount_is_positive!(amt);
@@ -79,12 +79,12 @@ pub fn hac_check(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Amo
     addr.check_version()?;
     let state = CoreState::wrap(ctx.state());
     if let Some(bls) = state.balance( addr ) {
-        // println!("address {} balance {}", addr.readable(), bls.hacash );
+        // println!("address {} balance {}", addr.to_readable(), bls.hacash );
         if bls.hacash >= *amt {
             return Ok(bls.hacash)
         }
     }
-    errf!("address {} balance is insufficient, at least {}", addr.readable(), amt)
+    errf!("address {} balance is insufficient, at least {}", addr, amt)
 }
 
 
@@ -100,4 +100,3 @@ pub fn hac_sub(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Vec<u
     do_hac_sub(ctx, addr, amt)?;
     Ok(vec![])
 }
-

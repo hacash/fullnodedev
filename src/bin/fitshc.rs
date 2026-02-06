@@ -56,8 +56,8 @@ fn main() {
     // `combi_list` macro defined in basis/macros? or field/macros?
     // Let's assume list() method exists based on earlier usage in contract.rs: `self.inherits.length()`.
     // Wait, earlier code `self.abstcalls.list()` works.
-    let inherit_addrs: Vec<String> = sto.inherits.list().iter().map(|a| a.readable()).collect();
-    let lib_addrs: Vec<String> = sto.librarys.list().iter().map(|a| a.readable()).collect();
+    let inherit_addrs: Vec<String> = sto.inherits.list().iter().map(|a| a.to_readable()).collect();
+    let lib_addrs: Vec<String> = sto.librarys.list().iter().map(|a| a.to_readable()).collect();
     
     let contract_map = json!({
         "contract": contract_name,

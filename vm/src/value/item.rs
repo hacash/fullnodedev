@@ -262,7 +262,7 @@ impl Value {
                 Some(s) => format!("\"{}\"", s),
                 _ => "0x".to_owned() + &hex::encode(b),
             },
-            Address(a) => a.readable(),
+            Address(a) => a.to_string(),
             HeapSlice((s, l)) => format!("heap({},{})", s, l),
             Compo(a) => format!("compo({}){}", a.len(), a.to_string()),
         }
@@ -280,7 +280,7 @@ impl Value {
             U64(n) =>  format!("{}", n),
             U128(n) => format!("{}", n),
             Bytes(b) => format!("\"{}\"", &to_readable_or_base64(b)),
-            Address(a) =>  format!("\"{}\"", a.readable()),
+            Address(a) =>  format!("\"{}\"", a),
             HeapSlice((s, l)) => format!("[{},{}]", s, l),
             Compo(a) => a.to_json(),
         }
@@ -288,6 +288,3 @@ impl Value {
 
 
 }
-
-
-

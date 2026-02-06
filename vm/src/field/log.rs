@@ -13,7 +13,7 @@ impl VmLog {
 
     pub fn render(&self, append: &str) -> String {
         let mut res = format!(r#""address":"{}","topic0":"{}","topic1":"{}","topic2":"{}","topic3":"{}","data":"{}""#, 
-            self.addr.readable(),
+            self.addr,
             self.topic0.raw().to_hex(),
             self.topic1.raw().to_hex(),
             self.topic2.raw().to_hex(),
@@ -58,6 +58,4 @@ impl VmLog {
 
 
 }
-
-
 

@@ -200,8 +200,8 @@ impl P2shMerkleTree {
         if calc.address != self.calc.address {
             return errf!(
                 "p2sh tool: proof derived address {} mismatch tree address {}",
-                calc.address.readable(),
-                self.calc.address.readable()
+                calc.address,
+                self.calc.address
             )
         }
         let mut act = UnlockScriptProve::new();
@@ -267,4 +267,3 @@ mod p2sh_tool_test {
         assert_eq!(calc.address, tree.address());
     }
 }
-

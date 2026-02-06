@@ -138,8 +138,7 @@ fn may_show_miner_detail(engcnf: &EngineConf, blkp: &BlkPkg) {
     let Ok(cbtx) = blkp.objc.coinbase_transaction() else {
         return
     };
-    let adrt = cbtx.main().readable().drain(..9).collect::<String>();
+    let adrt = cbtx.main().to_readable().drain(..9).collect::<String>();
     print!("miner: {}...<{}> ", adrt, cbtx.message().to_readable_left());
     // devtest end
 }
-

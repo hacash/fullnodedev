@@ -17,7 +17,7 @@ action_define!{ TexCellAct, 35,
         // check signature
         let thx = self.get_sign_stuff();
         if ! verify_signature(&thx, &self.addr, &self.sign) {
-            return errf!("address {} signature verify failed in tex cell action", self.addr.readable())
+            return errf!("address {} signature verify failed in tex cell action", self.addr)
         }
         // exec
         self.cells.execute(ctx, &self.addr).map(|_|vec![])

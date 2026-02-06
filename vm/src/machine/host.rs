@@ -15,7 +15,7 @@ pub trait VmHost {
     fn srest(&mut self, hei: u64, cadr: &ContractAddress, key: &Value) -> VmrtRes<Value>;
     fn sload(&mut self, hei: u64, cadr: &ContractAddress, key: &Value) -> VmrtRes<Value>;
     fn sdel(&mut self, cadr: &ContractAddress, key: Value) -> VmrtErr;
-    fn ssave(&mut self, hei: u64, cadr: &ContractAddress, key: Value, val: Value) -> VmrtErr;
+    fn ssave(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, val: Value) -> VmrtRes<i64>;
     fn srent(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, period: Value) -> VmrtRes<i64>;
 }
 
@@ -61,9 +61,9 @@ impl VmHost for CtxHost<'_> {
         st.sdel(cadr, key)
     }
 
-    fn ssave(&mut self, hei: u64, cadr: &ContractAddress, key: Value, val: Value) -> VmrtErr {
+    fn ssave(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, val: Value) -> VmrtRes<i64> {
         let mut st = crate::VMState::wrap(self.ctx.state());
-        st.ssave(hei, cadr, key, val)
+        st.ssave(gst, hei, cadr, key, val)
     }
 
     fn srent(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, period: Value) -> VmrtRes<i64> {
@@ -71,4 +71,3 @@ impl VmHost for CtxHost<'_> {
         st.srent(gst, hei, cadr, key, period)
     }
 }
-

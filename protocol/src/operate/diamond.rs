@@ -31,8 +31,8 @@ diamond_operate_define!(hacd_add, addr, hacd, oldhacd, {
 diamond_operate_define!(hacd_sub, addr, hacd, oldhacd, {  
     // check
     if *oldhacd < *hacd {
-		return errf!("address {} diamond {} is insufficient, at least {}", 
-            addr.readable(), oldhacd, hacd)
+        return errf!("address {} diamond {} is insufficient, at least {}", 
+            addr, oldhacd, hacd)
     }
     // do sub
     *oldhacd - *hacd
@@ -92,7 +92,7 @@ pub fn check_diamond_status(state: &mut CoreState, addr_from: &Address, hacd_nam
         return errf!("diamond {} has been mortgaged and cannot be transferred", hacd_name.to_readable())
     }
     if *addr_from != diaitem.address {
-        return errf!("diamond {} not belong to address {}", hacd_name.to_readable(), addr_from.readable())
+        return errf!("diamond {} not belong to address {}", hacd_name.to_readable(), addr_from)
     }
     // ok
     Ok(diaitem)
@@ -143,4 +143,3 @@ pub fn diamond_owned_move(state: &mut CoreState, from: &Address, to: &Address, l
     state.diamond_owned_set(to, &to_owned);
     Ok(())
 }
-

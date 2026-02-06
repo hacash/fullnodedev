@@ -15,7 +15,12 @@ pub fn block_verify(cnf: &EngineConf, isrt_blk: &dyn BlockRead, blk_data_len: us
     if blk_time > cur_time {
         return errf!("block timestamp {} cannot more than system timestamp {}", blk_time, cur_time)
     }
-    if blk_time <= prev_blk_time {
+    // In debug mode, allow same timestamp for faster testing
+    #[cfg(debug_assertions)]
+    let time_check = blk_time < prev_blk_time;
+    #[cfg(not(debug_assertions))]
+    let time_check = blk_time <= prev_blk_time;
+    if time_check {
         return errf!("block timestamp {} cannot less than prev block timestamp {}", blk_time, prev_blk_time)
     }
     // check size

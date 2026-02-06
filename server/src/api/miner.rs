@@ -72,7 +72,7 @@ fn get_miner_pending_block_stuff(is_detail: bool, is_transaction: bool, is_stuff
             "prevhash", hex_or_hase64!(stuff.block.prevhash()),
             "timestamp",stuff.block.timestamp().uint(),
             "transaction_count", stuff.block.transaction_count().uint() - 1, // real tx
-            "reward_address", stuff.coinbase_tx.main().readable(),
+            "reward_address", stuff.coinbase_tx.main().to_readable(),
         };
         // data.append(&mut addition);
         let _ = addition.into_iter().map(|(k, v)| data.insert(k, v) ).collect::<Vec<_>>();
@@ -376,4 +376,3 @@ f80108
 
 
 */
-

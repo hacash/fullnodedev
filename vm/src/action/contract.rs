@@ -33,14 +33,14 @@ action_define!{ContractDeploy, 99,
         // check contract
         let caddr = ContractAddress::calculate(&maddr, &self.nonce);
         if vmsto!(ctx).contract_exist(&caddr) {
-            return errf!("contract {} already exist", (*caddr).readable())
+            return errf!("contract {} already exist", (*caddr).to_readable())
         }
         // cannot inherit self or link self as library
         if self.contract.inherits.list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot inherit itself {}", (*caddr).readable())
+            return errf!("contract cannot inherit itself {}", (*caddr).to_readable())
         }
         if self.contract.librarys.list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot link itself as library {}", (*caddr).readable())
+            return errf!("contract cannot link itself as library {}", (*caddr).to_readable())
         }
         // spend protocol fee
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost)?;
@@ -95,7 +95,7 @@ action_define!{ContractUpdate, 98,
         // load old
         let caddr = ContractAddress::from_addr(self.address)?;
         let Some(contract) = vmsto!(ctx).contract(&caddr) else {
-            return errf!("contract {} not exist", (*caddr).readable())
+            return errf!("contract {} not exist", (*caddr).to_readable())
         };
         // spend protocol fee
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost)?;
@@ -104,10 +104,10 @@ action_define!{ContractUpdate, 98,
         let (_did_append, did_change) = new_contract.apply_edit(&self.edit, hei)?;
         // cannot inherit self or link self as library
         if new_contract.inherits.list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot inherit itself {}", (*caddr).readable())
+            return errf!("contract cannot inherit itself {}", (*caddr).to_readable())
         }
         if new_contract.librarys.list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot link itself as library {}", (*caddr).readable())
+            return errf!("contract cannot link itself as library {}", (*caddr).to_readable())
         }
         let cty = ExecMode::Abst as u8;
         let sys = maybe!(did_change, Change, Append) as u8; // Change or Append

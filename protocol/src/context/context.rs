@@ -105,7 +105,7 @@ impl Context for ContextInst<'_> {
     }
     // p2sh
     fn p2sh(&self, adr: &Address) -> Ret<&Box<dyn P2sh>> {
-        let e = format!("p2sh '{}' not find", adr.readable());  
+        let e = format!("p2sh '{}' not find", adr);  
         self.psh.get(adr).ok_or(e)
     }
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
@@ -114,7 +114,7 @@ impl Context for ContextInst<'_> {
         // different code. Keeping a single, unique proof per address makes tx validation and
         // mempool simulation deterministic and easier to audit.
         if self.psh.contains_key(&adr) {
-            return errf!("p2sh '{}' already proved in current tx", adr.readable())
+            return errf!("p2sh '{}' already proved in current tx", adr)
         }
         self.psh.insert(adr, p2sh);
         Ok(())

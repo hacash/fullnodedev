@@ -10,7 +10,7 @@ action_define!{ HacToTrs, 1,
         to : AddrOrPtr
         hacash : Amount
     },
-    (self, format!("Transfer {} HAC to {}", self.hacash.to_unit_string("HAC"), self.to.readable())),
+    (self, format!("Transfer {} HAC to {}", self.hacash.to_unit_string("HAC"), self.to.to_readable())),
     (self, ctx, _gas {
         let from = ctx.env().tx.main; 
         let to   = ctx.addr(&self.to)?;
@@ -38,7 +38,7 @@ action_define!{ HacFromTrs, 13,
         from   : AddrOrPtr
         hacash : Amount
     },
-    (self, format!("Transfer {} HAC from {}", self.hacash.to_unit_string("HAC"), self.from.readable())),
+    (self, format!("Transfer {} HAC from {}", self.hacash.to_unit_string("HAC"), self.from.to_readable())),
     (self, ctx, _gas {
         let from = ctx.addr(&self.from)?;
         let to   = ctx.env().tx.main; 
@@ -69,14 +69,13 @@ action_define!{ HacFromToTrs, 14,
         to     : AddrOrPtr
         hacash : Amount
     },
-    (self, format!("Transfer {} HAC from {} to {}", self.hacash.to_unit_string("HAC"), self.from.readable(), self.to.readable())),
+    (self, format!("Transfer {} HAC from {} to {}", self.hacash.to_unit_string("HAC"), self.from.to_readable(), self.to.to_readable())),
     (self, ctx, _gas {
         let from = ctx.addr(&self.from)?;
         let to   = ctx.addr(&self.to)?;
         hac_transfer(ctx, &from, &to, &self.hacash)
     })
 }
-
 
 
 

@@ -16,7 +16,7 @@ async fn diamondminer_init(State(ctx): State<ApiCtx>, _q: Query<Q7846>) -> impl 
 
     let data = jsondata!{
         "bid_address", cnf.dmer_bid_account.readable(),
-        "reward_address", cnf.dmer_reward_address.readable(),
+        "reward_address", cnf.dmer_reward_address.to_readable(),
     };
 
     api_data(data)

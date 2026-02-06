@@ -919,7 +919,7 @@ impl Syntax {
                             format!("0x{}", hex::encode(b))
                         }
                     },
-                    Token::Address(a) => a.readable(),
+                    Token::Address(a) => a.to_readable(),
                     _ => unreachable!(),
                 };
                 if self.symbols.contains_key(&name) {

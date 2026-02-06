@@ -10,7 +10,7 @@ action_define!{ SatToTrs, 10,
         to        : AddrOrPtr
         satoshi   : Satoshi 
     },
-    (self, format!("Transfer {} SAT to {}", *self.satoshi, self.to.readable())),
+    (self, format!("Transfer {} SAT to {}", *self.satoshi, self.to.to_readable())),
     (self, ctx, _gas {
         let from = ctx.env().tx.main; 
         let to   = ctx.addr(&self.to)?;
@@ -38,7 +38,7 @@ action_define!{ SatFromTrs, 11,
         from      : AddrOrPtr
         satoshi   : Satoshi   
     },
-    (self, format!("Transfer {} SAT from {}", *self.satoshi, self.from.readable())),
+    (self, format!("Transfer {} SAT from {}", *self.satoshi, self.from.to_readable())),
     (self, ctx, _gas {
         let from = ctx.addr(&self.from)?;
         let to   = ctx.env().tx.main; 
@@ -68,7 +68,7 @@ action_define!{ SatFromToTrs, 12,
         to        : AddrOrPtr
         satoshi   : Satoshi 
     },
-    (self, format!("Transfer {} SAT from {} to {}", *self.satoshi, self.from.readable(), self.to.readable())),
+    (self, format!("Transfer {} SAT from {} to {}", *self.satoshi, self.from.to_readable(), self.to.to_readable())),
     (self, ctx, _gas {
         let from = ctx.addr(&self.from)?;
         let to   = ctx.addr(&self.to)?;

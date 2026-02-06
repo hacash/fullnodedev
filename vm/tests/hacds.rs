@@ -156,57 +156,57 @@ mod hacds {
 
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(0)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(0)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(1)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(1)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(2)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(2)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(3)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(3)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(4)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(4)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(5)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(5)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(6)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(6)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(7)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(7)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(8)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(8)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(9)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(9)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(10)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(10)).to_readable()
         );
         println!(
             "{}",
-            ContractAddress::calculate(&addr1, &Uint4::from(11)).readable()
+            ContractAddress::calculate(&addr1, &Uint4::from(11)).to_readable()
         );
 
         println!(
             "ContractAddress: {} {} {} {}",
-            addr1.readable(),
-            caddr.readable(),
+            addr1.to_readable(),
+            caddr.to_readable(),
             Uint4::default().uint(),
             Uint4::default().serialize().to_hex()
         );

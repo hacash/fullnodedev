@@ -788,7 +788,7 @@ impl<'a> Formater<'a> {
         if data.len() == FieldAddress::SIZE {
             let addr = FieldAddress::must_vec(data.to_vec());
             if addr.check_version().is_ok() {
-                return Some(RecoveredLiteral::address(addr.readable()));
+                return Some(RecoveredLiteral::address(addr.to_readable()));
             }
         }
         None
@@ -1114,7 +1114,7 @@ impl<'a> Formater<'a> {
                             "lib {} = {}: {}\n",
                             info.name,
                             idx,
-                            addr.readable()
+                            addr.to_readable()
                         ),
                         None => format!("lib {} = {}\n", info.name, idx),
                     };

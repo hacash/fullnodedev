@@ -69,7 +69,7 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
     // return info
     let mut data = render_tx_info(tx.as_read(), None, lasthei, &unit, true, signature, false, description);
     data.insert("sign_data", json!(jsondata!{
-        "address", address.readable(),
+        "address", address.to_readable(),
         "pubkey", signobj.publickey.to_hex(),
         "sigdts", signobj.signature.to_hex(),
     }));
@@ -320,7 +320,7 @@ fn render_tx_info(tx: &dyn TransactionRead,
 
 
     let fee_str = tx.fee().to_unit_string(unit);
-    let main_addr = tx.main().readable();
+    let main_addr = tx.main().to_readable();
     let mut data = jsondata!{
         // tx
         "hash", tx.hash().to_hex(),
@@ -380,11 +380,10 @@ fn check_signature(data: &mut JsonObject, tx: &dyn TransactionRead) {
     let mut sigchs = vec![];
     for (adr, sg) in sigstats {
         sigchs.push(jsondata!{
-            "address", adr.readable(),
+            "address", adr.to_readable(),
             "complete", sg, // is sign ok
         });
     }
     data.insert("signatures", json!(sigchs));
 }
-
 

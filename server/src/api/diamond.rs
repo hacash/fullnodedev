@@ -40,11 +40,11 @@ async fn diamond(State(ctx): State<ApiCtx>, q: Query<Q3946>) -> impl IntoRespons
     // return data
     let data = jsondata!{
         "name", dian.to_readable(),
-        "belong", diaobj.address.readable(),
+        "belong", diaobj.address.to_readable(),
         "inscriptions", diaobj.inscripts.array(),
         // smelt
         "number", *diasmelt.number,
-        "miner", diasmelt.miner_address.readable(),
+        "miner", diasmelt.miner_address.to_readable(),
         "born", jsondata!{
             "height", *diasmelt.born_height, // born block height
             "hash", diasmelt.born_hash.to_hex(), // born block hash
@@ -102,9 +102,9 @@ async fn diamond_bidding(State(ctx): State<ApiCtx>, q: Query<Q8346>) -> impl Int
             // "purity", a.fee purity(),
             "tx", txhx.to_hex(),
             "fee", txr.fee().to_unit_string(&unit),
-            "bid", txr.main().readable(),
+            "bid", txr.main().to_readable(),
             "name", act.diamond.to_readable(),
-            "belong", act.address.readable(),
+            "belong", act.address.to_readable(),
         };
         if number == 0 {
             one.insert("number", json!(*act.number));
@@ -330,4 +330,3 @@ async fn diamond_inscription_protocol_cost(State(ctx): State<ApiCtx>, q: Query<Q
     })
 
 }
-

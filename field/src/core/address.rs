@@ -120,7 +120,7 @@ impl Address {
 
 impl Display for Address {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        Display::fmt(&self.0, f)
+        write!(f, "{}", self.to_readable())
     }
 }
 
@@ -160,7 +160,7 @@ impl Address {
     pub fn must_version(&self) -> Rerr {
         maybe!(self.version() == Self::$key,
             Ok(()),
-            errf!("address {} is not {} type", self.readable(), stringify!($key))
+            errf!("address {} is not {} type", self.to_readable(), stringify!($key))
         )
     }
     }}
@@ -217,12 +217,12 @@ impl Address {
         Self::UNKNOWN
     }
 
-    pub fn readable(&self) -> String {
+    pub fn to_readable(&self) -> String {
         Account::to_readable(&*self)
     }
 
     pub fn prefix(&self, n: usize) -> String {
-        let mut s = self.readable();
+        let mut s = self.to_readable();
         let _ = s.split_off(n);
         s
     }
@@ -343,9 +343,13 @@ impl AddrOrPtr {
         Self::Val2(Addrptr::from(i + ADDR_OR_PTR_DIV_NUM))
     } 
 
+    pub fn to_readable(&self) -> String {
+        self.readable()
+    }
+
     pub fn readable(&self) -> String {
         match self {
-            Self::Val1(v) => v.readable(),
+            Self::Val1(v) => v.to_readable(),
             Self::Val2(v) => format!("<address pointer {}>", v.uint() - ADDR_OR_PTR_DIV_NUM),
         }
     }
@@ -373,16 +377,16 @@ mod address_tests {
         let adr1 = Address::UNKNOWN;
         let adr2 = Address::from_readable(adr0).unwrap();
         
-        assert_eq!(adr1.readable(), adr2.readable());
+        assert_eq!(adr1.to_readable(), adr2.to_readable());
 
         let adra = "14Xrfwd7XWmvzjpinTxxc9PwdHf37Myryy";
         let privkey = "594ac10e33501c06e3fae0f9133f4701c204a1f9de62a97cc33754a051019db7";
 
         let adrb = Account::create_by(privkey).unwrap();
-        assert_eq!(adra, adrb.readable());
+        assert_eq!(adra, adrb.to_readable());
 
         let adrc = "1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9";
-        assert_eq!(adrc, Account::create_by("123456").unwrap().readable());
+        assert_eq!(adrc, Account::create_by("123456").unwrap().to_readable());
 
     }
 

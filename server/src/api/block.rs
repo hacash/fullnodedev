@@ -43,7 +43,7 @@ async fn block_intro(State(ctx): State<ApiCtx>, q: Query<Q2953>) -> impl IntoRes
         "nonce", blkobj.nonce().uint(),
         "difficulty", blkobj.difficulty().uint(),
         // coinbase
-        "miner", cbtx.miner.readable(),
+        "miner", cbtx.miner.to_readable(),
         "reward", cbtx.reward.to_unit_string(&unit),
         "message", cbtx.message,
         // tx list
@@ -82,7 +82,7 @@ async fn block_recents(State(ctx): State<ApiCtx>, q: Query<Q7456>) -> impl IntoR
             "hash", li.hash.to_hex(),
             "prev", li.prev.to_hex(),
             "txs", li.txs - 1,
-            "miner", li.miner.readable(),
+            "miner", li.miner.to_readable(),
             "message", li.message,
             "reward", li.reward.to_unit_string(&unit),
             "time", li.time,
@@ -145,7 +145,7 @@ async fn block_views(State(ctx): State<ApiCtx>, q: Query<Q4935>) -> impl IntoRes
             "hash", blkhx.to_hex(),
             "msg", cbtx.message().to_readable_left(),
             "reward", cbtx.reward().to_unit_string(&unit),
-            "miner", cbtx.main().readable(),
+            "miner", cbtx.main().to_readable(),
             "time", intro.timestamp().uint(),
             "txs", intro.transaction_count().uint() - 1,
         };
@@ -223,5 +223,4 @@ async fn block_datas(State(ctx): State<ApiCtx>, q: Query<Q8538>) -> impl IntoRes
     // return raw data
     alldatas
 }
-
 

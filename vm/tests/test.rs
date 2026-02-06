@@ -68,7 +68,7 @@ mod other {
         let addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let caddr = ContractAddress::calculate(&addr, &Uint4::default());
 
-        println!("ContractAddress: {}", caddr.readable());
+        println!("ContractAddress: {}", caddr.to_readable());
 
         let cadr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
         assert!(caddr == ContractAddress::from_addr(cadr).unwrap());
@@ -115,7 +115,7 @@ mod other {
         let addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         println!(
             "++++++++ addr: {}",
-            ContractAddress::calculate(&addr, &Uint4::from(1)).readable()
+            ContractAddress::calculate(&addr, &Uint4::from(1)).to_readable()
         );
     }
 

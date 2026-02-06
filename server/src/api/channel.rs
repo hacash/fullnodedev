@@ -35,12 +35,12 @@ async fn channel(State(ctx): State<ApiCtx>, q: Query<Q7542>) -> impl IntoRespons
         "arbitration_lock", *channel.arbitration_lock_block,
         "interest_attribution", *channel.interest_attribution,
         "left", json!(jsondata!{
-            "address", channel.left_bill.address.readable(),
+            "address", channel.left_bill.address.to_readable(),
             "hacash", channel.left_bill.balance.hacash.to_unit_string(&unit),
             "satoshi", channel.left_bill.balance.satoshi.uint(),
         }),
         "right", json!(jsondata!{
-            "address", channel.right_bill.address.readable(),
+            "address", channel.right_bill.address.to_readable(),
             "hacash", channel.right_bill.balance.hacash.to_unit_string(&unit),
             "satoshi", channel.right_bill.balance.satoshi.uint(),
         }),
@@ -49,7 +49,7 @@ async fn channel(State(ctx): State<ApiCtx>, q: Query<Q7542>) -> impl IntoRespons
     // if status == 1 // closed  status == 2 || status == 3 
     if let Some(challenging) = channel.if_challenging.if_value() {
         let l_or_r = challenging.assert_address_is_left_or_right.check();
-        let assaddr = maybe!(l_or_r, channel.left_bill.address.readable(), channel.right_bill.address.readable());
+        let assaddr = maybe!(l_or_r, channel.left_bill.address.to_readable(), channel.right_bill.address.to_readable());
         data.insert("challenging", json!(jsondata!{
             "launch_height", *challenging.challenge_launch_height,
             "assert_bill_auto_number", *challenging.assert_bill_auto_number,

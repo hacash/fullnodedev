@@ -16,7 +16,7 @@ impl Resoure {
             return itr_err_code!(OutOfLoadContract)
         }
         let Some(c) = vmsta.contract(addr) else {
-            return itr_err_fmt!(NotFindContract, "cannot find contract {}", addr.readable());
+            return itr_err_fmt!(NotFindContract, "cannot find contract {}", addr.to_readable());
         };
         let rev = c.metas.revision.uint();
         if let Some(obj) = global_machine_manager()

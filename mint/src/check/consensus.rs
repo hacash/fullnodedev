@@ -19,7 +19,7 @@ fn impl_tx_submit(this: &HacashMinter, engine: &dyn EngineRead, txp: &TxPkg) -> 
     let dianame = diamintact.d.diamond;
     let dianum  = *diamintact.d.number;
     println!("**** {} diamond bidding {}-{} addr: {}, fee: {}", ctshow().split_off(11),
-        dianame.to_readable(), dianum, bidaddr.readable(), bidfee);
+        dianame.to_readable(), dianum, bidaddr.to_readable(), bidfee);
     * test end */
     // check_diamond_mint_minimum_bidding_fee
     check_diamond_mint_minimum_bidding_fee(next_hei, txr, &diamintact)?;
@@ -147,7 +147,7 @@ fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dy
                     /* test print start */
                     println!("\n✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖\ndiamond mint bidding fee {} less than consensus record {}", bidfee, rhbf);
                     println!("block height {} have a diamond {}-{}, address: {}, fee: {}, RecordHighestBidding: {}, {}", 
-                        curhei, diamint.d.diamond.to_readable(), dianum, txp.main().readable(), bidfee,
+                        curhei, diamint.d.diamond.to_readable(), dianum, txp.main(), bidfee,
                         rhbf, bidrecord.print(dianum),
                     );
                     /* test print end */ 

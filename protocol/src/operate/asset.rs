@@ -33,8 +33,8 @@ asset_operate_define!(asset_add, addr, asset, oldasset, {
 asset_operate_define!(asset_sub, addr, asset, oldasset, {  
     // check
     if oldasset < asset {
-		return errf!("address {} asset {} is insufficient, at least {}", 
-            addr.readable(), oldasset, asset)
+            return errf!("address {} asset {} is insufficient, at least {}", 
+            addr, oldasset, asset)
     }
     // do sub
     oldasset.checked_sub(asset)?
@@ -78,10 +78,8 @@ pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> Ret
             }
         }
     }
-    errf!("address {} asset is insufficient, at least {}", addr.readable(), ast)
+    errf!("address {} asset is insufficient, at least {}", addr, ast)
 }
-
-
 
 
 

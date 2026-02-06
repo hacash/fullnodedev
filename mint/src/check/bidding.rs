@@ -56,8 +56,8 @@ impl BiddingProve {
         };
 
         macro_rules! rcdshow { () => {
-            // println!("- devtest record bidding {} {}", &record.addr.readable(), &record.fee);  
-            // flush!("{}({}) ", &record.addr.readable()[0..7], &record.fee);
+            // println!("- devtest record bidding {} {}", &record.addr.to_readable(), &record.fee);  
+            // flush!("{}({}) ", &record.addr.to_readable()[0..7], &record.fee);
         }}
         let bids = self.biddings.entry(dianum).or_default();
         // push
@@ -131,7 +131,7 @@ impl BiddingProve {
         items.push_str(&format!("MinterRecordBiddingList {} (\n", dianum));
         if let Some(bids) = self.biddings.get(&dianum) {
             for r in bids.iter() {
-                let mut adr = r.addr.readable();
+                let mut adr = r.addr.to_readable();
                 let _ = adr.split_off(9);
                 items.push_str(&format!("    {} {} {}... {}\n", 
                     timeshow(r.time).split_off(11), r.diamond.to_readable(), adr, r.fee));

@@ -10,7 +10,7 @@ action_define!{ DiaSingleTrs, 5,
         diamond   : DiamondName  
         to        : AddrOrPtr 
     },
-    (self, format!("Transfer 1 HACD ({}) to {}", self.diamond.to_readable(), self.to.readable())),
+    (self, format!("Transfer 1 HACD ({}) to {}", self.diamond.to_readable(), self.to.to_readable())),
     (self, ctx, _gas {
         let from  = ctx.env().tx.main;
         let to    = ctx.addr(&self.to)?;
@@ -32,7 +32,7 @@ action_define!{ DiaFromToTrs, 6,
         to        : AddrOrPtr
         diamonds  : DiamondNameListMax200
     },
-    (self, format!("Transfer {} HACD ({}) from {} to {}", self.diamonds.length(), self.diamonds.splitstr(), self.from.readable(), self.to.readable())),
+    (self, format!("Transfer {} HACD ({}) from {} to {}", self.diamonds.length(), self.diamonds.splitstr(), self.from.to_readable(), self.to.to_readable())),
     (self, ctx, _gas {
         let from = ctx.addr(&self.from)?;
         let to   = ctx.addr(&self.to)?;
@@ -52,7 +52,7 @@ action_define!{ DiaToTrs, 7,
         to        : AddrOrPtr
         diamonds  : DiamondNameListMax200
     },
-    (self, format!("Transfer {} HACD ({}) to {}", self.diamonds.length(), self.diamonds.splitstr(), self.to.readable())),
+    (self, format!("Transfer {} HACD ({}) to {}", self.diamonds.length(), self.diamonds.splitstr(), self.to.to_readable())),
     (self, ctx, _gas {
         let from = ctx.env().tx.main;
         let to   = ctx.addr(&self.to)?;
@@ -72,7 +72,7 @@ action_define!{ DiaFromTrs, 8,
         from      : AddrOrPtr
         diamonds  : DiamondNameListMax200 
     },
-    (self, format!("Transfer {} HACD ({}) from {}", self.diamonds.length(), self.diamonds.splitstr(), self.from.readable())),
+    (self, format!("Transfer {} HACD ({}) from {}", self.diamonds.length(), self.diamonds.splitstr(), self.from.to_readable())),
     (self, ctx, _gas {
         let from = ctx.addr(&self.from)?;
         let to   = ctx.env().tx.main;
@@ -99,4 +99,3 @@ pub fn do_diamonds_transfer(diamonds: &DiamondNameListMax200, from: &Address, to
     // transfer
     hacd_transfer(&mut state, from, to, &DiamondNumber::from(dianum as u32), &diamonds)
 }
-

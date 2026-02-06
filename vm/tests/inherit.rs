@@ -38,7 +38,7 @@ mod inherit {
         let addr = addr("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9");
         for i in 0..12 {
             let caddr = ContractAddress::calculate(&addr, &Uint4::from(i));
-            println!("{}", caddr.readable());
+            println!("{}", caddr.to_readable());
         }
     }
 

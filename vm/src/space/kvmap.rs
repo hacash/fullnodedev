@@ -96,9 +96,8 @@ impl CtcKVMap {
     }
 
     pub fn entry(&mut self, addr: &Address) -> VmrtRes<&mut MKVMap> {
-        addr.check_version().map_ires(MemoryError, format!("memory use must in dffective address but in {}", addr.readable()))?;
+        addr.check_version().map_ires(MemoryError, format!("memory use must in dffective address but in {}", addr))?;
         Ok(self.datas.entry(addr.clone()).or_insert_with(||MKVMap::new(self.limit)))
     }
 
 }
-
