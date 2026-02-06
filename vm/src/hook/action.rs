@@ -7,27 +7,27 @@ pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context, _gas: 
         HacFromToTrs::KIND
         | HacFromTrs::KIND
         | HacToTrs::KIND
-            => coin_asset_transfer_call(PermitHAC, PayableHAC, action, ctx),
+            => coin_asset_transfer_call(kid, PermitHAC, PayableHAC, action, ctx),
         | SatFromToTrs::KIND
         | SatFromTrs::KIND
         | SatToTrs::KIND
-            => coin_asset_transfer_call(PermitSAT, PayableSAT, action, ctx),
+            => coin_asset_transfer_call(kid, PermitSAT, PayableSAT, action, ctx),
         | DiaSingleTrs::KIND
         | DiaFromToTrs::KIND
         | DiaFromTrs::KIND
         | DiaToTrs::KIND 
-            => coin_asset_transfer_call(PermitHACD, PayableHACD, action, ctx),
+            => coin_asset_transfer_call(kid, PermitHACD, PayableHACD, action, ctx),
         | AssetFromToTrs::KIND
         | AssetFromTrs::KIND
         | AssetToTrs::KIND 
-            => coin_asset_transfer_call(PermitAsset, PayableAsset, action, ctx),
+            => coin_asset_transfer_call(kid, PermitAsset, PayableAsset, action, ctx),
         _ => Ok(())
     }
 
 }
 
 
-fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn Any, ctx: &mut dyn Context) -> Rerr {
+fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, action: &dyn Any, ctx: &mut dyn Context) -> Rerr {
 
     let addrs = &ctx.env().tx.addrs;
     let mut from = ctx.env().tx.main;
@@ -101,13 +101,25 @@ fn coin_asset_transfer_call(abstfrom: AbstCall, abstto: AbstCall, action: &dyn A
         return Ok(()) // no script or contract address
     }
 
+    const P2SH_PARAM_LEN: usize = 5; // witness + kind + to + (arg1, arg2)
+
     // call from p2sh script
     if fs {
-        let mut argvs = argvs.clone();
-        argvs.push_front( Value::Address(to) );
-        let param = Value::Compo(CompoItem::list(argvs)?);
-        // Copy codes out to avoid holding an immutable borrow of ctx across VM execution.
-        let codes = ctx.p2sh(&from)?.code_stuff().to_vec();
+        let p2sh = ctx.p2sh(&from)?;
+        let witness = p2sh.witness().to_vec();
+        let codes = p2sh.code_stuff().to_vec();
+        let mut params: Vec<Value> = Vec::with_capacity(P2SH_PARAM_LEN);
+        params.push(Value::Bytes(witness));
+        params.push(Value::U16(kid));
+        params.push(Value::Address(to));
+        let mut args = argvs.clone();
+        while params.len() < P2SH_PARAM_LEN {
+            match args.pop_front() {
+                Some(v) => params.push(v),
+                None => params.push(Value::Nil),
+            }
+        }
+        let param = Value::Compo(CompoItem::list(VecDeque::from(params))?);
         let cm = ExecMode::P2sh as u8;
         setup_vm_run(ctx, cm, 0, &codes, param)?;
         // return value checked inside p2sh_call

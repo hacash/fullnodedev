@@ -9,6 +9,7 @@ pub struct Resoure {
     pub global_vals: GKVMap,
     pub memory_vals: CtcKVMap,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
+    pub contract_load_bytes: usize,
     // stack heap
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
@@ -43,6 +44,7 @@ impl Resoure {
         self.space_cap = cap;
         self.gas_extra = GasExtra::new(height);
         self.gas_table = GasTable::new(height);
+        self.contract_load_bytes = 0;
     }
 
     pub fn stack_allocat(&mut self) -> Stack {
@@ -65,4 +67,3 @@ impl Resoure {
 
 
 }
-

@@ -103,7 +103,8 @@ impl VM for MachineBox {
         let min_cost = {
             let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
             match std_mem_transmute!(ty) {
-                Main | P2sh => gsext.main_call_min,
+                Main => gsext.main_call_min,
+                P2sh => gsext.p2sh_call_min,
                 Abst => gsext.abst_call_min,
                 _ => never!(),
             }

@@ -12,7 +12,8 @@ combi_list!{ MerkelStuffs,
 
 
 pub struct UnlockScript {
-    stuff: Vec<u8>
+    stuff: Vec<u8>,
+    witness: Vec<u8>,
 }
 
 /// Result of `scriptmh` address derivation for a P2SH lock script.
@@ -44,7 +45,7 @@ action_define!{UnlockScriptProve, 97,
     false, [],
     {
         // calc hash: script + calibs
-        argvkey: BytesW2 // unlock bytecodes
+        argvkey: BytesW2 // unlock witness bytes (not executed)
         lockbox: BytesW2 // verify bytecodes
         adrlibs: ContractAddressW1 // lib address list for pure and callcode call
         merkels: MerkelStuffs
@@ -70,6 +71,9 @@ action_define!{UnlockScriptProve, 97,
 impl P2sh for UnlockScript {
     fn code_stuff(&self) -> &[u8] {
         &self.stuff
+    }
+    fn witness(&self) -> &[u8] {
+        &self.witness
     }
 }
 
@@ -119,102 +123,42 @@ impl UnlockScriptProve {
         })
     }
 
-    fn verify_unlocks_bytecode(cap: &SpaceCap, unlocks: &[u8]) -> Ret<()> {
-        use Bytecode::*;
-        if unlocks.is_empty() {
-            return errf!("p2sh unlock script cannot be empty")
-        }
-        // Use convert_and_check() but avoid the tail-END constraint by temporarily appending END.
-        // Also ensure the appended END is a real instruction (not consumed as PBUF/PBUFL data),
-        // otherwise a malformed unlock script could "borrow" this byte as missing data.
-        let mut tmp = Vec::with_capacity(unlocks.len() + 1);
-        tmp.extend_from_slice(unlocks);
-        tmp.push(END as u8);
-        let insts = convert_and_check(cap, CodeType::Bytecode, &tmp)?;
-        if insts[unlocks.len()] == 0 {
-            return errf!("p2sh unlock script tail format error")
-        }
-        // Disallow opcodes for safety:
-        // - no jumps / branches
-        // - no early exit (RET/END/ERR/ABT/AST)
-        // - no state writes (global/memory/storage/log/heap grow/write)
-        // - no contract calls (any CALL*)
-        // Allowed: stack ops + pure computation + read-only state/storage (GGET/MGET/SLOAD/SREST) etc.
-        for (i, b) in unlocks.iter().enumerate() {
-            if insts[i] == 0 {
-                continue // data segment
-            }
-            let inst: Bytecode = std_mem_transmute!(*b);
-            match inst {
-                // forbid control flow
-                JMPL | JMPS | JMPSL | BRL | BRS | BRSL | BRSLN => {
-                    return errf!("p2sh unlock script cannot use jump/branch opcode {}", *b)
-                }
-                // forbid early exit / abort
-                RET | END | ERR | ABT | AST => {
-                    return errf!("p2sh unlock script cannot return/abort early (opcode {})", *b)
-                }
-                // forbid any contract call
-                CALL | CALLTHIS | CALLSELF | CALLSUPER | CALLVIEW | CALLPURE | CALLCODE => {
-                    return errf!("p2sh unlock script cannot call contracts (opcode {})", *b)
-                }
-                // forbid state writes (but allow reads)
-                SDEL | SSAVE | SRENT | GPUT | MPUT | LOG1 | LOG2 | LOG3 | LOG4 => {
-                    return errf!("p2sh unlock script cannot write state/log (opcode {})", *b)
-                }
-                // forbid heap write/grow (outside operand stack)
-                HWRITE | HWRITEX | HWRITEXL | HGROW => {
-                    return errf!("p2sh unlock script cannot write heap (opcode {})", *b)
-                }
-                // forbid local write / outside-stack mutations
-                ALLOC | PUT | PUTX | XOP | XLG | UPLIST => {
-                    return errf!("p2sh unlock script cannot write outside operand stack (opcode {})", *b)
-                }
-                // forbid extend action
-                EXTACTION => {
-                    return errf!("p2sh unlock script cannot use EXTACTION (opcode {})", *b)
-                }
-                // debug / panic
-                PRT | NT => {
-                    return errf!("p2sh unlock script cannot use debug/panic opcode {}", *b)
-                }
-                _ => {}
-            }
+    fn verify_witness_bytes(cap: &SpaceCap, witness: &[u8]) -> Ret<()> {
+        if witness.len() > cap.max_value_size {
+            return errf!("p2sh witness bytes too long")
         }
         Ok(())
     }
 
     fn get_stuff(&self, ctx: &dyn Context) -> Ret<UnlockScript> {
-        // check libs all is contract 
-        if ! self.adrlibs.list().iter().all(|a|a.is_contract()) {
-            return errf!("contract libs error")
-        }
         // check bytecodes
         let cap = SpaceCap::new(ctx.env().block.height);
+        // check libs all is contract 
+        let libs = self.adrlibs.list();
+        if libs.len() > cap.librarys_link {
+            return errf!("p2sh libs overflow ({}>{})", libs.len(), cap.librarys_link)
+        }
+        if ! libs.iter().all(|a|a.is_contract()) {
+            return errf!("contract libs error")
+        }
         let ctb = CodeType::Bytecode;
         let lockbox = self.lockbox.as_vec();
-        let unlocks = self.argvkey.as_vec();
+        let witness = self.argvkey.as_vec().clone();
         convert_and_check(&cap, ctb, &lockbox)?;
-        Self::verify_unlocks_bytecode(&cap, &unlocks)?;
-        if unlocks.len() + lockbox.len() > cap.one_function_size {
-            return errf!("p2sh code too long")
+        Self::verify_witness_bytes(&cap, &witness)?;
+        if lockbox.len() > cap.one_function_size {
+            return errf!("p2sh lockbox code too long")
         }
-        // verify combined code to avoid inconsistencies between segments
-        let mut combined = Vec::with_capacity(unlocks.len() + lockbox.len());
-        combined.extend_from_slice(&unlocks);
-        combined.extend_from_slice(&lockbox);
-        convert_and_check(&cap, ctb, &combined)?;
-        // ok 
+        // ok
         let merkel = self.get_merkel()?.to_vec();
         let libs = self.adrlibs.serialize();
-        let combined_len = combined.len();
         let mut stuff = Vec::with_capacity(
-            merkel.len() + libs.len() + combined_len
+            merkel.len() + libs.len() + lockbox.len()
         );
         stuff.extend_from_slice(&merkel);
         stuff.extend_from_slice(&libs);
-        stuff.append(&mut combined);
-        Ok(UnlockScript{ stuff })
+        stuff.extend_from_slice(&lockbox);
+        Ok(UnlockScript{ stuff, witness })
     }
 
     fn get_merkel(&self) -> Ret<Address> {

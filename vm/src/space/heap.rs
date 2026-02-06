@@ -50,11 +50,24 @@ impl Heap {
         if oldseg + seg > self.limit {
             return itr_err_code!(OutOfHeap)
         }
-        let mut gas = 0;
-        for s in oldseg+1 .. oldseg+seg+1 {
-            gas += 2i64.pow(s as u32);
-        } 
-        Ok(gas)
+        // Gas is an abstraction of space usage: the first 8 segments are charged
+        // exponentially (2,4,8,16,32,64,128,256), then linear 256 per segment.
+        let mut gas: u64 = 0;
+        let exp_cnt = seg.min(8);
+        for i in 0..exp_cnt {
+            gas = gas
+                .checked_add(1u64.checked_shl((i + 1) as u32).unwrap_or(u64::MAX))
+                .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
+        }
+        if seg > 8 {
+            let add = (seg - 8)
+                .checked_mul(Self::SEGLEN)
+                .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
+            gas = gas
+                .checked_add(add as u64)
+                .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
+        }
+        Ok(gas as i64)
     }
 
     pub fn grow(&mut self, seg: u8) -> VmrtRes<i64> {

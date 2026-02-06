@@ -140,11 +140,13 @@ impl CallFrame {
         // check gas
         let ctln = r.contracts.len();
         let delta = ctln.saturating_sub(*ctlnum);
-        if delta > 0 {
+        if delta > 0 || r.contract_load_bytes > 0 {
             // Library resolve may touch src+lib (usually 1-2 loads), while inheritance
             // resolve can walk multiple parents, so delta can be >1 in a single CALL.
             let fee = (delta as i64) * r.gas_extra.load_new_contract;
-            *env.gas -= fee;
+            let bytes_fee = (r.contract_load_bytes as i64) / 64;
+            *env.gas -= fee + bytes_fee;
+            r.contract_load_bytes = 0;
             if *env.gas < 0 {
                 return itr_err_code!(OutOfGas)
             }

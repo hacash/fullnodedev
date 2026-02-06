@@ -19,16 +19,19 @@ impl Resoure {
             return itr_err_fmt!(NotFindContract, "cannot find contract {}", addr.to_readable());
         };
         let rev = c.metas.revision.uint();
+        let cbytes = c.size();
         if let Some(obj) = global_machine_manager()
             .contract_cache()
             .get(addr, rev)
         {
             self.contracts.insert(addr.clone(), obj.clone()); // tx-local cache
+            self.contract_load_bytes = self.contract_load_bytes.saturating_add(cbytes);
             return Ok(obj);
         }
         let cobj = Arc::new(c.clone().into_obj()?);
         self.contracts.insert(addr.clone(), cobj.clone()); // tx-local cache
         global_machine_manager().contract_cache().insert(addr, &c, cobj.clone());
+        self.contract_load_bytes = self.contract_load_bytes.saturating_add(cbytes);
         Ok(cobj)
     }
 

@@ -53,6 +53,10 @@ macro_rules! memory_kvmap_define {
                 })
             }
 
+            pub fn contains_key(&self, k: &Value) -> VmrtRes<bool> {
+                Ok(self.datas.contains_key(&Self::key(k)?))
+            }
+
         }
     };
 }

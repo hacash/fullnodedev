@@ -193,7 +193,7 @@ impl P2shMerkleTree {
     ///
     /// This function does NOT validate bytecode (it does not know the current `SpaceCap`).
     /// The chain will validate in `UnlockScriptProve::execute`.
-    pub fn build_unlock_script_prove_unchecked(&self, idx: usize, unlocks: BytesW2) -> Ret<(Address, UnlockScriptProve, ScriptmhCalc)> {
+    pub fn build_unlock_script_prove_unchecked(&self, idx: usize, witness: BytesW2) -> Ret<(Address, UnlockScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
         let merkels = self.proof_for_index(idx)?;
         let calc = UnlockScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &merkels)?;
@@ -205,7 +205,7 @@ impl P2shMerkleTree {
             )
         }
         let mut act = UnlockScriptProve::new();
-        act.argvkey = unlocks;
+        act.argvkey = witness;
         act.lockbox = spec.lockbox;
         act.adrlibs = spec.adrlibs;
         act.merkels = merkels;
@@ -213,23 +213,18 @@ impl P2shMerkleTree {
         Ok((calc.address, act, calc))
     }
 
-    /// Same as `build_unlock_script_prove_unchecked`, but performs local bytecode checks using
+    /// Same as `build_unlock_script_prove_unchecked`, but performs local checks using
     /// the same rules as `UnlockScriptProve::get_stuff`.
-    pub fn build_unlock_script_prove_checked(&self, block_height: u64, idx: usize, unlocks: BytesW2) -> Ret<(Address, UnlockScriptProve, ScriptmhCalc)> {
+    pub fn build_unlock_script_prove_checked(&self, block_height: u64, idx: usize, witness: BytesW2) -> Ret<(Address, UnlockScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
         let cap = SpaceCap::new(block_height);
         let ctb = CodeType::Bytecode;
         // lockbox must be valid by itself
         convert_and_check(&cap, ctb, spec.lockbox.as_vec())?;
-        // unlock script must satisfy restricted opcode policy
-        UnlockScriptProve::verify_unlocks_bytecode(&cap, unlocks.as_vec())?;
-        // combined code must be valid as a single function (this matches on-chain validation)
-        let mut combined = Vec::with_capacity(unlocks.length() + spec.lockbox.length());
-        combined.extend_from_slice(unlocks.as_vec());
-        combined.extend_from_slice(spec.lockbox.as_vec());
-        convert_and_check(&cap, ctb, &combined)?;
+        // witness bytes must fit local constraints
+        UnlockScriptProve::verify_witness_bytes(&cap, witness.as_vec())?;
         // ok, build action
-        self.build_unlock_script_prove_unchecked(idx, unlocks)
+        self.build_unlock_script_prove_unchecked(idx, witness)
     }
 }
 

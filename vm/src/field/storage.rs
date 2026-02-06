@@ -360,15 +360,13 @@ impl VMState<'_> {
     */
     fn ssave(&mut self, gst: &GasExtra, curhei: u64, cadr: &ContractAddress, k: Value, v: Value) -> VmrtRes<i64> {
         v.canbe_store()?; // check can store
-        let key_len = k.canbe_key()?.len();
         let val_len = v.can_get_size()? as usize;
 
         let k = Self::skey(cadr, &k)?;
-        let gc = crate::rt::GasCost::new(curhei);
-        let mut extra_gas = gc.storage_write(key_len, val_len);
+        let mut extra_gas = gst.storage_write(val_len);
         let one_period_rent = (val_len as i64) + gst.storege_value_base_size;
-        // Key hashing (if needed) is charged only when (re)creating a key.
-        let key_hash_fee = gc.hash_extra(field::Address::SIZE + key_len);
+        // Key creation fee is charged only when (re)creating a key.
+        let key_create_fee = gst.storage_key_cost;
 
         let mut old_valid = false;
         let old = match self.ctrtkvdb(&k) {
@@ -390,8 +388,8 @@ impl VMState<'_> {
         };
 
         if !old_valid {
-            // (Re)create: charge one period rent + key-hash fee (integrated into key creation).
-            extra_gas += one_period_rent + key_hash_fee;
+            // (Re)create: charge one period rent + key creation fee.
+            extra_gas += one_period_rent + key_create_fee;
         }
 
         let mut vobj = match old {
