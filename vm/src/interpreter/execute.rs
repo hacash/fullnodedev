@@ -19,7 +19,9 @@ macro_rules! itrbuf {
     ($codes: expr, $pc: expr, $l: expr) => {
         { 
             let r = $pc + $l;
-            debug_assert!(r <= $codes.len());
+            if r < $pc || r > $codes.len() {
+                return itr_err_code!(CodeOverflow)
+            }
             let v: [u8; $l] = unsafe { read_arr::<$l>($codes, $pc) };
             $pc = r;
             v
@@ -31,7 +33,9 @@ macro_rules! itrparam {
     ($codes: expr, $pc: expr, $l: expr, $t: ty) => {
         { 
             let r = $pc + $l;
-            debug_assert!(r <= $codes.len());
+            if r < $pc || r > $codes.len() {
+                return itr_err_code!(CodeOverflow)
+            }
             let v = <$t>::from_be_bytes(unsafe { read_arr::<$l>($codes, $pc) });
             $pc = r;
             v
@@ -57,7 +61,9 @@ macro_rules! itrparambufex {
             let s = itrparam!{$codes, $pc, $l, $t} as usize;
             let l = $pc;
             let r = l + s;
-            debug_assert!(r <= $codes.len());
+            if r < l || r > $codes.len() {
+                return itr_err_code!(CodeOverflow)
+            }
             $pc = r;
             let v = unsafe { std::slice::from_raw_parts($codes.as_ptr().add(l), s) };
             Value::Bytes(v.to_vec())
@@ -216,12 +222,14 @@ pub fn execute_code(
 
     // start run
     let exit;
-    loop {
-        // read inst
-        debug_assert!(*pc < codes.len());
-        let instbyte = unsafe { *codes.get_unchecked(*pc as usize) }; // u8
-        let instruction: Bytecode = std_mem_transmute!(instbyte);
-        *pc += 1; // next
+	    loop {
+	        // read inst
+	        if *pc >= codes.len() {
+	            return itr_err_code!(CodeOverflow)
+	        }
+	        let instbyte = unsafe { *codes.get_unchecked(*pc as usize) }; // u8
+	        let instruction: Bytecode = std_mem_transmute!(instbyte);
+	        *pc += 1; // next
 
         // debug_print_stack(ops, locals, pc, instruction);
 
@@ -892,4 +900,110 @@ fn debug_print_stack(ops: &Stack, lcs: &Stack, pc: &usize, inst: Bytecode) {
     ops.len(), &ops.print_stack(), lcs.len(), &lcs.print_stack(), 
     *pc, inst);
 
+}
+
+
+
+
+#[cfg(test)]
+mod bounds_tests {
+    use super::*;
+    use crate::machine::VmHost;
+    use crate::rt::{ExecMode, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
+    use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
+    use crate::value::Value;
+    use crate::ContractAddress;
+    use sys::Ret;
+
+    #[derive(Default)]
+    struct DummyHost;
+
+    impl VmHost for DummyHost {
+        fn height(&mut self) -> u64 {
+            1
+        }
+
+        fn ext_action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+            Ok((0, vec![]))
+        }
+
+        fn log_push(&mut self, _cadr: &ContractAddress, _items: Vec<Value>) -> VmrtErr {
+            Ok(())
+        }
+
+        fn srest(&mut self, _hei: u64, _cadr: &ContractAddress, _key: &Value) -> VmrtRes<Value> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn sload(&mut self, _hei: u64, _cadr: &ContractAddress, _key: &Value) -> VmrtRes<Value> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn sdel(&mut self, _cadr: &ContractAddress, _key: Value) -> VmrtErr {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn ssave(
+            &mut self,
+            _gst: &GasExtra,
+            _hei: u64,
+            _cadr: &ContractAddress,
+            _key: Value,
+            _val: Value,
+        ) -> VmrtRes<i64> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn srent(
+            &mut self,
+            _gst: &GasExtra,
+            _hei: u64,
+            _cadr: &ContractAddress,
+            _key: Value,
+            _period: Value,
+        ) -> VmrtRes<i64> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+    }
+
+    #[test]
+    fn execute_code_rejects_truncated_params() {
+        use crate::rt::Bytecode;
+
+        let codes = vec![Bytecode::PU16 as u8]; // missing 2 bytes param
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut globals = GKVMap::new(20);
+        let mut memorys = CtcKVMap::new(12);
+
+        let cadr = ContractAddress::default();
+
+        let res = execute_code(
+            &mut pc,
+            &codes,
+            ExecMode::Main,
+            false,
+            0,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &mut globals,
+            &mut memorys,
+            &mut host,
+            &cadr,
+            &cadr,
+        );
+
+        assert!(matches!(res, Err(ItrErr(ItrErrCode::CodeOverflow, _))));
+    }
 }

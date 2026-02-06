@@ -216,7 +216,9 @@ impl Value {
             return itr_err_code!(ItemNoSize)
         }
         let n = self.val_size();
-        assert!(n < u16::MAX as usize);
+        if n >= u16::MAX as usize {
+            return itr_err_code!(OutOfValueSize)
+        }
         Ok(n as u16)
     }
 
@@ -287,4 +289,22 @@ impl Value {
     }
 
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rt::{ItrErr, ItrErrCode};
+
+    #[test]
+    fn can_get_size_returns_error_instead_of_panicking_on_u16_max() {
+        let v = Value::Bytes(vec![0u8; u16::MAX as usize]);
+        assert!(matches!(v.can_get_size(), Err(ItrErr(ItrErrCode::OutOfValueSize, _))));
+    }
+
+    #[test]
+    fn can_get_size_allows_u16_max_minus_one() {
+        let v = Value::Bytes(vec![0u8; (u16::MAX as usize) - 1]);
+        assert_eq!(v.can_get_size().unwrap(), u16::MAX - 1);
+    }
 }

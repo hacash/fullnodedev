@@ -51,8 +51,12 @@ These are dynamic and depend on the size of the resources or the scale of usage.
 - 20:  every memory key
 - 32:  every global key
 - 32:  every contract load
-- 256: every heap segment ( the first 8 segments of the HGROW command grow exponentially, and after 8 segments they change to linear growth. start from 2, 4, 8, 16, 32, 64, 128 to 256, the linear part is fixed at 256 gas per segment. the actual size of one heap segment is 256 bytes )
-- 256: every storage key
+- 256: every heap segment in linear ( the first 8 segments of the HGROW command grow exponentially, and after 8 segments they change to linear growth. start from 2, 4, 8, 16, 32, 64, 128 to 256, the linear part is fixed at 256 gas per segment. the actual size of one heap segment is 256 bytes )
+  - Heap segment growth:
+    - First 8 segments: exponential growth (2, 4, 8, 16, 32, 64, 128, 256 gas per segment)
+    - After 8 segments: linear growth (256 gas per segment)
+    - Example: HGROW 1 = 2 gas, HGROW 8 = 510 gas, HGROW 10 = 1022 gas
+- 256: every (re)created storage key
 
 
 #### Stack buffer copy
@@ -82,7 +86,7 @@ NTCALL has three kinds of charges: 1-base, 2-extra, 3-func. The func fee is defi
 
 Some opcode should be charged based on both the number of items and the total size. item/4 is item*0.25, item/2 is item*0.5
 
-KEYS, VALUES byte refers to the total bytes output (create on stack). map byte = all key_byte + all value_byte, list byte = all value_byte
+KEYS, VALUES byte refers to the total bytes output (create on stack). map byte = all key_byte + all value_byte, list byte = all value_byte, total_gas = base + item_gas + byte_gas
 
 The byte in ITEMGET/HEAD/TAIL refers to outputting value_byte; list types do not include key_byte.
 
@@ -93,14 +97,18 @@ The byte in ITEMGET/HEAD/TAIL refers to outputting value_byte; list types do not
 
 #### Log render
 
+byte = sum(all_param_bytes) = topic_bytes + sum(all_data_bytes)
+
 - byte/1: LOG*
 
 #### Storage read and write
 
 The key_byte is not calculated here.
 
+SSAVE will automatically extend expired periods by up to one cycle for free, without charging additional rent gas.
+
 - byte/8: SLOAD
-- byte/6: SSAVE (free make-up for one period)
+- byte/6: SSAVE (write bytes; rent/key-create fee may also apply depending on key state)
 
 #### Storage rent
 
@@ -127,7 +135,7 @@ dynamic = 40 / 8 = 5
 total = 37 gas
 ```
 
-2) SSAVE (value_byte = 80, 1 period rent)
+2) SSAVE (value_byte = 80, renew/new-key includes 1 period rent; if new-key add +256)
 ```
 base = 64
 dynamic_write = 80 / 6 = 13
@@ -141,3 +149,32 @@ base = 24
 dynamic = 100 / 1 = 100
 total = 124 gas
 ```
+
+
+## Expected Usage (DeFi Scenarios)
+
+This section provides a 3-tier “DeFi operation” **expected resource usage** and a rough gas estimate table, intended to help contract developers quickly gauge whether a workflow may approach `max_gas_of_tx=8192`.
+
+Assumptions and notes:
+
+- These are estimation templates. Real costs depend on opcode mix, contract sizes, host-returned gas from `EXTACTION/EXTFUNC`, and whether `SSAVE` triggers renewals or (re)creates a storage key.
+- The “Other compute opcodes” column is meant to count opcodes **excluding** those already accounted for as IO/heavy ops in this table (e.g. `SLOAD/SSAVE/LOG*/HGROW/HREAD/HWRITE/EXT*/NTCALL`), to avoid double counting.
+- Contract load cost: `32 * new_loads + sum(contract_bytes/64)` (integer truncation).
+- `SSAVE` has two typical pricing cases:
+  - **Normal write**: `64 + value_byte/6`
+  - **New / expired-recreate / auto-renew triggered**: on top of normal write, add `rent_one_period = 32 + value_byte`; for new/recreate also add `storage_key_cost=256`.
+
+> In the table, `value_byte=8` corresponds to `U64`-like balances/reserves. If you store `Bytes(32)` (e.g. hash/commitment), replace `8` with `32` and recompute.
+
+| Scenario | Contract Loads | EXTACTION | NTCALL | Other Compute Opcodes (rough) | Heap (rough) | Storage (rough) | Log (rough) | Estimated Total Gas (range) |
+|---|---|---|---|---|---|---|---|---|
+| Light DeFi op (e.g. single-pool fee settle / single-contract balance move) | 1 new load; contract ~8KB | 0 | 0 | ~300 opcodes (avg 2 gas/op → ~600) | none | `SLOAD*2` (value_byte=8) + `SSAVE*2` (existing, value_byte=8) | `LOG2*1` (total value_byte ~24) | ~1000–~1100 (example: `160(load)+600(code)+196(storage)+48(log)=1004`; if SSAVE renew triggers +80; if new key is created cost rises significantly) |
+| Typical DeFi op (e.g. AMM swap / lending borrow/repay step) | 3 new loads; each contract ~8KB | 1; body ~96B; host returned gas ~200 (example) | 3 hash calls (e.g. sha2/sha3/ripemd160; input ~32B) | ~1200 opcodes (~2400) | `HGROW 2 seg` + `HWRITE 512B` + `HREAD 512B` | `SLOAD*10` (8B) + `SSAVE*6` (existing, 8B) | `LOG3*2` (~48B each) | ~4200–~5200 (example: `480(load)+2400(code)+237(ext)+119(nt)+94(heap)+720(storage)+152(log)=4202`; depends on host gas and whether SSAVE renew/new happens) |
+| Heavy DeFi op (e.g. liquidation / multi-hop routing / batch distribution step; near gas cap) | 6 new loads; each contract ~12KB | 2; body ~256B; host returned gas ~400 (example) | 6 hash calls (input ~32B) | ~1800 opcodes (~3600) | `HGROW 4 seg` + `HWRITE 1024B` + `HREAD 1024B` | `SLOAD*20` (8B) + `SSAVE*12` (existing, 8B) | `LOG4*2` (~64B each) | ~7900–~8600 (example: `1344(load)+3600(code)+906(ext)+264(nt)+193(heap)+1440(storage)+192(log)=7939`; easy to exceed 8192 due to SSAVE renew/new or high host-returned gas) |
+
+Suggested workflow (quick estimate):
+
+1. List contracts/libraries touched, estimate new contract loads and contract sizes.
+2. List counts of `SLOAD/SSAVE/SRENT` and their `value_byte` (store `U64` → 8B; common hashes → 32B).
+3. If you assemble large parameters in heap (HeapSlice feeding `NTCALL/EXT*`), list `HGROW` segments and read/write byte sizes.
+4. Treat `EXTACTION/EXTFUNC` body bytes and host-returned gas as variables; start conservative, then calibrate with on-chain measurements.

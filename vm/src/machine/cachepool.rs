@@ -510,6 +510,7 @@ mod tests {
             promote_threshold: 20,
             max_entry_bytes: 0,
         };
+        let max_bytes = config.max_bytes;
         pool.configure(config);
 
         for i in 0..10 {
@@ -520,7 +521,7 @@ mod tests {
         }
 
         let stats = pool.stats();
-        assert!(stats.used_bytes <= config.max_bytes);
+        assert!(stats.used_bytes <= max_bytes);
         assert!(stats.entries <= 10);
     }
 }

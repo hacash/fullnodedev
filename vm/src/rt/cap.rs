@@ -12,8 +12,8 @@ pub struct SpaceCap {
 
     pub max_heap_seg: usize, // 64: 256 * 64 = 16kb
 
-    pub max_global: usize, // 32
-    pub max_memory: usize, // 12
+    pub max_global: usize, // 20
+    pub max_memory: usize, // 16
 
     pub max_contract_size: usize, // 65535 * 2
     pub one_function_size: usize, // 65535 / 4

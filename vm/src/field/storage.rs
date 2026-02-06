@@ -213,7 +213,9 @@ mod storage_param_tests {
         let gst = GasExtra::new(1);
         let mut v = ValueSto::new(0, Value::Nil);
         // rent to exactly the max
-        let p = Value::U64(STORAGE_PERIOD_MAX as u64);
+        // `ValueSto::new` already includes the minimum 1-period lease, so we can only add
+        // `STORAGE_PERIOD_MAX - 1` more periods to reach the maximum.
+        let p = Value::U64((STORAGE_PERIOD_MAX - 1) as u64);
         v.rent(&gst, 0, p).unwrap();
         assert_eq!(v.expire.uint(), STORAGE_SAVE_MAX);
 
