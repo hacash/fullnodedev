@@ -3,6 +3,14 @@ pub fn initialize(engine: &ChainEngine, state_db: Arc<dyn DiskDB>, no_sta_dir: b
       
     let _lk = engine.syncing.lock().unwrap();
 
+    if no_sta_dir {
+        let mut init_state = StateInst::build(state_db.clone(), None);
+        if let Err(e) = engine.minter.initialize(&mut init_state) {
+            panic!("[Minter Error] init state error: {}", e);
+        }
+        init_state.write_to_disk();
+    }
+
     // store
     let store = engine.store.as_ref();
     let status = store.status();

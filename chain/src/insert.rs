@@ -54,10 +54,6 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
     let prev_state = parent.state.clone();
     let mut sub_state = prev_state.fork_sub(Arc::downgrade(&prev_state));
 
-    if height == 1 {
-        eng.minter.initialize(sub_state.as_mut())?;
-    }
-
     let chain_info = ChainInfo {
         fast_sync,
         diamond_form: eng.cnf.diamond_form,
