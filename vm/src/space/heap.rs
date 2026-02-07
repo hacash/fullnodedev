@@ -52,19 +52,16 @@ impl Heap {
         }
         // Gas is an abstraction of space usage: the first 8 segments are charged
         // exponentially (2,4,8,16,32,64,128,256), then linear 256 per segment.
+        // Price is based on existing heap size so multiple HGROW(1) cannot bypass.
         let mut gas: u64 = 0;
-        let exp_cnt = seg.min(8);
-        for i in 0..exp_cnt {
+        for s in oldseg..(oldseg + seg) {
+            let add = if s < 8 {
+                1u64.checked_shl((s + 1) as u32).unwrap_or(u64::MAX)
+            } else {
+                Self::SEGLEN as u64
+            };
             gas = gas
-                .checked_add(1u64.checked_shl((i + 1) as u32).unwrap_or(u64::MAX))
-                .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
-        }
-        if seg > 8 {
-            let add = (seg - 8)
-                .checked_mul(Self::SEGLEN)
-                .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
-            gas = gas
-                .checked_add(add as u64)
+                .checked_add(add)
                 .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
         }
         Ok(gas as i64)

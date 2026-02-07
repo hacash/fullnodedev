@@ -49,8 +49,8 @@ impl Syntax {
         close: char,
         err_msg: &'static str,
     ) -> Ret<Vec<Box<dyn IRNode>>> {
-        let max = self.tokens.len() - 1;
-        if self.idx >= max {
+        let end = self.tokens.len() - 1; // trailing synthetic sentinel
+        if self.idx >= end {
             return errf!("{}", err_msg);
         }
         let Partition(c) = &self.tokens[self.idx] else {
@@ -63,14 +63,17 @@ impl Syntax {
 
         let mut subs: Vec<Box<dyn IRNode>> = Vec::new();
         let mut block_err = false;
+        let mut closed = false;
         self.with_expect_retval(true, |s| {
             loop {
-                if s.idx >= max {
+                if s.idx >= end {
+                    block_err = true;
                     break;
                 }
                 let nxt = &s.tokens[s.idx];
                 if let Partition(sp) = nxt {
                     if *sp == close {
+                        closed = true;
                         s.idx += 1;
                         break;
                     } else if matches!(sp, '}' | ')' | ']') {
@@ -86,7 +89,7 @@ impl Syntax {
             Ok::<(), Error>(())
         })?;
 
-        if block_err {
+        if block_err || !closed {
             return errf!("{}", err_msg);
         }
         for arg in &subs {
@@ -562,7 +565,17 @@ impl Syntax {
                     }
                     left = res
                 }
-                Operator(_) if self.check_op => {
+                Operator(op) if self.check_op => {
+                    if op == OpTy::NOT {
+                        return errf!("operator ! cannot be binary");
+                    }
+                    self.idx -= 1;
+                    self.check_op = false;
+                    let res = self.parse_next_op(left, 0)?;
+                    self.check_op = true;
+                    left = res;
+                }
+                Keyword(And) | Keyword(Or) if self.check_op => {
                     self.idx -= 1;
                     self.check_op = false;
                     let res = self.parse_next_op(left, 0)?;
@@ -580,6 +593,9 @@ impl Syntax {
                 Some(op) if op.level() >= min_prec => op,
                 _ => break,
             };
+            if op == OpTy::NOT {
+                return errf!("operator !/not cannot be binary");
+            }
             self.consume_operator();
             let mut right = self.item_must(0)?;
             right = self.parse_next_op(right, op.next_min_prec())?;
@@ -590,21 +606,24 @@ impl Syntax {
         Ok(left)
     }
 
+    fn token_to_operator(token: &Token) -> Option<OpTy> {
+        match token {
+            Token::Operator(op) => Some(*op),
+            Token::Keyword(KwTy::And) => Some(OpTy::AND),
+            Token::Keyword(KwTy::Or) => Some(OpTy::OR),
+            _ => None,
+        }
+    }
+
     fn peek_operator(&self) -> Option<OpTy> {
-        self.tokens.get(self.idx).and_then(|token| {
-            if let Token::Operator(op) = token {
-                Some(*op)
-            } else {
-                None
-            }
-        })
+        self.tokens.get(self.idx).and_then(Self::token_to_operator)
     }
 
     fn consume_operator(&mut self) -> Option<OpTy> {
         if let Some(token) = self.tokens.get(self.idx) {
-            if let Token::Operator(op) = token {
+            if let Some(op) = Self::token_to_operator(token) {
                 self.idx += 1;
-                return Some(*op);
+                return Some(op);
             }
         }
         None
@@ -628,8 +647,8 @@ impl Syntax {
     pub fn item_may_block(&mut self, keep_retval: bool) -> Ret<IRNodeArray> { // return type changed
         let inst = Self::opcode_irblock(keep_retval);
         let mut block = IRNodeArray::with_opcode(inst); // was IRNodeArray::with_opcode(inst);
-        let max = self.tokens.len() - 1;
-        if self.idx >= max {
+        let end = self.tokens.len() - 1; // trailing synthetic sentinel
+        if self.idx >= end {
             return errf!("block format error")
         }
         let nxt = &self.tokens[self.idx];
@@ -641,12 +660,17 @@ impl Syntax {
         };
         self.idx += 1;
         let mut block_err = false;
+        let mut closed = false;
         self.with_expect_retval(keep_retval, |s| {
             loop {
-                if s.idx >= max { break }
+                if s.idx >= end {
+                    block_err = true;
+                    break
+                }
                 let nxt = &s.tokens[s.idx];
                 if let Partition(sp) = nxt {
                     if *sp == se {
+                        closed = true;
                         s.idx += 1;
                         break
                     }else if matches!(sp, '}'|')'|']') {
@@ -661,7 +685,7 @@ impl Syntax {
             }
             Ok::<(), Error>(())
         })?;
-        if block_err {
+        if block_err || !closed {
             return errf!("block format error")
         }
         if keep_retval {
@@ -676,6 +700,10 @@ impl Syntax {
 
     pub fn item_param(&mut self) -> Ret<Box<dyn IRNode>> {
         let e = errf!("param format error");
+        let end = self.tokens.len() - 1; // trailing synthetic sentinel
+        if self.idx >= end {
+            return e;
+        }
         let mut nxt = self.next()?;
         if let Partition('{')= nxt {} else {
             return e
@@ -683,16 +711,23 @@ impl Syntax {
         let mut params = 0;
         let mut param_names = Vec::new();
         loop {
+            if self.idx >= end {
+                return e;
+            }
             nxt = self.next()?;
-            if let Partition('}') = nxt {
-                break // all finish
-            };
-            if let Identifier(id) = nxt {
-                let name = id.clone();
-                self.bind_local(id, params, SlotKind::Param)?;
-                param_names.push(name);
-                params += 1;
-            } 
+            match nxt {
+                Partition('}') => break, // all finish
+                Identifier(id) => {
+                    if params == u8::MAX {
+                        return errf!("param index overflow");
+                    }
+                    let name = id.clone();
+                    self.bind_local(id, params, SlotKind::Param)?;
+                    param_names.push(name);
+                    params += 1;
+                }
+                _ => return e,
+            }
         }
         // match
         use Bytecode::*;
@@ -703,7 +738,7 @@ impl Syntax {
         // Canonical param-unpack IR form (for byte-for-byte roundtrip stability):
         // UPLIST(PICK0, P0)
         Ok(Box::new(IRNodeDouble{
-            hrtv: true,
+            hrtv: false,
             inst: UPLIST,
             subx: push_inst(Bytecode::PICK0),
             suby: push_inst(Bytecode::P0),
@@ -802,9 +837,6 @@ impl Syntax {
             self.idx += 1;
             nxt
         }}}
-        macro_rules! back { () => {
-            self.idx -= 1;
-        }}
         let mut nxt = next!();
         let mut item: Box<dyn IRNode> = match nxt {
             Identifier(id) => self.item_identifier(id.clone())?,
@@ -853,6 +885,11 @@ impl Syntax {
                 }
                 _ => return errf!("operator {:?} cannot start expression", op)
             },
+            Keyword(Not) => {
+                let expr = self.item_must(0)?;
+                expr.checkretval()?; // must retv
+                push_single(NOT, expr)
+            }
             Keyword(While) => {
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
@@ -875,6 +912,9 @@ impl Syntax {
                 let nxt = &self.tokens[self.idx];
                 let Keyword(Else) = nxt else {
                     // no else
+                    if keep_retval {
+                        return errf!("if expression must have else branch")
+                    }
                     return Ok(Some(Box::new(ifobj)))
                 };
                 self.idx += 1; // over else token
@@ -984,14 +1024,12 @@ impl Syntax {
                 let Keyword(KwTy::Assign) = nxt else { return e };
                 nxt = next!();
                 let Integer(idx) = nxt else { return e };
-                nxt = next!();
                 let mut adr = None;
-                if let Keyword(Colon) = nxt {
+                if self.idx < max && matches!(self.tokens[self.idx], Keyword(Colon)) {
+                    self.idx += 1; // consume ':'
                     nxt = next!();
                     let Token::Address(a) = nxt else { return e };
                     adr = Some(*a as field::Address);
-                }else{
-                    back!();
                 }
                 if *idx > u8::MAX as u128 {
                     return errf!("lib statement link index overflow")
@@ -1029,7 +1067,10 @@ impl Syntax {
             Keyword(Call) => {
                 let e = errf!("call format error");
                 let idx_token = next!();
-                let lib_idx = Self::parse_lib_index_token(idx_token)?;
+                let lib_idx = match idx_token {
+                    Identifier(id) => self.link_lib(id)?,
+                    _ => Self::parse_lib_index_token(idx_token)?,
+                };
                 nxt = next!();
                 let Keyword(DColon) = nxt else {
                     return e
@@ -1045,7 +1086,10 @@ impl Syntax {
             Keyword(CallView) => {
                 let e = errf!("callview format error");
                 let idx_token = next!();
-                let lib_idx = Self::parse_lib_index_token(idx_token)?;
+                let lib_idx = match idx_token {
+                    Identifier(id) => self.link_lib(id)?,
+                    _ => Self::parse_lib_index_token(idx_token)?,
+                };
                 nxt = next!();
                 let Keyword(DColon) = nxt else {
                     return e
@@ -1061,7 +1105,10 @@ impl Syntax {
             Keyword(CallPure) => {
                 let e = errf!("callpure format error");
                 let idx_token = next!();
-                let lib_idx = Self::parse_lib_index_token(idx_token)?;
+                let lib_idx = match idx_token {
+                    Identifier(id) => self.link_lib(id)?,
+                    _ => Self::parse_lib_index_token(idx_token)?,
+                };
                 nxt = next!();
                 let Keyword(DColon) = nxt else {
                     return e

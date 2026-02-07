@@ -50,7 +50,12 @@ impl Syntax {
                     pms + args, argvs.len()
                 )
             }
-            assert!(rs <= 1);
+            if rs > 1 {
+                return errf!(
+                    "ir func '{}' has unsupported multi-value return ({})",
+                    id, rs
+                )
+            }
             return build_ir_func(inst, pms, args, rs, argvs,)
         }
 

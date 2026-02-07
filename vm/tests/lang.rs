@@ -32,6 +32,17 @@ fn t1() {
 }
 
 #[test]
+fn multi_return_ir_func_is_rejected_without_panic() {
+    let script = r##"
+        swap(1, 2)
+    "##;
+
+    let res = std::panic::catch_unwind(|| lang_to_irnode(script));
+    assert!(res.is_ok(), "compiler panicked for multi-return ir func");
+    assert!(res.unwrap().is_err());
+}
+
+#[test]
 fn bind_slot_and_cache_print() {
     let script = r##"
         var x $0 = 1
@@ -466,6 +477,15 @@ fn else_if_expression_still_requires_value_branches() {
     "##;
     let err = lang_to_ircode(script).unwrap_err();
     assert!(err.contains("block expression") || err.contains("return value"));
+}
+
+#[test]
+fn if_expression_requires_else_branch_at_parse_time() {
+    let script = r##"
+        print if true { 1 }
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("if expression must have else branch"));
 }
 
 #[test]
@@ -941,6 +961,62 @@ fn param_block_prints_from_ir_roundtrip() {
     let (block, source_map) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = format_ircode_to_lang(&block, Some(&source_map)).unwrap();
     assert!(printed.contains("param { addr, sat }"));
+}
+
+#[test]
+fn reject_unclosed_log_argument_delimiter() {
+    let script = r##"
+        log(1 2
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("log argv number error"));
+}
+
+#[test]
+fn reject_unclosed_if_block() {
+    let script = r##"
+        if true {
+            print 1
+        end
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("block format error"));
+}
+
+#[test]
+fn reject_binary_not_operator() {
+    let script = r##"
+        1 ! 0
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("cannot be binary"));
+}
+
+#[test]
+fn reject_param_block_non_identifier_member() {
+    let script = r##"
+        param { a 1 }
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("param format error"));
+}
+
+#[test]
+fn reject_param_block_without_close_brace() {
+    let script = r##"
+        param { a
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("param format error"));
+}
+
+#[test]
+fn reject_param_as_value_expression() {
+    let script = r##"
+        print (param { a })
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("return value") || err.contains("format error"));
 }
 
 fn find_print_expression(block: &IRNodeArray) -> &Box<dyn IRNode> {

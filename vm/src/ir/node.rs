@@ -260,9 +260,12 @@ impl std::ops::DerefMut for IRNodeWrapOne {
 
 impl IRNode for IRNodeWrapOne {
     fn as_any(&self) -> &dyn Any { self }
-    fn subs(&self) -> usize { 0 }
+    fn subs(&self) -> usize { 1 }
     fn hasretval(&self) -> bool { self.node.hasretval() }
     fn bytecode(&self) -> u8 { self.node.bytecode() }
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        self.node.codegen_into(buf)
+    }
     fn serialize(&self) -> Vec<u8> { self.node.serialize() }
     fn print(&self) -> String {
         format!("({})", self.node.print())
@@ -633,5 +636,41 @@ impl IRNodeArray {
     }
     pub fn set_inst(&mut self, inst: Bytecode) {
         self.inst = inst;
+    }
+}
+
+#[cfg(test)]
+mod node_tests {
+    use super::*;
+
+    #[test]
+    fn wrap_codegen_delegates_param_node() {
+        let wrapped: Box<dyn IRNode> = Box::new(IRNodeWrapOne {
+            node: Box::new(IRNodeParam1 {
+                hrtv: true,
+                inst: Bytecode::PU8,
+                para: 100,
+                text: String::new(),
+            }),
+        });
+        let bytes = wrapped.codegen().expect("codegen");
+        assert_eq!(bytes, vec![Bytecode::PU8 as u8, 100]);
+    }
+
+    #[test]
+    fn wrap_codegen_delegates_compound_node() {
+        let wrapped: Box<dyn IRNode> = Box::new(IRNodeWrapOne {
+            node: Box::new(IRNodeDouble {
+                hrtv: true,
+                inst: Bytecode::ADD,
+                subx: Box::new(IRNodeLeaf::notext(true, Bytecode::P1)),
+                suby: Box::new(IRNodeLeaf::notext(true, Bytecode::P2)),
+            }),
+        });
+        let bytes = wrapped.codegen().expect("codegen");
+        assert_eq!(
+            bytes,
+            vec![Bytecode::P1 as u8, Bytecode::P2 as u8, Bytecode::ADD as u8]
+        );
     }
 }

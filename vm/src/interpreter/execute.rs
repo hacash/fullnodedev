@@ -483,9 +483,9 @@ pub fn execute_code(
             LENGTH   => { let l = ops.compo()?.length(cap)?; *ops.peek()? = l; }
             HASKEY   => {
                 let k = ops.pop()?;
+                let len = ops.compo()?.len();
                 let h = ops.compo()?.haskey(k)?;
                 *ops.peek()? = h;
-                let len = ops.compo()?.len();
                 gas += gst.compo_items(len, 4);
             }
 	        ITEMGET  => {
