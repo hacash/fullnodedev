@@ -19,9 +19,10 @@ macro_rules! itrbuf {
     ($codes: expr, $pc: expr, $l: expr) => {
         { 
             let r = $pc + $l;
-            if r < $pc || r > $codes.len() {
+            debug_assert!($pc<=r && r<=$codes.len());
+            /* if r < $pc || r > $codes.len() {
                 return itr_err_code!(CodeOverflow)
-            }
+            } */
             let v: [u8; $l] = unsafe { read_arr::<$l>($codes, $pc) };
             $pc = r;
             v
@@ -33,9 +34,10 @@ macro_rules! itrparam {
     ($codes: expr, $pc: expr, $l: expr, $t: ty) => {
         { 
             let r = $pc + $l;
-            if r < $pc || r > $codes.len() {
+            debug_assert!($pc<=r && r<=$codes.len());
+            /* if r < $pc || r > $codes.len() {
                 return itr_err_code!(CodeOverflow)
-            }
+            } */
             let v = <$t>::from_be_bytes(unsafe { read_arr::<$l>($codes, $pc) });
             $pc = r;
             v
@@ -222,14 +224,15 @@ pub fn execute_code(
 
     // start run
     let exit;
-	    loop {
-	        // read inst
-	        if *pc >= codes.len() {
-	            return itr_err_code!(CodeOverflow)
-	        }
-	        let instbyte = unsafe { *codes.get_unchecked(*pc as usize) }; // u8
-	        let instruction: Bytecode = std_mem_transmute!(instbyte);
-	        *pc += 1; // next
+    loop {
+        // read inst
+        debug_assert!(*pc < codes.len());
+        // if *pc >= codes.len() {
+        //     return itr_err_code!(CodeOverflow)
+        // }
+        let instbyte = unsafe { *codes.get_unchecked(*pc as usize) }; // u8
+        let instruction: Bytecode = std_mem_transmute!(instbyte);
+        *pc += 1; // next
 
         // debug_print_stack(ops, locals, pc, instruction);
 

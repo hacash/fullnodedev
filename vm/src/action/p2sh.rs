@@ -146,9 +146,6 @@ impl UnlockScriptProve {
         let witness = self.argvkey.as_vec().clone();
         convert_and_check(&cap, ctb, &lockbox)?;
         Self::verify_witness_bytes(&cap, &witness)?;
-        if lockbox.len() > cap.one_function_size {
-            return errf!("p2sh lockbox code too long")
-        }
         // ok
         let merkel = self.get_merkel()?.to_vec();
         let libs = self.adrlibs.serialize();
