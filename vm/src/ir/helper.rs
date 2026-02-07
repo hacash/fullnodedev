@@ -35,6 +35,26 @@ pub fn push_single_noret(inst: Bytecode, subx: Box<dyn IRNode>) -> Box<dyn IRNod
     Box::new(IRNodeSingle{inst, hrtv: false, subx})
 }
 
+// Convenience for constructing IRNodeParam1Single with hrtv = false
+pub fn push_single_p1(inst: Bytecode, para: u8, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
+    Box::new(IRNodeParam1Single { hrtv: false, inst, para, subx })
+}
+
+// Variant allowing explicit hrtv
+pub fn push_single_p1_hr(hrtv: bool, inst: Bytecode, para: u8, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
+    Box::new(IRNodeParam1Single { hrtv, inst, para, subx })
+}
+
+// Convenience for constructing IRNodeDouble where subx/suby are Bytecode instructions
+pub fn push_double(inst: Bytecode, subx_inst: Bytecode, suby_inst: Bytecode) -> Box<dyn IRNode> {
+    Box::new(IRNodeDouble { hrtv: false, inst, subx: push_inst(subx_inst), suby: push_inst(suby_inst) })
+}
+
+// Variant accepting boxed sub-nodes
+pub fn push_double_box(inst: Bytecode, subx: Box<dyn IRNode>, suby: Box<dyn IRNode>) -> Box<dyn IRNode> {
+    Box::new(IRNodeDouble { hrtv: false, inst, subx, suby })
+}
+
 pub fn push_num(n: u128) -> Box<dyn IRNode> {
     use Bytecode::*;
     macro_rules! push_uint {
@@ -78,16 +98,11 @@ pub fn push_num(n: u128) -> Box<dyn IRNode> {
 pub fn push_addr(a: field::Address) -> Box<dyn IRNode> {
     use Bytecode::*;
     let para = vec![vec![field::Address::SIZE as u8], a.serialize()].concat();
-    Box::new(IRNodeParam1Single {
+    push_single_p1_hr(true, CTO, ValueTy::Address as u8, Box::new(IRNodeParams {
         hrtv: true,
-        inst: CTO,
-        para: ValueTy::Address as u8,
-        subx: Box::new(IRNodeParams {
-            hrtv: true,
-            inst: PBUF,
-            para,
-        }),
-    })
+        inst: PBUF,
+        para,
+    }))
 }
 
 pub fn push_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {

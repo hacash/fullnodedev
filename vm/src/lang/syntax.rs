@@ -32,15 +32,18 @@ pub struct Syntax {
 #[allow(dead_code)]
 impl Syntax {
     fn opcode_irblock(keep_retval: bool) -> Bytecode {
-        maybe!(keep_retval, Bytecode::IRBLOCKR, Bytecode::IRBLOCK)
+        use Bytecode::*;
+        maybe!(keep_retval, IRBLOCKR, IRBLOCK)
     }
 
     fn opcode_irif(keep_retval: bool) -> Bytecode {
-        maybe!(keep_retval, Bytecode::IRIFR, Bytecode::IRIF)
+        use Bytecode::*;
+        maybe!(keep_retval, IRIFR, IRIF)
     }
 
     fn build_irlist(subs: Vec<Box<dyn IRNode>>) -> Ret<IRNodeArray> {
-        IRNodeArray::from_vec(subs, Bytecode::IRLIST)
+        use Bytecode::*;
+        IRNodeArray::from_vec(subs, IRLIST)
     }
 
     fn parse_delimited_value_exprs(
@@ -99,12 +102,13 @@ impl Syntax {
     }
 
     fn build_list_node(&mut self, mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+        use Bytecode::*;
         let num = subs.len();
         if num == 0 {
-            return Ok(push_inst(Bytecode::NEWLIST));
+            return Ok(push_inst(NEWLIST));
         }
         subs.push(push_num(num as u128));
-        subs.push(push_inst(Bytecode::PACKLIST));
+        subs.push(push_inst(PACKLIST));
         let arys = Self::build_irlist(subs)?;
         Ok(Box::new(arys))
     }
@@ -259,7 +263,7 @@ impl Syntax {
     pub fn bind_local_assign_replace(&mut self, s: String, idx: u8, v: Box<dyn IRNode>, kind: SlotKind) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         self.bind_local(s, idx, kind)?;
-        Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: idx, subx: v}))
+        Ok(push_single_p1(PUT, idx, v))
     }
 
     fn parse_local_statement(&mut self, kind: SlotKind, err_msg: &str) -> Ret<Box<dyn IRNode>> {
@@ -398,7 +402,7 @@ impl Syntax {
             return errf!("cannot assign to immutable symbol '{}'", s)
         }
         self.source_map.mark_slot_mutated(i);
-        Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: i, subx: v }))
+        Ok(push_single_p1(PUT, i, v))
     }
     
     pub fn assign_local(&mut self, s: &String, v: Box<dyn IRNode>, op: &Token) -> Ret<Box<dyn IRNode>> {
@@ -417,7 +421,7 @@ impl Syntax {
                 Keyword(AsgDiv) => 0b11000000,
                 _ => unreachable!(),
             };
-            return Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: XOP, para: mark, subx: v }))
+            return Ok(push_single_p1(XOP, mark, v))
         }
         // $0 = $0 + 1
         let getv = push_local_get(i, s!(""));
@@ -428,15 +432,16 @@ impl Syntax {
             Keyword(AsgDiv) => DIV,
             _ => unreachable!()
         }, subx: getv, suby: v});
-        Ok(Box::new(IRNodeParam1Single{hrtv: false, inst: PUT, para: i, subx: opsv }))
+        Ok(push_single_p1(PUT, i, opsv))
     }
     
 
     pub fn new(mut tokens: Vec<Token>) -> Self {
+        use Bytecode::*;
         tokens.push(Token::Partition('}'));
         Self {
             tokens,
-            irnode: IRNodeArray::with_opcode(Bytecode::IRBLOCK), // was IRNodeArray::new()
+            irnode: IRNodeArray::with_opcode(IRBLOCK), // was IRNodeArray::new()
             check_op: true,
             ..Default::default()
         }
@@ -528,7 +533,7 @@ impl Syntax {
                             Keyword(Bytes) => cuto!(CBUF),
                             Keyword(Address) => {
                                 let para = ValueTy::Address as u8;
-                                Box::new(IRNodeParam1Single{hrtv, inst: CTO, para, subx: left })
+                                push_single_p1_hr(hrtv, CTO, para, left)
                             }
                             _ => return e,
                         };
@@ -550,14 +555,14 @@ impl Syntax {
                         Keyword(Nil)     => Box::new(IRNodeSingle{hrtv, subx, inst: TNIL   }),
                         Keyword(List)    => Box::new(IRNodeSingle{hrtv, subx, inst: TLIST  }),
                         Keyword(Map)     => Box::new(IRNodeSingle{hrtv, subx, inst: TMAP  }),
-                        Keyword(Bool)    => Box::new(IRNodeParam1Single{para: ValueTy::Bool    as u8, hrtv, subx, inst: TIS}),
-                        Keyword(U8)      => Box::new(IRNodeParam1Single{para: ValueTy::U8      as u8, hrtv, subx, inst: TIS}),
-                        Keyword(U16)     => Box::new(IRNodeParam1Single{para: ValueTy::U16     as u8, hrtv, subx, inst: TIS}),
-                        Keyword(U32)     => Box::new(IRNodeParam1Single{para: ValueTy::U32     as u8, hrtv, subx, inst: TIS}),
-                        Keyword(U64)     => Box::new(IRNodeParam1Single{para: ValueTy::U64     as u8, hrtv, subx, inst: TIS}),
-                        Keyword(U128)    => Box::new(IRNodeParam1Single{para: ValueTy::U128    as u8, hrtv, subx, inst: TIS}),
-                        Keyword(Bytes)   => Box::new(IRNodeParam1Single{para: ValueTy::Bytes   as u8, hrtv, subx, inst: TIS}),
-                        Keyword(Address) => Box::new(IRNodeParam1Single{para: ValueTy::Address as u8, hrtv, subx, inst: TIS}),
+                        Keyword(Bool)    => push_single_p1_hr(hrtv, TIS, ValueTy::Bool    as u8, subx),
+                        Keyword(U8)      => push_single_p1_hr(hrtv, TIS, ValueTy::U8      as u8, subx),
+                        Keyword(U16)     => push_single_p1_hr(hrtv, TIS, ValueTy::U16     as u8, subx),
+                        Keyword(U32)     => push_single_p1_hr(hrtv, TIS, ValueTy::U32     as u8, subx),
+                        Keyword(U64)     => push_single_p1_hr(hrtv, TIS, ValueTy::U64     as u8, subx),
+                        Keyword(U128)    => push_single_p1_hr(hrtv, TIS, ValueTy::U128    as u8, subx),
+                        Keyword(Bytes)   => push_single_p1_hr(hrtv, TIS, ValueTy::Bytes   as u8, subx),
+                        Keyword(Address) => push_single_p1_hr(hrtv, TIS, ValueTy::Address as u8, subx),
                         _ => return e
                     };
                     if is_not {
@@ -737,20 +742,10 @@ impl Syntax {
         self.source_map.register_param_names(param_names)?;
         if params == 1 {
             // Single param: PUT 0 PICK0 (PICK0 moves top to top, PUT consumes; no POP needed)
-            Ok(Box::new(IRNodeParam1Single {
-                hrtv: false,
-                inst: PUT,
-                para: 0,
-                subx: push_inst(Bytecode::PICK0),
-            }))
+            Ok(push_single_p1(PUT, 0, push_inst(PICK0)))
         } else {
             // Multi param: UPLIST(PICK0, P0) (caller pushes list)
-            Ok(Box::new(IRNodeDouble {
-                hrtv: false,
-                inst: UPLIST,
-                subx: push_inst(Bytecode::PICK0),
-                suby: push_inst(Bytecode::P0),
-            }))
+            Ok(push_double(UPLIST, PICK0, P0))
         }
     }
 
@@ -904,7 +899,7 @@ impl Syntax {
                 exp.checkretval()?; // must retv
                 // let e = errf!("while statement format error");
                 let suby = self.item_may_list(false)?;
-                Box::new(IRNodeDouble{hrtv: false, inst: IRWHILE, subx: exp, suby})
+                push_double_box(IRWHILE, exp, suby)
             }
             Keyword(If) => {
                 let exp = self.item_must(0)?;
@@ -1323,6 +1318,7 @@ impl Syntax {
     }
 
     pub fn parse(mut self) -> Ret<(IRNodeArray, SourceMap)> {
+        use Bytecode::*;
         // reserve head for ALLOC
         self.irnode.push(push_empty());
 
@@ -1350,25 +1346,15 @@ impl Syntax {
             match params.len() {
                 0 => {
                     // pop implicit nil argument (auto-inserted by caller)
-                    self.irnode.push(push_inst_noret(Bytecode::POP));
+                    self.irnode.push(push_inst_noret(POP));
                 }
                 1 => {
                     // Single param: PUT 0 PICK0 (PICK0 moves top to top, PUT consumes; no POP needed)
-                    self.irnode.push(Box::new(IRNodeParam1Single {
-                        hrtv: false,
-                        inst: Bytecode::PUT,
-                        para: 0,
-                        subx: push_inst(Bytecode::PICK0),
-                    }));
+                    self.irnode.push(push_single_p1(PUT, 0, push_inst(PICK0)));
                 }
                 _ => {
                     // Multi param: UPLIST(PICK0, P0) (caller pushes list)
-                    let unpack = Box::new(IRNodeDouble {
-                        hrtv: false,
-                        inst: Bytecode::UPLIST,
-                        subx: push_inst(Bytecode::PICK0),
-                        suby: push_inst(Bytecode::P0),
-                    });
+                    let unpack = push_double(UPLIST, PICK0, P0);
                     self.irnode.push(unpack);
                 }
             }
@@ -1383,12 +1369,12 @@ impl Syntax {
         if self.local_alloc > 0 {
             let allocs = Box::new(IRNodeParam1 {
                 hrtv: false,
-                inst: Bytecode::ALLOC,
+                inst: ALLOC,
                 para: self.local_alloc,
                 text: s!(""),
             });
             let mut exist = false;
-            if subs.len() > 1 && subs[1].bytecode() == Bytecode::ALLOC as u8 {
+            if subs.len() > 1 && subs[1].bytecode() == ALLOC as u8 {
                 exist = true;
             }
             if exist {

@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate sys;
+#[macro_use]
 pub mod rt;
 pub mod action;
 pub mod contract;
@@ -14,6 +16,7 @@ pub mod machine;
 pub mod native;
 pub mod space;
 pub mod value;
+pub mod exec_test;
 
 pub use rt::VmrtRes;
 

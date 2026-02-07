@@ -74,9 +74,7 @@ impl Syntax {
                 )
             }
             let subx = if Bytecode::NTCALL.metadata().input == 0 { push_empty() } else { argvs };
-            return Ok(Box::new(IRNodeParam1Single{
-                hrtv: true, inst: Bytecode::NTCALL, para: idx, subx
-            }))
+            return Ok(push_single_p1_hr(true, Bytecode::NTCALL, idx, subx));
         }
 
         // extend action
@@ -94,11 +92,11 @@ impl Syntax {
                 )
             }
             let subx = if inst.metadata().input == 0 { push_empty() } else { argvres };
-            return Ok(Box::new(IRNodeParam1Single{hrtv, inst, para, subx}))
+            return Ok(push_single_p1_hr(hrtv, inst, para, subx));
         }
 
         // not find
-        errf!("cannot find function '{}'", id)
+        return errf!("unknown function '{}'", id);
     }
 
 }
@@ -107,7 +105,7 @@ impl Syntax {
 
 fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     use Bytecode::*;
-    let mut argvs = VecDeque::from(argvs);
+    let mut argvs = std::collections::VecDeque::from(argvs);
     let hrtv = maybe!(rs==1, true, false);
     let ttv = pms + args;
     if ttv == 0 {
@@ -150,7 +148,7 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
         let para = param!();
         return Ok(match args {
             0 => Box::new(IRNodeParam1{hrtv, inst, para, text:s!("")}),
-            1 => Box::new(IRNodeParam1Single{hrtv, inst, para, subx: avg!()}),
+            1 => push_single_p1_hr(hrtv, inst, para, avg!()),
             _ => unreachable!()
         })
     }
