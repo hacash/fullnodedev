@@ -530,10 +530,10 @@ pub fn execute_code(
                 gas += gst.compo_bytes(bytes_len(&v));
                 ops.push(v)?;
             }
-            TAIL     => {
+            BACK     => {
                 let mut compo_val = ops.pop()?;
                 let len = compo_val.compo()?.len();
-                let v = compo_val.compo()?.tail()?.valid(cap)?;
+                let v = compo_val.compo()?.back()?.valid(cap)?;
                 gas += gst.compo_items(len, 4);
                 gas += gst.compo_bytes(bytes_len(&v));
                 ops.push(v)?;

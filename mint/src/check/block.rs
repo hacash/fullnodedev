@@ -332,6 +332,7 @@ mod tests {
             dmer_bid_max: Amount::small_mei(31),
             dmer_bid_step: Amount::small(5, 247),
             txpool_maxs: Vec::default(),
+            contract_cache_size: 0.0,
         };
         // Make sure we set miner message/reward (pack uses these).
         cnf.miner_message = Fixed16::default();

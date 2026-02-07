@@ -82,7 +82,7 @@ fn get_base_gas(opcode: Bytecode) -> i64 {
         PBUF | PBUFL |
         MOD | MUL | DIV | XOP |
         HREAD | HREADU | HREADUL | HSLICE | HGROW |
-        ITEMGET | HEAD | TAIL | HASKEY | LENGTH => 4,
+        ITEMGET | HEAD | BACK | HASKEY | LENGTH => 4,
         
         POW => 5,
         
@@ -511,7 +511,7 @@ fn test_compo_gas(ctx: &mut GasTestContext, opcode: Bytecode, item_count: usize,
     
     use Bytecode::*;
     match opcode {
-        ITEMGET | HEAD | TAIL | HASKEY | UPLIST | APPEND => {
+        ITEMGET | HEAD | BACK | HASKEY | UPLIST | APPEND => {
             expected += (item_count as i64) / 4;
             expected += (byte_size as i64) / 20;
         }
@@ -762,7 +762,7 @@ mod tests {
         
         let compo_opcodes = vec![
             Bytecode::NEWLIST, Bytecode::NEWMAP,
-            Bytecode::ITEMGET, Bytecode::HEAD, Bytecode::TAIL,
+            Bytecode::ITEMGET, Bytecode::HEAD, Bytecode::BACK,
             Bytecode::HASKEY, Bytecode::APPEND, Bytecode::KEYS, Bytecode::VALUES,
             Bytecode::CLONE, Bytecode::MERGE,
         ];

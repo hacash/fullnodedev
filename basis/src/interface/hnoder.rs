@@ -4,7 +4,7 @@ pub trait HNoder: Send + Sync {
 
     fn start(&self, _: Worker) {}
 
-    fn submit_transaction(&self, _: &TxPkg, _is_async: bool) -> Rerr { never!() }
+    fn submit_transaction(&self, _: &TxPkg, _is_async: bool, _only_insert_txpool: bool) -> Rerr { never!() }
     fn submit_block(&self, _: &BlkPkg, _is_async: bool) -> Rerr { never!() }
 
     fn engine(&self) -> Arc<dyn Engine> { never!() }

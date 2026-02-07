@@ -887,7 +887,7 @@ contract Child {
 | `values(map)` | Map values |
 | `haskey(map, key)` | Check key |
 | `head(list)` | First element |
-| `tail(list)` | Rest of list |
+| `back(list)` | Last element |
 | `append(list, item)` | Append |
 | `insert(list, index, item)` | Insert |
 | `remove(list, index)` | Remove |

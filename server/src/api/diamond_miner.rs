@@ -99,7 +99,7 @@ async fn diamondminer_success(State(ctx): State<ApiCtx>, q: Query<Q6396>, body: 
     let txpkg = TxPkg::create(Box::new(tx));
     // try submit
     let in_async = true;
-    if let Err(e) = ctx.hcshnd.submit_transaction(&txpkg, in_async) {
+    if let Err(e) = ctx.hcshnd.submit_transaction(&txpkg, in_async, false) {
         return api_error(&e)
     }
 

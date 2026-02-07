@@ -478,7 +478,9 @@ impl CompoItem {
         }
     }
 
-    pub fn tail(&mut self) -> VmrtRes<Value> {
+    /// Returns the last element of the list.
+    /// e.g. back([10, 20, 30]) -> 30
+    pub fn back(&mut self) -> VmrtRes<Value> {
         let list = self.list_mut()?;
         match list.pop_back() {
             Some(v) => Ok(v),

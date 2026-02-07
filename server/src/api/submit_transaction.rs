@@ -1,6 +1,7 @@
 
 api_querys_define!{ Q4396,
     __nnn__, Option<bool>, None,
+    only_insert_txpool, Option<bool>, None,
 }
 
 /*
@@ -34,7 +35,8 @@ async fn submit_transaction(State(ctx): State<ApiCtx>, q: Query<Q4396>, body: By
     }
     // try submit
     let is_async = true;
-    if let Err(e) = ctx.hcshnd.submit_transaction(&txpkg, is_async) {
+    let only_insert_txpool = q.only_insert_txpool.unwrap_or(false);
+    if let Err(e) = ctx.hcshnd.submit_transaction(&txpkg, is_async, only_insert_txpool) {
         return api_error(&e)
     }
     // ok

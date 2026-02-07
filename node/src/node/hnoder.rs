@@ -8,13 +8,16 @@ impl HNoder for HacashNode {
     }
 
 
-    fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool) -> Rerr {
-        // check signature
+    fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool, only_insert_txpool: bool) -> Rerr {
         let txread = txpkg.objc.as_read();
-        // txread.verify_signature()?;
-        // try execute tx
         self.engine.try_execute_tx(txread)?;
-        // add to pool
+        if only_insert_txpool {
+            // Direct insert to txpool, no channel, no broadcast
+            let minter = self.engine.minter();
+            minter.tx_submit(self.engine.as_read(), txpkg)?;
+            let _ = self.txpool.insert_by(txpkg.clone(), &|tx| minter.tx_pool_group(tx));
+            return Ok(());
+        }
         let msghdl = self.msghdl.clone();
         let txbody = txpkg.data.to_vec();
         let runobj = async move {

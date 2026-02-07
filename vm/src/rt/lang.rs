@@ -310,7 +310,7 @@ irfn_define!{
     KEYS       : 0, 1, 1,     keys
     VALUES     : 0, 1, 1,     values
     HEAD       : 0, 1, 1,     head
-    TAIL       : 0, 1, 1,     tail
+    BACK       : 0, 1, 1,     back
     APPEND     : 0, 2, 1,     append
     CLONE      : 0, 1, 1,     clone
     UPLIST     : 0, 2, 0,     unpack_list

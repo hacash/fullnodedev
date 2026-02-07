@@ -1,5 +1,4 @@
 use std::any::*;
-use std::collections::*;
 use std::iter;
 
 use sys::*;

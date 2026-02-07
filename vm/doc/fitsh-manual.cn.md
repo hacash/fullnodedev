@@ -887,7 +887,7 @@ contract Child {
 | `values(map)` | 映射值 |
 | `haskey(map, key)` | 检查键 |
 | `head(list)` | 首元素 |
-| `tail(list)` | 列表剩余 |
+| `back(list)` | 末元素 |
 | `append(list, item)` | 追加 |
 | `insert(list, index, item)` | 插入 |
 | `remove(list, index)` | 移除 |

@@ -46,7 +46,7 @@ impl GasTable {
             PBUF, PBUFL,
             MOD, MUL, DIV, XOP, 
             HREAD, HREADU, HREADUL, HSLICE, HGROW,
-            ITEMGET, HEAD, TAIL, HASKEY, LENGTH,
+            ITEMGET, HEAD, BACK, HASKEY, LENGTH,
         ]);
         gst.set(5,  &[POW]);
         gst.set(6,  &[HWRITE, HWRITEX, HWRITEXL, 

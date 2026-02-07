@@ -523,7 +523,7 @@ fn test_base_gas(opcode: Bytecode, reporter: &mut TestReporter, calc: &ExpectedG
         SIZE => build_codes!(PNBUF SIZE END),
         CAT => build_codes!(PNBUF PNBUF CAT END),
         CHOISE => build_codes!(P1 P0 P1 CHOISE END),
-        HEAD | TAIL | HASKEY | LENGTH => {
+        HEAD | BACK | HASKEY | LENGTH => {
             // These need compo value on stack - use combination test
             test_base_gas_combination(build_codes!(NEWLIST), opcode, reporter, calc);
             return;
@@ -1515,7 +1515,7 @@ mod tests {
             HGROW,
             ITEMGET,
             HEAD,
-            TAIL,
+            BACK,
             HASKEY,
             LENGTH,
         ];
@@ -1535,7 +1535,7 @@ mod tests {
         test_base_gas_combination(build_codes!(P0 P1), POPN, &mut reporter, &calc);
         test_base_gas_combination(build_codes!(P0 P1), PICK, &mut reporter, &calc);
         
-        // Skip HREAD, ITEMGET, HEAD, TAIL, HASKEY, LENGTH - tested in dynamic gas tests or need combination test
+        // Skip HREAD, ITEMGET, HEAD, BACK, HASKEY, LENGTH - tested in dynamic gas tests or need combination test
 
         // Opcodes with gas cost = 5
         test_base_gas(POW, &mut reporter, &calc);

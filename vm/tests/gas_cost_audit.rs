@@ -30,7 +30,7 @@ pub fn analyze_test_results() {
         ("PBUFL", 4), ("MOD", 4), ("MUL", 4), ("DIV", 4),
         ("XOP", 4), ("HREAD", 4), ("HREADU", 4), ("HREADUL", 4),
         ("HSLICE", 4), ("HGROW", 4), ("ITEMGET", 4),
-        ("HEAD", 4), ("TAIL", 4), ("HASKEY", 4), ("LENGTH", 4),
+        ("HEAD", 4), ("BACK", 4), ("HASKEY", 4), ("LENGTH", 4),
         // Gas cost = 5
         ("POW", 5),
         // Gas cost = 6

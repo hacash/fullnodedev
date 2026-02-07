@@ -1223,7 +1223,8 @@ impl Syntax {
                 if num == 0 {
                     push_inst(NEWMAP)
                 } else {
-                    subs.push(push_num((num / 2) as u128));
+                    // PACKMAP expects total item count (k+v pairs), not pair count
+                    subs.push(push_num(num as u128));
                     subs.push(push_inst(PACKMAP));
                     let arys = Self::build_irlist(subs)?; // changed
                     Box::new(arys)

@@ -15,7 +15,7 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
     PBUF, PBUFL,
     MOD, MUL, DIV, XOP, 
     HREAD, HREADU, HREADUL, HSLICE, HGROW,
-    ITEMGET, HEAD, TAIL, HASKEY, LENGTH,
+    ITEMGET, HEAD, BACK, HASKEY, LENGTH,
 - 5: POW
 - 6: HWRITE, HWRITEX, HWRITEXL, 
     INSERT, REMOVE, CLEAR, APPEND
@@ -88,12 +88,12 @@ Some opcode should be charged based on both the number of items and the total si
 
 KEYS, VALUES byte refers to the total bytes output (create on stack). map byte = all key_byte + all value_byte, list byte = all value_byte, total_gas = base + item_gas + byte_gas
 
-The byte in ITEMGET/HEAD/TAIL refers to outputting value_byte; list types do not include key_byte.
+The byte in ITEMGET/HEAD/BACK refers to outputting value_byte; list types do not include key_byte.
 
-- item/4:  ITEMGET, HEAD, TAIL, HASKEY, UPLIST, APPEND
+- item/4:  ITEMGET, HEAD, BACK, HASKEY, UPLIST, APPEND
 - item/2:  KEYS, VALUES, INSERT, REMOVE
 - item/1:  CLONE, MERGE
-- byte/20: CLONE, KEYS, VALUES, ITEMGET, HEAD, TAIL
+- byte/20: CLONE, KEYS, VALUES, ITEMGET, HEAD, BACK
 
 #### Log render
 

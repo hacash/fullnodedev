@@ -87,7 +87,7 @@ async fn fee_raise(State(ctx): State<ApiCtx>, q: Query<Q5396>, body: Bytes) -> i
     let txpkg = TxPkg::create(txb);
     // submit tx & add to txpool
     let is_async = true;
-    if let Err(e) = ctx.hcshnd.submit_transaction(&txpkg, is_async) {
+    if let Err(e) = ctx.hcshnd.submit_transaction(&txpkg, is_async, false) {
         return api_error(&e)
     }
     // ok

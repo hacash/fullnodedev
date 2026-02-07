@@ -120,8 +120,8 @@ pub enum Bytecode {
     ITEMGET             = 0x6a, // t,k+    compo iten get
     KEYS                = 0x6b, // &       compo keys
     VALUES              = 0x6c, // &       compo values
-    HEAD                = 0x6d, // &       compo pick last
-    TAIL                = 0x6e, // &       compo pick last
+    HEAD                = 0x6d, // &       compo pick first
+    BACK                = 0x6e, // &       compo pick last
     APPEND              = 0x6f, // &       compo append
     CLONE               = 0x70, // a++     compo clone
     _______________113  = 0x71,
@@ -398,7 +398,7 @@ bytecode_metadata_define!{
     KEYS       : 0, 1, 1,     keys
     VALUES     : 0, 1, 1,     values
     HEAD       : 0, 1, 1,     head
-    TAIL       : 0, 1, 1,     tail
+    BACK       : 0, 1, 1,     back
     APPEND     : 0, 2, 1,     append
     CLONE      : 0, 1, 1,     clone
     UPLIST     : 0, 2, 0,     unpack_list

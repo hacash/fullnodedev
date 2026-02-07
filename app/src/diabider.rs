@@ -175,7 +175,7 @@ fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_heigh
     let txp = TxPkg::create(my_tx);
 
     // submit tx
-    if let Err(e) = hnode.submit_transaction(&txp, false) {
+    if let Err(e) = hnode.submit_transaction(&txp, false, false) {
         printerr!("ㄨㄨㄨ submit tx error: {}", e);
         retry!(3); // submit error
     }
