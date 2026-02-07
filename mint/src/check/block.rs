@@ -53,6 +53,7 @@ fn impl_packing_next_block(this: &HacashMinter, engine: &dyn EngineRead, txpool:
     
     append_valid_tx_pick_from_txpool( nexthei, 
         &mut trslen, &mut trshxs, &mut transactions, 
+        cbtx.size(),
         engine, txpool,
     );
 
@@ -90,25 +91,26 @@ pub fn create_coinbase_tx(hei: u64, msg: Fixed16, adr: Address) -> TransactionCo
     park txs to block
 */
 fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs: &mut Vec<Hash>, 
-    trs: &mut DynVecTransaction, engine: &dyn EngineRead, txpool: &dyn TxPool,
+    trs: &mut DynVecTransaction, base_tx_size: usize, engine: &dyn EngineRead, txpool: &dyn TxPool,
 ) {
     let engcnf = engine.config();
     let txmaxn = engcnf.max_block_txs;
     let txmaxsz = engcnf.max_block_size;
     let mut allfee = Amount::zero();
-    let mut txallsz: usize = 80; // 80 is coinbase tx size
+    let mut txallsz: usize = base_tx_size;
     let txallsz = &mut txallsz;
     let mut invalidtxhxs = Vec::new();
 
     let mut sub_state = engine.fork_sub_state();
 
     macro_rules! ok_push_one_tx {
-        ($a: expr) => {
+        ($a: expr, $txsz: expr) => {
             if trs.push($a.objc.clone()).is_err() {
                 return false
             }
             trshxs.push($a.objc.as_ref().as_read().hash_with_fee());
             *trslen += 1;
+            *txallsz += $txsz;
         }
     }
 
@@ -135,10 +137,17 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
     // pick one diamond mint tx
     if pending_hei % 5 == 0 {
         let mut pick_dmint = |a: &TxPkg| {
+            let txsz = a.data.len();
+            if txsz + *txallsz > txmaxsz {
+                return true // try next one
+            }
+            if *trslen >= txmaxn {
+                return false // end
+            }
             // check tx
             check_pick_one_tx!(a);
             // ok push
-            ok_push_one_tx!(a);
+            ok_push_one_tx!(a, txsz);
             false // end
         };
         txpool.iter_at(TXGID_DIAMINT, &mut pick_dmint).unwrap();
@@ -147,13 +156,15 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
     // pick normal tx
     let mut pick_normal_tx = |a: &TxPkg| {
         let txsz = a.data.len();
+        if *trslen >= txmaxn {
+            return false // end, num enough
+        }
+        if txsz + *txallsz > txmaxsz {
+            return true // skip oversize tx and continue
+        }
         // check tx
         check_pick_one_tx!(a);
-        // check size
-        if txsz + *txallsz > txmaxsz || *trslen >= txmaxn {
-            return false // end, num or size enough
-        }
-        ok_push_one_tx!(a);
+        ok_push_one_tx!(a, txsz);
         true // next
     };
     txpool.iter_at(TXGID_NORMAL, &mut pick_normal_tx).unwrap();
@@ -374,7 +385,11 @@ fn clean_invalid_normal_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, blkhei: u
     let mut sub_state = eng.fork_sub_state();
     // already minted hacd number
     let _ = txpool.retain_at(TXGID_NORMAL, &mut |a: &TxPkg| {
-        let exec = eng.try_execute_tx_by( a.objc.as_read(), pdhei, &mut sub_state);
+        let txr = a.objc.as_read();
+        if txr.verify_signature().is_err() {
+            return false;
+        }
+        let exec = eng.try_execute_tx_by(txr, pdhei, &mut sub_state);
         exec.is_ok() // keep or delete 
     });
 }
@@ -392,7 +407,3 @@ fn clean_invalid_diamond_mint_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, _bl
         nextdn == action::get_diamond_mint_number(a.objc.as_read())
     });
 }
-
-
-
-

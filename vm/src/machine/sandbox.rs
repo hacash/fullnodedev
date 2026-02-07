@@ -56,8 +56,8 @@ fn parse_push_params(codes: &mut Vec<u8>, pms: &str) -> Rerr {
     }).sum();
     match pms {
         0      => { push!(PNIL); } // none argv
-        1      => { /* already push in parse_one_param */ }
-        2..255 => { push!(PU8, pms, PACKLIST); } 
+        1      => { /* single param: push raw value; contract uses PUT 0 PICK0, not UPLIST */ }
+        2..255 => { push!(PU8, pms, PACKLIST); }
         255..  => return errf!("param number is too much"),
     }
     Ok(())

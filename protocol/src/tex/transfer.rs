@@ -91,11 +91,15 @@ impl CellExec for $class {
         let sat = Uint8::from(self.satnum.uint());
         $zhu_op(ctx, taradr, &sat)?;
         // tex add
+        let satnum = self.satnum.uint();
+        if satnum > i64::MAX as u64 {
+            return errf!("cell sat too big")
+        }
         let tex = ctx.tex_ledger();
-        let Some(zhures) = tex.zhu.$state_op(self.satnum.uint() as i64) else {
-            return errf!("cell state coin zhu overflow")
+        let Some(satres) = tex.sat.$state_op(satnum as i64) else {
+            return errf!("cell state coin sat overflow")
         };
-        tex.zhu = zhures;
+        tex.sat = satres;
         Ok(())
     }
 }
@@ -179,6 +183,9 @@ impl CellTrsDiaGet {
 impl CellExec for CellTrsDiaGet {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
+        if self.dianum.uint() == 0 {
+            return errf!("cell diamond get number cannot be zero")
+        }
         // tex add
         let tex = ctx.tex_ledger();
         tex.record_diamond_get(taradr, self.dianum.uint() as usize)
@@ -220,6 +227,7 @@ impl $class {
 impl CellExec for $class {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
+        tex_check_asset_serial(ctx, self.asset.serial)?;
         {
             let state = &mut CoreState::wrap(ctx.state());
             $asset_op(state, taradr, &self.asset)?;
@@ -249,5 +257,3 @@ impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 define_cell_trs_asset!{ 7, CellTrsAssetPay, asset_sub, checked_add } 
 define_cell_trs_asset!{ 8, CellTrsAssetGet, asset_add, checked_sub } 
-
-

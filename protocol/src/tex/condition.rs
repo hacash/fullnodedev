@@ -45,8 +45,8 @@ impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 
 
-define_cell_cond_zhu!{ 11, CellCondZhuLe, le }
-define_cell_cond_zhu!{ 12, CellCondZhuGe, ge }
+define_cell_cond_zhu!{ 11, CellCondZhuAtMost, ge }
+define_cell_cond_zhu!{ 12, CellCondZhuAtLeast, le }
 define_cell_cond_zhu!{ 13, CellCondZhuEq, eq }
 
 
@@ -94,8 +94,8 @@ impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 
 
-define_cell_cond_sat!{ 14, CellCondSatLe, le }
-define_cell_cond_sat!{ 15, CellCondSatGe, ge }
+define_cell_cond_sat!{ 14, CellCondSatAtMost, ge }
+define_cell_cond_sat!{ 15, CellCondSatAtLeast, le }
 define_cell_cond_sat!{ 16, CellCondSatEq, eq }
 
 
@@ -143,8 +143,8 @@ impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 
 
-define_cell_cond_dia!{ 17, CellCondDiaLe, le }
-define_cell_cond_dia!{ 18, CellCondDiaGe, ge }
+define_cell_cond_dia!{ 17, CellCondDiaAtMost, ge }
+define_cell_cond_dia!{ 18, CellCondDiaAtLeast, le }
 define_cell_cond_dia!{ 19, CellCondDiaEq, eq }
 
 
@@ -183,6 +183,7 @@ impl $class {
 impl CellExec for $class {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
+        tex_check_asset_serial(ctx, self.asset.serial)?;
         let bls = CoreState::wrap(ctx.state()).balance(taradr).unwrap_or_default();
         let aid = self.asset.serial;
         let ast = bls.asset_must(aid);
@@ -199,8 +200,8 @@ impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 
 
-define_cell_cond_asset!{ 20, CellCondAssetLe, le }
-define_cell_cond_asset!{ 21, CellCondAssetGe, ge }
+define_cell_cond_asset!{ 20, CellCondAssetAtMost, ge }
+define_cell_cond_asset!{ 21, CellCondAssetAtLeast, le }
 define_cell_cond_asset!{ 22, CellCondAssetEq, eq }
 
 
@@ -248,11 +249,9 @@ impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
 
 
 
-define_cell_cond_height!{ 23, CellCondHeightLe, le }
-define_cell_cond_height!{ 24, CellCondHeightGe, ge }
+define_cell_cond_height!{ 23, CellCondHeightAtMost, ge }
+define_cell_cond_height!{ 24, CellCondHeightAtLeast, le }
 
 
 
 /*****************************************************/
-
-

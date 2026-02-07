@@ -9,7 +9,7 @@ fn check_alive_blk_hei(ctx: &mut dyn Context) -> Ret<(u64, u64)> {
     return err!("HIP20 asset just for test chain now");
     // open hip20 feature
     let chei = ctx.env().block.height;
-    let is_mainnet = ctx.env().chain.id==0 && chei > ASSET_ALIVE_HEIGHT;
+    let is_mainnet = ctx.env().chain.id==0 && chei >= ASSET_ALIVE_HEIGHT;
     let alive_hei: u64 = maybe!(is_mainnet, ASSET_ALIVE_HEIGHT, 0);
     let minsri:    u64 = maybe!(is_mainnet, 1025, 5);
     Ok((alive_hei, minsri))
@@ -53,6 +53,9 @@ action_define!{AssetCreate, 16,
         if *amd.decimal > 16 {
             return err!("decimal cannot more than 16")
         }
+        if amd.supply.is_zero() {
+            return err!("supply must be greater than zero")
+        }
         // check fee and burn
         let blkrw = super::genesis::block_reward(chei);
         let pfee = self.protocol_fee.clone();
@@ -70,8 +73,18 @@ action_define!{AssetCreate, 16,
         sta.asset_set(&amd.serial, &amd); // store asset object
         // total count update
         let mut ttcount = sta.get_total_count();
-        ttcount.created_asset += 1;
-        ttcount.asset_issue_burn_mei += pfee.to_mei_u64().unwrap();
+        let new_created_asset = ttcount.created_asset.uint()
+            .checked_add(1)
+            .ok_or("created_asset overflow".to_string())?;
+        ttcount.created_asset = Uint4::from(new_created_asset);
+        let pfee_mei = pfee.to_mei_u64()
+            .ok_or("protocol fee cannot convert to mei".to_string())?;
+        let pfee_mei_u32 = u32::try_from(pfee_mei)
+            .map_err(|_| "protocol fee mei overflow uint4".to_string())?;
+        let new_asset_issue_burn_mei = ttcount.asset_issue_burn_mei.uint()
+            .checked_add(pfee_mei_u32)
+            .ok_or("asset_issue_burn_mei overflow".to_string())?;
+        ttcount.asset_issue_burn_mei = Uint4::from(new_asset_issue_burn_mei);
         sta.set_total_count(&ttcount);
         // do mint
         let mut asset_obj = AssetAmt::from_serial(amd.serial);
@@ -84,6 +97,3 @@ action_define!{AssetCreate, 16,
         Ok(vec![])
     })
 }
-
-
-

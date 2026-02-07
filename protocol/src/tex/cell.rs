@@ -30,13 +30,11 @@ fn tex_cell_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn TexCell
 
 fn tex_cell_json_decode(json: &str) -> Ret<Option<Box<dyn TexCell>>> {
     let obj = json_decode_object(json)?;
-    let kind_str = if let Some(k) = obj.get("kind") {
-        k
-    } else {
-        obj.get("cellid").ok_or_else(|| "tex cell object JSON must have 'kind' or 'cellid'".to_string())?
-    };
-    let kind = kind_str.parse::<u16>().map_err(|_| format!("invalid tex cell kind: {}", kind_str))?;
-    tex_cell_try_json_decode(kind, json)
+    let cellid_str = obj.get("cellid")
+        .ok_or_else(|| "tex cell object JSON must have 'cellid'".to_string())?;
+    let cellid = cellid_str.parse::<u16>()
+        .map_err(|_| format!("invalid tex cell id: {}", cellid_str))?;
+    tex_cell_try_json_decode(cellid, json)
 }
 
    
@@ -56,20 +54,20 @@ define_tex_cell_create!{ tex_cell_create,
     CellTrsAssetPay    // 7
     CellTrsAssetGet    // 8 
     
-    CellCondZhuLe    // 11
-    CellCondZhuGe    // 12
+    CellCondZhuAtMost   // 11
+    CellCondZhuAtLeast  // 12
     CellCondZhuEq    // 13
-    CellCondSatLe    // 14
-    CellCondSatGe    // 15
+    CellCondSatAtMost   // 14
+    CellCondSatAtLeast  // 15
     CellCondSatEq    // 16
-    CellCondDiaLe    // 17
-    CellCondDiaGe    // 18
+    CellCondDiaAtMost   // 17
+    CellCondDiaAtLeast  // 18
     CellCondDiaEq    // 19
-    CellCondAssetLe  // 20
-    CellCondAssetGe  // 21
+    CellCondAssetAtMost // 20
+    CellCondAssetAtLeast // 21
     CellCondAssetEq  // 22
-    CellCondHeightLe // 23
-    CellCondHeightGe // 24
+    CellCondHeightAtMost  // 23
+    CellCondHeightAtLeast // 24
     
 
 }

@@ -19,6 +19,28 @@ use super::action::*;
 static SETTLEMENT_ADDR: Address = ADDRESS_ONEX;
 
 
+fn tex_check_asset_serial(ctx: &mut dyn Context, serial: Fold64) -> Rerr {
+    if serial.is_zero() {
+        return errf!("tex asset serial cannot be zero")
+    }
+    {
+        let tex = ctx.tex_ledger();
+        if tex.asset_checked.contains(&serial) {
+            return Ok(())
+        }
+    }
+    let exist = {
+        let state = CoreState::wrap(ctx.state());
+        state.asset(&serial).is_some()
+    };
+    if !exist {
+        return errf!("tex asset <{}> not exist", serial.uint())
+    }
+    ctx.tex_ledger().asset_checked.insert(serial);
+    Ok(())
+}
+
+
 
 include!{"interface.rs"}
 include!{"transfer.rs"}

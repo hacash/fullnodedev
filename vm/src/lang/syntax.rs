@@ -735,14 +735,23 @@ impl Syntax {
             return errf!("param must need at least one");
         }
         self.source_map.register_param_names(param_names)?;
-        // Canonical param-unpack IR form (for byte-for-byte roundtrip stability):
-        // UPLIST(PICK0, P0)
-        Ok(Box::new(IRNodeDouble{
-            hrtv: false,
-            inst: UPLIST,
-            subx: push_inst(Bytecode::PICK0),
-            suby: push_inst(Bytecode::P0),
-        }))
+        if params == 1 {
+            // Single param: PUT 0 PICK0 (PICK0 moves top to top, PUT consumes; no POP needed)
+            Ok(Box::new(IRNodeParam1Single {
+                hrtv: false,
+                inst: PUT,
+                para: 0,
+                subx: push_inst(Bytecode::PICK0),
+            }))
+        } else {
+            // Multi param: UPLIST(PICK0, P0) (caller pushes list)
+            Ok(Box::new(IRNodeDouble {
+                hrtv: false,
+                inst: UPLIST,
+                subx: push_inst(Bytecode::PICK0),
+                suby: push_inst(Bytecode::P0),
+            }))
+        }
     }
 
     fn deal_func_argv(&mut self) -> Ret<Box<dyn IRNode>> {
@@ -1344,26 +1353,21 @@ impl Syntax {
                     self.irnode.push(push_inst_noret(Bytecode::POP));
                 }
                 1 => {
-                    // Canonical param-unpack IR form (for byte-for-byte roundtrip stability):
-                    // UPLIST(PICK0, P0)
+                    // Single param: PUT 0 PICK0 (PICK0 moves top to top, PUT consumes; no POP needed)
+                    self.irnode.push(Box::new(IRNodeParam1Single {
+                        hrtv: false,
+                        inst: Bytecode::PUT,
+                        para: 0,
+                        subx: push_inst(Bytecode::PICK0),
+                    }));
+                }
+                _ => {
+                    // Multi param: UPLIST(PICK0, P0) (caller pushes list)
                     let unpack = Box::new(IRNodeDouble {
                         hrtv: false,
                         inst: Bytecode::UPLIST,
                         subx: push_inst(Bytecode::PICK0),
                         suby: push_inst(Bytecode::P0),
-                    });
-                    self.irnode.push(unpack);
-                }
-                _ => {
-                    // unpack list arguments into locals starting at 0
-                    // Stack has the argument list on top
-                    // Use PICK0 to consume the value (same as single param handling)
-                    // UPLIST needs: [list][slot_index] -> pops both, unpacks list into locals
-                    let unpack = Box::new(IRNodeDouble {
-                        hrtv: false,
-                        inst: Bytecode::UPLIST,
-                        subx: push_inst(Bytecode::PICK0),
-                        suby: push_inst(Bytecode::P0),   // slot index 0
                     });
                     self.irnode.push(unpack);
                 }

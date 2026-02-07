@@ -12,6 +12,7 @@ pub struct TexLedger {
     pub diamonds: DiamondNameListMax60000,
     pub diatrs:   Vec<(Address, usize)>,
     pub assets:   HashMap<Fold64, i128>,
+    pub asset_checked: HashSet<Fold64>,
 }
 
 
@@ -38,4 +39,3 @@ impl TexLedger {
     }
 
 }
-

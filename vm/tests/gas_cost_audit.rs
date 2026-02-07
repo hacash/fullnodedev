@@ -3,7 +3,6 @@
 //! Analyzes test results and compares them against vm/doc/gas-cost.md specifications
 
 use std::collections::HashMap;
-use vm::rt::*;
 
 /// Parse test output and extract failure information
 pub fn analyze_test_results() {

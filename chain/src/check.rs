@@ -22,7 +22,7 @@ fn try_execute_tx_by(this: &ChainEngine, tx: &dyn TransactionRead, pd_hei: u64, 
     let env = Env {
         chain: ChainInfo {
             id: this.cnf.chain_id,
-            diamond_form: false,
+            diamond_form: this.cnf.diamond_form,
             fast_sync: false,
         },
         block: BlkInfo {
@@ -32,11 +32,21 @@ fn try_execute_tx_by(this: &ChainEngine, tx: &dyn TransactionRead, pd_hei: u64, 
         },
         tx: create_tx_info(tx),
     };
-    let sub = unsafe { Box::from_raw(sub_state.as_mut() as *mut dyn State) };
+    // Isolate execution per tx:
+    // - build an internal sub-state fork from current accumulated `sub_state`
+    // - merge on success
+    // - discard on failure
+    let parent: Arc<Box<dyn State>> = sub_state.clone_state().into();
+    let sub = parent.fork_sub(Arc::downgrade(&parent));
     let log = this.logs.next(0);
     let mut ctxobj = ctx::ContextInst::new(env, sub, Box::new(log), tx);
     let exec_res = tx.execute(&mut ctxobj);
     let (sta, _) = ctxobj.release();
-    let _ = Box::into_raw(sta);
-    exec_res
+    match exec_res {
+        Ok(()) => {
+            sub_state.merge_sub(sta);
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }

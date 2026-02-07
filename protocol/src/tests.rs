@@ -1,11 +1,11 @@
 use std::sync::Once;
-use crate::*;
 use crate::action::*;
 use crate::transaction::*;
 use crate::block::*;
 use field::*;
 use basis::component::*;
 use basis::interface::*;
+use sys::*;
 
 static INIT: Once = Once::new();
 
@@ -235,4 +235,626 @@ fn test_address_bare_base58check_in_protocol() {
     let mut ptr = AddrOrPtr::default();
     ptr.from_json(&format!(r#"{{"type":1,"value":"{}"}}"#, addr_str)).unwrap();
     assert_eq!(ptr.to_readable(), addr_str);
+}
+
+#[cfg(feature = "ast")]
+#[derive(Default, Clone)]
+struct AstTestState {
+    parent: std::sync::Weak<Box<dyn State>>,
+    mem: MemMap,
+}
+
+#[cfg(feature = "ast")]
+impl State for AstTestState {
+    fn fork_sub(&self, p: std::sync::Weak<Box<dyn State>>) -> Box<dyn State> {
+        Box::new(Self { parent: p, mem: MemMap::default() })
+    }
+
+    fn merge_sub(&mut self, sta: Box<dyn State>) {
+        self.mem.extend(sta.as_mem().clone());
+    }
+
+    fn detach(&mut self) {
+        self.parent = std::sync::Weak::<Box<dyn State>>::new();
+    }
+
+    fn clone_state(&self) -> Box<dyn State> {
+        Box::new(self.clone())
+    }
+
+    fn as_mem(&self) -> &MemMap {
+        &self.mem
+    }
+
+    fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+        if let Some(v) = self.mem.get(&k) {
+            return v.clone();
+        }
+        if let Some(parent) = self.parent.upgrade() {
+            return parent.get(k);
+        }
+        None
+    }
+
+    fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+        self.mem.insert(k, Some(v));
+    }
+
+    fn del(&mut self, k: Vec<u8>) {
+        self.mem.insert(k, None);
+    }
+}
+
+#[cfg(feature = "ast")]
+fn build_ast_ctx_with_state<'a>(
+    env: Env,
+    sta: Box<dyn State>,
+    tx: &'a dyn TransactionRead,
+) -> crate::context::ContextInst<'a> {
+    use crate::state::EmptyLogs;
+    crate::context::ContextInst::new(env, sta, Box::new(EmptyLogs {}), tx)
+}
+
+#[cfg(feature = "ast")]
+fn ast_state_get_u8(ctx: &mut dyn Context, key: u8) -> Option<u8> {
+    ctx.state().get(vec![key]).and_then(|v| v.first().copied())
+}
+
+#[cfg(feature = "ast")]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+struct AstTestSet {
+    key: Uint1,
+    val: Uint1,
+}
+
+#[cfg(feature = "ast")]
+impl Parse for AstTestSet {
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        let mut mv = self.key.parse(buf)?;
+        mv += self.val.parse(&buf[mv..])?;
+        Ok(mv)
+    }
+}
+
+#[cfg(feature = "ast")]
+impl Serialize for AstTestSet {
+    fn serialize(&self) -> Vec<u8> {
+        [self.key.serialize(), self.val.serialize()].concat()
+    }
+
+    fn size(&self) -> usize {
+        self.key.size() + self.val.size()
+    }
+}
+
+#[cfg(feature = "ast")]
+impl Field for AstTestSet {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(feature = "ast")]
+impl ToJSON for AstTestSet {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        format!(
+            "{{\"key\":{},\"val\":{}}}",
+            self.key.to_json_fmt(fmt),
+            self.val.to_json_fmt(fmt)
+        )
+    }
+}
+
+#[cfg(feature = "ast")]
+impl FromJSON for AstTestSet {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let pairs = json_split_object(json);
+        for (k, v) in pairs {
+            if k == "key" {
+                self.key.from_json(v)?;
+            } else if k == "val" {
+                self.val.from_json(v)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ast")]
+impl ActExec for AstTestSet {
+    fn execute(&self, ctx: &mut dyn Context) -> Ret<(u32, Vec<u8>)> {
+        ctx.state().set(vec![*self.key], vec![*self.val]);
+        Ok((0, vec![]))
+    }
+}
+
+#[cfg(feature = "ast")]
+impl Description for AstTestSet {}
+
+#[cfg(feature = "ast")]
+impl Action for AstTestSet {
+    fn kind(&self) -> u16 {
+        65001
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+#[cfg(feature = "ast")]
+impl AstTestSet {
+    fn create_by(key: u8, val: u8) -> Self {
+        Self {
+            key: Uint1::from(key),
+            val: Uint1::from(val),
+            ..Self::new()
+        }
+    }
+}
+
+#[cfg(feature = "ast")]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+struct AstTestFail {}
+
+#[cfg(feature = "ast")]
+impl Parse for AstTestFail {
+    fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
+        Ok(0)
+    }
+}
+
+#[cfg(feature = "ast")]
+impl Serialize for AstTestFail {
+    fn serialize(&self) -> Vec<u8> {
+        vec![]
+    }
+
+    fn size(&self) -> usize {
+        0
+    }
+}
+
+#[cfg(feature = "ast")]
+impl Field for AstTestFail {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(feature = "ast")]
+impl ToJSON for AstTestFail {
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        "{}".to_owned()
+    }
+}
+
+#[cfg(feature = "ast")]
+impl FromJSON for AstTestFail {
+    fn from_json(&mut self, _json: &str) -> Ret<()> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ast")]
+impl ActExec for AstTestFail {
+    fn execute(&self, _ctx: &mut dyn Context) -> Ret<(u32, Vec<u8>)> {
+        errf!("ast test forced fail")
+    }
+}
+
+#[cfg(feature = "ast")]
+impl Description for AstTestFail {}
+
+#[cfg(feature = "ast")]
+impl Action for AstTestFail {
+    fn kind(&self) -> u16 {
+        65002
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.chain.fast_sync = true; // keep focus on AST semantics
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+
+    let cond = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(1, 11))]);
+    let br_if = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(2, 22))]);
+    let br_else = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(3, 33))]);
+    let astif = AstIf::create_by(cond, br_if, br_else);
+
+    ctx.depth_set(CallDepth::new(-1));
+    astif.execute(&mut ctx).unwrap();
+
+    assert_eq!(ast_state_get_u8(&mut ctx, 1), Some(11)); // cond committed
+    assert_eq!(ast_state_get_u8(&mut ctx, 2), Some(22)); // if branch committed
+    assert_eq!(ast_state_get_u8(&mut ctx, 3), None); // else branch not executed
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
+    let mut tx = TransactionType2::default();
+    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.actions.push(Box::new(AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(7, 77)), // succeeds and writes
+            Box::new(AstTestFail::new()),           // fails
+        ],
+    ))).unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.state().set(vec![9], vec![99]); // parent baseline
+
+    let old = ctx.state_fork(); // tx-level isolation
+    ctx.depth_set(CallDepth::new(-1));
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("must succeed at least"));
+    ctx.state_recover(old); // tx-level rollback on failure
+
+    assert_eq!(ast_state_get_u8(&mut ctx, 9), Some(99)); // baseline kept
+    assert_eq!(ast_state_get_u8(&mut ctx, 7), None); // child write rolled back
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_nested_if_select_else_path_commits_expected_layers() {
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+
+    let inner_if = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(AstTestFail::new())]), // force false -> else
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(52, 52))]),
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(53, 53))]),
+    );
+
+    let outer_if = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(50, 50))]),
+        AstSelect::create_list(vec![
+            Box::new(AstTestSet::create_by(51, 51)),
+            Box::new(inner_if),
+        ]),
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(54, 54))]),
+    );
+
+    ctx.depth_set(CallDepth::new(-1));
+    outer_if.execute(&mut ctx).unwrap();
+
+    assert_eq!(ast_state_get_u8(&mut ctx, 50), Some(50)); // outer cond
+    assert_eq!(ast_state_get_u8(&mut ctx, 51), Some(51)); // outer if branch
+    assert_eq!(ast_state_get_u8(&mut ctx, 53), Some(53)); // inner else branch
+    assert_eq!(ast_state_get_u8(&mut ctx, 52), None); // inner if branch not executed
+    assert_eq!(ast_state_get_u8(&mut ctx, 54), None); // outer else not executed
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+
+    let nested_fail = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(61, 61)), // would be committed in inner select before final Err
+            Box::new(AstTestFail::new()),
+        ],
+    );
+    let outer = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(60, 60)), // success #1
+            Box::new(nested_fail),                   // Err -> outer recover this whole sub-state
+            Box::new(AstTestSet::create_by(62, 62)), // success #2
+        ],
+    );
+
+    ctx.depth_set(CallDepth::new(-1));
+    outer.execute(&mut ctx).unwrap();
+
+    assert_eq!(ast_state_get_u8(&mut ctx, 60), Some(60));
+    assert_eq!(ast_state_get_u8(&mut ctx, 62), Some(62));
+    assert_eq!(ast_state_get_u8(&mut ctx, 61), None); // nested failed select write must not leak
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
+    let mut tx = TransactionType2::default();
+    tx.ty = Uint1::from(TransactionType2::TYPE);
+
+    let act = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(70, 70))]), // cond=true and committed by AstIf
+        AstSelect::create_by(
+            2,
+            2,
+            vec![
+                Box::new(AstTestSet::create_by(71, 71)), // committed before final failure
+                Box::new(AstTestFail::new()),
+            ],
+        ),
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(72, 72))]),
+    );
+    tx.actions.push(Box::new(act)).unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.state().set(vec![79], vec![79]); // baseline
+
+    let old = ctx.state_fork();
+    ctx.depth_set(CallDepth::new(-1));
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("must succeed at least"));
+    ctx.state_recover(old);
+
+    assert_eq!(ast_state_get_u8(&mut ctx, 79), Some(79)); // baseline kept
+    assert_eq!(ast_state_get_u8(&mut ctx, 70), None); // nested partial commit must be rolled back at tx level
+    assert_eq!(ast_state_get_u8(&mut ctx, 71), None); // nested partial commit must be rolled back at tx level
+    assert_eq!(ast_state_get_u8(&mut ctx, 72), None);
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_deep_4level_success_path_commits_expected_state() {
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+
+    let lvl4_select = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(83, 83)),
+            Box::new(AstTestSet::create_by(84, 84)),
+        ],
+    );
+    let lvl3_if = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(82, 82))]),
+        AstSelect::create_list(vec![Box::new(lvl4_select)]),
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(89, 89))]),
+    );
+    let lvl2_select = AstSelect::create_list(vec![Box::new(lvl3_if)]);
+    let lvl1_if = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(80, 80))]),
+        AstSelect::create_list(vec![
+            Box::new(AstTestSet::create_by(81, 81)),
+            Box::new(lvl2_select),
+        ]),
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(88, 88))]),
+    );
+
+    ctx.depth_set(CallDepth::new(-1));
+    lvl1_if.execute(&mut ctx).unwrap();
+
+    assert_eq!(ast_state_get_u8(&mut ctx, 80), Some(80));
+    assert_eq!(ast_state_get_u8(&mut ctx, 81), Some(81));
+    assert_eq!(ast_state_get_u8(&mut ctx, 82), Some(82));
+    assert_eq!(ast_state_get_u8(&mut ctx, 83), Some(83));
+    assert_eq!(ast_state_get_u8(&mut ctx, 84), Some(84));
+    assert_eq!(ast_state_get_u8(&mut ctx, 88), None);
+    assert_eq!(ast_state_get_u8(&mut ctx, 89), None);
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+
+    let lvl4_if_fail = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(93, 93))]), // cond=true
+        AstSelect::create_list(vec![Box::new(AstTestFail::new())]),            // force fail
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(94, 94))]),
+    );
+    let lvl3_select_fail = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(92, 92)), // partial commit inside this nested select
+            Box::new(lvl4_if_fail),                  // fails
+        ],
+    );
+    let lvl2_if_fail = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(91, 91))]), // cond=true commit
+        AstSelect::create_list(vec![Box::new(lvl3_select_fail)]),              // fails
+        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(96, 96))]),
+    );
+    let lvl1_outer_select = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(90, 90)), // success #1
+            Box::new(lvl2_if_fail),                  // fail; outer select must recover this branch
+            Box::new(AstTestSet::create_by(95, 95)), // success #2
+        ],
+    );
+
+    ctx.depth_set(CallDepth::new(-1));
+    lvl1_outer_select.execute(&mut ctx).unwrap();
+
+    assert_eq!(ast_state_get_u8(&mut ctx, 90), Some(90));
+    assert_eq!(ast_state_get_u8(&mut ctx, 95), Some(95));
+    assert_eq!(ast_state_get_u8(&mut ctx, 91), None); // must be isolated
+    assert_eq!(ast_state_get_u8(&mut ctx, 92), None); // must be isolated
+    assert_eq!(ast_state_get_u8(&mut ctx, 93), None); // must be isolated
+    assert_eq!(ast_state_get_u8(&mut ctx, 94), None);
+    assert_eq!(ast_state_get_u8(&mut ctx, 96), None);
+}
+
+#[cfg(feature = "tex")]
+#[derive(Default)]
+struct TestMemState {
+    kv: std::collections::HashMap<Vec<u8>, Vec<u8>>,
+}
+
+#[cfg(feature = "tex")]
+impl State for TestMemState {
+    fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+        self.kv.get(&k).cloned()
+    }
+    fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+        self.kv.insert(k, v);
+    }
+    fn del(&mut self, k: Vec<u8>) {
+        self.kv.remove(&k);
+    }
+}
+
+#[cfg(feature = "tex")]
+fn build_tex_ctx_with_state(env: Env, sta: Box<dyn State>) -> crate::context::ContextInst<'static> {
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+    let tx = Box::leak(Box::new(TransactionType2::default()));
+    crate::context::ContextInst::new(env, sta, Box::new(EmptyLogs {}), tx)
+}
+
+#[cfg(feature = "tex")]
+#[test]
+fn test_tex_sat_pay_records_sat_not_zhu() {
+    use crate::tex::*;
+
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let addr = field::ADDRESS_ONEX.clone();
+
+    let mut ctx = build_tex_ctx_with_state(env, Box::new(TestMemState::default()));
+    {
+        let mut st = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = Balance::default();
+        bls.satoshi = Fold64::from(100).unwrap();
+        st.balance_set(&addr, &bls);
+    }
+
+    let cell = CellTrsSatPay::new(Fold64::from(7).unwrap());
+    cell.execute(&mut ctx, &addr).unwrap();
+
+    assert_eq!(ctx.tex_ledger().sat, 7);
+    assert_eq!(ctx.tex_ledger().zhu, 0);
+}
+
+#[cfg(feature = "tex")]
+#[test]
+fn test_tex_asset_serial_must_exist_and_cache() {
+    use crate::tex::*;
+
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let addr = field::ADDRESS_ONEX.clone();
+
+    let mut ctx = build_tex_ctx_with_state(env, Box::new(TestMemState::default()));
+    {
+        let mut st = crate::state::CoreState::wrap(ctx.state());
+        st.asset_set(
+            &Fold64::from(9).unwrap(),
+            &AssetSmelt {
+                serial: Fold64::from(9).unwrap(),
+                supply: Fold64::from(10_000).unwrap(),
+                decimal: Uint1::from(2),
+                issuer: addr,
+                ticket: BytesW1::from_str("AST9").unwrap(),
+                name: BytesW1::from_str("Asset9").unwrap(),
+            },
+        );
+    }
+
+    let miss = CellCondAssetEq::new(AssetAmt::from(999, 1).unwrap())
+        .execute(&mut ctx, &addr)
+        .unwrap_err();
+    assert!(miss.contains("not exist"));
+
+    let ok1 = CellCondAssetEq::new(AssetAmt::from(9, 0).unwrap());
+    ok1.execute(&mut ctx, &addr).unwrap();
+    let ok2 = CellCondAssetEq::new(AssetAmt::from(9, 0).unwrap());
+    ok2.execute(&mut ctx, &addr).unwrap();
+    assert!(ctx.tex_ledger().asset_checked.contains(&Fold64::from(9).unwrap()));
+    assert_eq!(ctx.tex_ledger().asset_checked.len(), 1);
+}
+
+#[cfg(feature = "tex")]
+#[test]
+fn test_tex_diamond_get_zero_rejected_early() {
+    use crate::tex::*;
+
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let addr = field::ADDRESS_ONEX.clone();
+
+    let mut ctx = build_tex_ctx_with_state(env, Box::new(TestMemState::default()));
+    let err = CellTrsDiaGet::new(DiamondNumber::from(0))
+        .execute(&mut ctx, &addr)
+        .unwrap_err();
+    assert!(err.contains("cannot be zero"));
+}
+
+#[cfg(feature = "tex")]
+#[test]
+fn test_tex_cell_json_must_use_cellid() {
+    use crate::tex::*;
+
+    let mut ls = DnyTexCellW1::default();
+    let ok_json = r#"[{"cellid":11,"haczhu":0}]"#;
+    ls.from_json(ok_json).unwrap();
+    assert_eq!(ls.length(), 1);
+
+    let mut bad = DnyTexCellW1::default();
+    let err = bad.from_json(r#"[{"kind":11,"haczhu":0}]"#).unwrap_err();
+    assert!(err.contains("cellid"));
+}
+
+#[cfg(feature = "tex")]
+#[test]
+fn test_tex_action_signature_rejects_payload_tamper() {
+    use crate::tex::*;
+
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    env.block.height = 10;
+    env.chain.fast_sync = true;
+
+    let mut ctx = build_tex_ctx_with_state(env, Box::new(TestMemState::default()));
+    let acc = Account::create_by_password("sig_check_tex").unwrap();
+    let addr = Address::from(*acc.address());
+
+    let mut act = TexCellAct::create_by(addr);
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100))).unwrap();
+    act.do_sign(&acc).unwrap();
+    // tamper payload after sign
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100))).unwrap();
+
+    ctx.depth_set(CallDepth::new(-1));
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("signature verify failed"));
 }

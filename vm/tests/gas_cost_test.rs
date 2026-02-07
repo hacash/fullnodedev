@@ -178,6 +178,7 @@ struct ExpectedGasCalculator {
     gas_extra: GasExtra,
 }
 
+#[allow(dead_code)]
 impl ExpectedGasCalculator {
     fn new() -> Self {
         Self {
@@ -349,17 +350,20 @@ fn measure_opcode_gas_with_setup(
 }
 
 /// Create a bytes value with specified length
+#[allow(dead_code)]
 fn create_bytes_value(len: usize) -> Value {
     Value::bytes(vec![0u8; len])
 }
 
 /// Create a list with specified number of items
+#[allow(dead_code)]
 fn create_list_value(_item_count: usize, _item_size: usize) -> Value {
     // CompoItem is private, we cannot create it directly, this function is temporarily unused
     Value::Nil
 }
 
 /// Create a map with specified number of items
+#[allow(dead_code)]
 fn create_map_value(_item_count: usize, _key_size: usize, _val_size: usize) -> Value {
     // CompoItem is private, we cannot create it directly, this function is temporarily unused
     Value::Nil
@@ -550,7 +554,7 @@ fn test_base_gas(opcode: Bytecode, reporter: &mut TestReporter, calc: &ExpectedG
             return;
         },
         // Opcodes that need complex setup - use combination test or skip
-        HREAD | HWRITE | MGET | GGET | SLOAD | ITEMGET | LOG1 | LOG2 | LOG3 | LOG4 | HWRITEXL | GETX | PUTX => {
+        HREAD | HWRITE | MGET | GGET | SLOAD | ITEMGET | LOG1 | LOG2 | LOG3 | LOG4 => {
             // These opcodes are tested in dynamic gas tests, skip base gas test
             return;
         },
@@ -635,26 +639,26 @@ fn test_dup_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
         // Build test code: push a value of specified size, then DUP
         // Note: PBUF/PNBUF also consume gas (base + stack_copy), so we need to account for that
         let mut setup_codes = Vec::new();
-        let mut push_base_gas = 0i64;
-        let mut push_dynamic_gas = 0i64;
+        let mut _push_base_gas = 0i64;
+        let mut _push_dynamic_gas = 0i64;
         
         if size == 0 {
             setup_codes.extend(build_codes!(PNBUF));
-            push_base_gas = calc.base_gas(PNBUF);
+            _push_base_gas = calc.base_gas(PNBUF);
         } else if size <= 255 {
             setup_codes.extend(build_codes!(PBUF));
             setup_codes.push(size as u8);
             setup_codes.extend(vec![0u8; size]);
-            push_base_gas = calc.base_gas(PBUF);
-            push_dynamic_gas = calc.stack_copy_gas(size);
+            _push_base_gas = calc.base_gas(PBUF);
+            _push_dynamic_gas = calc.stack_copy_gas(size);
         } else {
             // For values greater than 255, use PBUFL
             setup_codes.extend(build_codes!(PBUFL));
             let size_u16 = size as u16;
             setup_codes.extend(size_u16.to_be_bytes());
             setup_codes.extend(vec![0u8; size]);
-            push_base_gas = calc.base_gas(PBUFL);
-            push_dynamic_gas = calc.stack_copy_gas(size);
+            _push_base_gas = calc.base_gas(PBUFL);
+            _push_dynamic_gas = calc.stack_copy_gas(size);
         }
         
         // Measure only DUP gas (excluding PBUF/PNBUF setup)
@@ -1494,7 +1498,7 @@ mod tests {
         }
 
         // Opcodes with gas cost = 4
-        let gas_4_opcodes = vec![
+        let _gas_4_opcodes = vec![
             DUPN,
             POPN,
             PICK,

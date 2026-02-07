@@ -23,6 +23,7 @@ struct GasMismatch {
     resource_sizes: HashMap<String, usize>,
 }
 
+#[allow(dead_code)]
 struct GasTestContext {
     mismatches: Vec<GasMismatch>,
     gas_table: GasTable,

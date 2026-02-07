@@ -41,6 +41,9 @@ fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRe
 }
 
 
+/// Ensure the last instruction is a terminal one (RET/END/ERR/ABT or call).
+/// Failure (CodeNotWithEnd) is a fitsh code compile error and propagates to the compiler
+/// via compile_body -> parse_function -> parse_top_level -> fitshc::compile.
 fn ensure_terminal_instruction(inst: Bytecode) -> VmrtErr {
     if let RET | END | ERR | ABT |
         CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALL // CALLDYN
@@ -147,17 +150,17 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
 }
 
 
-// 
+//
 fn verify_jump_dests(instable: &[u8], jumpdests: &[isize]) -> VmrtErr {
     let itlen = instable.len();
     let right = itlen as isize - 1;
     for jp in jumpdests {
         let j = *jp;
         if j < 0 || j > right {
-            return itr_err_code!(JumpOverflow)   
+            return itr_err_code!(JumpOverflow)
         }
         if 0 == instable[j as usize] {
-            return itr_err_code!(JumpInDataSeg) 
+            return itr_err_code!(JumpInDataSeg)
         }
     }
     // finish
