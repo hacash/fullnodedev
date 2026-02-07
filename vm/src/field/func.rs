@@ -44,7 +44,7 @@ impl FuncArgvTypes {
 
     pub fn from_types(otp: Option<ValueTy>, tys: Vec<ValueTy>) -> Ret<Self> {
         let output_ty = match otp {
-            Some(o) => { o.canbe_argv()?; (o as u8) << 4}
+            Some(o) => { o.canbe_retval()?; (o as u8) << 4}
             _ => 0,
         };
         let n = tys.len();
@@ -79,7 +79,7 @@ impl FuncArgvTypes {
         Ok(match ty {
             ValueTy::Nil => None,
             _ => {
-                ty.canbe_argv()?;
+                ty.canbe_retval()?;
                 Some(ty)
             }
         })

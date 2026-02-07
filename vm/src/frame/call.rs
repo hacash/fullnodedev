@@ -2,7 +2,7 @@
 
 impl CallFrame {
 
-    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj, 
+    pub fn start_call_old(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj, 
         entry_addr: ContractAddress, 
         code_owner: Option<ContractAddress>,
         libs: Option<Vec<ContractAddress>>, 
@@ -131,6 +131,223 @@ impl CallFrame {
             }
             // panic!("unreachable exit {:?}", exit);
             // unreachable!()
+        }
+    }
+
+
+    pub fn start_call_old2(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj,
+        entry_addr: ContractAddress,
+        code_owner: Option<ContractAddress>,
+        libs: Option<Vec<ContractAddress>>,
+        param: Option<Value>
+    ) -> VmrtRes<Value> {
+        macro_rules! curr { () => { self.frames.last_mut().unwrap() } }
+        macro_rules! curr_ref { () => { self.frames.last().unwrap() } }
+        use CallExit::*;
+        use ExecMode::*;
+        let libs_none: Option<Vec<ContractAddress>> = None;
+        self.contract_count = r.contracts.len();
+        let mut root = self.increase(r)?;
+        root.depth = env.ctx.depth().to_isize() as isize;
+        root.ctxadr = entry_addr.clone();
+        root.curadr = code_owner.unwrap_or(entry_addr);
+        self.push(root);
+        // Root frame enters execution with the entry function prepared.
+        curr!().prepare(mode, false, code, param)?;
+        loop {
+            let exit = curr!().execute(r, env)?;
+            match exit {
+                Call(fnptr) => {
+                    let (ctxadr, curadr, depth) = {
+                        let curr = curr_ref!();
+                        (curr.ctxadr.clone(), curr.curadr.clone(), curr.depth)
+                    };
+                    let libs_ptr = maybe!(depth == 0, &libs, &libs_none);
+                    let (chgsrcadr, fnobj) = r.load_must_call(env.ctx, fnptr.clone(), &ctxadr, &curadr, libs_ptr)?;
+                    let fnobj = fnobj.as_ref().clone();
+                    let fn_is_public = fnobj.check_conf(FnConf::Public);
+                    self.check_load_new_contract_and_gas(r, env)?;
+                    if fnptr.is_callcode {
+                        // CALLCODE keeps stack depth and rewires current code owner in-place.
+                        let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
+                        curr!().curadr = owner;
+                        curr!().prepare(fnptr.mode, true, fnobj, None)?;
+                        continue;
+                    }
+                    if matches!(fnptr.mode, Outer) && !fn_is_public {
+                        let cadr = chgsrcadr.as_ref().unwrap();
+                        return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.to_readable(), fnptr.fnsign.to_hex())
+                    }
+                    // Normal CALL pops args from caller and starts a new child frame.
+                    let param = Some(curr!().pop_value()?);
+                    let next = self.increase(r)?;
+                    self.push(next);
+                    curr!().prepare(fnptr.mode, false, fnobj, param)?;
+                    if matches!(fnptr.mode, Outer) {
+                        // OUTER call switches both context address and current address to callee.
+                        let cadr = chgsrcadr.unwrap();
+                        curr!().ctxadr = cadr.clone();
+                        curr!().curadr = cadr;
+                        continue;
+                    }
+                    // Inner/View/Pure call updates only current code owner for execution.
+                    let default_owner = match fnptr.target {
+                        CallTarget::This | CallTarget::Libidx(_) => ctxadr.clone(),
+                        CallTarget::Self_ | CallTarget::Super => curadr.clone(),
+                    };
+                    curr!().curadr = chgsrcadr.unwrap_or(default_owner);
+                }
+                Abort | Throw | Finish | Return => {
+                    let mut retv = Value::Nil;
+                    {
+                        let curr = curr!();
+                        if matches!(exit, Return | Throw) {
+                            retv = curr.pop_value()?;
+                        }
+                        curr.check_output_type(&mut retv)?;
+                    }
+                    if matches!(exit, Abort | Throw) {
+                        return itr_err_fmt!(ThrowAbort, "VM return error: {}", retv)
+                    }
+                    // Finished frame is popped and its runtime resources are reclaimed.
+                    self.pop().unwrap().reclaim(r);
+                    loop {
+                        let is_tail = match self.frames.last() {
+                            Some(prev) => prev.pc == prev.codes.len(),
+                            None => return Ok(retv),
+                        };
+                        if !is_tail {
+                            // Return value is pushed back to the direct caller frame.
+                            curr!().push_value(retv)?;
+                            break;
+                        }
+                        // Tail-return collapse keeps bubbling value across completed callers.
+                        curr_ref!().check_output_type(&mut retv)?;
+                        self.pop().unwrap().reclaim(r);
+                    }
+                }
+            }
+        }
+    }
+
+
+    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj,
+        entry_addr: ContractAddress,
+        code_owner: Option<ContractAddress>,
+        libs: Option<Vec<ContractAddress>>,
+        param: Option<Value>
+    ) -> VmrtRes<Value> {
+        // Macro definitions for frame access
+        macro_rules! curr { () => { self.frames.last_mut().unwrap() } }
+        macro_rules! curr_ref { () => { self.frames.last().unwrap() } }
+        
+        use CallExit::*;
+        use ExecMode::*;
+        
+        let libs_none: Option<Vec<ContractAddress>> = None;
+        
+        // Setup root frame
+        self.contract_count = r.contracts.len();
+        let mut root = self.increase(r)?;
+        root.depth = env.ctx.depth().to_isize() as isize;
+        root.ctxadr = entry_addr.clone();
+        root.curadr = code_owner.unwrap_or(entry_addr);
+        self.push(root);
+        curr!().prepare(mode, false, code, param)?;
+        
+        // Main execution loop
+        loop {
+            let exit = curr!().execute(r, env)?;
+            
+            match exit {
+                Call(fnptr) => {
+                    // Load call context
+                    let (ctxadr, curadr, depth) = (
+                        curr_ref!().ctxadr.clone(),
+                        curr_ref!().curadr.clone(),
+                        curr_ref!().depth
+                    );
+                    
+                    let libs_ptr = if depth == 0 { &libs } else { &libs_none };
+                    let (chgsrcadr, fnobj) = r.load_must_call(env.ctx, fnptr.clone(), &ctxadr, &curadr, libs_ptr)?;
+                    let fnobj = fnobj.as_ref().clone();
+                    let fn_is_public = fnobj.check_conf(FnConf::Public);
+                    self.check_load_new_contract_and_gas(r, env)?;
+                    
+                    // CALLCODE: in-place execution
+                    if fnptr.is_callcode {
+                        let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
+                        curr!().curadr = owner;
+                        curr!().prepare(fnptr.mode, true, fnobj, None)?;
+                        continue;
+                    }
+                    
+                    // Check public access for outer calls
+                    if let Outer = fnptr.mode {
+                        let cadr = chgsrcadr.as_ref().unwrap();
+                        if !fn_is_public {
+                            return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.to_readable(), fnptr.fnsign.to_hex());
+                        }
+                    }
+                    
+                    // Create new frame for normal calls
+                    let param = Some(curr!().pop_value()?);
+                    let next = self.increase(r)?;
+                    self.push(next);
+                    curr!().prepare(fnptr.mode, false, fnobj, param)?;
+                    
+                    // Set context addresses based on call mode
+                    match fnptr.mode {
+                        Inner | View | Pure => {
+                            let default_owner = match fnptr.target {
+                                CallTarget::This | CallTarget::Libidx(_) => ctxadr.clone(),
+                                CallTarget::Self_ | CallTarget::Super => curadr.clone(),
+                            };
+                            curr!().curadr = chgsrcadr.unwrap_or(default_owner);
+                        }
+                        Outer => {
+                            let cadr = chgsrcadr.unwrap();
+                            curr!().ctxadr = cadr.clone();
+                            curr!().curadr = cadr;
+                        }
+                        _ => unreachable!()
+                    }
+                }
+                
+                Abort | Throw | Finish | Return => {
+                    // Extract return value
+                    let mut retv = Value::Nil;
+                    if matches!(exit, Return | Throw) {
+                        retv = curr!().pop_value()?;
+                    }
+                    curr!().check_output_type(&mut retv)?;
+                    
+                    // Handle abort/throw
+                    if matches!(exit, Abort | Throw) {
+                        return itr_err_fmt!(ThrowAbort, "VM return error: {}", retv);
+                    }
+                    
+                    // Pop current frame and reclaim resources
+                    self.pop().unwrap().reclaim(r);
+                    
+                    // Bubble return through tail calls
+                    loop {
+                        let is_tail = match self.frames.last() {
+                            Some(f) => f.pc == f.codes.len(),
+                            None => return Ok(retv),
+                        };
+                        
+                        if !is_tail {
+                            curr!().push_value(retv)?;
+                            break;
+                        }
+                        
+                        // Tail-call collapse
+                        curr_ref!().check_output_type(&mut retv)?;
+                        self.pop().unwrap().reclaim(r);
+                    }
+                }
+            }
         }
     }
 

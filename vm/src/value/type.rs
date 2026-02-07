@@ -32,6 +32,15 @@ impl ValueTy {
         }
     }
 
+    /// Allowed as function return value (Compo/list may only be return type, not parameter)
+    pub fn canbe_retval(&self) -> Rerr {
+        use ValueTy::*;
+        match self {
+            Nil | HeapSlice => errf!("Value Type {:?} cannot be func retval", self),
+            _ => Ok(())
+        }
+    }
+
     pub fn name(&self) -> &'static str {
         // use ValueTy::*;
         match self {

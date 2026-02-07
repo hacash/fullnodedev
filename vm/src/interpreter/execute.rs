@@ -19,10 +19,10 @@ macro_rules! itrbuf {
     ($codes: expr, $pc: expr, $l: expr) => {
         { 
             let r = $pc + $l;
-            debug_assert!($pc<=r && r<=$codes.len());
-            /* if r < $pc || r > $codes.len() {
+            #[cfg(debug_assertions)]
+            if r < $pc || r > $codes.len() {
                 return itr_err_code!(CodeOverflow)
-            } */
+            }
             let v: [u8; $l] = unsafe { read_arr::<$l>($codes, $pc) };
             $pc = r;
             v
@@ -34,10 +34,10 @@ macro_rules! itrparam {
     ($codes: expr, $pc: expr, $l: expr, $t: ty) => {
         { 
             let r = $pc + $l;
-            debug_assert!($pc<=r && r<=$codes.len());
-            /* if r < $pc || r > $codes.len() {
+            #[cfg(debug_assertions)]
+            if r < $pc || r > $codes.len() {
                 return itr_err_code!(CodeOverflow)
-            } */
+            }
             let v = <$t>::from_be_bytes(unsafe { read_arr::<$l>($codes, $pc) });
             $pc = r;
             v

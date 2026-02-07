@@ -152,18 +152,20 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
             KwTy::Address => Some(ValueTy::Address),
             KwTy::Bytes => Some(ValueTy::Bytes),
             KwTy::Bool => Some(ValueTy::Bool),
+            KwTy::List | KwTy::Map => Some(ValueTy::Compo),
              _ => None 
         }
     } else if let Identifier(tn) = tk {
         match tn.as_str() {
             "u8" => Some(ValueTy::U8),
-             "u16" => Some(ValueTy::U16),
+            "u16" => Some(ValueTy::U16),
             "u32" => Some(ValueTy::U32),
             "u64" => Some(ValueTy::U64),
             "u128" => Some(ValueTy::U128),
             "address" => Some(ValueTy::Address),
             "bytes" => Some(ValueTy::Bytes),
             "bool" => Some(ValueTy::Bool),
+            "list" | "map" => Some(ValueTy::Compo),
             _ => None
         }
     } else { None };
