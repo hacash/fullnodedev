@@ -375,6 +375,7 @@ pub fn execute_code(
             }
             POP    => { ops.pop()?; } // drop
             POPN   => { ops.popn(pu8!())?; },
+            PICK0  => ops.pick(0)?,
             PICK   => ops.pick(pu8!())?,
             SWAP   => ops.swap()?,
             REV    => ops.reverse(pu8!())?, // reverse

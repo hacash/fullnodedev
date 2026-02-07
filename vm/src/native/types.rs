@@ -69,12 +69,20 @@ impl NativeCall {
         }
     }
 
+    pub fn has_idx(idx: u8) -> bool {
+        match idx {
+            $(
+                $v => true,
+            )+
+            _ => false,
+        }
+    }
+
 
 }
 
 
     };
 }
-
 
 

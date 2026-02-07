@@ -1,4 +1,6 @@
 
+use crate::native::NativeCall;
+
 /*
     Verify bytecode validity and return the instruction table.
 */
@@ -13,11 +15,15 @@ pub fn convert_and_check(cap: &SpaceCap, ctype: CodeType, codes: &[u8]) -> VmrtR
         return itr_err_code!(CodeTooLong)
     }
     // verify inst
-    verify_bytecodes(bytecodes)
+    verify_bytecodes_with_limits(bytecodes, cap.max_value_size)
 }
 
 
 pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
+    verify_bytecodes_with_limits(codes, SpaceCap::new(1).max_value_size)
+}
+
+fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<Vec<u8>> {
     // check empty
     let cl = codes.len();
     if cl <= 0 {
@@ -26,10 +32,8 @@ pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
     if cl > u16::MAX as usize {
         return itr_err_code!(CodeTooLong)
     }
-    // check end
-    check_tail_end(codes[cl - 1])?;
     // check inst valid
-    let (instable, jumpdests) = verify_valid_instruction(codes)?;
+    let (instable, jumpdests) = verify_valid_instruction(codes, max_push_buf_len)?;
     // check jump dests
     verify_jump_dests(&instable, &jumpdests)?;
     // ok finish
@@ -37,11 +41,10 @@ pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
 }
 
 
-fn check_tail_end(c: u8) -> VmrtErr {
-    let tail: Bytecode = std_mem_transmute!(c);
+fn ensure_terminal_instruction(inst: Bytecode) -> VmrtErr {
     if let RET | END | ERR | ABT |
         CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALL // CALLDYN
-    = tail {
+    = inst {
         return Ok(())
     };
     // error
@@ -52,20 +55,27 @@ fn check_tail_end(c: u8) -> VmrtErr {
 /*
 
 */   
-fn verify_valid_instruction(codes: &[u8]) -> VmrtRes<(Vec<u8>, Vec<isize>)> {
+fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(Vec<u8>, Vec<isize>)> {
     // use Bytecode::*;
     let cdlen = codes.len(); // end/ret/err/abt in tail
     let mut instable = vec![0u8; cdlen];
     let mut jumpdest = vec![];
     let mut i = 0;
-    let mut cur = 0u8;
+    let mut cur = Bytecode::default();
     while i < cdlen {
-        cur = codes[i];
-        let inst: Bytecode = std_mem_transmute!(cur);
+        let curbt = codes[i];
+        let inst: Bytecode = std_mem_transmute!(curbt);
         let meta = inst.metadata();
         if ! meta.valid {
             return itr_err_fmt!(InstInvalid, "{}", inst as u8)
         }
+        match inst {
+            IRBYTECODE | IRLIST | IRBLOCK | IRBLOCKR | IRIF | IRIFR | IRWHILE => {
+                return itr_err_fmt!(InstInvalid, "IR bytecode {:?} is not allowed", inst)
+            }
+            _ => {}
+        }
+        cur = inst;
         instable[i] = 1; // yes is valid instruction
         i += 1;
         macro_rules! pu8 { () => {{
@@ -88,8 +98,28 @@ fn verify_valid_instruction(codes: &[u8]) -> VmrtRes<(Vec<u8>, Vec<isize>)> {
         }}}
         match inst {
             // push buf
-            PBUF  => i += ( pu8!()) as usize,
-            PBUFL => i += (pu16!()) as usize,
+            PBUF  => {
+                let l = pu8!() as usize;
+                if l > max_push_buf_len {
+                    return itr_err_fmt!(InstParamsErr, "PBUF size {} too large", l)
+                }
+                i += l
+            }
+            PBUFL => {
+                let l = pu16!() as usize;
+                if l > max_push_buf_len {
+                    return itr_err_fmt!(InstParamsErr, "PBUFL size {} too large", l)
+                }
+                i += l
+            }
+            // ext/native
+            EXTACTION | EXTENV | EXTFUNC => ensure_extend_call_id(inst, pu8!())?,
+            NTCALL => {
+                let idx = pu8!();
+                if !NativeCall::has_idx(idx) {
+                    return itr_err_fmt!(NativeCallError, "native call idx {} not found", idx)
+                }
+            }
             // jump record
             JMPL  | BRL  => adddest!(pu16!() as isize),
             JMPS  | BRS  => adddest!(i as isize + pi8!() as isize + 1),
@@ -111,7 +141,7 @@ fn verify_valid_instruction(codes: &[u8]) -> VmrtRes<(Vec<u8>, Vec<isize>)> {
         }
         // next
     }
-    check_tail_end(cur)?; // check end
+    ensure_terminal_instruction(cur)?; // check end
     // finish orr
     Ok((instable, jumpdest))
 }
