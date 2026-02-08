@@ -73,7 +73,7 @@ pub fn build_push_params(params: &str) -> Ret<Vec<u8>> {
         };
         match ty {
             Nil => push!(PNIL),
-            Bool => push!(if v == "true" { P1 } else { P0 }),
+            Bool => push!(if v == "true" { PTRUE } else { PFALSE }),
             U8 => {
                 if let Ok(n) = v.parse::<u8>() {
                     push!(PU8, n);

@@ -12,7 +12,7 @@ pub fn analyze_test_results() {
     let expected_base_gas: HashMap<&str, i64> = [
         // Gas cost = 1
         ("PU8", 1), ("P0", 1), ("P1", 1), ("P2", 1), ("P3", 1),
-        ("PNBUF", 1), ("PNIL", 1), ("CU8", 1), ("CU16", 1),
+        ("PNBUF", 1), ("PNIL", 1), ("PTRUE", 1), ("PFALSE", 1), ("CU8", 1), ("CU16", 1),
         ("CU32", 1), ("CU64", 1), ("CU128", 1), ("CBUF", 1),
         ("CTO", 1), ("TID", 1), ("TIS", 1), ("TNIL", 1),
         ("TMAP", 1), ("TLIST", 1), ("POP", 1), ("NOP", 1),

@@ -46,6 +46,8 @@ impl BytecodePrint for Vec<u8> {
                     P1 =>   line += &format!("{} · ", 1),
                     P2 =>   line += &format!("{} · ", 2),
                     P3 =>   line += &format!("{} · ", 3),
+                    PTRUE =>  line += "true · ",
+                    PFALSE => line += "false · ",
                     PU8 =>  line += &format!("{} · ",  self[i+1]),
                     PU16 => line += &format!("{} · ", pu16!(i+1)),
                     RET | END | ERR | ABT => line += "--",

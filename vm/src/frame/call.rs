@@ -2,7 +2,7 @@
 
 impl CallFrame {
 
-    pub fn start_call_old(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj, 
+    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj, 
         entry_addr: ContractAddress, 
         code_owner: Option<ContractAddress>,
         libs: Option<Vec<ContractAddress>>, 
@@ -231,7 +231,7 @@ impl CallFrame {
     }
 
 
-    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj,
+    pub fn start_call_3(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj,
         entry_addr: ContractAddress,
         code_owner: Option<ContractAddress>,
         libs: Option<Vec<ContractAddress>>,

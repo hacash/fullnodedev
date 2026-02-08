@@ -697,6 +697,8 @@ impl<'a> Formater<'a> {
                 P1 => return Some(RecoveredLiteral::numeric("1", ValueTy::U8)),
                 P2 => return Some(RecoveredLiteral::numeric("2", ValueTy::U8)),
                 P3 => return Some(RecoveredLiteral::numeric("3", ValueTy::U8)),
+                PTRUE => return Some(RecoveredLiteral::numeric("true", ValueTy::Bool)),
+                PFALSE => return Some(RecoveredLiteral::numeric("false", ValueTy::Bool)),
                 _ => {}
             }
         }
@@ -739,6 +741,8 @@ impl<'a> Formater<'a> {
                 P1 => return Some(RecoveredLiteral::numeric("1", ValueTy::U8)),
                 P2 => return Some(RecoveredLiteral::numeric("2", ValueTy::U8)),
                 P3 => return Some(RecoveredLiteral::numeric("3", ValueTy::U8)),
+                PTRUE => return Some(RecoveredLiteral::numeric("true", ValueTy::Bool)),
+                PFALSE => return Some(RecoveredLiteral::numeric("false", ValueTy::Bool)),
                 _ => {}
             }
         }
@@ -954,6 +958,8 @@ impl<'a> Formater<'a> {
             P2 => buf.push('2'),
             P1 => buf.push('1'),
             P0 => buf.push('0'),
+            PTRUE => buf.push_str("true"),
+            PFALSE => buf.push_str("false"),
             PNIL => buf.push_str("nil"),
             PNBUF => buf.push_str("\"\""),
             NEWLIST => buf.push_str("[]"),

@@ -53,8 +53,8 @@ pub enum Bytecode {
     P3                  = 0x27, // +      push u8 3
     PNIL                = 0x28, // +      push nil
     PNBUF               = 0x29, // +      push buf empty
-    ________________42  = 0x2a,
-    ________________43  = 0x2b,       
+    PTRUE               = 0x2a, // +      push true
+    PFALSE              = 0x2b, // +      push false
     ________________44  = 0x2c,       
     ________________45  = 0x2d,          
     ________________46  = 0x2e,       
@@ -327,7 +327,7 @@ impl Bytecode {
     params, stack input, stack output
 */
 bytecode_metadata_define!{
-    EXTACTION  : 1, 1, 1,     ext_action
+    EXTACTION  : 1, 1, 0,     ext_action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
     EXTFUNC    : 1, 1, 1,     ext_func
     EXTENV     : 1, 0, 1,     ext_env
     NTCALL     : 1, 1, 1,     native_call
@@ -351,6 +351,8 @@ bytecode_metadata_define!{
     P3         : 0, 0, 1,     push_3
     PNBUF      : 0, 0, 1,     push_empty_buf
     PNIL       : 0, 0, 1,     push_nil
+    PTRUE      : 0, 0, 1,     push_true
+    PFALSE     : 0, 0, 1,     push_false
 
     CU8        : 0, 1, 1,     cast_u8
     CU16       : 0, 1, 1,     cast_u16

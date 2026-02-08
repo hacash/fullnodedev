@@ -338,12 +338,14 @@ pub fn execute_code(
                 }
                 ops.push(v)?;
             }
-            P0    => ops.push(U8(0))?,
-            P1    => ops.push(U8(1))?,
-            P2    => ops.push(U8(2))?,
-            P3    => ops.push(U8(3))?,
-            PNBUF => ops.push(Value::empty_bytes())?,
-            PNIL  => ops.push(Value::Nil)?,
+            P0     => ops.push(U8(0))?,
+            P1     => ops.push(U8(1))?,
+            P2     => ops.push(U8(2))?,
+            P3     => ops.push(U8(3))?,
+            PNBUF  => ops.push(Value::empty_bytes())?,
+            PNIL   => ops.push(Value::Nil)?,
+            PTRUE  => ops.push(Bool(true))?,
+            PFALSE => ops.push(Bool(false))?,
             // cast & type
             CU8   => ops.peek()?.cast_u8()?,
             CU16  => ops.peek()?.cast_u16()?,

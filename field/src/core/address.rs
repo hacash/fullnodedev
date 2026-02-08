@@ -276,7 +276,7 @@ impl ParsePrefix for AddressW1 {
 /*
 *
 */
-combi_revenum!{ AddrOrList, Address, AddressW1, ADDR_OR_PTR_DIV_NUM }
+combi_revenum_old!{ AddrOrList, Address, AddressW1, ADDR_OR_PTR_DIV_NUM }
 
 impl AddrOrList {
 

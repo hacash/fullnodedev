@@ -229,6 +229,7 @@ impl Syntax {
         if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
             return match leaf.inst {
                 P0 | P1 | P2 | P3 => Some(ValueTy::U8),
+                PTRUE | PFALSE => Some(ValueTy::Bool),
                 _ => None,
             };
         }
@@ -1264,8 +1265,8 @@ impl Syntax {
                 }
             }
             Keyword(Nil)    => push_nil(),
-            Keyword(True)   => push_inst(P1),
-            Keyword(False)  => push_inst(P0),
+            Keyword(True)   => push_inst(PTRUE),
+            Keyword(False)  => push_inst(PFALSE),
             Keyword(Abort)  => push_inst_noret(ABT),
             Keyword(End)    => push_inst_noret(END),
             Keyword(Print)  => {

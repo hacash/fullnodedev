@@ -74,7 +74,7 @@ fn parse_one_param(codes: &mut Vec<u8>, t: &str, v: &str) -> usize {
     };
     match ty {
         Nil  => push!(PNIL),
-        Bool => push!(maybe!(v=="true", P1, P0)),
+        Bool => push!(maybe!(v=="true", PTRUE, PFALSE)),
         U8   => if let Ok(n) = v.parse::<u8>() {
             push!(PU8, n);
         },

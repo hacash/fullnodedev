@@ -9,7 +9,7 @@ fn address_ptr(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     if idx > max {
         return itr_err_fmt!(NativeCallError, "address_ptr param max {} but got {}", max, idx)
     }
-    Ok(Value::U8( idx + DVN ))
+    Ok(Value::U8(idx + DVN))
 }
 
 fn context_address(_: u64, buf: &[u8]) -> VmrtRes<Value> {

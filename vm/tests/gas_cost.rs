@@ -72,7 +72,7 @@ impl GasTestContext {
 fn get_base_gas(opcode: Bytecode) -> i64 {
     use Bytecode::*;
     match opcode {
-        PU8 | P0 | P1 | P2 | P3 | PNBUF | PNIL |
+        PU8 | P0 | P1 | P2 | P3 | PNBUF | PNIL | PTRUE | PFALSE |
         CU8 | CU16 | CU32 | CU64 | CU128 | CBUF | CTO | TID | TIS | TNIL | TMAP | TLIST |
         POP | NOP | NT | END | RET | ABT | ERR | AST | PRT => 1,
         
@@ -663,7 +663,7 @@ mod tests {
         // Test all opcodes with base gas = 1
         let gas1_opcodes = vec![
             Bytecode::PU8, Bytecode::P0, Bytecode::P1, Bytecode::P2, Bytecode::P3,
-            Bytecode::PNBUF, Bytecode::PNIL,
+            Bytecode::PNBUF, Bytecode::PNIL, Bytecode::PTRUE, Bytecode::PFALSE,
             Bytecode::CU8, Bytecode::CU16, Bytecode::CU32, Bytecode::CU64, Bytecode::CU128,
             Bytecode::CBUF, Bytecode::CTO, Bytecode::TID, Bytecode::TIS,
             Bytecode::TNIL, Bytecode::TMAP, Bytecode::TLIST,

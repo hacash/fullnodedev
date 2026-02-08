@@ -239,7 +239,7 @@ impl IrFn {
 
 irfn_define!{
 
-    EXTACTION  : 1, 1, 1,     ext_action
+    EXTACTION  : 1, 1, 0,     ext_action  // no return value
     // EXTFUNC    : 1, 1, 1,     ext_func
     // EXTENV     : 1, 0, 1,     ext_env
     // NTCALL     : 1, 1, 1,     native_call
@@ -263,6 +263,8 @@ irfn_define!{
     P3         : 0, 0, 1,     push_3
     PNBUF      : 0, 0, 1,     push_empty_buf
     PNIL       : 0, 0, 1,     push_nil
+    PTRUE      : 0, 0, 1,     push_true
+    PFALSE     : 0, 0, 1,     push_false
 
     CU8        : 0, 1, 1,     cast_u8
     CU16       : 0, 1, 1,     cast_u16

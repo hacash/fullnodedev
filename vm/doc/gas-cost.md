@@ -6,7 +6,7 @@ Gas Cost
 
 These are fixed and can be regarded as the basic overhead of instructions. Opcodes not appearing in the list are all 2.
 
-- 1: PU8, P0, P1, P2, P3, PNBUF, PNIL, 
+- 1: PU8, P0, P1, P2, P3, PNBUF, PNIL, PTRUE, PFALSE,
     CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
     POP, NOP, NT, END, RET, ABT, ERR, AST, PRT
 - 2: `all other opcode`
