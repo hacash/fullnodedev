@@ -51,7 +51,7 @@ pub fn execute3() {
         var mei  = $1
         argv = buf_left_drop(21, argv)
         mei  = hac_to_mei(argv)
-        return choise(true, false, mei<=4)
+        return choose(mei<=4, 0, 1)
     "##).unwrap();
 
     let argv = Value::Compo(CompoItem::list(VecDeque::from([
@@ -86,7 +86,7 @@ pub fn execute5() {
         var addr = $0
         var mei  = $1
         mei = hac_to_mei(mei)
-        mei = choise(5, mei, mei > 5)
+        mei = choose(5, mei, mei > 5)
         let amt = zhu_to_hac(mei * 100000000)
         transfer_hac_to(addr, amt)
         return 0

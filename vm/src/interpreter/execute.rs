@@ -384,7 +384,10 @@ pub fn execute_code(
             PICK   => ops.pick(pu8!())?,
             SWAP   => ops.swap()?,
             REV    => ops.reverse(pu8!())?, // reverse
-            CHOISE => { if ops.pop()?.check_false() { ops.swap()? } ops.pop()?; } /* x ? a : b */
+            // CHOOSE: pop condition; if false swap the remaining two values so
+            // the chosen branch becomes the top of the stack. Leave the
+            // chosen value on the stack for subsequent instructions to consume.
+            CHOOSE => { if ops.pop()?.check_false() { ops.swap()? } ops.pop()?; }, /* x ? a : b */
             CAT    => {
                 let (xlen, ylen) = match ops.datas.len() {
                     l if l >= 2 => (ops.datas[l - 2].val_size(), ops.datas[l - 1].val_size()),
@@ -611,7 +614,7 @@ pub fn execute_code(
 	                gas += gst.stack_copy(bytes_len(&v));
 	                *ops.peek()? = v;
 	            }
-	            PUT   => locals.save(pu8_as_u16!(), ops.pop()?.valid(cap)?)?,
+                PUT   => locals.save(pu8_as_u16!(), ops.pop()?.valid(cap)?)?,
 	            GET   => {
 	                let v = locals.load(pu8!() as usize)?.valid(cap)?;
 	                gas += gst.stack_copy(bytes_len(&v));

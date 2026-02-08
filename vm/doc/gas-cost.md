@@ -10,7 +10,7 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
     CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
     POP, NOP, NT, END, RET, ABT, ERR, AST, PRT
 - 2: `all other opcode`
-- 3: BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOISE
+- 3: BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE
 - 4: DUPN, POPN, PICK,
     PBUF, PBUFL,
     MOD, MUL, DIV, XOP, 

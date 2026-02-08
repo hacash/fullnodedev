@@ -140,7 +140,26 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
         return Ok(match args {
             1 => Box::new(IRNodeSingle{hrtv, inst, subx: avg!()}),
             2 => Box::new(IRNodeDouble{hrtv, inst, subx: avg!(), suby: avg!()}),
-            3 => Box::new(IRNodeTriple{hrtv, inst, subx: avg!(), suby: avg!(), subz: avg!()}),
+            3 => {
+                // Special-case CHOOSE: source syntax is choose(cond, yes, no)
+                // IRNodeTriple expects (subx, suby, subz) which codegen will emit
+                // in order and the runtime expects stack [subx, suby, subz].
+                // To match natural `choose(cond, yes, no)` call order we
+                // rearrange arguments so that runtime selection logic works:
+                // produce IRNodeTriple{subx=yes, suby=no, subz=cond}.
+                if inst == Bytecode::CHOOSE {
+                    let a = avg!(); // cond
+                    let b = avg!(); // yes
+                    let c = avg!(); // no
+                    // To make `choose(cond, yes, no)` select `yes` when cond is true
+                    // (interpreter: pop cond; if false swap; pop unchosen), arrange
+                    // IR children so that codegen emits [yes, no, cond] ->
+                    // subx = yes, suby = no, subz = cond.
+                    Box::new(IRNodeTriple{hrtv, inst, subx: b, suby: c, subz: a})
+                } else {
+                    Box::new(IRNodeTriple{hrtv, inst, subx: avg!(), suby: avg!(), subz: avg!()})
+                }
+            }
             _ => unreachable!()
         })
     }

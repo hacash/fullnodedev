@@ -76,7 +76,7 @@ fn get_base_gas(opcode: Bytecode) -> i64 {
         CU8 | CU16 | CU32 | CU64 | CU128 | CBUF | CTO | TID | TIS | TNIL | TMAP | TLIST |
         POP | NOP | NT | END | RET | ABT | ERR | AST | PRT => 1,
         
-        BRL | BRS | BRSL | BRSLN | XLG | PUT | CHOISE => 3,
+        BRL | BRS | BRSL | BRSLN | XLG | PUT | CHOOSE => 3,
         
         DUPN | POPN | PICK |
         PBUF | PBUFL |
@@ -690,13 +690,13 @@ mod tests {
         // Test opcodes with base gas = 3
         let gas3_opcodes = vec![
             Bytecode::BRL, Bytecode::BRS, Bytecode::BRSL, Bytecode::BRSLN,
-            Bytecode::XLG, Bytecode::PUT, Bytecode::CHOISE,
+            Bytecode::XLG, Bytecode::PUT, Bytecode::CHOOSE,
         ];
         
         for opcode in gas3_opcodes {
             let setup = match opcode {
                 Bytecode::PUT => vec![Bytecode::ALLOC as u8, 1, Bytecode::P0 as u8],
-                Bytecode::CHOISE => vec![Bytecode::P1 as u8, Bytecode::P0 as u8, Bytecode::P1 as u8],
+                Bytecode::CHOOSE => vec![Bytecode::P1 as u8, Bytecode::P0 as u8, Bytecode::P1 as u8],
                 Bytecode::XLG => vec![Bytecode::ALLOC as u8, 1, Bytecode::P0 as u8],
                 Bytecode::BRL | Bytecode::BRS | Bytecode::BRSL | Bytecode::BRSLN => {
                     vec![Bytecode::P0 as u8]

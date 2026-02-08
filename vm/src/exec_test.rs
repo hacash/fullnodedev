@@ -186,6 +186,6 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<crat
     let released = ops.release();
     released
         .into_iter()
-        .next()
+        .last()
         .ok_or_else(|| crate::rt::ItrErr::new(crate::rt::ItrErrCode::StackError, "no return value"))
 }

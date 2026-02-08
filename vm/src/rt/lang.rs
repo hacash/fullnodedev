@@ -296,7 +296,7 @@ irfn_define!{
     LDROP      : 1, 1, 1,     buf_left_drop
     RDROP      : 1, 1, 1,     buf_right_drop
     SIZE       : 0, 1, 1,     size
-    CHOISE     : 0, 3, 1,     choise
+    CHOOSE     : 0, 3, 1,     choose
 
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map

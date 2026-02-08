@@ -24,7 +24,7 @@ pub fn analyze_test_results() {
         ("DUP", 2),
         // Gas cost = 3
         ("BRL", 3), ("BRS", 3), ("BRSL", 3), ("BRSLN", 3),
-        ("XLG", 3), ("PUT", 3), ("CHOISE", 3),
+        ("XLG", 3), ("PUT", 3), ("CHOOSE", 3),
         // Gas cost = 4
         ("DUPN", 4), ("POPN", 4), ("PICK", 4), ("PBUF", 4),
         ("PBUFL", 4), ("MOD", 4), ("MUL", 4), ("DIV", 4),

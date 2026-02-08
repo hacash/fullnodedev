@@ -151,7 +151,7 @@ let bigger = max(10, 20)
 let smaller = min(10, 20)
 let inc_val = increase(1, counter)
 let dec_val = decrease(1, counter)
-let choice = choise(counter > 0, 1, 0)
+let choice = choose(counter > 0, 1, 0)
 
 let h = block_height()
 let m_addr = tx_main_address()

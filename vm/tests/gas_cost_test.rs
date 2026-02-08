@@ -522,7 +522,7 @@ fn test_base_gas(opcode: Bytecode, reporter: &mut TestReporter, calc: &ExpectedG
         GE => build_codes!(P0 P1 GE END),
         SIZE => build_codes!(PNBUF SIZE END),
         CAT => build_codes!(PNBUF PNBUF CAT END),
-        CHOISE => build_codes!(P1 P0 P1 CHOISE END),
+        CHOOSE => build_codes!(P1 P0 P1 CHOOSE END),
         HEAD | BACK | HASKEY | LENGTH => {
             // These need compo value on stack - use combination test
             test_base_gas_combination(build_codes!(NEWLIST), opcode, reporter, calc);
@@ -1477,7 +1477,7 @@ mod tests {
             BRSLN,
             XLG,
             PUT,
-            CHOISE,
+            CHOOSE,
         ];
 
         for opcode in gas_3_opcodes {

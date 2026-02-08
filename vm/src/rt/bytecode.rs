@@ -92,7 +92,7 @@ pub enum Bytecode {
     LDROP               = 0x4e, // *&     drop buf left *
     RDROP               = 0x4f, // *&     drop buf right *
     SIZE                = 0x50, // &      size (u16)
-    CHOISE              = 0x51, // a,b,c+ (x ? a : b)
+    CHOOSE              = 0x51, // a,b,c+ (x ? a : b)
     ________________82  = 0x52,
     ________________83  = 0x53,
     ________________84  = 0x54,
@@ -384,7 +384,7 @@ bytecode_metadata_define!{
     LDROP      : 1, 1, 1,     buf_left_drop
     RDROP      : 1, 1, 1,     buf_right_drop
     SIZE       : 0, 1, 1,     size
-    CHOISE     : 0, 3, 1,     choise
+    CHOOSE     : 0, 3, 1,     choose
 
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map

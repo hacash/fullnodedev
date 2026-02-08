@@ -118,7 +118,7 @@ So `U16(1)` → bytes `00 01`, but `Bytes(00 01)` → `U16(1)` (ok), while `Byte
 The VM defines a “truthiness” check that is used by:
 
 - Branching opcodes (e.g. `BR*`)
-- Conditional selection (e.g. `CHOISE`)
+- Conditional selection (e.g. `CHOOSE`)
 - Logical operators (`AND`, `OR`, `NOT`)
 
 Rule:

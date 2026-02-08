@@ -39,7 +39,7 @@ impl GasTable {
             CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
             POP, NOP, NT, END, RET, ABT, ERR, AST, PRT]);
         gst.set(2,  &[]); // all other bytecode
-        gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOISE]);
+        gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE]);
         // "Medium" cost ops (includes some O(n) stack ops that were previously default-2).
         gst.set(4,  &[
             DUPN, POPN, PICK,

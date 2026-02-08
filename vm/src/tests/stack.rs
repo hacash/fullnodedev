@@ -11,7 +11,7 @@ pub fn stack_test_1() {
         P0 P1 PU8 2 REV 3 END
     };
     let _codes4 = build_codes!{
-        P1 PU8 2 P0 CHOISE END
+        P1 PU8 2 P0 CHOOSE END
     };
     let _codes5 = build_codes!{
         P0 DUP DUP DUP POP POP POP POP END

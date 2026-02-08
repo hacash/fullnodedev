@@ -144,7 +144,7 @@ mod deploy {
         println!("payable_hac codes: {}", payable_hac_codes.to_hex());
 
         let permit_hac = convert_ir_to_bytecode(&build_codes!(
-            RET CHOISE
+            RET CHOOSE
                 GT CU64 EXTENV 1 PU8 10
                 PU8 99
                 PU8 0
