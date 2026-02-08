@@ -94,6 +94,7 @@ impl GasTable {
 #[derive(Default)]
 pub struct GasExtra {
     pub max_gas_of_tx: i64,
+    pub gas_rate: i64, // gas burn discount denominator (mainnet=1, L2 sidechain can be e.g. 10 or 32)
     pub local_one_alloc: i64,
     pub storege_value_base_size: i64,
     pub load_new_contract: i64,
@@ -117,14 +118,35 @@ pub struct GasExtra {
     extaction_div: i64,
 }
 
+/// Decode gas budget from a 1-byte `gas_max` field using compact float encoding.
+///
+/// Layout: byte=0 means no gas (non-contract tx). For byte in 1..=255:
+///   index = byte - 1
+///   mantissa = (index & 0x1F) + 32      // range 32..63
+///   exponent = index >> 5               // range 0..7
+///   result   = mantissa << (exponent*3) // multiply by 1,8,64,512,4096,32768,262144,2097152
+///
+/// Coverage: [32, ~130M], strictly monotonic.
+///   Segment 0 (byte 1-32):    [32, 63]            step 1       — L1 simple calls
+///   Segment 2 (byte 65-96):   [2048, 4032]        step 64      — L1 current range
+///   Segment 4 (byte 129-160): [131072, 258048]    step 4096    — L1 future expansion
+///   Segment 7 (byte 225-255): [67108864, 130023424] step 2M    — L2 extreme
+pub fn decode_gas_budget(b: u8) -> i64 {
+    if b == 0 { return 0 }
+    let i = (b - 1) as i64;
+    let m = (i & 0x1F) + 32;   // mantissa: 32..63
+    let e = (i >> 5) as u32;   // exponent: 0..7
+    m << (e * 3)               // ×1, ×8, ×64, ×512, ×4096, ×32768, ×262144, ×2097152
+}
+
 impl GasExtra {
     pub fn new(_hei: u64) -> Self {
-        const U16M: i64 = u16::MAX as i64 + 1; // 65536
         Self {
-            max_gas_of_tx:     U16M / 8, // 65536/8 = 8192
+            max_gas_of_tx:     8192, // L1 mainnet limit, can increase via hard fork
+            gas_rate:          1,    // mainnet: no discount (burn = cost*fee/txsz/gas_rate)
             local_one_alloc:          5, // 5 * num
             storege_value_base_size: 32,
-            load_new_contract:  1 * GSCU as i64, // 32
+            load_new_contract:  32, // base gas for loading a new contract
             main_call_min:      24*2, // 48
             p2sh_call_min:      24*3, // 72
             abst_call_min:      24*4, // 96

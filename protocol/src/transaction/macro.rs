@@ -77,11 +77,10 @@ impl TransactionRead for $class {
         gfee
     }
 
-    fn fee_extend(&self) -> Ret<(u16, Amount)> {
-        let par = (*self.gas_max) as u16;
-        let bei = par * par;
-        let fee = self.fee_got().dist_mul(bei as u128)?;
-        Ok((bei, fee))
+    fn fee_extend(&self) -> Ret<u8> {
+        // Return the raw 1-byte gas_max value.
+        // The VM decodes it via decode_gas_budget().
+        Ok(*self.gas_max)
     }
 
 
@@ -105,12 +104,14 @@ impl TransactionRead for $class {
         verify_tx_signature(self)
     }
     
-    // fee_purity is gas_price
+    // fee_purity: fee rate per byte in unit-238, used for miner tx ordering.
 	fn fee_purity(&self) -> u64 {
 		let txsz = self.size() as u64;
-        assert!(txsz > GSCU, "Tx size cannot less than {} bytes", GSCU);
-		let fee238 = self.fee_got().to_238_u64().unwrap_or_default();
-		fee238 / (txsz / GSCU)
+        if txsz == 0 {
+            return 0
+        }
+		let fee238 = self.fee_got().to_238_u64().unwrap_or(0);
+		fee238 / txsz
 	}
 
 }

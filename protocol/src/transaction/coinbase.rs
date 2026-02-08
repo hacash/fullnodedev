@@ -42,7 +42,7 @@ impl TransactionRead for TransactionCoinbase {
         Amount::zero()
     }
 
-    fn fee_extend(&self) -> Ret<(u16, Amount)> {
+    fn fee_extend(&self) -> Ret<u8> {
         errf!("cannot get fee extend on coinbase tx")
     }
 

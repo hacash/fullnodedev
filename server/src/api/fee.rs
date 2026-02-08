@@ -20,7 +20,8 @@ async fn fee_average(State(ctx): State<ApiCtx>, q: Query<Q7365>) -> impl IntoRes
     };
 
     if consumption > 0 {
-        let mut setfee = Amount::unit238(avgfeep / GSCU * consumption); // unit: 238
+        // fee_purity is per-byte (unit-238), consumption is tx size in bytes
+        let mut setfee = Amount::unit238(avgfeep * consumption);
         if setfee.is_zero() {
             setfee = Amount::zhu(1);
         }

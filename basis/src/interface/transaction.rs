@@ -23,7 +23,7 @@ pub trait TransactionRead : Serialize + TxExec + Send + Sync + DynClone + std::f
     fn fee(&self) -> &Amount { Amount::zero_ref() }
     fn fee_pay(&self) -> Amount { Amount::zero() }
     fn fee_got(&self) -> Amount { Amount::zero() }
-    fn fee_extend(&self) -> Ret<(u16, Amount)> { err!("cannot get fee extend") }
+    fn fee_extend(&self) -> Ret<u8> { err!("cannot get fee extend") }
     fn fee_purity(&self) -> u64 { 0 }
     
     fn message(&self) -> &Fixed16 { Fixed16::zero_ref() }

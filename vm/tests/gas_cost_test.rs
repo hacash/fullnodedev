@@ -41,7 +41,7 @@ fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -
         fn addrs(&self) -> Vec<Address> { vec![Address::default()] }
         fn fee(&self) -> &Amount { Amount::zero_ref() }
         fn fee_purity(&self) -> u64 { 1 }
-        fn fee_extend(&self) -> Ret<(u16, Amount)> { Ok((1, Amount::zero())) }
+        fn fee_extend(&self) -> Ret<u8> { Ok(1) }
     }
 
     let mut pc: usize = 0;

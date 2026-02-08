@@ -155,7 +155,7 @@ fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, ctlsz: usize, ptcfee: 
     // let _hei = ctx.env().block.height;
     let e = errf!("contract protocol fee calculate failed");
     let mul = CONTRACT_STORE_FEE_MUL as u128; // 30
-    let feep = ctx.tx().fee_purity() as u128 / GSCU as u128;
+    let feep = ctx.tx().fee_purity() as u128; // per-byte, no GSCU division
     let Some(rlfe) = feep.checked_mul(ctlsz as u128) else {
         return e
     };
