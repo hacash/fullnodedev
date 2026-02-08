@@ -171,7 +171,7 @@ pub enum Bytecode {
     SDEL                = 0x9d, // a     storage delete
     SSAVE               = 0x9e, // a,b   storage save
     SRENT               = 0x9f, // a,b   storage time rent
-    AND                 = 0xa0, // a,b+   amd
+    AND                 = 0xa0, // a,b+   and
     OR                  = 0xa1, // a,b+   or
     EQ                  = 0xa2, // a,b+   equal
     NEQ                 = 0xa3, // a,b+   not equal
@@ -407,7 +407,7 @@ bytecode_metadata_define!{
 
     XLG        : 1, 1, 1,     local_logic    
     XOP        : 1, 1, 0,     local_operand         
-    ALLOC      : 1, 0 ,0,     local_alloc       
+    ALLOC      : 1, 0, 0,     local_alloc       
     PUTX       : 0, 2, 0,     local_x_put          
     GETX       : 0, 1, 1,     local_x              
     PUT        : 1, 1, 0,     local_put          
@@ -447,9 +447,9 @@ bytecode_metadata_define!{
     EQ         : 0, 2, 1,     equal
     NEQ        : 0, 2, 1,     not_equal
     LT         : 0, 2, 1,     less_than
-    GT         : 0, 2, 1,     more_than  
+    GT         : 0, 2, 1,     greater_than  
     LE         : 0, 2, 1,     less_equal
-    GE         : 0, 2, 1,     more_equal
+    GE         : 0, 2, 1,     greater_equal
     NOT        : 0, 1, 1,     not
 
     BSHR       : 0, 2, 1,     bit_shr

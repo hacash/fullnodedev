@@ -319,7 +319,7 @@ irfn_define!{
 
     XLG        : 1, 1, 1,     local_logic    
     XOP        : 1, 1, 0,     local_operand         
-    ALLOC      : 1, 0 ,0,     local_alloc       
+    ALLOC      : 1, 0, 0,     local_alloc       
     PUTX       : 0, 2, 0,     local_x_put          
     GETX       : 0, 1, 1,     local_x              
     PUT        : 1, 1, 0,     local_put          
@@ -359,9 +359,9 @@ irfn_define!{
     // EQ         : 0, 2, 1,     equal
     // NEQ        : 0, 2, 1,     not_equal
     // LT         : 0, 2, 1,     less_than
-    // GT         : 0, 2, 1,     more_than  
+    // GT         : 0, 2, 1,     greater_than  
     // LE         : 0, 2, 1,     less_equal
-    // GE         : 0, 2, 1,     more_equal
+    // GE         : 0, 2, 1,     greater_equal
     // NOT        : 0, 1, 1,     not
 
     BSHR       : 0, 2, 1,     bit_shr

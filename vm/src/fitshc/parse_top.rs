@@ -3,7 +3,7 @@ use sys::*;
 use crate::rt::{KwTy, AbstCall};
 use crate::contract::{Abst};
 use crate::value::ValueTy;
-use crate::Token::*;
+use crate::rt::Token::{self, *};
 use field::Address;
 use super::state::ParseState;
 use super::parse_deploy::{parse_deploy};
@@ -56,8 +56,91 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
     Ok(())
 }
 
+/// Represents a parsed top-level constant value
+#[derive(Debug, Clone)]
+pub enum ConstValue {
+    /// Unsigned integer: u8, u16, u32, u64, u128, u256
+    Uint(u128),
+    /// Boolean: true or false
+    Bool(bool),
+    /// Bytes: hex string (0x...) or binary (0b...)
+    Bytes(Vec<u8>),
+    /// Address:Hacash address
+    Address(field::Address),
+    /// String literal
+    String(Vec<u8>),
+}
+
+fn parse_const_value(state: &mut ParseState) -> Ret<ConstValue> {
+    let token = state.current().cloned()
+        .ok_or_else(|| format!("Expected const value but got EOF"))?;
+    state.advance();
+
+    match token {
+        Token::Integer(n) => Ok(ConstValue::Uint(n)),
+        Token::Bytes(b) => Ok(ConstValue::Bytes(b)),
+        Token::Address(addr) => Ok(ConstValue::Address(addr)),
+        Token::Identifier(s) => {
+            match s.as_str() {
+                "true" => Ok(ConstValue::Bool(true)),
+                "false" => Ok(ConstValue::Bool(false)),
+                _ => {
+                    // Try to parse as hex bytes
+                    if s.starts_with("0x") {
+                        let v = s[2..].to_string();
+                        match hex::decode(v) {
+                            Ok(d) => return Ok(ConstValue::Bytes(d)),
+                            Err(_) => return errf!("Invalid hex bytes: {}", s),
+                        }
+                    }
+                    errf!("Invalid const value: {}", s)
+                }
+            }
+        }
+        Token::Keyword(kw) => {
+            match kw {
+                KwTy::True => Ok(ConstValue::Bool(true)),
+                KwTy::False => Ok(ConstValue::Bool(false)),
+                _ => errf!("Invalid const value keyword: {:?}", kw),
+            }
+        }
+        _ => errf!("Expected const value but got {:?}", token),
+    }
+}
+
 fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
     match state.current() {
+        Some(Keyword(KwTy::Const)) => {
+            // Parse top-level const: const NAME = VALUE
+            state.advance(); // consume 'const'
+            let name = if let Some(Identifier(n)) = state.current() {
+                n.clone()
+            } else {
+                return errf!("Expected const name after 'const'");
+            };
+            state.advance();
+
+            // Expect '='
+            if let Some(Keyword(KwTy::Assign)) = state.current() {
+                state.advance();
+            } else {
+                return errf!("Expected '=' after const name");
+            }
+
+            // Parse the const value
+            let value = parse_const_value(state)?;
+
+            // Convert to string representation for storage
+            let value_str = match &value {
+                ConstValue::Uint(n) => format!("uint:{}", n),
+                ConstValue::Bool(b) => format!("bool:{}", b),
+                ConstValue::Bytes(b) => format!("bytes:0x{}", hex::encode(b)),
+                ConstValue::Address(a) => format!("address:{}", a.to_readable()),
+                ConstValue::String(s) => format!("string:{}", String::from_utf8_lossy(s)),
+            };
+
+            state.consts.push((name, value_str));
+        },
         Some(Keyword(KwTy::Deploy)) => {
             let info = parse_deploy(state)?;
             state.deploy = Some(info);
@@ -122,7 +205,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             }
             
             // compile abstract body using shared compile function
-            let (_irnodes, compiled, source_map) = compile_body(body_tokens, args.clone(), &state.libs, is_ircode)?;
+            let (_irnodes, compiled, source_map) = compile_body(body_tokens, args.clone(), &state.libs, &state.consts, is_ircode)?;
             
             let abst = match compiled {
                 CompiledCode::IrCode(ircodes) => Abst::new(aid).ircode(ircodes)?,

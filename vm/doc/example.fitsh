@@ -1,5 +1,5 @@
 /*
-    Fitsh Contract Example, 
+    Fitsh Contract Example,
     Added some keyword:
         use
         contract
@@ -10,6 +10,7 @@
         public
         ircode
         bytecode
+        const (top-level constants)
 */
 
 
@@ -22,7 +23,12 @@ use pragma 0.1.0
 */
 contract TestToken {
 
-    
+    // ========== Top-level constants ==========
+    // Contract-level constants defined at the top of the contract body
+    const FRAC_PER_HACD = 10000
+    const MAX_HACD_PER_OP = 200
+    const MIN_DEPOSIT = 1
+
     deploy {
         protocol_cost: "1:248",
         nonce: 1,

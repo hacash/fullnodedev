@@ -26,6 +26,8 @@ pub struct Syntax {
     // External injected
     ext_params: Option<Vec<(String, ValueTy)>>,
     ext_libs: Option<Vec<(String, u8, Option<field::Address>)>>,
+    /// External constants: (name, IRNode) pairs
+    ext_consts: Option<Vec<(String, Box<dyn IRNode>)>>,
 }
 
 
@@ -1314,6 +1316,12 @@ impl Syntax {
         self
     }
 
+    /// Inject external constants into the syntax context
+    pub fn with_consts(mut self, consts: Vec<(String, Box<dyn IRNode>)>) -> Self {
+        self.ext_consts = Some(consts);
+        self
+    }
+
     pub fn with_ircode(mut self, is_ircode: bool) -> Self {
         self.is_ircode = is_ircode;
         self
@@ -1328,6 +1336,15 @@ impl Syntax {
         if let Some(libs) = self.ext_libs.take() {
             for (name, idx, addr) in libs {
                 self.bind_lib(name, idx, addr)?;
+            }
+        }
+        // External Consts
+        if let Some(consts) = self.ext_consts.take() {
+            for (name, node) in consts {
+                if self.symbols.contains_key(&name) {
+                    return errf!("symbol '{}' already defined", name);
+                }
+                self.symbols.insert(name.clone(), SymbolEntry::Const(node));
             }
         }
         // External Params

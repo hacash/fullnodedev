@@ -20,12 +20,12 @@ pub struct ContextInst<'a> {
 
 impl ContextInst<'_> {
 
-    pub fn new<'a>(env: Env, sta: Box<dyn State>, log: Box<dyn Logs>, txr: &'a dyn TransactionRead) -> ContextInst<'a> {
+    pub fn new(env: Env, sta: Box<dyn State>, log: Box<dyn Logs>, txr: &dyn TransactionRead) -> ContextInst {
         ContextInst{ env, sta, log, txr,
             depth: CallDepth::new(0),
             check_sign_cache: HashMap::new(),
             vmi: VMNil::empty(),
-            psh: HashMap::default(), 
+            psh: HashMap::new(),
             tex_ledger: TexLedger::default(),
         }
     }
@@ -91,10 +91,11 @@ impl Context for ContextInst<'_> {
         ptr.real(&self.env.tx.addrs)
     }
     fn check_sign(&mut self, adr: &Address) -> Rerr {
-        adr.must_privakey()?;
-        if self.check_sign_cache.contains_key(adr) {
-            return self.check_sign_cache[adr].clone().map(|_|())
+        if let Some(isok) = self.check_sign_cache.get(adr) {
+            return isok.clone().map(|_|())
         }
+        // Must check privkey after cache lookup to avoid unnecessary checks on cached entries
+        adr.must_privakey()?;
         let isok = transaction::verify_target_signature(adr, self.txr);
         self.check_sign_cache.insert(*adr, isok.clone());
         isok.map(|_|())
@@ -104,9 +105,9 @@ impl Context for ContextInst<'_> {
         &mut self.tex_ledger
     }
     // p2sh
-    fn p2sh(&self, adr: &Address) -> Ret<&Box<dyn P2sh>> {
-        let e = format!("p2sh '{}' not find", adr);  
-        self.psh.get(adr).ok_or(e)
+    fn p2sh(&self, adr: &Address) -> Ret<&dyn P2sh> {
+        let e = format!("p2sh '{}' not find", adr);
+        self.psh.get(adr).map(|boxed| boxed.as_ref()).ok_or(e)
     }
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
         adr.must_scriptmh()?;

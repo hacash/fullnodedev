@@ -16,6 +16,8 @@ pub struct ParseState {
     pub libs: Vec<(String, Address)>,
     pub deploy: Option<DeployInfo>,
     pub source_maps: Vec<(String, SourceMap)>,
+    /// Top-level constants: name -> value (parsed as string for simplicity)
+    pub consts: Vec<(String, String)>,
 }
 
 impl ParseState {
@@ -30,6 +32,7 @@ impl ParseState {
             libs: Vec::new(),
             deploy: None,
             source_maps: Vec::new(),
+            consts: Vec::new(),
         }
     }
 

@@ -53,7 +53,7 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
     func = func.types(ret_ty, arg_types);
     
     // Compile body using shared compile function
-    let (irnodes, compiled, source_map) = compile_body(body_tokens, args, &state.libs, is_ircode)?;
+    let (irnodes, compiled, source_map) = compile_body(body_tokens, args, &state.libs, &state.consts, is_ircode)?;
     
     func = match compiled {
         CompiledCode::IrCode(_) => func.irnode(irnodes)?,
