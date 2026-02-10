@@ -96,14 +96,14 @@ macro_rules! action_define {
                     check_action_level($pctx.depth().clone(), $pself, $pctx.tx().actions())?;
                 }
                 // act size is base gas use, if burn 90% fee to use 10 times fee
-                #[allow(unused_mut)] 
+                #[allow(unused_mut)]
                 let burn90fee10times = maybe!($pself.burn_90(), 10, 1);
                 let mut $pgas: u32 = $pself.size() as u32 * burn90fee10times;
-                // call action hook (pre-hook)
-                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx, &mut $pgas)?;
                 // execute action body
                 let res: Ret<Vec<u8>> = $exec;
                 let res = res?;
+                // call action hook (post-hook: audit after state change)
+                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx, &mut $pgas)?;
                 Ok(($pgas, res))
             }
         }

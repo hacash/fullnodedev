@@ -210,6 +210,25 @@ impl MachineBox {
 
 impl VM for MachineBox {
     fn usable(&self) -> bool { true }
+
+    fn snapshot_volatile(&self) -> Box<dyn Any> {
+        let m = self.machine.as_ref().unwrap();
+        Box::new((
+            self.account.remaining,
+            m.r.global_vals.clone(),
+            m.r.memory_vals.clone(),
+        ))
+    }
+
+    fn restore_volatile(&mut self, snap: Box<dyn Any>) {
+        let Ok(snap) = snap.downcast::<(i64, GKVMap, CtcKVMap)>() else { return };
+        let (remaining, globals, memorys) = *snap;
+        self.account.remaining = remaining;
+        let m = self.machine.as_mut().unwrap();
+        m.r.global_vals = globals;
+        m.r.memory_vals = memorys;
+    }
+
     fn call(&mut self, 
         ctx: &mut dyn Context,
         ty: u8, kd: u8, data: &[u8], param: Box<dyn Any>

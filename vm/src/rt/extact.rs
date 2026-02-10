@@ -38,7 +38,7 @@ pub const CALL_EXTEND_ENV_DEFS: [ExtDefTy; 2] = [
 ];
 
 
-pub const CALL_EXTEND_FUNC_DEFS: [ExtDefTy; 2] = [
+pub const CALL_EXTEND_VIEW_DEFS: [ExtDefTy; 2] = [
     (FuncCheckSign::IDX, "check_signature",         Bool,  1),
     (FuncBalance::IDX,   "balance",                 Bytes, 1),
 ];
@@ -70,7 +70,7 @@ pub fn ensure_extend_call_id(act_kind: Bytecode, id: u8) -> VmrtErr {
     let ok = match act_kind {
         Bytecode::EXTACTION => search_ext_by_id(id, &CALL_EXTEND_ACTION_DEFS).is_some(),
         Bytecode::EXTENV    => search_ext_by_id(id, &CALL_EXTEND_ENV_DEFS).is_some(),
-        Bytecode::EXTFUNC   => search_ext_by_id(id, &CALL_EXTEND_FUNC_DEFS).is_some(),
+        Bytecode::EXTVIEW   => search_ext_by_id(id, &CALL_EXTEND_VIEW_DEFS).is_some(),
         _ => false,
     };
     if !ok {
@@ -92,10 +92,10 @@ pub fn ensure_extend_call_allowed(mode: ExecMode, act_kind: Bytecode, id: u8) ->
                     "extend env call not support in pure call",
                 ));
             }
-            Bytecode::EXTFUNC => {
+            Bytecode::EXTVIEW => {
                 return Err(ItrErr::new(
                     ItrErrCode::ExtActDisabled,
-                    "extend func call not support in pure call",
+                    "extend view call not support in pure call",
                 ));
             }
             _ => {}

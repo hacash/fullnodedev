@@ -241,7 +241,7 @@ pub fn execute_code(
         *gas_usable -= gas_table.gas(instbyte); // 
         // println!("gas usable {} cp: {}, inst: {:?}", *gas_usable, gas_table.gas(instbyte), instruction);
 
-	        macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
+	    macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
             if in_callcode && EXTACTION == $act_kind {
                 return itr_err_fmt!(ExtActDisabled, "extend action not allowed in callcode")
             }
@@ -251,76 +251,76 @@ pub fn execute_code(
             let idx = pu8!();
             ensure_extend_call_allowed(mode, $act_kind, idx)?;
             let kid = u16::from_be_bytes([instbyte, idx]);
-	            let mut actbody = vec![];
-	            if $pass_body {
-	                let mut bdv = ops.peek()?.canbe_ext_call_data(heap)?;
-	                actbody.append(&mut bdv);
-                    match $act_kind {
-                        EXTACTION => gas += gst.extaction_bytes(actbody.len()),
-                        EXTFUNC => gas += gst.extfunc_bytes(actbody.len()),
-                        _ => {}
-                    }
-	            }
-	            let (bgasu, cres) = host.ext_action_call(kid, actbody).map_err(|e|
-	                ItrErr::new(ExtActCallError, e.as_str()))?;
-	            gas += bgasu as i64;
-	            if $have_retv {
-	                let vty = match instruction {
-	                    EXTENV  => search_ext_by_id(idx, &CALL_EXTEND_ENV_DEFS),
-	                    EXTFUNC => search_ext_by_id(idx, &CALL_EXTEND_FUNC_DEFS),
-	                    _ => never!(),
-	                }.ok_or_else(|| ItrErr::new(ExtActCallError, &format!("extend id {} not found", idx)))?.2;
-	                let resv = Value::type_from(vty, cres)?.valid(cap)?; // from ty + stack size bound
-                    match $act_kind {
-                        EXTFUNC => gas += gst.extfunc_bytes(bytes_len(&resv)),
-                        _ => {}
-                    }
-	                if $pass_body {
-	                    *ops.peek()? = resv;
-	                } else {
-	                    ops.push(resv)?;
-	                }
-	            } else if $pass_body {
-	                // EXTACTION: returns bytes but does not keep it on stack
-	                ops.pop()?;
-	            } else {
-	                never!()
-	            }
-	        }}
+            let mut actbody = vec![];
+            if $pass_body {
+                let mut bdv = ops.peek()?.canbe_ext_call_data(heap)?;
+                actbody.append(&mut bdv);
+                match $act_kind {
+                    EXTACTION => gas += gst.extaction_bytes(actbody.len()),
+                    EXTVIEW => gas += gst.extview_bytes(actbody.len()),
+                    _ => {}
+                }
+            }
+            let (bgasu, cres) = host.ext_action_call(kid, actbody).map_err(|e|
+                ItrErr::new(ExtActCallError, e.as_str()))?;
+            gas += bgasu as i64;
+            if $have_retv {
+                let vty = match instruction {
+                    EXTENV  => search_ext_by_id(idx, &CALL_EXTEND_ENV_DEFS),
+                    EXTVIEW => search_ext_by_id(idx, &CALL_EXTEND_VIEW_DEFS),
+                    _ => never!(),
+                }.ok_or_else(|| ItrErr::new(ExtActCallError, &format!("extend id {} not found", idx)))?.2;
+                let resv = Value::type_from(vty, cres)?.valid(cap)?; // from ty + stack size bound
+                match $act_kind {
+                    EXTVIEW => gas += gst.extview_bytes(bytes_len(&resv)),
+                    _ => {}
+                }
+                if $pass_body {
+                    *ops.peek()? = resv;
+                } else {
+                    ops.push(resv)?;
+                }
+            } else if $pass_body {
+                // EXTACTION: returns bytes but does not keep it on stack
+                ops.pop()?;
+            } else {
+                never!()
+            }
+	    }}
 
-	        let mut ntcall = |idx: u8| -> VmrtErr {
-            // Special native calls that read execution/state-like context should follow the same
-            // read privilege as state reads (nsr!): disallow in Pure(callpure).
-	                let mut argv = match idx {
-                NativeCall::idx_context_address => context_addr.serialize(), // context_address
-                _ => vec![],
-            };
-	            let argl = NativeCall::args_len(idx);
-	            if argl > 0 {
-	                argv = ops.peek()?.canbe_ext_call_data(heap)?;
-                    gas += gst.ntcall_bytes(argv.len());
-	            } else {
-	                nsr!{};
-	            }
-	            let (r, g) = NativeCall::call(hei, idx, &argv)?;
-	            let r = r.valid(cap)?;
-                gas += gst.ntcall_bytes(bytes_len(&r));
-	            if argl > 0 {
-	                *ops.peek()? = r; 
-	            } else {
-	                ops.push(r)?;
-	            }
-            gas += g;
-            Ok(())
-        };
+	    // NTFUNC: pure native function (has args, stack 1→1, allowed in Pure mode)
+        macro_rules! ntcall { ($func_or_env: expr, $idx: expr) => {
+            if $func_or_env {
+                let argv = ops.pop()?.canbe_ext_call_data(heap)?;
+                gas += gst.ntfunc_bytes(argv.len());
+                let (r, g) = NativeFunc::call(hei, $idx, &argv)?;
+                let r = r.valid(cap)?;
+                gas += gst.ntfunc_bytes(bytes_len(&r));
+                ops.push(r)?;
+                gas += g;
+            } else {
+                nsr!();
+                let r = match $idx {
+                    NativeEnv::idx_context_address => Value::Address(context_addr.to_addr()),
+                    _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not find", $idx),
+                };
+                let g = NativeEnv::gas($idx)?;
+                let r = r.valid(cap)?;
+                gas += gst.ntfunc_bytes(bytes_len(&r));
+                ops.push(r)?;
+                gas += g;
+            }    
+        }}
 
         match instruction {
             // ext action
             EXTACTION => { extcall!(EXTACTION, true,  false); },
             EXTENV    => { extcall!(EXTENV,    false, true);  },
-            EXTFUNC   => { extcall!(EXTFUNC,   true,  true);  },
-            // native call
-            NTCALL => ntcall(pu8!())?,
+            EXTVIEW   => { extcall!(EXTVIEW,   true,  true);  },
+            // native func (pure computation, always allowed)
+            NTFUNC => ntcall!(true,  pu8!()),
+            // native env (VM context read, forbidden in Pure mode)
+            NTENV  => ntcall!(false, pu8!()),
             // constant
             PU8   => ops.push(U8(pu8!()))?,
             PU16  => ops.push(U16(pu16!()))?,
@@ -834,9 +834,11 @@ fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr
         Main    if not_ist!(CALL, CALLVIEW,   CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInMain),
         P2sh    if not_ist!(         CALLVIEW, CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInP2sh),
         Abst    if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
-        View    if not_ist!(         CALLVIEW, CALLPURE,  CALLCODE) => itr_err_code!(CallLocInView),
+        View    if not_ist!(         CALLVIEW, CALLPURE            ) => itr_err_code!(CallLocInView),
         Pure    if not_ist!(                  CALLPURE            ) => itr_err_code!(CallInPure),
-        _ => Ok(()), // Outer | Inner support all call instructions
+        // Outer and Inner allow all call instructions.
+        // Guard-false arms for Main/P2sh/Abst/View/Pure also fall here (call is allowed).
+        Main | P2sh | Abst | Outer | Inner | View | Pure => Ok(()),
     }
 }
 

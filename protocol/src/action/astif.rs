@@ -17,17 +17,17 @@ action_define!{AstIf, 22,
         if true {
             return errf!("ast if not open")
         }
-        // 
-        let oldsta = ctx.state_fork();
+        //
+        let snap = ctx_snapshot(ctx);
         match self.cond.execute(ctx) {
             // if br
             Ok(..) => {
-                ctx.state_merge(oldsta); // merge sub state
+                ctx_merge(ctx, snap);
                 self.br_if.execute(ctx)
             },
             // else br
             Err(..) => {
-                ctx_state_recover(ctx, oldsta);
+                ctx_recover(ctx, snap);
                 self.br_else.execute(ctx)
             }
         }.map(|(_,b)|b)

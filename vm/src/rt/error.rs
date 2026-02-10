@@ -82,9 +82,10 @@ pub enum ItrErrCode {
     
     Arithmetic        = 90,
     BytesHandle       = 91,
-    NativeCallError   = 92,
-    ExtActCallError   = 93,
-    ItemNoSize        = 94,
+    NativeFuncError   = 92,
+    NativeEnvError    = 93,
+    ExtActCallError   = 94,
+    ItemNoSize        = 95,
 
     StorageKeyInvalid       = 101,
     StorageKeyNotFind       = 102,

@@ -1,6 +1,5 @@
 use basis::component::*;
 use basis::interface::*;
-use basis::*;
 use protocol::transaction::*;
 use sys::*;
 

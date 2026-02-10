@@ -40,14 +40,14 @@ pub fn analyze_test_results() {
         ("CAT", 8), ("BYTE", 8), ("CUT", 8), ("LEFT", 8),
         ("RIGHT", 8), ("LDROP", 8), ("RDROP", 8), ("MGET", 8),
         ("JOIN", 8), ("REV", 8), ("NEWLIST", 8), ("NEWMAP", 8),
-        ("NTCALL", 8),
+        ("NTFUNC", 8),
         // Gas cost = 12
-        ("EXTENV", 12), ("MPUT", 12), ("CALLTHIS", 12),
+        ("EXTENV", 12), ("NTENV", 12), ("MPUT", 12), ("CALLTHIS", 12),
         ("CALLSELF", 12), ("CALLSUPER", 12), ("PACKLIST", 12),
         ("PACKMAP", 12), ("UPLIST", 12), ("CLONE", 12),
         ("MERGE", 12), ("KEYS", 12), ("VALUES", 12),
         // Gas cost = 16
-        ("EXTFUNC", 16), ("GGET", 16), ("CALLCODE", 16),
+        ("EXTVIEW", 16), ("GGET", 16), ("CALLCODE", 16),
         // Gas cost = 20
         ("LOG1", 20), ("CALLPURE", 20),
         // Gas cost = 24

@@ -59,22 +59,27 @@ impl Syntax {
             return build_ir_func(inst, pms, args, rs, argvs,)
         }
 
-        // native call
-        if let Some((idx, args_len)) = pick_native_call(&id) {
+        // native func (pure, exactly 1 arg)
+        if let Some(idx) = pick_native_func(&id) {
             let (num, argvs) = self.must_get_func_argv(ArgvMode::Concat)?;
-            let allow_empty_placeholder = args_len == 0
-                && num == 1
+            if num != 1 {
+                return errf!("native func '{}' requires 1 argument but got {}", id, num)
+            }
+            return Ok(push_single_p1_hr(true, Bytecode::NTFUNC, idx, argvs));
+        }
+
+        // native env (VM context read, 0 args)
+        if let Some(idx) = pick_native_env(&id) {
+            let (num, argvs) = self.must_get_func_argv(ArgvMode::Concat)?;
+            let allow_empty_placeholder = num == 1
                 && argvs
                     .as_any()
                     .downcast_ref::<IRNodeLeaf>()
                     .is_some_and(|leaf| leaf.inst == Bytecode::PNBUF);
-            if num != args_len && !allow_empty_placeholder {
-                return errf!("native call '{}' argv length must {} but got {}", 
-                    id, args_len, num
-                )
+            if num != 0 && !allow_empty_placeholder {
+                return errf!("native env '{}' takes no arguments but got {}", id, num)
             }
-            let subx = if Bytecode::NTCALL.metadata().input == 0 { push_empty() } else { argvs };
-            return Ok(push_single_p1_hr(true, Bytecode::NTCALL, idx, subx));
+            return Ok(push_single_p1_hr(true, Bytecode::NTENV, idx, push_empty()));
         }
 
         // extend action
@@ -196,8 +201,12 @@ fn pick_ir_func(id: &str) -> Option<(IrFn, Bytecode, usize, usize, usize)> {
 }
 
 
-fn pick_native_call(id: &str) -> Option<(u8, usize)> {
-    NativeCall::from_name(id).map(|d|(d.0, d.1)) // (id, argv_count)
+fn pick_native_func(id: &str) -> Option<u8> {
+    NativeFunc::from_name(id).map(|d| d.0)
+}
+
+fn pick_native_env(id: &str) -> Option<u8> {
+    NativeEnv::from_name(id).map(|d| d.0)
 }
 
 
@@ -248,8 +257,8 @@ fn pick_ext_func(id: &str) -> Option<(bool, Bytecode, u8, usize)> {
     if let Some(x) = CALL_EXTEND_ENV_DEFS.iter().find(|f|f.1==id) {
         return Some((true, Bytecode::EXTENV,  x.0, x.3))
     }
-    if let Some(x) = CALL_EXTEND_FUNC_DEFS.iter().find(|f|f.1==id) {
-        return Some((true, Bytecode::EXTFUNC, x.0, x.3))
+    if let Some(x) = CALL_EXTEND_VIEW_DEFS.iter().find(|f|f.1==id) {
+        return Some((true, Bytecode::EXTVIEW, x.0, x.3))
     }
     if let Some(x) = CALL_EXTEND_ACTION_DEFS.iter().find(|f|f.1==id) {
         return Some((false, Bytecode::EXTACTION, x.0, x.3))

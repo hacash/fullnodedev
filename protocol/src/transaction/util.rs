@@ -1,4 +1,14 @@
 
+pub fn create_tx_info(tx: &dyn TransactionRead) -> TxInfo {
+    TxInfo {
+        ty: tx.ty(),
+        main: tx.main(),
+        addrs: tx.addrs(),
+        fee: tx.fee_pay(),
+    }
+}
+
+
 /**
 * verify tx all needs signature
 */

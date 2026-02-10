@@ -1,5 +1,5 @@
 
-use crate::native::NativeCall;
+use crate::native::{NativeFunc, NativeEnv};
 
 /*
     Verify bytecode validity and return the instruction table.
@@ -116,11 +116,17 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
                 i += l
             }
             // ext/native
-            EXTACTION | EXTENV | EXTFUNC => ensure_extend_call_id(inst, pu8!())?,
-            NTCALL => {
+            EXTACTION | EXTENV | EXTVIEW => ensure_extend_call_id(inst, pu8!())?,
+            NTFUNC => {
                 let idx = pu8!();
-                if !NativeCall::has_idx(idx) {
-                    return itr_err_fmt!(NativeCallError, "native call idx {} not found", idx)
+                if !NativeFunc::has_idx(idx) {
+                    return itr_err_fmt!(NativeFuncError, "native func idx {} not found", idx)
+                }
+            }
+            NTENV => {
+                let idx = pu8!();
+                if !NativeEnv::has_idx(idx) {
+                    return itr_err_fmt!(NativeEnvError, "native env idx {} not found", idx)
                 }
             }
             // jump record

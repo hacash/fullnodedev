@@ -47,6 +47,14 @@ impl Logs for BlockLogs {
         }
     }
 
+    fn snapshot_len(&self) -> usize {
+        self.logs.len()
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.logs.truncate(len);
+    }
+
 }
 
 

@@ -92,12 +92,12 @@ fn get_base_gas(opcode: Bytecode) -> i64 {
         CAT | BYTE | CUT | LEFT | RIGHT | LDROP | RDROP |
         MGET | JOIN | REV |
         NEWLIST | NEWMAP |
-        NTCALL => 8,
+        NTFUNC => 8,
         
-        EXTENV | MPUT | CALLTHIS | CALLSELF | CALLSUPER |
+        EXTENV | NTENV | MPUT | CALLTHIS | CALLSELF | CALLSUPER |
         PACKLIST | PACKMAP | UPLIST | CLONE | MERGE | KEYS | VALUES => 12,
         
-        EXTFUNC | GGET | CALLCODE => 16,
+        EXTVIEW | GGET | CALLCODE => 16,
         
         LOG1 | CALLPURE => 20,
         

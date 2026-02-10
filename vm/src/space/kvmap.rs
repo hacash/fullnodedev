@@ -5,7 +5,7 @@ macro_rules! memory_kvmap_define {
     ($class:ident, $er1:expr, $er2:expr) => {
                 
         #[allow(dead_code)]
-        #[derive(Default)]
+        #[derive(Default, Clone)]
         pub struct $class {
             limit: usize,
             datas: HashMap<Vec<u8>, Value>,
@@ -75,7 +75,7 @@ memory_kvmap_define!{ MKVMap, MemoryError, OutOfMemory }
 */
 
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CtcKVMap {
     limit: usize,
     datas: HashMap<Address, MKVMap>

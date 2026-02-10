@@ -7,4 +7,8 @@ pub trait Logs : Send + Sync {
     //
     fn height(&self) -> u64 { 0 }
     fn write_to_disk(&self) {}
+    /// Return current log count for snapshot before AstSelect/AstIf fork.
+    fn snapshot_len(&self) -> usize { 0 }
+    /// Truncate logs back to a previous snapshot length on recover.
+    fn truncate(&mut self, _len: usize) {}
 }

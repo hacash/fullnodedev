@@ -670,7 +670,9 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 | `callself` | `self.func(...)` | Inner | Yes | Yes |
 | `callsuper` | `super.func(...)` | Inner | Yes | Yes |
 
-**State** = Storage, Global, Memory, Log. `callcode` runs in the **current frame** and inherits the caller's mode; it also sets `in_callcode = true`, which forbids any further nested calls (CallInCallcode error).
+**State** = Storage, Global, Memory, Log. 
+
+**Important**: `callcode` runs in the **current frame** and **fully inherits the caller's ExecMode** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the callcode body are governed by the inherited mode's permissions. Additionally, `callcode` sets `in_callcode = true`, which forbids any further nested calls (CallInCallcode error).
 
 #### Allowed Calls per Entry/Execution Mode
 
@@ -681,20 +683,59 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 | **Abst** (payment hooks) | CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE | CALL (Outer) |
 | **Outer** (nested contract) | All | — |
 | **Inner** (this/self/super) | All | — |
-| **View** (read-only) | CALLVIEW, CALLPURE, CALLCODE | CALL, CALLTHIS, CALLSELF, CALLSUPER |
+| **View** (read-only) | CALLVIEW, CALLPURE | CALL, CALLTHIS, CALLSELF, CALLSUPER |
 | **Pure** (no state) | CALLPURE only | All others |
 | **in_callcode** (inside CALLCODE) | None | All (nested calls forbidden) |
 
 **Abst** disallows CALL (Outer) to prevent reentrancy from payment hooks into external contracts.
 
-#### State Access by Mode
+| ExecMode/Entry | CALL | CALLVIEW | CALLPURE | CALLCODE | CALLTHIS | CALLSELF | CALLSUPER |
+|---|---|---|---|---|---|---|---|
+| Main | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| P2sh | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Abst | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Outer/Inner | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| View | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Pure | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Callcode | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+#### State Access Control Matrix by Mode
+
+**Storage/Global/Memory/Log Access**:
 
 | Mode | Storage read | Storage write | Global/Memory read | Global/Memory write | Log |
-|------|--------------|---------------|-------------------|---------------------|-----|
+|------|--------------|---------------|-------------------|---------------------|
 | Main, P2sh, Abst | Yes | Yes | Yes | Yes | Yes |
 | Outer, Inner | Yes | Yes | Yes | Yes | Yes |
 | View | Yes | No | Yes | No | No |
 | Pure | No | No | No | No | No |
+
+**Extended Calls (EXTACTION / EXTENV / EXTVIEW)**:
+
+| Mode | EXTACTION | EXTENV | EXTVIEW | Notes |
+|------|-----------|--------|---------|-------|
+| **Main** (depth==0, not in_callcode) | ✅ Yes | ✅ Yes | ✅ Yes | Full access |
+| **Main** (depth>0 or in_callcode) | ❌ No | ✅ Yes | ✅ Yes | EXTACTION blocked in nested calls / callcode |
+| **P2sh, Abst** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
+| **Outer, Inner** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
+| **View** | ❌ No | ✅ Yes | ✅ Yes | Read-only environment access |
+| **Pure** | ❌ No | ❌ No | ❌ No | No external state access |
+
+**Native Functions (NTFUNC / NTENV)**:
+
+| Opcode | Native Call | Args | Pure Mode | View Mode | Main/Outer/Inner | Function |
+|--------|-------------|------|-----------|-----------|------------------|----------|
+| NTENV | `context_address` | 0 | ❌ Forbidden (`nsr!`) | ✅ Allowed | ✅ Allowed | Read VM execution state |
+| NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ Allowed | ✅ | ✅ | Pure hash functions |
+| NTFUNC | `hac_to_mei/zhu`, `mei/zhu_to_hac` | 1 | ✅ Allowed | ✅ | ✅ | Pure amount conversion |
+| NTFUNC | `address_ptr` | 1 | ✅ Allowed | ✅ | ✅ | Pure address pointer extraction |
+
+**Summary**:
+- **EXTACTION** (asset transfers): Only `Main` mode at `depth == 0` and **not** in `callcode`
+- **EXTENV** (`block_height`, `tx_main_address`): Forbidden in `Pure`, allowed elsewhere
+- **EXTVIEW** (`check_signature`, `balance`): Forbidden in `Pure`, allowed elsewhere — read-only chain state queries
+- **NTFUNC** (pure computation): Always allowed in all modes including `Pure`
+- **NTENV** (`context_address`): Forbidden in `Pure` (reads VM state), allowed elsewhere
 
 #### EXTACTION Restriction
 

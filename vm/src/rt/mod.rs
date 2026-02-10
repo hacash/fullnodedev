@@ -1,7 +1,6 @@
 use super::*;
 
 use sys::*;
-use basis::*;
 
 include!("util.rs");
 include!("extact.rs");

@@ -1,0 +1,9 @@
+{
+    "env": {
+        "ANTHROPIC_AUTH_TOKEN": "sk-jfM3WE4dPBLuSAsABYqfmoBDkz1mGhCux6FRVd9CEOuhszfs",
+        "ANTHROPIC_BASE_URL": "https://ai.9w7.cn",
+        // "ANTHROPIC_BASE_URL": "https://ai.xn--vuq861bvij35ps8cv0uohm.com/",
+        "API_TIMEOUT_MS": "30000",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1" 
+    }
+}
