@@ -62,6 +62,7 @@ pub struct Frame {
     pub in_callcode: bool,
     pub depth: isize,
     pub types: Option<FuncArgvTypes>,
+    pub callcode_caller_types: Option<FuncArgvTypes>,
     pub codes: Vec<u8>,
     pub oprnds: Stack,
     pub locals: Stack,
@@ -127,6 +128,7 @@ impl Frame {
         compile irnode
     */
     pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: FnObj, param: Option<Value>) -> VmrtErr {
+        self.callcode_caller_types = None;
         if let Some(mut p) = param {
             p.canbe_func_argv()?;
             if let Some(vtys) = &fnobj.agvty {

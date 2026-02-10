@@ -17,10 +17,10 @@ pub enum Bytecode {
     ________________3   = 0x03,
     ________________4   = 0x04,
     ________________5   = 0x05,
-    EXTFUNC             = 0x06, // *@  call extend action
-    EXTENV              = 0x07, // *+  call extend action
-    NTCALL              = 0x08, // *@  native call
-    ________________9   = 0x09,
+    EXTVIEW             = 0x06, // *@  call extend view (read-only query)
+    EXTENV              = 0x07, // *+  call extend env
+    NTFUNC              = 0x08, // *@  native pure function
+    NTENV               = 0x09, // *+  native env (VM state read)
     ________________10  = 0x0a,
     ________________11  = 0x0b,
     ________________12  = 0x0c,
@@ -328,9 +328,10 @@ impl Bytecode {
 */
 bytecode_metadata_define!{
     EXTACTION  : 1, 1, 0,     ext_action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
-    EXTFUNC    : 1, 1, 1,     ext_func
+    EXTVIEW    : 1, 1, 1,     ext_view
     EXTENV     : 1, 0, 1,     ext_env
-    NTCALL     : 1, 1, 1,     native_call
+    NTFUNC     : 1, 1, 1,     native_func
+    NTENV      : 1, 0, 1,     native_env
 
     // CALLDYN    :   0, 3, 1,   call_dynamic
     CALL       : 1+4, 1, 1,   call

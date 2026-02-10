@@ -91,8 +91,8 @@ impl BytecodePrint for Vec<u8> {
                     }else if let XLG = inst {
                         let (opt, idx) = local_logic_param_parse(self[i]);
                         pms.push(format!("{}, {}", opt, idx));
-                    }else if let EXTFUNC = inst {
-                        let ary = CALL_EXTEND_FUNC_DEFS;
+                    }else if let EXTVIEW = inst {
+                        let ary = CALL_EXTEND_VIEW_DEFS;
                         let f = search_ext_name_by_id(self[i], &ary);
                         pms.push(format!(" {}(..) ", f));
                     }else if let CALL = inst {

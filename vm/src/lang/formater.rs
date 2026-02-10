@@ -899,12 +899,16 @@ impl<'a> Formater<'a> {
             XOP => self.format_local_param(node, local_operand_param_parse),
             XLG => self.format_local_param(node, local_logic_param_parse),
             EXTENV => self.format_extend_call(node, &CALL_EXTEND_ENV_DEFS),
-            EXTFUNC => self.format_extend_call(node, &CALL_EXTEND_FUNC_DEFS),
+            EXTVIEW => self.format_extend_call(node, &CALL_EXTEND_VIEW_DEFS),
             EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS),
-            NTCALL => {
-                let ntcall: NativeCall = std_mem_transmute!(node.para);
+            NTFUNC => {
+                let ntfn: NativeFunc = std_mem_transmute!(node.para);
                 let argv = self.build_call_args(&*node.subx, true);
-                format!("{}({})", ntcall.name(), argv)
+                format!("{}({})", ntfn.name(), argv)
+            }
+            NTENV => {
+                let ntfn: NativeEnv = std_mem_transmute!(node.para);
+                format!("{}()", ntfn.name())
             }
             _ => {
                 let substr = self.print_inline(&*node.subx);

@@ -20,7 +20,7 @@ pub struct ContextInst<'a> {
 
 impl ContextInst<'_> {
 
-    pub fn new(env: Env, sta: Box<dyn State>, log: Box<dyn Logs>, txr: &dyn TransactionRead) -> ContextInst {
+    pub fn new<'a>(env: Env, sta: Box<dyn State>, log: Box<dyn Logs>, txr: &'a dyn TransactionRead) -> ContextInst<'a> {
         ContextInst{ env, sta, log, txr,
             depth: CallDepth::new(0),
             check_sign_cache: HashMap::new(),
@@ -52,7 +52,7 @@ impl StateOperat for ContextInst<'_> {
         ctx_state_merge_sub(self, old)
     }
     fn state_recover(&mut self, old: Arc<Box<dyn State>>) {
-        ctx_state_recover(self, old)
+        ctx_state_recover_sub(self, old)
     }
     fn state_replace(&mut self, sta: Box<dyn State>) -> Box<dyn State> {
         std::mem::replace(&mut self.sta, sta)
@@ -65,7 +65,8 @@ impl Context for ContextInst<'_> {
         self.log.as_mut()
     }
 
-    fn reset_for_new_tx(&mut self) {
+    fn reset_for_new_tx(&mut self, txr: &dyn TransactionRead) {
+        self.env.replace_tx( create_tx_info(txr) ); // set env
         // Per-tx caches must not leak across transactions.
         self.psh.clear();
         self.check_sign_cache.clear();
@@ -96,7 +97,7 @@ impl Context for ContextInst<'_> {
         }
         // Must check privkey after cache lookup to avoid unnecessary checks on cached entries
         adr.must_privakey()?;
-        let isok = transaction::verify_target_signature(adr, self.txr);
+        let isok = verify_target_signature(adr, self.txr);
         self.check_sign_cache.insert(*adr, isok.clone());
         isok.map(|_|())
     }

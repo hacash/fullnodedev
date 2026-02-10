@@ -40,7 +40,7 @@ pub struct ScriptmhCalc {
 /*
     pay to script hash
 */
-action_define!{UnlockScriptProve, 97, 
+action_define!{UnlockScriptProve, 90, 
     ActLv::Ast, // level
     false, [],
     {

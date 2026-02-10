@@ -296,8 +296,6 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         }
     }
     */
-    // reset the vm and other caches
-    ctx.reset_for_new_tx();
     // execute actions
     for action in tx.actions() {
         ctx.depth_set(CallDepth::new(-1)); // set depth

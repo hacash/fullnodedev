@@ -240,9 +240,10 @@ impl IrFn {
 irfn_define!{
 
     EXTACTION  : 1, 1, 0,     ext_action  // no return value
-    // EXTFUNC    : 1, 1, 1,     ext_func
+    // EXTVIEW    : 1, 1, 1,     ext_view
     // EXTENV     : 1, 0, 1,     ext_env
-    // NTCALL     : 1, 1, 1,     native_call
+    // NTFUNC     : 1, 1, 1,     native_func
+    // NTENV      : 1, 0, 1,     native_env
 
     // CALLDYN    :   0, 3, 1,   call_dynamic
     // CALL       : 1+4, 1, 1,   call

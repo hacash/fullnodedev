@@ -46,11 +46,12 @@ impl GasTable {
             PBUF, PBUFL,
             MOD, MUL, DIV, XOP, 
             HREAD, HREADU, HREADUL, HSLICE, HGROW,
-            ITEMGET, HEAD, BACK, HASKEY, LENGTH,
+            ITEMGET, HEAD, BACK, HASKEY, LENGTH
         ]);
         gst.set(5,  &[POW]);
         gst.set(6,  &[HWRITE, HWRITEX, HWRITEXL, 
             INSERT, REMOVE, CLEAR, APPEND, 
+            NTENV
         ]);
         // "Heavy" ops that commonly allocate/copy buffers (previously default-2).
         gst.set(8,  &[
@@ -58,13 +59,13 @@ impl GasTable {
             CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP,
             MGET, JOIN, REV, 
             NEWLIST, NEWMAP,
-            NTCALL
+            NTFUNC
         ]);
         gst.set(12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER,
             // O(n) compo merge (can touch many items); avoid default-2.
             PACKLIST, PACKMAP, UPLIST, CLONE, MERGE, KEYS, VALUES
         ]);
-        gst.set(16, &[EXTFUNC, GGET, CALLCODE]);
+        gst.set(16, &[EXTVIEW, GGET, CALLCODE]);
         gst.set(20, &[LOG1, CALLPURE]);
         gst.set(24, &[LOG2, GPUT, CALLVIEW]);
         gst.set(28, &[LOG3, SDEL, EXTACTION]);
@@ -113,8 +114,8 @@ pub struct GasExtra {
     storage_read_div: i64,
     storage_write_div: i64,
     compo_byte_div: i64,
-    ntcall_div: i64,
-    extfunc_div: i64,
+    ntfunc_div: i64,
+    extview_div: i64,
     extaction_div: i64,
 }
 
@@ -162,8 +163,8 @@ impl GasExtra {
             storage_read_div:    8,
             storage_write_div:   6,
             compo_byte_div:     20,
-            ntcall_div:         16,
-            extfunc_div:        16,
+            ntfunc_div:         16,
+            extview_div:        16,
             extaction_div:      10,
         }
     }
@@ -184,13 +185,13 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    pub fn ntcall_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.ntcall_div)
+    pub fn ntfunc_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.ntfunc_div)
     }
 
     #[inline(always)]
-    pub fn extfunc_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.extfunc_div)
+    pub fn extview_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.extview_div)
     }
 
     #[inline(always)]

@@ -258,14 +258,14 @@ impl ExpectedGasCalculator {
         (32 + val_len as i64) * periods
     }
 
-    /// Calculate NTCALL gas (byte/16)
-    fn ntcall_gas(&self, byte_len: usize) -> i64 {
-        self.gas_extra.ntcall_bytes(byte_len)
+    /// Calculate NTFUNC gas (byte/16)
+    fn ntfunc_gas(&self, byte_len: usize) -> i64 {
+        self.gas_extra.ntfunc_bytes(byte_len)
     }
 
-    /// Calculate EXTFUNC gas (byte/16)
-    fn extfunc_gas(&self, byte_len: usize) -> i64 {
-        self.gas_extra.extfunc_bytes(byte_len)
+    /// Calculate EXTVIEW gas (byte/16)
+    fn extview_gas(&self, byte_len: usize) -> i64 {
+        self.gas_extra.extview_bytes(byte_len)
     }
 
     /// Calculate EXTACTION gas (byte/10)
@@ -388,7 +388,7 @@ fn test_base_gas_combination(
     
     // Add target opcode and its parameters
     match target_opcode {
-        GET | PUT | DUPN | POPN | PICK | HGROW | HREADU | HWRITEX | XLG | XOP | CTO | TIS | NTCALL | ALLOC => {
+        GET | PUT | DUPN | POPN | PICK | HGROW | HREADU | HWRITEX | XLG | XOP | CTO | TIS | NTFUNC | ALLOC => {
             codes.push(target_opcode as u8);
             codes.push(0u8);
         },
@@ -490,7 +490,7 @@ fn test_base_gas(opcode: Bytecode, reporter: &mut TestReporter, calc: &ExpectedG
         XLG => build_codes!(XLG 0 END),
         XOP => build_codes!(XOP 0 END),
         TIS => build_codes!(TIS 0 END),
-        NTCALL => build_codes!(NTCALL 0 END),
+        NTFUNC => build_codes!(NTFUNC 0 END),
         ALLOC => build_codes!(ALLOC 0 END),
         // Opcodes that need u16 parameter
         PU16 => build_codes!(PU16 0 0 END),
@@ -1550,7 +1550,7 @@ mod tests {
         // Skip HWRITE, INSERT, REMOVE, CLEAR, APPEND - tested in dynamic gas tests or need combination test
 
         // Opcodes with gas cost = 8 - test only those that can be tested independently
-        let gas_8_testable = vec![CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, JOIN, REV, NEWLIST, NEWMAP, NTCALL];
+        let gas_8_testable = vec![CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, JOIN, REV, NEWLIST, NEWMAP, NTFUNC];
 
         for opcode in gas_8_testable {
             test_base_gas(opcode, &mut reporter, &calc);
@@ -1559,7 +1559,7 @@ mod tests {
         // Skip MGET - tested in dynamic gas tests
 
         // Opcodes with gas cost = 12 - test only those that can be tested independently
-        let gas_12_testable = vec![EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER];
+        let gas_12_testable = vec![EXTENV, NTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER];
 
         for opcode in gas_12_testable {
             test_base_gas(opcode, &mut reporter, &calc);
@@ -1568,7 +1568,7 @@ mod tests {
         // Skip PACKLIST, PACKMAP, UPLIST, CLONE, MERGE, KEYS, VALUES - need combination test
 
         // Opcodes with gas cost = 16
-        let gas_16_testable = vec![EXTFUNC, CALLCODE];
+        let gas_16_testable = vec![EXTVIEW, CALLCODE];
 
         for opcode in gas_16_testable {
             test_base_gas(opcode, &mut reporter, &calc);

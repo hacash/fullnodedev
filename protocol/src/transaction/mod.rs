@@ -2,7 +2,6 @@ use std::collections::*;
 
 use sys::*;
 use field::*;
-use basis::*;
 use basis::interface::*;
 use basis::component::*;
 

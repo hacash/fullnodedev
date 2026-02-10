@@ -39,14 +39,14 @@ action_define!{AstSelect, 21,
                 break // ok full
             }
             // try execute
-            let oldsta = ctx.state_fork();
+            let snap = ctx_snapshot(ctx);
             if let Ok((g, r)) = act.execute(ctx) {
                 gas += g;
                 rv = r;
                 ok += 1;
-                ctx.state_merge(oldsta); // merge sub state
+                ctx_merge(ctx, snap);
             } else {
-                ctx_state_recover(ctx, oldsta);
+                ctx_recover(ctx, snap);
             }   
         }
         // check at least

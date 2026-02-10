@@ -670,7 +670,9 @@ VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制�
 | `callself` | `self.func(...)` | Inner | 允许 | 允许 |
 | `callsuper` | `super.func(...)` | Inner | 允许 | 允许 |
 
-**状态** = 存储、全局、内存、日志。`callcode` 在**当前帧**中执行并继承调用方模式；同时设置 `in_callcode = true`，禁止任何后续嵌套调用（CallInCallcode 错误）。
+**状态** = 存储、全局、内存、日志。
+
+**重要说明**：`callcode` 在**当前帧**中执行并**完全继承调用方的 ExecMode** —— 它**没有独立的状态访问控制逻辑**。callcode 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）均受继承模式的权限限制。此外，`callcode` 设置 `in_callcode = true`，禁止任何后续嵌套调用（CallInCallcode 错误）。
 
 #### 各入口/执行模式下的允许调用
 
@@ -681,13 +683,25 @@ VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制�
 | **Abst**（支付钩子） | CALLTHIS、CALLSELF、CALLSUPER、CALLVIEW、CALLPURE、CALLCODE | CALL（Outer） |
 | **Outer**（嵌套合约） | 全部 | — |
 | **Inner**（this/self/super） | 全部 | — |
-| **View**（只读） | CALLVIEW、CALLPURE、CALLCODE | CALL、CALLTHIS、CALLSELF、CALLSUPER |
+| **View**（只读） | CALLVIEW、CALLPURE | CALL、CALLTHIS、CALLSELF、CALLSUPER |
 | **Pure**（无状态） | 仅 CALLPURE | 其余全部 |
 | **in_callcode**（在 CALLCODE 内） | 无 | 全部（禁止嵌套调用） |
 
 **Abst** 禁止 CALL（Outer），防止支付钩子通过外部合约重入。
 
-#### 各模式下的状态访问
+| 模式/入口 | CALL | CALLVIEW | CALLPURE | CALLCODE | CALLTHIS | CALLSELF | CALLSUPER |
+|---|---|---|---|---|---|---|---|
+| Main | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| P2sh | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Abst | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Outer/Inner | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| View | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Pure | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Callcode | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+#### 各模式下的状态访问控制矩阵
+
+**存储/全局/内存/日志访问**：
 
 | 模式 | 存储读取 | 存储写入 | 全局/内存读取 | 全局/内存写入 | 日志 |
 |------|----------|----------|---------------|---------------|------|
@@ -695,6 +709,33 @@ VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制�
 | Outer、Inner | 允许 | 允许 | 允许 | 允许 | 允许 |
 | View | 允许 | 禁止 | 允许 | 禁止 | 禁止 |
 | Pure | 禁止 | 禁止 | 禁止 | 禁止 | 禁止 |
+
+**外部调用（EXTACTION / EXTENV / EXTVIEW）**：
+
+| 模式 | EXTACTION | EXTENV | EXTVIEW | 备注 |
+|------|-----------|--------|---------|------|
+| **Main**（depth==0，不在 in_callcode 中） | ✅ 允许 | ✅ 允许 | ✅ 允许 | 完全访问 |
+| **Main**（depth>0 或 in_callcode 中） | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 在嵌套调用/callcode 中被阻止 |
+| **P2sh、Abst** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 仅限入口层 |
+| **Outer、Inner** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 仅限入口层 |
+| **View** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | 只读环境访问 |
+| **Pure** | ❌ 禁止 | ❌ 禁止 | ❌ 禁止 | 无外部状态访问 |
+
+**原生函数（NTFUNC / NTENV）**：
+
+| 操作码 | 原生调用 | 参数数 | Pure 模式 | View 模式 | Main/Outer/Inner | 功能 |
+|--------|----------|--------|-----------|-----------|------------------|------|
+| NTENV | `context_address` | 0 | ❌ 禁止（`nsr!`） | ✅ 允许 | ✅ 允许 | 读取 VM 执行状态 |
+| NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ 允许 | ✅ | ✅ | 纯哈希函数 |
+| NTFUNC | `hac_to_mei/zhu`、`mei/zhu_to_hac` | 1 | ✅ 允许 | ✅ | ✅ | 纯金额转换 |
+| NTFUNC | `address_ptr` | 1 | ✅ 允许 | ✅ | ✅ | 纯地址指针提取 |
+
+**小结**：
+- **EXTACTION**（资产转移）：仅 `Main` 模式在 `depth == 0` 且**非** `callcode` 中
+- **EXTENV**（`block_height`、`tx_main_address`）：在 `Pure` 中禁止，其他允许
+- **EXTVIEW**（`check_signature`、`balance`）：在 `Pure` 中禁止，其他允许 —— 只读链状态查询
+- **NTFUNC**（纯计算）：所有模式均允许，包括 `Pure`
+- **NTENV**（`context_address`）：在 `Pure` 中禁止（读取 VM 状态），其他允许
 
 #### EXTACTION 限制
 

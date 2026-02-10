@@ -103,7 +103,7 @@ impl BlockExec for BlockV1 {
         let mut total_fee = Amount::zero();
         // exec each tx
         for tx in txs {
-            ctx.env.replace_tx( create_tx_info(tx.as_read()) ); // set env
+            ctx.reset_for_new_tx(tx.as_read());
             ctx.txr = tx.as_read();
             tx.execute(ctx)?; // do exec
             total_fee = total_fee.add_mode_u64(&tx.fee_got())?; // add fee
