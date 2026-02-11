@@ -13,7 +13,7 @@ use basis::component::*;
 use basis::config::*;
 use protocol::state::*;
 use protocol::transaction::*;
-use protocol::block::{self, BlockHeadOnlyHeight, create_tx_info};
+use protocol::block::{self, BlockHeadOnlyHeight};
 use protocol::context as ctx;
 
 

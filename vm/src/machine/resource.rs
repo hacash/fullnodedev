@@ -1,8 +1,17 @@
 
+/// Block heights at which VM protocol upgrades activate.
+/// Append new heights here for hard forks that change GasTable/GasExtra/SpaceCap.
+/// Must be sorted in ascending order.
+const UPGRADE_HEIGHTS: &[u64] = &[
+    // 200000,  // example: v1 adjustments
+];
+
+
 
 #[derive(Default)]
 pub struct Resoure {
-    height: u64,
+    cfg_height: u64,        // height used to build current config
+    next_upgrade: u64,      // cached: next upgrade height (skip rebuild if height < this)
     pub gas_table: GasTable,
     pub gas_extra: GasExtra,
     pub space_cap: SpaceCap,
@@ -21,7 +30,8 @@ impl Resoure {
     pub fn create(height: u64) -> Self {
         let cap = SpaceCap::new(height);
         Self {
-            height,
+            cfg_height: height,
+            next_upgrade: Self::next_upgrade_after(height),
             global_vals: GKVMap::new(cap.max_global),
             memory_vals: CtcKVMap::new(cap.max_memory),
             space_cap: cap,
@@ -35,16 +45,24 @@ impl Resoure {
         self.global_vals.clear();
         self.memory_vals.clear();
         self.contracts.clear();
-        if self.height == height {
-            return
+        self.contract_load_bytes = 0;
+        if height < self.next_upgrade {
+            return // same protocol version, skip config rebuild
         }
+        // crossed an upgrade boundary — rebuild config
+        self.reset_gascap(height);
+    }
+
+    fn reset_gascap(&mut self, height: u64) {
         let cap = SpaceCap::new(height);
-        self.height = height;
+        self.cfg_height = height;
+        self.next_upgrade = Self::next_upgrade_after(height);
+        // rebuild
         self.global_vals.reset(cap.max_global);
+        self.memory_vals.reset(cap.max_memory);
         self.space_cap = cap;
         self.gas_extra = GasExtra::new(height);
         self.gas_table = GasTable::new(height);
-        self.contract_load_bytes = 0;
     }
 
     pub fn stack_allocat(&mut self) -> Stack {
@@ -63,7 +81,18 @@ impl Resoure {
         self.heap_pool.push(heap);
     }
 
+    // util
 
-
+    /// Return the smallest upgrade height that is strictly greater than `height`.
+    /// If no future upgrade exists, returns `u64::MAX`.
+    fn next_upgrade_after(height: u64) -> u64 {
+        for &h in UPGRADE_HEIGHTS {
+            if h > height {
+                return h
+            }
+        }
+        u64::MAX
+    }
 
 }
+

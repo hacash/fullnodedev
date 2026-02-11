@@ -21,13 +21,13 @@ pub trait Context : StateOperat + ActCall {
     fn env(&self) -> &Env;
     fn addr(&self, _:&AddrOrPtr) -> Ret<Address>;
     fn check_sign(&mut self, _: &Address) -> Rerr;
-    fn depth(&mut self) -> &mut CallDepth;
-    fn depth_set(&mut self, _: CallDepth);
-    // fn depth_add(&mut self) { never!() }
-    // fn depth_sub(&mut self) { never!() }
+    fn level(&self) -> usize;
+    fn level_set(&mut self, _: usize);
     fn tx(&self) -> &dyn TransactionRead;
     fn vm(&mut self) -> &mut dyn VM;
     fn vm_replace(&mut self, _: Box<dyn VM>) -> Box<dyn VM>;
+    fn snapshot_volatile(&self) -> Box<dyn Any> { Box::new(()) }
+    fn restore_volatile(&mut self, _: Box<dyn Any>) {}
     // tex
     fn tex_ledger(&mut self) -> &mut TexLedger;
     // log
@@ -36,4 +36,3 @@ pub trait Context : StateOperat + ActCall {
     fn p2sh(&self, _: &Address) -> Ret<&dyn P2sh> { errf!("not find") }
     fn p2sh_set(&mut self, _: Address, _: Box<dyn P2sh>) -> Rerr { Ok(()) }
 }
-

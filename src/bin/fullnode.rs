@@ -48,6 +48,7 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
     {
         protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
         protocol::setup::action_hooker(vm::hook::try_action_hook);
+        protocol::setup::vm_assigner(vm::machine::vm_assign);
     }
 
     // api

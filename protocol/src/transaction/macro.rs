@@ -272,6 +272,9 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         if blkhei > 33033 && mty <= TXTY1 { // last is 33019
             return errf!("Type 1 transactions have been deprecated after height 33,033")
         }
+        // Defense-in-depth: tx.execute may be called by mempool/runtime checks directly.
+        // Keep signature verification on the execution path to avoid unsigned tx bypass.
+        tx.verify_signature()?;
         // check tx exist
         if let Some(exhei) = state.tx_exist(&hx) { // have tx !!!
             // handle hacash block chain bug start
@@ -296,9 +299,11 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         }
     }
     */
+    // pre-initialize VM for this tx (if vm crate is registered)
+    crate::setup::do_vm_init(ctx);
     // execute actions
     for action in tx.actions() {
-        ctx.depth_set(CallDepth::new(-1)); // set depth
+        ctx.level_set(ACTION_CTX_LEVEL_TOP);
         action.execute(ctx)?;
     }
     

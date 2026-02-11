@@ -47,13 +47,15 @@ pub struct CtxSnapshot {
     state:   Arc<Box<dyn State>>,
     vm_snap: Box<dyn Any>,
     log_len: usize,
+    ctx_snap: Box<dyn Any>,
 }
 
 pub fn ctx_snapshot(ctx: &mut dyn Context) -> CtxSnapshot {
     let vm_snap = ctx.vm().snapshot_volatile();
     let log_len = ctx.logs().snapshot_len();
+    let ctx_snap = ctx.snapshot_volatile();
     let state = ctx_state_fork_sub(ctx);
-    CtxSnapshot { state, vm_snap, log_len }
+    CtxSnapshot { state, vm_snap, log_len, ctx_snap }
 }
 
 pub fn ctx_merge(ctx: &mut dyn Context, snap: CtxSnapshot) {
@@ -63,6 +65,9 @@ pub fn ctx_merge(ctx: &mut dyn Context, snap: CtxSnapshot) {
 
 pub fn ctx_recover(ctx: &mut dyn Context, snap: CtxSnapshot) {
     ctx_state_recover_sub(ctx, snap.state);
+    // VM recover intentionally excludes gas remaining:
+    // failed AST branches rollback state/log/memory, but consumed gas is not refunded.
     ctx.vm().restore_volatile(snap.vm_snap);
     ctx.logs().truncate(snap.log_len);
+    ctx.restore_volatile(snap.ctx_snap);
 }

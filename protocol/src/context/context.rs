@@ -3,7 +3,7 @@
 */
 pub struct ContextInst<'a> {
     pub env: Env,
-    pub depth: CallDepth,
+    pub level: usize,
     pub txr: &'a dyn TransactionRead,
 
     pub vmi: Box<dyn VM>,
@@ -22,7 +22,7 @@ impl ContextInst<'_> {
 
     pub fn new<'a>(env: Env, sta: Box<dyn State>, log: Box<dyn Logs>, txr: &'a dyn TransactionRead) -> ContextInst<'a> {
         ContextInst{ env, sta, log, txr,
-            depth: CallDepth::new(0),
+            level: ACTION_CTX_LEVEL_TOP,
             check_sign_cache: HashMap::new(),
             vmi: VMNil::empty(),
             psh: HashMap::new(),
@@ -65,6 +65,22 @@ impl Context for ContextInst<'_> {
         self.log.as_mut()
     }
 
+    fn snapshot_volatile(&self) -> Box<dyn Any> {
+        Box::new((
+            self.tex_ledger.clone(),
+            self.psh.keys().cloned().collect::<HashSet<Address>>(),
+            self.level,
+        ))
+    }
+
+    fn restore_volatile(&mut self, snap: Box<dyn Any>) {
+        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>, usize)>() else { return };
+        let (tex, keys, level) = *snap;
+        self.tex_ledger = tex;
+        self.psh.retain(|k, _| keys.contains(k));
+        self.level = level;
+    }
+
     fn reset_for_new_tx(&mut self, txr: &dyn TransactionRead) {
         self.env.replace_tx( create_tx_info(txr) ); // set env
         // Per-tx caches must not leak across transactions.
@@ -72,16 +88,13 @@ impl Context for ContextInst<'_> {
         self.check_sign_cache.clear();
         self.tex_ledger = TexLedger::default();
         self.vm_replace(VMNil::empty());
+        self.level = ACTION_CTX_LEVEL_TOP;
     }
     fn as_ext_caller(&mut self) -> &mut dyn ActCall { self }
     fn env(&self) -> &Env { &self.env }
     
-    fn depth(&mut self) -> &mut CallDepth { &mut self.depth }
-    fn depth_set(&mut self, cd: CallDepth) { self.depth = cd }
-    /*
-    fn depth_add(&mut self) { self.depth += 1 }
-    fn depth_sub(&mut self) { self.depth -= 1 }
-    */
+    fn level(&self) -> usize { self.level }
+    fn level_set(&mut self, level: usize) { self.level = level }
 
     fn tx(&self) -> &dyn TransactionRead { self.txr }
     fn vm(&mut self) -> &mut dyn VM { self.vmi.as_mut() }

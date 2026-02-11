@@ -17,19 +17,18 @@ impl CallFrame {
         
         let libs_none: Option<Vec<ContractAddress>> = None;
         
-        // Setup root frame
+        // Setup root frame (depth=0, nested frames get depth+1 via Frame::next)
         self.contract_count = r.contracts.len();
         let mut root = self.increase(r)?;
-        root.depth = env.ctx.depth().to_isize() as isize;
         root.ctxadr = entry_addr.clone();
         root.curadr = code_owner.unwrap_or(entry_addr);
         self.push(root);
         curr!().prepare(mode, false, code, param)?;
-        
+
         // Main execution loop
         loop {
             let exit = curr!().execute(r, env)?;
-            
+
             match exit {
                 Call(fnptr) => {
                     // Load call context
@@ -38,7 +37,7 @@ impl CallFrame {
                         curr_ref!().curadr.clone(),
                         curr_ref!().depth
                     );
-                    
+
                     let libs_ptr = if depth == 0 { &libs } else { &libs_none };
                     let (chgsrcadr, fnobj) = r.load_must_call(env.ctx, fnptr.clone(), &ctxadr, &curadr, libs_ptr)?;
                     let fnobj = fnobj.as_ref().clone();

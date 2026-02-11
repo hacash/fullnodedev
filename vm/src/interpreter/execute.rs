@@ -166,7 +166,7 @@ pub fn execute_code(
     codes: &[u8], // max len = 65536
     mode: ExecMode,
     in_callcode: bool,
-    depth: isize,
+    depth: usize,
 
     gas_usable: &mut i64, // max gas can be use
 
@@ -891,9 +891,9 @@ fn unpack_list(mut i: u8, locals: &mut Stack, list: &VecDeque<Value>) -> VmrtErr
 }
 
 
-fn debug_print_value(_ctx: &ContractAddress, _cur: &ContractAddress 
-, _mode: ExecMode, _depth: isize, _val: Value) {
-    debug_println!("{}-{} {} {:?} => {:?}", 
+fn debug_print_value(_ctx: &ContractAddress, _cur: &ContractAddress
+, _mode: ExecMode, _depth: usize, _val: Value) {
+    debug_println!("{}-{} {} {:?} => {:?}",
         _ctx.prefix(7), _cur.prefix(7), _depth, _mode, _val);
 }
 

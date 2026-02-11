@@ -117,10 +117,6 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
     macro_rules! check_pick_one_tx {
         ($a: expr) => {
             let txr = $a.objc.as_ref().as_read();
-            if let Err(..) = txr.verify_signature() {
-                invalidtxhxs.push(txr.hash());
-                return true // sign fail, ignore, next
-            }
             if let Err(..) = engine.try_execute_tx_by(txr, pending_hei, &mut sub_state) {
                 invalidtxhxs.push(txr.hash());
                 return true // execute fail, ignore, next
@@ -387,9 +383,6 @@ fn clean_invalid_normal_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, blkhei: u
     // already minted hacd number
     let _ = txpool.retain_at(TXGID_NORMAL, &mut |a: &TxPkg| {
         let txr = a.objc.as_read();
-        if txr.verify_signature().is_err() {
-            return false;
-        }
         let exec = eng.try_execute_tx_by(txr, pdhei, &mut sub_state);
         exec.is_ok() // keep or delete 
     });

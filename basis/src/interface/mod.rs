@@ -10,7 +10,7 @@ use field::*;
 use super::config::*;
 use super::component::{ 
     MemMap, ActLv, ChainInfo,
-    Env, CallDepth, TexLedger,
+    Env, TexLedger,
     TxPkg, BlkPkg, RecentBlockInfo
 };
 
@@ -33,5 +33,4 @@ include!{"engine.rs"}
 include!{"hnoder.rs"}
 include!{"scaner.rs"}
 include!{"server.rs"}
-
 

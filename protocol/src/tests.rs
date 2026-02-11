@@ -8,10 +8,103 @@ use basis::interface::*;
 use sys::*;
 
 static INIT: Once = Once::new();
+static INIT_EXT_ENV: Once = Once::new();
 
 fn init_test_registry() {
     INIT.call_once(|| {
         crate::setup::action_register(crate::action::try_create, crate::action::try_json_decode);
+    });
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+struct TestExtEnvReadOnly {
+    kind: Uint2,
+}
+
+impl TestExtEnvReadOnly {
+    const KIND: u16 = 0x07f0;
+}
+
+impl Parse for TestExtEnvReadOnly {
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.kind.parse(buf)
+    }
+}
+
+impl Serialize for TestExtEnvReadOnly {
+    fn serialize(&self) -> Vec<u8> {
+        self.kind.serialize()
+    }
+    fn size(&self) -> usize {
+        self.kind.size()
+    }
+}
+
+impl Field for TestExtEnvReadOnly {
+    fn new() -> Self {
+        Self {
+            kind: Uint2::from(Self::KIND),
+        }
+    }
+}
+
+impl ToJSON for TestExtEnvReadOnly {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        format!(r#"{{"kind":{}}}"#, self.kind.to_json_fmt(fmt))
+    }
+}
+
+impl FromJSON for TestExtEnvReadOnly {
+    fn from_json(&mut self, json_str: &str) -> Ret<()> {
+        let pairs = json_split_object(json_str);
+        for (k, v) in pairs {
+            if k == "kind" {
+                self.kind.from_json(v)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Description for TestExtEnvReadOnly {
+    fn to_description(&self) -> String {
+        "Test ext env read only action".to_owned()
+    }
+}
+
+impl ActExec for TestExtEnvReadOnly {
+    fn execute(&self, _ctx: &mut dyn Context) -> Ret<(u32, Vec<u8>)> {
+        Ok((0, vec![1u8]))
+    }
+}
+
+impl Action for TestExtEnvReadOnly {
+    fn kind(&self) -> u16 { *self.kind }
+    fn level(&self) -> ActLv { ActLv::Any }
+    fn req_sign(&self) -> Vec<AddrOrPtr> { vec![] }
+    fn as_any(&self) -> &dyn std::any::Any { self }
+}
+
+fn ext_env_try_create(kind: u16, buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usize)>> {
+    if kind != TestExtEnvReadOnly::KIND {
+        return Ok(None);
+    }
+    let (act, sk) = TestExtEnvReadOnly::create(buf)?;
+    Ok(Some((Box::new(act), sk)))
+}
+
+fn ext_env_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>> {
+    if kind != TestExtEnvReadOnly::KIND {
+        return Ok(None);
+    }
+    let mut act = TestExtEnvReadOnly::default();
+    act.from_json(json)?;
+    Ok(Some(Box::new(act)))
+}
+
+fn init_ext_env_test_registry() {
+    INIT_EXT_ENV.call_once(|| {
+        crate::setup::action_register(ext_env_try_create, ext_env_try_json_decode);
     });
 }
 
@@ -149,6 +242,29 @@ fn test_ctx_action_call_must_check_req_sign() {
 }
 
 #[test]
+fn test_tx_execute_must_verify_signature_before_actions() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let mut tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
+    act.hacash = Amount::mei(1);
+    tx.actions.push(Box::new(act)).unwrap();
+
+    let mut env = Env::default();
+    env.tx.main = tx.main();
+    env.tx.addrs = tx.addrs();
+    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("signature") || err.contains("failed") || err.contains("verify"), "{}", err);
+}
+
+#[test]
 fn test_tx_req_sign_must_be_privakey_address() {
     init_test_registry();
 
@@ -166,6 +282,79 @@ fn test_tx_req_sign_must_be_privakey_address() {
     let signset = tx.req_sign().unwrap();
     assert!(signset.contains(&tx.main()));
     assert!(!signset.contains(&scriptmh_addr));
+}
+
+#[test]
+fn test_ctx_action_call_extenv_does_not_require_tx_main_signature() {
+    init_test_registry();
+    init_ext_env_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+
+    let mut env = Env::default();
+    env.tx.main = tx.main();
+    env.tx.addrs = tx.addrs();
+
+    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+
+    let res = ctx.action_call(TestExtEnvReadOnly::KIND, vec![]).unwrap();
+    assert_eq!(res.1, vec![1u8]);
+}
+
+#[test]
+fn test_tx_req_sign_must_collect_nested_ast_child_actions() {
+    init_test_registry();
+
+    use crate::transaction::TransactionType2;
+
+    let mut tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    let nested_signer = field::ADDRESS_TWOX.clone();
+
+    let mut leaf = HacFromTrs::new();
+    leaf.from = AddrOrPtr::from_addr(nested_signer);
+    leaf.hacash = Amount::mei(1);
+
+    let nested_if = AstIf::create_by(
+        AstSelect::nop(),
+        AstSelect::create_list(vec![Box::new(AstSelect::create_list(vec![Box::new(leaf)]))]),
+        AstSelect::nop(),
+    );
+    tx.actions.push(Box::new(AstSelect::create_list(vec![Box::new(nested_if)]))).unwrap();
+
+    let signset = tx.req_sign().unwrap();
+    assert!(signset.contains(&tx.main()));
+    assert!(signset.contains(&nested_signer));
+}
+
+#[test]
+fn test_ctx_action_call_must_check_nested_ast_req_sign() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    // tx without any signatures
+    let tx = TransactionType2::default();
+
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone(), field::ADDRESS_TWOX.clone()];
+
+    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+
+    let mut leaf = HacFromTrs::new();
+    leaf.from = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
+    leaf.hacash = Amount::mei(1);
+    let act = AstSelect::create_list(vec![Box::new(leaf)]);
+    let bytes = act.serialize();
+
+    let err = ctx.action_call(AstSelect::KIND, bytes[2..].to_vec()).unwrap_err();
+    assert!(err.contains("signature") || err.contains("failed") || err.contains("verify"), "{}", err);
 }
 
 #[test]
@@ -474,7 +663,7 @@ fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
     let br_else = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(3, 33))]);
     let astif = AstIf::create_by(cond, br_if, br_else);
 
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 1), Some(11)); // cond committed
@@ -504,7 +693,7 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     ctx.state().set(vec![9], vec![99]); // parent baseline
 
     let old = ctx.state_fork(); // tx-level isolation
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least"));
     ctx.state_recover(old); // tx-level rollback on failure
@@ -536,7 +725,7 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(54, 54))]),
     );
 
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     outer_if.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 50), Some(50)); // outer cond
@@ -572,7 +761,7 @@ fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
         ],
     );
 
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     outer.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 60), Some(60));
@@ -608,7 +797,7 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     ctx.state().set(vec![79], vec![79]); // baseline
 
     let old = ctx.state_fork();
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least"));
     ctx.state_recover(old);
@@ -650,7 +839,7 @@ fn test_ast_deep_4level_success_path_commits_expected_state() {
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(88, 88))]),
     );
 
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     lvl1_if.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 80), Some(80));
@@ -698,7 +887,7 @@ fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
         ],
     );
 
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     lvl1_outer_select.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 90), Some(90));
@@ -708,6 +897,90 @@ fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
     assert_eq!(ast_state_get_u8(&mut ctx, 93), None); // must be isolated
     assert_eq!(ast_state_get_u8(&mut ctx, 94), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 96), None);
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_tree_depth_limit_6_rejects_7th_level() {
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+
+    let lvl7 = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(105, 105))]);
+    let lvl6 = AstSelect::create_list(vec![Box::new(lvl7)]);
+    let lvl5 = AstSelect::create_list(vec![Box::new(lvl6)]);
+    let lvl4 = AstSelect::create_list(vec![Box::new(lvl5)]);
+    let lvl3 = AstSelect::create_list(vec![Box::new(lvl4)]);
+    let lvl2 = AstSelect::create_list(vec![Box::new(lvl3)]);
+    let lvl1 = AstSelect::create_list(vec![Box::new(lvl2)]);
+
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    let err = lvl1.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("must succeed at least 1 but only 0"), "{}", err);
+    assert_eq!(ast_state_get_u8(&mut ctx, 105), None);
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_savepoint_recover_tex_and_p2sh() {
+    #[derive(Default, Debug, Clone, PartialEq, Eq)]
+    struct AstTestTexP2shSet;
+    impl Parse for AstTestTexP2shSet {
+        fn parse(&mut self, _buf: &[u8]) -> Ret<usize> { Ok(0) }
+    }
+    impl Serialize for AstTestTexP2shSet {
+        fn serialize(&self) -> Vec<u8> { vec![] }
+        fn size(&self) -> usize { 0 }
+    }
+    impl Field for AstTestTexP2shSet {
+        fn new() -> Self { Self::default() }
+    }
+    impl ToJSON for AstTestTexP2shSet {
+        fn to_json_fmt(&self, _fmt: &JSONFormater) -> String { "{}".to_owned() }
+    }
+    impl FromJSON for AstTestTexP2shSet {
+        fn from_json(&mut self, _json: &str) -> Ret<()> { Ok(()) }
+    }
+    struct AstTestP2sh;
+    impl P2sh for AstTestP2sh {
+        fn code_stuff(&self) -> &[u8] { b"x" }
+        fn witness(&self) -> &[u8] { b"y" }
+    }
+    impl ActExec for AstTestTexP2shSet {
+        fn execute(&self, ctx: &mut dyn Context) -> Ret<(u32, Vec<u8>)> {
+            ctx.tex_ledger().sat += 7;
+            let adr = Address::create_scriptmh([7u8; 20]);
+            ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
+            Ok((0, vec![]))
+        }
+    }
+    impl Description for AstTestTexP2shSet {}
+    impl Action for AstTestTexP2shSet {
+        fn kind(&self) -> u16 { 65003 }
+        fn level(&self) -> ActLv { ActLv::Ast }
+        fn as_any(&self) -> &dyn std::any::Any { self }
+    }
+
+    use crate::state::EmptyLogs;
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = crate::context::ContextInst::new(env, Box::new(AstTestState::default()), Box::new(EmptyLogs {}), &tx);
+    let old_adr = Address::create_scriptmh([6u8; 20]);
+    ctx.p2sh_set(old_adr, Box::new(AstTestP2sh)).unwrap();
+    let old_tex = ctx.tex_ledger().clone();
+    let new_adr = Address::create_scriptmh([7u8; 20]);
+    let inner = AstSelect::create_by(2, 2, vec![Box::new(AstTestTexP2shSet::new()), Box::new(AstTestFail::new())]);
+    let act = AstSelect::create_by(0, 1, vec![Box::new(inner)]);
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    act.execute(&mut ctx).unwrap();
+    assert_eq!(ctx.tex_ledger().zhu, old_tex.zhu);
+    assert_eq!(ctx.tex_ledger().sat, old_tex.sat);
+    assert!(ctx.p2sh(&old_adr).is_ok());
+    assert!(ctx.p2sh(&new_adr).is_err());
 }
 
 #[cfg(feature = "tex")]
@@ -854,7 +1127,7 @@ fn test_tex_action_signature_rejects_payload_tamper() {
     // tamper payload after sign
     act.add_cell(Box::new(CellCondHeightAtMost::new(100))).unwrap();
 
-    ctx.depth_set(CallDepth::new(-1));
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.contains("signature verify failed"));
 }

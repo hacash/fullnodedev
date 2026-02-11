@@ -79,9 +79,6 @@ async fn fee_raise(State(ctx): State<ApiCtx>, q: Query<Q5396>, body: Bytes) -> i
     }
     txb.set_fee(fee.clone());
     txb.fill_sign(&acc).unwrap();
-    if let Err(e) = txb.verify_signature() {
-        return api_error(&format!("transaction signature verify error: {}", &e))
-    }
     let txhash = txb.hash();
     let txhashwf = txb.hash_with_fee();
     // pkg

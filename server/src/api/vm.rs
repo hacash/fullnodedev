@@ -115,7 +115,7 @@ async fn contract_sandbox_call(State(ctx): State<ApiCtx>, q: Query<Q8365>) -> im
             hash: Hash::default(),
             coinbase: Address::default(),
         },
-        tx: block::create_tx_info(&tx),
+        tx: transaction::create_tx_info(&tx),
     };
     let mut ctxobj = ContextInst::new(env, substa, Box::new(EmptyLogs{}) ,&tx);
 
