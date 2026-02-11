@@ -5,7 +5,7 @@ action_define!{AstIf, 22,
     ActLv::Ast, // level
     // burn 90 fee , check child burn 90
     self.cond.burn_90() || self.br_if.burn_90() || self.br_else.burn_90(), 
-    [],
+    self.collect_req_sign(),
     {
         cond:    AstSelect
         br_if:   AstSelect
@@ -17,7 +17,8 @@ action_define!{AstIf, 22,
         if true {
             return errf!("ast if not open")
         }
-        //
+        let mut guard = ast_enter(ctx)?;
+        let ctx = guard.ctx();
         let snap = ctx_snapshot(ctx);
         match self.cond.execute(ctx) {
             // if br
@@ -47,6 +48,11 @@ impl AstIf {
         }
     }
 
+    pub(crate) fn collect_req_sign(&self) -> Vec<AddrOrPtr> {
+        let mut req = self.cond.collect_req_sign();
+        req.extend(self.br_if.collect_req_sign());
+        req.extend(self.br_else.collect_req_sign());
+        req
+    }
+
 }
-
-

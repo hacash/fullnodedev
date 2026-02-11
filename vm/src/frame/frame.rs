@@ -30,7 +30,6 @@ impl CallFrame {
     }
 
     pub fn increase(&mut self, r: &mut Resoure) -> VmrtRes<Frame> {
-        // Root: Frame::new() depth=0 (set by start_call). Nested: Frame::next() depth=parent+1
         let cap = &r.space_cap;
         if self.frames.len() >= cap.call_depth {
             return itr_err_code!(OutOfCallDepth)
@@ -60,15 +59,15 @@ pub struct Frame {
     pub pc: usize,
     pub mode: ExecMode,
     pub in_callcode: bool,
-    pub depth: isize,
+    pub depth: usize,
     pub types: Option<FuncArgvTypes>,
     pub callcode_caller_types: Option<FuncArgvTypes>,
     pub codes: Vec<u8>,
     pub oprnds: Stack,
     pub locals: Stack,
     pub heap: Heap,
-    pub ctxadr: ContractAddress, 
-    pub curadr: ContractAddress, 
+    pub ctxadr: ContractAddress,
+    pub curadr: ContractAddress,
 }
 
 
@@ -82,7 +81,6 @@ impl Frame {
     }
 
     pub fn new(r: &mut Resoure) -> Self {
-        // depth=0 default, set by start_call (root) or Frame::next (nested)
         let mut f = Self{
             oprnds: r.stack_allocat(),
             locals: r.stack_allocat(),
@@ -97,7 +95,6 @@ impl Frame {
     }
 
     pub fn next(&self, r: &mut Resoure) -> Self {
-        // Nested frame: depth = parent.depth + 1
         let mut f = Self::new(r);
         let stks = self.oprnds.limit() - self.oprnds.len();
         let locs = self.locals.limit() - self.locals.len();
@@ -105,7 +102,7 @@ impl Frame {
         f.locals.reset(locs);
         f.ctxadr = self.ctxadr.clone();
         f.curadr = self.curadr.clone();
-        f.depth = self.depth + 1; // nested call: depth increments
+        f.depth = self.depth + 1;
         f
     }
 

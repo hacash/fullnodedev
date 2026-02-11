@@ -1,11 +1,9 @@
 
-
-
 action_define!{AstSelect, 21, 
     ActLv::Ast, // level
     // burn 90 fee, check any sub child action
     self.actions.list().iter().any(|a|a.burn_90()),
-    [],
+    self.collect_req_sign(),
     {
         exe_min: Uint1
         exe_max: Uint1
@@ -18,6 +16,8 @@ action_define!{AstSelect, 21,
         if true {
             return errf!("ast select not open")
         }
+        let mut guard = ast_enter(ctx)?;
+        let ctx = guard.ctx();
         let slt_min = *self.exe_min as usize;
         let slt_max = *self.exe_max as usize;
         let slt_num = self.actions.length();
@@ -28,8 +28,8 @@ action_define!{AstSelect, 21,
         if slt_max > slt_num {
             return errf!("action ast select max cannot more than list num")
         }
-        if slt_num > 200 {
-            return errf!("action ast select num cannot more than 200")
+        if slt_num > TX_ACTIONS_MAX {
+            return errf!("action ast select num cannot more than {}", TX_ACTIONS_MAX)
         }
         // execute
         let mut ok = 0;
@@ -40,14 +40,15 @@ action_define!{AstSelect, 21,
             }
             // try execute
             let snap = ctx_snapshot(ctx);
-            if let Ok((g, r)) = act.execute(ctx) {
+            let exec_res = act.execute(ctx);
+            if let Ok((g, r)) = exec_res {
                 gas += g;
                 rv = r;
                 ok += 1;
                 ctx_merge(ctx, snap);
             } else {
                 ctx_recover(ctx, snap);
-            }   
+            }
         }
         // check at least
         if ok < slt_min {
@@ -87,8 +88,20 @@ impl AstSelect {
         }
     }
 
+    pub(crate) fn collect_req_sign(&self) -> Vec<AddrOrPtr> {
+        let mut req = vec![];
+        for act in self.actions.list() {
+            if let Some(sub) = AstSelect::downcast(act) {
+                req.extend(sub.collect_req_sign());
+                continue;
+            }
+            if let Some(sub) = AstIf::downcast(act) {
+                req.extend(sub.collect_req_sign());
+                continue;
+            }
+            req.extend(act.req_sign());
+        }
+        req
+    }
+
 }
-
-
-
-

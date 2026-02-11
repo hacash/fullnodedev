@@ -4,7 +4,7 @@
 
 
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct TexLedger {
     pub zhu: i64,
     pub sat: i64,

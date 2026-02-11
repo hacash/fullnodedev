@@ -93,12 +93,13 @@ macro_rules! action_define {
             fn execute(&$pself, $pctx: &mut dyn Context) -> Ret<(u32, Vec<u8>)> {
                 use std::any::Any;
                 if !$pctx.env().chain.fast_sync {
-                    check_action_level($pctx.depth().clone(), $pself, $pctx.tx().actions())?;
+                    check_action_level($pctx.level(), $pself, $pctx.tx().actions())?;
                 }
-                // act size is base gas use, if burn 90% fee to use 10 times fee
+                // act size is base gas use
+                // NOTE: burn_90 gas multiplier is handled centrally in ctx_action_call(),
+                // not here, to keep the logic in one place.
                 #[allow(unused_mut)]
-                let burn90fee10times = maybe!($pself.burn_90(), 10, 1);
-                let mut $pgas: u32 = $pself.size() as u32 * burn90fee10times;
+                let mut $pgas: u32 = $pself.size() as u32;
                 // execute action body
                 let res: Ret<Vec<u8>> = $exec;
                 let res = res?;
@@ -175,52 +176,54 @@ macro_rules! action_register {
 
 
 // check action level
-// Note: depth here is ctx.depth (mode level: 0=Main/P2sh, 1=Abst), not Frame.depth (call stack depth)
-pub fn check_action_level(depth: CallDepth, act: &dyn Action, actions: &Vec<Box<dyn Action>>) -> Rerr {
-        let depth: i8 = depth.into();
-        let kid = act.kind();
-        let alv = act.level();
-        let alvn: i8 = alv.clone().into();
-        if alv == ActLv::Any {
-            return Ok(()) // any depth can call
+pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<dyn Action>>) -> Rerr {
+    let kid = act.kind();
+    let alv = act.level();
+    let actlen = actions.len();
+    if actlen < 1 || actlen > TX_ACTIONS_MAX {
+        return errf!(
+            "action length {} is 0 or one transaction max actions is {}",
+            actlen,
+            TX_ACTIONS_MAX
+        )
+    }
+
+    macro_rules! check_level_top { ($actname: expr) => {
+        if ctx_level != ACTION_CTX_LEVEL_TOP {
+            return errf!("action {} just can execute on {}", kid, $actname)
+        }      
+    }}
+
+    if alv == ActLv::TopOnly {
+        check_level_top!{"TOP_ONLY"}
+        if actlen > 1 {
+            return errf!("action {} just can execute on TOP_ONLY", kid)
         }
-        let actlen = actions.len();
-        if actlen < 1 || actlen > 200 {
-            return errf!("action length {} is 0 or one transaction max actions is 200", actlen)
+    } else if alv == ActLv::TopUnique {
+        check_level_top!{"TOP_UNIQUE"}
+        let mut smalv = 0;
+        for act in actions {
+            if act.kind() == kid {
+                smalv += 1;
+            }
         }
-        if alv == ActLv::TopOnly {
-            if depth >= 0 {
-                return errf!("action {} just can execute on TOP_ONLY", kid)
-            }
-            if actlen > 1 {
-                return errf!("action {} just can execute on TOP_ONLY", kid)
-            }
-        } else if alv == ActLv::TopUnique {
-            if depth >= 0 {
-                return errf!("action {} just can execute on level TOP_UNIQUE", kid)
-            }
-            let mut smalv = 0;
-            for act in actions {
-                if act.kind() == kid {
-                    smalv += 1;
-                }
-            }
-            if smalv > 1 {
-                return errf!("action {} just can execute on level TOP_UNIQUE", kid)
-            }
-        } else if alv == ActLv::Top {
-            if depth >= 0 {
-                return errf!("action just can execute on level TOP")
-            }
-        } else if alv == ActLv::Ast {
-            if depth >= 0 {
-                return errf!("action just can execute on level AST")
-            }
-        } else if depth > alvn {
-            return errf!("action just can execute on depth {} but call in {}", alvn, depth)
+        if smalv > 1 {
+            return errf!("action {} just can execute on level TOP_UNIQUE", kid)
         }
-        // ok
-        Ok(())
+    } else if alv == ActLv::Top {
+        check_level_top!{"TOP"}
+    } else if let Some(max_ctx_level) = alv.max_ctx_level() {
+        if ctx_level > max_ctx_level {
+            return errf!(
+                "action {} max ctx level {} but call in {}",
+                kid,
+                max_ctx_level,
+                ctx_level
+            )
+        }
+    }
+    // ok
+    Ok(())
 }
 
 

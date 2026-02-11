@@ -75,8 +75,8 @@ pub fn block_verify(cnf: &EngineConf, isrt_blk: &dyn BlockRead, blk_data_len: us
         if tx.timestamp().uint() > cur_time {
             return errf!("tx timestamp {} cannot more than now {}", tx.timestamp(), cur_time)
         }
-        // verify signature
-        tx.as_ref().as_read().verify_signature()?; 
+        // Signature verification is enforced in tx.execute() (except fast_sync mode),
+        // keeping execution as the single consensus anchor point.
     }
     // check size
     if txttnum != txcount {
