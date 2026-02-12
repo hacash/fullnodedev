@@ -289,28 +289,30 @@ pub fn execute_code(
 	    }}
 
 	    // NTFUNC: pure native function (has args, stack 1→1, allowed in Pure mode)
-        macro_rules! ntcall { ($func_or_env: expr, $idx: expr) => {
+        macro_rules! ntcall { ($func_or_env: expr, $idx: expr) => {{
+            // Evaluate idx expression exactly once (e.g. pu8!()).
+            let nt_idx = $idx;
             if $func_or_env {
                 let argv = ops.pop()?.canbe_ext_call_data(heap)?;
                 gas += gst.ntfunc_bytes(argv.len());
-                let (r, g) = NativeFunc::call(hei, $idx, &argv)?;
+                let (r, g) = NativeFunc::call(hei, nt_idx, &argv)?;
                 let r = r.valid(cap)?;
                 gas += gst.ntfunc_bytes(bytes_len(&r));
                 ops.push(r)?;
                 gas += g;
             } else {
                 nsr!();
-                let r = match $idx {
+                let r = match nt_idx {
                     NativeEnv::idx_context_address => Value::Address(context_addr.to_addr()),
-                    _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not find", $idx),
+                    _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not find", nt_idx),
                 };
-                let g = NativeEnv::gas($idx)?;
+                let g = NativeEnv::gas(nt_idx)?;
                 let r = r.valid(cap)?;
                 gas += gst.ntfunc_bytes(bytes_len(&r));
                 ops.push(r)?;
                 gas += g;
             }    
-        }}
+        }}}
 
         match instruction {
             // ext action

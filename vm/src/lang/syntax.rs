@@ -1,6 +1,6 @@
+use hex;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
-use hex;
 
 enum SymbolEntry {
     Slot(u8, bool),
@@ -19,7 +19,7 @@ pub struct Syntax {
     local_alloc: u8,
     check_op: bool,
     expect_retval: bool,
-    is_ircode: bool,  // true for ircode mode, false for bytecode mode
+    is_ircode: bool, // true for ircode mode, false for bytecode mode
     // leftv: Box<dyn AST>,
     irnode: IRNodeArray, // replaced IRNodeArray -> IRNodeArray
     source_map: SourceMap,
@@ -29,7 +29,6 @@ pub struct Syntax {
     /// External constants: (name, IRNode) pairs
     ext_consts: Option<Vec<(String, Box<dyn IRNode>)>>,
 }
-
 
 #[allow(dead_code)]
 impl Syntax {
@@ -115,8 +114,6 @@ impl Syntax {
         Ok(Box::new(arys))
     }
 
-
-
     /*
     pub fn bind_uses(&mut self, s: String, adr: Vec<u8>) -> Rerr {
         if let Some(..) = self.bduses.get(&s) {
@@ -135,11 +132,10 @@ impl Syntax {
         }
     }
     */
-    
 
     fn next(&mut self) -> Ret<Token> {
         if self.idx >= self.tokens.len() {
-            return errf!("item_with_left get next token error")
+            return errf!("item_with_left get next token error");
         }
         let nxt = &self.tokens[self.idx];
         self.idx += 1;
@@ -147,7 +143,8 @@ impl Syntax {
     }
 
     fn with_expect_retval<F, R>(&mut self, expect: bool, f: F) -> R
-    where F: FnOnce(&mut Self) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
     {
         let prev = self.expect_retval;
         self.expect_retval = expect;
@@ -157,15 +154,15 @@ impl Syntax {
     }
 
     pub fn link_lib(&self, s: &String) -> Ret<u8> {
-        match self.bdlibs.get(s).map(|d|d.0) {
+        match self.bdlibs.get(s).map(|d| d.0) {
             Some(i) => Ok(i),
-            _ =>  errf!("cannot find any lib bind '{}'", s)
+            _ => errf!("cannot find any lib bind '{}'", s),
         }
     }
 
     pub fn bind_lib(&mut self, s: String, idx: u8, adr: Option<field::Address>) -> Rerr {
         if let Some(..) = self.bdlibs.get(&s) {
-            return errf!("<use> cannot repeat bind the symbol '{}'", s)
+            return errf!("<use> cannot repeat bind the symbol '{}'", s);
         }
         if let Some(adr) = adr {
             adr.must_contract()?;
@@ -178,34 +175,34 @@ impl Syntax {
     fn parse_lib_index_token(token: &Token) -> Ret<u8> {
         if let Integer(n) = token {
             if *n > u8::MAX as u128 {
-                return errf!("call index overflow")
+                return errf!("call index overflow");
             }
-            return Ok(*n as u8)
+            return Ok(*n as u8);
         }
         errf!("call index must be integer")
     }
 
-    fn parse_fn_sig_str(s: &str) -> Ret<[u8;4]> {
+    fn parse_fn_sig_str(s: &str) -> Ret<[u8; 4]> {
         let hex = s.strip_prefix("0x").unwrap_or(s);
         if hex.len() != 8 {
-            return errf!("function signature must be 8 hex digits, got '{}'", s)
+            return errf!("function signature must be 8 hex digits, got '{}'", s);
         }
         let bytes = match hex::decode(hex) {
             Ok(b) => b,
             Err(_) => return errf!("function signature '{}' decode error", s),
         };
-        let arr: [u8;4] = match bytes.as_slice().try_into() {
+        let arr: [u8; 4] = match bytes.as_slice().try_into() {
             Ok(a) => a,
             Err(_) => return errf!("function signature expects 4 bytes"),
         };
         Ok(arr)
     }
 
-    fn parse_fn_sig_token(token: &Token) -> Ret<[u8;4]> {
+    fn parse_fn_sig_token(token: &Token) -> Ret<[u8; 4]> {
         match token {
             Identifier(name) => Self::parse_fn_sig_str(name),
             Bytes(bytes) if bytes.len() == 4 => {
-                let arr: [u8;4] = bytes.as_slice().try_into().unwrap();
+                let arr: [u8; 4] = bytes.as_slice().try_into().unwrap();
                 Ok(arr)
             }
             Integer(n) if *n <= u32::MAX as u128 => {
@@ -213,7 +210,9 @@ impl Syntax {
                 Ok(v.to_be_bytes())
             }
             Bytes(..) => errf!("function signature bytes must be exactly 4 bytes"),
-            _ => errf!("function signature must be hex identifier, decimal <u32>, or 4-byte literal"),
+            _ => {
+                errf!("function signature must be hex identifier, decimal <u32>, or 4-byte literal")
+            }
         }
     }
 
@@ -258,12 +257,23 @@ impl Syntax {
         None
     }
 
-    pub fn bind_local_assign(&mut self, s: String, v: Box<dyn IRNode>, kind: SlotKind) -> Ret<Box<dyn IRNode>> {
+    pub fn bind_local_assign(
+        &mut self,
+        s: String,
+        v: Box<dyn IRNode>,
+        kind: SlotKind,
+    ) -> Ret<Box<dyn IRNode>> {
         let idx = self.local_alloc;
         self.bind_local_assign_replace(s, idx, v, kind)
     }
 
-    pub fn bind_local_assign_replace(&mut self, s: String, idx: u8, v: Box<dyn IRNode>, kind: SlotKind) -> Ret<Box<dyn IRNode>> {
+    pub fn bind_local_assign_replace(
+        &mut self,
+        s: String,
+        idx: u8,
+        v: Box<dyn IRNode>,
+        kind: SlotKind,
+    ) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         self.bind_local(s, idx, kind)?;
         Ok(push_single_p1(PUT, idx, v))
@@ -284,7 +294,7 @@ impl Syntax {
             lcalc
         };
         let Identifier(id) = self.next()? else {
-            return e
+            return e;
         };
         let vk = id.clone();
         let mut nxt = self.next()?;
@@ -312,9 +322,9 @@ impl Syntax {
         }
         match (idx, val) {
             (Some(i), Some(v)) => self.bind_local_assign_replace(vk, i, v, kind),
-            (.., Some(v))      => self.bind_local_assign(vk, v, kind),
-            (Some(i), ..)      => self.bind_local(vk, i, kind),
-            _ => return e
+            (.., Some(v)) => self.bind_local_assign(vk, v, kind),
+            (Some(i), ..) => self.bind_local(vk, i, kind),
+            _ => return e,
         }
     }
 
@@ -323,7 +333,7 @@ impl Syntax {
         self.reserve_slot(idx)?;
         if idx >= self.local_alloc {
             if idx == u8::MAX {
-                return errf!("slot {} exceeds limit", idx)
+                return errf!("slot {} exceeds limit", idx);
             }
             self.local_alloc = idx + 1;
         }
@@ -335,7 +345,7 @@ impl Syntax {
 
     fn register_slot_symbol(&mut self, s: String, idx: u8, mutable: bool) -> Rerr {
         if let Some(..) = self.symbols.get(&s) {
-            return errf!("symbol '{}' already bound", s)
+            return errf!("symbol '{}' already bound", s);
         }
         self.symbols.insert(s, SymbolEntry::Slot(idx, mutable));
         Ok(())
@@ -343,7 +353,7 @@ impl Syntax {
 
     fn register_bind_symbol(&mut self, s: String, entry: SymbolEntry) -> Rerr {
         if let Some(SymbolEntry::Slot(_, _)) = self.symbols.get(&s) {
-            return errf!("cannot rebind slot '{}' with bind", s)
+            return errf!("cannot rebind slot '{}' with bind", s);
         }
         self.symbols.insert(s, entry);
         Ok(())
@@ -356,7 +366,7 @@ impl Syntax {
 
     fn reserve_slot(&mut self, idx: u8) -> Rerr {
         if self.slot_used.contains(&idx) {
-            return errf!("slot {} already bound", idx)
+            return errf!("slot {} already bound", idx);
         }
         self.slot_used.insert(idx);
         Ok(())
@@ -402,18 +412,23 @@ impl Syntax {
         use Bytecode::*;
         let (i, mutable) = self.slot_info(s)?;
         if !mutable {
-            return errf!("cannot assign to immutable symbol '{}'", s)
+            return errf!("cannot assign to immutable symbol '{}'", s);
         }
         self.source_map.mark_slot_mutated(i);
         Ok(push_single_p1(PUT, i, v))
     }
-    
-    pub fn assign_local(&mut self, s: &String, v: Box<dyn IRNode>, op: &Token) -> Ret<Box<dyn IRNode>> {
+
+    pub fn assign_local(
+        &mut self,
+        s: &String,
+        v: Box<dyn IRNode>,
+        op: &Token,
+    ) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         use KwTy::*;
         let (i, mutable) = self.slot_info(s)?;
         if !mutable {
-            return errf!("cannot assign to immutable symbol '{}'", s)
+            return errf!("cannot assign to immutable symbol '{}'", s);
         }
         self.source_map.mark_slot_mutated(i);
         if i < 64 {
@@ -424,20 +439,24 @@ impl Syntax {
                 Keyword(AsgDiv) => 0b11000000,
                 _ => unreachable!(),
             };
-            return Ok(push_single_p1(XOP, mark, v))
+            return Ok(push_single_p1(XOP, mark, v));
         }
         // $0 = $0 + 1
         let getv = push_local_get(i, s!(""));
-        let opsv = Box::new(IRNodeDouble{hrtv: true, inst: match op {
-            Keyword(AsgAdd) => ADD,
-            Keyword(AsgSub) => SUB,
-            Keyword(AsgMul) => MUL,
-            Keyword(AsgDiv) => DIV,
-            _ => unreachable!()
-        }, subx: getv, suby: v});
+        let opsv = Box::new(IRNodeDouble {
+            hrtv: true,
+            inst: match op {
+                Keyword(AsgAdd) => ADD,
+                Keyword(AsgSub) => SUB,
+                Keyword(AsgMul) => MUL,
+                Keyword(AsgDiv) => DIV,
+                _ => unreachable!(),
+            },
+            subx: getv,
+            suby: v,
+        });
         Ok(push_single_p1(PUT, i, opsv))
     }
-    
 
     pub fn new(mut tokens: Vec<Token>) -> Self {
         use Bytecode::*;
@@ -450,26 +469,27 @@ impl Syntax {
         }
     }
 
-
     pub fn item_with_left(&mut self, mut left: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
         use Bytecode::*;
         use KwTy::*;
         let max = self.tokens.len();
         let sfptr = self as *mut Syntax;
         if self.idx >= self.tokens.len() {
-            return Ok(left) // end
+            return Ok(left); // end
         }
-        macro_rules! next { () => {{
-            if self.idx >= max {
-                return errf!("item with left get next token error")
-            }
-            let nxt = self.tokens[self.idx].clone();
-            self.idx += 1;
-            nxt
-        }}}
+        macro_rules! next {
+            () => {{
+                if self.idx >= max {
+                    return errf!("item with left get next token error");
+                }
+                let nxt = self.tokens[self.idx].clone();
+                self.idx += 1;
+                nxt
+            }};
+        }
         loop {
             if self.idx >= max {
-                break
+                break;
             }
             let nxt = next!();
             match nxt {
@@ -480,26 +500,29 @@ impl Syntax {
                     let k = self.item_must(0)?;
                     k.checkretval()?; // key must be a value expression
                     let Partition(']') = next!() else {
-                        return errf!("item get statement format error")
+                        return errf!("item get statement format error");
                     };
-                    left = Box::new(IRNodeDouble { hrtv: true, inst: ITEMGET, subx: left, suby: k });
+                    left = Box::new(IRNodeDouble {
+                        hrtv: true,
+                        inst: ITEMGET,
+                        subx: left,
+                        suby: k,
+                    });
                 }
-                Keyword(KwTy::Assign) 
-                | Keyword(AsgAdd) 
+                Keyword(KwTy::Assign)
+                | Keyword(AsgAdd)
                 | Keyword(AsgSub)
                 | Keyword(AsgMul)
                 | Keyword(AsgDiv) => {
                     let e = errf!("assign statement format error");
-                    let mut id: Option<String> = None; 
+                    let mut id: Option<String> = None;
                     if let Some(ir) = left.as_any().downcast_ref::<IRNodeParam1>() {
                         id = Some(ir.as_text().clone());
                     };
                     if let Some(ir) = left.as_any().downcast_ref::<IRNodeLeaf>() {
                         id = Some(ir.as_text().clone());
                     };
-                    let Some(id) = id else {
-                        return e
-                    };
+                    let Some(id) = id else { return e };
                     let v = unsafe { (&mut *sfptr).item_must(0)? };
                     v.checkretval()?; // must retv
                     left = match nxt {
@@ -523,9 +546,15 @@ impl Syntax {
                     let skip_cast = target_ty
                         .and_then(|ty| Self::literal_value_type(&*left).filter(|lit| *lit == ty))
                         .is_some();
-                    macro_rules! cuto {($inst: expr) => { 
-                        Box::new(IRNodeSingle{hrtv, inst: $inst, subx: left} )
-                    }}
+                    macro_rules! cuto {
+                        ($inst: expr) => {
+                            Box::new(IRNodeSingle {
+                                hrtv,
+                                inst: $inst,
+                                subx: left,
+                            })
+                        };
+                    }
                     if !skip_cast {
                         let v: Box<dyn IRNode> = match nk {
                             Keyword(U8) => cuto!(CU8),
@@ -555,21 +584,39 @@ impl Syntax {
                     left.checkretval()?; // must retv
                     let subx = left;
                     let mut res: Box<dyn IRNode> = match nk {
-                        Keyword(Nil)     => Box::new(IRNodeSingle{hrtv, subx, inst: TNIL   }),
-                        Keyword(List)    => Box::new(IRNodeSingle{hrtv, subx, inst: TLIST  }),
-                        Keyword(Map)     => Box::new(IRNodeSingle{hrtv, subx, inst: TMAP  }),
-                        Keyword(Bool)    => push_single_p1_hr(hrtv, TIS, ValueTy::Bool    as u8, subx),
-                        Keyword(U8)      => push_single_p1_hr(hrtv, TIS, ValueTy::U8      as u8, subx),
-                        Keyword(U16)     => push_single_p1_hr(hrtv, TIS, ValueTy::U16     as u8, subx),
-                        Keyword(U32)     => push_single_p1_hr(hrtv, TIS, ValueTy::U32     as u8, subx),
-                        Keyword(U64)     => push_single_p1_hr(hrtv, TIS, ValueTy::U64     as u8, subx),
-                        Keyword(U128)    => push_single_p1_hr(hrtv, TIS, ValueTy::U128    as u8, subx),
-                        Keyword(Bytes)   => push_single_p1_hr(hrtv, TIS, ValueTy::Bytes   as u8, subx),
-                        Keyword(Address) => push_single_p1_hr(hrtv, TIS, ValueTy::Address as u8, subx),
-                        _ => return e
+                        Keyword(Nil) => Box::new(IRNodeSingle {
+                            hrtv,
+                            subx,
+                            inst: TNIL,
+                        }),
+                        Keyword(List) => Box::new(IRNodeSingle {
+                            hrtv,
+                            subx,
+                            inst: TLIST,
+                        }),
+                        Keyword(Map) => Box::new(IRNodeSingle {
+                            hrtv,
+                            subx,
+                            inst: TMAP,
+                        }),
+                        Keyword(Bool) => push_single_p1_hr(hrtv, TIS, ValueTy::Bool as u8, subx),
+                        Keyword(U8) => push_single_p1_hr(hrtv, TIS, ValueTy::U8 as u8, subx),
+                        Keyword(U16) => push_single_p1_hr(hrtv, TIS, ValueTy::U16 as u8, subx),
+                        Keyword(U32) => push_single_p1_hr(hrtv, TIS, ValueTy::U32 as u8, subx),
+                        Keyword(U64) => push_single_p1_hr(hrtv, TIS, ValueTy::U64 as u8, subx),
+                        Keyword(U128) => push_single_p1_hr(hrtv, TIS, ValueTy::U128 as u8, subx),
+                        Keyword(Bytes) => push_single_p1_hr(hrtv, TIS, ValueTy::Bytes as u8, subx),
+                        Keyword(Address) => {
+                            push_single_p1_hr(hrtv, TIS, ValueTy::Address as u8, subx)
+                        }
+                        _ => return e,
                     };
                     if is_not {
-                        res = Box::new(IRNodeSingle{hrtv, inst: NOT, subx: res})
+                        res = Box::new(IRNodeSingle {
+                            hrtv,
+                            inst: NOT,
+                            subx: res,
+                        })
                     }
                     left = res
                 }
@@ -590,7 +637,10 @@ impl Syntax {
                     self.check_op = true;
                     left = res;
                 }
-                _ => { self.idx -= 1; break }
+                _ => {
+                    self.idx -= 1;
+                    break;
+                }
             }
         }
         Ok(left)
@@ -607,9 +657,14 @@ impl Syntax {
             self.consume_operator();
             let mut right = self.item_must(0)?;
             right = self.parse_next_op(right, op.next_min_prec())?;
-            left.checkretval()?;  // must retv
+            left.checkretval()?; // must retv
             right.checkretval()?; // must retv
-            left = Box::new(IRNodeDouble{hrtv: true, inst: op.bytecode(), subx: left, suby: right});
+            left = Box::new(IRNodeDouble {
+                hrtv: true,
+                inst: op.bytecode(),
+                subx: left,
+                suby: right,
+            });
         }
         Ok(left)
     }
@@ -641,7 +696,7 @@ impl Syntax {
         self.idx += jp;
         self.with_expect_retval(true, |s| match s.item_may()? {
             Some(n) => Ok(n),
-            None => errf!("not match next Syntax node")
+            None => errf!("not match next Syntax node"),
         })
     }
 
@@ -651,20 +706,21 @@ impl Syntax {
         // can be byte-for-byte stable under any PrintOption settings.
         Ok(Box::new(self.item_may_block(keep_retval)?))
     }
-    
-    pub fn item_may_block(&mut self, keep_retval: bool) -> Ret<IRNodeArray> { // return type changed
+
+    pub fn item_may_block(&mut self, keep_retval: bool) -> Ret<IRNodeArray> {
+        // return type changed
         let inst = Self::opcode_irblock(keep_retval);
         let mut block = IRNodeArray::with_opcode(inst); // was IRNodeArray::with_opcode(inst);
         let end = self.tokens.len() - 1; // trailing synthetic sentinel
         if self.idx >= end {
-            return errf!("block format error")
+            return errf!("block format error");
         }
         let nxt = &self.tokens[self.idx];
         let se = match nxt {
             Partition('{') => '}',
             Partition('(') => ')',
             Partition('[') => ']',
-            _ => return errf!("block format error")
+            _ => return errf!("block format error"),
         };
         self.idx += 1;
         let mut block_err = false;
@@ -673,34 +729,34 @@ impl Syntax {
             loop {
                 if s.idx >= end {
                     block_err = true;
-                    break
+                    break;
                 }
                 let nxt = &s.tokens[s.idx];
                 if let Partition(sp) = nxt {
                     if *sp == se {
                         closed = true;
                         s.idx += 1;
-                        break
-                    }else if matches!(sp, '}'|')'|']') {
+                        break;
+                    } else if matches!(sp, '}' | ')' | ']') {
                         block_err = true;
-                        break
+                        break;
                     }
                 }
-                let Some(li) = s.item_may()? else {
-                    break
-                };
-                block.push( li );
+                let Some(li) = s.item_may()? else { break };
+                block.push(li);
             }
             Ok::<(), Error>(())
         })?;
         if block_err || !closed {
-            return errf!("block format error")
+            return errf!("block format error");
         }
         if keep_retval {
             match block.subs.last() {
                 None => return errf!("block expression cannot be empty"),
-                Some(last) if !last.hasretval() => return errf!("block expression must return value"),
-                _ => {},
+                Some(last) if !last.hasretval() => {
+                    return errf!("block expression must return value")
+                }
+                _ => {}
             }
         }
         Ok(block)
@@ -713,8 +769,9 @@ impl Syntax {
             return e;
         }
         let mut nxt = self.next()?;
-        if let Partition('{')= nxt {} else {
-            return e
+        if let Partition('{') = nxt {
+        } else {
+            return e;
         };
         let mut params = 0;
         let mut param_names = Vec::new();
@@ -767,13 +824,15 @@ impl Syntax {
         let max = self.tokens.len() - 1;
         // let e0 = errf!("not find identifier '{}'", id);
         let e1 = errf!("call express after identifier format error");
-        macro_rules! next {() => {{
-            self.idx += 1;
-            if self.idx >= max {
-                return e1
-            }
-            &self.tokens[self.idx]
-        }}}           
+        macro_rules! next {
+            () => {{
+                self.idx += 1;
+                if self.idx >= max {
+                    return e1;
+                }
+                &self.tokens[self.idx]
+            }};
+        }
         if start_with_char(&id, '$') {
             let stripped = id.trim_start_matches('$');
             if stripped == "param" {
@@ -785,46 +844,58 @@ impl Syntax {
         }
         if self.idx < max {
             let mut nxt = &self.tokens[self.idx];
-            if let Partition('(') = nxt { // function call
-                return self.item_func_call(id)
+            if let Partition('(') = nxt {
+                // function call
+                return self.item_func_call(id);
             } else if let Keyword(Dot) = nxt {
-                    nxt = next!();
-                    let Identifier(func) = nxt else {
-                        return e1
+                nxt = next!();
+                let Identifier(func) = nxt else { return e1 };
+                self.idx += 1;
+                let fnsg = calc_func_sign(&func);
+                self.source_map.register_func(fnsg, func.clone())?;
+                let fnpm = self.deal_func_argv()?;
+                if id == "this" || id == "self" || id == "super" {
+                    let inst = match id.as_str() {
+                        "this" => CALLTHIS,
+                        "self" => CALLSELF,
+                        "super" => CALLSUPER,
+                        _ => unreachable!(),
                     };
-                    self.idx += 1;
-                    let fnsg = calc_func_sign(&func);
-                    self.source_map.register_func(fnsg, func.clone())?;
-                    let fnpm = self.deal_func_argv()?;
-                    if id == "this" || id == "self" || id == "super" {
-                        let inst = match id.as_str() {
-                            "this" => CALLTHIS,
-                            "self" => CALLSELF,
-                            "super" => CALLSUPER,
-                            _ => unreachable!(),
-                        };
-                        let para: Vec<u8> = fnsg.to_vec(); // fnsig
-                        return Ok(Box::new(IRNodeParamsSingle{hrtv: true, inst, para, subx: fnpm}))
-                    }
-                    // CALL
-                    let libi = self.link_lib(&id)?;
-                    let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
-                    return Ok(Box::new(IRNodeParamsSingle{hrtv: true, inst: CALL, para,  subx: fnpm}))
-                }else if Keyword(Colon) == *nxt || Keyword(DColon) == *nxt {
-                    let is_static = Keyword(DColon) == *nxt;
-                    nxt = next!();
-                    let Identifier(func) = nxt else {
-                        return e1
-                    };
-                    self.idx += 1;
-                    let fnsg = calc_func_sign(&func);
-                    self.source_map.register_func(fnsg, func.clone())?;
-                    let fnpm = self.deal_func_argv()?;
-                    let inst = maybe!(is_static, CALLPURE, CALLVIEW);
-                    let libi = self.link_lib(&id)?;
-                    let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
-                    return Ok(Box::new(IRNodeParamsSingle{hrtv: true, inst, para, subx: fnpm}))
+                    let para: Vec<u8> = fnsg.to_vec(); // fnsig
+                    return Ok(Box::new(IRNodeParamsSingle {
+                        hrtv: true,
+                        inst,
+                        para,
+                        subx: fnpm,
+                    }));
                 }
+                // CALL
+                let libi = self.link_lib(&id)?;
+                let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
+                return Ok(Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst: CALL,
+                    para,
+                    subx: fnpm,
+                }));
+            } else if Keyword(Colon) == *nxt || Keyword(DColon) == *nxt {
+                let is_static = Keyword(DColon) == *nxt;
+                nxt = next!();
+                let Identifier(func) = nxt else { return e1 };
+                self.idx += 1;
+                let fnsg = calc_func_sign(&func);
+                self.source_map.register_func(fnsg, func.clone())?;
+                let fnpm = self.deal_func_argv()?;
+                let inst = maybe!(is_static, CALLPURE, CALLVIEW);
+                let libi = self.link_lib(&id)?;
+                let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
+                return Ok(Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst,
+                    para,
+                    subx: fnpm,
+                }));
+            }
         }
         self.link_symbol(&id)
     }
@@ -834,23 +905,89 @@ impl Syntax {
         use KwTy::*;
         let max = self.tokens.len() - 1;
         if self.idx >= max {
-            return Ok(None) // end
+            return Ok(None); // end
         }
-        macro_rules! next { () => {{
-            if self.idx >= max {
-                return errf!("item_may get next token error")
-            }
-            let nxt = &self.tokens[self.idx];
-            self.idx += 1;
-            nxt
-        }}}
+        macro_rules! next {
+            () => {{
+                if self.idx >= max {
+                    return errf!("item_may get next token error");
+                }
+                let nxt = &self.tokens[self.idx];
+                self.idx += 1;
+                nxt
+            }};
+        }
         let mut nxt = next!();
         let mut item: Box<dyn IRNode> = match nxt {
             Identifier(id) => self.item_identifier(id.clone())?,
             Keyword(This) => self.item_identifier("this".to_string())?,
             Keyword(Self_) => self.item_identifier("self".to_string())?,
             Keyword(Super) => self.item_identifier("super".to_string())?,
-            Integer(n) => push_num(*n),
+            Integer(n) => {
+                let num_node = push_num(*n);
+                // Check for type suffix
+                if self.idx < self.tokens.len() {
+                    let next_tk = &self.tokens[self.idx];
+                    if let Keyword(kw) = next_tk {
+                        // Perform compile-time overflow check
+                        match kw {
+                            KwTy::U8 => {
+                                if *n > u8::MAX as u128 {
+                                    return errf!("integer {} overflows u8 (max: {})", n, u8::MAX);
+                                }
+                                self.idx += 1;
+                                push_single(CU8, num_node)
+                            }
+                            KwTy::U16 => {
+                                if *n > u16::MAX as u128 {
+                                    return errf!(
+                                        "integer {} overflows u16 (max: {})",
+                                        n,
+                                        u16::MAX
+                                    );
+                                }
+                                self.idx += 1;
+                                push_single(CU16, num_node)
+                            }
+                            KwTy::U32 => {
+                                if *n > u32::MAX as u128 {
+                                    return errf!(
+                                        "integer {} overflows u32 (max: {})",
+                                        n,
+                                        u32::MAX
+                                    );
+                                }
+                                self.idx += 1;
+                                push_single(CU32, num_node)
+                            }
+                            KwTy::U64 => {
+                                if *n > u64::MAX as u128 {
+                                    return errf!(
+                                        "integer {} overflows u64 (max: {})",
+                                        n,
+                                        u64::MAX
+                                    );
+                                }
+                                self.idx += 1;
+                                push_single(CU64, num_node)
+                            }
+                            KwTy::U128 => {
+                                self.idx += 1;
+                                push_single(CU128, num_node)
+                            }
+                            _ => {
+                                // Not a type suffix, treat as identifier
+                                num_node
+                            }
+                        }
+                    } else {
+                        num_node
+                    }
+                } else {
+                    num_node
+                }
+            }
+            Token::Character(b) => push_num(*b as u128),
             Token::Address(a) => push_addr(*a),
             Token::Bytes(b) => push_bytes(b)?,
             Partition('(') => {
@@ -861,17 +998,15 @@ impl Syntax {
                 exp.checkretval()?; // must retv
                 let e = errf!("(..) expression format error");
                 nxt = next!();
-                let Partition(')') = nxt else {
-                    return e
-                };
-                Box::new(IRNodeWrapOne{node: exp})
+                let Partition(')') = nxt else { return e };
+                Box::new(IRNodeWrapOne { node: exp })
             }
             Partition('[') => {
                 let mut subs = vec![];
                 loop {
                     nxt = next!();
                     if let Partition(']') = nxt {
-                        break
+                        break;
                     };
                     self.idx -= 1;
                     let item = self.item_must(0)?;
@@ -890,7 +1025,7 @@ impl Syntax {
                     expr.checkretval()?; // must retv
                     push_single(NOT, expr)
                 }
-                _ => return errf!("operator {:?} cannot start expression", op)
+                _ => return errf!("operator {:?} cannot start expression", op),
             },
             Keyword(Not) => {
                 let expr = self.item_must(0)?;
@@ -900,7 +1035,7 @@ impl Syntax {
             Keyword(While) => {
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
-                // let e = errf!("while statement format error");
+                                    // let e = errf!("while statement format error");
                 let suby = self.item_may_list(false)?;
                 push_double_box(IRWHILE, exp, suby)
             }
@@ -909,7 +1044,7 @@ impl Syntax {
                 exp.checkretval()?; // must retv
                 let keep_retval = self.expect_retval;
                 let list = self.item_may_list(keep_retval)?;
-                let mut ifobj = IRNodeTriple{
+                let mut ifobj = IRNodeTriple {
                     hrtv: keep_retval,
                     inst: Self::opcode_irif(keep_retval),
                     subx: exp,
@@ -920,9 +1055,9 @@ impl Syntax {
                 let Keyword(Else) = nxt else {
                     // no else
                     if keep_retval {
-                        return errf!("if expression must have else branch")
+                        return errf!("if expression must have else branch");
                     }
-                    return Ok(Some(Box::new(ifobj)))
+                    return Ok(Some(Box::new(ifobj)));
                 };
                 self.idx += 1; // over else token
                 let nxt = &self.tokens[self.idx];
@@ -930,25 +1065,24 @@ impl Syntax {
                 let Keyword(If) = nxt else {
                     let elseobj = self.item_may_list(keep_retval)?;
                     ifobj.subz = elseobj;
-                    return Ok(Some(Box::new(ifobj)))
+                    return Ok(Some(Box::new(ifobj)));
                 };
                 // else if
-                let elseifobj = self.with_expect_retval(keep_retval, |s| match s.item_may()? {
-                    Some(n) => Ok(n),
-                    None => errf!("else if statement format error"),
-                })?;
+                let elseifobj =
+                    self.with_expect_retval(keep_retval, |s| match s.item_may()? {
+                        Some(n) => Ok(n),
+                        None => errf!("else if statement format error"),
+                    })?;
                 ifobj.subz = elseifobj;
                 Box::new(ifobj)
             }
             Keyword(KwTy::Const) => {
                 let e = errf!("const statement format error");
                 let token = self.next()?;
-                let Identifier(name) = token else {
-                    return e
-                };
+                let Identifier(name) = token else { return e };
                 let token = self.next()?;
                 let Keyword(KwTy::Assign) = token else {
-                    return e
+                    return e;
                 };
                 let val_token = self.next()?;
                 let val_node: Box<dyn IRNode> = match &val_token {
@@ -965,14 +1099,17 @@ impl Syntax {
                         } else {
                             format!("0x{}", hex::encode(b))
                         }
-                    },
+                    }
                     Token::Address(a) => a.to_readable(),
                     _ => unreachable!(),
                 };
                 if self.symbols.contains_key(&name) {
-                    return errf!("symbol '{}' already defined", name)
+                    return errf!("symbol '{}' already defined", name);
                 }
-                self.symbols.insert(name.clone(), SymbolEntry::Const(dyn_clone::clone_box(val_node.as_ref())));
+                self.symbols.insert(
+                    name.clone(),
+                    SymbolEntry::Const(dyn_clone::clone_box(val_node.as_ref())),
+                );
                 self.source_map.register_const(name, val_str)?;
                 return Ok(Some(push_empty()));
             }
@@ -988,16 +1125,14 @@ impl Syntax {
                     _ => unreachable!(),
                 };
                 self.parse_local_statement(kind, err_msg)?
-            },
+            }
             Keyword(Bind) => {
                 let e = errf!("bind statement format error");
                 let token = self.next()?;
-                let Identifier(name) = token else {
-                    return e
-                };
+                let Identifier(name) = token else { return e };
                 let token = self.next()?;
                 let Keyword(KwTy::Assign) = token else {
-                    return e
+                    return e;
                 };
                 let expr = self.item_must(0)?;
                 expr.checkretval()?; // must retv
@@ -1023,7 +1158,8 @@ impl Syntax {
                 push_empty()
             }
             */
-            Keyword(Lib) => { // lib AnySwap = 1 : emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
+            Keyword(Lib) => {
+                // lib AnySwap = 1 : emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
                 let e = errf!("lib statement format error");
                 nxt = next!();
                 let Identifier(id) = nxt else { return e };
@@ -1039,14 +1175,12 @@ impl Syntax {
                     adr = Some(*a as field::Address);
                 }
                 if *idx > u8::MAX as u128 {
-                    return errf!("lib statement link index overflow")
+                    return errf!("lib statement link index overflow");
                 }
                 self.bind_lib(id.clone(), *idx as u8, adr)?;
                 push_empty()
             }
-            Keyword(Param) => {
-                self.item_param()?
-            }
+            Keyword(Param) => self.item_param()?,
             Keyword(CallCode) => {
                 let e = errf!("callcode statement format error");
                 let idx_token = next!();
@@ -1055,21 +1189,26 @@ impl Syntax {
                     _ => Self::parse_lib_index_token(idx_token)?,
                 };
                 nxt = next!();
-                let Keyword(DColon) = nxt else {
-                    return e
-                };
+                let Keyword(DColon) = nxt else { return e };
                 nxt = next!();
                 let fnsg = match nxt {
-                    Identifier(func) => {
-                        match Self::parse_fn_sig_str(&func) {
-                            Ok(sig) => sig,
-                            Err(_) => calc_func_sign(&func),
-                        }
-                    }
+                    Identifier(func) => match Self::parse_fn_sig_str(&func) {
+                        Ok(sig) => sig,
+                        Err(_) => calc_func_sign(&func),
+                    },
                     _ => Self::parse_fn_sig_token(nxt)?,
                 };
+                // callcode 必须后跟 end
+                nxt = next!();
+                let Keyword(KwTy::End) = nxt else {
+                    return errf!("callcode must be followed by 'end'");
+                };
                 let para: Vec<u8> = iter::once(lib_idx).chain(fnsg).collect();
-                Box::new(IRNodeParams{hrtv: false, inst: CALLCODE, para})
+                Box::new(IRNodeParams {
+                    hrtv: false,
+                    inst: CALLCODE,
+                    para,
+                })
             }
             Keyword(Call) => {
                 let e = errf!("call format error");
@@ -1079,16 +1218,19 @@ impl Syntax {
                     _ => Self::parse_lib_index_token(idx_token)?,
                 };
                 nxt = next!();
-                let Keyword(DColon) = nxt else {
-                    return e
-                };
+                let Keyword(DColon) = nxt else { return e };
                 nxt = next!();
                 let sig = Self::parse_fn_sig_token(nxt)?;
                 let mut para = Vec::with_capacity(1 + sig.len());
                 para.push(lib_idx);
                 para.extend(sig);
                 let argv = self.deal_func_argv()?;
-                Box::new(IRNodeParamsSingle{hrtv: true, inst: CALL, para, subx: argv})
+                Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst: CALL,
+                    para,
+                    subx: argv,
+                })
             }
             Keyword(CallView) => {
                 let e = errf!("callview format error");
@@ -1098,16 +1240,19 @@ impl Syntax {
                     _ => Self::parse_lib_index_token(idx_token)?,
                 };
                 nxt = next!();
-                let Keyword(DColon) = nxt else {
-                    return e
-                };
+                let Keyword(DColon) = nxt else { return e };
                 nxt = next!();
                 let sig = Self::parse_fn_sig_token(nxt)?;
                 let mut para = Vec::with_capacity(1 + sig.len());
                 para.push(lib_idx);
                 para.extend(sig);
                 let argv = self.deal_func_argv()?;
-                Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLVIEW, para, subx: argv})
+                Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst: CALLVIEW,
+                    para,
+                    subx: argv,
+                })
             }
             Keyword(CallPure) => {
                 let e = errf!("callpure format error");
@@ -1117,16 +1262,19 @@ impl Syntax {
                     _ => Self::parse_lib_index_token(idx_token)?,
                 };
                 nxt = next!();
-                let Keyword(DColon) = nxt else {
-                    return e
-                };
+                let Keyword(DColon) = nxt else { return e };
                 nxt = next!();
                 let sig = Self::parse_fn_sig_token(nxt)?;
                 let mut para = Vec::with_capacity(1 + sig.len());
                 para.push(lib_idx);
                 para.extend(sig);
                 let argv = self.deal_func_argv()?;
-                Box::new(IRNodeParamsSingle{hrtv: true, inst: CALLPURE, para, subx: argv})
+                Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst: CALLPURE,
+                    para,
+                    subx: argv,
+                })
             }
             Keyword(CallThis) | Keyword(CallSelf) | Keyword(CallSuper) => {
                 let (inst, e) = match nxt {
@@ -1138,30 +1286,31 @@ impl Syntax {
                 let idx_token = next!();
                 let lib_idx = Self::parse_lib_index_token(idx_token)?;
                 if lib_idx != 0 {
-                    return e
+                    return e;
                 }
                 nxt = next!();
-                let Keyword(DColon) = nxt else {
-                    return e
-                };
+                let Keyword(DColon) = nxt else { return e };
                 nxt = next!();
                 let sig = Self::parse_fn_sig_token(nxt)?;
                 let argv = self.deal_func_argv()?;
-                Box::new(IRNodeParamsSingle{hrtv: true, inst, para: sig.to_vec(), subx: argv})
+                Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst,
+                    para: sig.to_vec(),
+                    subx: argv,
+                })
             }
             Keyword(ByteCode) => {
                 let e = errf!("bytecode format error");
                 nxt = next!();
-                let Partition('{') = nxt else {
-                    return e
-                };
+                let Partition('{') = nxt else { return e };
                 let mut codes: Vec<u8> = Vec::new();
                 loop {
                     let inst: u8;
                     match next!() {
                         Identifier(id) => {
                             let Some(t) = Bytecode::parse(id) else {
-                                return errf!("bytecode {} not find", id)
+                                return errf!("bytecode {} not find", id);
                             };
                             inst = t as u8;
                         }
@@ -1169,12 +1318,12 @@ impl Syntax {
                             inst = *n as u8;
                         }
                         Partition('}') => break, // end
-                        _ => return e
+                        _ => return e,
                     }
                     codes.push(inst as u8);
                 }
-                Box::new(IRNodeBytecodes{codes})
-            },
+                Box::new(IRNodeBytecodes { codes })
+            }
 
             Keyword(List) => {
                 let e = errf!("list statement format error");
@@ -1184,7 +1333,7 @@ impl Syntax {
                 loop {
                     nxt = next!();
                     if let Partition('}') = nxt {
-                        break
+                        break;
                     };
                     self.idx -= 1;
                     let item = self.item_must(0)?;
@@ -1196,28 +1345,20 @@ impl Syntax {
             Keyword(Map) => {
                 let e = errf!("map format error");
                 nxt = next!();
-                let Partition('{') = nxt else {
-                    return e
-                };
+                let Partition('{') = nxt else { return e };
                 let mut subs = Vec::new();
                 loop {
                     nxt = next!();
                     if let Partition('}') = nxt {
-                        break
+                        break;
                     } else {
                         self.idx -= 1;
                     }
-                    let Some(k) = self.item_may()? else {
-                        break
-                    };
+                    let Some(k) = self.item_may()? else { break };
                     k.checkretval()?;
                     nxt = next!();
-                    let Keyword(Colon) = nxt else {
-                        return e
-                    };
-                    let Some(v) = self.item_may()? else {
-                        return e
-                    };
+                    let Keyword(Colon) = nxt else { return e };
+                    let Some(v) = self.item_may()? else { return e };
                     v.checkretval()?;
                     subs.push(k);
                     subs.push(v);
@@ -1239,7 +1380,7 @@ impl Syntax {
                 // Therefore log arguments must be parsed as value expressions.
                 let max = self.tokens.len() - 1;
                 if self.idx >= max {
-                    return e
+                    return e;
                 }
                 let (open, close) = match &self.tokens[self.idx] {
                     Partition('(') => ('(', ')'),
@@ -1247,7 +1388,8 @@ impl Syntax {
                     Partition('[') => ('[', ']'),
                     _ => return e,
                 };
-                let mut subs = Self::parse_delimited_value_exprs(self, open, close, "log argv number error")?;
+                let mut subs =
+                    Self::parse_delimited_value_exprs(self, open, close, "log argv number error")?;
 
                 let num = subs.len();
                 match num {
@@ -1266,18 +1408,18 @@ impl Syntax {
                     _ => return e,
                 }
             }
-            Keyword(Nil)    => push_nil(),
-            Keyword(True)   => push_inst(PTRUE),
-            Keyword(False)  => push_inst(PFALSE),
-            Keyword(Abort)  => push_inst_noret(ABT),
-            Keyword(End)    => push_inst_noret(END),
-            Keyword(Print)  => {
+            Keyword(Nil) => push_nil(),
+            Keyword(True) => push_inst(PTRUE),
+            Keyword(False) => push_inst(PFALSE),
+            Keyword(Abort) => push_inst_noret(ABT),
+            Keyword(End) => push_inst_noret(END),
+            Keyword(Print) => {
                 let exp = self.item_must(0)?;
                 if !exp.hasretval() {
                     return errf!("print arguments must be expressions with return values; do not use bind/var declarations directly");
                 }
                 push_single_noret(PRT, exp)
-            },
+            }
             Keyword(Assert) => {
                 let exp = self.item_must(0)?;
                 if !exp.hasretval() {
@@ -1285,7 +1427,7 @@ impl Syntax {
                 }
                 push_single_noret(AST, exp)
             }
-            Keyword(Throw)  => {
+            Keyword(Throw) => {
                 let exp = self.item_must(0)?;
                 if !exp.hasretval() {
                     return errf!("throw arguments must be expressions with return values");
@@ -1304,7 +1446,6 @@ impl Syntax {
         item = self.item_with_left(item)?;
         Ok(Some(item))
     }
-
 
     pub fn with_params(mut self, params: Vec<(String, ValueTy)>) -> Self {
         self.ext_params = Some(params);
@@ -1380,7 +1521,8 @@ impl Syntax {
         }
 
         while let Some(item) = self.item_may()? {
-            if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {} else {
+            if let Some(..) = item.as_any().downcast_ref::<IRNodeEmpty>() {
+            } else {
                 self.irnode.push(item);
             };
         }
@@ -1406,6 +1548,4 @@ impl Syntax {
         let source_map = self.source_map;
         Ok((block, source_map))
     }
-
-
 }

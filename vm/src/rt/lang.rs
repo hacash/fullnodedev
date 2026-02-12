@@ -1,6 +1,4 @@
-
 /********************************/
-
 
 macro_rules! keyword_define {
     ( $( $k:ident : $s:expr  )+ ) => {
@@ -26,8 +24,7 @@ impl KwTy {
     }
 }
 
-
-keyword_define!{
+keyword_define! {
     Arrow     : "->"
     DColon    : "::"
     Colon     : ":"
@@ -40,7 +37,7 @@ keyword_define!{
     LineCms   : "//"
     BlkCmsL   : "/*"
     BlkCmsR   : "*/"
-    Progma    : "progma"
+    Progma    : "pragma"
     Use       : "use"
     Lib       : "lib"
     Let       : "let"
@@ -102,18 +99,13 @@ keyword_define!{
     Struct    : "struct"
     Tuple     : "tuple"
 
-}   
-
-
-
+}
 
 /********************************/
 
-
-
 macro_rules! operator_define {
     ( $( $k:ident : $s:expr, $lv:expr  )+ ) => {
-        
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(u8)]
 pub enum OpTy {
@@ -176,9 +168,7 @@ impl OpTy {
     }
 }
 
-
-
-operator_define!{
+operator_define! {
     NOT       : "!" ,     13
     POW       : "**",     12
     MUL       : "*" ,     11
@@ -202,16 +192,12 @@ operator_define!{
     CAT       : "++",     1
 }
 
-
-
 /********************************/
-
-
 
 macro_rules! irfn_define {
     ( $( $c:ident : $pl:expr, $args:expr, $rts:expr, $k:ident )+ ) => {
-       
-#[allow(non_camel_case_types)] 
+
+#[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum IrFn {
@@ -235,9 +221,7 @@ impl IrFn {
     }
 }
 
-
-
-irfn_define!{
+irfn_define! {
 
     EXTACTION  : 1, 1, 0,     ext_action  // no return value
     // EXTVIEW    : 1, 1, 1,     ext_view
@@ -318,17 +302,17 @@ irfn_define!{
     CLONE      : 0, 1, 1,     clone
     UPLIST     : 0, 2, 0,     unpack_list
 
-    XLG        : 1, 1, 1,     local_logic    
-    XOP        : 1, 1, 0,     local_operand         
-    ALLOC      : 1, 0, 0,     local_alloc       
-    PUTX       : 0, 2, 0,     local_x_put          
-    GETX       : 0, 1, 1,     local_x              
-    PUT        : 1, 1, 0,     local_put          
-    GET        : 1, 0, 1,     local          
-    GET0       : 0, 0, 1,     local_0        
-    GET1       : 0, 0, 1,     local_1        
-    GET2       : 0, 0, 1,     local_2   
-    GET3       : 0, 0, 1,     local_3    
+    XLG        : 1, 1, 1,     local_logic
+    XOP        : 1, 1, 0,     local_operand
+    ALLOC      : 1, 0, 0,     local_alloc
+    PUTX       : 0, 2, 0,     local_x_put
+    GETX       : 0, 1, 1,     local_x
+    PUT        : 1, 1, 0,     local_put
+    GET        : 1, 0, 1,     local
+    GET0       : 0, 0, 1,     local_0
+    GET1       : 0, 0, 1,     local_1
+    GET2       : 0, 0, 1,     local_2
+    GET3       : 0, 0, 1,     local_3
 
     HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
@@ -348,7 +332,7 @@ irfn_define!{
     // LOG2       : 0, 255, 0,     log_2
     // LOG3       : 0, 255, 0,     log_3
     // LOG4       : 0, 255, 0,     log_4
-        
+
     SREST      : 0, 1, 1,     storage_rest
     SLOAD      : 0, 1, 1,     storage_load
     SDEL       : 0, 1, 0,     storage_del
@@ -360,7 +344,7 @@ irfn_define!{
     // EQ         : 0, 2, 1,     equal
     // NEQ        : 0, 2, 1,     not_equal
     // LT         : 0, 2, 1,     less_than
-    // GT         : 0, 2, 1,     greater_than  
+    // GT         : 0, 2, 1,     greater_than
     // LE         : 0, 2, 1,     less_equal
     // GE         : 0, 2, 1,     greater_equal
     // NOT        : 0, 1, 1,     not
@@ -411,18 +395,14 @@ irfn_define!{
 
 }
 
-
-
-
-
 /********************************
 #[derive(Default, Eq, PartialEq)]
 #[repr(u8)]
 pub enum TokenType {
-    #[default] 
+    #[default]
     Blank,  // \s\n\t\r
     Word,   // _a~zA~Z0~9
-    Number, // 0~9 x b . 
+    Number, // 0~9 x b .
     Str,
     StrEsc,
     Split,  // () {} []
@@ -430,11 +410,7 @@ pub enum TokenType {
 }
 */
 
-
-
 /********************************/
-
-
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Token {
@@ -443,6 +419,7 @@ pub enum Token {
     Partition(char),
     Identifier(String),
     Integer(u128),
+    Character(u8),
     Bytes(Vec<u8>),
     Address(field::Address),
 }

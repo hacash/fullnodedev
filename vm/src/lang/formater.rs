@@ -54,18 +54,26 @@ impl<'a> Formater<'a> {
 
     fn ensure_else_body(&self, s: &str) -> String {
         let t = s.trim();
-        maybe!(t.starts_with('{') || t.starts_with("if "), t.to_owned(), format!("{{ {} }}", t))
+        maybe!(
+            t.starts_with('{') || t.starts_with("if "),
+            t.to_owned(),
+            format!("{{ {} }}", t)
+        )
     }
     pub fn new(opt: &PrintOption<'a>) -> Self {
         Self { opt: opt.clone() }
     }
 
     fn child(&self) -> Self {
-        Self { opt: self.opt.child() }
+        Self {
+            opt: self.opt.child(),
+        }
     }
 
     fn with_tab(&self, t: usize) -> Self {
-        Self { opt: self.opt.with_tab(t) }
+        Self {
+            opt: self.opt.with_tab(t),
+        }
     }
 
     fn slot_name_display(&self, slot: u8) -> String {
@@ -176,17 +184,23 @@ impl<'a> Formater<'a> {
                 CU32 | CU64 | CU128 => {
                     if let Some(params) = single.subx.as_any().downcast_ref::<IRNodeParams>() {
                         let para = &params.para;
-                        if para.is_empty() { return None; }
+                        if para.is_empty() {
+                            return None;
+                        }
                         let len = para[0] as usize;
-                        if len > para.len().saturating_sub(1) { return None; }
-                        if len == 0 { return Some(0); }
+                        if len > para.len().saturating_sub(1) {
+                            return None;
+                        }
+                        if len == 0 {
+                            return Some(0);
+                        }
                         let mut value = 0u128;
                         for &b in &para[1..=len] {
                             value = (value << 8) | b as u128;
                         }
                         return Some(value as usize);
                     }
-                    return None
+                    return None;
                 }
                 _ => return None,
             }
@@ -194,41 +208,76 @@ impl<'a> Formater<'a> {
         None
     }
 
-    fn extract_map_elements(&self, inst: Bytecode, subs: &[Box<dyn IRNode>]) -> Option<Vec<(String, String)>> {
+    fn extract_map_elements(
+        &self,
+        inst: Bytecode,
+        subs: &[Box<dyn IRNode>],
+    ) -> Option<Vec<(String, String)>> {
         use Bytecode::*;
-        if inst != IRLIST { return None; }
+        if inst != IRLIST {
+            return None;
+        }
         let num = subs.len();
-        if num < 2 { return None; }
+        if num < 2 {
+            return None;
+        }
         let last = &subs[num - 1];
         if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKMAP { return None; }
-        } else { return None; }
+            if leaf.inst != PACKMAP {
+                return None;
+            }
+        } else {
+            return None;
+        }
         let count_idx = num - 2;
         let count = num - 2;
         let expected = self.extract_const_usize(&*subs[count_idx])?;
-        if expected * 2 != count || count % 2 != 0 { return None; }
-        let mut pairs = Vec::with_capacity(expected);
+        if count % 2 != 0 {
+            return None;
+        }
+        // Historical IR variants exist:
+        // - newer encoding stores total item count (k + v count),
+        // - older encoding stores pair count.
+        // Accept both to keep decompilation stable across artifacts.
+        if expected != count && expected * 2 != count {
+            return None;
+        }
+        let mut pairs = Vec::with_capacity(count / 2);
         for i in (0..count).step_by(2) {
             let k = self.print_inline(&*subs[i]);
-            let v = self.print_inline(&*subs[i+1]);
+            let v = self.print_inline(&*subs[i + 1]);
             pairs.push((k, v));
         }
         Some(pairs)
     }
 
-    fn extract_list_elements(&self, inst: Bytecode, subs: &[Box<dyn IRNode>]) -> Option<Vec<String>> {
+    fn extract_list_elements(
+        &self,
+        inst: Bytecode,
+        subs: &[Box<dyn IRNode>],
+    ) -> Option<Vec<String>> {
         use Bytecode::*;
-        if inst != IRLIST { return None; }
+        if inst != IRLIST {
+            return None;
+        }
         let num = subs.len();
-        if num < 2 { return None; }
+        if num < 2 {
+            return None;
+        }
         let last = &subs[num - 1];
         if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKLIST { return None; }
-        } else { return None; }
+            if leaf.inst != PACKLIST {
+                return None;
+            }
+        } else {
+            return None;
+        }
         let count_idx = num - 2;
         let count = num - 2;
         let expected = self.extract_const_usize(&*subs[count_idx])?;
-        if expected != count { return None; }
+        if expected != count {
+            return None;
+        }
         let mut elems = Vec::with_capacity(count);
         for node in &subs[..count] {
             elems.push(self.print_inline(&**node));
@@ -325,7 +374,8 @@ impl<'a> Formater<'a> {
         let prefix = self.line_prefix();
         if arr.inst == IRLIST {
             if let Some(elements) = self.extract_list_elements(arr.inst, &arr.subs) {
-                return Some(maybe!(self.opt.flatten_array_list,
+                return Some(maybe!(
+                    self.opt.flatten_array_list,
                     format!("{}[{}]", prefix, elements.join(", ")),
                     {
                         let args = elements.join(", ");
@@ -356,7 +406,8 @@ impl<'a> Formater<'a> {
             if let Some(last) = arr.subs.last() {
                 let code: Bytecode = std_mem_transmute!(last.bytecode());
                 if matches!(code, LOG1 | LOG2 | LOG3 | LOG4) {
-                    let args: Vec<String> = arr.subs[0..arr.subs.len()-1].iter()
+                    let args: Vec<String> = arr.subs[0..arr.subs.len() - 1]
+                        .iter()
                         .map(|s| self.print_inline(&**s))
                         .collect();
                     return Some(format!("{}log({})", prefix, args.join(", ")));
@@ -421,26 +472,27 @@ impl<'a> Formater<'a> {
         let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
         // If `trim_param_unpack=true`, we may rewrite the canonical UPLIST node into `param { ... }`.
         // If `trim_param_unpack=false`, we must never emit `param { ... }`.
-        let (param_rewrite_idx, param_rewrite_line) = if is_file_level_irblock && self.opt.trim_param_unpack {
-            // alloc could be at index 0 or 1 (depending on placeholder insertion patterns)
-            let mut alloc_index: Option<usize> = None;
-            for (i, s) in arr.subs.iter().enumerate().take(2) {
-                if s.bytecode() == ALLOC as u8 {
-                    alloc_index = Some(i);
-                    break;
+        let (param_rewrite_idx, param_rewrite_line) =
+            if is_file_level_irblock && self.opt.trim_param_unpack {
+                // alloc could be at index 0 or 1 (depending on placeholder insertion patterns)
+                let mut alloc_index: Option<usize> = None;
+                for (i, s) in arr.subs.iter().enumerate().take(2) {
+                    if s.bytecode() == ALLOC as u8 {
+                        alloc_index = Some(i);
+                        break;
+                    }
                 }
-            }
-            let idx = alloc_index.map(|ai| ai + 1).unwrap_or(0);
-            // Mark param slots so later PUTs don't print as `var ...`.
-            if let Some(names) = helper.infer_param_names(arr, idx) {
-                for i in 0..names.len() as u8 {
-                    self.opt.mark_slot_put(i);
+                let idx = alloc_index.map(|ai| ai + 1).unwrap_or(0);
+                // Mark param slots so later PUTs don't print as `var ...`.
+                if let Some(names) = helper.infer_param_names(arr, idx) {
+                    for i in 0..names.len() as u8 {
+                        self.opt.mark_slot_put(i);
+                    }
                 }
-            }
-            (Some(idx), helper.try_build_param_line(arr, idx))
-        } else {
-            (None, None)
-        };
+                (Some(idx), helper.try_build_param_line(arr, idx))
+            } else {
+                (None, None)
+            };
 
         let file_level_param_names = if is_file_level_irblock && !self.opt.trim_param_unpack {
             self.opt
@@ -490,7 +542,10 @@ impl<'a> Formater<'a> {
     fn format_call_instruction(&self, node: &dyn IRNode, code: Bytecode) -> Option<String> {
         use Bytecode::*;
         let pss = node.as_any().downcast_ref::<IRNodeParamsSingle>()?;
-        if !matches!(code, CALL | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLPURE) {
+        if !matches!(
+            code,
+            CALL | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLPURE
+        ) {
             return None;
         }
         let pre = self.line_prefix();
@@ -500,16 +555,32 @@ impl<'a> Formater<'a> {
         let default_body = match code {
             // IMPORTANT: keep `0x` prefix so the tokenizer parses it as bytes (0x....),
             // not as a decimal integer. Otherwise the recompiled 4-byte signature differs.
-            CALL => format!("call {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
+            CALL => format!(
+                "call {}::0x{}({})",
+                pss.para[0],
+                ::hex::encode(&pss.para[1..]),
+                args
+            ),
             CALLTHIS => format!("callthis 0::0x{}({})", ::hex::encode(&pss.para), args),
             CALLSELF => format!("callself 0::0x{}({})", ::hex::encode(&pss.para), args),
             CALLSUPER => format!("callsuper 0::0x{}({})", ::hex::encode(&pss.para), args),
-            CALLVIEW => format!("callview {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
-            CALLPURE => format!("callpure {}::0x{}({})", pss.para[0], ::hex::encode(&pss.para[1..]), args),
+            CALLVIEW => format!(
+                "callview {}::0x{}({})",
+                pss.para[0],
+                ::hex::encode(&pss.para[1..]),
+                args
+            ),
+            CALLPURE => format!(
+                "callpure {}::0x{}({})",
+                pss.para[0],
+                ::hex::encode(&pss.para[1..]),
+                args
+            ),
             _ => format!("{}({})", meta.intro, args),
         };
 
-        let short_body = maybe!(self.opt.call_short_syntax,
+        let short_body = maybe!(
+            self.opt.call_short_syntax,
             self.short_call_target(code, pss, &args),
             None
         );
@@ -554,10 +625,12 @@ impl<'a> Formater<'a> {
                         Some(lit) => lit.text.clone(),
                         None => self.print_inline(&*s.subx),
                     };
-                    let operand = maybe!(s.subx.level() > 0,
+                    let operand = maybe!(
+                        s.subx.level() > 0,
                         {
                             let t = substr.trim();
-                            maybe!(t.starts_with('(') && t.ends_with(')') ,
+                            maybe!(
+                                t.starts_with('(') && t.ends_with(')'),
                                 substr.clone(),
                                 format!("({})", substr)
                             )
@@ -565,13 +638,42 @@ impl<'a> Formater<'a> {
                         substr.clone()
                     );
                     return Some(match s.inst {
-                        // Never elide cast opcodes; roundtrip must preserve ircode bytes.
-                        CU8   => format!("{}{}", pre, format!("{} as u8",   operand)),
-                        CU16  => format!("{}{}", pre, format!("{} as u16",  operand)),
-                        CU32  => format!("{}{}", pre, format!("{} as u32",  operand)),
-                        CU64  => format!("{}{}", pre, format!("{} as u64",  operand)),
-                        CU128 => format!("{}{}", pre, format!("{} as u128", operand)),
-                        CBUF =>  format!("{}{} as bytes", pre, operand),
+                        CU8 => {
+                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                                format!("{}{}{}", pre, operand, "u8")
+                            } else {
+                                format!("{}{} as u8", pre, operand)
+                            }
+                        }
+                        CU16 => {
+                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                                format!("{}{}{}", pre, operand, "u16")
+                            } else {
+                                format!("{}{} as u16", pre, operand)
+                            }
+                        }
+                        CU32 => {
+                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                                format!("{}{}{}", pre, operand, "u32")
+                            } else {
+                                format!("{}{} as u32", pre, operand)
+                            }
+                        }
+                        CU64 => {
+                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                                format!("{}{}{}", pre, operand, "u64")
+                            } else {
+                                format!("{}{} as u64", pre, operand)
+                            }
+                        }
+                        CU128 => {
+                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                                format!("{}{}{}", pre, operand, "u128")
+                            } else {
+                                format!("{}{} as u128", pre, operand)
+                            }
+                        }
+                        CBUF => format!("{}{} as bytes", pre, operand),
                         RET | ERR | AST | PRT => {
                             let meta = s.inst.metadata();
                             format!("{}{} {}", pre, meta.intro, substr)
@@ -603,9 +705,7 @@ impl<'a> Formater<'a> {
                 }
                 _ => {
                     let meta = s.inst.metadata();
-                    let argv = maybe!(meta.input == 0, s!(""), 
-                        self.print_inline(&*s.subx)
-                    );
+                    let argv = maybe!(meta.input == 0, s!(""), self.print_inline(&*s.subx));
                     return Some(format!("{}{}({})", pre, meta.intro, argv));
                 }
             }
@@ -623,36 +723,35 @@ impl<'a> Formater<'a> {
                     }
                 }
                 let subystr = self.print_inline(&*d.suby);
-                return Some(format!(
-                    "{}{}[{}]",
-                    self.line_prefix(),
-                    subxstr,
-                    subystr
-                ));
+                return Some(format!("{}{}[{}]", self.line_prefix(), subxstr, subystr));
             }
             if d.inst == IRWHILE {
                 let subxstr = self.print_inline(&*d.subx);
                 let subystr = self.print_inner(&*d.suby);
                 let body = self.ensure_braced_block(&subystr);
-                return Some(format!(
-                    "{}while {} {}",
-                    self.line_prefix(),
-                    subxstr,
-                    body
-                ));
+                return Some(format!("{}while {} {}", self.line_prefix(), subxstr, body));
             }
         }
         if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
+            if t.inst == Bytecode::CHOOSE {
+                // IR stores CHOOSE as (yes, no, cond) for codegen/runtime semantics.
+                // Source syntax is choose(cond, yes, no); invert when decompiling.
+                let cond = self.print_inline(&*t.subz);
+                let yes = self.print_inline(&*t.subx);
+                let no = self.print_inline(&*t.suby);
+                return Some(format!(
+                    "{}choose({}, {}, {})",
+                    self.line_prefix(),
+                    cond,
+                    yes,
+                    no
+                ));
+            }
             if t.inst == IRIF || t.inst == IRIFR {
                 let subxstr = self.print_inline(&*t.subx);
                 let subystr = self.print_inner(&*t.suby);
                 let body = self.ensure_braced_block(&subystr);
-                let mut buf = format!(
-                    "{}if {} {}",
-                    self.line_prefix(),
-                    subxstr,
-                    body
-                );
+                let mut buf = format!("{}if {} {}", self.line_prefix(), subxstr, body);
                 if t.subz.bytecode() != Bytecode::NOP as u8 {
                     let subzstr = self.print_inner(&*t.subz);
                     let elsebody = self.ensure_else_body(&subzstr);
@@ -683,10 +782,10 @@ impl<'a> Formater<'a> {
         use Bytecode::*;
         if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
             match single.inst {
-                CU8   => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U8),
-                CU16  => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U16),
-                CU32  => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U32),
-                CU64  => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U64),
+                CU8 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U8),
+                CU16 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U16),
+                CU32 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U32),
+                CU64 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U64),
                 CU128 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U128),
                 _ => {}
             }
@@ -726,6 +825,7 @@ impl<'a> Formater<'a> {
             }
         }
         if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
+            use Bytecode::*;
             if single.inst == CTO && single.para == ValueTy::Address as u8 {
                 return self.literal_from_node(&*single.subx);
             }
@@ -777,9 +877,8 @@ impl<'a> Formater<'a> {
         node: &dyn IRNode,
         target: ValueTy,
     ) -> Option<RecoveredLiteral> {
-        self.numeric_literal_from(node, target).and_then(|lit| {
-            maybe!(lit.ty == Some(target), Some(lit), None)
-        })
+        self.numeric_literal_from(node, target)
+            .and_then(|lit| maybe!(lit.ty == Some(target), Some(lit), None))
     }
 
     fn decode_bytes_literal(&self, data: &[u8]) -> Option<RecoveredLiteral> {
@@ -882,11 +981,23 @@ impl<'a> Formater<'a> {
             PUT => {
                 let substr = self.print_inline(&*node.subx);
                 let is_first = self.opt.mark_slot_put(node.para);
-                let target = maybe!(is_first,
+                let target = maybe!(
+                    is_first,
                     {
-                        let prefix = maybe!(self.opt.map.map(|m| m.slot_is_var(node.para)).unwrap_or(false),
+                        let prefix = maybe!(
+                            self.opt
+                                .map
+                                .map(|m| m.slot_is_var(node.para))
+                                .unwrap_or(false),
                             "var",
-                            maybe!(self.opt.map.map(|m| m.slot_is_let(node.para)).unwrap_or(false), "let", "var")
+                            maybe!(
+                                self.opt
+                                    .map
+                                    .map(|m| m.slot_is_let(node.para))
+                                    .unwrap_or(false),
+                                "let",
+                                "var"
+                            )
                         );
                         let name = self.slot_name_display(node.para);
                         let slot_id_str = format!("${}", node.para);
@@ -908,7 +1019,12 @@ impl<'a> Formater<'a> {
             }
             NTENV => {
                 let ntfn: NativeEnv = std_mem_transmute!(node.para);
-                format!("{}()", ntfn.name())
+                let args = maybe!(
+                    self.opt.hide_default_call_argv,
+                    String::new(),
+                    "\"\"".to_string()
+                );
+                format!("{}({})", ntfn.name(), args)
             }
             _ => {
                 let substr = self.print_inline(&*node.subx);
@@ -922,7 +1038,10 @@ impl<'a> Formater<'a> {
         let pre = self.opt.indent.repeat(self.opt.tab);
         let meta = node.inst.metadata();
         let substr = self.print_sub(&*node.subx);
-        format!("{}{}({}, {}, {})", pre, meta.intro, node.para[0], node.para[1], substr)
+        format!(
+            "{}{}({}, {}, {})",
+            pre, meta.intro, node.para[0], node.para[1], substr
+        )
     }
 
     fn format_extend_call(
@@ -932,7 +1051,10 @@ impl<'a> Formater<'a> {
     ) -> String {
         let id = node.para;
         let Some(f) = search_ext_by_id(id, defs) else {
-            return format!("/* unknown external call id: {} */ __unknown_ext_{}_()", id, id)
+            return format!(
+                "/* unknown external call id: {} */ __unknown_ext_{}_()",
+                id, id
+            );
         };
         let argv = self.build_call_args(&*node.subx, true);
         format!("{}({})", f.1, argv)
@@ -967,8 +1089,7 @@ impl<'a> Formater<'a> {
             PNIL => buf.push_str("nil"),
             PNBUF => buf.push_str("\"\""),
             NEWLIST => buf.push_str("[]"),
-            ABT | END | RET | ERR | AST | PRT 
-                => buf.push_str(meta.intro),
+            ABT | END | RET | ERR | AST | PRT => buf.push_str(meta.intro),
             _ => {
                 buf.push_str(meta.intro);
                 buf.push_str("()");
@@ -989,6 +1110,14 @@ impl<'a> Formater<'a> {
                 let f = search_ext_name_by_id(node.para, &ary);
                 buf.push_str(&format!("{}()", f));
             }
+            NTENV => {
+                let ntfn: NativeEnv = std_mem_transmute!(node.para);
+                if self.opt.hide_default_call_argv {
+                    buf.push_str(&format!("{}()", ntfn.name()));
+                } else {
+                    buf.push_str(&format!("{}(\"\")", ntfn.name()));
+                }
+            }
             _ => {
                 buf.push_str(&format!("{}({})", meta.intro, node.para));
             }
@@ -1003,7 +1132,10 @@ impl<'a> Formater<'a> {
         match node.inst {
             PU16 => buf.push_str(&format!("{}", u16::from_be_bytes(node.para))),
             _ => {
-                buf.push_str(&format!("{}({}, {})", meta.intro, node.para[0], node.para[1]));
+                buf.push_str(&format!(
+                    "{}({}, {})",
+                    meta.intro, node.para[0], node.para[1]
+                ));
             }
         };
         buf
@@ -1034,6 +1166,8 @@ impl<'a> Formater<'a> {
                 // IMPORTANT: keep `0x` prefix so tokenizer parses it as bytes (0x....),
                 // not as a decimal integer/identifier.
                 buf.push_str(&format!("callcode {}::0x{}", i, f));
+                // Source syntax requires a trailing `end` token for callcode statements.
+                buf.push_str(&format!("\n{}end", self.line_prefix()));
             }
             _ => {
                 buf.push_str(&format!("{}(0x{})", meta.intro, parastr));
@@ -1048,7 +1182,11 @@ impl<'a> Formater<'a> {
             return String::new();
         }
         // codegen-only placeholder must never appear in decompilation
-        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+        if node
+            .as_any()
+            .downcast_ref::<IRNodeTopStackValue>()
+            .is_some()
+        {
             panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
         }
         if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
@@ -1091,17 +1229,18 @@ impl<'a> Formater<'a> {
             let subx = self.print_inline(&*triple.subx);
             let suby = self.print_inline(&*triple.suby);
             let subz = self.print_inline(&*triple.subz);
-            return format!(
-                "{}{}({}, {}, {})",
-                prefix, meta.intro, subx, suby, subz
-            );
+            return format!("{}{}({}, {}, {})", prefix, meta.intro, subx, suby, subz);
         }
         format!("{}{}", prefix, meta.intro)
     }
 
     /// Main entry for descriptive printing.
     pub fn print(&self, node: &dyn IRNode) -> String {
-        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+        if node
+            .as_any()
+            .downcast_ref::<IRNodeTopStackValue>()
+            .is_some()
+        {
             panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
         }
 
@@ -1120,12 +1259,9 @@ impl<'a> Formater<'a> {
                 let mut prefix = String::new();
                 for (idx, info) in map.lib_entries() {
                     let line = match &info.address {
-                        Some(addr) => format!(
-                            "lib {} = {}: {}\n",
-                            info.name,
-                            idx,
-                            addr.to_readable()
-                        ),
+                        Some(addr) => {
+                            format!("lib {} = {}: {}\n", info.name, idx, addr.to_readable())
+                        }
                         None => format!("lib {} = {}\n", info.name, idx),
                     };
                     prefix.push_str(&line);
@@ -1153,10 +1289,7 @@ impl<'a> Formater<'a> {
                     for name in pending {
                         if self.opt.mark_const_printed(name.clone()) {
                             if let Some(value) = map.get_const_value(&name) {
-                                defs.push_str(&format!(
-                                    "{}const {} = {}\n",
-                                    prefix, name, value
-                                ));
+                                defs.push_str(&format!("{}const {} = {}\n", prefix, name, value));
                             }
                         }
                     }
@@ -1169,7 +1302,11 @@ impl<'a> Formater<'a> {
     }
 
     fn print_inner(&self, node: &dyn IRNode) -> String {
-        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+        if node
+            .as_any()
+            .downcast_ref::<IRNodeTopStackValue>()
+            .is_some()
+        {
             panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
         }
         if let Some(wrap) = node.as_any().downcast_ref::<IRNodeWrapOne>() {
@@ -1189,7 +1326,8 @@ impl<'a> Formater<'a> {
         }
         let code: Bytecode = std_mem_transmute!(node.bytecode());
         if code == Bytecode::NEWLIST {
-            return maybe!(self.opt.flatten_array_list,
+            return maybe!(
+                self.opt.flatten_array_list,
                 format!("{}[]", self.line_prefix()),
                 format!("{}list {{}}", self.line_prefix())
             );
@@ -1210,9 +1348,52 @@ impl<'a> Formater<'a> {
     }
     /// Inline printing (equivalent to `print_sub_inline`).
     pub fn print_inline(&self, node: &dyn IRNode) -> String {
-        if node.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+        if node
+            .as_any()
+            .downcast_ref::<IRNodeTopStackValue>()
+            .is_some()
+        {
             panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
         }
+
+        // Cast nodes need explicit render to keep `100u64`/`100 as u64` shape.
+        // Returning only recovered literal text here would drop the type suffix/cast.
+        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
+            use Bytecode::*;
+            match single.inst {
+                CU8 | CU16 | CU32 | CU64 | CU128 => {
+                    if let Some(literal) = self.literal_from_node(node) {
+                        // `push_num` encodes larger integers as CU32/CU64/CU128 over raw
+                        // PBUF bytes. That cast is an encoding detail, not source syntax.
+                        // Keep decompilation stable by printing the plain number in this case.
+                        let encoded_numeric = single
+                            .subx
+                            .as_any()
+                            .downcast_ref::<IRNodeParams>()
+                            .is_some_and(|p| matches!(p.inst, Bytecode::PBUF | Bytecode::PBUFL));
+                        if encoded_numeric {
+                            return literal.text;
+                        }
+
+                        let suffix = match single.inst {
+                            CU8 => "u8",
+                            CU16 => "u16",
+                            CU32 => "u32",
+                            CU64 => "u64",
+                            CU128 => "u128",
+                            _ => unreachable!(),
+                        };
+                        return maybe!(
+                            self.opt.numeric_literal_suffix,
+                            format!("{}{}", literal.text, suffix),
+                            format!("{} as {}", literal.text, suffix)
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
         if let Some(literal) = self.literal_from_node(node) {
             if let Some(map) = self.opt.map {
                 if let Some(name) = map.get_const_name(&literal.text) {
@@ -1267,7 +1448,9 @@ impl<'a> Formater<'a> {
             let mut buf = String::from("\n") + &sub;
             buf += &(String::from("\n") + &self.opt.indent.repeat(self.opt.tab));
             buf
-        } else { emp }
+        } else {
+            emp
+        }
     }
 
     pub fn print_subx_suby_op(&self, dbl: &IRNodeDouble, op: &str) -> String {
@@ -1286,18 +1469,14 @@ impl<'a> Formater<'a> {
         // Parenthesize children to preserve the original IR tree semantics.
         // - For left-associative ops, wrap the right child on equal precedence.
         // - For right-associative ops (currently only `**`), wrap the left child on equal precedence.
-        let need_wrap_left = clv > 0
-            && llv > 0
-            && !wrapx
-            && (clv > llv || (is_right_assoc && clv == llv));
+        let need_wrap_left =
+            clv > 0 && llv > 0 && !wrapx && (clv > llv || (is_right_assoc && clv == llv));
         if need_wrap_left {
             subx = format!("({})", &subx);
         }
 
-        let need_wrap_right = clv > 0
-            && rlv > 0
-            && !wrapy
-            && (clv > rlv || (!is_right_assoc && clv == rlv));
+        let need_wrap_right =
+            clv > 0 && rlv > 0 && !wrapy && (clv > rlv || (!is_right_assoc && clv == rlv));
         if need_wrap_right {
             suby = format!("({})", &suby);
         }
@@ -1306,9 +1485,14 @@ impl<'a> Formater<'a> {
 
     // Added: local `ascii_show_string` implementation to avoid relying on external imports.
     fn ascii_show_string(&self, data: &[u8]) -> Option<String> {
-        if data.is_empty() { return Some(String::new()); }
+        if data.is_empty() {
+            return Some(String::new());
+        }
         // Determine printable ASCII (common newline/tab are allowed).
-        if data.iter().all(|&b| (b >= 0x20 && b <= 0x7E) || b == 0x0a || b == 0x0d || b == 0x09) {
+        if data
+            .iter()
+            .all(|&b| (b >= 0x20 && b <= 0x7E) || b == 0x0a || b == 0x0d || b == 0x09)
+        {
             match std::str::from_utf8(data) {
                 Ok(s) => Some(s.to_string()),
                 Err(_) => None,
@@ -1317,5 +1501,4 @@ impl<'a> Formater<'a> {
             None
         }
     }
-
 }

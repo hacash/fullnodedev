@@ -49,6 +49,7 @@ mod main {
             var n = C.f1(3)
             print n
             callcode C::f2
+            end
         "##,
         );
 
