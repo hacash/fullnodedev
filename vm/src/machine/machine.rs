@@ -77,15 +77,20 @@ impl GasCounter {
         }
         // cache tx ref to avoid repeated vtable dispatch on &dyn TransactionRead
         let tx = ctx.tx();
-        // decode gas budget from tx.gas_max (1-byte compact float)
+        // decode gas budget from tx.gas_max (1-byte lookup table)
         let gas_max_byte = tx.fee_extend()?;
         if gas_max_byte == 0 {
-            return errf!("gas_max cannot be 0 for contract call")
+            return errf!("gas_max_byte is 0: contract call requires tx.gas_max > 0")
         }
-        let budget = decode_gas_budget(gas_max_byte);
-        let budget = budget.min(extra.max_gas_of_tx); // clamp to chain limit
+        let decoded = decode_gas_budget(gas_max_byte);
+        let budget = decoded.min(extra.max_gas_of_tx); // clamp to chain limit
         if budget <= 0 {
-            return errf!("gas budget is 0 after chain limit clamp")
+            return errf!(
+                "gas budget invalid after clamp: gas_max_byte={} decoded={} chain_cap={}",
+                gas_max_byte,
+                decoded,
+                extra.max_gas_of_tx
+            )
         }
         // cache fee purity components for settlement (avoid repeated conversion)
         // gas_price = fee_purity = fee_got / tx_size (miner-received fee per byte)
@@ -260,9 +265,10 @@ impl VM for MachineBox {
         let mut account = GasCallGuard::enter(&mut self.account)?;
         let is_outermost = account.is_outermost();
         // min gas cost per call type
+        let cty: ExecMode = std_mem_transmute!(ty);
         let min_cost = {
             let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
-            match std_mem_transmute!(ty) {
+            match cty {
                 Main => gsext.main_call_min,
                 P2sh => gsext.p2sh_call_min,
                 Abst => gsext.abst_call_min,
@@ -272,9 +278,18 @@ impl VM for MachineBox {
         // (3) execute VM call with shared gas counter
         let gas = &mut account.remaining;
         let gas_before = *gas;
+        // Fail-fast: if remaining gas can't cover the per-call minimum, this call cannot start.
+        if gas_before < min_cost {
+            *gas -= min_cost; // keep the same "min cost consumes from shared counter" semantics
+            return errf!(
+                "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
+                gas_before,
+                min_cost,
+                cty
+            )
+        }
         let machine = self.machine.as_mut().unwrap();
         let exenv = &mut ExecEnv{ ctx, gas };
-        let cty: ExecMode = std_mem_transmute!(ty);
         let result = match cty {
             Main => {
                 let cty = CodeType::parse(kd)?;
@@ -310,7 +325,13 @@ impl VM for MachineBox {
             let shortfall = min_cost - cost;
             *gas -= shortfall;
             if *gas < 0 {
-                return errf!("gas has run out (min cost enforcement)");
+                return errf!(
+                    "gas has run out after min cost enforcement: remaining={} (before={} min_call_cost={} actual_cost={})",
+                    *gas,
+                    gas_before,
+                    min_cost,
+                    actual
+                );
             }
             cost = min_cost;
         }
@@ -616,7 +637,7 @@ mod machine_test {
                 3200
             }
             fn fee_extend(&self) -> Ret<u8> {
-                // gas_max_byte=17 → decode_gas_budget(17) = 48
+                // gas_max_byte=17 uses lookup-table decoding.
                 Ok(17)
             }
         }
@@ -638,7 +659,7 @@ mod machine_test {
 
         let gsext = GasExtra::new(1);
         let min = gsext.main_call_min;
-        let budget = decode_gas_budget(17); // gas_max_byte=17 -> 48
+        let budget = decode_gas_budget(17); // lookup-table decoded budget
         // The min-call cost must be reflected in the shared gas counter.
         assert!(vm.account.remaining <= (budget - min), "account.remaining should include min cost deduction");
     }
@@ -780,7 +801,7 @@ mod machine_test {
                 1
             }
             fn fee_extend(&self) -> Ret<u8> {
-                // gas_max_byte=1 → decode_gas_budget(1) = 32
+                // gas_max_byte=1 uses lookup-table decoding.
                 Ok(1)
             }
         }

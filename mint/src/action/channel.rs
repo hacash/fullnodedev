@@ -36,18 +36,18 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
 
     let env = ctx.env().clone();
 
+    // check id size
+    check_valid_store_item_key("channel", &cid, ChannelId::SIZE)?;
+    // check format
+    if left_addr == right_addr {
+        return errf!("left address cannot equal with right address")
+    }
     // sub balance
     if left_amt.not_zero() {
         hac_sub(ctx, left_addr,  left_amt)?;
     }
     if right_amt.not_zero() {
         hac_sub(ctx, right_addr, right_amt)?;
-    }
-    // check id size
-    check_valid_store_item_key("channel", &cid, ChannelId::SIZE)?;
-    // check format
-    if left_addr == right_addr {
-        return errf!("left address cannot equal with right address")
     }
     if left_amt.size() > 6 || right_amt.size() > 6 {
         return errf!("left or right amount bytes too long")
@@ -56,6 +56,16 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         (left_amt.is_zero() && right_amt.is_zero()) {
         return errf!("left or right amount is not positive or two both is empty")
     }
+
+    let lock_total = left_amt.add_mode_u64(right_amt)?;
+    // TotalCount is tracked in HAC zhu (u64). Reject values that cannot be represented
+    // to avoid consensus panics on unwrap/overflow.
+    let lock_total_zhu = lock_total.to_zhu_u64().ok_or_else(|| {
+        format!(
+            "channel deposit amount {} overflow zhu u64",
+            lock_total.to_fin_string()
+        )
+    })?;
 
     // check exist
     let mut reuse_version = Uint4::from(1);
@@ -70,7 +80,10 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
             return errf!("channel {} is openning or cannot reuse.", cid)
         }
         reuse_version = chan.reuse_version.clone();
-        reuse_version += 1u64;
+        let nv = (*reuse_version)
+            .checked_add(1)
+            .ok_or_else(|| "channel reuse_version overflow".to_string())?;
+        reuse_version = Uint4::from(nv);
     }
 
     // save channel
@@ -96,8 +109,14 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
 
     // update total count
     let mut ttcount = state.get_total_count();
-    ttcount.opening_channel += 1u64;
-    ttcount.channel_deposit_zhu += left_amt.add_mode_u64(right_amt)?.to_zhu_u64().unwrap();
+    let opening = (*ttcount.opening_channel)
+        .checked_add(1)
+        .ok_or_else(|| "opening_channel overflow".to_string())?;
+    ttcount.opening_channel = Uint5::from(opening);
+    let dep = (*ttcount.channel_deposit_zhu)
+        .checked_add(lock_total_zhu)
+        .ok_or_else(|| "channel_deposit_zhu overflow".to_string())?;
+    ttcount.channel_deposit_zhu = Uint8::from(dep);
     state.set_total_count(&ttcount);
 
     // ok finish
@@ -144,4 +163,3 @@ fn channel_close(this: &ChannelClose, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     // do close
     close_channel_default( pending_height, ctx, cid, &chan)
 }
-

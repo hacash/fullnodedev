@@ -76,13 +76,10 @@ VM Logs:
 Gas Calculation:
 
     - 1 gas = 1 byte
-    - gas price = fee purity = txfeegot / txsize
-    - 1 gcu = 32 gas or 32 byte
-    - tx gas limit is 65535 / 4 = 16383
-    - a machine execution charges at least 1 gcu of gas (32 gas) = gas / GSCU + 1
-    - load a contract for call cost 2 * gcu = 64gas
-    - call main cost gas at least 1 * gcu =  32gas
-    - call abst cost gas at least 3 * gcu =  96gas
+    - gas price = fee purity = txfeegot / txsize (miner-received fee per byte)
+    - tx gas budget comes from tx.gas_max (1-byte lookup-table decoded) and is clamped by chain cap max_gas_of_tx (= 8192 on current L1 mainnet)
+    - each VM call consumes at least: main=48, p2sh=72, abst=96 gas (even if bytecode is smaller)
+    - see `vm/src/rt/gas.rs` + `vm/doc/gas-cost.md` for the exact encoding/cost table
     - 
 
 
