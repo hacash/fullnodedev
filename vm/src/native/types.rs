@@ -8,7 +8,7 @@
 
 /// Helper: generates the type-specific method (call for func, gas for env).
 macro_rules! native_dispatch_method {
-    (func, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $gas:expr, $rty:expr )+) => {
+    (func, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
         pub fn call(hei: u64, idx: u8, v: &[u8]) -> VmrtRes<(Value, i64)> {
             let cty: $EnumName = std_mem_transmute!(idx);
             match cty {
@@ -22,7 +22,7 @@ macro_rules! native_dispatch_method {
             }
         }
     };
-    (env, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $gas:expr, $rty:expr )+) => {
+    (env, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
         pub fn gas(idx: u8) -> VmrtRes<i64> {
             match idx {
                 $( $v => Ok($gas), )+
@@ -36,7 +36,7 @@ macro_rules! native_dispatch_method {
 /// Pass `func` for pure functions (generates `call()`), `env` for context reads (generates `gas()`).
 macro_rules! native_func_env_define {
     ( $kind:ident, $EnumName:ident, $ErrCode:ident,
-      $( $name:ident = $v:expr, $gas:expr, $rty:expr )+ ) => {
+      $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+ ) => {
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -54,7 +54,7 @@ impl $EnumName {
     }}
     )+
 
-    native_dispatch_method!($kind, $EnumName, $ErrCode, $( $name = $v, $gas, $rty )+);
+    native_dispatch_method!($kind, $EnumName, $ErrCode, $( $name = $v, $argv_len, $gas, $rty )+);
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -76,9 +76,22 @@ impl $EnumName {
             _ => false,
         }
     }
+
+    pub fn argv_len(idx: u8) -> Option<usize> {
+        match idx {
+            $( $v => Some($argv_len), )+
+            _ => None,
+        }
+    }
+
+    pub fn argv_len_of(&self) -> usize {
+        match self {
+            $( Self::$name => $argv_len, )+
+            Self::Null => 0,
+        }
+    }
 }
 
     };
 }
-
 

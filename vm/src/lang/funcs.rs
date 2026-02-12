@@ -59,11 +59,19 @@ impl Syntax {
             return build_ir_func(inst, pms, args, rs, argvs,)
         }
 
-        // native func (pure, exactly 1 arg)
+        // native func (pure, concat args; arity checked by name)
         if let Some(idx) = pick_native_func(&id) {
             let (num, argvs) = self.must_get_func_argv(ArgvMode::Concat)?;
-            if num != 1 {
-                return errf!("native func '{}' requires 1 argument but got {}", id, num)
+            let Some(need) = NativeFunc::argv_len(idx) else {
+                return errf!("unknown native func idx {}", idx)
+            };
+            if num != need {
+                return errf!(
+                    "native func '{}' requires {} argument(s) but got {}",
+                    id,
+                    need,
+                    num
+                )
             }
             return Ok(push_single_p1_hr(true, Bytecode::NTFUNC, idx, argvs));
         }

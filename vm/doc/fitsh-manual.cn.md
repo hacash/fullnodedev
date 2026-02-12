@@ -727,7 +727,8 @@ VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制�
 |--------|----------|--------|-----------|-----------|------------------|------|
 | NTENV | `context_address` | 0 | ❌ 禁止（`nsr!`） | ✅ 允许 | ✅ 允许 | 读取 VM 执行状态 |
 | NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ 允许 | ✅ | ✅ | 纯哈希函数 |
-| NTFUNC | `hac_to_mei/zhu`、`mei/zhu_to_hac` | 1 | ✅ 允许 | ✅ | ✅ | 纯金额转换 |
+| NTFUNC | `hac_to_mei/zhu`、`mei/zhu_to_hac`、`u64_to_fold64`、`fold64_to_u64` | 1 | ✅ 允许 | ✅ | ✅ | 纯金额/编码转换 |
+| NTFUNC | `pack_asset(serial, amount)` | 2 | ✅ 允许 | ✅ | ✅ | 由两个 u64 组装 AssetAmt bytes |
 | NTFUNC | `address_ptr` | 1 | ✅ 允许 | ✅ | ✅ | 纯地址指针提取 |
 
 **小结**：
@@ -883,6 +884,9 @@ contract Child {
 | `hac_to_zhu(n)` | HAC 转 zhu |
 | `mei_to_hac(n)` | Mei 转 HAC |
 | `zhu_to_hac(n)` | Zhu 转 HAC |
+| `u64_to_fold64(n)` | 将 u64 编码为 Fold64 bytes |
+| `fold64_to_u64(data)` | 将 Fold64 bytes 解码为 u64 |
+| `pack_asset(serial, amount)` | 将 `(u64,u64)` 编码为 AssetAmt bytes |
 
 ### 11.5 扩展动作（EXTACTION）
 

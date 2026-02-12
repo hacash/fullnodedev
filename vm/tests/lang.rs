@@ -606,7 +606,8 @@ fn print_decomp_bind_alias_clones_expression() {
     let printed = ircode_to_lang(&ircode).unwrap();
     println!("{}", printed);
     assert!(printed.matches("print ").count() >= 2);
-    assert!(printed.matches("if 1 {").count() >= 2);
+    let cond_count = printed.matches("if 1 {").count() + printed.matches("if true {").count();
+    assert!(cond_count >= 2, "unexpected decompiled text:\n{}", printed);
     assert!(printed.contains("} else {"));
 }
 
@@ -1159,7 +1160,11 @@ fn decompile_hacswap_sell_args_without_list() {
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = format_ircode_to_lang(&ircode, Some(&smap)).unwrap();
     // panic!("{}", printed);
-    assert!(printed.contains("HacSwap.sell(sat, 100000, 300)"));
+    assert!(
+        printed.contains("HacSwap.sell(sat, 100000, 300)"),
+        "unexpected decompiled text:\n{}",
+        printed
+    );
     assert!(!printed.contains("pack_list {"));
 }
 

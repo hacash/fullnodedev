@@ -727,7 +727,8 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 |--------|-------------|------|-----------|-----------|------------------|----------|
 | NTENV | `context_address` | 0 | ❌ Forbidden (`nsr!`) | ✅ Allowed | ✅ Allowed | Read VM execution state |
 | NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ Allowed | ✅ | ✅ | Pure hash functions |
-| NTFUNC | `hac_to_mei/zhu`, `mei/zhu_to_hac` | 1 | ✅ Allowed | ✅ | ✅ | Pure amount conversion |
+| NTFUNC | `hac_to_mei/zhu`, `mei/zhu_to_hac`, `u64_to_fold64`, `fold64_to_u64` | 1 | ✅ Allowed | ✅ | ✅ | Pure amount/encoding conversion |
+| NTFUNC | `pack_asset(serial, amount)` | 2 | ✅ Allowed | ✅ | ✅ | Build AssetAmt bytes from two u64 |
 | NTFUNC | `address_ptr` | 1 | ✅ Allowed | ✅ | ✅ | Pure address pointer extraction |
 
 **Summary**:
@@ -883,6 +884,9 @@ contract Child {
 | `hac_to_zhu(n)` | HAC to zhu conversion |
 | `mei_to_hac(n)` | Mei to HAC |
 | `zhu_to_hac(n)` | Zhu to HAC |
+| `u64_to_fold64(n)` | Encode u64 to Fold64 bytes |
+| `fold64_to_u64(data)` | Decode Fold64 bytes to u64 |
+| `pack_asset(serial, amount)` | Encode `(u64,u64)` into AssetAmt bytes |
 
 ### 11.5 Extension Actions (EXTACTION)
 
