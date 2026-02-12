@@ -40,6 +40,26 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
 - min_of_p2sh_call: 72. The VM call will consume at least this gas from the shared counter.
 - min_of_abst_call: 96. The VM call will consume at least this gas from the shared counter.
 
+## tx.gas_max (1-byte) encoding
+
+`TransactionType3.gas_max` is a 1-byte lookup key. The VM reads it via `TransactionRead::fee_extend()` and decodes it with `decode_gas_budget()` (see `vm/src/rt/gas.rs`).
+
+- `gas_max=0`: no VM gas budget (non-contract tx); any contract/p2sh call will fail to initialize gas.
+- `gas_max>0`: decoded budget is read from `GAS_BUDGET_LOOKUP_1P07_FROM_138` and then clamped by `max_gas_of_tx` (chain hard cap).
+
+Decode (byte → gas):
+
+- `b=0` → `0`
+- `b in 1..=255`:
+  - `gas = GAS_BUDGET_LOOKUP_1P07_FROM_138[b]`
+  - table generation rule: `table[i] = floor(138 * 1.07^i)`, `i in 0..=255`
+  - table max: `table[255] = 4,292,817,207` (fits in `u32`)
+
+Practical notes on current L1 parameters (`max_gas_of_tx=8192`):
+
+- The lookup table is dense and strictly increasing (1-byte full scale), suitable for future L2/high-cap settings.
+- Under current L1 cap, bytes above the clamp threshold are still equivalent after clamping.
+
 
 ## Extra cost every behavior
 

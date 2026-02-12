@@ -31,9 +31,13 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value)
     if txty < TY3 {
         return errf!("current transaction type {} too low to setup vm, need at least {}", txty, TY3)
     }
+    // Ensure VM is initialized if a VM assigner is registered.
+    // Protocol normally does this at tx execution entry, but callers may invoke `setup_vm_run`
+    // directly in tests/tools.
+    protocol::setup::do_vm_init(ctx);
     if !ctx.vm().usable() {
         let gmx = ctx.tx().fee_extend().unwrap_or(0);
-        return errf!("vm not initialized for this tx, gas_max {}", gmx)
+        return errf!("vm not initialized for this tx (tx_type={}, gas_max_byte={})", txty, gmx)
     }
     // Set ctx.level for this VM call and restore it after returning.
     let old_level = ctx.level();
