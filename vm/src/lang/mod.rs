@@ -88,7 +88,7 @@ pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Re
 pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
     let mut opt = PrintOption::new("  ", 0);
     opt.recover_literals = true;
-    opt.numeric_literal_suffix = true;
+    opt.simplify_numeric_as_suffix = true;
     Ok(Formater::new(&opt).print(&block))
 }
 
@@ -108,7 +108,7 @@ pub fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtR
     opt.flatten_array_list = true;
     opt.flatten_syscall_cat = true;
     opt.recover_literals = true;
-    opt.numeric_literal_suffix = true;
+    opt.simplify_numeric_as_suffix = true;
     Ok(Formater::new(&opt).print(&block))
 }
 
