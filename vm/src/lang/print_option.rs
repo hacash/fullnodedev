@@ -30,7 +30,7 @@ pub struct PrintOption<'a> {
     pub recover_literals: bool,
     /// When enabled, prints numeric literals with type suffix (e.g., `100u64`)
     /// instead of using `as` keyword (e.g., `100 as u64`).
-    pub numeric_literal_suffix: bool,
+    pub simplify_numeric_as_suffix: bool,
     // Tracking of printed slots/constants to avoid duplication.
     allocated: Rc<RefCell<PrintHashSet<u8>>>,
     printed_consts: Rc<RefCell<PrintHashSet<String>>>,
@@ -53,7 +53,7 @@ impl<'a> PrintOption<'a> {
             flatten_array_list: false,
             flatten_syscall_cat: false,
             recover_literals: false,
-            numeric_literal_suffix: true,
+            simplify_numeric_as_suffix: true,
             allocated: Rc::new(RefCell::new(PrintHashSet::new())),
             printed_consts: Rc::new(RefCell::new(PrintHashSet::new())),
             pending_consts: Rc::new(RefCell::new(Vec::new())),

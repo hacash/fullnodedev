@@ -348,10 +348,10 @@ mod token_t {
         assert!(result.is_ok(), "100u64 should be valid");
     }
 
-    // ==================== Numeric Literal Suffix Decompilation Test ====================
+    // ==================== Simplify Numeric As Suffix Test ====================
 
     #[test]
-    fn test_numeric_literal_suffix_decompilation() {
+    fn test_simplify_numeric_as_suffix_decompilation() {
         use super::irnode_to_lang;
         use super::lang_to_irnode;
 
@@ -428,7 +428,7 @@ mod token_t {
     }
 
     #[test]
-    fn test_numeric_literal_suffix_option_off_uses_as_cast() {
+    fn test_simplify_numeric_as_suffix_option_off_uses_as_cast() {
         use super::lang_to_irnode;
         use super::Formater;
         use super::PrintOption;
@@ -438,17 +438,17 @@ mod token_t {
 
         let mut opt = PrintOption::new("  ", 0);
         opt.recover_literals = true;
-        opt.numeric_literal_suffix = false;
+        opt.simplify_numeric_as_suffix = false;
         let decompiled = Formater::new(&opt).print(&ir);
 
         assert!(
             decompiled.contains("100 as u64"),
-            "Expected '100 as u64' when numeric_literal_suffix=false, got: {}",
+            "Expected '100 as u64' when simplify_numeric_as_suffix=false, got: {}",
             decompiled
         );
         assert!(
             !decompiled.contains("100u64"),
-            "Should NOT contain '100u64' when numeric_literal_suffix=false, got: {}",
+            "Should NOT contain '100u64' when simplify_numeric_as_suffix=false, got: {}",
             decompiled
         );
     }

@@ -639,35 +639,35 @@ impl<'a> Formater<'a> {
                     );
                     return Some(match s.inst {
                         CU8 => {
-                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
                                 format!("{}{}{}", pre, operand, "u8")
                             } else {
                                 format!("{}{} as u8", pre, operand)
                             }
                         }
                         CU16 => {
-                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
                                 format!("{}{}{}", pre, operand, "u16")
                             } else {
                                 format!("{}{} as u16", pre, operand)
                             }
                         }
                         CU32 => {
-                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
                                 format!("{}{}{}", pre, operand, "u32")
                             } else {
                                 format!("{}{} as u32", pre, operand)
                             }
                         }
                         CU64 => {
-                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
                                 format!("{}{}{}", pre, operand, "u64")
                             } else {
                                 format!("{}{} as u64", pre, operand)
                             }
                         }
                         CU128 => {
-                            if self.opt.numeric_literal_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
                                 format!("{}{}{}", pre, operand, "u128")
                             } else {
                                 format!("{}{} as u128", pre, operand)
@@ -1384,7 +1384,7 @@ impl<'a> Formater<'a> {
                             _ => unreachable!(),
                         };
                         return maybe!(
-                            self.opt.numeric_literal_suffix,
+                            self.opt.simplify_numeric_as_suffix,
                             format!("{}{}", literal.text, suffix),
                             format!("{} as {}", literal.text, suffix)
                         );
