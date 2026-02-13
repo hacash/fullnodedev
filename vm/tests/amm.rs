@@ -4,9 +4,9 @@ mod common;
 #[allow(unused)]
 mod amm {
 
-    use sys::*;
     use field::*;
     use protocol::action::*;
+    use sys::*;
 
     use vm::*;
     // use vm::ir::*;
@@ -336,48 +336,55 @@ mod amm {
             .syst(Abst::new(PermitSAT).bytecode(permit_sat).unwrap())
             .syst(Abst::new(PermitHAC).bytecode(permit_hac).unwrap())
             .func(
-                Func::new("prepare").unwrap()
+                Func::new("prepare")
+                    .unwrap()
                     .public()
                     .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
                     .bytecode(prepare_codes)
                     .unwrap(),
             )
             .func(
-                Func::new("deposit").unwrap()
+                Func::new("deposit")
+                    .unwrap()
                     .types(None, vec![VT::Address, VT::U64, VT::U64])
                     .bytecode(deposit_codes)
                     .unwrap(),
             )
             .func(
-                Func::new("withdraw").unwrap()
+                Func::new("withdraw")
+                    .unwrap()
                     .public()
                     .types(None, vec![VT::Address, VT::U128])
                     .bytecode(withdraw_codes)
                     .unwrap(),
             )
             .func(
-                Func::new("buy").unwrap()
+                Func::new("buy")
+                    .unwrap()
                     .public()
                     .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
                     .bytecode(buy_codes)
                     .unwrap(),
             )
             .func(
-                Func::new("sell").unwrap()
+                Func::new("sell")
+                    .unwrap()
                     .public()
                     .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
                     .bytecode(sell_codes)
                     .unwrap(),
             )
             .func(
-                Func::new("total").unwrap()
+                Func::new("total")
+                    .unwrap()
                     .public()
                     .types(None, vec![])
                     .bytecode(total_codes)
                     .unwrap(),
             )
             .func(
-                Func::new("shares").unwrap()
+                Func::new("shares")
+                    .unwrap()
                     .public()
                     .types(Some(VT::U128), vec![VT::Address])
                     .bytecode(shares_codes)

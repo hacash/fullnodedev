@@ -5,8 +5,4 @@ use sys::*;
 use basis::interface::*;
 use protocol::action::*;
 
-
-
-
-include!{"hook.rs"}
-
+include! {"hook.rs"}

@@ -93,8 +93,15 @@ impl Exiter {
     
     pub fn exit(&self) {
         // broadcast to nitify all thread to quit
-        let _ = self.sender.broadcast_blocking(());
-        // let _ = self.sender.broadcast(());
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let _ = self.sender.broadcast_blocking(());
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            // `broadcast_blocking` is unavailable on wasm targets.
+            let _ = self.sender.try_broadcast(());
+        }
     }
     
     pub fn wait(self) {

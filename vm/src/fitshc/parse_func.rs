@@ -1,12 +1,12 @@
-use sys::{Ret, errf};
-use sys::*;
-use crate::rt::{Token, KwTy};
-use crate::value::ValueTy;
+use super::compile_body::{CompiledCode, compile_body};
+use super::state::ParseState;
 use crate::Token::*;
 use crate::contract::Func;
 use crate::rt::SourceMap;
-use super::state::ParseState;
-use super::compile_body::{compile_body, CompiledCode};
+use crate::rt::{KwTy, Token};
+use crate::value::ValueTy;
+use sys::*;
+use sys::{Ret, errf};
 
 pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, SourceMap, String)> {
     // function public/private/ircode Name(...) -> Ret { ... }
@@ -16,28 +16,28 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
 
     let mut is_public = false;
     let mut is_ircode = false;
-    
+
     // Modifiers
     while let Some(tk) = state.current() {
         match tk {
             Keyword(KwTy::Public) => {
                 is_public = true;
                 state.advance();
-            },
+            }
             Keyword(KwTy::Private) => {
                 state.advance();
-            },
+            }
             Keyword(KwTy::Virtual) => {
                 // Reserved modifier; currently has no semantic effect in codegen.
                 state.advance();
-            },
+            }
             Keyword(KwTy::IrCode) => {
                 is_ircode = true;
                 state.advance();
-            },
+            }
             Keyword(KwTy::ByteCode) => {
                 state.advance();
-            },
+            }
             _ => break,
         }
     }
@@ -47,14 +47,17 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
 
     // Setup Func
     let mut func = Func::new(&name)?;
-    if is_public { func = func.public(); }
-    
+    if is_public {
+        func = func.public();
+    }
+
     let arg_types: Vec<ValueTy> = args.iter().map(|(_, t)| *t).collect();
     func = func.types(ret_ty, arg_types);
-    
+
     // Compile body using shared compile function
-    let (irnodes, compiled, source_map) = compile_body(body_tokens, args, &state.libs, &state.consts, is_ircode)?;
-    
+    let (irnodes, compiled, source_map) =
+        compile_body(body_tokens, args, &state.libs, &state.consts, is_ircode)?;
+
     func = match compiled {
         CompiledCode::IrCode(_) => func.irnode(irnodes)?,
         CompiledCode::Bytecode(bts) => func.bytecode(bts)?,
@@ -63,17 +66,18 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
     Ok((func, source_map, name))
 }
 
-
-pub fn parse_func_sig(state: &mut ParseState) -> Ret<(String, Vec<(String, ValueTy)>, Option<ValueTy>)> {
+pub fn parse_func_sig(
+    state: &mut ParseState,
+) -> Ret<(String, Vec<(String, ValueTy)>, Option<ValueTy>)> {
     // Name(args?) -> Ret
     let name = if let Some(Identifier(n)) = state.current() {
         let n = n.clone();
         state.advance();
         n
     } else {
-        return errf!("expected function name but got {:?}", state.current())
+        return errf!("expected function name but got {:?}", state.current());
     };
-    
+
     let mut args = Vec::new();
     if let Some(Partition('(')) = state.current() {
         state.advance();
@@ -82,65 +86,71 @@ pub fn parse_func_sig(state: &mut ParseState) -> Ret<(String, Vec<(String, Value
                 state.advance();
                 break;
             }
-            if state.idx >= state.max { return errf!("args not closed") }
+            if state.idx >= state.max {
+                return errf!("args not closed");
+            }
 
             // arg: type
             let arg_name = if let Some(Identifier(n)) = state.current() {
-                 let n = n.clone();
-                 state.advance();
-                 n
+                let n = n.clone();
+                state.advance();
+                n
             } else {
-                 return errf!("expected arg name")
+                return errf!("expected arg name");
             };
 
             // :
             if let Some(Keyword(KwTy::Colon)) = state.current() {
                 state.advance();
             }
-            
+
             // type
             let rtype = parse_type(state);
             let aty = match rtype {
                 Some(t) => t,
-                None => return errf!("unknown type")
+                None => return errf!("unknown type"),
             };
             args.push((arg_name, aty));
-            
+
             // comma
             if let Some(Partition(',')) = state.current() {
-                 state.advance();
+                state.advance();
             }
         }
     }
-    
+
     // -> Ret
     let mut ret_ty = None;
     if let Some(Keyword(KwTy::Arrow)) = state.current() {
         state.advance();
-        
+
         // ( type )
         if let Some(Partition('(')) = state.current() {
-             state.advance();
+            state.advance();
         }
 
-        if state.idx >= state.max { return errf!("expected return type") }
+        if state.idx >= state.max {
+            return errf!("expected return type");
+        }
         let rtype = parse_type(state);
-        
+
         ret_ty = match rtype {
             Some(t) => Some(t),
-            None => return errf!("unknown return type")
+            None => return errf!("unknown return type"),
         };
 
         if let Some(Partition(')')) = state.current() {
-             state.advance();
+            state.advance();
         }
     }
-    
+
     Ok((name, args, ret_ty))
 }
 
 pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
-    if state.idx >= state.max { return None }
+    if state.idx >= state.max {
+        return None;
+    }
     let tk = &state.tokens[state.idx];
     let ty = if let Keyword(k) = tk {
         match k {
@@ -153,7 +163,7 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
             KwTy::Bytes => Some(ValueTy::Bytes),
             KwTy::Bool => Some(ValueTy::Bool),
             KwTy::List | KwTy::Map => Some(ValueTy::Compo),
-             _ => None 
+            _ => None,
         }
     } else if let Identifier(tn) = tk {
         match tn.as_str() {
@@ -166,10 +176,12 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
             "bytes" => Some(ValueTy::Bytes),
             "bool" => Some(ValueTy::Bool),
             "list" | "map" => Some(ValueTy::Compo),
-            _ => None
+            _ => None,
         }
-    } else { None };
-    
+    } else {
+        None
+    };
+
     if ty.is_some() {
         state.advance();
     }
@@ -182,8 +194,12 @@ pub fn parse_func_body_tokens(state: &mut ParseState) -> Ret<Vec<Token>> {
     let mut depth = 1;
     while state.idx < state.max {
         let t = &state.tokens[state.idx];
-        if let Partition('{') = t { depth += 1; }
-        if let Partition('}') = t { depth -= 1; }
+        if let Partition('{') = t {
+            depth += 1;
+        }
+        if let Partition('}') = t {
+            depth -= 1;
+        }
         if depth == 0 {
             state.advance(); // consume closing }
             return Ok(inner);

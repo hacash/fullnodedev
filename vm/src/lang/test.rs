@@ -199,7 +199,6 @@ mod token_t {
 
         let nonempty_ir =
             lang_to_irnode("map { \"k\": \"v\" }").expect("Failed to compile non-empty map");
-        let nonempty_serialized = nonempty_ir.serialize();
 
         let empty_decompiled = irnode_to_lang(empty_ir).expect("Failed to decompile empty map");
         println!("Empty map decompiled: {:?}", empty_decompiled);

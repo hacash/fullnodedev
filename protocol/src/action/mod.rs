@@ -1,55 +1,54 @@
 use std::any::*;
 
-use sys::*;
-use field::*;
 use basis::component::*;
 use basis::interface::*;
+use field::*;
+use sys::*;
 
-use super::setup::*;
-use super::state::*;
 use super::context::*;
 use super::operate::*;
+use super::setup::*;
+use super::state::*;
 
+include! {"util.rs"}
+include! {"macro.rs"}
+include! {"create.rs"}
 
-include!{"util.rs"}
-include!{"macro.rs"}
-include!{"create.rs"}
-
-include!{"hacash.rs"}
-include!{"satoshi.rs"}
-include!{"diamond.rs"}
-include!{"asset.rs"}
+include! {"hacash.rs"}
+include! {"satoshi.rs"}
+include! {"diamond.rs"}
+include! {"asset.rs"}
 // include!{"diamond_mint.rs"}
 // include!{"diamond_insc.rs"}
 // include!{"diamond_util.rs"}
 // include!{"channel.rs"}
-include!{"chainlimit.rs"}
+include! {"chainlimit.rs"}
 
-include!{"astselect.rs"}
-include!{"astif.rs"}
+include! {"astselect.rs"}
+include! {"astif.rs"}
 
 /*
 * register
 */
-action_register!{
+action_register! {
 
     // hac
     HacToTrs              // 1
     HacFromTrs            // 13
     HacFromToTrs          // 14
     // HacAmountCompress     // 15
-    
+
     // channel
     // ChannelOpen           // 2
     // ChannelClose          // 3
-    
+
     // diamond
     // DiamondMint           // 4
     DiaSingleTrs          // 5
     DiaFromToTrs          // 6
     DiaToTrs              // 7
     DiaFromTrs            // 8
-    
+
     // satoshi
     // SatoshiGenesis     // 9
     SatToTrs              // 10

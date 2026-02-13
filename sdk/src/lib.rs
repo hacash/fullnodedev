@@ -1,5 +1,5 @@
 // #![no_std]
-#![no_main]
+#![cfg_attr(all(target_arch = "wasm32", not(test)), no_main)]
 
 // use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -8,26 +8,13 @@
 //     loop {}
 // }
 
-#[allow(unused_macros)]
-macro_rules! panic {
-    ($s:expr) => {
-        loop {}
-    };
-    ($fmt:expr, $($s:expr),+) => {
-        loop {}
-    };
-}
-
-
-use wasm_bindgen::prelude::*;
+use field::*;
 use sys::Account as SysAccount;
 use sys::*;
-use field::*;
+use wasm_bindgen::prelude::*;
 
-
-include!{"param.rs"}
-include!{"util.rs"}
-include!{"account.rs"}
-include!{"coin.rs"}
-include!{"sign.rs"}
-
+include! {"param.rs"}
+include! {"util.rs"}
+include! {"account.rs"}
+include! {"coin.rs"}
+include! {"sign.rs"}

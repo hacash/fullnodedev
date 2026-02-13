@@ -1,14 +1,14 @@
-use sys::{Ret, errf};
-use sys::*;
-use crate::rt::{KwTy, AbstCall};
-use crate::contract::{Abst};
-use crate::value::ValueTy;
-use crate::rt::Token::{self, *};
-use field::Address;
+use super::compile_body::{CompiledCode, compile_body};
+use super::parse_deploy::parse_deploy;
+use super::parse_func::{parse_func_body_tokens, parse_func_sig, parse_function};
 use super::state::ParseState;
-use super::parse_deploy::{parse_deploy};
-use super::parse_func::{parse_function, parse_func_sig, parse_func_body_tokens};
-use super::compile_body::{compile_body, CompiledCode};
+use crate::contract::Abst;
+use crate::rt::Token::{self, *};
+use crate::rt::{AbstCall, KwTy};
+use crate::value::ValueTy;
+use field::Address;
+use sys::*;
+use sys::{Ret, errf};
 
 pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
     // optional pragma
@@ -20,9 +20,9 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
                 // consume version tokens like 0.1.0 or v0.1.0
                 loop {
                     match state.current() {
-                        Some(Integer(_)) |
-                        Some(Identifier(_)) |
-                        Some(Keyword(KwTy::Dot)) => state.advance(),
+                        Some(Integer(_)) | Some(Identifier(_)) | Some(Keyword(KwTy::Dot)) => {
+                            state.advance()
+                        }
                         _ => break,
                     }
                 }
@@ -34,8 +34,8 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
     if let Some(Keyword(KwTy::Contract)) = state.current() {
         state.advance();
         if let Some(Identifier(name)) = state.current() {
-             state.contract_name = name.clone();
-             state.advance();
+            state.contract_name = name.clone();
+            state.advance();
         }
         state.eat_partition('{')?;
 
@@ -52,7 +52,7 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
             parse_contract_body_item(state)?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -72,7 +72,9 @@ pub enum ConstValue {
 }
 
 fn parse_const_value(state: &mut ParseState) -> Ret<ConstValue> {
-    let token = state.current().cloned()
+    let token = state
+        .current()
+        .cloned()
         .ok_or_else(|| format!("Expected const value but got EOF"))?;
     state.advance();
 
@@ -97,13 +99,11 @@ fn parse_const_value(state: &mut ParseState) -> Ret<ConstValue> {
                 }
             }
         }
-        Token::Keyword(kw) => {
-            match kw {
-                KwTy::True => Ok(ConstValue::Bool(true)),
-                KwTy::False => Ok(ConstValue::Bool(false)),
-                _ => errf!("Invalid const value keyword: {:?}", kw),
-            }
-        }
+        Token::Keyword(kw) => match kw {
+            KwTy::True => Ok(ConstValue::Bool(true)),
+            KwTy::False => Ok(ConstValue::Bool(false)),
+            _ => errf!("Invalid const value keyword: {:?}", kw),
+        },
         _ => errf!("Expected const value but got {:?}", token),
     }
 }
@@ -140,11 +140,11 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             };
 
             state.consts.push((name, value_str));
-        },
+        }
         Some(Keyword(KwTy::Deploy)) => {
             let info = parse_deploy(state)?;
             state.deploy = Some(info);
-        },
+        }
         Some(Keyword(KwTy::Library)) => {
             state.advance();
             let libs = parse_addr_list(state)?;
@@ -153,17 +153,17 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                 state.libs.push((name, addr));
                 state.contract = state.contract.clone().lib(addr);
             }
-        },
+        }
         Some(Keyword(KwTy::Inherit)) => {
             state.advance();
             let inherits = parse_addr_list(state)?;
             for (_name, addr) in inherits {
                 state.contract = state.contract.clone().inh(addr);
             }
-        },
+        }
         Some(Keyword(KwTy::Abstract)) => {
             state.advance(); // consume abstract
-            
+
             // Check for ircode/bytecode modifier
             let mut is_ircode = false;
             while let Some(tk) = state.current() {
@@ -171,18 +171,21 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                     Keyword(KwTy::IrCode) => {
                         is_ircode = true;
                         state.advance();
-                    },
+                    }
                     Keyword(KwTy::ByteCode) => {
                         state.advance();
-                    },
+                    }
                     _ => break,
                 }
             }
-            
+
             let (name, args, ret_ty) = parse_func_sig(state)?;
             // return type must be integer error code if declared
             if let Some(rty) = ret_ty {
-                let ok = matches!(rty, ValueTy::U8 | ValueTy::U16 | ValueTy::U32 | ValueTy::U64 | ValueTy::U128);
+                let ok = matches!(
+                    rty,
+                    ValueTy::U8 | ValueTy::U16 | ValueTy::U32 | ValueTy::U64 | ValueTy::U128
+                );
                 if !ok {
                     return errf!("abstract '{}' return type must be integer error code", name);
                 }
@@ -193,36 +196,52 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             // validate param types
             let expect = aid.param_types();
             if expect.len() != args.len() {
-                return errf!("abstract '{}' params length mismatch: expect {}, got {}", name, expect.len(), args.len());
+                return errf!(
+                    "abstract '{}' params length mismatch: expect {}, got {}",
+                    name,
+                    expect.len(),
+                    args.len()
+                );
             }
             for (i, (_, ty)) in args.iter().enumerate() {
                 if *ty != expect[i] {
                     return errf!(
                         "abstract '{}' param {} type mismatch: expect {:?}, got {:?}",
-                        name, i, expect[i], ty
+                        name,
+                        i,
+                        expect[i],
+                        ty
                     );
                 }
             }
-            
+
             // compile abstract body using shared compile function
-            let (_irnodes, compiled, source_map) = compile_body(body_tokens, args.clone(), &state.libs, &state.consts, is_ircode)?;
-            
+            let (_irnodes, compiled, source_map) = compile_body(
+                body_tokens,
+                args.clone(),
+                &state.libs,
+                &state.consts,
+                is_ircode,
+            )?;
+
             let abst = match compiled {
                 CompiledCode::IrCode(ircodes) => Abst::new(aid).ircode(ircodes)?,
                 CompiledCode::Bytecode(bts) => Abst::new(aid).bytecode(bts)?,
             };
-            
+
             state.contract = state.contract.clone().syst(abst);
-            state.source_maps.push((format!("abstract::{}", name), source_map));
-        },
+            state
+                .source_maps
+                .push((format!("abstract::{}", name), source_map));
+        }
         Some(Keyword(KwTy::Function)) => {
             // consume 'function' inside parse_function
-            let (func, smap, name) = parse_function(state, true)?; 
+            let (func, smap, name) = parse_function(state, true)?;
             state.contract = state.contract.clone().func(func);
             state.source_maps.push((name, smap));
-        },
+        }
         _ => {
-            state.advance(); 
+            state.advance();
         }
     }
     Ok(())
@@ -243,13 +262,12 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, Address)>> {
             return errf!("Expected lib/inherit name");
         };
         state.advance();
-        
+
         if let Some(Keyword(KwTy::Colon)) = state.current() {
             state.advance();
         } else {
-             state.eat_partition(':')?; 
+            state.eat_partition(':')?;
         }
-
 
         let addr = if let Some(Identifier(a)) = state.current() {
             let adr = Address::from_readable(a).map_err(|e| e.to_string())?;
@@ -260,9 +278,9 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, Address)>> {
             state.advance();
             adr
         } else {
-             return errf!("Expected address but got {:?}", state.current()); 
+            return errf!("Expected address but got {:?}", state.current());
         };
-        
+
         list.push((name, addr));
 
         if let Some(Partition(',')) = state.current() {

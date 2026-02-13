@@ -1,19 +1,24 @@
 //! Gas Cost Test Suite
-//! 
+//!
 //! Comprehensive test suite for verifying that the actual gas consumption of each opcode
 //! executed by the virtual machine engine under different resource space conditions
 //! matches the expected design specified in vm/doc/gas-cost.md.
 
+use vm::rt::ItrErrCode;
 use vm::rt::*;
-use vm::*;
 use vm::space::*;
 use vm::value::*;
-use vm::rt::ItrErrCode;
+use vm::*;
 
 use vm::rt::Bytecode::*;
 
 // Directly use internal module path - need to create a wrapper function
-fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -> VmrtRes<(CallExit, i64, Vec<Value>, Heap)> {
+fn execute_test_with_argv(
+    gas_limit: i64,
+    codes: Vec<u8>,
+    argv: Option<Value>,
+) -> VmrtRes<(CallExit, i64, Vec<Value>, Heap)> {
+    use crate::machine::CtxHost;
     use basis::component::Env;
     use basis::interface::{Context, TransactionRead};
     use field::{Address, Amount, Hash};
@@ -21,27 +26,46 @@ fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -
     use protocol::state::EmptyLogs;
     use space::{CtcKVMap, GKVMap, Heap, Stack};
     use sys::Ret;
-    use crate::machine::CtxHost;
 
     #[derive(Default, Clone, Debug)]
     struct DummyTx;
 
     impl field::Serialize for DummyTx {
-        fn size(&self) -> usize { 0 }
-        fn serialize(&self) -> Vec<u8> { vec![] }
+        fn size(&self) -> usize {
+            0
+        }
+        fn serialize(&self) -> Vec<u8> {
+            vec![]
+        }
     }
 
     impl basis::interface::TxExec for DummyTx {}
 
     impl TransactionRead for DummyTx {
-        fn ty(&self) -> u8 { 3 }
-        fn hash(&self) -> Hash { Hash::default() }
-        fn hash_with_fee(&self) -> Hash { Hash::default() }
-        fn main(&self) -> Address { Address::default() }
-        fn addrs(&self) -> Vec<Address> { vec![Address::default()] }
-        fn fee(&self) -> &Amount { Amount::zero_ref() }
-        fn fee_purity(&self) -> u64 { 1 }
-        fn fee_extend(&self) -> Ret<u8> { Ok(1) }
+        fn ty(&self) -> u8 {
+            3
+        }
+        fn hash(&self) -> Hash {
+            Hash::default()
+        }
+        fn hash_with_fee(&self) -> Hash {
+            Hash::default()
+        }
+        fn main(&self) -> Address {
+            Address::default()
+        }
+        fn addrs(&self) -> Vec<Address> {
+            vec![Address::default()]
+        }
+        fn fee(&self) -> &Amount {
+            Amount::zero_ref()
+        }
+        fn fee_purity(&self) -> u64 {
+            1
+        }
+        fn fee_extend(&self) -> Ret<u8> {
+            Ok(1)
+        }
     }
 
     let mut pc: usize = 0;
@@ -56,13 +80,15 @@ fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -
     struct TestStateMem {
         mem: std::collections::HashMap<Vec<u8>, Vec<u8>>,
     }
-    
+
     impl Default for TestStateMem {
         fn default() -> Self {
-            Self { mem: std::collections::HashMap::new() }
+            Self {
+                mem: std::collections::HashMap::new(),
+            }
         }
     }
-    
+
     impl basis::interface::State for TestStateMem {
         fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
             self.mem.get(&k).cloned()
@@ -74,8 +100,13 @@ fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -
             self.mem.remove(&k);
         }
     }
-    
-    let mut ctx = ContextInst::new(env, Box::new(TestStateMem::default()), Box::new(EmptyLogs{}), &tx);
+
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(TestStateMem::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
     let ctx: &mut dyn Context = &mut ctx;
 
     let mut ops = Stack::new(256);
@@ -86,14 +117,14 @@ fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -
     let mut heap = Heap::new(64);
 
     let mut host = CtxHost::new(ctx);
-    
+
     // Validate code length before execution to avoid panic from debug_assert
     // Note: We can't prevent all panics from debug_assert, but we can try to validate
     // that codes has at least one byte (END) before execution
     if codes.is_empty() {
         return Err(ItrErr::new(ItrErrCode::InstInvalid, "empty code"));
     }
-    
+
     vm::interpreter::execute_code(
         &mut pc,
         &codes,
@@ -112,9 +143,8 @@ fn execute_test_with_argv(gas_limit: i64, codes: Vec<u8>, argv: Option<Value>) -
         &mut host,
         &cadr,
         &cadr,
-    ).map(|r|{
-        (r, gas_limit - gas, ops.release(), heap)
-    })
+    )
+    .map(|r| (r, gas_limit - gas, ops.release(), heap))
 }
 
 /// Test result structure
@@ -214,17 +244,17 @@ impl ExpectedGasCalculator {
     fn heap_grow_gas(&self, segments: usize, _current_segments: usize) -> i64 {
         let mut gas: i64 = 0;
         let exp_count = segments.min(8);
-        
+
         // Exponential growth part
         for i in 0..exp_count {
             gas += 1i64 << (i + 1);
         }
-        
+
         // Linear growth part
         if segments > 8 {
             gas += ((segments - 8) * 256) as i64;
         }
-        
+
         gas
     }
 
@@ -276,12 +306,9 @@ impl ExpectedGasCalculator {
 
 /// Execute a single opcode test and return actual gas consumption
 /// Note: This function automatically excludes END gas (1) since all valid bytecode must end with END
-fn execute_opcode_test(
-    codes: Vec<u8>,
-    initial_stack: Option<Vec<Value>>,
-) -> Result<i64, String> {
+fn execute_opcode_test(codes: Vec<u8>, initial_stack: Option<Vec<Value>>) -> Result<i64, String> {
     let gas_limit = 1_000_000i64;
-    
+
     // Prepare initial stack
     let mut argv = None;
     if let Some(stack_vals) = initial_stack {
@@ -297,7 +324,7 @@ fn execute_opcode_test(
             // Exclude END gas (1) since all valid bytecode must end with END
             let end_gas = 1i64;
             Ok(gas_consumed - end_gas)
-        },
+        }
         Err(e) => Err(format!("Execution error: {:?}", e)),
     }
 }
@@ -314,20 +341,17 @@ fn measure_baseline_gas(setup_codes: Vec<u8>) -> Result<i64, String> {
 /// This function executes setup code once, then measures the target opcode gas
 /// by comparing total gas (setup + target) with baseline gas (setup only)
 /// Note: execute_opcode_test already excludes END gas, so we don't need to handle it here
-fn measure_opcode_gas_with_setup(
-    setup_codes: Vec<u8>,
-    target_opcode: u8,
-) -> Result<i64, String> {
+fn measure_opcode_gas_with_setup(setup_codes: Vec<u8>, target_opcode: u8) -> Result<i64, String> {
     // Measure baseline (setup + END) - this should not include target opcode
     let mut baseline_codes = setup_codes.clone();
     baseline_codes.extend(build_codes!(END));
     let baseline = execute_opcode_test(baseline_codes, None)?;
-    
+
     // Measure total (setup + target_opcode + END)
     // Note: Some opcodes need parameters after the opcode byte
     let mut total_codes = setup_codes.clone(); // Clone again to avoid consuming
     total_codes.push(target_opcode);
-    
+
     // Add parameter for opcodes that need it
     // Note: We use numeric comparison since target_opcode is u8
     if target_opcode == GET as u8 || target_opcode == PUT as u8 {
@@ -338,14 +362,14 @@ fn measure_opcode_gas_with_setup(
     } else if target_opcode == HGROW as u8 {
         total_codes.push(1u8); // segments parameter
     }
-    
+
     total_codes.extend(build_codes!(END));
     let total = execute_opcode_test(total_codes, None)?;
-    
+
     // Target opcode gas = total - baseline
     // Both already exclude END gas, so this is correct
     let target_gas = total - baseline;
-    
+
     Ok(target_gas)
 }
 
@@ -378,41 +402,42 @@ fn test_base_gas_combination(
     calc: &ExpectedGasCalculator,
 ) {
     let expected = calc.base_gas(target_opcode);
-    
+
     // Clone setup_codes first since we'll need it later
     let setup_codes_clone = setup_codes.clone();
-    
+
     // Build test code: setup + target_opcode + END
     // For opcodes with parameters, we need to append them after the opcode
     let mut codes = setup_codes;
-    
+
     // Add target opcode and its parameters
     match target_opcode {
-        GET | PUT | DUPN | POPN | PICK | HGROW | HREADU | HWRITEX | XLG | XOP | CTO | TIS | NTFUNC | ALLOC => {
+        GET | PUT | DUPN | POPN | PICK | HGROW | HREADU | HWRITEX | XLG | XOP | CTO | TIS
+        | NTFUNC | ALLOC => {
             codes.push(target_opcode as u8);
             codes.push(0u8);
-        },
+        }
         PU16 | HREADUL | HWRITEXL | GETX | PUTX => {
             codes.push(target_opcode as u8);
             codes.push(0u8);
             codes.push(0u8);
-        },
+        }
         PBUF => {
             codes.push(target_opcode as u8);
             codes.push(0u8);
-        },
+        }
         PBUFL => {
             codes.push(target_opcode as u8);
             codes.push(0u8);
             codes.push(0u8);
-        },
+        }
         _ => {
             codes.push(target_opcode as u8);
         }
     }
-    
+
     codes.extend(build_codes!(END));
-    
+
     match execute_opcode_test(codes, None) {
         Ok(total_gas) => {
             // Calculate setup gas
@@ -422,7 +447,7 @@ fn test_base_gas_combination(
                 Ok(gas) => gas,
                 Err(_) => 0, // If setup fails, assume 0
             };
-            
+
             // Target opcode gas = total - setup
             let actual = total_gas - setup_gas;
             let success = actual == expected;
@@ -453,7 +478,7 @@ fn test_base_gas_combination(
 /// Test base gas consumption
 fn test_base_gas(opcode: Bytecode, reporter: &mut TestReporter, calc: &ExpectedGasCalculator) {
     let expected = calc.base_gas(opcode);
-    
+
     // Build test code
     let codes = match opcode {
         END => build_codes!(END),
@@ -527,37 +552,37 @@ fn test_base_gas(opcode: Bytecode, reporter: &mut TestReporter, calc: &ExpectedG
             // These need compo value on stack - use combination test
             test_base_gas_combination(build_codes!(NEWLIST), opcode, reporter, calc);
             return;
-        },
+        }
         INSERT => {
             // INSERT needs compo, key, and value
             test_base_gas_combination(build_codes!(NEWLIST PNBUF PNBUF), opcode, reporter, calc);
             return;
-        },
+        }
         REMOVE => {
             // REMOVE needs compo and key
             test_base_gas_combination(build_codes!(NEWLIST PNBUF), opcode, reporter, calc);
             return;
-        },
+        }
         CLEAR => {
             // CLEAR needs compo value
             test_base_gas_combination(build_codes!(NEWLIST), opcode, reporter, calc);
             return;
-        },
+        }
         APPEND => {
             // APPEND needs compo and value
             test_base_gas_combination(build_codes!(NEWLIST PNBUF), opcode, reporter, calc);
             return;
-        },
+        }
         CLONE | MERGE | KEYS | VALUES | PACKLIST | PACKMAP | UPLIST => {
             // These need compo values - use combination test
             test_base_gas_combination(build_codes!(NEWLIST), opcode, reporter, calc);
             return;
-        },
+        }
         // Opcodes that need complex setup - use combination test or skip
         HREAD | HWRITE | MGET | GGET | SLOAD | ITEMGET | LOG1 | LOG2 | LOG3 | LOG4 => {
             // These opcodes are tested in dynamic gas tests, skip base gas test
             return;
-        },
+        }
         // Opcodes that need stack values but can be tested with minimal setup
         INC => build_codes!(P0 INC 0 END),
         DEC => build_codes!(P0 DEC 0 END),
@@ -641,7 +666,7 @@ fn test_dup_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
         let mut setup_codes = Vec::new();
         let mut _push_base_gas = 0i64;
         let mut _push_dynamic_gas = 0i64;
-        
+
         if size == 0 {
             setup_codes.extend(build_codes!(PNBUF));
             _push_base_gas = calc.base_gas(PNBUF);
@@ -660,7 +685,7 @@ fn test_dup_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
             _push_base_gas = calc.base_gas(PBUFL);
             _push_dynamic_gas = calc.stack_copy_gas(size);
         }
-        
+
         // Measure only DUP gas (excluding PBUF/PNBUF setup)
         match measure_opcode_gas_with_setup(setup_codes, DUP as u8) {
             Ok(actual) => {
@@ -795,7 +820,7 @@ fn test_hread_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcula
         // HREAD: requires offset and length on stack
         let length_u16 = length as u16;
         setup_codes.extend(length_u16.to_be_bytes());
-        
+
         // Measure only HREAD gas (excluding HGROW and stack setup)
         match measure_opcode_gas_with_setup(setup_codes, HREAD as u8) {
             Ok(actual) => {
@@ -846,7 +871,7 @@ fn test_get_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
             setup_codes.extend(vec![0u8; size]);
         }
         setup_codes.extend(build_codes!(PUT 0));
-        
+
         // Measure only GET gas (excluding ALLOC, PUT, and value push)
         match measure_opcode_gas_with_setup(setup_codes, GET as u8) {
             Ok(actual) => {
@@ -904,7 +929,7 @@ fn test_mget_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculat
         // Push key for MGET
         setup_codes.extend(build_codes!(PBUF 4));
         setup_codes.extend(b"key1");
-        
+
         // Measure only MGET gas (excluding MPUT and key push)
         match measure_opcode_gas_with_setup(setup_codes, MGET as u8) {
             Ok(actual) => {
@@ -960,7 +985,7 @@ fn test_gget_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculat
         // Push key for GGET
         setup_codes.extend(build_codes!(PBUF 4));
         setup_codes.extend(b"key1");
-        
+
         // Measure only GGET gas (excluding GPUT and key push)
         match measure_opcode_gas_with_setup(setup_codes, GGET as u8) {
             Ok(actual) => {
@@ -994,10 +1019,10 @@ fn test_gget_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculat
 fn test_itemget_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculator) {
     let base_gas = calc.base_gas(ITEMGET);
     let test_cases = vec![
-        (1, 10),   // 1 item, 10 bytes
-        (4, 20),   // 4 items, 20 bytes
-        (8, 40),   // 8 items, 40 bytes
-        (16, 80),  // 16 items, 80 bytes
+        (1, 10),  // 1 item, 10 bytes
+        (4, 20),  // 4 items, 20 bytes
+        (8, 40),  // 8 items, 40 bytes
+        (16, 80), // 16 items, 80 bytes
     ];
 
     for (item_count, item_size) in test_cases {
@@ -1017,14 +1042,17 @@ fn test_itemget_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcu
         }
         // Push key (index 0)
         setup_codes.extend(build_codes!(P0));
-        
+
         // Measure only ITEMGET gas (excluding NEWLIST, APPEND, and value push)
         match measure_opcode_gas_with_setup(setup_codes, ITEMGET as u8) {
             Ok(actual) => {
                 let success = actual == expected_total;
                 let result = TestResult {
                     opcode: ITEMGET,
-                    test_case: format!("dynamic gas (items: {}, item_size: {})", item_count, item_size),
+                    test_case: format!(
+                        "dynamic gas (items: {}, item_size: {})",
+                        item_count, item_size
+                    ),
                     expected_gas: expected_total,
                     actual_gas: actual,
                     difference: actual - expected_total,
@@ -1035,7 +1063,10 @@ fn test_itemget_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcu
             Err(e) => {
                 let result = TestResult {
                     opcode: ITEMGET,
-                    test_case: format!("dynamic gas (items: {}, item_size: {}, error: {})", item_count, item_size, e),
+                    test_case: format!(
+                        "dynamic gas (items: {}, item_size: {}, error: {})",
+                        item_count, item_size, e
+                    ),
                     expected_gas: expected_total,
                     actual_gas: 0,
                     difference: -expected_total,
@@ -1050,10 +1081,10 @@ fn test_itemget_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcu
 /// Test dynamic gas for LOG1-4 opcodes
 fn test_log_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculator) {
     let log_opcodes = vec![
-        (LOG1, 20, 1),  // base 20, 1 param
-        (LOG2, 24, 2),  // base 24, 2 params
-        (LOG3, 28, 3),  // base 28, 3 params
-        (LOG4, 32, 4),  // base 32, 4 params
+        (LOG1, 20, 1), // base 20, 1 param
+        (LOG2, 24, 2), // base 24, 2 params
+        (LOG3, 28, 3), // base 28, 3 params
+        (LOG4, 32, 4), // base 32, 4 params
     ];
 
     let test_sizes = vec![0, 10, 20, 50, 100];
@@ -1075,7 +1106,7 @@ fn test_log_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
             // But for gas calculation, LOG uses total_bytes = sum of all param sizes
             let mut codes = Vec::new();
             let mut param_push_gas = 0i64;
-            
+
             // Push all params: 1 topic + param_count data params
             // Total params = param_count + 1
             for _ in 0..(param_count + 1) {
@@ -1091,7 +1122,7 @@ fn test_log_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
             }
             codes.push(opcode as u8);
             codes.extend(build_codes!(END));
-            
+
             // Measure total gas (param push + LOG + END)
             match execute_opcode_test(codes, None) {
                 Ok(total_gas) => {
@@ -1101,7 +1132,10 @@ fn test_log_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
                     let success = actual == expected_total;
                     let result = TestResult {
                         opcode,
-                        test_case: format!("dynamic gas (param_size: {}, params: {})", size, param_count),
+                        test_case: format!(
+                            "dynamic gas (param_size: {}, params: {})",
+                            size, param_count
+                        ),
                         expected_gas: expected_total,
                         actual_gas: actual,
                         difference: actual - expected_total,
@@ -1112,7 +1146,10 @@ fn test_log_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculato
                 Err(e) => {
                     let result = TestResult {
                         opcode,
-                        test_case: format!("dynamic gas (param_size: {}, params: {}, error: {})", size, param_count, e),
+                        test_case: format!(
+                            "dynamic gas (param_size: {}, params: {}, error: {})",
+                            size, param_count, e
+                        ),
                         expected_gas: expected_total,
                         actual_gas: 0,
                         difference: -expected_total,
@@ -1152,7 +1189,7 @@ fn test_sload_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcula
         // Push key for SLOAD
         setup_codes.extend(build_codes!(PBUF 4));
         setup_codes.extend(b"key1");
-        
+
         // Measure only SLOAD gas (excluding SSAVE and key push)
         match measure_opcode_gas_with_setup(setup_codes, SLOAD as u8) {
             Ok(actual) => {
@@ -1186,21 +1223,21 @@ fn test_sload_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcula
 fn test_srent_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalculator) {
     let base_gas = calc.base_gas(SRENT);
     assert_eq!(base_gas, 64);
-    
+
     // Test cases: (value_byte, periods)
     let test_cases = vec![
         // Basic rent tests
-        (0, 1),      // 0 bytes, 1 period
-        (8, 1),      // 8 bytes, 1 period
-        (32, 1),     // 32 bytes, 1 period
-        (64, 1),     // 64 bytes, 1 period
-        (100, 1),    // 100 bytes, 1 period
+        (0, 1),   // 0 bytes, 1 period
+        (8, 1),   // 8 bytes, 1 period
+        (32, 1),  // 32 bytes, 1 period
+        (64, 1),  // 64 bytes, 1 period
+        (100, 1), // 100 bytes, 1 period
         // Multi-period tests
-        (8, 2),      // 8 bytes, 2 periods
-        (8, 10),     // 8 bytes, 10 periods
-        (32, 5),     // 32 bytes, 5 periods
-        (32, 100),   // 32 bytes, 100 periods
-        (100, 10),   // 100 bytes, 10 periods
+        (8, 2),    // 8 bytes, 2 periods
+        (8, 10),   // 8 bytes, 10 periods
+        (32, 5),   // 32 bytes, 5 periods
+        (32, 100), // 32 bytes, 100 periods
+        (100, 10), // 100 bytes, 10 periods
     ];
 
     for (value_byte, periods) in test_cases {
@@ -1243,7 +1280,10 @@ fn test_srent_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcula
             Err(e) => {
                 let result = TestResult {
                     opcode: SRENT,
-                    test_case: format!("dynamic gas (value_byte: {}, periods: {}, setup error: {})", value_byte, periods, e),
+                    test_case: format!(
+                        "dynamic gas (value_byte: {}, periods: {}, setup error: {})",
+                        value_byte, periods, e
+                    ),
                     expected_gas: expected_total,
                     actual_gas: 0,
                     difference: -expected_total,
@@ -1271,7 +1311,10 @@ fn test_srent_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcula
             Err(e) => {
                 let result = TestResult {
                     opcode: SRENT,
-                    test_case: format!("dynamic gas (value_byte: {}, periods: {}, param push error: {})", value_byte, periods, e),
+                    test_case: format!(
+                        "dynamic gas (value_byte: {}, periods: {}, param push error: {})",
+                        value_byte, periods, e
+                    ),
                     expected_gas: expected_total,
                     actual_gas: 0,
                     difference: -expected_total,
@@ -1296,7 +1339,10 @@ fn test_srent_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcula
                 let success = actual == expected_total;
                 let result = TestResult {
                     opcode: SRENT,
-                    test_case: format!("dynamic gas (value_byte: {}, periods: {})", value_byte, periods),
+                    test_case: format!(
+                        "dynamic gas (value_byte: {}, periods: {})",
+                        value_byte, periods
+                    ),
                     expected_gas: expected_total,
                     actual_gas: actual,
                     difference: actual - expected_total,
@@ -1307,7 +1353,10 @@ fn test_srent_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcula
             Err(e) => {
                 let result = TestResult {
                     opcode: SRENT,
-                    test_case: format!("dynamic gas (value_byte: {}, periods: {}, error: {})", value_byte, periods, e),
+                    test_case: format!(
+                        "dynamic gas (value_byte: {}, periods: {}, error: {})",
+                        value_byte, periods, e
+                    ),
                     expected_gas: expected_total,
                     actual_gas: 0,
                     difference: -expected_total,
@@ -1344,7 +1393,7 @@ fn test_hwrite_dynamic_gas(reporter: &mut TestReporter, calc: &ExpectedGasCalcul
             setup_codes.extend(size_u16.to_be_bytes());
             setup_codes.extend(vec![0u8; size]);
         }
-        
+
         // Measure only HWRITE gas (excluding HGROW and stack setup)
         // HWRITE requires offset (u16) and value on stack
         match measure_opcode_gas_with_setup(setup_codes, HWRITE as u8) {
@@ -1382,25 +1431,13 @@ mod tests {
     #[test]
     fn test_all_opcodes_base_gas() {
         use std::panic;
-        
+
         let mut reporter = TestReporter::new();
         let calc = ExpectedGasCalculator::new();
 
         // Test all valid opcodes
         // Opcodes with gas cost = 1 - test only those that can be tested independently
-        let gas_1_opcodes = vec![
-            P0,
-            P1,
-            P2,
-            P3,
-            PNBUF,
-            PNIL,
-            TNIL,
-            TMAP,
-            TLIST,
-            NOP,
-            END,
-        ];
+        let gas_1_opcodes = vec![P0, P1, P2, P3, PNBUF, PNIL, TNIL, TMAP, TLIST, NOP, END];
 
         for opcode in gas_1_opcodes {
             // Use catch_unwind to handle panics gracefully
@@ -1419,9 +1456,11 @@ mod tests {
                 reporter.record(test_result);
             }
         }
-        
+
         // Test opcodes that need parameters separately
-        let opcodes_with_params = vec![PU8, CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, POP, RET, ABT, ERR, AST, PRT];
+        let opcodes_with_params = vec![
+            PU8, CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, POP, RET, ABT, ERR, AST, PRT,
+        ];
         for opcode in opcodes_with_params {
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 test_base_gas(opcode, &mut reporter, &calc);
@@ -1440,17 +1479,7 @@ mod tests {
         }
 
         // Opcodes with gas cost = 2 (default value, test some common ones)
-        let gas_2_opcodes = vec![
-            PU16,
-            SWAP,
-            SIZE,
-            ADD,
-            SUB,
-            AND,
-            OR,
-            EQ,
-            NEQ,
-        ];
+        let gas_2_opcodes = vec![PU16, SWAP, SIZE, ADD, SUB, AND, OR, EQ, NEQ];
 
         for opcode in gas_2_opcodes {
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
@@ -1470,15 +1499,7 @@ mod tests {
         }
 
         // Opcodes with gas cost = 3
-        let gas_3_opcodes = vec![
-            BRL,
-            BRS,
-            BRSL,
-            BRSLN,
-            XLG,
-            PUT,
-            CHOOSE,
-        ];
+        let gas_3_opcodes = vec![BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE];
 
         for opcode in gas_3_opcodes {
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
@@ -1499,25 +1520,8 @@ mod tests {
 
         // Opcodes with gas cost = 4
         let _gas_4_opcodes = vec![
-            DUPN,
-            POPN,
-            PICK,
-            PBUF,
-            PBUFL,
-            MOD,
-            MUL,
-            DIV,
-            XOP,
-            HREAD,
-            HREADU,
-            HREADUL,
-            HSLICE,
-            HGROW,
-            ITEMGET,
-            HEAD,
-            BACK,
-            HASKEY,
-            LENGTH,
+            DUPN, POPN, PICK, PBUF, PBUFL, MOD, MUL, DIV, XOP, HREAD, HREADU, HREADUL, HSLICE,
+            HGROW, ITEMGET, HEAD, BACK, HASKEY, LENGTH,
         ];
 
         // Opcodes with gas cost = 4 - test only those that can be tested independently
@@ -1525,16 +1529,16 @@ mod tests {
         // HREADU, HREADUL need heap setup - skip (tested in dynamic tests)
         // HSLICE needs heap setup - skip
         let gas_4_testable = vec![PBUF, PBUFL, MOD, MUL, DIV, XOP, HGROW];
-        
+
         for opcode in gas_4_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Test DUPN, POPN, PICK with combination test
         test_base_gas_combination(build_codes!(P0 P1), DUPN, &mut reporter, &calc);
         test_base_gas_combination(build_codes!(P0 P1), POPN, &mut reporter, &calc);
         test_base_gas_combination(build_codes!(P0 P1), PICK, &mut reporter, &calc);
-        
+
         // Skip HREAD, ITEMGET, HEAD, BACK, HASKEY, LENGTH - tested in dynamic gas tests or need combination test
 
         // Opcodes with gas cost = 5
@@ -1546,16 +1550,18 @@ mod tests {
         for opcode in gas_6_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip HWRITE, INSERT, REMOVE, CLEAR, APPEND - tested in dynamic gas tests or need combination test
 
         // Opcodes with gas cost = 8 - test only those that can be tested independently
-        let gas_8_testable = vec![CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, JOIN, REV, NEWLIST, NEWMAP, NTFUNC];
+        let gas_8_testable = vec![
+            CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, JOIN, REV, NEWLIST, NEWMAP, NTFUNC,
+        ];
 
         for opcode in gas_8_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip MGET - tested in dynamic gas tests
 
         // Opcodes with gas cost = 12 - test only those that can be tested independently
@@ -1564,7 +1570,7 @@ mod tests {
         for opcode in gas_12_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip PACKLIST, PACKMAP, UPLIST, CLONE, MERGE, KEYS, VALUES - need combination test
 
         // Opcodes with gas cost = 16
@@ -1573,7 +1579,7 @@ mod tests {
         for opcode in gas_16_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip GGET - tested in dynamic gas tests
 
         // Opcodes with gas cost = 20
@@ -1582,7 +1588,7 @@ mod tests {
         for opcode in gas_20_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip LOG1 - tested in dynamic gas tests
 
         // Opcodes with gas cost = 24
@@ -1591,7 +1597,7 @@ mod tests {
         for opcode in gas_24_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip LOG2 - tested in dynamic gas tests
 
         // Opcodes with gas cost = 28
@@ -1600,7 +1606,7 @@ mod tests {
         for opcode in gas_28_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip LOG3 - tested in dynamic gas tests
 
         // Opcodes with gas cost = 32
@@ -1609,7 +1615,7 @@ mod tests {
         for opcode in gas_32_testable {
             test_base_gas(opcode, &mut reporter, &calc);
         }
-        
+
         // Skip LOG4, SLOAD - tested in dynamic gas tests
 
         // Opcodes with gas cost = 64

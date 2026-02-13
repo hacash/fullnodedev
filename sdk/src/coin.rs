@@ -25,7 +25,6 @@ impl CoinTransferParam {
     pub fn new() -> Self {
         Self::default()
     }
-
 }
 
 
@@ -65,10 +64,11 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
     // let _from = q_acc!(param.from_prikey);
     let fee = q_amt!(param.fee);
     let toaddr = q_adr!(param.to_address);
-    let ts  = param.timestamp;
-    if ts == 0 {
-        return errf!("timestamp must give")
-    }
+    let ts = if param.timestamp == 0 {
+        curtimes()
+    } else {
+        param.timestamp
+    };
 
     // create trs
     let mut trsobj = TransactionType2::new_by(mainaddr, fee, ts);
@@ -91,7 +91,9 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
             obj.hacash = hac;
             Box::new(obj)
         });
-        trsobj.push_action(act).unwrap();
+        if let Err(e) = trsobj.push_action(act) {
+            return errf!("push hac transfer action error: {}", e);
+        }
     }
     // sat
     if param.satoshi > 0 {
@@ -108,7 +110,9 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
             obj.satoshi = sat;
             Box::new(obj)
         });
-        trsobj.push_action(act).unwrap();
+        if let Err(e) = trsobj.push_action(act) {
+            return errf!("push sat transfer action error: {}", e);
+        }
     }
     // hacd
     if param.diamonds.len() >= DiamondName::SIZE {
@@ -135,15 +139,17 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
                 }
             )
         );
-        trsobj.push_action(act).unwrap();
+        if let Err(e) = trsobj.push_action(act) {
+            return errf!("push diamond transfer action error: {}", e);
+        }
     }
     // do sign
     if let Err(e) = trsobj.fill_sign(&main) {
-        return errf!("fill main sgin error: {}", e)
+        return errf!("fill main sign error: {}", e)
     }
     if other_from {
         if let Err(e) = trsobj.fill_sign(&from) {
-            return errf!("fill from sgin error: {}", e)
+            return errf!("fill from sign error: {}", e)
         }
     }
     // finish

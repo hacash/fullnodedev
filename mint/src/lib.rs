@@ -1,39 +1,36 @@
 use std::any::*;
-use std::sync::*;
 use std::collections::*;
 use std::ops::*;
+use std::sync::*;
 
 use num_bigint::*;
 
-use sys::*;
-use field::*;
-use basis::*;
-use basis::interface::*;
 use basis::component::*;
 use basis::difficulty::*;
+use basis::interface::*;
+use basis::*;
+use field::*;
 use protocol::block::*;
 use protocol::state::*;
 use protocol::transaction::*;
+use sys::*;
 // use chain::interface::*;
 
+include! {"def.rs"}
+include! {"config.rs"}
 
-include!{"def.rs"}
-include!{"config.rs"}
-
-
-pub mod genesis;
 pub mod action;
-pub mod oprate;
-pub mod hook;
 pub mod api_service;
-
+pub mod genesis;
+pub mod hook;
+pub mod oprate;
 
 use action::*;
 
-include!{"check/block.rs"}
-include!{"check/bidding.rs"}
-include!{"check/initialize.rs"}
-include!{"check/coinbase.rs"}
-include!{"check/difficulty.rs"}
-include!{"check/consensus.rs"}
-include!{"minter.rs"}
+include! {"check/block.rs"}
+include! {"check/bidding.rs"}
+include! {"check/initialize.rs"}
+include! {"check/coinbase.rs"}
+include! {"check/difficulty.rs"}
+include! {"check/consensus.rs"}
+include! {"minter.rs"}

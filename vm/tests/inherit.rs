@@ -57,7 +57,8 @@ mod inherit {
             .func(Func::new("f3").unwrap().fitsh("return 31").unwrap())
             .func(Func::new("f4").unwrap().fitsh("return 4").unwrap())
             .func(
-                Func::new("f5").unwrap()
+                Func::new("f5")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -94,7 +95,8 @@ mod inherit {
             .inh(addr("iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh"))
             .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
             .func(
-                Func::new("f5").unwrap()
+                Func::new("f5")
+                    .unwrap()
                     .public()
                     .fitsh(
                         "
@@ -131,7 +133,8 @@ mod inherit {
             .inh(addr("ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz"))
             // .inh(addr("bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe"))
             .func(
-                Func::new("f9").unwrap()
+                Func::new("f9")
+                    .unwrap()
                     .public()
                     .fitsh(
                         "

@@ -383,10 +383,10 @@ mod address_tests {
         let privkey = "594ac10e33501c06e3fae0f9133f4701c204a1f9de62a97cc33754a051019db7";
 
         let adrb = Account::create_by(privkey).unwrap();
-        assert_eq!(adra, adrb.to_readable());
+        assert_eq!(adra, adrb.readable());
 
         let adrc = "1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9";
-        assert_eq!(adrc, Account::create_by("123456").unwrap().to_readable());
+        assert_eq!(adrc, Account::create_by("123456").unwrap().readable());
 
     }
 

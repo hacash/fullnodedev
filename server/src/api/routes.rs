@@ -2,14 +2,9 @@
 
 pub fn routes() -> Router<ApiCtx> {
 
-    let lrt = Router::new().route("/", get(console))
+    let lrt = Router::new()
     
     // query
-    .route(&query("latest"), get(latest))
-    .route(&query("hashrate"), get(hashrate))
-    .route(&query("hashrate/logs"), get(hashrate_logs))
-    .route(&query("balance"), get(balance))
-    .route(&query("channel"), get(channel))
     .route(&query("coin/transfer"), get(scan_coin_transfer))
 
     .route(&query("block/intro"), get(block_intro))
@@ -18,12 +13,6 @@ pub fn routes() -> Router<ApiCtx> {
     .route(&query("block/datas"), get(block_datas))
 
     .route(&query("transaction"), get(transaction_exist))
-
-    .route(&query("diamond"), get(diamond))
-    .route(&query("diamond/bidding"), get(diamond_bidding))
-    .route(&query("diamond/views"), get(diamond_views))
-    .route(&query("diamond/engrave"), get(diamond_engrave))
-    .route(&query("diamond/inscription_protocol_cost"), get(diamond_inscription_protocol_cost))
 
     .route(&query("fee/average"), get(fee_average))
 

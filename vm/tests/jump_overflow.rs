@@ -4,7 +4,7 @@
 
 use vm::ir::convert_ir_to_bytecode;
 use vm::lang::*;
-use vm::rt::{verify_bytecodes, BytecodePrint};
+use vm::rt::{BytecodePrint, verify_bytecodes};
 
 /// Minimal Fitsh main-call script equivalent to:
 ///   function test_if_true(a: u64) -> u64 { if a > 0 { return 1 } return 0 }
@@ -46,32 +46,10 @@ fn failing_while_script() -> &'static str {
 
 fn compile_and_verify(script: &str, _name: &str) -> Result<Vec<u8>, String> {
     let ircodes = lang_to_ircode(script).map_err(|e| format!("lang_to_ircode: {}", e))?;
-    let bytecodes = convert_ir_to_bytecode(&ircodes).map_err(|e| format!("convert_ir_to_bytecode: {:?}", e))?;
+    let bytecodes =
+        convert_ir_to_bytecode(&ircodes).map_err(|e| format!("convert_ir_to_bytecode: {:?}", e))?;
     verify_bytecodes(&bytecodes).map_err(|e| format!("verify_bytecodes: {:?}", e))?;
     Ok(bytecodes)
-}
-
-/// Debug: print bytecode and analyze jump targets for BRSL/JMPSL
-fn debug_jump_targets(codes: &[u8]) {
-    use vm::rt::Bytecode;
-    let len = codes.len();
-    println!("Code length: {}", len);
-    let mut i = 0;
-    while i < len {
-        let inst: Bytecode = unsafe { std::mem::transmute(codes[i]) };
-        let meta = inst.metadata();
-        if meta.param == 2 && matches!(inst, Bytecode::BRSL | Bytecode::BRSLN | Bytecode::JMPSL) {
-            if i + 3 <= len {
-                let param = i16::from_be_bytes([codes[i + 1], codes[i + 2]]);
-                let target = i as isize + 2 + param as isize;
-                println!("  @{} {:?} param={} target={} (valid: 0..={})", i, inst, param, target, len - 1);
-                if target < 0 || target as usize >= len {
-                    println!("    ^^^ JumpOverflow: target out of range");
-                }
-            }
-        }
-        i += 1 + meta.param as usize;
-    }
 }
 
 #[test]
@@ -79,14 +57,20 @@ fn jump_overflow_if_true() {
     let script = failing_if_true_script();
     match compile_and_verify(script, "if_true") {
         Ok(codes) => {
-            println!("[PASS] if_true compiled and verified, {} bytes", codes.len());
+            println!(
+                "[PASS] if_true compiled and verified, {} bytes",
+                codes.len()
+            );
             if let Ok(s) = codes.bytecode_print(true) {
                 println!("bytecode:\n{}", s);
             }
         }
         Err(e) => {
             if e.contains("JumpOverflow") || e.contains("16") {
-                panic!("JumpOverflow reproduced for if_true:\n{}\nScript:\n{}", e, script);
+                panic!(
+                    "JumpOverflow reproduced for if_true:\n{}\nScript:\n{}",
+                    e, script
+                );
             }
             panic!("Unexpected error for if_true: {}", e);
         }
@@ -102,8 +86,11 @@ fn jump_overflow_if_else() {
     match verify_bytecodes(&bytecodes) {
         Ok(_) => panic!("Raw if/else without end must fail verify (JMPSL targets len)"),
         Err(e) => {
-            assert!(format!("{:?}", e).contains("JumpOverflow"),
-                "Expected JumpOverflow, got: {:?}", e);
+            assert!(
+                format!("{:?}", e).contains("JumpOverflow"),
+                "Expected JumpOverflow, got: {:?}",
+                e
+            );
         }
     }
 }
@@ -118,7 +105,10 @@ fn jump_overflow_verify_end_fix() {
     let len = bytecodes.len();
     // JMPSL at 14, offset 2: target = 14 + 3 + 2 = 19 (interpreter/verify formula)
     // valid range for len=19: 0..=18, so 19 -> JumpOverflow
-    assert!(verify_bytecodes(&bytecodes).is_err(), "raw bytecode must fail (JMPSL targets len)");
+    assert!(
+        verify_bytecodes(&bytecodes).is_err(),
+        "raw bytecode must fail (JMPSL targets len)"
+    );
     // Append END so we have 20 bytes; position 19 = END, valid target
     bytecodes.push(Bytecode::END as u8);
     verify_bytecodes(&bytecodes).expect("bytecode with END appended must verify");
@@ -137,7 +127,10 @@ fn jump_overflow_while() {
         }
         Err(e) => {
             if e.contains("JumpOverflow") || e.contains("16") {
-                panic!("JumpOverflow reproduced for while:\n{}\nScript:\n{}", e, script);
+                panic!(
+                    "JumpOverflow reproduced for while:\n{}\nScript:\n{}",
+                    e, script
+                );
             }
             panic!("Unexpected error for while: {}", e);
         }

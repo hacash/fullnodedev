@@ -44,7 +44,8 @@ mod library {
         Contract::new()
             .lib(addr("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"))
             .func(
-                Func::new("f3").unwrap()
+                Func::new("f3")
+                    .unwrap()
                     .public()
                     .fitsh(
                         "
@@ -74,7 +75,8 @@ mod library {
             .lib(addr("WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm"))
             .lib(addr("bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5"))
             .func(
-                Func::new("f6").unwrap()
+                Func::new("f6")
+                    .unwrap()
                     .public()
                     .fitsh(
                         "

@@ -4,11 +4,11 @@
 // use vm::ir::IRCodePrint;
 // use vm::lang::{Tokenizer, Syntax};
 
+use vm::IRNode;
+use vm::PrintOption;
 use vm::ir::*;
 use vm::lang::*;
 use vm::rt::*;
-use vm::IRNode;
-use vm::PrintOption;
 
 mod common;
 
@@ -842,7 +842,12 @@ fn print_options_on_off_preserve_ircode_bytes() {
 
     let pretty_text = Formater::new(&pretty).print(&block);
     let pretty_ir = lang_to_ircode(&pretty_text)
-        .map_err(|e| format!("{}\n---- pretty_text ----\n{}\n---------------------\n", e, pretty_text))
+        .map_err(|e| {
+            format!(
+                "{}\n---- pretty_text ----\n{}\n---------------------\n",
+                e, pretty_text
+            )
+        })
         .unwrap();
     assert_eq!(ircode, pretty_ir);
 }

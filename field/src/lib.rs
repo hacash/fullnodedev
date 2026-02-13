@@ -1,11 +1,11 @@
+use std::cmp::Ordering;
 use std::collections::*;
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::cmp::Ordering;
 use std::ops::*;
 use std::sync::*;
 
-use concat_idents::concat_idents;
 use base64::prelude::*;
+use concat_idents::concat_idents;
 use dyn_clone::*;
 
 // use num_bigint::BigInt;
@@ -14,54 +14,48 @@ use dyn_clone::*;
 
 use sys::*;
 
+include! {"interface.rs"}
 
-include!{"interface.rs"}
-
-include!{"ini.rs"}
-include!{"util.rs"}
-include!{"json_util.rs"}
-include!{"impl.rs"}
-include!{"empty.rs"}
+include! {"ini.rs"}
+include! {"util.rs"}
+include! {"json_util.rs"}
+include! {"impl.rs"}
+include! {"empty.rs"}
 
 #[cfg(test)]
-include!{"tests.rs"}
+include! {"tests.rs"}
 
 // number
-include!{"number/macro_compute.rs"}
-include!{"number/macro_uint.rs"}
-include!{"number/uint.rs"}
-include!{"number/fold64.rs"}
+include! {"number/macro_compute.rs"}
+include! {"number/macro_uint.rs"}
+include! {"number/uint.rs"}
+include! {"number/fold64.rs"}
 
 // bytes
-include!{"bytes/fixed.rs"}
-include!{"bytes/datas.rs"}
+include! {"bytes/fixed.rs"}
+include! {"bytes/datas.rs"}
 
 // combi
-include!{"combi/struct.rs"}
-include!{"combi/list.rs"}
-include!{"combi/optional.rs"}
-include!{"combi/option.rs"}
-include!{"combi/revenum.rs"}
-include!{"combi/dynlist.rs"}
-include!{"combi/dynvec.rs"}
+include! {"combi/struct.rs"}
+include! {"combi/list.rs"}
+include! {"combi/optional.rs"}
+include! {"combi/option.rs"}
+include! {"combi/revenum.rs"}
+include! {"combi/dynlist.rs"}
+include! {"combi/dynvec.rs"}
 
 // core
-include!{"core/define.rs"}
-include!{"core/address.rs"}
-include!{"core/amount.rs"}
-include!{"core/diamond.rs"}
-include!{"core/diamond_smelt.rs"}
-include!{"core/status.rs"}
-include!{"core/asset.rs"}
+include! {"core/define.rs"}
+include! {"core/address.rs"}
+include! {"core/amount.rs"}
+include! {"core/diamond.rs"}
+include! {"core/diamond_smelt.rs"}
+include! {"core/status.rs"}
+include! {"core/asset.rs"}
 
 // component
-include!{"component/sign.rs"}
-include!{"component/asset.rs"}
-include!{"component/balance.rs"}
-include!{"component/total.rs"}
-include!{"component/channel.rs"}
-
-
-
-
-
+include! {"component/sign.rs"}
+include! {"component/asset.rs"}
+include! {"component/balance.rs"}
+include! {"component/total.rs"}
+include! {"component/channel.rs"}

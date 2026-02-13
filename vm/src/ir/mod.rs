@@ -24,11 +24,32 @@ pub fn push_nil() -> Box<dyn IRNode> {
 pub fn push_local_get(i: u8, text: String) -> Box<dyn IRNode> {
     use Bytecode::*;
     match i {
-        0 => Box::new(IRNodeLeaf { hrtv: true, inst: GET0, text }),
-        1 => Box::new(IRNodeLeaf { hrtv: true, inst: GET1, text }),
-        2 => Box::new(IRNodeLeaf { hrtv: true, inst: GET2, text }),
-        3 => Box::new(IRNodeLeaf { hrtv: true, inst: GET3, text }),
-        _ => Box::new(IRNodeParam1 { hrtv: true, inst: GET, text, para: i }),
+        0 => Box::new(IRNodeLeaf {
+            hrtv: true,
+            inst: GET0,
+            text,
+        }),
+        1 => Box::new(IRNodeLeaf {
+            hrtv: true,
+            inst: GET1,
+            text,
+        }),
+        2 => Box::new(IRNodeLeaf {
+            hrtv: true,
+            inst: GET2,
+            text,
+        }),
+        3 => Box::new(IRNodeLeaf {
+            hrtv: true,
+            inst: GET3,
+            text,
+        }),
+        _ => Box::new(IRNodeParam1 {
+            hrtv: true,
+            inst: GET,
+            text,
+            para: i,
+        }),
     }
 }
 
@@ -41,27 +62,64 @@ pub fn push_inst(inst: Bytecode) -> Box<dyn IRNode> {
 }
 
 pub fn push_single(inst: Bytecode, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
-    Box::new(IRNodeSingle{inst, hrtv: true, subx})
+    Box::new(IRNodeSingle {
+        inst,
+        hrtv: true,
+        subx,
+    })
 }
 
 pub fn push_single_noret(inst: Bytecode, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
-    Box::new(IRNodeSingle{inst, hrtv: false, subx})
+    Box::new(IRNodeSingle {
+        inst,
+        hrtv: false,
+        subx,
+    })
 }
 
 pub fn push_single_p1(inst: Bytecode, para: u8, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
-    Box::new(IRNodeParam1Single { hrtv: false, inst, para, subx })
+    Box::new(IRNodeParam1Single {
+        hrtv: false,
+        inst,
+        para,
+        subx,
+    })
 }
 
-pub fn push_single_p1_hr(hrtv: bool, inst: Bytecode, para: u8, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
-    Box::new(IRNodeParam1Single { hrtv, inst, para, subx })
+pub fn push_single_p1_hr(
+    hrtv: bool,
+    inst: Bytecode,
+    para: u8,
+    subx: Box<dyn IRNode>,
+) -> Box<dyn IRNode> {
+    Box::new(IRNodeParam1Single {
+        hrtv,
+        inst,
+        para,
+        subx,
+    })
 }
 
 pub fn push_double(inst: Bytecode, subx_inst: Bytecode, suby_inst: Bytecode) -> Box<dyn IRNode> {
-    Box::new(IRNodeDouble { hrtv: false, inst, subx: push_inst(subx_inst), suby: push_inst(suby_inst) })
+    Box::new(IRNodeDouble {
+        hrtv: false,
+        inst,
+        subx: push_inst(subx_inst),
+        suby: push_inst(suby_inst),
+    })
 }
 
-pub fn push_double_box(inst: Bytecode, subx: Box<dyn IRNode>, suby: Box<dyn IRNode>) -> Box<dyn IRNode> {
-    Box::new(IRNodeDouble { hrtv: false, inst, subx, suby })
+pub fn push_double_box(
+    inst: Bytecode,
+    subx: Box<dyn IRNode>,
+    suby: Box<dyn IRNode>,
+) -> Box<dyn IRNode> {
+    Box::new(IRNodeDouble {
+        hrtv: false,
+        inst,
+        subx,
+        suby,
+    })
 }
 
 pub fn push_num(n: u128) -> Box<dyn IRNode> {
@@ -107,11 +165,16 @@ pub fn push_num(n: u128) -> Box<dyn IRNode> {
 pub fn push_addr(a: field::Address) -> Box<dyn IRNode> {
     use Bytecode::*;
     let para = vec![vec![field::Address::SIZE as u8], a.serialize()].concat();
-    push_single_p1_hr(true, CTO, ValueTy::Address as u8, Box::new(IRNodeParams {
-        hrtv: true,
-        inst: PBUF,
-        para,
-    }))
+    push_single_p1_hr(
+        true,
+        CTO,
+        ValueTy::Address as u8,
+        Box::new(IRNodeParams {
+            hrtv: true,
+            inst: PBUF,
+            para,
+        }),
+    )
 }
 
 pub fn push_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
@@ -126,7 +189,10 @@ pub fn push_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
     let isl = bl > u8::MAX as usize;
     let inst = maybe!(isl, PBUFL, PBUF);
     let size = maybe!(isl, (bl as u16).to_be_bytes().to_vec(), vec![bl as u8]);
-    let para = std::iter::empty().chain(size).chain(b.clone()).collect::<Vec<_>>();
+    let para = std::iter::empty()
+        .chain(size)
+        .chain(b.clone())
+        .collect::<Vec<_>>();
     Ok(Box::new(IRNodeParams {
         hrtv: true,
         inst,

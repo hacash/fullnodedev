@@ -45,10 +45,11 @@ pub fn sign_transaction(param: SignTxParam) -> Ret<SignTxResult> {
     let acc = q_acc!(param.prikey);
     // let accadr = Address::from(acc.address().clone());
     let Ok(body) = hex::decode(&param.body) else {
-        return errf!("tx body error")
+        return errf!("tx body hex decode error")
     };
-    let Ok((mut trs, _)) = transaction::transaction_create(&body) else {
-        return errf!("tx parse error")
+    let (mut trs, _) = match transaction::transaction_create(&body) {
+        Ok(v) => v,
+        Err(e) => return errf!("tx parse error: {}", e),
     };
     let Ok(signature) = trs.fill_sign(&acc) else {
         return errf!("do sign error")
@@ -62,8 +63,6 @@ pub fn sign_transaction(param: SignTxParam) -> Ret<SignTxResult> {
         timestamp:     trs.timestamp().uint(),
     })
 }
-
-
 
 
 

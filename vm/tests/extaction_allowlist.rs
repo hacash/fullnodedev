@@ -4,16 +4,16 @@ mod tests {
 
     use basis::component::Env;
     use basis::interface::{Context, State, TransactionRead};
-    use protocol::state::EmptyLogs;
-    use sys::Ret;
-    use vm::rt::{Bytecode, ExecMode, GasExtra, GasTable, ItrErrCode};
-    use vm::rt::SpaceCap;
-    use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
-    use vm::ContractAddress;
-    use vm::machine::CtxHost;
-    use vm::interpreter::execute_code;
     use field::{Address, Amount, Hash};
     use protocol::context::ContextInst;
+    use protocol::state::EmptyLogs;
+    use sys::Ret;
+    use vm::ContractAddress;
+    use vm::interpreter::execute_code;
+    use vm::machine::CtxHost;
+    use vm::rt::SpaceCap;
+    use vm::rt::{Bytecode, ExecMode, GasExtra, GasTable, ItrErrCode};
+    use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
 
     #[derive(Default)]
     struct MemState {
@@ -36,19 +36,39 @@ mod tests {
     struct DummyTx;
 
     impl field::Serialize for DummyTx {
-        fn size(&self) -> usize { 0 }
-        fn serialize(&self) -> Vec<u8> { vec![] }
+        fn size(&self) -> usize {
+            0
+        }
+        fn serialize(&self) -> Vec<u8> {
+            vec![]
+        }
     }
     impl basis::interface::TxExec for DummyTx {}
     impl TransactionRead for DummyTx {
-        fn ty(&self) -> u8 { 3 }
-        fn hash(&self) -> Hash { Hash::default() }
-        fn hash_with_fee(&self) -> Hash { Hash::default() }
-        fn main(&self) -> Address { Address::default() }
-        fn addrs(&self) -> Vec<Address> { vec![Address::default()] }
-        fn fee(&self) -> &Amount { Amount::zero_ref() }
-        fn fee_purity(&self) -> u64 { 1 }
-        fn fee_extend(&self) -> Ret<u8> { Ok(1) }
+        fn ty(&self) -> u8 {
+            3
+        }
+        fn hash(&self) -> Hash {
+            Hash::default()
+        }
+        fn hash_with_fee(&self) -> Hash {
+            Hash::default()
+        }
+        fn main(&self) -> Address {
+            Address::default()
+        }
+        fn addrs(&self) -> Vec<Address> {
+            vec![Address::default()]
+        }
+        fn fee(&self) -> &Amount {
+            Amount::zero_ref()
+        }
+        fn fee_purity(&self) -> u64 {
+            1
+        }
+        fn fee_extend(&self) -> Ret<u8> {
+            Ok(1)
+        }
     }
 
     #[test]
@@ -67,7 +87,12 @@ mod tests {
         let tx = DummyTx::default();
         let mut env = Env::default();
         env.block.height = 1;
-        let mut ctx = ContextInst::new(env, Box::new(MemState::default()), Box::new(EmptyLogs {}), &tx);
+        let mut ctx = ContextInst::new(
+            env,
+            Box::new(MemState::default()),
+            Box::new(EmptyLogs {}),
+            &tx,
+        );
         let ctx: &mut dyn Context = &mut ctx;
 
         let mut ops = Stack::new(16);

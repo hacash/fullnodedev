@@ -42,8 +42,16 @@ mod fitshc_example_compile {
         }
 
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("Compile success!"), "stdout was: {}", stdout);
+        assert!(
+            stdout.contains("Compile success!"),
+            "stdout was: {}",
+            stdout
+        );
         assert!(expected_map.exists(), "missing {}", expected_map.display());
-        assert!(expected_deploy.exists(), "missing {}", expected_deploy.display());
+        assert!(
+            expected_deploy.exists(),
+            "missing {}",
+            expected_deploy.display()
+        );
     }
 }

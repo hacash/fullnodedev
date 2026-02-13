@@ -1,21 +1,16 @@
-
 use std::sync::Arc;
-use std::time::*;
 use std::thread;
+use std::time::*;
 
-
-use sys::*;
-use field::*;
-use basis::interface::*;
 use basis::component::*;
 use basis::config::*;
-use mint::*;
+use basis::interface::*;
+use field::*;
 use mint::action::*;
-
-
+use mint::*;
+use sys::*;
 
 pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
-    
     // check config
     let eng = hnode.engine();
     let cnf = eng.config();
@@ -26,12 +21,12 @@ pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
 
     if !cnf.dmer_enable || !cnf.is_mainnet() {
         worker.end();
-        return // not enable or not mainnet
+        return; // not enable or not mainnet
     }
 
     macro_rules! printerr {
         ( $f: expr, $( $v: expr ),+ ) => {
-            println!("\n\n{} {}\n\n", 
+            println!("\n\n{} {}\n\n",
                 "[Diamond Auto Bid Config Warning]",
                 format!($f, $( $v ),+)
             );
@@ -39,27 +34,34 @@ pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
     }
 
     if bidstep < minstep {
-        printerr!("bid step amount cannot less than {} HAC", &minstep );
+        printerr!("bid step amount cannot less than {} HAC", &minstep);
     }
 
     if bidmax < bidmin {
-        printerr!("max bid fee {} cannot less than min fee {}", &bidmax, &bidmin);
+        printerr!(
+            "max bid fee {} cannot less than min fee {}",
+            &bidmax,
+            &bidmin
+        );
         panic!("");
     }
 
-    println!("[Diamond Auto Bidding] start with account {} min fee {} and max fee {}.",
-        &cnf.dmer_bid_account.readable(), &bidmin, &bidmax
+    println!(
+        "[Diamond Auto Bidding] start with account {} min fee {} and max fee {}.",
+        &cnf.dmer_bid_account.readable(),
+        &bidmin,
+        &bidmax
     );
-    
-    // thread loop 
+
+    // thread loop
     let engcnf = cnf.clone();
     thread::spawn(move || {
-        thread::sleep( Duration::from_secs(15) );
+        thread::sleep(Duration::from_secs(15));
         let mut current_number: u32 = 0;
         loop {
             let pending_height = eng.latest_block().height().uint() + 1;
             check_bidding_step(hnode.clone(), &engcnf, pending_height, &mut current_number);
-            thread::sleep( Duration::from_millis(77) );
+            thread::sleep(Duration::from_millis(77));
             if worker.quit() {
                 break;
             }
@@ -67,17 +69,14 @@ pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
     });
 }
 
-
-
-
-
-
-
-
-
-fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_height: u64, bidding_number: &mut u32) {
-    if pending_height % 5 == 0  {
-        return // not need bid in mining block tail 5 and 10
+fn check_bidding_step(
+    hnode: Arc<dyn HNoder>,
+    engcnf: &EngineConf,
+    pending_height: u64,
+    bidding_number: &mut u32,
+) {
+    if pending_height % 5 == 0 {
+        return; // not need bid in mining block tail 5 and 10
     }
 
     let txpool = hnode.txpool();
@@ -92,20 +91,20 @@ fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_heigh
 
     macro_rules! retry {
         ($ms: expr) => {
-            thread::sleep( Duration::from_millis($ms) );
+            thread::sleep(Duration::from_millis($ms));
             return
-        }
+        };
     }
-    
+
     macro_rules! printerr {
         ( $f: expr, $( $v: expr ),+ ) => {
-            println!("\n\n{} {}\n\n", 
+            println!("\n\n{} {}\n\n",
                 "[Diamond Auto Build Error]",
                 format!($f, $( $v ),+)
             );
         }
     }
-    
+
     let Some(first_bid_txp) = pick_first_bid_tx(txplptr) else {
         retry!(3); // tx pool empty
     };
@@ -139,9 +138,7 @@ fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_heigh
     }
 
     let Ok(new_bid_fee) = first_bid_fee.add_mode_u64(&bid_step) else {
-        printerr!("cannot add fee {} with {}, ", 
-            &first_bid_fee, bid_step
-        );
+        printerr!("cannot add fee {} with {}, ", &first_bid_fee, bid_step);
         retry!(10); // move step fail
     };
     let Ok(mut new_bid_fee) = new_bid_fee.compress(2, AmtCpr::Grow) else {
@@ -162,12 +159,18 @@ fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_heigh
         let dfee = new_bid_fee.to_fin_string();
         if *bidding_number != dnum {
             *bidding_number = dnum;
-            flush!("✵✵✵✵ Diamond Auto Bid {}({}) by {} raise fee to ⇨ {}", dia, dnum, my_addr, dfee);
-        }else{
+            flush!(
+                "✵✵✵✵ Diamond Auto Bid {}({}) by {} raise fee to ⇨ {}",
+                dia,
+                dnum,
+                my_addr,
+                dfee
+            );
+        } else {
             flush!(" ⇨ {}", dfee);
         }
     }
-    
+
     // raise fee
     let mut my_tx = my_bid_txp.objc;
     my_tx.set_fee(new_bid_fee.clone());
@@ -183,16 +186,14 @@ fn check_bidding_step(hnode: Arc<dyn HNoder>, engcnf: &EngineConf, pending_heigh
     // next check step
 }
 
-
 ///////////////////////////////////////////////
-
 
 fn pick_my_bid_tx(tx_pool: &dyn TxPool, my_addr: &Address) -> Option<TxPkg> {
     let mut my_bid_tx: Option<TxPkg> = None;
     let mut pick_dmint = |a: &TxPkg| {
         if *my_addr == a.objc.main() {
             my_bid_tx = Some(a.clone());
-            return false // end
+            return false; // end
         }
         true // next
     };
@@ -201,17 +202,13 @@ fn pick_my_bid_tx(tx_pool: &dyn TxPool, my_addr: &Address) -> Option<TxPkg> {
     my_bid_tx
 }
 
-
-
-
 fn pick_first_bid_tx(tx_pool: &dyn TxPool) -> Option<TxPkg> {
     let mut first: Option<TxPkg> = None;
     let mut pick_dmint = |a: &TxPkg| {
         first = Some(a.clone());
-        return false // end at first
+        return false; // end at first
     };
     let _ = tx_pool.iter_at(TXGID_DIAMINT, &mut pick_dmint);
     // ok
     first
 }
-

@@ -1,17 +1,14 @@
+use concat_idents::concat_idents;
 
-use concat_idents::concat_idents; 
-
-use sys::*;
-use field::*;
 use basis::interface::*;
-use protocol::*;
+use field::*;
 use protocol::operate::*;
 use protocol::state::*;
+use protocol::*;
+use sys::*;
 
 use super::genesis;
 
+include! {"state.rs"}
 
-include!{"state.rs"}
-
-include!{"channel.rs"}
-
+include! {"channel.rs"}

@@ -1,8 +1,8 @@
 use std::collections::*;
 use std::fmt::*;
 
-use sys::ToHex;
 use field::*;
+use sys::ToHex;
 
 use super::rt::ItrErrCode::*;
 use super::rt::*;

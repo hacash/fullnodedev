@@ -1,10 +1,10 @@
-use std::sync::Once;
 use crate::action::*;
-use crate::transaction::*;
 use crate::block::*;
-use field::*;
+use crate::transaction::*;
 use basis::component::*;
 use basis::interface::*;
+use field::*;
+use std::sync::Once;
 use sys::*;
 
 static INIT: Once = Once::new();
@@ -79,10 +79,18 @@ impl ActExec for TestExtEnvReadOnly {
 }
 
 impl Action for TestExtEnvReadOnly {
-    fn kind(&self) -> u16 { *self.kind }
-    fn level(&self) -> ActLv { ActLv::Any }
-    fn req_sign(&self) -> Vec<AddrOrPtr> { vec![] }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        *self.kind
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Any
+    }
+    fn req_sign(&self) -> Vec<AddrOrPtr> {
+        vec![]
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 fn ext_env_try_create(kind: u16, buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usize)>> {
@@ -117,7 +125,7 @@ fn test_transaction_json_full_cycle() {
     tx.ty = Uint1::from(TransactionType2::TYPE);
     tx.timestamp = Timestamp::from(1730000000);
     tx.fee = Amount::small(1, 244); // 1.0 HAC
-    
+
     // Add an action: HacToTrs
     let mut act1 = HacToTrs::new();
     act1.to = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
@@ -151,7 +159,10 @@ fn test_transaction_json_full_cycle() {
     let bin2 = tx2.serialize();
 
     // 6. Compare
-    assert_eq!(bin1, bin2, "Binary mismatch after Transaction JSON round-trip");
+    assert_eq!(
+        bin1, bin2,
+        "Binary mismatch after Transaction JSON round-trip"
+    );
     assert_eq!(*tx2.timestamp, 1730000000);
     assert_eq!(tx2.actions.length(), 3);
 }
@@ -165,7 +176,7 @@ fn test_block_json_full_cycle() {
     block.intro.head.height = BlockHeight::from(100);
     block.intro.head.timestamp = Timestamp::from(1730000000);
     block.intro.head.prevhash = Hash::from([1u8; 32]);
-    
+
     // Create and add Transaction 1
     let mut tx1 = TransactionType2::default();
     tx1.ty = Uint1::from(TransactionType2::TYPE);
@@ -175,9 +186,9 @@ fn test_block_json_full_cycle() {
     act1.to = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
     act1.hacash = Amount::small(1, 244);
     tx1.actions.push(Box::new(act1)).unwrap();
-    
+
     block.transactions.push(Box::new(tx1)).unwrap();
-    
+
     // Create and add Transaction 2 (Coinbase)
     let mut tx2 = TransactionCoinbase::default();
     tx2.ty = Uint1::from(0); // Coinbase is usually 0
@@ -187,7 +198,7 @@ fn test_block_json_full_cycle() {
     let mut msg_fixed = [0u8; 16];
     msg_fixed[..msg.len()].copy_from_slice(msg);
     tx2.message = Fixed16::from(msg_fixed);
-    
+
     block.transactions.push(Box::new(tx2)).unwrap();
 
     // Update transaction count in header
@@ -202,7 +213,9 @@ fn test_block_json_full_cycle() {
 
     // 4. Deserialize from JSON
     let mut block2 = BlockV1::default();
-    block2.from_json(&json).expect("Block JSON Deserialization failed");
+    block2
+        .from_json(&json)
+        .expect("Block JSON Deserialization failed");
 
     // 5. Serialize reconstructed to Binary
     let bin2 = block2.serialize();
@@ -228,7 +241,12 @@ fn test_ctx_action_call_must_check_req_sign() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
 
-    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
 
     // HacFromTrs requires signature of `from`, but since this action is executed via ctx.action_call,
     // it would bypass tx.req_sign unless ctx_action_call enforces it.
@@ -237,7 +255,9 @@ fn test_ctx_action_call_must_check_req_sign() {
     act.hacash = Amount::mei(1);
     let bytes = act.serialize();
 
-    let err = ctx.action_call(HacFromTrs::KIND, bytes[2..].to_vec()).unwrap_err();
+    let err = ctx
+        .action_call(HacFromTrs::KIND, bytes[2..].to_vec())
+        .unwrap_err();
     assert!(err.contains("signature") || err.contains("failed") || err.contains("verify"));
 }
 
@@ -258,10 +278,19 @@ fn test_tx_execute_must_verify_signature_before_actions() {
     let mut env = Env::default();
     env.tx.main = tx.main();
     env.tx.addrs = tx.addrs();
-    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
 
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("signature") || err.contains("failed") || err.contains("verify"), "{}", err);
+    assert!(
+        err.contains("signature") || err.contains("failed") || err.contains("verify"),
+        "{}",
+        err
+    );
 }
 
 #[test]
@@ -299,7 +328,12 @@ fn test_ctx_action_call_extenv_does_not_require_tx_main_signature() {
     env.tx.main = tx.main();
     env.tx.addrs = tx.addrs();
 
-    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
 
     let res = ctx.action_call(TestExtEnvReadOnly::KIND, vec![]).unwrap();
     assert_eq!(res.1, vec![1u8]);
@@ -323,7 +357,9 @@ fn test_tx_req_sign_must_collect_nested_ast_child_actions() {
         AstSelect::create_list(vec![Box::new(AstSelect::create_list(vec![Box::new(leaf)]))]),
         AstSelect::nop(),
     );
-    tx.actions.push(Box::new(AstSelect::create_list(vec![Box::new(nested_if)]))).unwrap();
+    tx.actions
+        .push(Box::new(AstSelect::create_list(vec![Box::new(nested_if)])))
+        .unwrap();
 
     let signset = tx.req_sign().unwrap();
     assert!(signset.contains(&tx.main()));
@@ -345,7 +381,12 @@ fn test_ctx_action_call_must_check_nested_ast_req_sign() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone(), field::ADDRESS_TWOX.clone()];
 
-    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
 
     let mut leaf = HacFromTrs::new();
     leaf.from = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
@@ -353,8 +394,14 @@ fn test_ctx_action_call_must_check_nested_ast_req_sign() {
     let act = AstSelect::create_list(vec![Box::new(leaf)]);
     let bytes = act.serialize();
 
-    let err = ctx.action_call(AstSelect::KIND, bytes[2..].to_vec()).unwrap_err();
-    assert!(err.contains("signature") || err.contains("failed") || err.contains("verify"), "{}", err);
+    let err = ctx
+        .action_call(AstSelect::KIND, bytes[2..].to_vec())
+        .unwrap_err();
+    assert!(
+        err.contains("signature") || err.contains("failed") || err.contains("verify"),
+        "{}",
+        err
+    );
 }
 
 #[test]
@@ -369,7 +416,12 @@ fn test_ctx_action_call_must_reject_trailing_bytes() {
     let mut env = Env::default();
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
-    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
 
     let mut act = HacToTrs::new();
     act.to = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
@@ -386,8 +438,7 @@ fn test_action_json_create_must_reject_kind_mismatch() {
     init_test_registry();
 
     let json = r#"{"kind":14}"#;
-    let err = crate::action::action_json_create(HacToTrs::KIND, json)
-        .unwrap_err();
+    let err = crate::action::action_json_create(HacToTrs::KIND, json).unwrap_err();
     assert!(err.contains("kind mismatch"), "{}", err);
 }
 
@@ -399,7 +450,7 @@ fn test_complex_json_structure() {
     let mut tx = TransactionType1::default();
     tx.ty = Uint1::from(TransactionType1::TYPE);
     tx.fee = Amount::small(1, 240);
-    
+
     for i in 1..=20 {
         let mut act = HacToTrs::new();
         act.to = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
@@ -409,7 +460,8 @@ fn test_complex_json_structure() {
 
     let json = tx.to_json();
     let mut tx2 = TransactionType1::default();
-    tx2.from_json(&json).expect("Complex JSON Deserialization failed");
+    tx2.from_json(&json)
+        .expect("Complex JSON Deserialization failed");
 
     assert_eq!(tx.serialize(), tx2.serialize());
     assert_eq!(tx2.actions.length(), 20);
@@ -424,10 +476,13 @@ fn test_transaction_base58check_format_roundtrip() {
     tx.ty = Uint1::from(TransactionType2::TYPE);
     tx.timestamp = Timestamp::from(1730000000);
     tx.fee = Amount::small(1, 244);
-    tx.addrlist = AddrOrList::from_addr(Address::from_readable("1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS").unwrap());
+    tx.addrlist = AddrOrList::from_addr(
+        Address::from_readable("1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS").unwrap(),
+    );
 
     let mut act = HacToTrs::new();
-    act.to = AddrOrPtr::from_addr(Address::from_readable("1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS").unwrap());
+    act.to =
+        AddrOrPtr::from_addr(Address::from_readable("1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS").unwrap());
     act.hacash = Amount::small(5, 244);
     tx.actions.push(Box::new(act)).unwrap();
 
@@ -442,7 +497,8 @@ fn test_transaction_base58check_format_roundtrip() {
     assert!(!json.contains("b58:1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS"));
 
     let mut tx2 = TransactionType2::default();
-    tx2.from_json(&json).expect("Base58Check format JSON parse failed");
+    tx2.from_json(&json)
+        .expect("Base58Check format JSON parse failed");
     assert_eq!(tx.serialize(), tx2.serialize());
 }
 
@@ -456,7 +512,8 @@ fn test_address_bare_base58check_in_protocol() {
 
     // Verify AddrOrPtr with Address parses bare base58check
     let mut ptr = AddrOrPtr::default();
-    ptr.from_json(&format!(r#"{{"type":1,"value":"{}"}}"#, addr_str)).unwrap();
+    ptr.from_json(&format!(r#"{{"type":1,"value":"{}"}}"#, addr_str))
+        .unwrap();
     assert_eq!(ptr.to_readable(), addr_str);
 }
 
@@ -470,7 +527,10 @@ struct AstTestState {
 #[cfg(feature = "ast")]
 impl State for AstTestState {
     fn fork_sub(&self, p: std::sync::Weak<Box<dyn State>>) -> Box<dyn State> {
-        Box::new(Self { parent: p, mem: MemMap::default() })
+        Box::new(Self {
+            parent: p,
+            mem: MemMap::default(),
+        })
     }
 
     fn merge_sub(&mut self, sta: Box<dyn State>) {
@@ -710,14 +770,16 @@ fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
 fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     let mut tx = TransactionType2::default();
     tx.ty = Uint1::from(TransactionType2::TYPE);
-    tx.actions.push(Box::new(AstSelect::create_by(
-        2,
-        2,
-        vec![
-            Box::new(AstTestSet::create_by(7, 77)), // succeeds and writes
-            Box::new(AstTestFail::new()),           // fails
-        ],
-    ))).unwrap();
+    tx.actions
+        .push(Box::new(AstSelect::create_by(
+            2,
+            2,
+            vec![
+                Box::new(AstTestSet::create_by(7, 77)), // succeeds and writes
+                Box::new(AstTestFail::new()),           // fails
+            ],
+        )))
+        .unwrap();
 
     let mut env = Env::default();
     env.chain.fast_sync = true;
@@ -951,7 +1013,11 @@ fn test_ast_tree_depth_limit_6_rejects_7th_level() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = lvl1.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("must succeed at least 1 but only 0"), "{}", err);
+    assert!(
+        err.contains("must succeed at least 1 but only 0"),
+        "{}",
+        err
+    );
     assert_eq!(ast_state_get_u8(&mut ctx, 105), None);
 }
 
@@ -961,25 +1027,41 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
     #[derive(Default, Debug, Clone, PartialEq, Eq)]
     struct AstTestTexP2shSet;
     impl Parse for AstTestTexP2shSet {
-        fn parse(&mut self, _buf: &[u8]) -> Ret<usize> { Ok(0) }
+        fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
+            Ok(0)
+        }
     }
     impl Serialize for AstTestTexP2shSet {
-        fn serialize(&self) -> Vec<u8> { vec![] }
-        fn size(&self) -> usize { 0 }
+        fn serialize(&self) -> Vec<u8> {
+            vec![]
+        }
+        fn size(&self) -> usize {
+            0
+        }
     }
     impl Field for AstTestTexP2shSet {
-        fn new() -> Self { Self::default() }
+        fn new() -> Self {
+            Self::default()
+        }
     }
     impl ToJSON for AstTestTexP2shSet {
-        fn to_json_fmt(&self, _fmt: &JSONFormater) -> String { "{}".to_owned() }
+        fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+            "{}".to_owned()
+        }
     }
     impl FromJSON for AstTestTexP2shSet {
-        fn from_json(&mut self, _json: &str) -> Ret<()> { Ok(()) }
+        fn from_json(&mut self, _json: &str) -> Ret<()> {
+            Ok(())
+        }
     }
     struct AstTestP2sh;
     impl P2sh for AstTestP2sh {
-        fn code_stuff(&self) -> &[u8] { b"x" }
-        fn witness(&self) -> &[u8] { b"y" }
+        fn code_stuff(&self) -> &[u8] {
+            b"x"
+        }
+        fn witness(&self) -> &[u8] {
+            b"y"
+        }
     }
     impl ActExec for AstTestTexP2shSet {
         fn execute(&self, ctx: &mut dyn Context) -> Ret<(u32, Vec<u8>)> {
@@ -991,9 +1073,15 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
     }
     impl Description for AstTestTexP2shSet {}
     impl Action for AstTestTexP2shSet {
-        fn kind(&self) -> u16 { 65003 }
-        fn level(&self) -> ActLv { ActLv::Ast }
-        fn as_any(&self) -> &dyn std::any::Any { self }
+        fn kind(&self) -> u16 {
+            65003
+        }
+        fn level(&self) -> ActLv {
+            ActLv::Ast
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
     }
 
     use crate::state::EmptyLogs;
@@ -1002,12 +1090,24 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
-    let mut ctx = crate::context::ContextInst::new(env, Box::new(AstTestState::default()), Box::new(EmptyLogs {}), &tx);
+    let mut ctx = crate::context::ContextInst::new(
+        env,
+        Box::new(AstTestState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
     let old_adr = Address::create_scriptmh([6u8; 20]);
     ctx.p2sh_set(old_adr, Box::new(AstTestP2sh)).unwrap();
     let old_tex = ctx.tex_ledger().clone();
     let new_adr = Address::create_scriptmh([7u8; 20]);
-    let inner = AstSelect::create_by(2, 2, vec![Box::new(AstTestTexP2shSet::new()), Box::new(AstTestFail::new())]);
+    let inner = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestTexP2shSet::new()),
+            Box::new(AstTestFail::new()),
+        ],
+    );
     let act = AstSelect::create_by(0, 1, vec![Box::new(inner)]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
@@ -1104,7 +1204,11 @@ fn test_tex_asset_serial_must_exist_and_cache() {
     ok1.execute(&mut ctx, &addr).unwrap();
     let ok2 = CellCondAssetEq::new(AssetAmt::from(9, 0).unwrap());
     ok2.execute(&mut ctx, &addr).unwrap();
-    assert!(ctx.tex_ledger().asset_checked.contains(&Fold64::from(9).unwrap()));
+    assert!(
+        ctx.tex_ledger()
+            .asset_checked
+            .contains(&Fold64::from(9).unwrap())
+    );
     assert_eq!(ctx.tex_ledger().asset_checked.len(), 1);
 }
 
@@ -1156,10 +1260,12 @@ fn test_tex_action_signature_rejects_payload_tamper() {
     let addr = Address::from(*acc.address());
 
     let mut act = TexCellAct::create_by(addr);
-    act.add_cell(Box::new(CellCondHeightAtMost::new(100))).unwrap();
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100)))
+        .unwrap();
     act.do_sign(&acc).unwrap();
     // tamper payload after sign
-    act.add_cell(Box::new(CellCondHeightAtMost::new(100))).unwrap();
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100)))
+        .unwrap();
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = act.execute(&mut ctx).unwrap_err();

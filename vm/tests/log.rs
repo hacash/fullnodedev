@@ -19,7 +19,8 @@ mod hrc20 {
         Contract::new()
             // log
             .func(
-                Func::new("render").unwrap()
+                Func::new("render")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"

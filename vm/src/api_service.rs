@@ -9,10 +9,10 @@ use protocol::transaction::*;
 use serde_json::json;
 use sys::*;
 
-use crate::machine;
-use crate::rt::*;
 use crate::ContractAddress;
 use crate::VmLog;
+use crate::machine;
+use crate::rt::*;
 
 struct VmApiService {}
 

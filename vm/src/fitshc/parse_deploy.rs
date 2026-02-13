@@ -1,23 +1,22 @@
-use sys::{Ret, errf};
-use sys::*;
-use crate::rt::*;
-use crate::Token::*;
-use field::{Amount, Uint4, BytesW1};
 use super::state::ParseState;
+use crate::Token::*;
+use crate::rt::*;
+use field::{Amount, BytesW1, Uint4};
+use sys::*;
+use sys::{Ret, errf};
 
 #[derive(Default, Debug, Clone)]
 pub struct DeployInfo {
     pub protocol_cost: Option<Amount>,
     pub nonce: Option<Uint4>,
     pub construct_argv: Option<BytesW1>,
-     pub matches: bool,
+    pub matches: bool,
 }
-
 
 pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
     state.advance(); // consume deploy
     state.eat_partition('{')?;
-    
+
     let mut info = DeployInfo::default();
     info.matches = true;
 
@@ -32,9 +31,9 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
             state.advance();
             n
         } else {
-             return errf!("expected deploy key")
+            return errf!("expected deploy key");
         };
-        
+
         // let mut key_colon = false;
         if let Some(Keyword(KwTy::Colon)) = state.current() {
             // key_colon = true;
@@ -42,23 +41,23 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
         } else if let Some(Partition(':')) = state.current() {
             // key_colon = true;
             state.advance();
-        } 
-        
+        }
+
         if key == "protocol_cost" {
-             // value
-             // If tokenizer splits "1:248", we might see "1" ":" "248" or string "1:248" depending on tokenizer.
-             // Tokenizer treats ':' as symbol. So "1:248" becomes Int(1), Sym(:), Int(248).
-             // But if user quoted it '"1:248"', it becomes Bytes(utf8).
-             if let Some(Bytes(v)) = state.current() {
-                 let s = String::from_utf8_lossy(v);
-                 let amt = Amount::from(s.as_ref()).map_err(|e| e.to_string())?;
-                 info.protocol_cost = Some(amt);
-                 state.advance();
-             } else if let Some(Identifier(v)) = state.current() {
-                 let amt = Amount::from(v).map_err(|e| e.to_string())?;
-                 info.protocol_cost = Some(amt);
-                 state.advance();
-             } else if let Some(Integer(v)) = state.current() {
+            // value
+            // If tokenizer splits "1:248", we might see "1" ":" "248" or string "1:248" depending on tokenizer.
+            // Tokenizer treats ':' as symbol. So "1:248" becomes Int(1), Sym(:), Int(248).
+            // But if user quoted it '"1:248"', it becomes Bytes(utf8).
+            if let Some(Bytes(v)) = state.current() {
+                let s = String::from_utf8_lossy(v);
+                let amt = Amount::from(s.as_ref()).map_err(|e| e.to_string())?;
+                info.protocol_cost = Some(amt);
+                state.advance();
+            } else if let Some(Identifier(v)) = state.current() {
+                let amt = Amount::from(v).map_err(|e| e.to_string())?;
+                info.protocol_cost = Some(amt);
+                state.advance();
+            } else if let Some(Integer(v)) = state.current() {
                 // support 1:248 without quotes
                 let mut val = v.to_string();
                 let mut consumed = false;
@@ -83,45 +82,45 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
                     state.advance();
                 }
             } else {
-                 return errf!("expected amount at protocol_cost")
-             }
+                return errf!("expected amount at protocol_cost");
+            }
         } else if key == "nonce" {
-             if let Some(Integer(v)) = state.current() {
-                 info.nonce = Some(Uint4::from(*v as u32));
-                 state.advance();
-             } else if let Some(Identifier(v)) = state.current() {
-                 let n = v.parse::<u32>().map_err(|e| e.to_string())?;
-                 info.nonce = Some(Uint4::from(n));
-                 state.advance();
-             } else {
-                 return errf!("expected nonce integer")
-             }
+            if let Some(Integer(v)) = state.current() {
+                info.nonce = Some(Uint4::from(*v as u32));
+                state.advance();
+            } else if let Some(Identifier(v)) = state.current() {
+                let n = v.parse::<u32>().map_err(|e| e.to_string())?;
+                info.nonce = Some(Uint4::from(n));
+                state.advance();
+            } else {
+                return errf!("expected nonce integer");
+            }
         } else if key == "construct_argv" {
-             // Support hex string
-             if let Some(Bytes(v)) = state.current() {
-                 let s = String::from_utf8_lossy(v);
-                 let s = s.as_ref();
-                 let bts = if let Some(hexstr) = s.strip_prefix("0x") {
-                     hex::decode(hexstr).map_err(|e| e.to_string())?
-                 } else {
-                     s.as_bytes().to_vec()
-                 };
-                 info.construct_argv = Some(BytesW1::from(bts).unwrap());
-                 state.advance();
-             } else if let Some(Identifier(v)) = state.current() {
-                 let bts = if let Some(hexstr) = v.strip_prefix("0x") {
-                     hex::decode(hexstr).map_err(|e| e.to_string())?
-                 } else {
-                     v.as_bytes().to_vec()
-                 };
-                 info.construct_argv = Some(BytesW1::from(bts).unwrap());
-                 state.advance();
-             } else {
-                 return errf!("expected argv value")
-             }
+            // Support hex string
+            if let Some(Bytes(v)) = state.current() {
+                let s = String::from_utf8_lossy(v);
+                let s = s.as_ref();
+                let bts = if let Some(hexstr) = s.strip_prefix("0x") {
+                    hex::decode(hexstr).map_err(|e| e.to_string())?
+                } else {
+                    s.as_bytes().to_vec()
+                };
+                info.construct_argv = Some(BytesW1::from(bts).unwrap());
+                state.advance();
+            } else if let Some(Identifier(v)) = state.current() {
+                let bts = if let Some(hexstr) = v.strip_prefix("0x") {
+                    hex::decode(hexstr).map_err(|e| e.to_string())?
+                } else {
+                    v.as_bytes().to_vec()
+                };
+                info.construct_argv = Some(BytesW1::from(bts).unwrap());
+                state.advance();
+            } else {
+                return errf!("expected argv value");
+            }
         } else {
             // ignore or error?
-            state.advance(); 
+            state.advance();
         }
 
         // comma?

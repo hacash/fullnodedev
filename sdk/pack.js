@@ -1,4 +1,5 @@
-const fs = require("fs")
+const fs = require("fs");
+const path = require("path");
 
 
 const utilfn = `function base64ToBuffer(b) {
@@ -11,12 +12,16 @@ const utilfn = `function base64ToBuffer(b) {
 }`
 
 
+const distDir = path.join(__dirname, "dist");
+const wasmPath = path.join(distDir, "hacashsdk_bg.wasm");
+const jsPath = path.join(distDir, "hacashsdk.js");
+
 // wasm code 2 base64
-const wasmBase64  = fs.readFileSync("dist/hacashsdk_bg.wasm").toString('base64')
+const wasmBase64  = fs.readFileSync(wasmPath).toString('base64')
 
 // replace WebAssembly.Instance
 // const instanceLine = "module = new WebAssembly.Module(module);"
-let wasm2jscon = fs.readFileSync("dist/hacashsdk.js").toString()
+let wasm2jscon = fs.readFileSync(jsPath).toString()
 /*
     .replace(instanceLine,
     `${utilfn}\nmodule = new WebAssembly.Module(base64ToBuffer("${wasmBase64}"));`
@@ -39,6 +44,6 @@ const __Hacash_WASM_SDK_Stuff = "${wasmBase64}";
 `
 
 // output js file
-fs.writeFileSync("dist/hacashsdk_bg.js", wasm2jscon)
+fs.writeFileSync(path.join(distDir, "hacashsdk_bg.js"), wasm2jscon)
 
 // ok finish

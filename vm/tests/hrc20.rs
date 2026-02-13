@@ -41,7 +41,8 @@ mod hrc20 {
         Contract::new()
             // info
             .func(
-                Func::new("info").unwrap()
+                Func::new("info")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -65,7 +66,8 @@ mod hrc20 {
             )
             // total_supply
             .func(
-                Func::new("total_supply").unwrap()
+                Func::new("total_supply")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -81,7 +83,8 @@ mod hrc20 {
             )
             // balance_of
             .func(
-                Func::new("balance_of").unwrap()
+                Func::new("balance_of")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -99,7 +102,8 @@ mod hrc20 {
             )
             // transfer
             .func(
-                Func::new("transfer").unwrap()
+                Func::new("transfer")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -113,7 +117,8 @@ mod hrc20 {
             )
             // extend
             .func(
-                Func::new("renewal").unwrap()
+                Func::new("renewal")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -134,7 +139,8 @@ mod hrc20 {
                     .unwrap(),
             )
             .func(
-                Func::new("offering").unwrap()
+                Func::new("offering")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -159,7 +165,8 @@ mod hrc20 {
             )
             // private
             .func(
-                Func::new("do_transfer").unwrap()
+                Func::new("do_transfer")
+                    .unwrap()
                     .fitsh(
                         r##"
             param { addr_from, addr_to, amount }

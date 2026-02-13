@@ -1,5 +1,5 @@
-use vm::lang::{lang_to_irnode_with_sourcemap, Formater, PrintOption, lang_to_irnode};
 use vm::IRNode;
+use vm::lang::{Formater, PrintOption, lang_to_irnode, lang_to_irnode_with_sourcemap};
 
 #[test]
 fn test_fitsh_comprehensive_roundtrip() {
@@ -167,25 +167,23 @@ return true // Return
     let bin1 = ir1.serialize();
 
     // 2. Test combinations of PrintOptions
-    let options_to_test = vec![
-        ("canonical", {
-            let mut opt = PrintOption::new("  ", 0);
-            opt.trim_root_block = true;
-            opt.trim_head_alloc = true;
-            opt.trim_param_unpack = true;
-            opt.hide_default_call_argv = true;
-            opt.call_short_syntax = true;
-            opt.flatten_call_list = true;
-            opt.flatten_syscall_cat = true;
-            opt.flatten_array_list = true;
-            opt.recover_literals = true;
-            opt
-        }),
-    ];
+    let options_to_test = vec![("canonical", {
+        let mut opt = PrintOption::new("  ", 0);
+        opt.trim_root_block = true;
+        opt.trim_head_alloc = true;
+        opt.trim_param_unpack = true;
+        opt.hide_default_call_argv = true;
+        opt.call_short_syntax = true;
+        opt.flatten_call_list = true;
+        opt.flatten_syscall_cat = true;
+        opt.flatten_array_list = true;
+        opt.recover_literals = true;
+        opt
+    })];
 
     for (name, mut opt) in options_to_test {
         println!("--- Testing PrintOption: {} ---", name);
-        
+
         // Test with and without sourcemap
         for use_smap in [true, false] {
             println!("  Use SourceMap: {}", use_smap);
@@ -198,10 +196,16 @@ return true // Return
 
             // Decompile
             let decompiled = Formater::new(&opt).print(&ir1);
-            println!("Decompiled Code (opt: {}, smap: {}):\n{}", name, use_smap, decompiled);
+            println!(
+                "Decompiled Code (opt: {}, smap: {}):\n{}",
+                name, use_smap, decompiled
+            );
 
             // Recompile
-            let ir2 = lang_to_irnode(&decompiled).expect(&format!("Recompilation failed for opt: {}, use_smap: {}:\n{}", name, use_smap, decompiled));
+            let ir2 = lang_to_irnode(&decompiled).expect(&format!(
+                "Recompilation failed for opt: {}, use_smap: {}:\n{}",
+                name, use_smap, decompiled
+            ));
             let bin2 = ir2.serialize();
 
             // Compare Binary
@@ -212,7 +216,10 @@ return true // Return
                 // Find first difference
                 for i in 0..bin1.len().min(bin2.len()) {
                     if bin1[i] != bin2[i] {
-                        println!("First diff at byte {}: original=0x{:02x}, recompiled=0x{:02x}", i, bin1[i], bin2[i]);
+                        println!(
+                            "First diff at byte {}: original=0x{:02x}, recompiled=0x{:02x}",
+                            i, bin1[i], bin2[i]
+                        );
                         break;
                     }
                 }
@@ -220,6 +227,6 @@ return true // Return
             }
         }
     }
-    
+
     println!("Comprehensive Fitsh Roundtrip Audit Passed!");
 }

@@ -2,6 +2,8 @@
 api_querys_define!{ Q4538,
     height, u64, 1,
     txposi, isize, -1,
+    r#from, Option<String>, None,
+    r#to, Option<String>, None,
     filter_from, Option<String>, None,
     filter_to, Option<String>, None,
 }
@@ -31,9 +33,19 @@ async fn scan_coin_transfer(State(ctx): State<ApiCtx>, q: Query<Q4538>) -> impl 
     let tartrs = trs[txposi].as_read();
     let mainaddr_readable = tartrs.main().to_readable();
     let mut dtlist = Vec::new();
+    let from_filter = q.r#from.as_deref().or(q.filter_from.as_deref());
+    let to_filter = q.r#to.as_deref().or(q.filter_to.as_deref());
     // scan actions
     for act in tartrs.actions()  {
-        append_transfer_scan(tartrs, act, &mut dtlist, &unit, &coinkind );
+        append_transfer_scan(
+            tartrs,
+            act,
+            &mut dtlist,
+            &unit,
+            &coinkind,
+            from_filter,
+            to_filter,
+        );
     }
     // ok
     let data = jsondata!{
@@ -51,6 +63,7 @@ async fn scan_coin_transfer(State(ctx): State<ApiCtx>, q: Query<Q4538>) -> impl 
 
 fn append_transfer_scan(tx: &dyn TransactionRead, act: &Box<dyn Action>, 
     transfers: &mut Vec<JsonObject>, unit: &String, ck: &CoinKind,
+    from_filter: Option<&str>, to_filter: Option<&str>,
 ) {
     let trace = match act.kind() {
 
@@ -160,6 +173,18 @@ fn append_transfer_scan(tx: &dyn TransactionRead, act: &Box<dyn Action>,
     } else if let Some(a) = AssetFromToTrs::downcast(act) {
         check_asset!(a);
         set_from_to_ptr!(a.from, a.to);
+    }
+    if let Some(filter_from) = from_filter {
+        let from_addr = obj.get("from").and_then(|v| v.as_str()).unwrap_or("");
+        if from_addr != filter_from {
+            return;
+        }
+    }
+    if let Some(filter_to) = to_filter {
+        let to_addr = obj.get("to").and_then(|v| v.as_str()).unwrap_or("");
+        if to_addr != filter_to {
+            return;
+        }
     }
     transfers.push(obj);
     

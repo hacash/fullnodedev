@@ -1,15 +1,15 @@
+use field::*;
 use std::env;
 use std::fs;
 use std::path::Path;
-use vm::action::ContractDeploy;
 use vm::action::CONTRACT_STORE_PERM_PERIODS;
-use field::*;
+use vm::action::ContractDeploy;
 use vm::fitshc::compiler::compile;
 // use sys::*;
-use serde_json::{json, Value};
 use basis::interface::*;
 use protocol::transaction::*;
-use sys::{curtimes, Account};
+use serde_json::{Value, json};
+use sys::{Account, curtimes};
 
 fn estimate_protocol_cost_auto(
     txfee: &Amount,
@@ -22,7 +22,7 @@ fn estimate_protocol_cost_auto(
     const MAX_ITERS: usize = 6;
     let charge_bytes = sto.size() as u128;
     if charge_bytes == 0 {
-        return Amount::zero()
+        return Amount::zero();
     }
     let fee238 = txfee.to_238_u128().unwrap_or(0);
     let mut cur = Amount::unit238(1);
@@ -75,8 +75,8 @@ fn main() {
     let source = match fs::read_to_string(file_path) {
         Ok(s) => s,
         Err(e) => {
-             println!("Error reading file: {}", e);
-             return;
+            println!("Error reading file: {}", e);
+            return;
         }
     };
 
@@ -91,7 +91,10 @@ fn main() {
     println!("Compile success!");
 
     let path = Path::new(file_path);
-    let stem = path.file_stem().map(|s| s.to_string_lossy()).unwrap_or("output".into());
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or("output".into());
     let parent = path.parent().unwrap_or(Path::new("."));
 
     let sto = contract.into_sto();
@@ -100,7 +103,7 @@ fn main() {
     let mut func_maps = Vec::new();
     for (name, sm) in smaps {
         if let Ok(json_str) = sm.to_json() {
-             if let Ok(mut v) = serde_json::from_str::<Value>(&json_str) {
+            if let Ok(mut v) = serde_json::from_str::<Value>(&json_str) {
                 if let Some(obj) = v.as_object_mut() {
                     obj.insert("name".to_string(), json!(name));
                 }
@@ -114,9 +117,19 @@ fn main() {
     // `combi_list` macro defined in basis/macros? or field/macros?
     // Let's assume list() method exists based on earlier usage in contract.rs: `self.inherits.length()`.
     // Wait, earlier code `self.abstcalls.list()` works.
-    let inherit_addrs: Vec<String> = sto.inherits.list().iter().map(|a| a.to_readable()).collect();
-    let lib_addrs: Vec<String> = sto.librarys.list().iter().map(|a| a.to_readable()).collect();
-    
+    let inherit_addrs: Vec<String> = sto
+        .inherits
+        .list()
+        .iter()
+        .map(|a| a.to_readable())
+        .collect();
+    let lib_addrs: Vec<String> = sto
+        .librarys
+        .list()
+        .iter()
+        .map(|a| a.to_readable())
+        .collect();
+
     let contract_map = json!({
         "contract": contract_name,
         "inherits": inherit_addrs,
@@ -125,7 +138,11 @@ fn main() {
     });
 
     let map_file = parent.join(format!("{}.contractmap.json", stem));
-    fs::write(&map_file, serde_json::to_string_pretty(&contract_map).unwrap()).ok();
+    fs::write(
+        &map_file,
+        serde_json::to_string_pretty(&contract_map).unwrap(),
+    )
+    .ok();
     println!("Generated: {}", map_file.display());
 
     // Deploy
@@ -134,28 +151,33 @@ fn main() {
     } else {
         (None, None, None)
     };
-    
-    let fee_str = args.get(2).map(|s| s.as_str()).unwrap_or("1:248"); 
+
+    let fee_str = args.get(2).map(|s| s.as_str()).unwrap_or("1:248");
     let txfee = Amount::from(fee_str).unwrap_or(Amount::default());
-    
+
     let nonce_val = args.get(3).and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
     let nonce = d_nonce.unwrap_or(Uint4::from(nonce_val));
-    
-    let argv = d_argv.unwrap_or_default(); 
-    let protocol_cost = d_fee.unwrap_or_else(|| estimate_protocol_cost_auto(&txfee, nonce, argv.clone(), &sto));
-    
+
+    let argv = d_argv.unwrap_or_default();
+    let protocol_cost =
+        d_fee.unwrap_or_else(|| estimate_protocol_cost_auto(&txfee, nonce, argv.clone(), &sto));
+
     let mut action = ContractDeploy::default();
     action.protocol_cost = protocol_cost;
     action.nonce = nonce;
     action.construct_argv = argv;
     action.contract = sto;
-    
+
     let action_bytes = action.serialize();
     let deploy_json = json!({
         "action": hex::encode(&action_bytes)
     });
 
     let deploy_file = parent.join(format!("{}.deploy.json", stem));
-    fs::write(&deploy_file, serde_json::to_string_pretty(&deploy_json).unwrap()).ok();
+    fs::write(
+        &deploy_file,
+        serde_json::to_string_pretty(&deploy_json).unwrap(),
+    )
+    .ok();
     println!("Generated: {}", deploy_file.display());
 }

@@ -1,11 +1,11 @@
-use sys::{Ret, errf};
-use sys::*;
-use crate::rt::*;
+use super::parse_deploy::DeployInfo;
+use crate::Token::*;
 use crate::contract::Contract;
 use crate::rt::SourceMap;
-use crate::Token::*;
-use super::parse_deploy::DeployInfo;
+use crate::rt::*;
 use field::Address;
+use sys::*;
+use sys::{Ret, errf};
 
 pub struct ParseState {
     pub tokens: Vec<Token>,
@@ -37,7 +37,11 @@ impl ParseState {
     }
 
     pub fn current(&self) -> Option<&Token> {
-        if self.idx >= self.max { None } else { Some(&self.tokens[self.idx]) }
+        if self.idx >= self.max {
+            None
+        } else {
+            Some(&self.tokens[self.idx])
+        }
     }
 
     pub fn advance(&mut self) {
@@ -46,12 +50,12 @@ impl ParseState {
 
     pub fn eat_partition(&mut self, char: char) -> Ret<()> {
         if self.idx >= self.max {
-             return errf!("expected '{}' but got EOF", char)
+            return errf!("expected '{}' but got EOF", char);
         }
         if let Partition(c) = self.tokens[self.idx] {
             if c == char {
                 self.idx += 1;
-                return Ok(())
+                return Ok(());
             }
         }
         errf!("expected '{}' but got {:?}", char, self.tokens[self.idx])

@@ -12,12 +12,12 @@ pub mod ir;
 pub mod lang;
 
 pub use lang::PrintOption;
+pub mod api_service;
+pub mod exec_test;
 pub mod machine;
 pub mod native;
 pub mod space;
 pub mod value;
-pub mod exec_test;
-pub mod api_service;
 
 pub use rt::VmrtRes;
 

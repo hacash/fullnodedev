@@ -34,7 +34,10 @@ pub fn run_with_config(cnfpath: &str) {
 pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
     // setup
     protocol::setup::block_hasher(x16rs::block_hash);
-    protocol::setup::action_register(protocol::action::try_create, protocol::action::try_json_decode);
+    protocol::setup::action_register(
+        protocol::action::try_create,
+        protocol::action::try_json_decode,
+    );
     protocol::setup::action_register(mint::action::try_create, mint::action::try_json_decode);
     // let mut server_apis: Vec<Router<ApiCtx>> = vec![];
 
@@ -81,7 +84,8 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
         .hnoder(|ini, txpool, engine| Box::new(HacashNode::open(ini, txpool, engine)))
         .server(|ini, hnoder| {
             #[allow(unused_mut)]
-            let mut services: Vec<std::sync::Arc<dyn ApiService>> = vec![mint::api_service::service()];
+            let mut services: Vec<std::sync::Arc<dyn ApiService>> =
+                vec![mint::api_service::service()];
             #[cfg(feature = "vm")]
             services.push(vm::api_service::service());
             Box::new(HttpServer::open(

@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    #![allow(dead_code)]
+
     use crate::*;
 
     // Define a complex composite structure

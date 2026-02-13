@@ -11,8 +11,8 @@ use sys::Ret;
 
 use crate::lang::lang_to_bytecode;
 use crate::machine::CtxHost;
-use crate::rt::*;
 use crate::rt::Bytecode::*;
+use crate::rt::*;
 use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
 use crate::value::ValueTy;
 use crate::value::ValueTy::*;
@@ -21,21 +21,41 @@ use crate::value::ValueTy::*;
 struct DummyTx;
 
 impl field::Serialize for DummyTx {
-    fn size(&self) -> usize { 0 }
-    fn serialize(&self) -> Vec<u8> { vec![] }
+    fn size(&self) -> usize {
+        0
+    }
+    fn serialize(&self) -> Vec<u8> {
+        vec![]
+    }
 }
 
 impl basis::interface::TxExec for DummyTx {}
 
 impl TransactionRead for DummyTx {
-    fn ty(&self) -> u8 { 3 }
-    fn hash(&self) -> Hash { Hash::default() }
-    fn hash_with_fee(&self) -> Hash { Hash::default() }
-    fn main(&self) -> Address { Address::default() }
-    fn addrs(&self) -> Vec<Address> { vec![Address::default()] }
-    fn fee(&self) -> &Amount { Amount::zero_ref() }
-    fn fee_purity(&self) -> u64 { 1 }
-    fn fee_extend(&self) -> Ret<u8> { Ok(1) }
+    fn ty(&self) -> u8 {
+        3
+    }
+    fn hash(&self) -> Hash {
+        Hash::default()
+    }
+    fn hash_with_fee(&self) -> Hash {
+        Hash::default()
+    }
+    fn main(&self) -> Address {
+        Address::default()
+    }
+    fn addrs(&self) -> Vec<Address> {
+        vec![Address::default()]
+    }
+    fn fee(&self) -> &Amount {
+        Amount::zero_ref()
+    }
+    fn fee_purity(&self) -> u64 {
+        1
+    }
+    fn fee_extend(&self) -> Ret<u8> {
+        Ok(1)
+    }
 }
 
 #[derive(Default)]
@@ -139,8 +159,10 @@ pub fn build_push_params(params: &str) -> Ret<Vec<u8>> {
 /// Execute lang script with params string. Returns Ok(Value) on success, Err(ItrErr) on VM error.
 /// Use for standalone tests to verify VM behavior (e.g. CastFail, CompoOpNotMatch).
 pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<crate::value::Value> {
-    let push_codes = build_push_params(params).map_err(|e| crate::rt::ItrErr::new(crate::rt::ItrErrCode::InstParamsErr, &e))?;
-    let body_codes = lang_to_bytecode(lang_script).map_err(|e| crate::rt::ItrErr::new(crate::rt::ItrErrCode::InstParamsErr, &e))?;
+    let push_codes = build_push_params(params)
+        .map_err(|e| crate::rt::ItrErr::new(crate::rt::ItrErrCode::InstParamsErr, &e))?;
+    let body_codes = lang_to_bytecode(lang_script)
+        .map_err(|e| crate::rt::ItrErr::new(crate::rt::ItrErrCode::InstParamsErr, &e))?;
     let mut codes = push_codes;
     codes.extend_from_slice(&body_codes);
 
