@@ -678,6 +678,61 @@ fn if_statement_and_while_single_stmt_bodies_elide_irblock_in_ircode() {
 }
 
 #[test]
+fn while_break_continue_roundtrip_and_codegen() {
+    let script = r##"
+        var i = 0
+        while i < 10 {
+            i += 1
+            if i == 3 {
+                continue
+            }
+            if i == 8 {
+                break
+            }
+        }
+        return i
+    "##;
+    let ircodes = common::checked_compile_fitsh_to_ir(script);
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRWHILE as u8));
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRBREAK as u8));
+    assert!(ircodes.iter().any(|b| *b == Bytecode::IRCONTINUE as u8));
+
+    let bytecodes = convert_ir_to_bytecode(&ircodes).unwrap();
+    assert!(!bytecodes.iter().any(|b| *b == Bytecode::IRBREAK as u8));
+    assert!(!bytecodes.iter().any(|b| *b == Bytecode::IRCONTINUE as u8));
+    assert!(verify_bytecodes(&bytecodes).is_ok());
+
+    let printed = ircode_to_lang(&ircodes).unwrap();
+    assert!(printed.contains("continue"));
+    assert!(printed.contains("break"));
+}
+
+#[test]
+fn while_nested_break_continue_codegen_verifies() {
+    let script = r##"
+        var i = 0
+        var j = 0
+        while i < 3 {
+            i += 1
+            j = 0
+            while j < 5 {
+                j += 1
+                if j == 2 {
+                    continue
+                }
+                if j == 4 {
+                    break
+                }
+            }
+        }
+        return i
+    "##;
+    let ircodes = common::checked_compile_fitsh_to_ir(script);
+    let bytecodes = convert_ir_to_bytecode(&ircodes).unwrap();
+    verify_bytecodes(&bytecodes).unwrap();
+}
+
+#[test]
 fn nested_expression_contexts_emit_expr_opcodes() {
     let script = r##"
         print {
@@ -710,6 +765,39 @@ fn nested_expression_contexts_emit_expr_opcodes() {
         .count();
     assert!(blockr >= 1);
     assert!(ifr >= 4);
+}
+
+#[test]
+fn reject_break_outside_while() {
+    let script = r##"
+        break
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("break can only be used inside while loop"));
+}
+
+#[test]
+fn reject_continue_outside_while() {
+    let script = r##"
+        continue
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("continue can only be used inside while loop"));
+}
+
+#[test]
+fn reject_break_continue_in_expression_context() {
+    let script1 = r##"
+        print break
+    "##;
+    let err1 = lang_to_ircode(script1).unwrap_err();
+    assert!(err1.contains("break statement cannot be used as expression"));
+
+    let script2 = r##"
+        print continue
+    "##;
+    let err2 = lang_to_ircode(script2).unwrap_err();
+    assert!(err2.contains("continue statement cannot be used as expression"));
 }
 
 #[test]

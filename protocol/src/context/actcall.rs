@@ -3,7 +3,14 @@ use crate::action;
 fn ctx_action_call(this: &mut ContextInst, k: u16, b: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
     // create
     let body = vec![k.to_be_bytes().to_vec(), b].concat();
-    let (action, _) = action::action_create(&body)?;
+    let (action, used) = action::action_create(&body)?;
+    if used != body.len() {
+        return errf!(
+            "extend action parse length mismatch: used {} but total {}",
+            used,
+            body.len()
+        )
+    }
     // EXTACTION payload actions are runtime-created and not part of tx.actions.
     // Keep runtime req_sign checks here; tx.main signature is already verified in tx.execute().
     let mut seen = HashSet::new();

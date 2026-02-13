@@ -64,6 +64,8 @@ action_register!{
 
     AstSelect             // 21
     AstIf                 // 22
+    SubmitHeightLimit     // 29
+    ValidChainID          // 30
 
     // inscription
     // DiamondInscription         // 32

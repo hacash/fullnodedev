@@ -85,6 +85,13 @@ macro_rules! action_define {
                         }
                     )*
                 }
+                if *self.kind != Self::KIND {
+                    return errf!(
+                        "action kind mismatch: expect {} but got {}",
+                        Self::KIND,
+                        *self.kind
+                    )
+                }
                 Ok(())
             }
         }
@@ -163,7 +170,7 @@ macro_rules! action_register {
         pub fn try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>> {
             match kind {
                 $(<$kty>::KIND => {
-                    let mut act = <$kty>::default();
+                    let mut act = <$kty>::new();
                     act.from_json(json)?;
                     Ok(Some(Box::new(act)))
                 },)+
@@ -231,15 +238,6 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
                 kid,
                 ctx_level
             )
-        }
-        let mut same_guard = 0;
-        for txact in actions {
-            if txact.kind() == kid {
-                same_guard += 1;
-            }
-        }
-        if same_guard > 1 {
-            return errf!("guard action {} cannot repeat in one transaction", kid)
         }
     } else if alv == ActLv::Top {
         check_level_top!{"TOP"}

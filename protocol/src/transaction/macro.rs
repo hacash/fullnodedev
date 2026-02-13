@@ -257,6 +257,10 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         if tx.action_count() == 0 {
             return errf!("tx actions cannot empty.")
         }
+        // Guard actions are environment constraints and cannot form a standalone transaction.
+        if tx.actions().iter().all(|a| a.level() == ActLv::Guard) {
+            return errf!("tx actions cannot be all GUARD")
+        }
         // main check
         if ! main.is_privakey() {
             return errf!("tx fee address version must be PRIVAKEY type.")

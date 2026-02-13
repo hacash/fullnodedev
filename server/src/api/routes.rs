@@ -52,9 +52,11 @@ pub fn routes() -> Router<ApiCtx> {
 
     ;
 
+    #[cfg(feature = "vm-api")]
+    let lrt = lrt.merge(extend_api_routes());
+
     lrt
     
 }
-
 
 

@@ -19,6 +19,7 @@ pub struct Syntax {
     local_alloc: u8,
     check_op: bool,
     expect_retval: bool,
+    loop_depth: usize,
     is_ircode: bool, // true for ircode mode, false for bytecode mode
     // leftv: Box<dyn AST>,
     irnode: IRNodeArray, // replaced IRNodeArray -> IRNodeArray
@@ -150,6 +151,16 @@ impl Syntax {
         self.expect_retval = expect;
         let res = f(self);
         self.expect_retval = prev;
+        res
+    }
+
+    fn with_loop_scope<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        self.loop_depth += 1;
+        let res = f(self);
+        self.loop_depth -= 1;
         res
     }
 
@@ -1035,8 +1046,7 @@ impl Syntax {
             Keyword(While) => {
                 let exp = self.item_must(0)?;
                 exp.checkretval()?; // must retv
-                                    // let e = errf!("while statement format error");
-                let suby = self.item_may_list(false)?;
+                let suby = self.with_loop_scope(|s| s.item_may_list(false))?;
                 push_double_box(IRWHILE, exp, suby)
             }
             Keyword(If) => {
@@ -1413,6 +1423,24 @@ impl Syntax {
             Keyword(False) => push_inst(PFALSE),
             Keyword(Abort) => push_inst_noret(ABT),
             Keyword(End) => push_inst_noret(END),
+            Keyword(Break) => {
+                if self.expect_retval {
+                    return errf!("break statement cannot be used as expression");
+                }
+                if self.loop_depth == 0 {
+                    return errf!("break can only be used inside while loop");
+                }
+                push_inst_noret(IRBREAK)
+            }
+            Keyword(Continue) => {
+                if self.expect_retval {
+                    return errf!("continue statement cannot be used as expression");
+                }
+                if self.loop_depth == 0 {
+                    return errf!("continue can only be used inside while loop");
+                }
+                push_inst_noret(IRCONTINUE)
+            }
             Keyword(Print) => {
                 let exp = self.item_must(0)?;
                 if !exp.hasretval() {

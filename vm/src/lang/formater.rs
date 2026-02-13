@@ -1089,6 +1089,8 @@ impl<'a> Formater<'a> {
             PNIL => buf.push_str("nil"),
             PNBUF => buf.push_str("\"\""),
             NEWLIST => buf.push_str("[]"),
+            IRBREAK => buf.push_str("break"),
+            IRCONTINUE => buf.push_str("continue"),
             ABT | END | RET | ERR | AST | PRT => buf.push_str(meta.intro),
             _ => {
                 buf.push_str(meta.intro);

@@ -665,7 +665,7 @@ pub fn execute_code(
             }
             SSAVE => {
                 nsw!();
-                let v = ops.pop()?;
+                let v = ops.pop()?.valid(cap)?;
                 let k = ops.pop()?;
                 gas += host.ssave(gst, hei, context_addr, k, v)?;
             }

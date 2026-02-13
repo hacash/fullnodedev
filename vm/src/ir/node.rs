@@ -74,6 +74,12 @@ impl IRNode for IRNodeLeaf {
     fn bytecode(&self) -> u8 { self.inst as u8 }
     fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
         buf.push(self.bytecode());
+        match self.inst {
+            // Keep loop-control placeholder width at 3 bytes in generated body code.
+            // This guarantees that later rewrite to `JMPSL + i16` does not change size.
+            Bytecode::IRBREAK | Bytecode::IRCONTINUE => buf.extend_from_slice(&[0, 0]),
+            _ => {}
+        }
         Ok(())
     }
     fn serialize(&self) -> Vec<u8> { vec![self.inst as u8] }

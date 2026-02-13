@@ -571,6 +571,8 @@ var step = global_get("tx_step")
 - `storage_rest(key)` for expiry
 - Value types: Nil, Bool, Uint, Address, Bytes
 - Max value size ~1280 bytes
+- 1 period = 100 blocks; max rent periods per entry = 30000
+- Boundary: at exact due height, data is still valid and `storage_rest(key)` returns `0`; expiration starts at next block
 
 **Example**: Token balances, AMM reserves, config.
 
@@ -930,7 +932,7 @@ contract Child {
 | `length(list)` | List length |
 | `keys(map)` | Map keys |
 | `values(map)` | Map values |
-| `haskey(map, key)` | Check key |
+| `has_key(map, key)` | Check key |
 | `head(list)` | First element |
 | `back(list)` | Last element |
 | `append(list, item)` | Append |

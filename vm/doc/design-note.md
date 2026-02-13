@@ -46,9 +46,9 @@ Contract Code Store Fee:
 Contract KV State Rent:
 
     1. rent fee = period * (32 + datasize)
-    2. one period = 300 block ( one day )
-    3. period max = 10000 (about 30 years)
-    4. ratain = 300 * 100 (about 100 days)
+    2. one period = 100 blocks (about 8h)
+    3. period max = 30000 (about 27.4 years)
+    4. retain = clamp(lifetime/3, min=1, max=300 periods = 100 days)
     5. data recover = rent it again before expire
     6. data len max = 1280 bytes = 32 * 40
     7. data type can store = Nil, Bool, Uint, Address, Bytes

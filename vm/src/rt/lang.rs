@@ -48,6 +48,8 @@ keyword_define! {
     If        : "if"
     Else      : "else"
     While     : "while"
+    Break     : "break"
+    Continue  : "continue"
     End       : "end"
     Return    : "return"
     Abort     : "abort"

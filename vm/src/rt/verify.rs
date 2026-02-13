@@ -73,7 +73,8 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
             return itr_err_fmt!(InstInvalid, "{}", inst as u8)
         }
         match inst {
-            IRBYTECODE | IRLIST | IRBLOCK | IRBLOCKR | IRIF | IRIFR | IRWHILE => {
+            IRBYTECODE | IRLIST | IRBLOCK | IRBLOCKR | IRIF | IRIFR | IRWHILE |
+            IRBREAK | IRCONTINUE => {
                 return itr_err_fmt!(InstInvalid, "IR bytecode {:?} is not allowed", inst)
             }
             _ => {}

@@ -358,6 +358,40 @@ fn test_ctx_action_call_must_check_nested_ast_req_sign() {
 }
 
 #[test]
+fn test_ctx_action_call_must_reject_trailing_bytes() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let tx = TransactionType2::default();
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = ContextInst::new(env, Box::new(crate::context::EmptyState {}), Box::new(EmptyLogs {}), &tx);
+
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
+    act.hacash = Amount::mei(1);
+    let mut body = act.serialize()[2..].to_vec();
+    body.push(0x00); // trailing garbage
+
+    let err = ctx.action_call(HacToTrs::KIND, body).unwrap_err();
+    assert!(err.contains("parse length mismatch"), "{}", err);
+}
+
+#[test]
+fn test_action_json_create_must_reject_kind_mismatch() {
+    init_test_registry();
+
+    let json = r#"{"kind":14}"#;
+    let err = crate::action::action_json_create(HacToTrs::KIND, json)
+        .unwrap_err();
+    assert!(err.contains("kind mismatch"), "{}", err);
+}
+
+#[test]
 fn test_complex_json_structure() {
     init_test_registry();
 

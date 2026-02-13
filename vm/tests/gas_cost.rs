@@ -66,6 +66,10 @@ impl GasTestContext {
             }
         }
     }
+
+    fn mismatch_count(&self) -> usize {
+        self.mismatches.len()
+    }
 }
 
 // Calculate expected base gas according to documentation
@@ -449,32 +453,70 @@ fn test_storage_load_gas(ctx: &mut GasTestContext, value_size: usize) {
     let expected_base = get_base_gas(Bytecode::SLOAD);
     let expected_read = (value_size as i64) / 8;
     let expected = expected_base + expected_read;
-    
-    // Note: SLOAD requires data to be saved first, which needs special setup
-    // Here we only test the base part, actual tests may need mock storage
-    let mut codes = Vec::new();
+
+    // Measure delta gas of SLOAD itself: (setup + SLOAD) - setup
+    let mut setup_codes = Vec::new();
     // Save data first
-    codes.push(Bytecode::PBUF as u8);
-    codes.push(1);
-    codes.push(0);
-    codes.push(Bytecode::PBUF as u8);
-    codes.push(value_size.min(255) as u8);
+    setup_codes.push(Bytecode::PBUF as u8);
+    setup_codes.push(1);
+    setup_codes.push(0);
+    setup_codes.push(Bytecode::PBUF as u8);
+    setup_codes.push(value_size.min(255) as u8);
     for _ in 0..value_size.min(255) {
-        codes.push(0);
+        setup_codes.push(0);
     }
-    codes.push(Bytecode::SSAVE as u8);
-    // Then load
-    codes.push(Bytecode::PBUF as u8);
-    codes.push(1);
-    codes.push(0);
-    codes.push(Bytecode::SLOAD as u8);
-    codes.push(Bytecode::END as u8);
-    
+    setup_codes.push(Bytecode::SSAVE as u8);
+    // Push key for SLOAD
+    setup_codes.push(Bytecode::PBUF as u8);
+    setup_codes.push(1);
+    setup_codes.push(0);
+
+    let mut baseline_codes = setup_codes.clone();
+    baseline_codes.push(Bytecode::END as u8);
+    let mut total_codes = setup_codes;
+    total_codes.push(Bytecode::SLOAD as u8);
+    total_codes.push(Bytecode::END as u8);
+
     let mut resource_sizes = HashMap::new();
     resource_sizes.insert("value_size".to_string(), value_size);
-    
-    // This test may fail due to storage requirements, but we record it
-    run_gas_test(ctx, codes, expected, &format!("Storage load ({} bytes)", value_size), Bytecode::SLOAD, resource_sizes);
+
+    let gas_limit = 100000i64;
+    let baseline = match execute_test_with_argv(gas_limit, baseline_codes, None) {
+        Ok((_r, gas, _ops, _heap)) => gas,
+        Err(e) => {
+            ctx.record_mismatch(
+                Bytecode::SLOAD,
+                format!("Storage load ({} bytes, setup failed: {:?})", value_size, e),
+                expected,
+                -1,
+                resource_sizes,
+            );
+            return;
+        }
+    };
+    let total = match execute_test_with_argv(gas_limit, total_codes, None) {
+        Ok((_r, gas, _ops, _heap)) => gas,
+        Err(e) => {
+            ctx.record_mismatch(
+                Bytecode::SLOAD,
+                format!("Storage load ({} bytes, execute failed: {:?})", value_size, e),
+                expected,
+                -1,
+                resource_sizes,
+            );
+            return;
+        }
+    };
+    let actual = total - baseline;
+    if actual != expected {
+        ctx.record_mismatch(
+            Bytecode::SLOAD,
+            format!("Storage load ({} bytes)", value_size),
+            expected,
+            actual,
+            resource_sizes,
+        );
+    }
 }
 
 // Test Storage save gas (byte/6 + rent + key cost)
@@ -484,24 +526,65 @@ fn test_storage_save_gas(ctx: &mut GasTestContext, value_size: usize, is_new_key
     let expected_rent = 32 + value_size as i64; // 1 period rent
     let expected_key_cost = if is_new_key { 256 } else { 0 };
     let expected = expected_base + expected_write + expected_rent + expected_key_cost;
-    
-    let mut codes = Vec::new();
-    codes.push(Bytecode::PBUF as u8);
-    codes.push(1);
-    codes.push(0);
-    codes.push(Bytecode::PBUF as u8);
-    codes.push(value_size.min(255) as u8);
+
+    // Measure delta gas of SSAVE itself: (setup + SSAVE) - setup.
+    let mut setup_codes = Vec::new();
+    setup_codes.push(Bytecode::PBUF as u8);
+    setup_codes.push(1);
+    setup_codes.push(0);
+    setup_codes.push(Bytecode::PBUF as u8);
+    setup_codes.push(value_size.min(255) as u8);
     for _ in 0..value_size.min(255) {
-        codes.push(0);
+        setup_codes.push(0);
     }
-    codes.push(Bytecode::SSAVE as u8);
-    codes.push(Bytecode::END as u8);
-    
+
+    let mut baseline_codes = setup_codes.clone();
+    baseline_codes.push(Bytecode::END as u8);
+    let mut total_codes = setup_codes;
+    total_codes.push(Bytecode::SSAVE as u8);
+    total_codes.push(Bytecode::END as u8);
+
     let mut resource_sizes = HashMap::new();
     resource_sizes.insert("value_size".to_string(), value_size);
     resource_sizes.insert("is_new_key".to_string(), if is_new_key { 1 } else { 0 });
-    
-    run_gas_test(ctx, codes, expected, &format!("Storage save ({} bytes, new_key={})", value_size, is_new_key), Bytecode::SSAVE, resource_sizes);
+
+    let gas_limit = 100000i64;
+    let baseline = match execute_test_with_argv(gas_limit, baseline_codes, None) {
+        Ok((_r, gas, _ops, _heap)) => gas,
+        Err(e) => {
+            ctx.record_mismatch(
+                Bytecode::SSAVE,
+                format!("Storage save ({} bytes, setup failed: {:?})", value_size, e),
+                expected,
+                -1,
+                resource_sizes,
+            );
+            return;
+        }
+    };
+    let total = match execute_test_with_argv(gas_limit, total_codes, None) {
+        Ok((_r, gas, _ops, _heap)) => gas,
+        Err(e) => {
+            ctx.record_mismatch(
+                Bytecode::SSAVE,
+                format!("Storage save ({} bytes, execute failed: {:?})", value_size, e),
+                expected,
+                -1,
+                resource_sizes,
+            );
+            return;
+        }
+    };
+    let actual = total - baseline;
+    if actual != expected {
+        ctx.record_mismatch(
+            Bytecode::SSAVE,
+            format!("Storage save ({} bytes, new_key={})", value_size, is_new_key),
+            expected,
+            actual,
+            resource_sizes,
+        );
+    }
 }
 
 // Test Compo operations gas
@@ -831,6 +914,7 @@ mod tests {
         }
         
         ctx.print_report();
+        assert_eq!(ctx.mismatch_count(), 0, "storage gas mismatches found");
     }
     
     #[test]

@@ -67,7 +67,11 @@ impl ValueSto {
         self.born.uint().saturating_add(STORAGE_SAVE_MAX)
     }
 
-    // return (expire, delete, height)
+    // return (is_expire, is_delete, expire_height)
+    //
+    // Boundary semantics are strict:
+    // - `chei == expire` -> NOT expired yet (still readable/writable; rest=0)
+    // - `chei == expire + retain_blocks` -> NOT deleted yet
     fn check(&self, chei: u64) -> (bool, bool, u64) {
         let due = self.expire.uint();
         let isexp = chei > due;
@@ -178,6 +182,31 @@ impl ValueSto {
 mod storage_param_tests {
     use super::*;
 
+    #[derive(Default, Clone)]
+    struct StateMem {
+        mem: basis::component::MemKV,
+    }
+
+    impl State for StateMem {
+        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+            match self.mem.get(&k) {
+                Some(v) => v.clone(),
+                None => None,
+            }
+        }
+        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+            self.mem.put(k, v)
+        }
+        fn del(&mut self, k: Vec<u8>) {
+            self.mem.del(k)
+        }
+    }
+
+    fn test_contract() -> ContractAddress {
+        let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        ContractAddress::calculate(&base, &Uint4::from(1))
+    }
+
     #[test]
     fn period_is_8_hours_and_max_is_bounded() {
         assert_eq!(STORAGE_PERIOD, 100);
@@ -228,30 +257,83 @@ mod storage_param_tests {
     }
 
     #[test]
+    fn expire_and_delete_boundary_is_strictly_greater() {
+        let v = ValueSto::new(0, Value::Nil);
+        // new value: due=100, retain=1 period=100 blocks
+        let (is_expire, is_delete, due) = v.check(STORAGE_PERIOD);
+        assert_eq!(due, STORAGE_PERIOD);
+        assert!(!is_expire);
+        assert!(!is_delete);
+
+        let (is_expire, is_delete, _) = v.check(STORAGE_PERIOD + 1);
+        assert!(is_expire);
+        assert!(!is_delete);
+
+        let (is_expire, is_delete, _) = v.check(STORAGE_PERIOD * 2);
+        assert!(is_expire);
+        assert!(!is_delete);
+
+        let (_, is_delete, _) = v.check(STORAGE_PERIOD * 2 + 1);
+        assert!(is_delete);
+    }
+
+    #[test]
+    fn srest_returns_zero_at_due_boundary_then_nil_after_expire() {
+        let gst = GasExtra::new(1);
+        let cadr = test_contract();
+        let mut sta = StateMem::default();
+        let mut st = crate::VMState::wrap(&mut sta);
+
+        let k = Value::Bytes(vec![1u8; 1]);
+        st.ssave(&gst, 0, &cadr, k.clone(), Value::U8(7)).unwrap();
+
+        let rest_due = st.srest(STORAGE_PERIOD, &cadr, &k).unwrap();
+        assert_eq!(rest_due, Value::U64(0));
+
+        let rest_expired = st.srest(STORAGE_PERIOD + 1, &cadr, &k).unwrap();
+        assert_eq!(rest_expired, Value::Nil);
+    }
+
+    #[test]
+    fn srent_reclaims_deleted_entry() {
+        let gst = GasExtra::new(1);
+        let cadr = test_contract();
+        let mut sta = StateMem::default();
+        let mut st = crate::VMState::wrap(&mut sta);
+
+        let k = Value::Bytes(vec![3u8; 1]);
+        st.ssave(&gst, 0, &cadr, k.clone(), Value::U8(9)).unwrap();
+        let sk = crate::VMState::skey(&cadr, &k).unwrap();
+        assert!(st.ctrtkvdb(&sk).is_some());
+
+        let err = st
+            .srent(&gst, STORAGE_PERIOD * 2 + 1, &cadr, k, Value::U8(1))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("StorageExpired"));
+        assert!(st.ctrtkvdb(&sk).is_none(), "deleted key should be reclaimed");
+    }
+
+    #[test]
+    fn ssave_rejects_value_larger_than_spacecap() {
+        let gst = GasExtra::new(1);
+        let cadr = test_contract();
+        let mut sta = StateMem::default();
+        let mut st = crate::VMState::wrap(&mut sta);
+
+        let max = SpaceCap::new(1).max_value_size;
+        let oversized = Value::Bytes(vec![0u8; max + 1]);
+        let err = st
+            .ssave(&gst, 1, &cadr, Value::Bytes(vec![2u8]), oversized)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("StorageValSizeErr"));
+    }
+
+    #[test]
     fn ssave_charges_key_create_fee_once_and_treats_expired_as_new() {
         let gst = GasExtra::new(1);
-        #[derive(Default, Clone)]
-        struct StateMem {
-            mem: basis::component::MemKV,
-        }
-
-        impl State for StateMem {
-            fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
-                match self.mem.get(&k) {
-                    Some(v) => v.clone(),
-                    None => None,
-                }
-            }
-            fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
-                self.mem.put(k, v)
-            }
-            fn del(&mut self, k: Vec<u8>) {
-                self.mem.del(k)
-            }
-        }
-
-        let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
-        let cadr = ContractAddress::calculate(&base, &Uint4::from(1));
+        let cadr = test_contract();
         let mut sta = StateMem::default();
         let mut st = crate::VMState::wrap(&mut sta);
 
@@ -348,7 +430,8 @@ impl VMState<'_> {
     }
 
     /*
-        if not find or expire return Nil  
+        if not find or expire return Nil.
+        note: at exact due height rest=0 (not expired yet), expiration starts at due+1.
     */
     fn srest(&mut self, curhei: u64, cadr: &ContractAddress, k: &Value) -> VmrtRes<Value> {
         let Some(v) = self.sread(curhei, cadr, k)? else {
@@ -363,6 +446,15 @@ impl VMState<'_> {
     fn ssave(&mut self, gst: &GasExtra, curhei: u64, cadr: &ContractAddress, k: Value, v: Value) -> VmrtRes<i64> {
         v.canbe_store()?; // check can store
         let val_len = v.can_get_size()? as usize;
+        let max_val = SpaceCap::new(curhei).max_value_size;
+        if val_len > max_val {
+            return itr_err_fmt!(
+                StorageValSizeErr,
+                "storage value too large, max {} bytes but got {}",
+                max_val,
+                val_len
+            );
+        }
 
         let k = Self::skey(cadr, &k)?;
         let mut extra_gas = gst.storage_write(val_len);
@@ -431,6 +523,7 @@ impl VMState<'_> {
         };
         let (_, is_delete, _) = v.check(curhei);
         if is_delete {
+            self.ctrtkvdb_del(&k);
             return itr_err_fmt!(StorageExpired, "data deleted")
         }
         let gas = v.rent(gst, curhei, p)?;

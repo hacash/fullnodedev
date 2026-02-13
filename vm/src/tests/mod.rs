@@ -9,6 +9,7 @@ include! {"benchmark.rs"}
 include! {"verify.rs"}
 include! {"ir.rs"}
 include! {"execute.rs"}
+include! {"fitsh_compile_test.rs"}
 
 #[allow(dead_code)]
 pub fn do_all_test() {

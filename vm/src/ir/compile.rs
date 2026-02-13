@@ -52,6 +52,105 @@ fn compile_double(btcd: Bytecode, x: IRNRef, y: IRNRef) -> VmrtRes<Option<Vec<u8
     })
 }
 
+#[derive(Copy, Clone)]
+enum LoopCtrl {
+    Break,
+    Continue,
+}
+
+#[derive(Copy, Clone)]
+struct CodeChunk {
+    start: usize,
+    len: usize,
+    ctrl: Option<LoopCtrl>,
+}
+
+fn decode_inst_len(codes: &[u8], at: usize) -> VmrtRes<usize> {
+    if at >= codes.len() {
+        return itr_err_fmt!(ComplieError, "decode instruction overflow");
+    }
+    let inst: Bytecode = std_mem_transmute!(codes[at]);
+    if let IRBREAK | IRCONTINUE = inst {
+        if at + 3 > codes.len() {
+            return itr_err_fmt!(ComplieError, "loop control placeholder overflow");
+        }
+        return Ok(3);
+    }
+    let meta = inst.metadata();
+    if !meta.valid {
+        return itr_err_fmt!(ComplieError, "invalid instruction {:?}", inst);
+    }
+    let mut end = at + 1 + meta.param as usize;
+    if end > codes.len() {
+        return itr_err_fmt!(ComplieError, "instruction params overflow");
+    }
+    match inst {
+        PBUF => {
+            let l = codes[at + 1] as usize;
+            end += l;
+        }
+        PBUFL => {
+            if at + 3 > codes.len() {
+                return itr_err_fmt!(ComplieError, "PBUFL params overflow");
+            }
+            let l = u16::from_be_bytes(codes[at + 1..at + 3].try_into().unwrap()) as usize;
+            end += l;
+        }
+        _ => {}
+    }
+    if end > codes.len() {
+        return itr_err_fmt!(ComplieError, "instruction payload overflow");
+    }
+    Ok(end - at)
+}
+
+fn rewrite_while_loop_ctrl(body: &[u8], cond_len: usize) -> VmrtRes<Vec<u8>> {
+    const JIL: usize = JMP_INST_LEN;
+    let mut chunks: Vec<CodeChunk> = Vec::new();
+    let mut i = 0;
+    while i < body.len() {
+        let inst: Bytecode = std_mem_transmute!(body[i]);
+        let len = decode_inst_len(body, i)?;
+        let ctrl = match inst {
+            IRBREAK => Some(LoopCtrl::Break),
+            IRCONTINUE => Some(LoopCtrl::Continue),
+            _ => None,
+        };
+        chunks.push(CodeChunk {
+            start: i,
+            len,
+            ctrl,
+        });
+        i += len;
+    }
+
+    let mut new_len = 0usize;
+    for one in &chunks {
+        new_len += if one.ctrl.is_some() { JIL } else { one.len };
+    }
+
+    let mut out = Vec::with_capacity(new_len);
+    let mut pos = 0usize;
+    for one in &chunks {
+        if let Some(ctrl) = one.ctrl {
+            let offset = match ctrl {
+                LoopCtrl::Break => new_len as i32 - pos as i32,
+                LoopCtrl::Continue => -((cond_len + pos + JIL * 2) as i32),
+            };
+            if offset < i16::MIN as i32 || offset > i16::MAX as i32 {
+                return itr_err_fmt!(ComplieError, "while loop control jump overflow: {}", offset);
+            }
+            out.push(JMPSL as u8);
+            out.extend_from_slice(&(offset as i16).to_be_bytes());
+            pos += JIL;
+            continue;
+        }
+        out.extend_from_slice(&body[one.start..one.start + one.len]);
+        pos += one.len;
+    }
+    Ok(out)
+}
+
 
 fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
     const JIL: usize = JMP_INST_LEN;
@@ -66,6 +165,7 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
     if y.hasretval() && !is_stmt_block(y) {
         body.push(POP as u8); // pop inst
     }
+    body = rewrite_while_loop_ctrl(&body, cond.len())?;
     let body_l = body.len() + JIL;
     let alls_l = body_l + cond.len() + JIL;
     // check code len

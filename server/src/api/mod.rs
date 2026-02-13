@@ -63,8 +63,8 @@ include!{"fee.rs"}
 include!{"miner.rs"}
 include!{"diamond_miner.rs"}
 
+#[cfg(feature = "vm-api")]
 include!{"vm.rs"}
 
 include!{"routes.rs"}
-
 

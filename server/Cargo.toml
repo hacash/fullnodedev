@@ -9,10 +9,14 @@ field          = {path = "../field"}
 basis          = {path = "../basis"}
 protocol       = {path = "../protocol"}
 mint           = {path = "../mint"}
-vm             = {path = "../vm"}
+vm             = {path = "../vm", optional = true}
 hex = "0.4.3"
 axum = "0.7.9"
 serde = "1.0.215"
 serde_json = "1.0.133"
 getrandom = "0.3.2"
 tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread", "sync", "time", "io-util", "net", "macros"] }
+
+[features]
+default = []
+vm-api = ["dep:vm"]

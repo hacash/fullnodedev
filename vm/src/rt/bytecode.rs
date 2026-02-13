@@ -258,8 +258,8 @@ pub enum Bytecode {
     IRIF                = 0xf4, // <IR NODE>
     IRIFR               = 0xf5, // <IR NODE>
     IRWHILE             = 0xf6, // <IR NODE>
-    ________________247 = 0xf7,
-    ________________248 = 0xf8,
+    IRBREAK             = 0xf7, // <IR NODE>
+    IRCONTINUE          = 0xf8, // <IR NODE>
     ________________249 = 0xf9,
     ________________250 = 0xfa,
     ________________251 = 0xfb,
@@ -492,6 +492,8 @@ bytecode_metadata_define!{
     IRIF       : 0, 3, 0,     ir_if
     IRIFR      : 0, 3, 1,     ir_if_expr
     IRWHILE    : 0, 2, 0,     ir_while
+    IRBREAK    : 0, 0, 0,     ir_break
+    IRCONTINUE : 0, 0, 0,     ir_continue
 
     BURN       : 2, 0, 0,     gas_burn
     NOP        : 0, 0, 0,     nop

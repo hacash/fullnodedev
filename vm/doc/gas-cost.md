@@ -125,7 +125,9 @@ byte = sum(all_param_bytes) = topic_bytes + sum(all_data_bytes)
 
 The key_byte is not calculated here.
 
-SSAVE will automatically extend expired periods by up to one cycle for free, without charging additional rent gas.
+SSAVE pricing semantics:
+- writing an expired key is treated as (re)create: charge 1-period rent and key-create fee.
+- writing a valid key with remaining lease `< 1 period` triggers auto-renew to 1 period and charges 1-period rent.
 
 - byte/8: SLOAD
 - byte/6: SSAVE (write bytes; rent/key-create fee may also apply depending on key state)

@@ -571,6 +571,8 @@ var step = global_get("tx_step")
 - `storage_rest(key)` 查询到期
 - 值类型：Nil、Bool、Uint、Address、Bytes
 - 单值最大约 1280 字节
+- 1 个租期 = 100 个区块；单条目最大租期 = 30000 个租期
+- 边界语义：在到期高度当块数据仍有效，`storage_rest(key)` 返回 `0`；下一块才算过期
 
 **示例**：代币余额、AMM 储备、配置。
 
@@ -930,7 +932,7 @@ contract Child {
 | `length(list)` | 列表长度 |
 | `keys(map)` | 映射键 |
 | `values(map)` | 映射值 |
-| `haskey(map, key)` | 检查键 |
+| `has_key(map, key)` | 检查键 |
 | `head(list)` | 首元素 |
 | `back(list)` | 末元素 |
 | `append(list, item)` | 追加 |
