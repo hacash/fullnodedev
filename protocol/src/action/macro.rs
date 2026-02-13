@@ -199,6 +199,20 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
         if actlen > 1 {
             return errf!("action {} just can execute on TOP_ONLY", kid)
         }
+    } else if alv == ActLv::TopOnlyWithGuard {
+        check_level_top!{"TOP_ONLY_WITH_GUARD"}
+        let mut non_guard = 0;
+        for txact in actions {
+            if txact.level() != ActLv::Guard {
+                non_guard += 1;
+            }
+        }
+        if non_guard != 1 {
+            return errf!(
+                "action {} just can execute on TOP_ONLY_WITH_GUARD (need exactly one non-guard action)",
+                kid
+            )
+        }
     } else if alv == ActLv::TopUnique {
         check_level_top!{"TOP_UNIQUE"}
         let mut smalv = 0;
@@ -209,6 +223,23 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
         }
         if smalv > 1 {
             return errf!("action {} just can execute on level TOP_UNIQUE", kid)
+        }
+    } else if alv == ActLv::Guard {
+        if ctx_level > ACTION_CTX_LEVEL_AST_MAX {
+            return errf!(
+                "action {} just can execute on GUARD (AST and above), now ctx {}",
+                kid,
+                ctx_level
+            )
+        }
+        let mut same_guard = 0;
+        for txact in actions {
+            if txact.kind() == kid {
+                same_guard += 1;
+            }
+        }
+        if same_guard > 1 {
+            return errf!("guard action {} cannot repeat in one transaction", kid)
         }
     } else if alv == ActLv::Top {
         check_level_top!{"TOP"}

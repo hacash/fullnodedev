@@ -61,13 +61,39 @@ impl Contract {
         edit
     }
 
+    fn estimate_protocol_cost(txfee: &Amount, payload_bytes: usize, charged_bytes: usize) -> Amount {
+        if charged_bytes == 0 {
+            return Amount::zero()
+        }
+        // CLI print helper: conservative estimate to reduce "protocol_cost too small" rejection.
+        // Real validation still uses on-chain tx.fee_purity().
+        const TX_SIZE_ESTIMATE_BASE_BYTES: u128 = 220;
+        const SAFETY_NUM: u128 = 120; // +20% headroom
+        const SAFETY_DEN: u128 = 100;
+        let fee238 = txfee.to_238_u128().unwrap_or(0);
+        let tx_size_est = TX_SIZE_ESTIMATE_BASE_BYTES.saturating_add(payload_bytes as u128);
+        let mut fee_purity = fee238 / tx_size_est.max(1);
+        if fee238 > 0 && fee_purity == 0 {
+            fee_purity = 1;
+        }
+        let need = fee_purity
+            .saturating_mul(charged_bytes as u128)
+            .saturating_mul(CONTRACT_STORE_PERM_PERIODS as u128);
+        let need = need
+            .saturating_mul(SAFETY_NUM)
+            .saturating_add(SAFETY_DEN - 1)
+            / SAFETY_DEN;
+        Amount::coin_u128(need, UNIT_238)
+    }
+
     pub fn testnet_deploy_print_by_nonce(&self, fee: &str, nonce: u32) {
         let txfee = Amount::from(fee).unwrap();
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         act.contract = self.ctrt.clone();
         act.construct_argv = self.argv.clone();
-        act.protocol_cost = txfee.dist_mul(CONTRACT_STORE_FEE_MUL as u128).unwrap();
+        let bytes = act.contract.size();
+        act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes);
         // print
         curl_trs_2(vec![Box::new(act)], fee);
     } 
@@ -81,7 +107,9 @@ impl Contract {
         let mut act = ContractUpdate::new();
         act.edit = self.clone().into_edit(expect_revision);
         act.address = cadr;
-        act.protocol_cost = txfee.dist_mul(CONTRACT_STORE_FEE_MUL as u128).unwrap();
+        // On-chain update fee is charged by positive delta bytes only; helper uses edit size as estimate.
+        let bytes = act.edit.size();
+        act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes);
         // print
         curl_trs_2(vec![Box::new(act)], fee);
     } 

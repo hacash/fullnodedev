@@ -58,14 +58,8 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     }
 
     let lock_total = left_amt.add_mode_u64(right_amt)?;
-    // TotalCount is tracked in HAC zhu (u64). Reject values that cannot be represented
-    // to avoid consensus panics on unwrap/overflow.
-    let lock_total_zhu = lock_total.to_zhu_u64().ok_or_else(|| {
-        format!(
-            "channel deposit amount {} overflow zhu u64",
-            lock_total.to_fin_string()
-        )
-    })?;
+    // TotalCount is tracked in HAC zhu (u64).
+    let lock_total_zhu = lock_total.to_zhu_u64()?;
 
     // check exist
     let mut reuse_version = Uint4::from(1);

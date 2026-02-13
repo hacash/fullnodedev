@@ -20,18 +20,23 @@ action_define!{AstIf, 22,
         let mut guard = ast_enter(ctx)?;
         let ctx = guard.ctx();
         let snap = ctx_snapshot(ctx);
-        match self.cond.execute(ctx) {
+        let cond_res = self.cond.execute(ctx);
+        let (cond_gas, branch_res) = match cond_res {
             // if br
-            Ok(..) => {
+            Ok((g, ..)) => {
                 ctx_merge(ctx, snap);
-                self.br_if.execute(ctx)
+                (g, self.br_if.execute(ctx))
             },
             // else br
             Err(..) => {
                 ctx_recover(ctx, snap);
-                self.br_else.execute(ctx)
+                (0, self.br_else.execute(ctx))
             }
-        }.map(|(_,b)|b)
+        };
+        let (branch_gas, branch_ret) = branch_res?;
+        gas += cond_gas;
+        gas += branch_gas;
+        Ok(branch_ret)
     })
 }
 

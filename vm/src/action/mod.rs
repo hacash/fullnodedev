@@ -44,4 +44,6 @@ action_register! {
 
     FuncCheckSign
     FuncBalance
+    FuncDiamondInscNum
+    FuncDiamondInscGet
 }

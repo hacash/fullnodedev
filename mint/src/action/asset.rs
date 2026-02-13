@@ -77,8 +77,7 @@ action_define!{AssetCreate, 16,
             .checked_add(1)
             .ok_or("created_asset overflow".to_string())?;
         ttcount.created_asset = Uint4::from(new_created_asset);
-        let pfee_mei = pfee.to_mei_u64()
-            .ok_or("protocol fee cannot convert to mei".to_string())?;
+        let pfee_mei = pfee.to_mei_u64()?;
         let pfee_mei_u32 = u32::try_from(pfee_mei)
             .map_err(|_| "protocol fee mei overflow uint4".to_string())?;
         let new_asset_issue_burn_mei = ttcount.asset_issue_burn_mei.uint()

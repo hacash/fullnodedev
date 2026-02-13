@@ -501,18 +501,19 @@ impl Amount {
 macro_rules! to_unit_define {
     ($fu64:ident, $fu128:ident, $unit:expr) => {
         
-    pub fn $fu128(&self) -> Option<u128> {
-        self.to_unit_biguint($unit)?.to_u128()
+    pub fn $fu128(&self) -> Ret<u128> {
+        let Some(v) = self.to_unit_biguint($unit).and_then(|v| v.to_u128()) else {
+            return errf!("amount {} overflow {} u128", self.to_fin_string(), stringify!($fu128))
+        };
+        Ok(v)
     }
     
-    pub fn $fu64(&self) -> Option<u64> {
-        let Some(u) = self.$fu128() else {
-            return None
-        };
+    pub fn $fu64(&self) -> Ret<u64> {
+        let u = self.$fu128()?;
         if u > u64::MAX as u128 {
-            return None
+            return errf!("amount {} overflow {} u64", self.to_fin_string(), stringify!($fu64))
         }
-        Some(u as u64)
+        Ok(u as u64)
     }
     };
 }

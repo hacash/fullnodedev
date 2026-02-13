@@ -10,7 +10,7 @@ fn mei_to_hac(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 
 fn hac_to_mei(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     let hacash = Amount::build(buf).map_ire(NativeFuncError)?;
-    let Some(mei) = hacash.to_mei_u64() else {
+    let Ok(mei) = hacash.to_mei_u64() else {
         return itr_err_fmt!(NativeFuncError, "call hac_to_mei overflow")
     };
     Ok(Value::U64( mei ))
@@ -19,7 +19,7 @@ fn hac_to_mei(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 
 fn hac_to_zhu(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     let hacash = Amount::build(buf).map_ire(NativeFuncError)?;
-    let Some(zhu) = hacash.to_zhu_u128() else {
+    let Ok(zhu) = hacash.to_zhu_u128() else {
         return itr_err_fmt!(NativeFuncError, "call hac_to_zhu overflow")
     };
     Ok(Value::U128( zhu ))

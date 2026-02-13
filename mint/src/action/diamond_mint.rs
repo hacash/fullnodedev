@@ -121,14 +121,21 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     let tx_bid_fee = &env.tx.fee;
     // total count 
     let mut ttcount = state.get_total_count();
-    ttcount.minted_diamond += 1;
+    let minted = (*ttcount.minted_diamond as usize)
+        .checked_add(1)
+        .ok_or_else(|| "minted_diamond overflow".to_string())?;
+    ttcount.minted_diamond = DiamondNumber::from_usize(minted)?;
     if dianum > DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES {
         let mut sub = tx_bid_fee.clone();
         if sub.unit() > 1 {
             sub = sub.unit_sub(1).unwrap();
         }
         let burn = tx_bid_fee.clone().sub_mode_u64(&sub)?; // 90%
-        ttcount.hacd_bid_burn_zhu += Uint8::from( burn.to_zhu_u64().unwrap() );
+        let burn_zhu = burn.to_zhu_u64()?;
+        let total_burn = (*ttcount.hacd_bid_burn_zhu)
+            .checked_add(burn_zhu)
+            .ok_or_else(|| "hacd_bid_burn_zhu overflow".to_string())?;
+        ttcount.hacd_bid_burn_zhu = Uint8::from(total_burn);
     }
     // gene
     let (life_gene, _visual_gene) = calculate_diamond_gene(dianum, &mediumhx, &diahx, &pending_hash, &tx_bid_fee);
@@ -169,8 +176,6 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     // ok
     Ok(vec![])
 }
-
-
 
 
 

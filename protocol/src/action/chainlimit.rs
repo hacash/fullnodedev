@@ -3,7 +3,7 @@
 *
 */
 action_define!{ SubmitHeightLimit, 29, 
-    ActLv::TopUnique, // level
+    ActLv::Guard, // level
     false, // burn 90 fee
     [], // need sign
     {
@@ -32,7 +32,7 @@ action_define!{ SubmitHeightLimit, 29,
 
 
 action_define!{ ValidChainID, 30, 
-    ActLv::TopUnique, // level
+    ActLv::Guard, // level
     false, // burn 90 fee
     [], // need sign
     {

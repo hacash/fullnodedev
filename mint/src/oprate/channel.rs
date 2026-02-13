@@ -40,12 +40,7 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
     if  left_amt.add_mode_u64(right_amt)? != ttamt {
         return errf!("HAC distribution amount must equal with lock in.")
     }
-    let ttamt_zhu = ttamt.to_zhu_u64().ok_or_else(|| {
-        format!(
-            "channel lock amount {} overflow zhu u64",
-            ttamt.to_fin_string()
-        )
-    })?;
+    let ttamt_zhu = ttamt.to_zhu_u64()?;
     let ttsat = paychan.left_bill.balance.satoshi + paychan.right_bill.balance.satoshi;
     if *left_sat + *right_sat != ttsat {
         return errf!("BTC distribution amount must equal with lock in.")
@@ -71,12 +66,7 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
             return errf!("interest calculate error!")
         }
         let ttiesthac = ttnewhac.sub_mode_u64(&ttamt)?;
-        let ttiesthac_zhu = ttiesthac.to_zhu_u64().ok_or_else(|| {
-            format!(
-                "channel interest amount {} overflow zhu u64",
-                ttiesthac.to_fin_string()
-            )
-        })?;
+        let ttiesthac_zhu = ttiesthac.to_zhu_u64()?;
         let interest = (*ttcount.channel_interest_zhu)
             .checked_add(ttiesthac_zhu)
             .ok_or_else(|| "channel_interest_zhu overflow".to_string())?;
@@ -123,4 +113,3 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
     // ok finish
     Ok(vec![])
 }
-

@@ -69,11 +69,18 @@ fn diamond_inscription(this: &DiamondInscription, ctx: &mut dyn Context) -> Ret<
 	// check cost
 	if pfee < &ttcost {
 		return errf!("diamond inscription cost error need {:?} but got {:?}", ttcost, pfee)
-	}
+    }
     // change count
     let mut ttcount = state.get_total_count();
-    ttcount.diamond_engraved += this.diamonds.length() as u64;
-    ttcount.diamond_insc_burn_zhu += pfee.to_zhu_u64().unwrap();
+    let engraved_total = (*ttcount.diamond_engraved)
+        .checked_add(this.diamonds.length() as u64)
+        .ok_or_else(|| "diamond_engraved overflow".to_string())?;
+    ttcount.diamond_engraved = Uint8::from(engraved_total);
+    let pfee_zhu = pfee.to_zhu_u64()?;
+    let burn_total = (*ttcount.diamond_insc_burn_zhu)
+        .checked_add(pfee_zhu)
+        .ok_or_else(|| "diamond_insc_burn_zhu overflow".to_string())?;
+    ttcount.diamond_insc_burn_zhu = Uint8::from(burn_total);
     state.set_total_count(&ttcount);
 	// sub main addr balance
 	if pfee.is_positive() {
@@ -143,9 +150,13 @@ fn diamond_inscription_clean(this: &DiamondInscriptionClear, ctx: &mut dyn Conte
     // change count and sub hac
     if pfee.is_positive() {
         let mut ttcount = state.get_total_count();
-        ttcount.diamond_insc_burn_zhu += pfee.to_zhu_u64().unwrap();
+        let pfee_zhu = pfee.to_zhu_u64()?;
+        let burn_total = (*ttcount.diamond_insc_burn_zhu)
+            .checked_add(pfee_zhu)
+            .ok_or_else(|| "diamond_insc_burn_zhu overflow".to_string())?;
+        ttcount.diamond_insc_burn_zhu = Uint8::from(burn_total);
         state.set_total_count(&ttcount);
-	    // sub main addr balance
+        // sub main addr balance
         hac_sub(ctx, &main_addr, &pfee)?;
 	}
     // finish
@@ -216,4 +227,3 @@ pub fn engraved_clean_one_diamond(_pending_height: u64, state: &mut CoreState, a
 	// ok finish
 	Ok(cost)
 }
-
