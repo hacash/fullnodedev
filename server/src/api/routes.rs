@@ -6,7 +6,6 @@ pub fn routes() -> Router<ApiCtx> {
     
     // query
     .route(&query("latest"), get(latest))
-    .route(&query("supply"), get(supply))
     .route(&query("hashrate"), get(hashrate))
     .route(&query("hashrate/logs"), get(hashrate_logs))
     .route(&query("balance"), get(balance))
@@ -28,10 +27,6 @@ pub fn routes() -> Router<ApiCtx> {
 
     .route(&query("fee/average"), get(fee_average))
 
-    .route(&query("miner/notice"), get(miner_notice))
-    .route(&query("miner/pending"), get(miner_pending))
-    .route(&query("diamondminer/init"), get(diamondminer_init))
-
     // create
     .route(&create("account"), get(account))
     .route(&create("transaction"), post(transaction_build))
@@ -40,8 +35,6 @@ pub fn routes() -> Router<ApiCtx> {
     // submit
     .route(&submit("transaction"), post(submit_transaction))
     .route(&submit("block"), post(submit_block))
-    .route(&submit("miner/success"), get(miner_success))
-    .route(&submit("diamondminer/success"), post(diamondminer_success))
 
     // operate
     .route(&operate("fee/raise"), post(fee_raise))
@@ -52,11 +45,6 @@ pub fn routes() -> Router<ApiCtx> {
 
     ;
 
-    #[cfg(feature = "vm-api")]
-    let lrt = lrt.merge(extend_api_routes());
-
     lrt
     
 }
-
-

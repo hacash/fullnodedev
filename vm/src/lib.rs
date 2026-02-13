@@ -17,6 +17,7 @@ pub mod native;
 pub mod space;
 pub mod value;
 pub mod exec_test;
+pub mod api_service;
 
 pub use rt::VmrtRes;
 

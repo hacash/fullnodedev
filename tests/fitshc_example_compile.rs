@@ -1,4 +1,4 @@
-#[cfg(feature = "hvm")]
+#[cfg(feature = "vm")]
 mod fitshc_example_compile {
     use std::fs;
     use std::path::PathBuf;

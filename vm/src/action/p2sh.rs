@@ -53,10 +53,6 @@ action_define!{UnlockScriptProve, 90,
     },
     (self, "Prove P2SH unlock script".to_owned()),
     (self, ctx, _gas {
-        #[cfg(not(feature = "p2sh"))]
-        if true {
-            return errf!("p2sh not yet")
-        }
         if self._marks_.not_zero() {
             return errf!("marks bytes format error")
         }

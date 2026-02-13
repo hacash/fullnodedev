@@ -54,7 +54,7 @@ pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &A
         return Ok(vec![]);
     }
     /*p2sh check*/
-    #[cfg(not(feature = "p2sh"))]
+    #[cfg(not(feature = "vm"))]
     if from.is_scriptmh() {
         return errf!("scriptmh address cannot be from yet")
     }

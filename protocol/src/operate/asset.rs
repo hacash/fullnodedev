@@ -51,7 +51,7 @@ pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset
 		return errf!("cannot trs to self")
     }
     /*p2sh check*/
-    #[cfg(not(feature = "p2sh"))]
+    #[cfg(not(feature = "vm"))]
     if from.is_scriptmh() {
         return errf!("scriptmh address cannot be from yet")
     }
@@ -80,7 +80,6 @@ pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> Ret
     }
     errf!("address {} asset is insufficient, at least {}", addr, ast)
 }
-
 
 
 

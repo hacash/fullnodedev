@@ -31,6 +31,6 @@ include!{"vm.rs"}
 include!{"minter.rs"}
 include!{"engine.rs"}
 include!{"hnoder.rs"}
+include!{"api.rs"}
 include!{"scaner.rs"}
 include!{"server.rs"}
-

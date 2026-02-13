@@ -22,8 +22,8 @@ use protocol::{block};
 include!{"context.rs"}
 include!{"param.rs"}
 include!{"render.rs"}
+include!{"registry.rs"}
 include!{"route.rs"}
 include!{"load.rs"}
 include!{"server.rs"}
-
 

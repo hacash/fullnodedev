@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 sys            = {path = "../sys"}
-field          = {path = "../field", features = ["hvm"]}
+field          = {path = "../field", features = ["vm"]}
 basis          = {path = "../basis"}
 protocol       = {path = "../protocol"}
 hex = "0.4.3"
@@ -16,10 +16,6 @@ dyn-clone = "1.0.17"
 concat-idents = "1.1.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-[features]
-p2sh = []
-
 
 [dev-dependencies]
 mint = {path = "../mint"}

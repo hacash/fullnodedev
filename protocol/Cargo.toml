@@ -14,5 +14,4 @@ concat-idents = "1.1.5"
 [features]
 tex = []
 ast = []
-p2sh = []
-
+vm = []

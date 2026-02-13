@@ -15,5 +15,4 @@ dyn-clone = "1.0.17"
 
 
 [features]
-hvm = []
-
+vm = []

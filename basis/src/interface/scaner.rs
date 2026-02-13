@@ -9,4 +9,6 @@ pub trait Scaner: Send + Sync {
     fn serve(&self, _: Worker) {} // rpc server
     
     fn roll(&self, _: Arc<dyn Block>,  _: Arc<Box<dyn State>>, _: Arc<dyn DiskDB>) {}
+
+    fn api_services(&self) -> Vec<Arc<dyn ApiService>> { vec![] }
 }

@@ -25,13 +25,18 @@ pub fn util(p: &str) -> String {
 /*
     routers
 */
-pub fn router(hnoder: Arc<dyn HNoder>, mut rts: Vec<Router<ApiCtx>>) -> Router {
+pub fn router(
+    hnoder: Arc<dyn HNoder>,
+    mut rts: Vec<Router<ApiCtx>>,
+    services: Vec<Arc<dyn ApiService>>,
+) -> Router {
 
     let ctx = ApiCtx::new(hnoder.engine(), hnoder.clone());
     let nrt = crate::api::routes();
     let mut rtr = Router::new()
         .route("/_server_", get("Hacash Api Server"))
         .merge(nrt);
+    rtr = merge_registered_services(rtr, services);
     while let Some(r) = rts.pop() {
         rtr = rtr.merge(r);
     }

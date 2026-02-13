@@ -43,8 +43,8 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
     {
         protocol::setup::action_register(protocol::tex::try_create, protocol::tex::try_json_decode);
     }
-    // vm feature (contracts and/or p2sh)
-    #[cfg(any(feature = "hvm", feature = "p2sh"))]
+    // vm feature (contracts + p2sh)
+    #[cfg(feature = "vm")]
     {
         protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
         protocol::setup::action_hooker(vm::hook::try_action_hook);
@@ -53,10 +53,11 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
 
     // api
     // build & setup
+    server::setup::api_servicer(scan.api_services());
     let mut builder = Builder::new(cnfpath);
 
     // Configure global VM contract cache pool (performance-only).
-    #[cfg(any(feature = "hvm", feature = "p2sh"))]
+    #[cfg(feature = "vm")]
     {
         let engcnf = builder.engine_conf();
         let size_mb = engcnf.contract_cache_size;
@@ -79,10 +80,14 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
         .engine(|dbfn, cnf, minter, scaner| Box::new(ChainEngine::open(dbfn, cnf, minter, scaner)))
         .hnoder(|ini, txpool, engine| Box::new(HacashNode::open(ini, txpool, engine)))
         .server(|ini, hnoder| {
+            #[allow(unused_mut)]
+            let mut services: Vec<std::sync::Arc<dyn ApiService>> = vec![mint::api_service::service()];
+            #[cfg(feature = "vm")]
+            services.push(vm::api_service::service());
             Box::new(HttpServer::open(
                 ini,
                 hnoder.clone(),
-                server::router(hnoder, vec![]),
+                server::router(hnoder, vec![], services),
             ))
         })
         .app(diabider::start_diamond_auto_bidding);

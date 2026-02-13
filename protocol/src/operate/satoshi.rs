@@ -52,7 +52,7 @@ pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &S
 		return errf!("cannot trs to self")
     }
     /*p2sh check*/
-    #[cfg(not(feature = "p2sh"))]
+    #[cfg(not(feature = "vm"))]
     if from.is_scriptmh() {
         return errf!("scriptmh address cannot be from yet")
     }
@@ -80,7 +80,6 @@ pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Sa
     }
     errf!("address {} satoshi is insufficient", addr)
 }
-
 
 
 

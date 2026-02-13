@@ -25,6 +25,7 @@ pub mod genesis;
 pub mod action;
 pub mod oprate;
 pub mod hook;
+pub mod api_service;
 
 
 use action::*;
@@ -36,4 +37,3 @@ include!{"check/coinbase.rs"}
 include!{"check/difficulty.rs"}
 include!{"check/consensus.rs"}
 include!{"minter.rs"}
-
