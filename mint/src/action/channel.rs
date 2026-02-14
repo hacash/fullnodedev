@@ -64,20 +64,22 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     // check exist
     let mut reuse_version = Uint4::from(1);
 	// channel ID with the same left and right addresses and closed by consensus can be reused
-    let mut state = MintState::wrap(ctx.state());
-    let havcha = state.channel(cid);
-    if let Some(chan) = havcha {
-        let chan_stat = chan.status;
-        let samebothaddr = *left_addr==chan.left_bill.address && *right_addr == chan.right_bill.address;
-        if !samebothaddr || CHANNEL_STATUS_AGREEMENT_CLOSED != chan_stat {
-            // exist or cannot reuse
-            return errf!("channel {} is openning or cannot reuse.", cid)
+    {
+        let state = MintState::wrap(ctx.state());
+        let havcha = state.channel(cid);
+        if let Some(chan) = havcha {
+            let chan_stat = chan.status;
+            let samebothaddr = *left_addr==chan.left_bill.address && *right_addr == chan.right_bill.address;
+            if !samebothaddr || CHANNEL_STATUS_AGREEMENT_CLOSED != chan_stat {
+                // exist or cannot reuse
+                return errf!("channel {} is openning or cannot reuse.", cid)
+            }
+            reuse_version = chan.reuse_version.clone();
+            let nv = (*reuse_version)
+                .checked_add(1)
+                .ok_or_else(|| "channel reuse_version overflow".to_string())?;
+            reuse_version = Uint4::from(nv);
         }
-        reuse_version = chan.reuse_version.clone();
-        let nv = (*reuse_version)
-            .checked_add(1)
-            .ok_or_else(|| "channel reuse_version overflow".to_string())?;
-        reuse_version = Uint4::from(nv);
     }
 
     // save channel
@@ -99,10 +101,14 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         if_challenging: ChallengePeriodDataOptional::default(), // none
         if_distribution: ClosedDistributionDataOptional::default(), // none
     };
-    state.channel_set(cid, &channel);
+    {
+        let mut state = MintState::wrap(ctx.state());
+        state.channel_set(cid, &channel);
+    }
 
     // update total count
-    let mut ttcount = state.get_total_count();
+    let mut cstate = CoreState::wrap(ctx.state());
+    let mut ttcount = cstate.get_total_count();
     let opening = (*ttcount.opening_channel)
         .checked_add(1)
         .ok_or_else(|| "opening_channel overflow".to_string())?;
@@ -111,7 +117,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         .checked_add(lock_total_zhu)
         .ok_or_else(|| "channel_deposit_zhu overflow".to_string())?;
     ttcount.channel_deposit_zhu = Uint8::from(dep);
-    state.set_total_count(&ttcount);
+    cstate.set_total_count(&ttcount);
 
     // ok finish
     Ok(vec![])

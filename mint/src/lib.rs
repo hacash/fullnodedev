@@ -20,7 +20,7 @@ include! {"def.rs"}
 include! {"config.rs"}
 
 pub mod action;
-pub mod api_service;
+pub mod api;
 pub mod genesis;
 pub mod hook;
 pub mod oprate;

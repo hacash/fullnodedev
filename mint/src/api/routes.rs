@@ -1,0 +1,34 @@
+
+fn routes() -> Vec<ApiRoute> {
+    use ApiRoute as R;
+    vec![
+        R::get("/", console),
+        R::get("/query/block/intro", block_intro),
+        R::get("/query/block/recents", block_recents),
+        R::get("/query/block/views", block_views),
+        R::get("/query/block/datas", block_datas),
+        R::get("/query/fee/average", fee_average),
+        R::get("/query/transaction", transaction_exist),
+        R::post("/create/transaction", transaction_build),
+        R::post("/submit/transaction", submit_transaction),
+        R::post("/submit/block", submit_block),
+        R::post("/operate/fee/raise", fee_raise),
+        R::post("/util/transaction/check", transaction_check),
+        R::post("/util/transaction/sign", transaction_sign),
+        R::get("/query/hashrate", hashrate),
+        R::get("/query/hashrate/logs", hashrate_logs),
+        R::get("/query/balance", balance),
+        R::get("/query/channel", channel),
+        R::get("/query/diamond", diamond),
+        R::get("/query/diamond/bidding", diamond_bidding),
+        R::get("/query/diamond/views", diamond_views),
+        R::get("/query/diamond/engrave", diamond_engrave),
+        R::get("/query/diamond/inscription_protocol_cost", diamond_inscription_protocol_cost,),
+        R::get("/query/supply", supply),
+        R::get("/query/miner/notice", miner_notice),
+        R::get("/query/miner/pending", miner_pending),
+        R::get("/submit/miner/success", miner_success),
+        R::get("/query/diamondminer/init", diamondminer_init),
+        R::post("/submit/diamondminer/success", diamondminer_success),
+    ]
+}

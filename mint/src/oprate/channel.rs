@@ -107,9 +107,14 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
     savechan.status = maybe!(is_final_closed, CHANNEL_STATUS_FINAL_ARBITRATION_CLOSED, CHANNEL_STATUS_AGREEMENT_CLOSED);
     savechan.if_distribution = distribution;
     // save channel and count
-    let mut state = MintState::wrap(ctx.state());
-    state.channel_set(&channel_id, &savechan);
-    state.set_total_count(&ttcount);
+    {
+        let mut state = MintState::wrap(ctx.state());
+        state.channel_set(&channel_id, &savechan);
+    }
+    {
+        let mut state = CoreState::wrap(ctx.state());
+        state.set_total_count(&ttcount);
+    }
     // ok finish
     Ok(vec![])
 }

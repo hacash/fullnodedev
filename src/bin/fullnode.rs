@@ -85,9 +85,9 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
         .server(|ini, hnoder| {
             #[allow(unused_mut)]
             let mut services: Vec<std::sync::Arc<dyn ApiService>> =
-                vec![mint::api_service::service()];
+                vec![mint::api::service()];
             #[cfg(feature = "vm")]
-            services.push(vm::api_service::service());
+            services.push(vm::api::service());
             Box::new(HttpServer::open(
                 ini,
                 hnoder.clone(),

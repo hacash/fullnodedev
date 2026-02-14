@@ -66,7 +66,7 @@ action_define!{AssetCreate, 16,
         let main_addr = ctx.env().tx.main; 
         hac_sub(ctx, &main_addr, &pfee)?;
         // state and check exists
-        let mut sta = MintState::wrap(ctx.state());
+        let mut sta = CoreState::wrap(ctx.state());
         if let Some(..) = sta.asset(&amd.serial) {
             return errf!("Asset serial {} already exists", serial)
         }
@@ -89,9 +89,9 @@ action_define!{AssetCreate, 16,
         let mut asset_obj = AssetAmt::from_serial(amd.serial);
         asset_obj.amount = amd.supply; // total supply
         // issue
-        let mut bls = sta.balance( &amd.issuer ).unwrap_or_default();
+        let mut bls = sta.balance(&amd.issuer).unwrap_or_default();
         bls.asset_set(asset_obj)?;
-        sta.balance_set( &amd.issuer, &bls );
+        sta.balance_set(&amd.issuer, &bls);
         // ok finish
         Ok(vec![])
     })
