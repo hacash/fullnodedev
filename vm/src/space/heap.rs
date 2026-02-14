@@ -126,7 +126,9 @@ impl Heap {
     pub fn slice(&self, l: Value, s: &Value) -> VmrtRes<Value> {
         let start  = s.checked_u32()?;
         let length = l.checked_u32()?;
-        let max = start + length;
+        let max = start
+            .checked_add(length)
+            .ok_or_else(|| ItrErr::new(HeapError, "create slice overflow"))?;
         if max as usize > self.datas.len() {
             return itr_err_fmt!(HeapError, "create slice overflow")
         }
@@ -191,15 +193,27 @@ impl Heap {
 mod heaptest {
     use super::*;
 
-    /*
-    cargo test --test space::heaptest::calc_grow_gas -- --nocapture
-    */
     #[test]
-    fn calc_grow_gas() {
+    fn calc_grow_gas_matches_doc_examples() {
         let mut heap = Heap::default();
         heap.limit = 64;
+        assert_eq!(heap.calc_grow_gas(1).unwrap(), 2);
+        assert_eq!(heap.calc_grow_gas(8).unwrap(), 510);
+        assert_eq!(heap.calc_grow_gas(10).unwrap(), 1022);
 
-        println!("{}", heap.calc_grow_gas(3).unwrap())
+        // price depends on existing heap size (cannot bypass by splitting calls)
+        assert_eq!(heap.grow(1).unwrap(), 2);
+        assert_eq!(heap.grow(1).unwrap(), 4);
+        assert_eq!(heap.grow(1).unwrap(), 8);
+    }
+
+    #[test]
+    fn slice_overflow_is_rejected() {
+        let heap = Heap::new(64);
+        let start = Value::U32(u32::MAX);
+        let len = Value::U32(1);
+        let err = heap.slice(len, &start).unwrap_err().to_string();
+        assert!(err.contains("create slice overflow"));
     }
 
 }

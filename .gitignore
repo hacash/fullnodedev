@@ -3,11 +3,11 @@ vscode-*/
 .vscode/
 .cursor/
 .cursor*
-
 */tests/*.md
 
 dist/
 
+*.geany
 *.config.ini
 *.loc.*
 *.loc/

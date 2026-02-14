@@ -206,8 +206,7 @@ impl Value {
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
             HeapSlice((_, n)) => *n as usize,
-            // not support
-            Compo(..) => usize::MAX,
+            Compo(c) => c.val_size(),
         }
     }
 
@@ -295,6 +294,7 @@ impl Value {
 mod tests {
     use super::*;
     use crate::rt::{ItrErr, ItrErrCode};
+    use std::collections::{BTreeMap, VecDeque};
 
     #[test]
     fn can_get_size_returns_error_instead_of_panicking_on_u16_max() {
@@ -306,5 +306,22 @@ mod tests {
     fn can_get_size_allows_u16_max_minus_one() {
         let v = Value::Bytes(vec![0u8; (u16::MAX as usize) - 1]);
         assert_eq!(v.can_get_size().unwrap(), u16::MAX - 1);
+    }
+
+    #[test]
+    fn val_size_counts_compo_list_and_map() {
+        let list = CompoItem::list(VecDeque::from([
+            Value::U8(7),
+            Value::Address(field::Address::default()),
+            Value::Bytes(vec![1, 2, 3]),
+        ])).unwrap();
+        let listv = Value::Compo(list);
+        assert_eq!(listv.val_size(), 1 + field::Address::SIZE + 3);
+
+        let mut map = BTreeMap::new();
+        map.insert(vec![0u8; 2], Value::U16(9));
+        map.insert(vec![1u8; 4], Value::Bytes(vec![5u8; 3]));
+        let mapv = Value::Compo(CompoItem::map(map).unwrap());
+        assert_eq!(mapv.val_size(), (2 + 2) + (4 + 3));
     }
 }

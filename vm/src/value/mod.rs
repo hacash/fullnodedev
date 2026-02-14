@@ -5,7 +5,6 @@ use std::fmt::*;
 use std::iter;
 use std::rc::*;
 
-// use field::*;
 use sys::*;
 
 use super::rt::ItrErrCode::*;

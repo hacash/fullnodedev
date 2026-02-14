@@ -75,6 +75,38 @@ impl Compo {
         }
     }
 
+    fn val_size(&self) -> usize {
+        fn add_or_max(total: usize, add: usize) -> usize {
+            total.checked_add(add).unwrap_or(usize::MAX)
+        }
+        match self {
+            Self::List(items) => {
+                let mut sum = 0usize;
+                for v in items {
+                    sum = add_or_max(sum, v.val_size());
+                    if sum == usize::MAX {
+                        break;
+                    }
+                }
+                sum
+            }
+            Self::Map(items) => {
+                let mut sum = 0usize;
+                for (k, v) in items {
+                    sum = add_or_max(sum, k.len());
+                    if sum == usize::MAX {
+                        break;
+                    }
+                    sum = add_or_max(sum, v.val_size());
+                    if sum == usize::MAX {
+                        break;
+                    }
+                }
+                sum
+            }
+        }
+    }
+
     pub fn clear(&mut self) {
         match self {
             Self::List(a) => a.clear(),
@@ -418,6 +450,10 @@ impl CompoItem {
 
     pub fn len(&self) -> usize {
         get_compo_inner_ref!(self).len()
+    }
+
+    pub fn val_size(&self) -> usize {
+        get_compo_inner_ref!(self).val_size()
     }
 
     pub fn length(&self, cap: &SpaceCap) -> VmrtRes<Value> {

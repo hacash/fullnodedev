@@ -166,3 +166,106 @@ impl CallFrame {
     
 
 }
+
+#[cfg(test)]
+mod gas_tests {
+    use super::*;
+    use basis::component::Env;
+    use basis::interface::{Context, State, TransactionRead};
+    use field::{Address, Amount, Hash};
+    use protocol::context::ContextInst;
+    use protocol::state::EmptyLogs;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use sys::Ret;
+
+    #[derive(Default, Clone, Debug)]
+    struct DummyTx;
+
+    impl field::Serialize for DummyTx {
+        fn size(&self) -> usize {
+            0
+        }
+        fn serialize(&self) -> Vec<u8> {
+            vec![]
+        }
+    }
+
+    impl basis::interface::TxExec for DummyTx {}
+
+    impl TransactionRead for DummyTx {
+        fn ty(&self) -> u8 {
+            3
+        }
+        fn hash(&self) -> Hash {
+            Hash::default()
+        }
+        fn hash_with_fee(&self) -> Hash {
+            Hash::default()
+        }
+        fn main(&self) -> Address {
+            Address::default()
+        }
+        fn addrs(&self) -> Vec<Address> {
+            vec![Address::default()]
+        }
+        fn fee(&self) -> &Amount {
+            Amount::zero_ref()
+        }
+        fn fee_purity(&self) -> u64 {
+            1
+        }
+        fn fee_extend(&self) -> Ret<u8> {
+            Ok(1)
+        }
+    }
+
+    #[derive(Default)]
+    struct StateMem {
+        mem: HashMap<Vec<u8>, Vec<u8>>,
+    }
+
+    impl State for StateMem {
+        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+            self.mem.get(&k).cloned()
+        }
+        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+            self.mem.insert(k, v);
+        }
+        fn del(&mut self, k: Vec<u8>) {
+            self.mem.remove(&k);
+        }
+    }
+
+    #[test]
+    fn contract_load_gas_charges_base_plus_bytes_div_64() {
+        let tx = DummyTx::default();
+        let mut env = Env::default();
+        env.block.height = 1;
+        let mut ctx = ContextInst::new(
+            env,
+            Box::new(StateMem::default()),
+            Box::new(EmptyLogs {}),
+            &tx,
+        );
+        let ctx: &mut dyn Context = &mut ctx;
+
+        let mut gas = 1000i64;
+        let mut exenv = ExecEnv { ctx, gas: &mut gas };
+
+        let mut r = Resoure::create(1);
+        r.contract_load_bytes = 129; // bytes_fee = 2
+        r.contracts
+            .insert(ContractAddress::default(), Arc::new(ContractObj::default())); // delta=1
+
+        let mut call = CallFrame::new();
+        call.contract_count = 0;
+
+        call.check_load_new_contract_and_gas(&mut r, &mut exenv).unwrap();
+
+        // fee = 1 * 32 + 129/64 = 32 + 2 = 34
+        assert_eq!(gas, 966);
+        assert_eq!(r.contract_load_bytes, 0);
+        assert_eq!(call.contract_count, 1);
+    }
+}

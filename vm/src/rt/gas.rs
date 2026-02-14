@@ -24,7 +24,8 @@ pub struct GasTable {
 impl Default for GasTable {
     fn default() -> Self {
         Self {
-            table: [1; 256]
+            // Keep Default aligned with `new()` baseline: unspecified opcodes cost 2.
+            table: [2; 256]
         }
     }
 }
@@ -108,6 +109,8 @@ pub struct GasExtra {
     pub storage_key_cost: i64,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
+    space_write_div: i64,
+    stack_op_div: i64,
     heap_read_div: i64,
     heap_write_div: i64,
     log_div: i64,
@@ -117,6 +120,7 @@ pub struct GasExtra {
     ntfunc_div: i64,
     extview_div: i64,
     extaction_div: i64,
+    extenv_div: i64,
 }
 
 /// Gas budget lookup table for tx `gas_max` byte.
@@ -210,7 +214,9 @@ impl GasExtra {
             global_key_cost:    32,
             storage_key_cost:   256,
             // Dynamic divisors (byte/N, item/N)
-            stack_copy_div:     12,
+            stack_copy_div:     24,
+            space_write_div:    24,
+            stack_op_div:       16,
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
@@ -220,6 +226,7 @@ impl GasExtra {
             ntfunc_div:         16,
             extview_div:        16,
             extaction_div:      10,
+            extenv_div:         16,
         }
     }
 
@@ -239,6 +246,16 @@ impl GasExtra {
     }
 
     #[inline(always)]
+    pub fn space_write(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.space_write_div)
+    }
+
+    #[inline(always)]
+    pub fn stack_op(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.stack_op_div)
+    }
+
+    #[inline(always)]
     pub fn ntfunc_bytes(&self, len: usize) -> i64 {
         Self::div_bytes(len, self.ntfunc_div)
     }
@@ -251,6 +268,11 @@ impl GasExtra {
     #[inline(always)]
     pub fn extaction_bytes(&self, len: usize) -> i64 {
         Self::div_bytes(len, self.extaction_div)
+    }
+
+    #[inline(always)]
+    pub fn extenv_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.extenv_div)
     }
 
     #[inline(always)]
@@ -325,5 +347,120 @@ mod gas_budget_codec_tests {
         let max = decode_gas_budget(u8::MAX);
         assert_eq!(encode_gas_budget(max + 1), u8::MAX);
         assert_eq!(encode_gas_budget(i64::MAX), u8::MAX);
+    }
+
+    #[test]
+    fn base_gas_table_matches_doc_and_default_is_2() {
+        let gst = GasTable::new(1);
+        let mut configured = [false; 256];
+        let groups: &[(i64, &[Bytecode])] = &[
+            (1, &[
+                PU8, P0, P1, P2, P3, PNBUF, PNIL, PTRUE, PFALSE,
+                CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST,
+                POP, NOP, NT, END, RET, ABT, ERR, AST, PRT,
+            ]),
+            (3, &[BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE]),
+            (4, &[
+                DUPN, POPN, PICK,
+                PBUF, PBUFL,
+                MOD, MUL, DIV, XOP,
+                HREAD, HREADU, HREADUL, HSLICE, HGROW,
+                ITEMGET, HEAD, BACK, HASKEY, LENGTH,
+            ]),
+            (5, &[POW]),
+            (6, &[HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
+            (8, &[CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, MGET, JOIN, REV, NEWLIST, NEWMAP, NTFUNC]),
+            (12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, PACKLIST, PACKMAP, UPLIST, CLONE, MERGE, KEYS, VALUES]),
+            (16, &[EXTVIEW, GGET, CALLCODE]),
+            (20, &[LOG1, CALLPURE]),
+            (24, &[LOG2, GPUT, CALLVIEW]),
+            (28, &[LOG3, SDEL, EXTACTION]),
+            (32, &[LOG4, SLOAD, SREST, CALL]),
+            (64, &[SSAVE, SRENT]),
+        ];
+        for (gas, items) in groups {
+            for op in *items {
+                let code = *op as u8;
+                configured[code as usize] = true;
+                assert_eq!(
+                    gst.gas(code),
+                    *gas,
+                    "base gas mismatch for opcode {:?} (0x{:02x})",
+                    op,
+                    code
+                );
+            }
+        }
+        for code in 0u8..=u8::MAX {
+            if !configured[code as usize] {
+                assert_eq!(
+                    gst.gas(code),
+                    2,
+                    "opcode 0x{:02x} not listed in doc should default to gas=2",
+                    code
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn gas_extra_constants_match_doc() {
+        let gst = GasExtra::new(1);
+        assert_eq!(gst.max_gas_of_tx, 8192);
+        assert_eq!(gst.main_call_min, 48);
+        assert_eq!(gst.p2sh_call_min, 72);
+        assert_eq!(gst.abst_call_min, 96);
+
+        assert_eq!(gst.local_one_alloc, 5);
+        assert_eq!(gst.memory_key_cost, 20);
+        assert_eq!(gst.global_key_cost, 32);
+        assert_eq!(gst.load_new_contract, 32);
+        assert_eq!(gst.storage_key_cost, 256);
+        assert_eq!(gst.storege_value_base_size, 32);
+    }
+
+    #[test]
+    fn dynamic_formula_divisors_match_doc() {
+        let gst = GasExtra::new(1);
+
+        assert_eq!(gst.stack_copy(23), 0);
+        assert_eq!(gst.stack_copy(24), 1);
+        assert_eq!(gst.stack_copy(49), 2);
+        assert_eq!(gst.space_write(23), 0);
+        assert_eq!(gst.space_write(24), 1);
+        assert_eq!(gst.space_write(49), 2);
+        assert_eq!(gst.stack_op(15), 0);
+        assert_eq!(gst.stack_op(16), 1);
+        assert_eq!(gst.stack_op(32), 2);
+
+        assert_eq!(gst.ntfunc_bytes(15), 0);
+        assert_eq!(gst.ntfunc_bytes(16), 1);
+        assert_eq!(gst.extview_bytes(31), 1);
+        assert_eq!(gst.extview_bytes(32), 2);
+        assert_eq!(gst.extenv_bytes(15), 0);
+        assert_eq!(gst.extenv_bytes(16), 1);
+        assert_eq!(gst.extaction_bytes(9), 0);
+        assert_eq!(gst.extaction_bytes(10), 1);
+
+        assert_eq!(gst.heap_read(15), 0);
+        assert_eq!(gst.heap_read(16), 1);
+        assert_eq!(gst.heap_write(11), 0);
+        assert_eq!(gst.heap_write(12), 1);
+
+        assert_eq!(gst.compo_items(3, 4), 0);
+        assert_eq!(gst.compo_items(4, 4), 1);
+        assert_eq!(gst.compo_items(5, 2), 2);
+        assert_eq!(gst.compo_items(5, 1), 5);
+        assert_eq!(gst.compo_bytes(19), 0);
+        assert_eq!(gst.compo_bytes(20), 1);
+
+        assert_eq!(gst.log_bytes(0), 0);
+        assert_eq!(gst.log_bytes(37), 37);
+
+        assert_eq!(gst.storage_read(7), 0);
+        assert_eq!(gst.storage_read(8), 1);
+        assert_eq!(gst.storage_write(5), 0);
+        assert_eq!(gst.storage_write(6), 1);
+        assert_eq!(gst.storage_del(), 0);
     }
 }

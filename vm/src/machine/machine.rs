@@ -13,7 +13,6 @@ pub struct GasCounter {
     purity_fee: i128,       // fee purity numerator: fee_got in unit-238 (miner-received portion)
     purity_size: i128,      // fee purity denominator: tx serialized size in bytes
     gas_rate: i64,          // burn discount denominator (mainnet=1, L2 can be e.g. 10 or 32)
-    tx_burn_90: bool,       // cached: whether tx has burn_90 flag (any action marks burn_90)
     initialized: bool,      // whether init_once() has been called
     reentry_depth: u32,     // current EXTACTION re-entry depth (0 = not in call)
     max_reentry: u32,       // hard cap from SpaceCap
@@ -57,7 +56,6 @@ impl Default for GasCounter {
             purity_fee: 0,
             purity_size: 0,
             gas_rate: 1,
-            tx_burn_90: false,
             initialized: false,
             reentry_depth: 0,
             max_reentry: 4,
@@ -100,8 +98,6 @@ impl GasCounter {
         if purity_fee <= 0 || purity_size <= 0 {
             return errf!("tx fee or size invalid for gas: purity_fee={} purity_size={}", purity_fee, purity_size)
         }
-        // cache tx-level burn_90 flag for EXTACTION gas multiplier
-        let tx_burn_90 = tx.burn_90();
         // verify sender has enough balance for worst-case burn:
         // max_burn = budget * purity_fee / (purity_size * gas_rate), rounded up
         let gas_rate = extra.gas_rate.max(1) as i128;
@@ -124,7 +120,6 @@ impl GasCounter {
         self.purity_fee = purity_fee;
         self.purity_size = purity_size;
         self.gas_rate = extra.gas_rate.max(1);
-        self.tx_burn_90 = tx_burn_90;
         self.max_reentry = cap.max_reentry_depth;
         self.initialized = true;
         Ok(())
@@ -725,7 +720,6 @@ mod machine_test {
         vm.account.purity_fee = 1;
         vm.account.purity_size = 1;
         vm.account.gas_rate = 99;
-        vm.account.tx_burn_90 = true;
         vm.account.initialized = false;
         vm.account.reentry_depth = 3;
         vm.account.max_reentry = 99;
@@ -741,7 +735,6 @@ mod machine_test {
         assert_eq!(vm.account.purity_fee, 1);
         assert_eq!(vm.account.purity_size, 1);
         assert_eq!(vm.account.gas_rate, 99);
-        assert_eq!(vm.account.tx_burn_90, true);
         assert_eq!(vm.account.initialized, false);
         assert_eq!(vm.account.reentry_depth, 3);
         assert_eq!(vm.account.max_reentry, 99);

@@ -354,6 +354,50 @@ mod storage_param_tests {
         let g3 = st.ssave(&gst, 2, &cadr, k, v).unwrap();
         assert!(g3 >= g1, "expired write should be priced as create");
     }
+
+    #[test]
+    fn ssave_pricing_components_match_doc_formula() {
+        let gst = GasExtra::new(1);
+        let cadr = test_contract();
+        let mut sta = StateMem::default();
+        let mut st = crate::VMState::wrap(&mut sta);
+
+        let key = Value::Bytes(vec![0x11u8]);
+        let val = Value::Bytes(vec![0x22u8; 80]);
+        let one_period_rent = gst.storege_value_base_size + 80i64;
+        let write_gas = gst.storage_write(80);
+
+        // New key: write + one-period rent + key create fee.
+        let g_new = st.ssave(&gst, 0, &cadr, key.clone(), val.clone()).unwrap();
+        assert_eq!(g_new, write_gas + one_period_rent + gst.storage_key_cost);
+
+        // Existing key at due boundary rest=1 period -> no auto-renew.
+        let g_exist_no_renew = st.ssave(&gst, 0, &cadr, key.clone(), val.clone()).unwrap();
+        assert_eq!(g_exist_no_renew, write_gas);
+
+        // Existing key with remaining lease < 1 period -> auto-renew adds one-period rent.
+        let g_exist_with_renew = st.ssave(&gst, 1, &cadr, key.clone(), val.clone()).unwrap();
+        assert_eq!(g_exist_with_renew, write_gas + one_period_rent);
+
+        // Expired key is treated as recreate.
+        let g_expired = st.ssave(&gst, STORAGE_PERIOD + 2, &cadr, key, val).unwrap();
+        assert_eq!(g_expired, write_gas + one_period_rent + gst.storage_key_cost);
+    }
+
+    #[test]
+    fn srent_gas_matches_period_formula() {
+        let gst = GasExtra::new(1);
+        let cadr = test_contract();
+        let mut sta = StateMem::default();
+        let mut st = crate::VMState::wrap(&mut sta);
+
+        let key = Value::Bytes(vec![0x44u8]);
+        let val = Value::Bytes(vec![0x55u8; 40]);
+        st.ssave(&gst, 0, &cadr, key.clone(), val).unwrap();
+
+        let gas = st.srent(&gst, 0, &cadr, key, Value::U8(3)).unwrap();
+        assert_eq!(gas, (gst.storege_value_base_size + 40i64) * 3);
+    }
 }
 
 

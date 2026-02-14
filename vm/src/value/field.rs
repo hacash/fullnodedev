@@ -103,9 +103,13 @@ impl Serialize for Value {
     }
 
     fn size(&self) -> usize {
-        let base = self.can_get_size().unwrap() as usize;
-        let prefix = maybe!(self.is_bytes(), 2usize, 0usize);
-        1 + prefix + base // type_id + (bytes len prefix?) + value
+        // Keep size() panic-free for non-storable variants (Compo/HeapSlice).
+        // This matches the serialized length contract directly.
+        if self.is_bytes() {
+            let base = self.raw().len();
+            return 1 + 2 + base // type_id + bytes len prefix + payload
+        }
+        1 + self.raw().len() // type_id + payload
     }
 }
 
@@ -120,5 +124,22 @@ impl ToJSON for Value {
 impl FromJSON for Value {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         errf!("Value FromJSON not implemented")
+    }
+}
+
+#[cfg(test)]
+mod field_tests {
+    use super::*;
+    use std::collections::VecDeque;
+
+    #[test]
+    fn value_size_is_panic_free_for_non_storable_variants() {
+        let hv = Value::HeapSlice((3, 7));
+        assert_eq!(<Value as Serialize>::size(&hv), 1 + 8);
+
+        let compo = CompoItem::list(VecDeque::from([Value::U8(1), Value::U16(2)])).unwrap();
+        let cv = Value::Compo(compo);
+        let sz = <Value as Serialize>::size(&cv);
+        assert!(sz > 1);
     }
 }
