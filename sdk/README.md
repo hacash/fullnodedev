@@ -3,7 +3,7 @@
 ```sh
 # dependencies
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli
+cargo install -f wasm-bindgen-cli --version 0.2.100
 # optional tools for extra optimization / inspection
 sudo apt install wabt binaryen
 ```
@@ -13,6 +13,11 @@ sudo apt install wabt binaryen
 ```sh
 ./pack.sh
 ```
+
+Notes:
+- `build.sh` now uses Cargo profile `wasm-release` (size-first, `opt-level = "z"`).
+- If `wasm-opt` is available, build output is post-optimized with `-Oz`.
+- Build log prints wasm size summary: `raw` and `gzip`.
 
 Output directories:
 - `dist/nodejs/*` raw wasm-bindgen (CommonJS)

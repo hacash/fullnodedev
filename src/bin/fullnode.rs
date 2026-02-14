@@ -1,5 +1,5 @@
 // use basis::server::ApiCtx;
-use app::fullnode::Builder;
+use app::fullnode::FullnodeBuilder;
 use app::{fullnode::NilScaner, *};
 use basis::config::*;
 use basis::interface::*;
@@ -20,18 +20,21 @@ fn main() {
         HACASH_NODE_VERSION, HACASH_NODE_BUILD_TIME, HACASH_STATE_DB_UPDT
     );
 
-    run();
+    if let Err(e) = run() {
+        println!("[Fatal] {}", e);
+        std::process::exit(1);
+    }
 }
 
-pub fn run() {
-    run_with_scaner("./hacash.config.ini", Box::new(NilScaner {}));
+pub fn run() -> Rerr {
+    run_with_scaner("./hacash.config.ini", Box::new(NilScaner {}))
 }
 
-pub fn run_with_config(cnfpath: &str) {
-    run_with_scaner(cnfpath, Box::new(NilScaner {}));
+pub fn run_with_config(cnfpath: &str) -> Rerr {
+    run_with_scaner(cnfpath, Box::new(NilScaner {}))
 }
 
-pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
+pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {
     // setup
     protocol::setup::block_hasher(x16rs::block_hash);
     protocol::setup::action_register(
@@ -53,11 +56,12 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
         protocol::setup::action_hooker(vm::hook::try_action_hook);
         protocol::setup::vm_assigner(vm::machine::vm_assign);
     }
-
-    // api
-    // build & setup
+    
+    // scan api
     server::setup::api_servicer(scan.api_services());
-    let mut builder = Builder::new(cnfpath);
+
+    let mut builder = FullnodeBuilder::from_config_path(cnfpath)?;
+    builder.install_ctrlc(true).scaner(scan);
 
     // Configure global VM contract cache pool (performance-only).
     #[cfg(feature = "vm")]
@@ -77,30 +81,29 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) {
 
     builder
         .diskdb(|dir| Box::new(db::DiskKV::open(dir)))
-        .scaner(scan)
         .txpool(build_txpool)
-        .minter(|ini| Box::new(HacashMinter::create(ini)))
-        .engine(|dbfn, cnf, minter, scaner| Box::new(ChainEngine::open(dbfn, cnf, minter, scaner)))
-        .hnoder(|ini, txpool, engine| Box::new(HacashNode::open(ini, txpool, engine)))
+        .minter(|ini| Ok(Box::new(HacashMinter::create(ini))))
+        .engine(|dbfn, cnf, minter, scaner| Ok(Box::new(ChainEngine::open(dbfn, cnf, minter, scaner))))
+        .hnoder(|ini, txpool, engine| Ok(Box::new(HacashNode::open(ini, txpool, engine))))
         .server(|ini, hnoder| {
             #[allow(unused_mut)]
             let mut services: Vec<std::sync::Arc<dyn ApiService>> =
                 vec![mint::api::service()];
             #[cfg(feature = "vm")]
             services.push(vm::api::service());
-            Box::new(HttpServer::open(
+            Ok(Box::new(HttpServer::open(
                 ini,
                 hnoder.clone(),
                 server::router(hnoder, vec![], services),
-            ))
+            )))
         })
         .app(diabider::start_diamond_auto_bidding);
 
     // start run
-    builder.run();
+    builder.run()
 }
 
-fn build_txpool(engcnf: &EngineConf) -> Box<dyn TxPool> {
+fn build_txpool(engcnf: &EngineConf) -> Ret<Box<dyn TxPool>> {
     let mut tpmaxs = maybe!(
         engcnf.miner_enable,
         vec![2000, 100], // miner node
@@ -108,5 +111,5 @@ fn build_txpool(engcnf: &EngineConf) -> Box<dyn TxPool> {
     );
     let fpmds = vec![true, false]; // is sort by fee_purity, normal or diamint
     cover(&mut tpmaxs, &engcnf.txpool_maxs);
-    Box::new(MemTxPool::new(engcnf.lowest_fee_purity, tpmaxs, fpmds))
+    Ok(Box::new(MemTxPool::new(engcnf.lowest_fee_purity, tpmaxs, fpmds)))
 }

@@ -2,7 +2,7 @@
 
 
 
-pub type FnBuildDB = fn(_: &PathBuf) -> Box<dyn DiskDB>;
+pub type FnBuildDB = Arc<dyn Fn(&PathBuf) -> Box<dyn DiskDB> + Send + Sync>;
 
 pub struct ChainEngine {
     pub(crate) cnf: Arc<EngineConf>,
@@ -78,5 +78,4 @@ impl ChainEngine {
     }
 
 }
-
 

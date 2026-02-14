@@ -20,7 +20,6 @@ pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
     let minstep = Amount::coin(1, 244);
 
     if !cnf.dmer_enable || !cnf.is_mainnet() {
-        worker.end();
         return; // not enable or not mainnet
     }
 

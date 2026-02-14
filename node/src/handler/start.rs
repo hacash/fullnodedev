@@ -24,9 +24,7 @@ impl MsgHandler {
             }
         }
         println!("[P2P] handler loop end.");
-        worker.end();
     }
 }
-
 
 

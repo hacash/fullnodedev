@@ -31,7 +31,6 @@ impl HttpServer {
     
     fn do_start(&self, worker: Worker) {
         if !self.cnf.enable {
-            worker.end();
             return // disable
         }
         let rt = new_tokio_rt(self.cnf.multi_thread);
@@ -51,7 +50,6 @@ async fn server_listen(ser: &HttpServer, worker: Worker) {
     let listener = TcpListener::bind(addr).await;
     if let Err(ref e) = listener {
         println!("\n[Error] api server bind port {} error: {}\n", port, e);
-        worker.end();
         return
     }
     let listener = listener.unwrap();
@@ -70,7 +68,5 @@ async fn server_listen(ser: &HttpServer, worker: Worker) {
         println!("{e}");
     }
     println!("[Server] serve exit.");
-    worker.end();
 }
-
 

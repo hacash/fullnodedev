@@ -1,6 +1,6 @@
 use std::path::*;
 use std::sync::*;
-use std::thread::*;
+use std::thread::{JoinHandle, spawn};
 
 use super::*;
 
@@ -10,188 +10,252 @@ use sys::*;
 
 /***************************************/
 
-pub type FnDBCreater = fn(_: &PathBuf) -> Box<dyn DiskDB>;
-pub type FnExtendApp = fn(_: Worker, _: Arc<dyn HNoder>);
+pub type FctDiskDb = Arc<dyn Fn(&PathBuf) -> Box<dyn DiskDB> + Send + Sync>;
+pub type FctTxPool = Arc<dyn Fn(&EngineConf) -> Ret<Box<dyn TxPool>> + Send + Sync>;
+pub type FctMinter = Arc<dyn Fn(&IniObj) -> Ret<Box<dyn Minter>> + Send + Sync>;
+pub type FctEngine = Arc<
+    dyn Fn(FctDiskDb, Arc<EngineConf>, Arc<dyn Minter>, Arc<dyn Scaner>) -> Ret<Box<dyn Engine>>
+        + Send
+        + Sync,
+>;
+pub type FctHNoder =
+    Arc<dyn Fn(&IniObj, Arc<dyn TxPool>, Arc<dyn Engine>) -> Ret<Box<dyn HNoder>> + Send + Sync>;
+pub type FctServer = Arc<dyn Fn(&IniObj, Arc<dyn HNoder>) -> Ret<Box<dyn Server>> + Send + Sync>;
+pub type FctExtendApp = Arc<dyn Fn(Worker, Arc<dyn HNoder>) + Send + Sync>;
+pub type ScanerReadyHook = Arc<dyn Fn(&dyn Scaner, &IniObj) -> Rerr + Send + Sync>;
 
 /***************************************/
-
-struct NilKVDB {}
-impl DiskDB for NilKVDB {}
 
 pub struct NilScaner {}
 impl Scaner for NilScaner {}
 
-struct NilTxPool {}
-impl TxPool for NilTxPool {}
+/***************************************/
 
-struct NilMinter {}
-impl Minter for NilMinter {}
+pub struct FullnodeRuntime {
+    exiter: Exiter,
+    scaner: Arc<dyn Scaner>,
+    hnoder: Arc<dyn HNoder>,
+    server: Arc<dyn Server>,
+    extapp: Vec<FctExtendApp>,
+}
 
-struct NilEngine {}
-impl EngineRead for NilEngine {}
-impl Engine for NilEngine {}
+impl FullnodeRuntime {
+    pub fn run(self) -> Rerr {
+        let exiter = self.exiter.clone();
+        let mut tasks: Vec<JoinHandle<()>> = vec![];
+        let mut spawn_task = |run: Box<dyn FnOnce(Worker) + Send>| {
+            let worker = exiter.worker();
+            tasks.push(spawn(move || run(worker)));
+        };
 
-struct NilHNoder {}
-impl HNoder for NilHNoder {}
+        let server = self.server.clone();
+        spawn_task(Box::new(move |worker| server.start(worker)));
+        let scanr1 = self.scaner.clone();
+        spawn_task(Box::new(move |worker| scanr1.start(worker)));
+        let scanr2 = self.scaner.clone();
+        spawn_task(Box::new(move |worker| scanr2.serve(worker)));
+        let hnoder = self.hnoder.clone();
+        spawn_task(Box::new(move |worker| hnoder.start(worker)));
+        for app in self.extapp {
+            let hnoder = self.hnoder.clone();
+            spawn_task(Box::new(move |worker| app(worker, hnoder)));
+        }
 
-struct NilServer {}
-impl Server for NilServer {}
+        // wait ctrl+c (or other exit signal), then start active shutdown.
+        if exiter.wait_exit_or_done() {
+            self.hnoder.exit();
+        }
+        exiter.wait();
+        
+        let mut panic_count = 0;
+        for handle in tasks {
+            if handle.join().is_err() {
+                panic_count += 1;
+            }
+        }
+        if panic_count > 0 {
+            return errf!("{} thread panicked", panic_count);
+        }
+        println!("[Exit] Hacash fullnode closed.");
+        Ok(())
+    }
+}
 
 /***************************************/
 
-#[allow(dead_code)]
-pub struct Builder {
+pub struct FullnodeBuilder {
     pub exiter: Exiter,
     cnfini: IniObj,
     datdir: PathBuf,
     engcnf: Arc<EngineConf>,
     nodcnf: Arc<NodeConf>,
-    diskdb: FnDBCreater,
-    extapp: Vec<FnExtendApp>,
-    minter: Arc<dyn Minter>,
-    engine: Arc<dyn Engine>,
-    txpool: Arc<dyn TxPool>,
-    scaner: Arc<dyn Scaner>,
-    hnoder: Arc<dyn HNoder>,
-    server: Arc<dyn Server>,
+    install_ctrlc: bool,
+    diskdb: Option<FctDiskDb>,
+    txpool: Option<FctTxPool>,
+    minter: Option<FctMinter>,
+    engine: Option<FctEngine>,
+    hnoder: Option<FctHNoder>,
+    server: Option<FctServer>,
+    scaner: Option<Box<dyn Scaner>>,
+    extapp: Vec<FctExtendApp>,
 }
 
-impl Builder {
-    pub fn new(inipath: &str) -> Self {
-        let cnfpath = inipath.to_owned(); // "./hacash.config.ini".to_owned();
-        let cnfini = load_config(cnfpath);
+impl FullnodeBuilder {
+    pub fn from_config_path(inipath: &str) -> Ret<Self> {
+        let cnfini = load_config(inipath.to_owned());
+        if cnfini.is_empty() {
+            return errf!("config '{}' is empty or failed to load", inipath);
+        }
+        Ok(Self::from_ini(cnfini))
+    }
+
+    pub fn from_ini(cnfini: IniObj) -> Self {
         let datdir = get_mainnet_data_dir(&cnfini);
         let engcnf = Arc::new(EngineConf::new(&cnfini, HACASH_STATE_DB_UPDT));
         let nodcnf = Arc::new(NodeConf::new(&cnfini));
-        let build_nil_db: FnDBCreater = |_| Box::new(NilKVDB {});
-        let exiter = Exiter::new();
-        let exitdo = exiter.clone();
-        let _ = ctrlc::set_handler(move || {
-            exitdo.exit();
-        });
         Self {
-            exiter,
+            exiter: Exiter::new(),
             cnfini,
             datdir,
             engcnf,
             nodcnf,
-            diskdb: build_nil_db,
-            extapp: Vec::new(),
-            scaner: Arc::new(NilScaner {}),
-            txpool: Arc::new(NilTxPool {}),
-            minter: Arc::new(NilMinter {}),
-            engine: Arc::new(NilEngine {}),
-            hnoder: Arc::new(NilHNoder {}),
-            server: Arc::new(NilServer {}),
+            install_ctrlc: false,
+            diskdb: None,
+            txpool: None,
+            minter: None,
+            engine: None,
+            hnoder: None,
+            server: None,
+            scaner: None,
+            extapp: vec![],
         }
     }
 
-    pub fn diskdb(&mut self, f: FnDBCreater) -> &mut Self {
-        self.diskdb = f;
+    pub fn install_ctrlc(&mut self, enable: bool) -> &mut Self {
+        self.install_ctrlc = enable;
         self
+    }
+
+    pub fn ini(&self) -> &IniObj {
+        &self.cnfini
+    }
+
+    pub fn data_dir(&self) -> &PathBuf {
+        &self.datdir
     }
 
     pub fn engine_conf(&self) -> Arc<EngineConf> {
         self.engcnf.clone()
     }
 
-    pub fn txpool(&mut self, f: fn(_: &EngineConf) -> Box<dyn TxPool>) -> &mut Self {
-        self.txpool = f(&self.engcnf).into();
+    pub fn node_conf(&self) -> Arc<NodeConf> {
+        self.nodcnf.clone()
+    }
+
+    pub fn diskdb<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(&PathBuf) -> Box<dyn DiskDB> + Send + Sync + 'static,
+    {
+        self.diskdb = Some(Arc::new(f));
         self
     }
 
-    pub fn minter(&mut self, f: fn(_: &IniObj) -> Box<dyn Minter>) -> &mut Self {
-        self.minter = f(&self.cnfini).into();
+    pub fn txpool<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(&EngineConf) -> Ret<Box<dyn TxPool>> + Send + Sync + 'static,
+    {
+        self.txpool = Some(Arc::new(f));
+        self
+    }
+
+    pub fn minter<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(&IniObj) -> Ret<Box<dyn Minter>> + Send + Sync + 'static,
+    {
+        self.minter = Some(Arc::new(f));
         self
     }
 
     pub fn scaner(&mut self, scn: Box<dyn Scaner>) -> &mut Self {
-        self.scaner = scn.into();
+        self.scaner = Some(scn);
         self
     }
 
-    pub fn engine(
-        &mut self,
-        f: fn(
-            _: FnDBCreater,
-            _: Arc<EngineConf>,
-            _: Arc<dyn Minter>,
-            _: Arc<dyn Scaner>,
-        ) -> Box<dyn Engine>,
-    ) -> &mut Self {
-        self.engine = f(
-            self.diskdb,
-            self.engcnf.clone(),
-            self.minter.clone(),
-            self.scaner.clone(),
-        )
-        .into();
+    pub fn engine<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(FctDiskDb, Arc<EngineConf>, Arc<dyn Minter>, Arc<dyn Scaner>) -> Ret<Box<dyn Engine>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.engine = Some(Arc::new(f));
         self
     }
 
-    pub fn hnoder(
-        &mut self,
-        f: fn(_: &IniObj, _: Arc<dyn TxPool>, _: Arc<dyn Engine>) -> Box<dyn HNoder>,
-    ) -> &mut Self {
-        self.hnoder = f(&self.cnfini, self.txpool.clone(), self.engine.clone()).into();
+    pub fn hnoder<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(&IniObj, Arc<dyn TxPool>, Arc<dyn Engine>) -> Ret<Box<dyn HNoder>> + Send + Sync + 'static,
+    {
+        self.hnoder = Some(Arc::new(f));
         self
     }
 
-    pub fn server(
-        &mut self,
-        f: fn(_: &IniObj, _: Arc<dyn HNoder>) -> Box<dyn Server>,
-    ) -> &mut Self {
-        self.server = f(&self.cnfini, self.hnoder.clone()).into();
+    pub fn server<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(&IniObj, Arc<dyn HNoder>) -> Ret<Box<dyn Server>> + Send + Sync + 'static,
+    {
+        self.server = Some(Arc::new(f));
         self
     }
 
-    pub fn app(&mut self, f: FnExtendApp) -> &mut Self {
-        self.extapp.push(f);
+    pub fn app<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(Worker, Arc<dyn HNoder>) + Send + Sync + 'static,
+    {
+        self.extapp.push(Arc::new(f));
         self
     }
 
-    // do start all
-    pub fn run(self) {
-        run_fullnode(self)
+    pub fn build(mut self) -> Ret<FullnodeRuntime> {
+
+        if self.install_ctrlc {
+            let exiter = self.exiter.clone();
+            ctrlc::set_handler(move || {
+                exiter.exit();
+            })
+            .map_err(|e| format!("failed to install ctrlc handler: {}", e))?;
+        }
+        
+        let errn = |name| format!("fullnode builder missing {}", name);
+
+        let diskdb = self.diskdb.take().ok_or(errn("diskdb"))?;
+        let txpool = self.txpool.take().ok_or(errn("txpool"))?;
+        let minter = self.minter.take().ok_or(errn("minter"))?;
+        let engine = self.engine.take().ok_or(errn("engine"))?;
+        let hnoder = self.hnoder.take().ok_or(errn("hnoder"))?;
+        let server = self.server.take().ok_or(errn("server"))?;
+        let mut scaner = self.scaner.take().ok_or(errn("scaner"))?;
+
+        scaner.init(&self.cnfini)?;
+
+        let errb = |name, e| format!("build {} failed: {}", name, e);
+        let scaner: Arc<dyn Scaner> = scaner.into();
+        let txpool: Arc<dyn TxPool> = txpool(self.engcnf.as_ref()).map_err(|e| errb("txpool", e))?.into();
+        let minter: Arc<dyn Minter> = minter(&self.cnfini).map_err(|e| errb("minter", e))?.into();
+        let engine: Arc<dyn Engine> = engine(diskdb, self.engcnf.clone(), minter, scaner.clone()).map_err(|e| errb("engine", e))?.into();
+        let hnoder: Arc<dyn HNoder> = hnoder(&self.cnfini, txpool, engine).map_err(|e| errb("hnoder", e))?.into();
+        let server: Arc<dyn Server> = server(&self.cnfini, hnoder.clone()).map_err(|e| errb("server", e))?.into();
+
+        Ok(FullnodeRuntime {
+            exiter: self.exiter,
+            scaner,
+            hnoder,
+            server,
+            extapp: self.extapp,
+        })
     }
-}
 
-fn run_fullnode(builder: Builder) {
-    let exiter = builder.exiter.clone();
-
-    // unpack
-    // let _txpool = builder.txpool.clone();
-    // let _scaner = builder.scaner.clone();
-    // let _minter = builder.minter.clone();
-    // let _engine = builder.engine.clone();
-    let server = builder.server.clone();
-    let scanr1 = builder.scaner.clone();
-    let scanr2 = builder.scaner.clone();
-    let hnoder = builder.hnoder.clone();
-    let hnode2 = builder.hnoder.clone();
-
-    // start server
-    let wkr1 = exiter.worker();
-    spawn(move || server.start(wkr1));
-
-    // start scaner
-    let wkr2 = exiter.worker();
-    spawn(move || scanr1.start(wkr2));
-    let wkr3 = exiter.worker();
-    spawn(move || scanr2.serve(wkr3));
-
-    // start node
-    let wkr4 = exiter.worker();
-    spawn(move || hnoder.start(wkr4));
-
-    // run extend app
-    for app in builder.extapp {
-        let wkr = exiter.worker();
-        let hnoder = builder.hnoder.clone();
-        spawn(move || app(wkr, hnoder));
+    pub fn run(self) -> Rerr {
+        self.build()?.run()
     }
-    // start all and wait them exit
-    exiter.wait();
-    hnode2.exit();
-    println!("[Exit] Hacash fullnode closed.");
 }

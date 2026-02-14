@@ -3,13 +3,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JSTARGET="${1:-nodejs}"
+PROFILE="${WASM_PROFILE:-wasm-release}"
 
 SDKNAME="hacashsdk"
 LIBNAME="sdk"
 TARGET="wasm32-unknown-unknown"
-TARGET_DIR="${CARGO_TARGET_DIR:-$SCRIPT_DIR/target}"
-BINARY="$TARGET_DIR/$TARGET/release/$LIBNAME.wasm"
-BINARY2="$TARGET_DIR/$TARGET/release/$SDKNAME.wasm"
+WASM_BINDGEN_VER="0.2.100"
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    TARGET_DIR="$CARGO_TARGET_DIR"
+else
+    TARGET_DIR="$(cargo metadata --manifest-path "$SCRIPT_DIR/Cargo.toml" --format-version 1 --no-deps \
+        | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p' | head -n 1)"
+fi
+BINARY="$TARGET_DIR/$TARGET/$PROFILE/$LIBNAME.wasm"
 DIST_DIR="$SCRIPT_DIR/dist"
 
 if ! rustup target list --installed | grep -q "^$TARGET$"; then
@@ -17,7 +23,13 @@ if ! rustup target list --installed | grep -q "^$TARGET$"; then
 fi
 
 if ! command -v wasm-bindgen >/dev/null 2>&1; then
-    echo "wasm-bindgen CLI not found. Install with: cargo install wasm-bindgen-cli"
+    echo "wasm-bindgen CLI not found. Install with: cargo install -f wasm-bindgen-cli --version $WASM_BINDGEN_VER"
+    exit 1
+fi
+WASM_BINDGEN_CLI_VER="$(wasm-bindgen --version | awk '{print $2}')"
+if [ "$WASM_BINDGEN_CLI_VER" != "$WASM_BINDGEN_VER" ]; then
+    echo "wasm-bindgen CLI version mismatch: expected $WASM_BINDGEN_VER, got $WASM_BINDGEN_CLI_VER"
+    echo "Install with: cargo install -f wasm-bindgen-cli --version $WASM_BINDGEN_VER"
     exit 1
 fi
 
@@ -25,9 +37,31 @@ fi
 cargo build \
     --manifest-path "$SCRIPT_DIR/Cargo.toml" \
     --target "$TARGET" \
-    --release \
+    --profile "$PROFILE" \
     --lib
 
 mkdir -p "$DIST_DIR"
-cp "$BINARY" "$BINARY2"
-wasm-bindgen "$BINARY2" --out-dir "$DIST_DIR" --target "$JSTARGET"
+if [ ! -f "$BINARY" ]; then
+    echo "build output not found: $BINARY"
+    exit 1
+fi
+
+wasm-bindgen "$BINARY" \
+    --out-name "$SDKNAME" \
+    --out-dir "$DIST_DIR" \
+    --target "$JSTARGET" \
+    --remove-name-section \
+    --remove-producers-section
+
+BG_WASM="$DIST_DIR/${SDKNAME}_bg.wasm"
+if command -v wasm-opt >/dev/null 2>&1; then
+    TMP_WASM="$(mktemp)"
+    wasm-opt -Oz --all-features --strip-debug --strip-dwarf -o "$TMP_WASM" "$BG_WASM"
+    mv "$TMP_WASM" "$BG_WASM"
+fi
+
+RAW_SIZE="$(wc -c < "$BG_WASM" | tr -d ' ')"
+GZIP_SIZE="$(gzip -c "$BG_WASM" | wc -c | tr -d ' ')"
+RAW_MB="$(awk -v b="$RAW_SIZE" 'BEGIN { printf "%.3f", b / 1024 / 1024 }')"
+GZIP_MB="$(awk -v b="$GZIP_SIZE" 'BEGIN { printf "%.3f", b / 1024 / 1024 }')"
+echo "[SDK wasm] target=$JSTARGET profile=$PROFILE raw=${RAW_MB}MB gzip=${GZIP_MB}MB"
