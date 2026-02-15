@@ -19,8 +19,8 @@ pub enum Bytecode {
     ________________5   = 0x05,
     EXTVIEW             = 0x06, // *@  call extend view (read-only query)
     EXTENV              = 0x07, // *+  call extend env
-    NTFUNC              = 0x08, // *@  native pure function
-    NTENV               = 0x09, // *+  native env (VM state read)
+    NTENV               = 0x08, // *+  native env (VM state read)
+    NTFUNC              = 0x09, // *@  native pure function
     ________________10  = 0x0a,
     ________________11  = 0x0b,
     ________________12  = 0x0c,

@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use basis::component::Env;
+use basis::interface::ActExec;
 use basis::interface::{Context, Logs, State, TransactionRead};
 use field::{Address, Amount, Field, Hash, Serialize, Uint4};
 use protocol::context::ContextInst;
 use protocol::transaction::create_tx_info;
 use sys::Ret;
+use vm::action::ContractDeploy;
 use vm::contract::{Contract, Func};
 use vm::frame::ExecEnv;
 use vm::lang::lang_to_bytecode;
@@ -189,6 +191,14 @@ fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
     }
 }
 
+fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(u32, Vec<u8>)> {
+    let mut act = ContractDeploy::new();
+    act.nonce = Uint4::from(nonce);
+    act.protocol_cost = Amount::zero();
+    act.contract = contract;
+    act.execute(ctx)
+}
+
 #[test]
 fn setup_vm_run_rejects_low_tx_type() {
     let _guard = test_guard();
@@ -202,6 +212,7 @@ fn setup_vm_run_rejects_low_tx_type() {
         Box::new(StateMem::default()),
         Box::new(MemLogs::default()),
     );
+    ctx.env.chain.fast_sync = true;
 
     let err = machine::setup_vm_run(
         &mut ctx,
@@ -305,7 +316,101 @@ fn loader_reports_library_index_overflow() {
     let codes = single_call_codes(0, sig);
 
     let err = execute_main_bytecode(&mut ctx, codes).unwrap_err();
-    assert!(err.contains("CallViewOverflow"), "{err}");
+    assert!(err.contains("CallLibIdxOverflow"), "{err}");
+}
+
+#[test]
+fn deploy_rejects_missing_library_contract() {
+    let _guard = test_guard();
+
+    let main = main_addr();
+    let missing = contract_addr(&main, 7001);
+    let tx = make_tx(3, main, vec![], 17);
+    let mut ctx = make_ctx(
+        1,
+        &tx,
+        Box::new(StateMem::default()),
+        Box::new(MemLogs::default()),
+    );
+    ctx.env.chain.fast_sync = true;
+
+    let sto = Contract::new()
+        .lib(missing.to_addr())
+        .func(Func::new("run").unwrap().public().fitsh("return 0").unwrap())
+        .into_sto();
+
+    let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
+    assert!(err.contains("library contract"), "{err}");
+    assert!(err.contains("not exist"), "{err}");
+}
+
+#[test]
+fn deploy_rejects_inherits_cycle_before_runtime() {
+    let _guard = test_guard();
+
+    let main = main_addr();
+    let a = contract_addr(&main, 7101);
+    let b = contract_addr(&main, 7102);
+    let tx = make_tx(3, main, vec![], 17);
+    let mut state = StateMem::default();
+
+    let sto_a = Contract::new()
+        .inh(b.to_addr())
+        .func(Func::new("fa").unwrap().public().fitsh("return 0").unwrap())
+        .into_sto();
+    let sto_b = Contract::new()
+        .inh(a.to_addr())
+        .func(Func::new("fb").unwrap().public().fitsh("return 0").unwrap())
+        .into_sto();
+    insert_contract(&mut state, &a, &sto_a);
+    insert_contract(&mut state, &b, &sto_b);
+
+    let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+    ctx.env.chain.fast_sync = true;
+    let sto = Contract::new()
+        .inh(a.to_addr())
+        .func(Func::new("run").unwrap().public().fitsh("return 0").unwrap())
+        .into_sto();
+
+    let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
+    assert!(err.contains("inherits cyclic"), "{err}");
+}
+
+#[test]
+fn deploy_rejects_missing_library_function_at_precheck() {
+    let _guard = test_guard();
+
+    let main = main_addr();
+    let lib = contract_addr(&main, 7201);
+    let tx = make_tx(3, main, vec![], 17);
+    let mut state = StateMem::default();
+
+    let lib_sto = Contract::new()
+        .func(Func::new("g").unwrap().public().fitsh("return 0").unwrap())
+        .into_sto();
+    insert_contract(&mut state, &lib, &lib_sto);
+
+    let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+    ctx.env.chain.fast_sync = true;
+    let sto = Contract::new()
+        .lib(lib.to_addr())
+        .func(
+            Func::new("run")
+                .unwrap()
+                .public()
+                .fitsh(
+                    r##"
+                    lib C = 0
+                    return C.f()
+                "##,
+                )
+                .unwrap(),
+        )
+        .into_sto();
+
+    let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
+    assert!(err.contains("function"), "{err}");
+    assert!(err.contains("not found"), "{err}");
 }
 
 #[test]

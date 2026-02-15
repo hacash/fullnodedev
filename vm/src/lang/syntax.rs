@@ -350,7 +350,7 @@ impl Syntax {
         }
         let mutable = matches!(kind, SlotKind::Let) == false;
         self.register_slot_symbol(s.clone(), idx, mutable)?;
-        self.source_map.register_slot(idx, s, kind)?;
+        self.source_map.register_slot(idx, s)?;
         Ok(push_empty())
     }
 

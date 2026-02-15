@@ -117,10 +117,14 @@ contract ContractName {
 function [public|private] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
 ```
 
-- `public`：可外部调用
-- `private`：仅内部
+- `public`：标记该函数可被 `CALL`（`Outer`）路径调用
+- `private`：未标记为 `public`（默认可见性标记）
 - `ircode`：编译为 IR（合约函数默认）
 - `bytecode`：编译为原始字节码
+
+可见性说明：
+- 这里的 `public/private` 是运行时调用解析使用的可见性标记，不等同于“所有调用模式统一生效”的源码级访问修饰符。
+- 若命名在实践中容易误导，可在后续版本引入更清晰的关键字（例如 `outer` 风格标记）。
 
 ---
 
@@ -656,6 +660,10 @@ storage_save(bk, balance + 100)
 | `self.func(...)` | CALLSELF | 当前合约 |
 | `super.func(...)` | CALLSUPER | 继承链父级 |
 
+库解析说明：
+- `libidx` 调用（`CALL/CALLVIEW/CALLPURE/CALLCODE`）只在目标库合约的本地用户函数表中解析。
+- 不会沿目标库合约的继承链继续查找。
+
 ### 11.2 调用权限与状态访问控制
 
 VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制。每种调用类型会切换到特定模式，并限制被调用方可执行的操作。
@@ -751,7 +759,7 @@ VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制�
 
 #### 小结
 
-- **call** → Outer：完全状态访问；被调用方须为 `public`
+- **call** → Outer：完全状态访问；被调用方须标记为 `public`
 - **callview** → View：只读；禁止存储/全局/内存/日志写入
 - **callpure** → Pure：无状态访问；仅纯计算及嵌套 CALLPURE
 - **callcode** → 继承当前模式；禁止嵌套调用；EXTACTION 禁用

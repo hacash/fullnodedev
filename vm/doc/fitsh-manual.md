@@ -117,10 +117,14 @@ contract ContractName {
 function [public|private] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
 ```
 
-- `public`: Externally callable
-- `private`: Internal only
+- `public`: Marks function as callable by `CALL` (`Outer`) path
+- `private`: Not marked `public` (default visibility marker)
 - `ircode`: Compile to IR (default for contract functions)
 - `bytecode`: Compile to raw bytecode
+
+Visibility note:
+- `public/private` here are runtime visibility markers for call resolution, not source-level access modifiers with universal guarantees across all call modes.
+- If naming is confusing in practice, a future revision may introduce clearer keywords (for example, an `outer`-style marker).
 
 ---
 
@@ -656,6 +660,10 @@ Side effects (e.g. `storage_save`, `print`) in a `bind` expression only run when
 | `self.func(...)` | CALLSELF | Current contract |
 | `super.func(...)` | CALLSUPER | Parent in inherit chain |
 
+Library resolution note:
+- `libidx` calls (`CALL/CALLVIEW/CALLPURE/CALLCODE`) resolve only against the target library contract's local user-function table.
+- They do not search the target library's inheritance chain.
+
 ### 11.2 Call Permission and State Access Control
 
 The VM enforces a permission system based on **ExecMode** (execution mode) and **in_callcode**. Each call type transitions to a specific mode and constrains what the callee can do.
@@ -751,7 +759,7 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 
 #### Summary
 
-- **call** → Outer: full state access; callee must be `public`
+- **call** → Outer: full state access; callee must be marked `public`
 - **callview** → View: read-only; no storage/global/memory/log writes
 - **callpure** → Pure: no state access; only pure computation and nested CALLPURE
 - **callcode** → inherits mode; no nested calls; EXTACTION disabled

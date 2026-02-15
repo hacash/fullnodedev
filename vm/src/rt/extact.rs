@@ -86,6 +86,12 @@ pub fn ensure_extend_call_id(act_kind: Bytecode, id: u8) -> VmrtErr {
 
 pub fn ensure_extend_call_allowed(mode: ExecMode, act_kind: Bytecode, id: u8) -> VmrtErr {
     ensure_extend_call_id(act_kind, id)?;
+    if act_kind == Bytecode::EXTACTION && mode != ExecMode::Main {
+        return Err(ItrErr::new(
+            ItrErrCode::ExtActDisabled,
+            "extend action not support in non-main call",
+        ));
+    }
     if mode == ExecMode::Pure {
         match act_kind {
             Bytecode::EXTENV => {
@@ -104,4 +110,23 @@ pub fn ensure_extend_call_allowed(mode: ExecMode, act_kind: Bytecode, id: u8) ->
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod extact_tests {
+    use super::*;
+
+    #[test]
+    fn extaction_disallowed_in_view_mode() {
+        let action_id = CALL_EXTEND_ACTION_DEFS[0].0;
+        let err = ensure_extend_call_allowed(ExecMode::View, Bytecode::EXTACTION, action_id)
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::ExtActDisabled);
+    }
+
+    #[test]
+    fn extaction_allowed_in_main_mode() {
+        let action_id = CALL_EXTEND_ACTION_DEFS[0].0;
+        assert!(ensure_extend_call_allowed(ExecMode::Main, Bytecode::EXTACTION, action_id).is_ok());
+    }
 }

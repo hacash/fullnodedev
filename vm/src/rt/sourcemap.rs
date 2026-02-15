@@ -91,7 +91,10 @@ impl SourceMap {
         Ok(())
     }
 
-    pub fn register_slot(&mut self, slot: u8, name: String, _kind: SlotKind) -> Rerr {
+    /// Register a local slot name for decompilation.
+    /// Slots are pessimistically marked as `let` and promoted to `var`
+    /// only when `mark_slot_mutated` is observed during parsing.
+    pub fn register_slot(&mut self, slot: u8, name: String) -> Rerr {
         self.slots.insert(slot, name);
         self.vars.remove(&slot);
         self.lets.insert(slot);
@@ -242,5 +245,21 @@ impl SourceMap {
         
         map.params = doc.params;
         Ok(map)
+    }
+}
+
+#[cfg(test)]
+mod sourcemap_tests {
+    use super::*;
+
+    #[test]
+    fn register_slot_defaults_to_let_until_mutated() {
+        let mut map = SourceMap::default();
+        map.register_slot(7, "x".to_string()).unwrap();
+        assert!(map.slot_is_let(7));
+        assert!(!map.slot_is_var(7));
+        map.mark_slot_mutated(7);
+        assert!(map.slot_is_var(7));
+        assert!(!map.slot_is_let(7));
     }
 }

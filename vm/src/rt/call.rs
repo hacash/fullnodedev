@@ -26,7 +26,7 @@ pub fn calc_func_sign(name: &str) -> FnSign {
 
 pub fn checked_func_sign(s: &[u8]) -> VmrtRes<FnSign> {
     if s.len() != FN_SIGN_WIDTH {
-        return itr_err!(ContractAddrErr, "fn sign size error")
+        return itr_err!(CastParamFail, "fn sign size error")
     }
     Ok(s.to_vec().try_into().unwrap())
 }
@@ -147,6 +147,17 @@ impl From<Vec<u8>> for ByteView {
 impl From<Arc<[u8]>> for ByteView {
     fn from(value: Arc<[u8]>) -> Self {
         Self::from_arc(value)
+    }
+}
+
+#[cfg(test)]
+mod call_tests {
+    use super::*;
+
+    #[test]
+    fn checked_func_sign_uses_cast_param_fail_for_wrong_size() {
+        let err = checked_func_sign(&[1, 2, 3]).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastParamFail);
     }
 }
 

@@ -48,6 +48,7 @@ action_define!{ContractDeploy, 99,
         if self.contract.metas.revision.uint() != 0 {
             return errf!("contract revision must be 0 on deploy")
         }
+        precheck_contract_links_and_calls(ctx, &caddr, &self.contract)?;
         let accf  = AbstCall::Construct;
         let hvaccf = self.contract.have_abst_call(accf);
         let charge_bytes = self.contract.size();
@@ -105,6 +106,7 @@ action_define!{ContractUpdate, 98,
         if new_contract.librarys.list().iter().any(|a| a == &caddr) {
             return errf!("contract cannot link itself as library {}", (*caddr).to_readable())
         }
+        precheck_contract_links_and_calls(ctx, &caddr, &new_contract)?;
         // spend protocol fee only when storage grows
         let old_size = contract.size();
         let new_size = new_contract.size();
@@ -125,6 +127,278 @@ action_define!{ContractUpdate, 98,
 /**************************************/
 
 
+
+fn precheck_contract_links_and_calls(
+    ctx: &mut dyn Context,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+) -> Rerr {
+    let height = ctx.env().block.height;
+    let mut vmsta = VMState::wrap(ctx.state());
+    check_link_contracts_exist(&mut vmsta, root_addr, root_contract)?;
+    check_inherits_acyclic(&mut vmsta, root_addr, root_contract)?;
+    check_static_call_targets(&mut vmsta, root_addr, root_contract, height)?;
+    Ok(())
+}
+
+fn load_contract_for_check(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    addr: &ContractAddress,
+    role: &str,
+) -> Ret<ContractSto> {
+    if addr == root_addr {
+        return Ok(root_contract.clone())
+    }
+    match vmsta.contract(addr) {
+        Some(c) => Ok(c),
+        None => errf!("{} contract {} not exist", role, addr.to_readable()),
+    }
+}
+
+fn check_link_contracts_exist(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+) -> Rerr {
+    for a in root_contract.librarys.list() {
+        let _ = load_contract_for_check(vmsta, root_addr, root_contract, a, "library")?;
+    }
+    for a in root_contract.inherits.list() {
+        let _ = load_contract_for_check(vmsta, root_addr, root_contract, a, "inherits")?;
+    }
+    Ok(())
+}
+
+fn check_inherits_acyclic(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+) -> Rerr {
+    fn dfs(
+        vmsta: &mut VMState,
+        root_addr: &ContractAddress,
+        root_contract: &ContractSto,
+        addr: &ContractAddress,
+        visiting: &mut std::collections::HashSet<ContractAddress>,
+        visited: &mut std::collections::HashSet<ContractAddress>,
+    ) -> Rerr {
+        if visiting.contains(addr) {
+            return errf!("inherits cyclic detected at {}", addr.to_readable())
+        }
+        if visited.contains(addr) {
+            return Ok(())
+        }
+        visiting.insert(addr.clone());
+        let sto = load_contract_for_check(vmsta, root_addr, root_contract, addr, "inherits")?;
+        for p in sto.inherits.list() {
+            dfs(vmsta, root_addr, root_contract, p, visiting, visited)?;
+        }
+        visiting.remove(addr);
+        visited.insert(addr.clone());
+        Ok(())
+    }
+
+    let mut visiting = std::collections::HashSet::new();
+    let mut visited = std::collections::HashSet::new();
+    dfs(vmsta, root_addr, root_contract, root_addr, &mut visiting, &mut visited)
+}
+
+fn contract_has_userfn(contract: &ContractSto, sign: &FnSign) -> bool {
+    contract
+        .userfuncs
+        .list()
+        .iter()
+        .any(|f| f.sign.to_array() == *sign)
+}
+
+fn resolve_userfn_by_inherits(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    addr: &ContractAddress,
+    sign: &FnSign,
+    visiting: &mut std::collections::HashSet<ContractAddress>,
+    visited: &mut std::collections::HashSet<ContractAddress>,
+) -> Ret<bool> {
+    if visiting.contains(addr) {
+        return errf!("inherits cyclic detected at {}", addr.to_readable())
+    }
+    if visited.contains(addr) {
+        return Ok(false)
+    }
+    visiting.insert(addr.clone());
+    let sto = load_contract_for_check(vmsta, root_addr, root_contract, addr, "inherits")?;
+    if contract_has_userfn(&sto, sign) {
+        visiting.remove(addr);
+        return Ok(true)
+    }
+    for p in sto.inherits.list() {
+        if resolve_userfn_by_inherits(vmsta, root_addr, root_contract, p, sign, visiting, visited)? {
+            visiting.remove(addr);
+            return Ok(true)
+        }
+    }
+    visiting.remove(addr);
+    visited.insert(addr.clone());
+    Ok(false)
+}
+
+fn scan_call_sites(codes: &[u8], mut check: impl FnMut(Bytecode, &[u8]) -> Rerr) -> Rerr {
+    let mut i = 0usize;
+    while i < codes.len() {
+        let inst: Bytecode = std_mem_transmute!(codes[i]);
+        let meta = inst.metadata();
+        if !meta.valid {
+            return errf!("invalid bytecode {}", codes[i])
+        }
+        i += 1;
+        let pms = meta.param as usize;
+        if i + pms > codes.len() {
+            return errf!("instruction param overflow at {}", i - 1)
+        }
+        let params = &codes[i..i + pms];
+        match inst {
+            Bytecode::CALL
+            | Bytecode::CALLTHIS
+            | Bytecode::CALLSELF
+            | Bytecode::CALLSUPER
+            | Bytecode::CALLVIEW
+            | Bytecode::CALLPURE
+            | Bytecode::CALLCODE => {
+                check(inst, params)?;
+            }
+            Bytecode::PBUF => {
+                let l = params[0] as usize;
+                if i + pms + l > codes.len() {
+                    return errf!("PBUF overflow at {}", i - 1)
+                }
+                i += l;
+            }
+            Bytecode::PBUFL => {
+                let l = u16::from_be_bytes([params[0], params[1]]) as usize;
+                if i + pms + l > codes.len() {
+                    return errf!("PBUFL overflow at {}", i - 1)
+                }
+                i += l;
+            }
+            _ => {}
+        }
+        i += pms;
+    }
+    Ok(())
+}
+
+fn check_static_call_targets(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    _height: u64,
+) -> Rerr {
+    let check_one = |func_tag: String, codes: &[u8], vmsta: &mut VMState| -> Rerr {
+        scan_call_sites(codes, |inst, params| {
+            let mut sign = [0u8; FN_SIGN_WIDTH];
+            match inst {
+                Bytecode::CALL | Bytecode::CALLVIEW | Bytecode::CALLPURE | Bytecode::CALLCODE => {
+                    let libs = root_contract.librarys.list();
+                    let libidx = params[0] as usize;
+                    if libidx >= libs.len() {
+                        return errf!(
+                            "{}: libidx overflow {} >= {}",
+                            func_tag,
+                            libidx,
+                            libs.len()
+                        )
+                    }
+                    sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
+                    let tar = &libs[libidx];
+                    let sto =
+                        load_contract_for_check(vmsta, root_addr, root_contract, tar, "library")?;
+                    if !contract_has_userfn(&sto, &sign) {
+                        return errf!(
+                            "{}: library {} function 0x{} not found",
+                            func_tag,
+                            tar.to_readable(),
+                            hex::encode(sign)
+                        )
+                    }
+                    Ok(())
+                }
+                Bytecode::CALLTHIS | Bytecode::CALLSELF => {
+                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
+                    let mut visiting = std::collections::HashSet::new();
+                    let mut visited = std::collections::HashSet::new();
+                    let found = resolve_userfn_by_inherits(
+                        vmsta,
+                        root_addr,
+                        root_contract,
+                        root_addr,
+                        &sign,
+                        &mut visiting,
+                        &mut visited,
+                    )?;
+                    if !found {
+                        return errf!(
+                            "{}: {:?} function 0x{} not found",
+                            func_tag,
+                            inst,
+                            hex::encode(sign)
+                        )
+                    }
+                    Ok(())
+                }
+                Bytecode::CALLSUPER => {
+                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
+                    let mut found = false;
+                    for p in root_contract.inherits.list() {
+                        let mut visiting = std::collections::HashSet::new();
+                        let mut visited = std::collections::HashSet::new();
+                        if resolve_userfn_by_inherits(
+                            vmsta,
+                            root_addr,
+                            root_contract,
+                            p,
+                            &sign,
+                            &mut visiting,
+                            &mut visited,
+                        )? {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        return errf!("{}: super function 0x{} not found", func_tag, hex::encode(sign))
+                    }
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
+        })
+    };
+
+    for f in root_contract.userfuncs.list() {
+        let ctype = CodeType::parse(f.cdty[0]).map_err(|e| e.to_string())?;
+        let codes = match ctype {
+            CodeType::Bytecode => f.code.to_vec(),
+            CodeType::IRNode => runtime_irs_to_bytecodes(&f.code).map_err(|e| e.to_string())?,
+        };
+        let tag = format!("userfn 0x{}", hex::encode(f.sign.to_array()));
+        check_one(tag, &codes, vmsta)?;
+    }
+
+    for f in root_contract.abstcalls.list() {
+        let ctype = CodeType::parse(f.cdty[0]).map_err(|e| e.to_string())?;
+        let codes = match ctype {
+            CodeType::Bytecode => f.code.to_vec(),
+            CodeType::IRNode => runtime_irs_to_bytecodes(&f.code).map_err(|e| e.to_string())?,
+        };
+        let tag = format!("abstcall {}", f.sign[0]);
+        check_one(tag, &codes, vmsta)?;
+    }
+
+    Ok(())
+}
 
 fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, pfee: &Amount, charge_bytes: usize) -> Rerr {
     if pfee.is_negative() {

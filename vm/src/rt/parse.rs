@@ -76,8 +76,9 @@ impl BytecodePrint for Vec<u8> {
                         let s = self[i];
                         pms.push(format!(" -#{}- ", s as isize + 1));
                     }else if let JMPL | BRL = inst {
-                        let s = pu16!(i) as i16;
-                        pms.push(format!(" -#{}- ", s as isize + 2));
+                        // JMPL/BRL use absolute u16 program counter target.
+                        let t = pu16!(i);
+                        pms.push(format!(" #{} ", t));
                     }else if let JMPSL | BRSL | BRSLN = inst {
                         let s = pu16!(i) as i16;
                         pms.push(format!(" -#{}- ", i as isize + s as isize + 2));
@@ -170,7 +171,7 @@ fn scan_jump_dests(codes: &[u8]) -> Vec<usize> {
         match inst {
             PBUF  => i += (pu8!() +1) as usize,
             PBUFL => i += (pu16!()+2) as usize,
-            JMPL  | BRL  => adddest!(pu16!() + 2),
+            JMPL  | BRL  => adddest!(pu16!()),
             JMPS  | BRS  => adddest!(i as isize + pi8!() as isize + 1),
             JMPSL | BRSL | BRSLN => adddest!(i as isize + pi16!() as isize + 2),
             _ => {},
@@ -179,4 +180,30 @@ fn scan_jump_dests(codes: &[u8]) -> Vec<usize> {
     }
 
     dests
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+
+    #[test]
+    fn scan_jump_dests_long_jump_uses_absolute_target() {
+        let codes = vec![
+            Bytecode::P0 as u8,
+            Bytecode::JMPL as u8, 0, 5,
+            Bytecode::P1 as u8,
+            Bytecode::END as u8,
+        ];
+        assert_eq!(scan_jump_dests(&codes), vec![5usize]);
+    }
+
+    #[test]
+    fn bytecode_print_desc_reports_absolute_long_jump_block() {
+        let codes = vec![
+            Bytecode::JMPL as u8, 0, 3,
+            Bytecode::END as u8,
+        ];
+        let printed = codes.bytecode_print(true).unwrap();
+        assert!(printed.contains("block: [3]"), "unexpected print: {}", printed);
+    }
 }

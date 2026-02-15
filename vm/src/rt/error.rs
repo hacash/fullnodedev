@@ -51,7 +51,7 @@ pub enum ItrErrCode {
     LogError          = 48,
     
     CallNotExist      = 51,
-    CallViewOverflow  = 52,
+    CallLibIdxOverflow  = 52,
     CallInvalid       = 53,
     CallExitInvalid   = 54,
     CallInCallcode    = 55,

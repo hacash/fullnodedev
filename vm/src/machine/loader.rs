@@ -101,7 +101,7 @@ impl Resoure {
         let librarys = adrlist;
         let libidx = lib as usize;
         if libidx >= librarys.len() {
-            return itr_err_code!(CallViewOverflow)
+            return itr_err_code!(CallLibIdxOverflow)
         }
         let taradr = librarys.get(libidx).unwrap();
         taradr.check().map_ire(ContractAddrErr)?; // check must contract addr

@@ -61,8 +61,7 @@ fn source_map_json_roundtrip() {
     map.register_lib(2, "Fund".to_string(), None).unwrap();
     let sig = extract_signature("deposit");
     map.register_func(sig, "deposit".to_string()).unwrap();
-    map.register_slot(0, "total".to_string(), SlotKind::Var)
-        .unwrap();
+    map.register_slot(0, "total".to_string()).unwrap();
     map.mark_slot_mutated(0);
     assert!(map.slot_is_var(0));
     assert!(!map.slot_is_let(0));
