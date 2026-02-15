@@ -455,26 +455,24 @@ pub struct ContractObj {
 
 impl ContractSto {
 
-	pub fn into_obj(self) -> VmrtRes<ContractObj> {
-		let mut obj = ContractObj {
-			sto: self,
-            ..Default::default()
-		};
-		// parse sytmcalls
-		for a in obj.sto.abstcalls.list() {
-			let code = FnObj::create(a.cdty[0], a.code.to_vec(), None)?;
-			let cty = std_mem_transmute!( a.sign[0] );
-			obj.abstfns.insert(cty, code.into());
+	pub fn into_obj(mut self) -> VmrtRes<ContractObj> {
+		let mut abstfns = HashMap::with_capacity(self.abstcalls.length());
+		// Move function bytecode out of `ContractSto` once. Runtime execution uses `FnObj`,
+		// so keeping another full copy inside `sto` only adds memory and copy cost.
+		for a in self.abstcalls.as_mut() {
+			let code_bytes = std::mem::take(&mut a.code).into_vec();
+			let code = FnObj::create(a.cdty[0], code_bytes, None)?;
+			let cty = std_mem_transmute!(a.sign[0]);
+			abstfns.insert(cty, code.into());
 		}
-		// parse userfuncs
-		for a in obj.sto.userfuncs.list() {
-			let code = FnObj::create(a.cdty[0], a.code.to_vec(), Some(a.pmdf.clone()))?;
+		let mut userfns = HashMap::with_capacity(self.userfuncs.length());
+		for a in self.userfuncs.as_mut() {
+			let code_bytes = std::mem::take(&mut a.code).into_vec();
+			let code = FnObj::create(a.cdty[0], code_bytes, Some(a.pmdf.clone()))?;
 			let cty = a.sign.to_array();
-			obj.userfns.insert(cty, code.into());
+			userfns.insert(cty, code.into());
 		}
-		// ok
-		Ok(obj)
+		Ok(ContractObj { sto: self, abstfns, userfns })
 	}
 }
-
 

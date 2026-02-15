@@ -24,7 +24,7 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
     Ok(())
 }
 
-pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value) -> Ret<(i64, Value)> {
+pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u8]>, pm: Value) -> Ret<(i64, Value)> {
     // check tx type
     const TY3: u8 = TransactionType3::TYPE;
     let txty = ctx.env().tx.ty;
@@ -58,7 +58,7 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: &[u8], pm: Value)
     let ctxptr = ctx as *mut dyn Context;
     let res = unsafe {
         let vm = (*ctxptr).vm() as *mut dyn VM;
-        (*vm).call(&mut *ctxptr, ty, mk, cd, Box::new(pm))
+        (*vm).call(VMCall::new(&mut *ctxptr, ty, mk, cd, Box::new(pm)))
     };
     ctx.level_set(old_level);
     let (cost, rv) = res?;

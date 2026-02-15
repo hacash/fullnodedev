@@ -14,7 +14,7 @@ fn is_stmt_block(n: IRNRef) -> bool {
 }
 
 
-fn compile_block(inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
+fn compile_block_into(inst: Bytecode, list: &[Box<dyn IRNode>], codes: &mut Vec<u8>) -> VmrtErr {
     let is_expr = inst == Bytecode::IRBLOCKR;
     if is_expr {
         match list.last() {
@@ -23,9 +23,8 @@ fn compile_block(inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>
             _ => {},
         }
     }
-    let mut codes = Vec::new();
     for (idx, one) in list.iter().enumerate() {
-        one.codegen_into(&mut codes)?;
+        one.codegen_into(codes)?;
         if one.hasretval() {
             if is_expr && idx + 1 == list.len() {
                 continue;
@@ -33,14 +32,25 @@ fn compile_block(inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>
             codes.push(POP as u8);
         }
     }
+    Ok(())
+}
+
+fn compile_block(inst: Bytecode, list: &[Box<dyn IRNode>]) -> VmrtRes<Vec<u8>> {
+    let mut codes = Vec::new();
+    compile_block_into(inst, list, &mut codes)?;
     Ok(codes)
 }
 
-fn compile_list(_inst: Bytecode, list: &Vec<Box<dyn IRNode>>) -> VmrtRes<Vec<u8>> {
-    let mut codes = Vec::new();
+fn compile_list_into(list: &[Box<dyn IRNode>], codes: &mut Vec<u8>) -> VmrtErr {
     for one in list {
-        one.codegen_into(&mut codes)?;
+        one.codegen_into(codes)?;
     }
+    Ok(())
+}
+
+fn compile_list(list: &[Box<dyn IRNode>]) -> VmrtRes<Vec<u8>> {
+    let mut codes = Vec::new();
+    compile_list_into(list, &mut codes)?;
     Ok(codes)
 }
 

@@ -85,6 +85,71 @@ pub enum FnConf {
     Public = 0b10000000,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ByteView {
+    bytes: Arc<[u8]>,
+    offset: usize,
+    limit: usize,
+}
+
+impl ByteView {
+    pub fn from_vec(bytes: Vec<u8>) -> Self {
+        let bytes: Arc<[u8]> = bytes.into();
+        let limit = bytes.len();
+        Self { bytes, offset: 0, limit }
+    }
+
+    pub fn from_arc(bytes: Arc<[u8]>) -> Self {
+        let limit = bytes.len();
+        Self { bytes, offset: 0, limit }
+    }
+
+    pub fn len(&self) -> usize {
+        self.limit - self.offset
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes[self.offset..self.limit]
+    }
+
+    pub fn slice(&self, offset: usize, limit: usize) -> VmrtRes<Self> {
+        if offset > limit || limit > self.len() {
+            return itr_err_code!(ItrErrCode::CodeOverflow)
+        }
+        Ok(Self {
+            bytes: self.bytes.clone(),
+            offset: self.offset + offset,
+            limit: self.offset + limit,
+        })
+    }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        self.as_slice().to_vec()
+    }
+}
+
+impl AsRef<[u8]> for ByteView {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl From<Vec<u8>> for ByteView {
+    fn from(value: Vec<u8>) -> Self {
+        Self::from_vec(value)
+    }
+}
+
+impl From<Arc<[u8]>> for ByteView {
+    fn from(value: Arc<[u8]>) -> Self {
+        Self::from_arc(value)
+    }
+}
+
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -92,8 +157,8 @@ pub struct FnObj {
     pub confs: u8, // binary switch
     pub agvty: Option<FuncArgvTypes>,
     pub ctype: CodeType,
-    pub codes: Vec<u8>,
-    compiled: Arc<std::sync::OnceLock<Vec<u8>>>,
+    pub codes: ByteView,
+    compiled: Arc<std::sync::OnceLock<ByteView>>,
 }
 
 impl FnObj {
@@ -109,22 +174,22 @@ impl FnObj {
             confs: mks & 0b11111000,
             agvty,
             ctype,
-            codes,
+            codes: ByteView::from_vec(codes),
             compiled: Arc::new(std::sync::OnceLock::new()),
         })
     }
 
-    pub fn plain(ctype: CodeType, codes: Vec<u8>, confs: u8, agvty: Option<FuncArgvTypes>) -> Self {
+    pub fn plain(ctype: CodeType, codes: impl Into<ByteView>, confs: u8, agvty: Option<FuncArgvTypes>) -> Self {
         Self {
             confs,
             agvty,
             ctype,
-            codes,
+            codes: codes.into(),
             compiled: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
-    pub fn exec_bytecodes(&self) -> VmrtRes<Vec<u8>> {
+    pub fn exec_bytecodes(&self) -> VmrtRes<ByteView> {
         use CodeType::*;
         Ok(match self.ctype {
             Bytecode => self.codes.clone(),
@@ -132,7 +197,7 @@ impl FnObj {
                 if let Some(cached) = self.compiled.get() {
                     return Ok(cached.clone());
                 }
-                let compiled = runtime_irs_to_bytecodes(&self.codes)?;
+                let compiled = ByteView::from_vec(runtime_irs_to_bytecodes(self.codes.as_slice())?);
                 let _ = self.compiled.set(compiled.clone());
                 compiled
             }
@@ -140,7 +205,7 @@ impl FnObj {
     }
 
     pub fn into_array(self) -> Vec<u8> {
-        self.codes
+        self.codes.into_vec()
     }
 }
 

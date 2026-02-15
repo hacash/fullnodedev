@@ -62,7 +62,7 @@ action_define!{ContractDeploy, 99,
         }
         if hvaccf { // have Construct func
             let cty = ExecMode::Abst as u8;
-            setup_vm_run(ctx, cty, accf as u8, caddr.as_bytes(), Value::Bytes(cargv))?;
+            setup_vm_run(ctx, cty, accf as u8, Arc::from(caddr.as_bytes()), Value::Bytes(cargv))?;
         }
         // ok finish
         Ok(vec![])
@@ -112,7 +112,7 @@ action_define!{ContractUpdate, 98,
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
         let cty = ExecMode::Abst as u8;
         let sys = maybe!(did_change, Change, Append) as u8; // Change or Append
-        setup_vm_run(ctx, cty, sys, caddr.as_bytes(), Value::Nil)?;
+        setup_vm_run(ctx, cty, sys, Arc::from(caddr.as_bytes()), Value::Nil)?;
         // save the new
         vmsto!(ctx).contract_set(&caddr, &new_contract);
         Ok(vec![]) 

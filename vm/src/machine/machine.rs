@@ -246,11 +246,15 @@ impl VM for MachineBox {
         m.r.contract_load_bytes = load_bytes;
     }
 
-    fn call(&mut self, 
-        ctx: &mut dyn Context,
-        ty: u8, kd: u8, data: &[u8], param: Box<dyn Any>
-    ) -> Ret<(i64, Vec<u8>)> {
+    fn call(&mut self, call: VMCall<'_>) -> Ret<(i64, Vec<u8>)> {
         use ExecMode::*;
+        let VMCall {
+            ctx,
+            mode,
+            kind,
+            payload,
+            param,
+        } = call;
         // (1) initialize gas budget on first call (idempotent)
         {
             let r = &self.machine.as_ref().unwrap().r;
@@ -260,7 +264,7 @@ impl VM for MachineBox {
         let mut account = GasCallGuard::enter(&mut self.account)?;
         let is_outermost = account.is_outermost();
         // min gas cost per call type
-        let cty: ExecMode = std_mem_transmute!(ty);
+        let cty: ExecMode = std_mem_transmute!(mode);
         let min_cost = {
             let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
             match cty {
@@ -287,22 +291,24 @@ impl VM for MachineBox {
         let exenv = &mut ExecEnv{ ctx, gas };
         let result = match cty {
             Main => {
-                let cty = CodeType::parse(kd)?;
-                machine.main_call(exenv, cty, data.to_vec())
+                let cty = CodeType::parse(kind)?;
+                machine.main_call(exenv, cty, payload)
             }
             P2sh => {
-                let (ctxadr, mv1) = Address::create(data)?;
-                let (calibs, mv2) = ContractAddressW1::create(&data[mv1..])?;
+                let payload = ByteView::from_arc(payload);
+                let payload_ref = payload.as_slice();
+                let (ctxadr, mv1) = Address::create(payload_ref)?;
+                let (calibs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
                 let mv = mv1 + mv2;
-                let realcodes = data[mv..].to_vec();
+                let realcodes = payload.slice(mv, payload.len())?;
                 let Ok(param) = param.downcast::<Value>() else {
                     return errf!("p2sh argv type not match")
                 };
                 machine.p2sh_call(exenv, ctxadr, calibs.into_list(), realcodes, *param)
             }
             Abst => {
-                let kid: AbstCall = std_mem_transmute!(kd);
-                let cadr = ContractAddress::parse(data)?;
+                let kid: AbstCall = std_mem_transmute!(kind);
+                let cadr = ContractAddress::parse(payload.as_ref())?;
                 let Ok(param) = param.downcast::<Value>() else {
                     return errf!("abst argv type not match")
                 };
@@ -373,11 +379,11 @@ impl Machine {
         }
     }
 
-    pub fn main_call(&mut self, env: &mut ExecEnv, ctype: CodeType, codes: Vec<u8>) -> Ret<Value> {
+    pub fn main_call(&mut self, env: &mut ExecEnv, ctype: CodeType, codes: Arc<[u8]>) -> Ret<Value> {
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
         let lib_adr = env.ctx.env().tx.addrs.iter().map(|a|ContractAddress::from_unchecked(*a)).collect();
-        let rv = self.do_call(env, ExecMode::Main, fnobj, ctx_adr, None, Some(lib_adr), None)?;
+        let rv = self.do_call(env, ExecMode::Main, &fnobj, ctx_adr, None, Some(lib_adr), None)?;
         check_vm_return_value(&rv, "main call")?;
         Ok(rv)
     }
@@ -387,22 +393,21 @@ impl Machine {
         let Some((owner, fnobj)) = self.r.load_abstfn(env.ctx, &contract_addr, cty)? else {
             return errf!("abst call {:?} not find in {}", cty, adr)
         };
-        let fnobj = fnobj.as_ref().clone();
-        let rv = self.do_call(env, ExecMode::Abst, fnobj, contract_addr, owner, None, Some(param))?;
+        let rv = self.do_call(env, ExecMode::Abst, fnobj.as_ref(), contract_addr, owner, None, Some(param))?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
     }
 
-    fn p2sh_call(&mut self, env: &mut ExecEnv, p2sh_addr: Address, libs: Vec<ContractAddress>, codes: Vec<u8>, param: Value) -> Ret<Value> {
+    fn p2sh_call(&mut self, env: &mut ExecEnv, p2sh_addr: Address, libs: Vec<ContractAddress>, codes: ByteView, param: Value) -> Ret<Value> {
         let ctype = CodeType::Bytecode;
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
-        let rv = self.do_call(env, ExecMode::P2sh, fnobj, ctx_adr, None, Some(libs), Some(param))?;
+        let rv = self.do_call(env, ExecMode::P2sh, &fnobj, ctx_adr, None, Some(libs), Some(param))?;
         check_vm_return_value(&rv, "p2sh call")?;
         Ok(rv)
     }
 
-    fn do_call(&mut self, env: &mut ExecEnv, mode: ExecMode, code: FnObj, entry_addr: ContractAddress, code_owner: Option<ContractAddress>, libs: Option<Vec<ContractAddress>>, param: Option<Value>) -> VmrtRes<Value> {
+    fn do_call(&mut self, env: &mut ExecEnv, mode: ExecMode, code: &FnObj, entry_addr: ContractAddress, code_owner: Option<ContractAddress>, libs: Option<Vec<ContractAddress>>, param: Option<Value>) -> VmrtRes<Value> {
         self.frames.push(CallFrame::new()); // for reclaim
         let res = self.frames.last_mut().unwrap().start_call(&mut self.r, env, mode, code, entry_addr, code_owner, libs, param);
         self.frames.pop().unwrap().reclaim(&mut self.r); // do reclaim
@@ -571,7 +576,7 @@ mod machine_test {
 
         let mut machine = Machine::create(Resoure::create(1));
         let rv = machine
-            .main_call(&mut exec, CodeType::Bytecode, main_codes)
+            .main_call(&mut exec, CodeType::Bytecode, main_codes.into())
             .unwrap();
 
         assert!(!rv.check_true(), "main call should return success (nil/0)");
@@ -649,7 +654,7 @@ mod machine_test {
         // END is a minimal "return nil" program; actual instruction gas is tiny.
         let codes = vec![Bytecode::END as u8];
 
-        vm.call(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, &codes, Box::new(Value::Nil))
+        vm.call(VMCall::new(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, codes.clone().into(), Box::new(Value::Nil)))
             .unwrap();
 
         let gsext = GasExtra::new(1);
@@ -705,7 +710,7 @@ mod machine_test {
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let codes = vec![Bytecode::END as u8];
-        vm.call(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, &codes, Box::new(Value::Nil)).unwrap();
+        vm.call(VMCall::new(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, codes.clone().into(), Box::new(Value::Nil))).unwrap();
 
         vm.machine.as_mut().unwrap().r.contract_load_bytes = 11;
         let before_load_bytes = vm.machine.as_ref().unwrap().r.contract_load_bytes;
@@ -811,7 +816,7 @@ mod machine_test {
         let codes = vec![Bytecode::END as u8];
 
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            vm.call(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, &codes, Box::new(Value::Nil))
+            vm.call(VMCall::new(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, codes.clone().into(), Box::new(Value::Nil)))
         }));
         assert!(res.is_ok(), "settle must not panic");
         // low fee may cause an error return, but must never panic
@@ -864,25 +869,25 @@ mod machine_test {
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         // Invalid code type causes early return inside Main branch before previous manual leave() point.
-        let early = vm.call(
+        let early = vm.call(VMCall::new(
             &mut ctx,
             ExecMode::Main as u8,
             255,
-            &[],
+            Arc::from(vec![]),
             Box::new(Value::Nil),
-        );
+        ));
         assert!(early.is_err(), "invalid code type must fail");
         assert_eq!(vm.account.reentry_depth, 0, "depth must be restored after early return");
 
         // Next normal call should still behave as an outermost call.
         let codes = vec![Bytecode::END as u8];
-        let ok = vm.call(
+        let ok = vm.call(VMCall::new(
             &mut ctx,
             ExecMode::Main as u8,
             CodeType::Bytecode as u8,
-            &codes,
+            codes.into(),
             Box::new(Value::Nil),
-        );
+        ));
         assert!(ok.is_ok(), "subsequent call must not be poisoned by previous early return");
         assert_eq!(vm.account.reentry_depth, 0, "depth must remain balanced after successful call");
     }

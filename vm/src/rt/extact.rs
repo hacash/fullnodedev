@@ -5,7 +5,7 @@ use ValueTy::*;
 
 type ExtDefTy = (u8, &'static str, ValueTy, usize);
 
-const CALL_EXTEND_UNKNOWN_NAME: &'static str = "__unknown__";
+const CALL_EXTEND_UNKNOWN_NAME: &str = "__unknown__";
 
 
 /********************************************/

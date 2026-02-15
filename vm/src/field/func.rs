@@ -15,6 +15,10 @@ impl FuncArgvTypes {
         }
     }
 
+    pub fn param_count(&self) -> usize {
+        bit4r!(self.typnum.uint()) as usize
+    }
+
     pub fn check_output(&self, v: &mut Value) -> VmrtErr {
         let Some(oty) = self.output_type().map_ire(CallArgvTypeFail)? else {
             return Ok(())
@@ -86,7 +90,7 @@ impl FuncArgvTypes {
     }
 
     pub fn param_types(&self) -> Ret<Vec<ValueTy>> {
-        let n = bit4r!(self.typnum.uint()) as usize;
+        let n = self.param_count();
         if 0 == n {
             return Ok(vec![])
         }
@@ -144,7 +148,6 @@ impl FromJSON for FuncArgvTypes {
 }
 
 impl_field_only_new!{FuncArgvTypes}
-
 
 
 

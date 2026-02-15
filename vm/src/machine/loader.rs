@@ -28,9 +28,9 @@ impl Resoure {
             self.contract_load_bytes = self.contract_load_bytes.saturating_add(cbytes);
             return Ok(obj);
         }
-        let cobj = Arc::new(c.clone().into_obj()?);
+        let cobj = Arc::new(c.into_obj()?);
         self.contracts.insert(addr.clone(), cobj.clone()); // tx-local cache
-        global_machine_manager().contract_cache().insert(addr, &c, cobj.clone());
+        global_machine_manager().contract_cache().insert(addr, &cobj.sto, cobj.clone());
         self.contract_load_bytes = self.contract_load_bytes.saturating_add(cbytes);
         Ok(cobj)
     }

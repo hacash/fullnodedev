@@ -121,7 +121,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
         }
         let param = Value::Compo(CompoItem::list(VecDeque::from(params))?);
         let cm = ExecMode::P2sh as u8;
-        setup_vm_run(ctx, cm, 0, &codes, param)?;
+        setup_vm_run(ctx, cm, 0, codes.into(), param)?;
         // return value checked inside p2sh_call
     }
 
@@ -130,7 +130,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
         let mut argvs = argvs.clone();
         argvs.push_front( Value::Address(to) );
         let param = Value::Compo(CompoItem::list(argvs)?);
-        setup_vm_run(ctx, absty, abstfrom as u8, from.as_bytes(), param)?;
+        setup_vm_run(ctx, absty, abstfrom as u8, Arc::from(from.as_bytes()), param)?;
         // return value checked inside abst_call
     }
 
@@ -138,7 +138,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
     if tc {
         argvs.push_front( Value::Address(from) );
         let param = Value::Compo(CompoItem::list(argvs)?);
-        setup_vm_run(ctx, absty, abstto as u8, to.as_bytes(), param)?;
+        setup_vm_run(ctx, absty, abstto as u8, Arc::from(to.as_bytes()), param)?;
         // return value checked inside abst_call
     }
 

@@ -547,19 +547,17 @@ impl IRNode for IRNodeArray {
     fn bytecode(&self) -> u8 { self.inst as u8 }
     fn codegen(&self) -> VmrtRes<Vec<u8>> {
         match self.inst {
-            Bytecode::IRLIST => compile_list(self.inst, &self.subs),
+            Bytecode::IRLIST => compile_list(&self.subs),
             Bytecode::IRBLOCK | Bytecode::IRBLOCKR => compile_block(self.inst, &self.subs),
             _ => errf!("IRNodeArray invalid opcode {:?}", self.inst).map_ire(InstInvalid)
         }
     }
     fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
-        let codes = match self.inst {
-            Bytecode::IRLIST => compile_list(self.inst, &self.subs)?,
-            Bytecode::IRBLOCK | Bytecode::IRBLOCKR => compile_block(self.inst, &self.subs)?,
-            _ => return errf!("IRNodeArray invalid opcode {:?}", self.inst).map_ire(InstInvalid)
-        };
-        buf.extend_from_slice(&codes);
-        Ok(())
+        match self.inst {
+            Bytecode::IRLIST => compile_list_into(&self.subs, buf),
+            Bytecode::IRBLOCK | Bytecode::IRBLOCKR => compile_block_into(self.inst, &self.subs, buf),
+            _ => errf!("IRNodeArray invalid opcode {:?}", self.inst).map_ire(InstInvalid),
+        }
     }
     fn serialize(&self) -> Vec<u8> {
         if self.subs.len() > u16::MAX as usize {

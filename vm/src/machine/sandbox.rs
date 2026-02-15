@@ -34,7 +34,7 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
     // do call
     let mut exenv = ExecEnv{ ctx, gas };
     let mut vmb = global_machine_manager().assign(hei);
-    let res = vmb.machine.as_mut().unwrap().main_call(&mut exenv, CodeType::Bytecode, codes);
+    let res = vmb.machine.as_mut().unwrap().main_call(&mut exenv, CodeType::Bytecode, codes.into());
     res.map(|v|(
         gas_limit-*gas, v.to_json()
     ))

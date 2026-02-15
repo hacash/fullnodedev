@@ -62,7 +62,7 @@ pub struct Frame {
     pub depth: usize,
     pub types: Option<FuncArgvTypes>,
     pub callcode_caller_types: Option<FuncArgvTypes>,
-    pub codes: Vec<u8>,
+    pub codes: ByteView,
     pub oprnds: Stack,
     pub locals: Stack,
     pub heap: Heap,
@@ -124,7 +124,7 @@ impl Frame {
     /*
         compile irnode
     */
-    pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: FnObj, param: Option<Value>) -> VmrtErr {
+    pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: &FnObj, param: Option<Value>) -> VmrtErr {
         self.callcode_caller_types = None;
         if let Some(mut p) = param {
             p.canbe_func_argv()?;
@@ -145,7 +145,7 @@ impl Frame {
         let mut host = crate::machine::CtxHost::new(env.ctx);
         execute_code(
             &mut self.pc,
-            &self.codes,
+            self.codes.as_slice(),
             self.mode,
             self.in_callcode,
             self.depth,

@@ -2,7 +2,7 @@
 
 impl CallFrame {
 
-    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: FnObj,
+    pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: &FnObj,
         entry_addr: ContractAddress,
         code_owner: Option<ContractAddress>,
         libs: Option<Vec<ContractAddress>>,
@@ -40,7 +40,7 @@ impl CallFrame {
 
                     let libs_ptr = if depth == 0 { &libs } else { &libs_none };
                     let (chgsrcadr, fnobj) = r.load_must_call(env.ctx, fnptr.clone(), &ctxadr, &curadr, libs_ptr)?;
-                    let fnobj = fnobj.as_ref().clone();
+                    let fnobj = fnobj.as_ref();
                     let fn_is_public = fnobj.check_conf(FnConf::Public);
                     self.check_load_new_contract_and_gas(r, env)?;
                     
@@ -49,7 +49,7 @@ impl CallFrame {
                         let owner = chgsrcadr.as_ref().cloned().unwrap_or_else(|| ctxadr.clone());
                         curr!().curadr = owner;
                         let callcode_param_count = match &fnobj.agvty {
-                            Some(types) => types.param_types().map_ire(CallArgvTypeFail)?.len(),
+                            Some(types) => types.param_count(),
                             None => 0,
                         };
                         if callcode_param_count != 0 {
