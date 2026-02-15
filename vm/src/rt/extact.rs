@@ -39,10 +39,10 @@ pub const CALL_EXTEND_ENV_DEFS: [ExtDefTy; 2] = [
 
 
 pub const CALL_EXTEND_VIEW_DEFS: [ExtDefTy; 4] = [
-    (FuncCheckSign::IDX,      "check_signature",   Bool,  1),
-    (FuncBalance::IDX,        "balance",           Bytes, 1),
-    (FuncDiamondInscNum::IDX, "diamond_insc_num",  U8,    1),
-    (FuncDiamondInscGet::IDX, "diamond_insc_get",  Bytes, 2),
+    (ViewCheckSign::IDX,      "check_signature",   Bool,  1),
+    (ViewBalance::IDX,        "balance",           Bytes, 1),
+    (ViewDiamondInscNum::IDX, "diamond_insc_num",  U8,    1),
+    (ViewDiamondInscGet::IDX, "diamond_insc_get",  Bytes, 2),
 ];
 
 

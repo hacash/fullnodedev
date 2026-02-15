@@ -19,6 +19,9 @@ action_define!{AstIf, 22,
         }
         let mut guard = ast_enter(ctx)?;
         let ctx = guard.ctx();
+        // Whole-node savepoint: if branch execution fails, rollback both
+        // condition side effects and branch side effects.
+        let whole_snap = ctx_snapshot(ctx);
         let snap = ctx_snapshot(ctx);
         let cond_res = self.cond.execute(ctx);
         let (cond_gas, branch_res) = match cond_res {
@@ -33,9 +36,16 @@ action_define!{AstIf, 22,
                 (0, self.br_else.execute(ctx))
             }
         };
-        let (branch_gas, branch_ret) = branch_res?;
+        let (branch_gas, branch_ret) = match branch_res {
+            Ok(v) => v,
+            Err(e) => {
+                ctx_recover(ctx, whole_snap);
+                return Err(e)
+            }
+        };
         gas += cond_gas;
         gas += branch_gas;
+        ctx_merge(ctx, whole_snap);
         Ok(branch_ret)
     })
 }

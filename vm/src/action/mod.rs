@@ -42,8 +42,8 @@ action_register! {
     EnvHeight
     EnvMainAddr
 
-    FuncCheckSign
-    FuncBalance
-    FuncDiamondInscNum
-    FuncDiamondInscGet
+    ViewCheckSign
+    ViewBalance
+    ViewDiamondInscNum
+    ViewDiamondInscGet
 }

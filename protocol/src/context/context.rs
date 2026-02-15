@@ -66,19 +66,19 @@ impl Context for ContextInst<'_> {
     }
 
     fn snapshot_volatile(&self) -> Box<dyn Any> {
+        // Note: `level` is NOT included here because AstLevelGuard (RAII)
+        // already restores it on all exit paths (success, error, panic).
         Box::new((
             self.tex_ledger.clone(),
             self.psh.keys().cloned().collect::<HashSet<Address>>(),
-            self.level,
         ))
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>, usize)>() else { return };
-        let (tex, keys, level) = *snap;
+        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>)>() else { return };
+        let (tex, keys) = *snap;
         self.tex_ledger = tex;
         self.psh.retain(|k, _| keys.contains(k));
-        self.level = level;
     }
 
     fn reset_for_new_tx(&mut self, txr: &dyn TransactionRead) {

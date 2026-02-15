@@ -271,9 +271,9 @@ pub enum Bytecode {
 
 use Bytecode::*;
 
-impl Into<u8> for Bytecode {
-    fn into(self) -> u8 {
-        self as u8
+impl From<Bytecode> for u8 {
+    fn from(val: Bytecode) -> u8 {
+        val as u8
     }
 }
 

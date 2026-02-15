@@ -34,11 +34,11 @@ action_define!{EnvCoinbaseAddr, 0x0703,
 
 
 
-/**************** func *****************/
+/**************** view *****************/
 
 
 
-action_define!{FuncCheckSign, 0x0601, 
+action_define!{ViewCheckSign, 0x0601, 
     ActLv::Any, false, [], {
         addr: Address
     },
@@ -52,7 +52,7 @@ action_define!{FuncCheckSign, 0x0601,
 }
 
 
-action_define!{FuncBalance, 0x0602, 
+action_define!{ViewBalance, 0x0602, 
     ActLv::Any, false, [], {
         addr: Address
     },
@@ -68,7 +68,7 @@ action_define!{FuncBalance, 0x0602,
 }
 
 
-action_define!{FuncDiamondInscNum, 0x0603, 
+action_define!{ViewDiamondInscNum, 0x0603, 
     ActLv::Any, false, [], {
         diamond: DiamondName
     },
@@ -87,7 +87,7 @@ action_define!{FuncDiamondInscNum, 0x0603,
 }
 
 
-action_define!{FuncDiamondInscGet, 0x0604, 
+action_define!{ViewDiamondInscGet, 0x0604, 
     ActLv::Any, false, [], {
         diamond: DiamondName
         inscidx: Uint1

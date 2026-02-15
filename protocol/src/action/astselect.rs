@@ -18,10 +18,12 @@ action_define!{AstSelect, 21,
         }
         let mut guard = ast_enter(ctx)?;
         let ctx = guard.ctx();
+        // Whole-node savepoint: if this AstSelect finally returns Err,
+        // rollback all partial commits done by successful children.
         let slt_min = *self.exe_min as usize;
         let slt_max = *self.exe_max as usize;
         let slt_num = self.actions.length();
-        // check number
+        // check number before snapshot to avoid state fork leak on early return
         if slt_min > slt_max {
             return errf!("action ast select max cannot less than min")
         }
@@ -31,6 +33,7 @@ action_define!{AstSelect, 21,
         if slt_num > TX_ACTIONS_MAX {
             return errf!("action ast select num cannot more than {}", TX_ACTIONS_MAX)
         }
+        let whole_snap = ctx_snapshot(ctx);
         // execute
         let mut ok = 0;
         let mut rv = vec![];
@@ -52,9 +55,11 @@ action_define!{AstSelect, 21,
         }
         // check at least
         if ok < slt_min {
+            ctx_recover(ctx, whole_snap);
             return errf!("action ast select must succeed at least {} but only {}", slt_min, ok)
         }
         // ok
+        ctx_merge(ctx, whole_snap);
         Ok(rv)
     })
 }
