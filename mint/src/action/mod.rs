@@ -39,5 +39,9 @@ action_register! {
     DiamondInscription         // 32
     DiamondInscriptionClear    // 33
 
+    // HIP-22 inscription upgrade
+    DiamondInscriptionMove     // 34
+    DiamondInscriptionDrop     // 35
+    DiamondInscriptionEdit     // 36
 
 }

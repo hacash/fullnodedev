@@ -13,7 +13,7 @@ dist/
 *.loc/
 *.contractmap.json
 *.deploy.json
-
+*CLAUDE.*
 
 chainv*/
 node2/

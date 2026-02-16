@@ -18,7 +18,7 @@ action_define!{ContractDeploy, 99,
     {   
         protocol_cost: Amount
         nonce: Uint4 
-        construct_argv: BytesW1 // max 1024
+        construct_argv: BytesW2 // checked by SpaceCap::max_value_size at runtime
         _marks_:   Fixed4 // zero
         contract: ContractSto
     },

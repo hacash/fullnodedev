@@ -2,7 +2,7 @@
 
 #[derive(Clone)]
 pub struct Contract {
-    argv: BytesW1,
+    argv: BytesW2,
     ctrt: ContractSto
 }
 
@@ -15,7 +15,7 @@ impl Contract {
     
     pub fn new() -> Self {
         Self {
-            argv: BytesW1::new(),
+            argv: BytesW2::new(),
             ctrt: ContractSto::new()
         }
     }
@@ -43,7 +43,7 @@ impl Contract {
     }
 
     pub fn argv(mut self, a: Vec<u8>) -> Self {
-        self.argv = BytesW1::from(a).unwrap();
+        self.argv = BytesW2::from(a).unwrap();
         self
     }
 

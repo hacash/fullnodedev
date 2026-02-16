@@ -14,7 +14,7 @@ use sys::{Account, curtimes};
 fn estimate_protocol_cost_auto(
     txfee: &Amount,
     nonce: Uint4,
-    argv: BytesW1,
+    argv: BytesW2,
     sto: &vm::ContractSto,
 ) -> Amount {
     const SAFETY_NUM: u128 = 103; // +3% headroom

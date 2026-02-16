@@ -17,6 +17,7 @@ pub enum ActLv {
     Ast,          // in act cond AST
     MainCall,     // tx main call (depth=0)
     ContractCall, // contract/abst call
+    AnyInCall,    // only callable inside VM call context (main/contract call)
     Any,          // any context
 }
 
@@ -30,6 +31,7 @@ impl ActLv {
             Guard | Ast => Some(ACTION_CTX_LEVEL_AST_MAX),
             MainCall => Some(ACTION_CTX_LEVEL_CALL_MAIN),
             ContractCall => Some(ACTION_CTX_LEVEL_CALL_CONTRACT),
+            AnyInCall => None, // checked by lower-bound rule in check_action_level
             Any => None, // truly unlimited
         }
     }

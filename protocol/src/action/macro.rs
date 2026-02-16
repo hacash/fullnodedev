@@ -239,6 +239,14 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
                 ctx_level
             )
         }
+    } else if alv == ActLv::AnyInCall {
+        if ctx_level < ACTION_CTX_LEVEL_CALL_MAIN {
+            return errf!(
+                "action {} just can execute in VM call context (ctx >= {})",
+                kid,
+                ACTION_CTX_LEVEL_CALL_MAIN
+            )
+        }
     } else if alv == ActLv::Top {
         check_level_top!{"TOP"}
     } else if let Some(max_ctx_level) = alv.max_ctx_level() {

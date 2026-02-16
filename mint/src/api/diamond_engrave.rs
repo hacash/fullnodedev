@@ -1,3 +1,15 @@
+fn push_diamond_engrave_item(
+    datalist: &mut Vec<Value>,
+    txhx: &Hash,
+    with_tx_hash: bool,
+    mut obj: serde_json::Map<String, Value>,
+) {
+    if with_tx_hash {
+        obj.insert("tx_hash".to_owned(), json!(txhx.to_hex()));
+    }
+    datalist.push(Value::Object(obj));
+}
+
 fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let height = req.query_u64("height", 0);
     let tx_hash = q_bool(&req, "tx_hash", false);
@@ -21,23 +33,76 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         for act in tx.actions() {
             if let Some(a) = action::DiamondInscription::downcast(act) {
                 let mut obj = serde_json::Map::new();
+                obj.insert("action".to_owned(), json!("inscription"));
                 obj.insert("diamonds".to_owned(), json!(a.diamonds.readable()));
                 obj.insert(
                     "inscription".to_owned(),
                     json!(a.engraved_content.to_readable_or_hex()),
                 );
-                if tx_hash {
-                    obj.insert("tx_hash".to_owned(), json!(txhx.to_hex()));
-                }
-                datalist.push(Value::Object(obj));
+                obj.insert("engraved_type".to_owned(), json!(*a.engraved_type));
+                obj.insert(
+                    "protocol_cost".to_owned(),
+                    json!(a.protocol_cost.to_fin_string()),
+                );
+                push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
             } else if let Some(a) = action::DiamondInscriptionClear::downcast(act) {
                 let mut obj = serde_json::Map::new();
+                obj.insert("action".to_owned(), json!("clear"));
                 obj.insert("diamonds".to_owned(), json!(a.diamonds.readable()));
-                obj.insert("clear".to_owned(), json!(true));
-                if tx_hash {
-                    obj.insert("tx_hash".to_owned(), json!(txhx.to_hex()));
-                }
-                datalist.push(Value::Object(obj));
+                obj.insert(
+                    "protocol_cost".to_owned(),
+                    json!(a.protocol_cost.to_fin_string()),
+                );
+                push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
+            } else if let Some(a) = action::DiamondInscriptionMove::downcast(act) {
+                let from = a.from_diamond.to_readable();
+                let to = a.to_diamond.to_readable();
+                let mut obj = serde_json::Map::new();
+                obj.insert("action".to_owned(), json!("move"));
+                // Use `diamonds` as unified literal carrier (source + target).
+                obj.insert("diamonds".to_owned(), json!(format!("{}{}", from, to)));
+                obj.insert(
+                    "index".to_owned(),
+                    json!(*a.index as u64),
+                );
+                obj.insert(
+                    "protocol_cost".to_owned(),
+                    json!(a.protocol_cost.to_fin_string()),
+                );
+                push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
+            } else if let Some(a) = action::DiamondInscriptionDrop::downcast(act) {
+                let dia = a.diamond.to_readable();
+                let mut obj = serde_json::Map::new();
+                obj.insert("action".to_owned(), json!("drop"));
+                obj.insert("diamonds".to_owned(), json!(dia));
+                obj.insert(
+                    "index".to_owned(),
+                    json!(*a.index as u64),
+                );
+                obj.insert(
+                    "protocol_cost".to_owned(),
+                    json!(a.protocol_cost.to_fin_string()),
+                );
+                push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
+            } else if let Some(a) = action::DiamondInscriptionEdit::downcast(act) {
+                let dia = a.diamond.to_readable();
+                let mut obj = serde_json::Map::new();
+                obj.insert("action".to_owned(), json!("edit"));
+                obj.insert("diamonds".to_owned(), json!(dia));
+                obj.insert(
+                    "index".to_owned(),
+                    json!(*a.index as u64),
+                );
+                obj.insert("engraved_type".to_owned(), json!(*a.engraved_type));
+                obj.insert(
+                    "protocol_cost".to_owned(),
+                    json!(a.protocol_cost.to_fin_string()),
+                );
+                obj.insert(
+                    "inscription".to_owned(),
+                    json!(a.engraved_content.to_readable_or_hex()),
+                );
+                push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
             }
         }
     };

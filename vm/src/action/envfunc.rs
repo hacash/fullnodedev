@@ -6,7 +6,7 @@
 
 
 action_define!{EnvHeight, 0x0701, 
-    ActLv::Any, false, [], {},
+    ActLv::AnyInCall, false, [], {},
     (self, "Syscall: Get block height".to_owned()),
     (self, ctx, _gas {
         Ok(ctx.env().block.height.to_be_bytes().to_vec())
@@ -15,7 +15,7 @@ action_define!{EnvHeight, 0x0701,
 
 
 action_define!{EnvMainAddr, 0x0702, 
-    ActLv::Any, false, [], {},
+    ActLv::AnyInCall, false, [], {},
     (self, "Syscall: Get main address".to_owned()),
     (self, ctx, _gas {
         Ok(ctx.env().tx.main.to_vec())
@@ -24,7 +24,7 @@ action_define!{EnvMainAddr, 0x0702,
 
 
 action_define!{EnvCoinbaseAddr, 0x0703, 
-    ActLv::Any, false, [], {},
+    ActLv::AnyInCall, false, [], {},
     (self, "Syscall: Get coinbase address".to_owned()),
     (self, ctx, _gas {
         let cbadr = ctx.env().block.coinbase.clone();
@@ -39,7 +39,7 @@ action_define!{EnvCoinbaseAddr, 0x0703,
 
 
 action_define!{ViewCheckSign, 0x0601, 
-    ActLv::Any, false, [], {
+    ActLv::AnyInCall, false, [], {
         addr: Address
     },
     (self, format!("Syscall: Check signature for {}", self.addr)),
@@ -53,7 +53,7 @@ action_define!{ViewCheckSign, 0x0601,
 
 
 action_define!{ViewBalance, 0x0602, 
-    ActLv::Any, false, [], {
+    ActLv::AnyInCall, false, [], {
         addr: Address
     },
     (self, format!("Syscall: Get balance for {}", self.addr)),
@@ -69,7 +69,7 @@ action_define!{ViewBalance, 0x0602,
 
 
 action_define!{ViewDiamondInscNum, 0x0603, 
-    ActLv::Any, false, [], {
+    ActLv::AnyInCall, false, [], {
         diamond: DiamondName
     },
     (self, format!("Syscall: Get diamond inscription number for <{}>", self.diamond.to_readable())),
@@ -88,7 +88,7 @@ action_define!{ViewDiamondInscNum, 0x0603,
 
 
 action_define!{ViewDiamondInscGet, 0x0604, 
-    ActLv::Any, false, [], {
+    ActLv::AnyInCall, false, [], {
         diamond: DiamondName
         inscidx: Uint1
     },
@@ -107,4 +107,3 @@ action_define!{ViewDiamondInscGet, 0x0604,
         Ok(insc.to_vec())
     })
 }
-

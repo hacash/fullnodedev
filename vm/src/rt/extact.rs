@@ -32,9 +32,10 @@ pub const CALL_EXTEND_ACTION_DEFS: [ExtDefTy; 13] = [
 ];
 
 
-pub const CALL_EXTEND_ENV_DEFS: [ExtDefTy; 2] = [
-    (EnvHeight::IDX,   "block_height",             U64,  0),
-    (EnvMainAddr::IDX, "tx_main_address", ValueTy::Address,  0),
+pub const CALL_EXTEND_ENV_DEFS: [ExtDefTy; 3] = [
+    (EnvHeight::IDX,       "block_height",           U64,              0),
+    (EnvCoinbaseAddr::IDX, "block_coinbase_address", ValueTy::Address, 0),
+    (EnvMainAddr::IDX,     "tx_main_address",        ValueTy::Address, 0),
 ];
 
 
@@ -128,5 +129,14 @@ mod extact_tests {
     fn extaction_allowed_in_main_mode() {
         let action_id = CALL_EXTEND_ACTION_DEFS[0].0;
         assert!(ensure_extend_call_allowed(ExecMode::Main, Bytecode::EXTACTION, action_id).is_ok());
+    }
+
+    #[test]
+    fn extenv_coinbase_is_registered_and_allowed() {
+        let env_id = EnvCoinbaseAddr::IDX;
+        let def = search_ext_by_id(env_id, &CALL_EXTEND_ENV_DEFS)
+            .expect("EnvCoinbaseAddr must exist in CALL_EXTEND_ENV_DEFS");
+        assert_eq!(def.1, "block_coinbase_address");
+        assert!(ensure_extend_call_allowed(ExecMode::Main, Bytecode::EXTENV, env_id).is_ok());
     }
 }

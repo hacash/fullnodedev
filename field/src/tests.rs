@@ -173,5 +173,21 @@ mod tests {
         // from_list_checked rejects duplicates
         let dup = vec![DiamondName::from(*b"WTYUIA"), DiamondName::from(*b"WTYUIA")];
         assert!(DiamondNameListMax200::from_list_checked(dup).is_err());
+
+        // check() also rejects duplicates even when list is created from raw bytes
+        // (defense against manually crafted binary payloads).
+        let mut raw200 = vec![2u8];
+        raw200.extend_from_slice(b"WTYUIA");
+        raw200.extend_from_slice(b"WTYUIA");
+        let (list200, used200) = DiamondNameListMax200::create(&raw200).unwrap();
+        assert_eq!(used200, raw200.len());
+        assert!(list200.check().is_err());
+
+        let mut raw60000 = vec![0u8, 2u8];
+        raw60000.extend_from_slice(b"WTYUIA");
+        raw60000.extend_from_slice(b"WTYUIA");
+        let (list60000, used60000) = DiamondNameListMax60000::create(&raw60000).unwrap();
+        assert_eq!(used60000, raw60000.len());
+        assert!(list60000.check().is_err());
     }
 }

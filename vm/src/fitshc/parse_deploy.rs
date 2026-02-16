@@ -1,7 +1,7 @@
 use super::state::ParseState;
 use crate::Token::*;
 use crate::rt::*;
-use field::{Amount, BytesW1, Uint4};
+use field::{Amount, BytesW2, Uint4};
 use sys::*;
 use sys::{Ret, errf};
 
@@ -9,7 +9,7 @@ use sys::{Ret, errf};
 pub struct DeployInfo {
     pub protocol_cost: Option<Amount>,
     pub nonce: Option<Uint4>,
-    pub construct_argv: Option<BytesW1>,
+    pub construct_argv: Option<BytesW2>,
     pub matches: bool,
 }
 
@@ -105,7 +105,7 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
                 } else {
                     s.as_bytes().to_vec()
                 };
-                info.construct_argv = Some(BytesW1::from(bts).unwrap());
+                info.construct_argv = Some(BytesW2::from(bts).map_err(|e| e.to_string())?);
                 state.advance();
             } else if let Some(Identifier(v)) = state.current() {
                 let bts = if let Some(hexstr) = v.strip_prefix("0x") {
@@ -113,7 +113,7 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
                 } else {
                     v.as_bytes().to_vec()
                 };
-                info.construct_argv = Some(BytesW1::from(bts).unwrap());
+                info.construct_argv = Some(BytesW2::from(bts).map_err(|e| e.to_string())?);
                 state.advance();
             } else {
                 return errf!("expected argv value");

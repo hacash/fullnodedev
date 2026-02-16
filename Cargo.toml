@@ -50,8 +50,9 @@ hex = "0.4.3"
 serde_json = "1.0"
 
 [features]
-default = ["db-sled", "hip20", "tex", "ast", "vm"] #, "ocl"]
+default = ["db-sled", "hip20", "hip22", "tex", "ast", "vm"] #, "ocl"]
 hip20 = ["mint/hip20"]
+hip22 = ["mint/hip22"]
 tex = ["protocol/tex"]
 ast = ["protocol/ast"]
 vm = ["dep:vm", "field/vm", "protocol/vm"]

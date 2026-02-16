@@ -1,4 +1,3 @@
-
 fn routes() -> Vec<ApiRoute> {
     use ApiRoute as R;
     vec![
@@ -23,7 +22,26 @@ fn routes() -> Vec<ApiRoute> {
         R::get("/query/diamond/bidding", diamond_bidding),
         R::get("/query/diamond/views", diamond_views),
         R::get("/query/diamond/engrave", diamond_engrave),
-        R::get("/query/diamond/inscription_protocol_cost", diamond_inscription_protocol_cost,),
+        R::get(
+            "/query/diamond/inscription_protocol_cost",
+            diamond_inscription_protocol_cost,
+        ),
+        R::get(
+            "/query/diamond/inscription_protocol_cost/append",
+            diamond_inscription_protocol_cost_append,
+        ),
+        R::get(
+            "/query/diamond/inscription_protocol_cost/move",
+            diamond_inscription_protocol_cost_move,
+        ),
+        R::get(
+            "/query/diamond/inscription_protocol_cost/edit",
+            diamond_inscription_protocol_cost_edit,
+        ),
+        R::get(
+            "/query/diamond/inscription_protocol_cost/drop",
+            diamond_inscription_protocol_cost_drop,
+        ),
         R::get("/query/supply", supply),
         R::get("/query/miner/notice", miner_notice),
         R::get("/query/miner/pending", miner_pending),

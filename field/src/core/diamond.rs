@@ -78,10 +78,14 @@ impl $class {
         if reallen > $max {
             return errf!("diamonds quantity cannot over {}", $max)
         }
-        // check name
+        // check name + duplicate
+        let mut seen = HashSet::with_capacity(reallen);
         for v in &self.lists {
             if ! DiamondName::is_valid(v.as_ref()) {
                 return errf!("diamond name {} is not valid", v.to_readable())
+            }
+            if !seen.insert(*v) {
+                return errf!("diamond name {} is duplicate", v.to_readable())
             }
         }
         // success
@@ -182,5 +186,4 @@ impl $class {
 
 define_diamond_name_list!{ DiamondNameListMax200,   Uint1, 200 }
 define_diamond_name_list!{ DiamondNameListMax60000, Uint2, 60000 }
-
 

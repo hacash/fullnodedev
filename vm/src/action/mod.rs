@@ -41,6 +41,7 @@ action_register! {
 
     EnvHeight
     EnvMainAddr
+    EnvCoinbaseAddr
 
     ViewCheckSign
     ViewBalance

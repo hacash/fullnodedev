@@ -18,3 +18,4 @@ getrandom = "0.3.2"
 
 [features]
 hip20 = []
+hip22 = []
