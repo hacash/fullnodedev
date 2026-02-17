@@ -241,13 +241,18 @@ pub fn execute_code(
         *gas_usable -= gas_table.gas(instbyte); // 
         // println!("gas usable {} cp: {}, inst: {:?}", *gas_usable, gas_table.gas(instbyte), instruction);
 
-	    macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
-            if in_callcode && EXTACTION == $act_kind {
-                return itr_err_fmt!(ExtActDisabled, "extend action not allowed in callcode")
-            }
-            if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
-                return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
-            }
+		    macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
+	            if in_callcode && EXTACTION == $act_kind {
+	                return itr_err_fmt!(ExtActDisabled, "extend action not allowed in callcode")
+	            }
+	            // `ensure_extend_call_allowed` already blocks EXTACTION in non-Main mode.
+	            // Keep `depth > 0` as a belt-and-suspenders runtime guard: with current
+	            // semantics Main starts at depth=0 and CALLCODE is in-place (no new frame),
+	            // so Main+depth>0 should be unreachable today, but this prevents accidental
+	            // privilege widening if future call paths ever re-enter EXTACTION from nested frames.
+	            if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
+	                return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
+	            }
             let idx = pu8!();
             ensure_extend_call_allowed(mode, $act_kind, idx)?;
             let kid = u16::from_be_bytes([instbyte, idx]);
@@ -858,6 +863,9 @@ fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr
     match mode {
         Main    if not_ist!(CALL, CALLVIEW,   CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInMain),
         P2sh    if not_ist!(         CALLVIEW, CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInP2sh),
+        // Abst intentionally allows this/self/super: root frame keeps state_addr as the
+        // concrete contract address passed by VM entry, while code_owner may come from
+        // inherited abstract function dispatch.
         Abst    if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
         View    if not_ist!(         CALLVIEW, CALLPURE            ) => itr_err_code!(CallLocInView),
         Pure    if not_ist!(                  CALLPURE            ) => itr_err_code!(CallInPure),

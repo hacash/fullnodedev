@@ -393,6 +393,8 @@ impl Machine {
         let Some((owner, fnobj)) = self.r.load_abstfn(env.ctx, &contract_addr, cty)? else {
             return errf!("abst call {:?} not find in {}", cty, adr)
         };
+        // Keep state anchored to the concrete contract address, even when abstract entry
+        // body is inherited from a parent owner. This preserves this/self split semantics.
         let rv = self.do_call(env, ExecMode::Abst, fnobj.as_ref(), contract_addr, owner, None, Some(param))?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
@@ -423,7 +425,7 @@ impl Machine {
 mod machine_test {
 
     use super::*;
-    use crate::contract::{Contract, Func};
+    use crate::contract::{Abst, Contract, Func};
     use crate::lang::lang_to_bytecode;
     use crate::rt::CodeType;
 
@@ -433,6 +435,55 @@ mod machine_test {
     use testkit::sim::context::make_ctx_with_state;
     use testkit::sim::state::FlatMemState as StateMem;
     use testkit::sim::tx::StubTxBuilder;
+    use crate::value::ValueTy as VT;
+
+    fn test_base_addr() -> Address {
+        Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap()
+    }
+
+    fn test_contract(base: &Address, nonce: u32) -> crate::ContractAddress {
+        crate::ContractAddress::calculate(base, &Uint4::from(nonce))
+    }
+
+    fn run_main_script(
+        base_addr: Address,
+        tx_libs: Vec<crate::ContractAddress>,
+        mut ext_state: StateMem,
+        main_script: &str,
+    ) -> Ret<Value> {
+        let main_codes = lang_to_bytecode(main_script).unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+        env.tx.addrs = tx_libs.iter().map(|a| a.clone().into_addr()).collect();
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .addrs(env.tx.addrs.clone())
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(std::mem::take(&mut ext_state)), &tx);
+
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas,
+        };
+        let mut machine = Machine::create(Resoure::create(1));
+        machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+    }
+
+    fn assert_err_contains(res: Ret<Value>, needle: &str) {
+        let err = res.expect_err("expected error");
+        assert!(
+            err.contains(needle),
+            "expected error to contain '{needle}', got '{err}'"
+        );
+    }
 
     #[test]
     fn calltargets_resolve_under_callview_and_inherits() {
@@ -611,6 +662,297 @@ mod machine_test {
             end
         "##;
         assert!(run_main(callcode_script).is_err(), "CALLCODE should not resolve inherits");
+    }
+
+    #[test]
+    fn call_outer_requires_public_visibility() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 21);
+
+        let target_sto = Contract::new()
+            .func(Func::new("hidden").unwrap().fitsh("return 1").unwrap())
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_target, &target_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            return C.hidden()
+        "##;
+        let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
+        assert_err_contains(res, "CallNotPublic");
+    }
+
+    #[test]
+    fn call_libidx_overflow_is_reported() {
+        let base_addr = test_base_addr();
+        let script = r##"
+            lib C = 0
+            return C.anything()
+        "##;
+        let res = run_main_script(base_addr, vec![], StateMem::default(), script);
+        assert_err_contains(res, "CallLibIdxOverflow");
+    }
+
+    #[test]
+    fn callthis_callself_callsuper_are_forbidden_in_main_mode() {
+        let base_addr = test_base_addr();
+        let scripts = [
+            "return this.nope()",
+            "return self.nope()",
+            "return super.nope()",
+        ];
+        for sc in scripts {
+            let res = run_main_script(base_addr, vec![], StateMem::default(), sc);
+            assert_err_contains(res, "CallOtherInMain");
+        }
+    }
+
+    #[test]
+    fn abst_this_and_self_follow_state_addr_and_code_owner() {
+        let base_addr = test_base_addr();
+        let contract_child = test_contract(&base_addr, 28);
+        let contract_parent = test_contract(&base_addr, 29);
+
+        let parent_sto = Contract::new()
+            .syst(
+                Abst::new(AbstCall::Construct)
+                    .fitsh(
+                        r##"
+                        let v = this.id() * 100 + self.id()
+                        assert v == 102
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(Func::new("id").unwrap().fitsh("return 2").unwrap())
+            .into_sto();
+        let child_sto = Contract::new()
+            .inh(contract_parent.to_addr())
+            .func(Func::new("id").unwrap().fitsh("return 1").unwrap())
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_parent, &parent_sto);
+            vmsta.contract_set(&contract_child, &child_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas,
+        };
+        let mut machine = Machine::create(Resoure::create(1));
+        let rv = machine
+            .abst_call(
+                &mut exec,
+                AbstCall::Construct,
+                contract_child,
+                Value::Bytes(vec![]),
+            )
+            .unwrap();
+        assert!(!rv.check_true(), "abst call should finish without assertion failure");
+    }
+
+    #[test]
+    fn callview_and_callpure_enforce_mode_call_whitelist() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 22);
+        let target_sto = Contract::new()
+            .func(
+                Func::new("bad_view")
+                    .unwrap()
+                    .public()
+                    .fitsh("return this.nope()")
+                    .unwrap(),
+            )
+            .func(
+                Func::new("bad_pure")
+                    .unwrap()
+                    .public()
+                    .fitsh("return this.nope()")
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_target, &target_sto);
+        }
+
+        let view_script = r##"
+            lib C = 0
+            return C:bad_view()
+        "##;
+        let pure_script = r##"
+            lib C = 0
+            return C::bad_pure()
+        "##;
+
+        let view_res = run_main_script(
+            base_addr.clone(),
+            vec![contract_target.clone()],
+            ext_state.clone(),
+            view_script,
+        );
+        assert_err_contains(view_res, "CallLocInView");
+
+        let pure_res = run_main_script(base_addr, vec![contract_target], ext_state, pure_script);
+        assert_err_contains(pure_res, "CallInPure");
+    }
+
+    #[test]
+    fn callcode_rejects_parametrized_target_and_nested_calls() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 23);
+        let target_sto = Contract::new()
+            .func(
+                Func::new("need_arg")
+                    .unwrap()
+                    .types(None, vec![VT::U64])
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .func(
+                Func::new("nested")
+                    .unwrap()
+                    .fitsh("return this.nope()")
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_target, &target_sto);
+        }
+
+        let need_arg_script = r##"
+            lib C = 0
+            callcode C::need_arg
+            end
+        "##;
+        let nested_script = r##"
+            lib C = 0
+            callcode C::nested
+            end
+        "##;
+
+        let arg_res = run_main_script(
+            base_addr.clone(),
+            vec![contract_target.clone()],
+            ext_state.clone(),
+            need_arg_script,
+        );
+        assert_err_contains(arg_res, "CallArgvTypeFail");
+
+        let nested_res = run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
+        assert_err_contains(nested_res, "CallInCallcode");
+    }
+
+    #[test]
+    fn callsuper_uses_direct_parent_order() {
+        let base_addr = test_base_addr();
+        let contract_a = test_contract(&base_addr, 24);
+        let contract_b = test_contract(&base_addr, 25);
+        let contract_child = test_contract(&base_addr, 26);
+
+        let a_sto = Contract::new()
+            .func(Func::new("f").unwrap().fitsh("return 10").unwrap())
+            .into_sto();
+        let b_sto = Contract::new()
+            .func(Func::new("f").unwrap().fitsh("return 20").unwrap())
+            .into_sto();
+        let child_sto = Contract::new()
+            .inh(contract_a.to_addr())
+            .inh(contract_b.to_addr())
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .public()
+                    .fitsh(
+                        r##"
+                        assert super.f() == 10
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_a, &a_sto);
+            vmsta.contract_set(&contract_b, &b_sto);
+            vmsta.contract_set(&contract_child, &child_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            return C.run()
+        "##;
+        let res = run_main_script(base_addr, vec![contract_child], ext_state, script);
+        assert!(res.is_ok(), "super should choose first direct parent in inherits order");
+    }
+
+    #[test]
+    fn callview_callpure_and_callcode_local_lookup_positive_paths() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 27);
+        let target_sto = Contract::new()
+            .func(
+                Func::new("view_ok")
+                    .unwrap()
+                    .fitsh("return 7")
+                    .unwrap(),
+            )
+            .func(
+                Func::new("pure_ok")
+                    .unwrap()
+                    .fitsh("return 8")
+                    .unwrap(),
+            )
+            .func(
+                Func::new("code_ok")
+                    .unwrap()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_target, &target_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            assert C:view_ok() == 7
+            assert C::pure_ok() == 8
+            callcode C::code_ok
+            end
+        "##;
+        let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
+        assert!(res.is_ok(), "local lookup should succeed for view/pure/callcode");
     }
 
     #[test]

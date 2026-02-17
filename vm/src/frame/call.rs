@@ -1,5 +1,35 @@
                         // println!("CALLCODE() state_addr={}, code_owner={}", state_addr.prefix(7), code_owner.prefix(7));
 
+fn resolve_non_outer_code_owner(
+    target: &CallTarget,
+    next_code_owner: Option<ContractAddress>,
+    state_addr: &ContractAddress,
+    code_owner: &ContractAddress,
+) -> VmrtRes<ContractAddress> {
+    match target {
+        CallTarget::Libidx(_) => {
+            // Invariant: lib-index lookup must always produce concrete code owner.
+            let Some(owner) = next_code_owner else {
+                return itr_err_fmt!(CallNotExist, "libidx call target missing code owner");
+            };
+            Ok(owner)
+        }
+        CallTarget::This => Ok(next_code_owner.unwrap_or(state_addr.clone())),
+        CallTarget::Self_ | CallTarget::Super => Ok(next_code_owner.unwrap_or(code_owner.clone())),
+    }
+}
+
+fn resolve_outer_frame_addrs(
+    next_state_addr: Option<ContractAddress>,
+    next_code_owner: Option<ContractAddress>,
+) -> VmrtRes<(ContractAddress, ContractAddress)> {
+    let Some(state_addr) = next_state_addr else {
+        return itr_err_fmt!(CallNotExist, "outer call target missing state address");
+    };
+    let owner = next_code_owner.unwrap_or_else(|| state_addr.clone());
+    Ok((state_addr, owner))
+}
+
 impl CallFrame {
 
     pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: &FnObj,
@@ -75,8 +105,13 @@ impl CallFrame {
                     
                     // Check public access for outer calls
                     if let Outer = fnptr.mode {
-                        let cadr = next_state_addr.as_ref().or(next_code_owner.as_ref()).unwrap();
                         if !fn_is_public {
+                            let Some(cadr) = next_state_addr.as_ref().or(next_code_owner.as_ref()) else {
+                                return itr_err_fmt!(
+                                    CallNotExist,
+                                    "outer call target missing address for visibility check"
+                                );
+                            };
                             return itr_err_fmt!(CallNotPublic, "contract {} func sign {}", cadr.to_readable(), fnptr.fnsign.to_hex());
                         }
                     }
@@ -90,31 +125,22 @@ impl CallFrame {
                     // Set context addresses based on call mode
                     match fnptr.mode {
                         Inner | View | Pure => {
-                            let owner = match fnptr.target {
-                                CallTarget::Libidx(_) => {
-                                    // Invariant: lib-index lookup must always produce concrete code owner.
-                                    let Some(owner) = next_code_owner else {
-                                        return itr_err_fmt!(
-                                            CallNotExist,
-                                            "libidx call target missing code owner"
-                                        );
-                                    };
-                                    owner
-                                }
-                                CallTarget::This => {
-                                    next_code_owner.unwrap_or(state_addr.clone())
-                                }
-                                CallTarget::Self_ | CallTarget::Super => {
-                                    next_code_owner.unwrap_or(code_owner.clone())
-                                }
-                            };
+                            // Non-Outer calls keep storage context inherited by Frame::next().
+                            // Only dispatch owner can change (this/self/super or lib lookup).
+                            // CALLCODE may rewrite code_owner in-place, but call instructions are
+                            // blocked while in_callcode=true (check_call_mode), so this branch
+                            // always handles normal nested frames.
+                            let owner = resolve_non_outer_code_owner(
+                                &fnptr.target,
+                                next_code_owner,
+                                &state_addr,
+                                &code_owner,
+                            )?;
                             curr!().code_owner = owner;
                         }
                         Outer => {
-                            let target_state_addr = next_state_addr
-                                .expect("outer call must provide target state address");
-                            let owner = next_code_owner
-                                .unwrap_or_else(|| target_state_addr.clone());
+                            let (target_state_addr, owner) =
+                                resolve_outer_frame_addrs(next_state_addr, next_code_owner)?;
                             curr!().state_addr = target_state_addr;
                             curr!().code_owner = owner;
                         }
@@ -225,5 +251,88 @@ mod gas_tests {
         assert_eq!(gas, 966);
         assert_eq!(r.contract_load_bytes, 0);
         assert_eq!(call.contract_count, 1);
+    }
+}
+
+#[cfg(test)]
+mod owner_resolution_tests {
+    use super::*;
+    use field::{Address, Uint4};
+
+    fn mk_contract_addr(n: u32) -> ContractAddress {
+        let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        ContractAddress::calculate(&base, &Uint4::from(n))
+    }
+
+    #[test]
+    fn libidx_requires_loader_owner() {
+        let state_addr = mk_contract_addr(1);
+        let code_owner = mk_contract_addr(2);
+        let err = resolve_non_outer_code_owner(
+            &CallTarget::Libidx(0),
+            None,
+            &state_addr,
+            &code_owner,
+        )
+        .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallNotExist);
+    }
+
+    #[test]
+    fn libidx_prefers_loader_owner() {
+        let state_addr = mk_contract_addr(1);
+        let code_owner = mk_contract_addr(2);
+        let loader_owner = mk_contract_addr(3);
+        let got = resolve_non_outer_code_owner(
+            &CallTarget::Libidx(0),
+            Some(loader_owner.clone()),
+            &state_addr,
+            &code_owner,
+        )
+        .unwrap();
+        assert_eq!(got, loader_owner);
+    }
+
+    #[test]
+    fn this_falls_back_to_state_addr() {
+        let state_addr = mk_contract_addr(1);
+        let code_owner = mk_contract_addr(2);
+        let got = resolve_non_outer_code_owner(
+            &CallTarget::This,
+            None,
+            &state_addr,
+            &code_owner,
+        )
+        .unwrap();
+        assert_eq!(got, state_addr);
+    }
+
+    #[test]
+    fn self_falls_back_to_current_code_owner() {
+        let state_addr = mk_contract_addr(1);
+        let code_owner = mk_contract_addr(2);
+        let got = resolve_non_outer_code_owner(
+            &CallTarget::Self_,
+            None,
+            &state_addr,
+            &code_owner,
+        )
+        .unwrap();
+        assert_eq!(got, code_owner);
+    }
+
+    #[test]
+    fn outer_requires_state_addr() {
+        let err = resolve_outer_frame_addrs(None, Some(mk_contract_addr(2))).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallNotExist);
+    }
+
+    #[test]
+    fn outer_falls_back_owner_to_state_addr() {
+        let state_addr = mk_contract_addr(1);
+        let (resolved_state, resolved_owner) =
+            resolve_outer_frame_addrs(Some(state_addr.clone()), None).unwrap();
+        assert_eq!(resolved_state, state_addr);
+        assert_eq!(resolved_owner, state_addr);
     }
 }
