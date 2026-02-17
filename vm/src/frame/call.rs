@@ -64,6 +64,9 @@ impl CallFrame {
                         }
                         // Keep CALLCODE ABI consistent with normal CALL while preserving caller
                         // signature checks at the end of delegated tail execution.
+                        // NOTE: Fitsh-compiled functions may POP one argv slot in normal paths.
+                        // Even when CALLCODE target declares 0 params, injecting Nil here avoids
+                        // accidental pop-empty-stack in delegated bodies written as regular funcs.
                         let caller_types = curr_ref!().types.clone();
                         curr!().prepare(fnptr.mode, true, fnobj, Some(Value::Nil))?;
                         curr!().callcode_caller_types = caller_types;
@@ -87,11 +90,25 @@ impl CallFrame {
                     // Set context addresses based on call mode
                     match fnptr.mode {
                         Inner | View | Pure => {
-                            let default_owner = match fnptr.target {
-                                CallTarget::This | CallTarget::Libidx(_) => state_addr.clone(),
-                                CallTarget::Self_ | CallTarget::Super => code_owner.clone(),
+                            let owner = match fnptr.target {
+                                CallTarget::Libidx(_) => {
+                                    // Invariant: lib-index lookup must always produce concrete code owner.
+                                    let Some(owner) = next_code_owner else {
+                                        return itr_err_fmt!(
+                                            CallNotExist,
+                                            "libidx call target missing code owner"
+                                        );
+                                    };
+                                    owner
+                                }
+                                CallTarget::This => {
+                                    next_code_owner.unwrap_or(state_addr.clone())
+                                }
+                                CallTarget::Self_ | CallTarget::Super => {
+                                    next_code_owner.unwrap_or(code_owner.clone())
+                                }
                             };
-                            curr!().code_owner = next_code_owner.unwrap_or(default_owner);
+                            curr!().code_owner = owner;
                         }
                         Outer => {
                             let target_state_addr = next_state_addr

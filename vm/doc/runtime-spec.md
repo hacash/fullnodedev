@@ -143,7 +143,8 @@ Function target resolution follows:
 1. `this`: resolve along context contract inheritance chain.
 2. `self`: resolve along current code owner inheritance chain.
 3. `super`: resolve starting from current code owner's parent layer.
-4. `libidx`: locate library first, then resolve function from the target contract's local user-function table only (no inheritance search on library target).
+4. `libidx` with `CALL`: locate library first, then resolve function from target + inherits (DFS order).
+5. `libidx` with `CALLVIEW/CALLPURE/CALLCODE`: locate library first, then resolve from target local user-function table only (no inheritance search).
 
 Resolution must enforce cycle detection and bounds safety.
 
@@ -248,7 +249,8 @@ The following invariants are recommended as long-term regression baselines:
 1. Executable code has passed legality checks before entering execution.
 2. Context level is correctly restored before/after VM entry call.
 3. Context address and code owner address semantics are not mixed.
-4. Inheritance resolution is acyclic, library indices are verifiable, and `libidx` lookup uses local target table semantics.
+4. Inheritance resolution is acyclic, library indices are verifiable, and `libidx` lookup follows split semantics:
+   `CALL` uses target + inherits search; `CALLVIEW/CALLPURE/CALLCODE` use local target table only.
 5. Extension capability is strictly constrained by allowlist and mode.
 6. Branch recover does not roll back consumed resources.
 7. Contract revision is monotonically increasing and update flow is auditable.

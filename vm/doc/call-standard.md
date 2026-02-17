@@ -35,8 +35,8 @@ Out of scope:
 
 ## 3. Terminology
 
-1. `ctxadr`: execution context address (state scope owner).
-2. `curadr`: current code owner address (resolution base for `self/super` semantics).
+1. `state_addr`: execution context address (state/log scope owner).
+2. `code_owner`: current code owner address (resolution base for `self/super` semantics).
 3. `FnSign`: 4-byte function signature.
 4. `Entry mode`: top-level execution mode (`Main`, `P2sh`, `Abst`).
 5. `Internal mode`: in-call execution mode (`Outer`, `Inner`, `View`, `Pure`).
@@ -73,6 +73,18 @@ Notes:
 
 ## 5. Call Target and Resolution Semantics
 
+## 5.0 One-to-one Runtime Mapping (7 call instructions)
+
+| Instruction | Target form | Lookup behavior | New frame | Callee mode | `state_addr` transition | `code_owner` transition |
+|---|---|---|---|---|---|---|
+| `CALL` | `libidx + fnsign` | resolve library address first, then search target + inherits (DFS, first match wins) | Yes | `Outer` | switch to library target contract | switch to resolved function owner (target or inherited parent) |
+| `CALLTHIS` | `fnsign` | search from `state_addr` via inherits | Yes | `Inner` | unchanged | resolved owner (default `state_addr`) |
+| `CALLSELF` | `fnsign` | search from `code_owner` via inherits | Yes | `Inner` | unchanged | resolved owner (default previous `code_owner`) |
+| `CALLSUPER` | `fnsign` | start from direct parents of `code_owner`, then DFS inherits | Yes | `Inner` | unchanged | resolved parent owner |
+| `CALLVIEW` | `libidx + fnsign` | resolve library address, then local user-function table only | Yes | `View` | unchanged | set to library target contract |
+| `CALLPURE` | `libidx + fnsign` | resolve library address, then local user-function table only | Yes | `Pure` | unchanged | set to library target contract |
+| `CALLCODE` | `libidx + fnsign` | resolve library address, then local user-function table only | No (in-place) | inherit caller mode | unchanged | switch current frame to library target contract |
+
 ## 5.1 `CALL`
 
 Design intent: external contract call by library index.
@@ -80,13 +92,13 @@ Design intent: external contract call by library index.
 Resolution model:
 
 1. Resolve library target by index.
-2. Resolve function by `FnSign` on that contract's **local user function table only** (no inheritance search for `libidx` calls).
+2. Resolve function by `FnSign` from target contract using inheritance search (target first, then DFS over inherits list).
 3. Require `public` visibility for external (`Outer`) calls.
 
 Context transition:
 
-1. `ctxadr` switches to target contract.
-2. `curadr` switches to target contract.
+1. `state_addr` switches to target contract.
+2. `code_owner` switches to resolved owner (target itself or inherited parent owner).
 
 ## 5.2 `CALLTHIS`
 
@@ -94,13 +106,13 @@ Design intent: internal call against the current execution context contract.
 
 Resolution model:
 
-1. Start from `ctxadr`.
+1. Start from `state_addr`.
 2. Resolve through inheritance chain.
 
 Context transition:
 
-1. `ctxadr` remains unchanged.
-2. `curadr` is set to resolved owner (or default `ctxadr`).
+1. `state_addr` remains unchanged.
+2. `code_owner` is set to resolved owner (or default `state_addr`).
 
 ## 5.3 `CALLSELF`
 
@@ -108,13 +120,18 @@ Design intent: internal call against current code owner contract.
 
 Resolution model:
 
-1. Start from `curadr`.
+1. Start from `code_owner`.
 2. Resolve through inheritance chain.
 
 Context transition:
 
-1. `ctxadr` remains unchanged.
-2. `curadr` is set to resolved owner (or default `curadr`).
+1. `state_addr` remains unchanged.
+2. `code_owner` is set to resolved owner (or default previous `code_owner`).
+
+Static-check scope note:
+
+1. Deploy-time static verification for `CALLSELF` validates code declared in the current contract package.
+2. Runtime dispatch still resolves from dynamic `code_owner`.
 
 ## 5.4 `CALLSUPER`
 
@@ -122,13 +139,13 @@ Design intent: parent-scope call.
 
 Resolution model:
 
-1. Start from direct parents of `curadr` (skip self).
+1. Start from direct parents of `code_owner` (skip self).
 2. Resolve through parent inheritance chain.
 
 Context transition:
 
-1. `ctxadr` remains unchanged.
-2. `curadr` becomes resolved parent owner.
+1. `state_addr` remains unchanged.
+2. `code_owner` becomes resolved parent owner.
 
 ## 5.5 `CALLVIEW`
 
@@ -139,7 +156,8 @@ Semantics:
 1. Uses library-index style addressing like `CALL`.
 2. Enters callee with `View` mode.
 3. State write operations are forbidden in this mode.
-4. Target resolution still follows `libidx` local-table rule (no inheritance search).
+4. Target resolution uses `libidx` local-table rule (no inheritance search).
+5. `state_addr` stays in caller context; `code_owner` switches to library target.
 
 ## 5.6 `CALLPURE`
 
@@ -150,7 +168,8 @@ Semantics:
 1. Uses library-index style addressing like `CALL`.
 2. Enters callee with `Pure` mode.
 3. State reads and writes are both forbidden.
-4. Target resolution still follows `libidx` local-table rule (no inheritance search).
+4. Target resolution uses `libidx` local-table rule (no inheritance search).
+5. `state_addr` stays in caller context; `code_owner` switches to library target.
 
 ## 5.7 `CALLCODE`
 
@@ -163,6 +182,7 @@ Core constraints:
 3. While in callcode state, further call instructions are forbidden.
 4. Return value contract is checked against original caller signature.
 5. `libidx` target lookup uses local user-function table only (no inheritance search).
+6. `state_addr` remains unchanged; delegated code runs with `code_owner` set to library target.
 
 Structural rule:
 
@@ -330,7 +350,10 @@ Propagation model:
 Recommended invariants for CI/regression:
 
 1. Mode matrix enforcement is stable.
-2. `this/self/super/libidx` resolution semantics are stable.
+2. Call resolution is stable:
+   `CALL(libidx)` => target + inherits;
+   `CALLVIEW/CALLPURE/CALLCODE(libidx)` => target local table only;
+   `CALLTHIS/CALLSELF/CALLSUPER` => `state_addr`/`code_owner` inheritance rules.
 3. External visibility (`public`) is enforced for outer `CALL` paths.
 4. CALLCODE never accepts parameterized targets.
 5. No nested call is possible in callcode execution state.
@@ -342,7 +365,10 @@ Recommended invariants for CI/regression:
 
 1. Positive matrix tests for all call instructions under allowed modes.
 2. Negative matrix tests for all forbidden mode combinations.
-3. Target resolution tests for `this/self/super/libidx` with inheritance graphs.
+3. Target resolution tests cover split semantics:
+   `CALL(libidx)` with inheritance search;
+   `CALLVIEW/CALLPURE/CALLCODE(libidx)` local-only search;
+   `this/self/super` inheritance search.
 4. CALLCODE behavior tests (in-place dispatch, no nested call, return contract inheritance).
 5. Native/extension input-output contract tests (typed decode, stack placement).
 6. Extension policy tests (`EXTACTION` main-only, pure-mode bans).

@@ -360,6 +360,9 @@ fn check_static_call_targets(
                     Ok(())
                 }
                 Bytecode::CALLTHIS | Bytecode::CALLSELF => {
+                    // Deploy-time precheck validates callsites against the contract being deployed/updated.
+                    // Runtime CALLSELF resolves from dynamic code_owner, which may differ after inherited
+                    // dispatch. Cross-contract inherited bodies are validated in their own deploy/update.
                     sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
                     let mut visiting = std::collections::HashSet::new();
                     let mut visited = std::collections::HashSet::new();

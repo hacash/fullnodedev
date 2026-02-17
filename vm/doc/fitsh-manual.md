@@ -512,7 +512,7 @@ Contracts can use six resource spaces. Understanding their scope, lifetime, and 
 
 ### 9.4 Memory (Contract Temp)
 
-**Scope**: Per contract (ctxadr).  
+**Scope**: Per contract (`state_addr`).  
 **Lifetime**: Current transaction only; cleared after tx.
 
 **Use when**:
@@ -562,7 +562,7 @@ var step = global_get("tx_step")
 
 ### 9.6 Storage (Contract State)
 
-**Scope**: Per contract (ctxadr).  
+**Scope**: Per contract (`state_addr`).  
 **Lifetime**: Persistent; requires rent; survives blocks.
 
 **Use when**:
@@ -591,7 +591,7 @@ storage_save(bk, balance + amount)
 
 ### 9.7 Log (Events)
 
-**Scope**: Per contract (ctxadr).  
+**Scope**: Per contract (`state_addr`).  
 **Lifetime**: Persistent (on-chain events).
 
 **Use when**:
@@ -661,24 +661,36 @@ Side effects (e.g. `storage_save`, `print`) in a `bind` expression only run when
 | `super.func(...)` | CALLSUPER | Parent in inherit chain |
 
 Library resolution note:
-- `libidx` calls (`CALL/CALLVIEW/CALLPURE/CALLCODE`) resolve only against the target library contract's local user-function table.
-- They do not search the target library's inheritance chain.
+- `CALL` (`lib.func(...)`) resolves the library address first, then searches target + inherits (DFS order).
+- `CALLVIEW/CALLPURE/CALLCODE` resolve against the target library contract's local user-function table only (no inheritance search).
 
 ### 11.2 Call Permission and State Access Control
 
 The VM enforces a permission system based on **ExecMode** (execution mode) and **in_callcode**. Each call type transitions to a specific mode and constrains what the callee can do.
 
-#### Call Type → Callee Mode
+#### 7 Call Instructions: Dispatch Matrix (runtime-exact)
 
-| Call | Syntax | Callee mode | State read | State write |
-|------|--------|-------------|------------|-------------|
-| `call` | `lib.func(...)` | Outer | Yes | Yes |
-| `callview` | `lib:func(...)` | View | Yes | No |
-| `callpure` | `lib::func(...)` | Pure | No | No |
-| `callcode` | `callcode lib::sig` | Inherits caller | Inherits | Inherits |
-| `callthis` | `this.func(...)` | Inner | Yes | Yes |
-| `callself` | `self.func(...)` | Inner | Yes | Yes |
-| `callsuper` | `super.func(...)` | Inner | Yes | Yes |
+| Call | Syntax | Callee mode | Lookup root | Inheritance search | Frame behavior | State read | State write |
+|------|--------|-------------|-------------|--------------------|----------------|------------|-------------|
+| `call` | `lib.func(...)` | Outer | library target | Yes (target + inherits) | New frame | Yes | Yes |
+| `callview` | `lib:func(...)` | View | library target | No (local table only) | New frame | Yes | No |
+| `callpure` | `lib::func(...)` | Pure | library target | No (local table only) | New frame | No | No |
+| `callcode` | `callcode lib::sig` | Inherits caller | library target | No (local table only) | In-place (no new frame) | Inherits | Inherits |
+| `callthis` | `this.func(...)` | Inner | `state_addr` | Yes | New frame | Yes | Yes |
+| `callself` | `self.func(...)` | Inner | `code_owner` | Yes | New frame | Yes | Yes |
+| `callsuper` | `super.func(...)` | Inner | direct parents of `code_owner` | Yes (parent DFS) | New frame | Yes | Yes |
+
+#### Address Transition Rules (`state_addr` / `code_owner`)
+
+| Call | `state_addr` | `code_owner` |
+|------|--------------|--------------|
+| `call` | switch to library target | switch to resolved function owner (target or inherited parent) |
+| `callview` | unchanged | switch to library target |
+| `callpure` | unchanged | switch to library target |
+| `callcode` | unchanged | switch current frame to library target |
+| `callthis` | unchanged | resolved owner from `state_addr` chain (default `state_addr`) |
+| `callself` | unchanged | resolved owner from `code_owner` chain (default previous `code_owner`) |
+| `callsuper` | unchanged | resolved owner from direct-parent chain |
 
 **State** = Storage, Global, Memory, Log. 
 
@@ -769,16 +781,16 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 
 The VM maintains two key addresses during execution:
 
-- **ctxadr** (context address): The storage/log owner — the contract initially called (entry point). Stays unchanged through nested inner calls.
-- **curadr** (current address): The code owner — the contract whose code is currently executing. Changes when a resolved call targets a different contract.
+- **state_addr**: The storage/log owner — the contract initially called (entry point). Stays unchanged through nested inner/view/pure/callcode dispatch.
+- **code_owner**: The code owner — the contract whose code is currently executing. Changes when resolution chooses another owner.
 
 | Call | Resolves in | Search order |
 |------|-------------|---------------|
-| `this.func(...)` | ctxadr | DFS: current contract → inherits (in order) |
-| `self.func(...)` | curadr | DFS: current contract → inherits (in order) |
-| `super.func(...)` | curadr's parents only | DFS: skip curadr, search direct inherits → their inherits |
+| `this.func(...)` | state_addr | DFS: current contract → inherits (in order) |
+| `self.func(...)` | code_owner | DFS: current contract → inherits (in order) |
+| `super.func(...)` | code_owner's parents only | DFS: skip current owner, search direct inherits → their inherits |
 
-**When do they differ?** When `super` or `self` moves execution into a parent's code: `curadr` becomes the parent, but `ctxadr` stays the child. Then `this` still resolves in the child (storage context), while `self` resolves in the parent (current code owner).
+**When do they differ?** When `super` or `self` moves execution into a parent's code: `code_owner` becomes the parent, but `state_addr` stays the child. Then `this` still resolves in the child (storage context), while `self` resolves in the parent (current code owner).
 
 #### Example 1: Direct call (no inheritance)
 
@@ -828,13 +840,13 @@ contract Child {
 ```
 
 - `Child.run()` calls `super.compute()` → resolves in Parent (skip Child). We execute Parent's `compute()`.
-- **ctxadr** = Child (unchanged)
-- **curadr** = Parent (current code owner)
+- **state_addr** = Child (unchanged)
+- **code_owner** = Parent (current code owner)
 
 Inside Parent's `compute()`:
 
-- `this.get_value()` → resolves in **ctxadr** (Child) → Child's `get_value()` → **1**
-- `self.get_value()` → resolves in **curadr** (Parent) → Parent's `get_value()` → **2**
+- `this.get_value()` → resolves in **state_addr** (Child) → Child's `get_value()` → **1**
+- `self.get_value()` → resolves in **code_owner** (Parent) → Parent's `get_value()` → **2**
 - `super.get_value()` → skip Parent, search Parent's inherits → Base's `get_value()` → **3**
 
 Result: `1*10000 + 2*100 + 3 = 10203`

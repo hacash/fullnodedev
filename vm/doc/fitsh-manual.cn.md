@@ -512,7 +512,7 @@ let first = $0         // 从槽位 0 读取
 
 ### 9.4 Memory（合约临时存储）
 
-**作用域**：每个合约（ctxadr）。  
+**作用域**：每个合约（`state_addr`）。  
 **生命周期**：仅当前交易；交易结束后清空。
 
 **适用场景**：
@@ -562,7 +562,7 @@ var step = global_get("tx_step")
 
 ### 9.6 Storage（合约状态）
 
-**作用域**：每个合约（ctxadr）。  
+**作用域**：每个合约（`state_addr`）。  
 **生命周期**：持久；需支付租金；跨区块保留。
 
 **适用场景**：
@@ -591,7 +591,7 @@ storage_save(bk, balance + amount)
 
 ### 9.7 Log（事件）
 
-**作用域**：每个合约（ctxadr）。  
+**作用域**：每个合约（`state_addr`）。  
 **生命周期**：持久（链上事件）。
 
 **适用场景**：
@@ -661,24 +661,36 @@ storage_save(bk, balance + 100)
 | `super.func(...)` | CALLSUPER | 继承链父级 |
 
 库解析说明：
-- `libidx` 调用（`CALL/CALLVIEW/CALLPURE/CALLCODE`）只在目标库合约的本地用户函数表中解析。
-- 不会沿目标库合约的继承链继续查找。
+- `CALL`（`lib.func(...)`）先解析库地址，再对目标合约按 DFS 搜索“自身 + 继承链”。
+- `CALLVIEW/CALLPURE/CALLCODE` 仅在目标库合约的本地用户函数表中解析（不查继承链）。
 
 ### 11.2 调用权限与状态访问控制
 
 VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制。每种调用类型会切换到特定模式，并限制被调用方可执行的操作。
 
-#### 调用类型 → 被调用方模式
+#### 7 个 Call 指令分发表（与运行时实现一致）
 
-| 调用 | 语法 | 被调用方模式 | 状态读取 | 状态写入 |
-|------|------|--------------|----------|----------|
-| `call` | `lib.func(...)` | Outer | 允许 | 允许 |
-| `callview` | `lib:func(...)` | View | 允许 | 禁止 |
-| `callpure` | `lib::func(...)` | Pure | 禁止 | 禁止 |
-| `callcode` | `callcode lib::sig` | 继承调用方 | 继承 | 继承 |
-| `callthis` | `this.func(...)` | Inner | 允许 | 允许 |
-| `callself` | `self.func(...)` | Inner | 允许 | 允许 |
-| `callsuper` | `super.func(...)` | Inner | 允许 | 允许 |
+| 调用 | 语法 | 被调用模式 | 查找起点 | 是否查继承链 | 帧行为 | 状态读取 | 状态写入 |
+|------|------|------------|----------|--------------|--------|----------|----------|
+| `call` | `lib.func(...)` | Outer | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 允许 | 允许 |
+| `callview` | `lib:func(...)` | View | 库目标合约 | 否（仅本地表） | 新建帧 | 允许 | 禁止 |
+| `callpure` | `lib::func(...)` | Pure | 库目标合约 | 否（仅本地表） | 新建帧 | 禁止 | 禁止 |
+| `callcode` | `callcode lib::sig` | 继承调用方 | 库目标合约 | 否（仅本地表） | 原地执行（不建帧） | 继承 | 继承 |
+| `callthis` | `this.func(...)` | Inner | `state_addr` | 是 | 新建帧 | 允许 | 允许 |
+| `callself` | `self.func(...)` | Inner | `code_owner` | 是 | 新建帧 | 允许 | 允许 |
+| `callsuper` | `super.func(...)` | Inner | `code_owner` 的直接父级 | 是（父级 DFS） | 新建帧 | 允许 | 允许 |
+
+#### 地址迁移规则（`state_addr` / `code_owner`）
+
+| 调用 | `state_addr` | `code_owner` |
+|------|--------------|--------------|
+| `call` | 切换为库目标合约 | 切换为实际命中函数的所有者（目标本身或继承父级） |
+| `callview` | 不变 | 切换为库目标合约 |
+| `callpure` | 不变 | 切换为库目标合约 |
+| `callcode` | 不变 | 当前帧切换为库目标合约 |
+| `callthis` | 不变 | 从 `state_addr` 链命中的所有者（默认 `state_addr`） |
+| `callself` | 不变 | 从 `code_owner` 链命中的所有者（默认之前 `code_owner`） |
+| `callsuper` | 不变 | 从直接父级链命中的所有者 |
 
 **状态** = 存储、全局、内存、日志。
 
@@ -769,16 +781,16 @@ VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制�
 
 VM 在执行过程中维护两个关键地址：
 
-- **ctxadr**（上下文地址）：存储/日志的所有者 —— 最初被调用的合约（入口）。在嵌套内部调用中保持不变。
-- **curadr**（当前地址）：代码所有者 —— 当前正在执行其代码的合约。当解析到的调用指向不同合约时，会随之变化。
+- **state_addr**：存储/日志的所有者 —— 最初被调用的合约（入口）。在嵌套 inner/view/pure/callcode 调度中保持不变。
+- **code_owner**：代码所有者 —— 当前正在执行其代码的合约。当解析到的调用命中其他所有者时会变化。
 
 | 调用 | 解析范围 | 查找顺序 |
 |------|----------|----------|
-| `this.func(...)` | ctxadr | DFS：当前合约 → 继承链（按顺序） |
-| `self.func(...)` | curadr | DFS：当前合约 → 继承链（按顺序） |
-| `super.func(...)` | 仅 curadr 的父级 | DFS：跳过 curadr，在直接继承中查找 → 其继承链 |
+| `this.func(...)` | state_addr | DFS：当前合约 → 继承链（按顺序） |
+| `self.func(...)` | code_owner | DFS：当前合约 → 继承链（按顺序） |
+| `super.func(...)` | 仅 code_owner 的父级 | DFS：跳过当前 owner，在直接继承中查找 → 其继承链 |
 
-**何时会不同？** 当 `super` 或 `self` 将执行转移到父级代码时：`curadr` 变为父级，但 `ctxadr` 仍为子级。此时 `this` 仍在子级（存储上下文）中解析，而 `self` 在父级（当前代码所有者）中解析。
+**何时会不同？** 当 `super` 或 `self` 将执行转移到父级代码时：`code_owner` 变为父级，但 `state_addr` 仍为子级。此时 `this` 仍在子级（存储上下文）中解析，而 `self` 在父级（当前代码所有者）中解析。
 
 #### 示例 1：直接调用（无继承）
 
@@ -828,13 +840,13 @@ contract Child {
 ```
 
 - `Child.run()` 调用 `super.compute()` → 在 Parent 中解析（跳过 Child）。执行 Parent 的 `compute()`。
-- **ctxadr** = Child（不变）
-- **curadr** = Parent（当前代码所有者）
+- **state_addr** = Child（不变）
+- **code_owner** = Parent（当前代码所有者）
 
 在 Parent 的 `compute()` 内：
 
-- `this.get_value()` → 在 **ctxadr**（Child）中解析 → Child 的 `get_value()` → **1**
-- `self.get_value()` → 在 **curadr**（Parent）中解析 → Parent 的 `get_value()` → **2**
+- `this.get_value()` → 在 **state_addr**（Child）中解析 → Child 的 `get_value()` → **1**
+- `self.get_value()` → 在 **code_owner**（Parent）中解析 → Parent 的 `get_value()` → **2**
 - `super.get_value()` → 跳过 Parent，在 Parent 的继承中查找 → Base 的 `get_value()` → **3**
 
 结果：`1*10000 + 2*100 + 3 = 10203`

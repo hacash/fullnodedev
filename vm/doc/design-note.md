@@ -91,7 +91,7 @@ Call Kind:
     - SuperCall           <fnsig>(argv)
     - ViewCall    <libidx, fnsig>(argv)
     - PureCall    <libidx, fnsig>(argv)
-    - CallCode     <libidx, fnsig>(argv)   // run callee code, inherit current ExecMode privileges, and forbid any nested call
+    - CallCode     <libidx, fnsig>         // no user argv; run delegated code in-place, inherit current ExecMode privileges, and forbid any nested call
 
 
 Call Privileges:
@@ -103,17 +103,26 @@ Call Privileges:
     - Main          (State Write) => Outer,        View, Pure, Code
     - Abst          (State Write) =>        Inner, View, Pure, Code
     - P2sh          (State Write) =>               View, Pure, Code
-    - View          (State Read ) =>               View, Pure, Code
-    - Pure          (           ) =>                    Pure, Code
+    - View          (State Read ) =>               View, Pure
+    - Pure          (           ) =>                    Pure
     - Code          (- inherit -) =>                               -
     - Outer | Inner (State Write) => Outer, Inner, View, Pure, Code (All types)
 
 
 Call Context Change:
 
-    - ctxadr (storage/log context) changes only on Outer
-        - curadr (code owner for library resolution) follows resolved owner:
-            Outer => callee, Inner => resolved child/parent, View/Pure => library; CallCode updates curadr to the resolved code owner
+    - state_addr (storage/log context) changes only on Outer
+        - code_owner (code owner for self/super resolution) follows resolved owner:
+            Outer => resolved function owner on target contract graph (target or parent)
+            Inner => resolved child/parent
+            View/Pure => library target
+            CallCode => library target (in-place)
+
+
+libidx Resolution Split:
+
+    - CALL (Outer): target library + inheritance search (DFS)
+    - CALLVIEW/CALLPURE/CALLCODE: target library local table only (no inheritance search)
 
 
 Inheritance Resolution (CALLTHIS/CALLSELF/CALLSUPER):
