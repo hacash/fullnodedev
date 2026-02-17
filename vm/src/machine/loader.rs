@@ -5,6 +5,13 @@
 */
 
 
+#[derive(Debug, Clone)]
+pub struct CallLoad {
+    pub state_addr: Option<ContractAddress>,
+    pub code_owner: Option<ContractAddress>,
+    pub fnobj: Arc<FnObj>,
+}
+
 impl Resoure {
 
     pub fn load_contract(&mut self, vmsta: &mut VMState, addr: &ContractAddress) -> VmrtRes<Arc<ContractObj>> {
@@ -85,28 +92,29 @@ impl Resoure {
 
 
 
-    fn load_fn_by_search_librarys(
-        &mut self, vmsta: &mut VMState, 
-        srcadr: &ContractAddress, lib: u8, fnsg: FnSign
-    ) -> VmrtRes<(ContractAddress, Option<Arc<FnObj>>)> {
-        let csto = self.load_contract(vmsta, srcadr)?;
-        let librarys = csto.sto.librarys.list();
-        self.load_fn_by_search_list(vmsta, librarys, lib, fnsg)
-    }
-
-    fn load_fn_by_search_list(
-        &mut self, vmsta: &mut VMState, adrlist: &Vec<ContractAddress>, lib: u8, fnsg: FnSign
-    ) -> VmrtRes<(ContractAddress, Option<Arc<FnObj>>)> {
+    fn resolve_lib_addr_by_list(
+        &self,
+        adrlist: &Vec<ContractAddress>,
+        lib: u8,
+    ) -> VmrtRes<ContractAddress> {
         use ItrErrCode::*;
-        let librarys = adrlist;
         let libidx = lib as usize;
-        if libidx >= librarys.len() {
+        if libidx >= adrlist.len() {
             return itr_err_code!(CallLibIdxOverflow)
         }
-        let taradr = librarys.get(libidx).unwrap();
+        let taradr = adrlist.get(libidx).unwrap();
         taradr.check().map_ire(ContractAddrErr)?; // check must contract addr
-        let csto = self.load_contract(vmsta, taradr)?;
-        Ok((taradr.clone(), csto.userfns.get(&fnsg).map(|f|f.clone())))
+        Ok(taradr.clone())
+    }
+
+    fn resolve_lib_addr_from_source(
+        &mut self,
+        vmsta: &mut VMState,
+        source: &ContractAddress,
+        lib: u8,
+    ) -> VmrtRes<ContractAddress> {
+        let csto = self.load_contract(vmsta, source)?;
+        self.resolve_lib_addr_by_list(csto.sto.librarys.list(), lib)
     }
 
     pub fn load_userfn(&mut self, vmsta: &mut VMState, addr: &ContractAddress, fnsg: FnSign) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
@@ -117,17 +125,17 @@ impl Resoure {
     pub fn load_userfn_super(
         &mut self,
         vmsta: &mut VMState,
-        curadr: &ContractAddress,
+        code_owner: &ContractAddress,
         fnsg: FnSign,
     ) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
         // Start from direct inherits of current code owner, skipping itself.
-        let csto = self.load_contract(vmsta, curadr)?;
+        let csto = self.load_contract(vmsta, code_owner)?;
         let mut visiting = std::collections::HashSet::new();
         let mut visited = std::collections::HashSet::new();
         let fnkey = FnKey::User(fnsg);
         for ih in csto.sto.inherits.list() {
             if let Some((owner, func)) = self.load_fn_by_search_inherits_rec(vmsta, ih, &fnkey, &mut visiting, &mut visited)? {
-                let change = maybe!(&owner == curadr, None, Some(owner));
+                let change = maybe!(&owner == code_owner, None, Some(owner));
                 return Ok(Some((change, func)));
             }
         }
@@ -141,43 +149,77 @@ impl Resoure {
     }
 
     /*
-        return (change current address, fnobj)
+        return call target resolve result
     */
     pub fn load_must_call(&mut self, 
         ctx: &mut dyn Context, fptr: Funcptr, 
-        dstadr: &ContractAddress, srcadr: &ContractAddress,
+        state_addr: &ContractAddress, code_owner: &ContractAddress,
         adrlibs: &Option<Vec<ContractAddress>>
-    ) -> VmrtRes<(Option<ContractAddress>, Arc<FnObj>)> {
+    ) -> VmrtRes<CallLoad> {
         let mut vmsta = VMState::wrap(ctx.state());
         use CallTarget::*;
+        use ExecMode::*;
         use ItrErrCode::*;
-        match match fptr.target {
+        match fptr.target {
             This => {
-                let Some((a, b)) = self.load_userfn(&mut vmsta, dstadr, fptr.fnsign)? else {
+                let Some((owner_change, fnobj)) = self.load_userfn(&mut vmsta, state_addr, fptr.fnsign)? else {
                     return itr_err_code!(CallNotExist)
                 };
-                (a, Some(b))
+                Ok(CallLoad {
+                    state_addr: None,
+                    code_owner: owner_change,
+                    fnobj,
+                })
             }
             Self_ => {
-                let Some((a, b)) = self.load_userfn(&mut vmsta, srcadr, fptr.fnsign)? else {
+                let Some((owner_change, fnobj)) = self.load_userfn(&mut vmsta, code_owner, fptr.fnsign)? else {
                     return itr_err_code!(CallNotExist)
                 };
-                (a, Some(b))
+                Ok(CallLoad {
+                    state_addr: None,
+                    code_owner: owner_change,
+                    fnobj,
+                })
             }
             Super => {
-                let Some((a, b)) = self.load_userfn_super(&mut vmsta, srcadr, fptr.fnsign)? else {
+                let Some((owner_change, fnobj)) = self.load_userfn_super(&mut vmsta, code_owner, fptr.fnsign)? else {
                     return itr_err_code!(CallNotExist)
                 };
-                (a, Some(b))
+                Ok(CallLoad {
+                    state_addr: None,
+                    code_owner: owner_change,
+                    fnobj,
+                })
             }
-            // Addr(ctxadr)  => (Some(ctxadr.clone()), self.load_userfn(vmsta, &ctxadr, fptr.fnsign)?),
-            Libidx(lib)   => match adrlibs {
-                Some(ads) => self.load_fn_by_search_list(&mut vmsta, &ads, lib, fptr.fnsign),
-                _ => self.load_fn_by_search_librarys(&mut vmsta, srcadr, lib, fptr.fnsign),
-            }.map(|(a,b)|(Some(a), b))?,
-        }  {
-            (b, Some(c))  => Ok((b, c)),
-            _ => itr_err_code!(CallNotExist), // 
+            // Addr(state_addr) => (Some(state_addr.clone()), self.load_userfn(vmsta, &state_addr, fptr.fnsign)?),
+            Libidx(lib) => {
+                let taradr = match adrlibs {
+                    Some(ads) => self.resolve_lib_addr_by_list(ads, lib)?,
+                    _ => self.resolve_lib_addr_from_source(&mut vmsta, code_owner, lib)?,
+                };
+                // CALL (Outer) follows account semantics: function resolution includes inherits.
+                if fptr.mode == Outer && !fptr.is_callcode {
+                    let Some((owner_change, fnobj)) = self.load_userfn(&mut vmsta, &taradr, fptr.fnsign)? else {
+                        return itr_err_code!(CallNotExist)
+                    };
+                    let owner = owner_change.unwrap_or_else(|| taradr.clone());
+                    return Ok(CallLoad {
+                        state_addr: Some(taradr),
+                        code_owner: Some(owner),
+                        fnobj,
+                    });
+                }
+                // CALLVIEW/CALLPURE/CALLCODE keep library semantics: exact local lookup only.
+                let csto = self.load_contract(&mut vmsta, &taradr)?;
+                let Some(fnobj) = csto.userfns.get(&fptr.fnsign).cloned() else {
+                    return itr_err_code!(CallNotExist)
+                };
+                Ok(CallLoad {
+                    state_addr: None,
+                    code_owner: Some(taradr),
+                    fnobj,
+                })
+            }
         }
     }
 

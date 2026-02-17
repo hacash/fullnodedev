@@ -300,7 +300,41 @@ fn check_static_call_targets(
         scan_call_sites(codes, |inst, params| {
             let mut sign = [0u8; FN_SIGN_WIDTH];
             match inst {
-                Bytecode::CALL | Bytecode::CALLVIEW | Bytecode::CALLPURE | Bytecode::CALLCODE => {
+                Bytecode::CALL => {
+                    let libs = root_contract.librarys.list();
+                    let libidx = params[0] as usize;
+                    if libidx >= libs.len() {
+                        return errf!(
+                            "{}: libidx overflow {} >= {}",
+                            func_tag,
+                            libidx,
+                            libs.len()
+                        )
+                    }
+                    sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
+                    let tar = &libs[libidx];
+                    let mut visiting = std::collections::HashSet::new();
+                    let mut visited = std::collections::HashSet::new();
+                    let found = resolve_userfn_by_inherits(
+                        vmsta,
+                        root_addr,
+                        root_contract,
+                        tar,
+                        &sign,
+                        &mut visiting,
+                        &mut visited,
+                    )?;
+                    if !found {
+                        return errf!(
+                            "{}: call target {} function 0x{} not found in inherits",
+                            func_tag,
+                            tar.to_readable(),
+                            hex::encode(sign)
+                        )
+                    }
+                    Ok(())
+                }
+                Bytecode::CALLVIEW | Bytecode::CALLPURE | Bytecode::CALLCODE => {
                     let libs = root_contract.librarys.list();
                     let libidx = params[0] as usize;
                     if libidx >= libs.len() {

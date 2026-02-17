@@ -181,26 +181,7 @@ impl ValueSto {
 #[cfg(test)]
 mod storage_param_tests {
     use super::*;
-
-    #[derive(Default, Clone)]
-    struct StateMem {
-        mem: basis::component::MemKV,
-    }
-
-    impl State for StateMem {
-        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
-            match self.mem.get(&k) {
-                Some(v) => v.clone(),
-                None => None,
-            }
-        }
-        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
-            self.mem.put(k, v)
-        }
-        fn del(&mut self, k: Vec<u8>) {
-            self.mem.del(k)
-        }
-    }
+    use testkit::sim::state::FlatMemState as StateMem;
 
     fn test_contract() -> ContractAddress {
         let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();

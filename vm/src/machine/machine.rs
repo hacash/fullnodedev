@@ -297,14 +297,14 @@ impl VM for MachineBox {
             P2sh => {
                 let payload = ByteView::from_arc(payload);
                 let payload_ref = payload.as_slice();
-                let (ctxadr, mv1) = Address::create(payload_ref)?;
+                let (state_addr, mv1) = Address::create(payload_ref)?;
                 let (calibs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
                 let mv = mv1 + mv2;
                 let realcodes = payload.slice(mv, payload.len())?;
                 let Ok(param) = param.downcast::<Value>() else {
                     return errf!("p2sh argv type not match")
                 };
-                machine.p2sh_call(exenv, ctxadr, calibs.into_list(), realcodes, *param)
+                machine.p2sh_call(exenv, state_addr, calibs.into_list(), realcodes, *param)
             }
             Abst => {
                 let kid: AbstCall = std_mem_transmute!(kind);
@@ -428,74 +428,11 @@ mod machine_test {
     use crate::rt::CodeType;
 
     use basis::component::Env;
-    use basis::interface::{Context, State, TransactionRead};
-    use field::{Address, Amount, Hash, Uint4};
-    use protocol::context::ContextInst;
-    use protocol::state::EmptyLogs;
-
-    #[derive(Default, Clone)]
-    struct StateMem {
-        mem: basis::component::MemKV,
-    }
-
-    impl State for StateMem {
-        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
-            match self.mem.get(&k) {
-                Some(v) => v.clone(),
-                None => None,
-            }
-        }
-        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
-            self.mem.put(k, v)
-        }
-        fn del(&mut self, k: Vec<u8>) {
-            self.mem.del(k)
-        }
-    }
-
-    #[derive(Clone, Debug)]
-    struct DummyTx {
-        main: Address,
-        addrs: Vec<Address>,
-    }
-
-    impl field::Serialize for DummyTx {
-        fn size(&self) -> usize {
-            128 // reasonable mock tx size
-        }
-        fn serialize(&self) -> Vec<u8> {
-            vec![]
-        }
-    }
-
-    impl basis::interface::TxExec for DummyTx {}
-
-    impl TransactionRead for DummyTx {
-        fn ty(&self) -> u8 {
-            0
-        }
-        fn hash(&self) -> Hash {
-            Hash::default()
-        }
-        fn hash_with_fee(&self) -> Hash {
-            Hash::default()
-        }
-        fn main(&self) -> Address {
-            self.main
-        }
-        fn addrs(&self) -> Vec<Address> {
-            self.addrs.clone()
-        }
-        fn fee(&self) -> &Amount {
-            Amount::zero_ref()
-        }
-        fn fee_purity(&self) -> u64 {
-            1
-        }
-        fn fee_extend(&self) -> Ret<u8> {
-            Ok(1)
-        }
-    }
+    use basis::interface::Context;
+    use field::{Address, Amount, Uint4};
+    use testkit::sim::context::make_ctx_with_state;
+    use testkit::sim::state::FlatMemState as StateMem;
+    use testkit::sim::tx::StubTxBuilder;
 
     #[test]
     fn calltargets_resolve_under_callview_and_inherits() {
@@ -506,8 +443,8 @@ mod machine_test {
         let contract_base = crate::ContractAddress::calculate(&base_addr, &Uint4::from(3));
 
         // Build an inheritance chain: Child -> Parent -> Base.
-        // The key trick is: `super.f()` moves curadr (code owner) to Parent, while ctxadr stays Child.
-        // Then inside Parent.f(), `this.g()` must resolve in ctxadr (Child), `self.g()` in curadr (Parent),
+        // The key trick is: `super.f()` moves code_owner to Parent, while state_addr stays Child.
+        // Then inside Parent.f(), `this.g()` must resolve in state_addr (Child), `self.g()` in code_owner (Parent),
         // and `super.g()` in Parent's direct base (Base).
 
         let base = Contract::new().func(Func::new("g").unwrap().fitsh("return 3").unwrap());
@@ -562,11 +499,16 @@ mod machine_test {
         env.tx.main = base_addr;
         env.tx.addrs = vec![contract_child.into_addr()];
 
-        let tx = DummyTx {
-            main: base_addr,
-            addrs: env.tx.addrs.clone(),
-        };
-        let mut ctx = ContextInst::new(env, Box::new(ext_state), Box::new(EmptyLogs {}), &tx);
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .addrs(env.tx.addrs.clone())
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
 
         let mut gas: i64 = 1_000_000;
         let mut exec = crate::frame::ExecEnv {
@@ -583,6 +525,95 @@ mod machine_test {
     }
 
     #[test]
+    fn call_outer_uses_inherits_but_view_pure_callcode_keep_local_lookup() {
+        let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(11));
+        let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(12));
+
+        let parent_sto = Contract::new()
+            .func(Func::new("id").unwrap().fitsh("return 2").unwrap())
+            .func(
+                Func::new("probe")
+                    .unwrap()
+                    .public()
+                    .fitsh("return self.id() * 100 + this.id()")
+                    .unwrap(),
+            )
+            .into_sto();
+        let child_sto = Contract::new()
+            .inh(contract_parent.to_addr())
+            .func(Func::new("id").unwrap().fitsh("return 1").unwrap())
+            .func(Func::new("noop").unwrap().public().fitsh("return 0").unwrap())
+            .into_sto();
+
+        let run_main = |main_script: &str| -> Ret<Value> {
+            let main_codes = lang_to_bytecode(main_script).unwrap();
+            let mut ext_state = StateMem::default();
+            {
+                let mut vmsta = crate::VMState::wrap(&mut ext_state);
+                vmsta.contract_set(&contract_parent, &parent_sto.clone());
+                vmsta.contract_set(&contract_child, &child_sto.clone());
+            }
+
+            let mut env = Env::default();
+            env.block.height = 1;
+            env.tx.main = base_addr;
+            env.tx.addrs = vec![contract_child.clone().into_addr()];
+
+            let tx = StubTxBuilder::new()
+                .ty(0)
+                .main(base_addr)
+                .addrs(env.tx.addrs.clone())
+                .fee(Amount::zero())
+                .gas_max(1)
+                .tx_size(128)
+                .fee_purity(1)
+                .build();
+            let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+
+            let mut gas: i64 = 1_000_000;
+            let mut exec = crate::frame::ExecEnv {
+                ctx: &mut ctx as &mut dyn Context,
+                gas: &mut gas,
+            };
+            let mut machine = Machine::create(Resoure::create(1));
+            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+        };
+
+        // CALL (Outer): should resolve inherited `probe` on parent.
+        let outer_script = r##"
+            lib C = 0
+            let v = C.probe()
+            // In parent.probe():
+            // - self.id() resolves in parent(code_owner)=2
+            // - this.id() resolves in child(state_addr)=1
+            assert v == 201
+            return 0
+        "##;
+        assert!(run_main(outer_script).is_ok(), "CALL should resolve through inherits");
+
+        // CALLVIEW/CALLPURE/CALLCODE: should keep exact local lookup, so inherited-only fn is not found.
+        let view_script = r##"
+            lib C = 0
+            return C:probe()
+        "##;
+        assert!(run_main(view_script).is_err(), "CALLVIEW should not resolve inherits");
+
+        let pure_script = r##"
+            lib C = 0
+            return C::probe()
+        "##;
+        assert!(run_main(pure_script).is_err(), "CALLPURE should not resolve inherits");
+
+        let callcode_script = r##"
+            lib C = 0
+            callcode C::probe
+            end
+        "##;
+        assert!(run_main(callcode_script).is_err(), "CALLCODE should not resolve inherits");
+    }
+
+    #[test]
     fn min_call_gas_is_consumed_from_shared_counter() {
         use crate::rt::Bytecode;
 
@@ -593,61 +624,16 @@ mod machine_test {
         env.tx.main = main;
         env.tx.addrs = vec![main];
 
-        #[derive(Clone, Debug)]
-        struct GasTx {
-            main: Address,
-            addrs: Vec<Address>,
-            fee: Amount,
-        }
-
-        impl field::Serialize for GasTx {
-            fn size(&self) -> usize {
-                128
-            }
-            fn serialize(&self) -> Vec<u8> {
-                vec![]
-            }
-        }
-
-        impl basis::interface::TxExec for GasTx {}
-
-        impl TransactionRead for GasTx {
-            fn ty(&self) -> u8 {
-                TransactionType3::TYPE
-            }
-            fn hash(&self) -> Hash {
-                Hash::default()
-            }
-            fn hash_with_fee(&self) -> Hash {
-                Hash::default()
-            }
-            fn main(&self) -> Address {
-                self.main
-            }
-            fn addrs(&self) -> Vec<Address> {
-                self.addrs.clone()
-            }
-            fn fee(&self) -> &Amount {
-                &self.fee
-            }
-            fn fee_got(&self) -> Amount {
-                self.fee.clone()
-            }
-            fn fee_purity(&self) -> u64 {
-                3200
-            }
-            fn fee_extend(&self) -> Ret<u8> {
-                // gas_max_byte=17 uses lookup-table decoding.
-                Ok(17)
-            }
-        }
-
-        let tx = GasTx {
-            main,
-            addrs: vec![main],
-            fee: Amount::unit238(10_000_000),
-        };
-        let mut ctx = ContextInst::new(env, Box::new(StateMem::default()), Box::new(EmptyLogs {}), &tx);
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(3200)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
@@ -674,38 +660,16 @@ mod machine_test {
         env.tx.main = main;
         env.tx.addrs = vec![main];
 
-        #[derive(Clone, Debug)]
-        struct GasTx {
-            main: Address,
-            addrs: Vec<Address>,
-            fee: Amount,
-        }
-
-        impl field::Serialize for GasTx {
-            fn size(&self) -> usize { 128 }
-            fn serialize(&self) -> Vec<u8> { vec![] }
-        }
-
-        impl basis::interface::TxExec for GasTx {}
-
-        impl TransactionRead for GasTx {
-            fn ty(&self) -> u8 { TransactionType3::TYPE }
-            fn hash(&self) -> Hash { Hash::default() }
-            fn hash_with_fee(&self) -> Hash { Hash::default() }
-            fn main(&self) -> Address { self.main }
-            fn addrs(&self) -> Vec<Address> { self.addrs.clone() }
-            fn fee(&self) -> &Amount { &self.fee }
-            fn fee_got(&self) -> Amount { self.fee.clone() }
-            fn fee_purity(&self) -> u64 { 1 }
-            fn fee_extend(&self) -> Ret<u8> { Ok(17) }
-        }
-
-        let tx = GasTx {
-            main,
-            addrs: vec![main],
-            fee: Amount::unit238(10_000_000),
-        };
-        let mut ctx = ContextInst::new(env, Box::new(StateMem::default()), Box::new(EmptyLogs {}), &tx);
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
@@ -755,61 +719,16 @@ mod machine_test {
         env.tx.main = main;
         env.tx.addrs = vec![main];
 
-        #[derive(Clone, Debug)]
-        struct LowFeeTx {
-            main: Address,
-            addrs: Vec<Address>,
-            fee: Amount,
-        }
-
-        impl field::Serialize for LowFeeTx {
-            fn size(&self) -> usize {
-                128
-            }
-            fn serialize(&self) -> Vec<u8> {
-                vec![]
-            }
-        }
-
-        impl basis::interface::TxExec for LowFeeTx {}
-
-        impl TransactionRead for LowFeeTx {
-            fn ty(&self) -> u8 {
-                TransactionType3::TYPE
-            }
-            fn hash(&self) -> Hash {
-                Hash::default()
-            }
-            fn hash_with_fee(&self) -> Hash {
-                Hash::default()
-            }
-            fn main(&self) -> Address {
-                self.main
-            }
-            fn addrs(&self) -> Vec<Address> {
-                self.addrs.clone()
-            }
-            fn fee(&self) -> &Amount {
-                &self.fee
-            }
-            fn fee_got(&self) -> Amount {
-                self.fee.clone()
-            }
-            fn fee_purity(&self) -> u64 {
-                1
-            }
-            fn fee_extend(&self) -> Ret<u8> {
-                // gas_max_byte=1 uses lookup-table decoding.
-                Ok(1)
-            }
-        }
-
-        let tx = LowFeeTx {
-            main,
-            addrs: vec![main],
-            fee: Amount::unit238(1),
-        };
-        let mut ctx = ContextInst::new(env, Box::new(StateMem::default()), Box::new(EmptyLogs {}), &tx);
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(1))
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
@@ -833,38 +752,16 @@ mod machine_test {
         env.tx.main = main;
         env.tx.addrs = vec![main];
 
-        #[derive(Clone, Debug)]
-        struct GasTx {
-            main: Address,
-            addrs: Vec<Address>,
-            fee: Amount,
-        }
-
-        impl field::Serialize for GasTx {
-            fn size(&self) -> usize { 128 }
-            fn serialize(&self) -> Vec<u8> { vec![] }
-        }
-
-        impl basis::interface::TxExec for GasTx {}
-
-        impl TransactionRead for GasTx {
-            fn ty(&self) -> u8 { TransactionType3::TYPE }
-            fn hash(&self) -> Hash { Hash::default() }
-            fn hash_with_fee(&self) -> Hash { Hash::default() }
-            fn main(&self) -> Address { self.main }
-            fn addrs(&self) -> Vec<Address> { self.addrs.clone() }
-            fn fee(&self) -> &Amount { &self.fee }
-            fn fee_got(&self) -> Amount { self.fee.clone() }
-            fn fee_purity(&self) -> u64 { 1 }
-            fn fee_extend(&self) -> Ret<u8> { Ok(17) }
-        }
-
-        let tx = GasTx {
-            main,
-            addrs: vec![main],
-            fee: Amount::unit238(10_000_000),
-        };
-        let mut ctx = ContextInst::new(env, Box::new(StateMem::default()), Box::new(EmptyLogs {}), &tx);
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));

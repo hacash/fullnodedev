@@ -1,21 +1,26 @@
-mod common;
+#![cfg(feature = "vm")]
 
 #[cfg(test)]
 mod action_coverage {
-    use std::collections::HashMap;
-    use std::sync::{Mutex, MutexGuard, Once, OnceLock};
+    use std::sync::Once;
 
-    use basis::component::{Env, ACTION_CTX_LEVEL_CALL_CONTRACT, ACTION_CTX_LEVEL_CALL_MAIN};
+    use basis::component::{ACTION_CTX_LEVEL_CALL_CONTRACT, ACTION_CTX_LEVEL_CALL_MAIN};
     use basis::interface::ActExec;
-    use basis::interface::{ActCall, Context, Logs, State, StateOperat, Transaction, TransactionRead};
+    use basis::interface::{ActCall, Context, Logs, State, StateOperat, Transaction};
     use field::{
         Address, Amount, BytesW1, BytesW2, DiamondName, DiamondSto, Field, Hash, Inscripts, Parse,
         Readable, Serialize, Uint1, Uint2, Uint4,
     };
-    use protocol::context::ContextInst;
     use protocol::state::CoreState;
-    use protocol::transaction::{create_tx_info, TransactionType3};
+    use protocol::transaction::TransactionType3;
     use sys::{Account, Ret};
+    use testkit::sim::integration::{
+        make_ctx_from_tx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
+        vm_alt_addr as alt_addr, vm_main_addr as main_addr,
+    };
+    use testkit::sim::logs::MemLogs;
+    use testkit::sim::state::FlatMemState as StateMem;
+    use testkit::sim::tx::StubTx as TestTx;
     use vm::action::*;
     use vm::build_codes;
     use vm::contract::{Abst, Contract, Func};
@@ -28,76 +33,6 @@ mod action_coverage {
 
     // ─── Test infrastructure ───
 
-    #[derive(Default, Clone)]
-    struct StateMem {
-        mem: HashMap<Vec<u8>, Vec<u8>>,
-    }
-
-    impl State for StateMem {
-        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
-            self.mem.get(&k).cloned()
-        }
-        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
-            self.mem.insert(k, v);
-        }
-        fn del(&mut self, k: Vec<u8>) {
-            self.mem.remove(&k);
-        }
-    }
-
-    #[derive(Default, Clone)]
-    struct MemLogs {
-        items: Vec<Vec<u8>>,
-    }
-
-    impl Logs for MemLogs {
-        fn push(&mut self, stuff: &dyn Serialize) {
-            self.items.push(stuff.serialize());
-        }
-        fn load(&self, _height: u64, idx: usize) -> Option<Vec<u8>> {
-            self.items.get(idx).cloned()
-        }
-        fn remove(&self, _height: u64) {}
-        fn snapshot_len(&self) -> usize { self.items.len() }
-        fn truncate(&mut self, len: usize) { self.items.truncate(len); }
-    }
-
-    #[derive(Clone, Debug)]
-    struct TestTx {
-        ty: u8,
-        main: Address,
-        addrs: Vec<Address>,
-        fee: Amount,
-        gas_max: u8,
-        tx_size: usize,
-    }
-
-    impl Serialize for TestTx {
-        fn size(&self) -> usize { self.tx_size }
-        fn serialize(&self) -> Vec<u8> { vec![] }
-    }
-
-    impl basis::interface::TxExec for TestTx {}
-
-    impl TransactionRead for TestTx {
-        fn ty(&self) -> u8 { self.ty }
-        fn hash(&self) -> Hash { Hash::default() }
-        fn hash_with_fee(&self) -> Hash { Hash::default() }
-        fn main(&self) -> Address { self.main }
-        fn addrs(&self) -> Vec<Address> { self.addrs.clone() }
-        fn fee(&self) -> &Amount { &self.fee }
-        fn fee_got(&self) -> Amount { self.fee.clone() }
-        fn fee_purity(&self) -> u64 { 3200 }
-        fn fee_extend(&self) -> Ret<u8> { Ok(self.gas_max) }
-    }
-
-    fn test_guard() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-    }
-
     fn init_action_registry() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
@@ -106,35 +41,11 @@ mod action_coverage {
         });
     }
 
-    fn main_addr() -> Address {
-        Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap()
-    }
-
-    fn alt_addr() -> Address {
-        Address::from_readable("1EuGe2GU8tDKnHLNfBsgyffx66buK7PP6g").unwrap()
-    }
-
     fn contract_addr(main: &Address, nonce: u32) -> ContractAddress {
         ContractAddress::calculate(main, &Uint4::from(nonce))
     }
 
-    fn make_tx(ty: u8, main: Address, addrs: Vec<Address>, gas_max: u8) -> TestTx {
-        TestTx {
-            ty, main, addrs,
-            fee: Amount::unit238(10_000_000),
-            gas_max,
-            tx_size: 128,
-        }
-    }
-
-    fn make_ctx_from_tx<'a>(height: u64, tx: &'a dyn TransactionRead, state: Box<dyn State>, logs: Box<dyn Logs>) -> ContextInst<'a> {
-        let mut env = Env::default();
-        env.block.height = height;
-        env.tx = create_tx_info(tx);
-        ContextInst::new(env, state, logs, tx)
-    }
-
-    fn make_ctx<'a>(height: u64, tx: &'a TestTx, state: Box<dyn State>, logs: Box<dyn Logs>) -> ContextInst<'a> {
+    fn make_ctx<'a>(height: u64, tx: &'a TestTx, state: Box<dyn State>, logs: Box<dyn Logs>) -> protocol::context::ContextInst<'a> {
         make_ctx_from_tx(height, tx, state, logs)
     }
 
@@ -183,10 +94,6 @@ mod action_coverage {
         codes.extend_from_slice(&sig);
         codes.push(Bytecode::END as u8);
         codes
-    }
-
-    fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
-        unsafe { protocol::setup::VM_ASSIGN_FUNC = assigner; }
     }
 
     fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(u32, Vec<u8>)> {

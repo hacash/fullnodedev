@@ -1,4 +1,6 @@
-use vm::exec_test::execute_lang_with_params;
+mod common;
+
+use common::execute_lang_with_params;
 
 #[test]
 fn choose_returns_yes_when_cond_true() {

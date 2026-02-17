@@ -6,58 +6,17 @@ use protocol::transaction::*;
 use sys::*;
 
 #[cfg(feature = "ast")]
-use std::any::Any;
-
+use testkit::sim::context::{make_ctx_with_logs as testkit_make_ctx_with_logs, make_ctx_with_state as testkit_make_ctx_with_state};
 #[cfg(feature = "ast")]
-#[derive(Default, Clone)]
-struct AstTestState {
-    parent: std::sync::Weak<Box<dyn State>>,
-    mem: MemMap,
-}
-
+use testkit::sim::logs::MemLogs as AstTestLogs;
 #[cfg(feature = "ast")]
-impl State for AstTestState {
-    fn fork_sub(&self, p: std::sync::Weak<Box<dyn State>>) -> Box<dyn State> {
-        Box::new(Self {
-            parent: p,
-            mem: MemMap::default(),
-        })
-    }
-
-    fn merge_sub(&mut self, sta: Box<dyn State>) {
-        self.mem.extend(sta.as_mem().clone());
-    }
-
-    fn detach(&mut self) {
-        self.parent = std::sync::Weak::<Box<dyn State>>::new();
-    }
-
-    fn clone_state(&self) -> Box<dyn State> {
-        Box::new(self.clone())
-    }
-
-    fn as_mem(&self) -> &MemMap {
-        &self.mem
-    }
-
-    fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
-        if let Some(v) = self.mem.get(&k) {
-            return v.clone();
-        }
-        if let Some(parent) = self.parent.upgrade() {
-            return parent.get(k);
-        }
-        None
-    }
-
-    fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
-        self.mem.insert(k, Some(v));
-    }
-
-    fn del(&mut self, k: Vec<u8>) {
-        self.mem.insert(k, None);
-    }
-}
+use testkit::sim::state::ForkableMemState as AstTestState;
+#[cfg(feature = "ast")]
+use testkit::sim::vm::CounterMockVm as MockVM;
+#[cfg(feature = "tex")]
+use testkit::sim::context::make_ctx_with_default_tx;
+#[cfg(feature = "tex")]
+use testkit::sim::state::FlatMemState as TestMemState;
 
 #[cfg(feature = "ast")]
 fn build_ast_ctx_with_state<'a>(
@@ -65,8 +24,7 @@ fn build_ast_ctx_with_state<'a>(
     sta: Box<dyn State>,
     tx: &'a dyn TransactionRead,
 ) -> protocol::context::ContextInst<'a> {
-    use protocol::state::EmptyLogs;
-    protocol::context::ContextInst::new(env, sta, Box::new(EmptyLogs {}), tx)
+    testkit_make_ctx_with_state(env, sta, tx)
 }
 
 #[cfg(feature = "ast")]
@@ -575,18 +533,12 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
         }
     }
 
-    use protocol::state::EmptyLogs;
     let tx = TransactionType2::default();
     let mut env = Env::default();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
-    let mut ctx = protocol::context::ContextInst::new(
-        env,
-        Box::new(AstTestState::default()),
-        Box::new(EmptyLogs {}),
-        &tx,
-    );
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     let old_adr = Address::create_scriptmh([6u8; 20]);
     ctx.p2sh_set(old_adr, Box::new(AstTestP2sh)).unwrap();
     let old_tex = ctx.tex_ledger().clone();
@@ -696,30 +648,8 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
 }
 
 #[cfg(feature = "tex")]
-#[derive(Default)]
-struct TestMemState {
-    kv: std::collections::HashMap<Vec<u8>, Vec<u8>>,
-}
-
-#[cfg(feature = "tex")]
-impl State for TestMemState {
-    fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
-        self.kv.get(&k).cloned()
-    }
-    fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
-        self.kv.insert(k, v);
-    }
-    fn del(&mut self, k: Vec<u8>) {
-        self.kv.remove(&k);
-    }
-}
-
-#[cfg(feature = "tex")]
 fn build_tex_ctx_with_state(env: Env, sta: Box<dyn State>) -> protocol::context::ContextInst<'static> {
-    use protocol::state::EmptyLogs;
-    use protocol::transaction::TransactionType2;
-    let tx = Box::leak(Box::new(TransactionType2::default()));
-    protocol::context::ContextInst::new(env, sta, Box::new(EmptyLogs {}), tx)
+    make_ctx_with_default_tx(env, sta)
 }
 
 #[cfg(feature = "tex")]
@@ -1079,25 +1009,6 @@ impl AstTestCombo {
     }
 }
 
-// --- In-memory Logs for testing snapshot_len / truncate ---
-#[cfg(feature = "ast")]
-struct AstTestLogs {
-    entries: Vec<Vec<u8>>,
-}
-#[cfg(feature = "ast")]
-impl AstTestLogs {
-    fn new() -> Self { Self { entries: vec![] } }
-    fn len(&self) -> usize { self.entries.len() }
-}
-#[cfg(feature = "ast")]
-impl Logs for AstTestLogs {
-    fn push(&mut self, stuff: &dyn Serialize) {
-        self.entries.push(stuff.serialize());
-    }
-    fn snapshot_len(&self) -> usize { self.entries.len() }
-    fn truncate(&mut self, len: usize) { self.entries.truncate(len); }
-}
-
 // --- Helper to build ctx with AstTestLogs ---
 #[cfg(feature = "ast")]
 fn build_ast_ctx_with_logs<'a>(
@@ -1106,7 +1017,7 @@ fn build_ast_ctx_with_logs<'a>(
     log: Box<dyn Logs>,
     tx: &'a dyn TransactionRead,
 ) -> protocol::context::ContextInst<'a> {
-    protocol::context::ContextInst::new(env, sta, log, tx)
+    testkit_make_ctx_with_logs(env, sta, log, tx)
 }
 
 // PLACEHOLDER_NEW_TESTS
@@ -1643,36 +1554,6 @@ fn test_ast_p2sh_rollback_allows_retry_in_next_child() {
 // =====================================================================
 // VM snapshot/restore tests within AST branches
 // =====================================================================
-
-// --- Mock VM that tracks global state for snapshot/restore testing ---
-#[cfg(feature = "ast")]
-struct MockVM {
-    /// Mutable counter that simulates VM global state changes.
-    counter: std::sync::Arc<std::sync::atomic::AtomicI64>,
-}
-
-#[cfg(feature = "ast")]
-impl MockVM {
-    fn create() -> (Box<dyn VM>, std::sync::Arc<std::sync::atomic::AtomicI64>) {
-        let counter = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
-        (Box::new(Self { counter: counter.clone() }), counter)
-    }
-}
-
-#[cfg(feature = "ast")]
-impl VM for MockVM {
-    fn usable(&self) -> bool { true }
-
-    fn snapshot_volatile(&self) -> Box<dyn Any> {
-        Box::new(self.counter.load(std::sync::atomic::Ordering::SeqCst))
-    }
-
-    fn restore_volatile(&mut self, snap: Box<dyn Any>) {
-        if let Ok(c) = snap.downcast::<i64>() {
-            self.counter.store(*c, std::sync::atomic::Ordering::SeqCst);
-        }
-    }
-}
 
 // --- Test action that mutates VM state (increments MockVM counter) ---
 #[cfg(feature = "ast")]

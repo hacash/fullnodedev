@@ -1,0 +1,11 @@
+[package]
+name = "testkit"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+sys            = {path = "../sys"}
+field          = {path = "../field"}
+basis          = {path = "../basis"}
+protocol       = {path = "../protocol", features = ["ast", "tex", "vm"]}

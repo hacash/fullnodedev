@@ -13,7 +13,6 @@ pub mod lang;
 
 pub use lang::PrintOption;
 pub mod api;
-pub mod exec_test;
 pub mod machine;
 pub mod native;
 pub mod space;

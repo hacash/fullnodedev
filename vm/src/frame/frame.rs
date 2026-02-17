@@ -66,8 +66,8 @@ pub struct Frame {
     pub oprnds: Stack,
     pub locals: Stack,
     pub heap: Heap,
-    pub ctxadr: ContractAddress,
-    pub curadr: ContractAddress,
+    pub state_addr: ContractAddress,
+    pub code_owner: ContractAddress,
 }
 
 
@@ -100,8 +100,8 @@ impl Frame {
         let locs = self.locals.limit() - self.locals.len();
         f.oprnds.reset(stks);
         f.locals.reset(locs);
-        f.ctxadr = self.ctxadr.clone();
-        f.curadr = self.curadr.clone();
+        f.state_addr = self.state_addr.clone();
+        f.code_owner = self.code_owner.clone();
         f.depth = self.depth + 1;
         f
     }
@@ -159,8 +159,8 @@ impl Frame {
             &mut r.global_vals,
             &mut r.memory_vals,
             &mut host,
-            &self.ctxadr,
-            &self.curadr,
+            &self.state_addr,
+            &self.code_owner,
         )
     }
 
