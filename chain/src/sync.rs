@@ -38,7 +38,7 @@ fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr 
                 let (blkobj, size) = match block::block_create(&datas.as_ref()[seek..]) {
                     Ok((b, s)) => (b, s),
                     Err(e) => {
-                        let _ = errch_parse.send(format!("block parse error: {}", e));
+                        let _ = errch_parse.send(format!("block {} parse error: {}", need_blk_hei, e));
                         break;
                     }
                 };
@@ -79,6 +79,7 @@ fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr 
         }
     });
 
+    drop(errch2);
     drop(errch);
     if let Some(e) = errcv.into_iter().next() {
         return sync_warning(e)

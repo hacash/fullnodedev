@@ -5,7 +5,7 @@
 
 
 
-action_define!{EnvHeight, 0x0701, 
+action_define!{ EnvHeight, 0x0701, 
     ActLv::AnyInCall, false, [], {},
     (self, "Syscall: Get block height".to_owned()),
     (self, ctx, _gas {
@@ -14,7 +14,7 @@ action_define!{EnvHeight, 0x0701,
 }
 
 
-action_define!{EnvMainAddr, 0x0702, 
+action_define!{ EnvMainAddr, 0x0702, 
     ActLv::AnyInCall, false, [], {},
     (self, "Syscall: Get main address".to_owned()),
     (self, ctx, _gas {
@@ -23,7 +23,7 @@ action_define!{EnvMainAddr, 0x0702,
 }
 
 
-action_define!{EnvCoinbaseAddr, 0x0703, 
+action_define!{ EnvCoinbaseAddr, 0x0703, 
     ActLv::AnyInCall, false, [], {},
     (self, "Syscall: Get coinbase address".to_owned()),
     (self, ctx, _gas {
@@ -38,7 +38,7 @@ action_define!{EnvCoinbaseAddr, 0x0703,
 
 
 
-action_define!{ViewCheckSign, 0x0601, 
+action_define!{ ViewCheckSign, 0x0601, 
     ActLv::AnyInCall, false, [], {
         addr: Address
     },
@@ -52,7 +52,7 @@ action_define!{ViewCheckSign, 0x0601,
 }
 
 
-action_define!{ViewBalance, 0x0602, 
+action_define!{ ViewBalance, 0x0602, 
     ActLv::AnyInCall, false, [], {
         addr: Address
     },
@@ -68,7 +68,7 @@ action_define!{ViewBalance, 0x0602,
 }
 
 
-action_define!{ViewDiamondInscNum, 0x0603, 
+action_define!{ ViewDiamondInscNum, 0x0603, 
     ActLv::AnyInCall, false, [], {
         diamond: DiamondName
     },
@@ -87,7 +87,7 @@ action_define!{ViewDiamondInscNum, 0x0603,
 }
 
 
-action_define!{ViewDiamondInscGet, 0x0604, 
+action_define!{ ViewDiamondInscGet, 0x0604, 
     ActLv::AnyInCall, false, [], {
         diamond: DiamondName
         inscidx: Uint1

@@ -22,7 +22,8 @@ include! {"asset.rs"}
 // include!{"diamond_insc.rs"}
 // include!{"diamond_util.rs"}
 // include!{"channel.rs"}
-include! {"chainlimit.rs"}
+include! {"blob.rs"}
+include! {"chain.rs"}
 
 include! {"astselect.rs"}
 include! {"astif.rs"}
@@ -33,42 +34,36 @@ include! {"astif.rs"}
 action_register! {
 
     // hac
-    HacToTrs              // 1
-    HacFromTrs            // 13
-    HacFromToTrs          // 14
-    // HacAmountCompress     // 15
+    HacToTrs      
+    HacFromTrs    
+    HacFromToTrs    
+    // HacAmountCompress  
 
-    // channel
-    // ChannelOpen           // 2
-    // ChannelClose          // 3
-
-    // diamond
-    // DiamondMint           // 4
-    DiaSingleTrs          // 5
-    DiaFromToTrs          // 6
-    DiaToTrs              // 7
-    DiaFromTrs            // 8
+    DiaSingleTrs       
+    DiaFromToTrs   
+    DiaToTrs       
+    DiaFromTrs     
 
     // satoshi
-    // SatoshiGenesis     // 9
-    SatToTrs              // 10
-    SatFromTrs            // 11
-    SatFromToTrs          // 12
+    // SatoshiGenesis   
+    SatToTrs            
+    SatFromTrs         
+    SatFromToTrs     
 
     // asset
-    // AssetCreate           // 16
-    AssetToTrs            // 17
-    AssetFromTrs          // 18
-    AssetFromToTrs        // 19
+    // AssetCreate     
+    AssetToTrs         
+    AssetFromTrs      
+    AssetFromToTrs    
 
-    AstSelect             // 21
-    AstIf                 // 22
-    HeightScope           // 29
-    ChainAllow            // 30
+    AstSelect           
+    AstIf          
 
-    // inscription
-    // DiamondInscription         // 32
-    // DiamondInscriptionClear    // 33
+    TxMessage
+    TxBlob
+
+    HeightScope       
+    ChainAllow     
 
 
 }

@@ -2,7 +2,7 @@
 
 
 
-action_define!{AssetToTrs, 17, 
+action_define!{ AssetToTrs, 17, 
     ActLv::MainCall,
     true, // burn 90 fee
     [], {
@@ -18,7 +18,7 @@ action_define!{AssetToTrs, 17,
 }
 
 
-action_define!{AssetFromTrs, 18, 
+action_define!{ AssetFromTrs, 18, 
     ActLv::MainCall,
     true,  // burn 90 fee
     [ self.from ], {
@@ -34,7 +34,7 @@ action_define!{AssetFromTrs, 18,
 }
 
 
-action_define!{AssetFromToTrs, 19, 
+action_define!{ AssetFromToTrs, 19, 
     ActLv::MainCall,
     true,  // burn 90 fee
     [ self.from ], {

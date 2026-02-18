@@ -14,7 +14,7 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         block: BlkInfo {
             height,
             hash: Hash::default(),
-            coinbase: Address::default(),
+            coinbase: engcnf.external_exec_coinbase(),
         },
         tx: protocol::transaction::create_tx_info(&tx),
     };

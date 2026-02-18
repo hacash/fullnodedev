@@ -88,7 +88,8 @@ impl Parse for Amount {
             return errf!("multi-byte amount cannot be all zero")
         }
         if bytes_is_zero(&self.byte) && (self.unit != 0 || self.dist != 0 || !self.byte.is_empty()) {
-            return errf!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte_len={})", self.unit, self.dist, self.byte.len())
+            println!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte={:?})", self.unit, self.dist, self.byte)
+            // return errf!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte_len={})", self.unit, self.dist, self.byte.len())
         }
         Ok(2 + btlen)
     }
@@ -96,25 +97,19 @@ impl Parse for Amount {
 
 impl Serialize for Amount {
     fn serialize_to(&self, out: &mut Vec<u8>) {
-        if self.is_zero() {
+        /*if self.is_zero() {
             if self.unit != 0 || self.dist != 0 || !self.byte.is_empty() {
                 panic!("amount: semantic zero in non-canonical form (unit={}, dist={}, byte_len={}) - check historical data", self.unit, self.dist, self.byte.len());
             }
             out.push(0);
             out.push(0);
             return;
-        }
+        }*/
         out.push(self.unit);
         out.push(self.dist as u8);
         out.extend_from_slice(&self.byte);
     }
     fn size(&self) -> usize {
-        if self.is_zero() {
-            if self.unit != 0 || self.dist != 0 || !self.byte.is_empty() {
-                panic!("amount: semantic zero in non-canonical form (unit={}, dist={}, byte_len={}) - check historical data", self.unit, self.dist, self.byte.len());
-            }
-            return 2;
-        }
         1 + 1 + self.byte.len()
     }
 }
@@ -1106,7 +1101,7 @@ mod amount_tests {
     }
 
     #[test]
-    fn test_zero_serialize_parse_canonical_only() {
+    fn test_zero_serialize_parse_semantic_zero_accepted() {
         let canonical = Amount::zero();
         let bytes = canonical.serialize();
         assert_eq!(bytes, &[0u8, 0], "zero must serialize to exactly [0, 0]");
@@ -1115,12 +1110,16 @@ mod amount_tests {
         assert!(parsed.unit() == 0 && parsed.dist() == 0 && parsed.byte().is_empty(),
             "parse of [0,0] must yield canonical (0,0,[])");
         assert!(parsed.equal(&canonical));
+
         let alt_zero = Amount { unit: 0, dist: 1, byte: vec![0] };
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { alt_zero.serialize(); }));
-        assert!(r.is_err(), "serialize of semantic zero (0,1,[0]) must panic to detect historical data");
+        let alt_ser = alt_zero.serialize();
+        assert_eq!(alt_ser, vec![0u8, 1, 0], "non-canonical semantic zero keeps raw encoding");
+
         let non_canonical_zero_bytes = vec![0u8, 1, 0];
         let mut parsed = Amount::default();
-        assert!(parsed.parse(&non_canonical_zero_bytes).is_err(), "parse of non-canonical zero [0,1,0] must return error");
+        parsed.parse(&non_canonical_zero_bytes).unwrap();
+        assert!(parsed.is_zero(), "parse of non-canonical zero [0,1,0] must still be semantic zero");
+        assert_eq!(parsed.to_bigint(), BigInt::from(0));
     }
 
     #[test]

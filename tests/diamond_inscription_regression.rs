@@ -115,7 +115,7 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
         let mut fail_ctx = make_ctx(10_000, tx.as_read());
         seed_balance(&mut fail_ctx, &main, 1_000_000);
         seed_diamond(&mut fail_ctx, diamond, main, cur_len, 0, 100);
-        let mut fail_act = DiamondInscription::new();
+        let mut fail_act = DiaInscPush::new();
         fail_act.diamonds = DiamondNameListMax200::one(diamond);
         fail_act.protocol_cost = Amount::mei(expect_cost.saturating_sub(1));
         fail_act.engraved_type = Uint1::from(1);
@@ -136,7 +136,7 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
         let mut ok_ctx = make_ctx(10_000, tx.as_read());
         seed_balance(&mut ok_ctx, &main, 1_000_000);
         seed_diamond(&mut ok_ctx, diamond, main, cur_len, 0, 100);
-        let mut ok_act = DiamondInscription::new();
+        let mut ok_act = DiaInscPush::new();
         ok_act.diamonds = DiamondNameListMax200::one(diamond);
         ok_act.protocol_cost = Amount::mei(expect_cost);
         ok_act.engraved_type = Uint1::from(1);
@@ -162,7 +162,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
     let mut fail_ctx = make_ctx(10_000, tx.as_read());
     seed_balance(&mut fail_ctx, &main, 1_000_000);
     seed_diamond(&mut fail_ctx, diamond, main, 0, 0, 100);
-    let mut fail_act = DiamondInscription::new();
+    let mut fail_act = DiaInscPush::new();
     fail_act.diamonds = DiamondNameListMax200::one(diamond);
     fail_act.protocol_cost = Amount::zero();
     fail_act.engraved_type = Uint1::from(100);
@@ -174,12 +174,48 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
     let mut ok_ctx = make_ctx(10_000, tx.as_read());
     seed_balance(&mut ok_ctx, &main, 1_000_000);
     seed_diamond(&mut ok_ctx, diamond, main, 0, 0, 100);
-    let mut ok_act = DiamondInscription::new();
+    let mut ok_act = DiaInscPush::new();
     ok_act.diamonds = DiamondNameListMax200::one(diamond);
     ok_act.protocol_cost = Amount::zero();
     ok_act.engraved_type = Uint1::from(101);
     ok_act.engraved_content = raw_non_readable;
     ok_act.execute(&mut ok_ctx).unwrap();
+}
+
+#[test]
+fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
+    let main_acc = Account::create_by("diamond-inscription-clear-main").unwrap();
+    let main = addr_of(&main_acc);
+    let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_011);
+    tx.fill_sign(&main_acc).unwrap();
+
+    let diamond = DiamondName::from_readable(b"WTYUKB").unwrap();
+    let mut ctx = make_ctx(10_000, tx.as_read());
+    seed_balance(&mut ctx, &main, 1_000_000);
+    // prev_engraved_height=9_950, pending=10_000 -> cooldown not met for actions that enforce cooldown.
+    seed_diamond(&mut ctx, diamond, main, 2, 9_950, 123);
+
+    let mut clear = DiaInscClean::new();
+    clear.diamonds = DiamondNameListMax200::one(diamond);
+    clear.protocol_cost = Amount::mei(123);
+    clear.execute(&mut ctx).unwrap();
+
+    let sto_after_clear = CoreState::wrap(ctx.state()).diamond(&diamond).unwrap();
+    assert_eq!(sto_after_clear.inscripts.length(), 0);
+    assert_eq!(*sto_after_clear.prev_engraved_height, 0);
+    assert_eq!(balance_mei(&mut ctx, &main), 1_000_000 - 123);
+
+    // Append immediately at the same height should pass because clear reset cooldown trace to 0.
+    let mut append = DiaInscPush::new();
+    append.diamonds = DiamondNameListMax200::one(diamond);
+    append.protocol_cost = Amount::zero();
+    append.engraved_type = Uint1::from(1);
+    append.engraved_content = BytesW1::from_str("again").unwrap();
+    append.execute(&mut ctx).unwrap();
+
+    let sto_after_append = CoreState::wrap(ctx.state()).diamond(&diamond).unwrap();
+    assert_eq!(sto_after_append.inscripts.length(), 1);
+    assert_eq!(*sto_after_append.prev_engraved_height, 10_000);
 }
 
 #[cfg(feature = "hip22")]
@@ -196,7 +232,7 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     let mut fail_ctx = make_ctx(10_000, tx.as_read());
     seed_balance(&mut fail_ctx, &main, 1_000_000);
     seed_diamond(&mut fail_ctx, diamond, main, 1, 0, 100);
-    let mut fail_act = DiamondInscriptionEdit::new();
+    let mut fail_act = DiaInscEdit::new();
     fail_act.diamond = diamond;
     fail_act.index = Uint1::from(0);
     fail_act.protocol_cost = Amount::zero();
@@ -208,7 +244,7 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     let mut ok_ctx = make_ctx(10_000, tx.as_read());
     seed_balance(&mut ok_ctx, &main, 1_000_000);
     seed_diamond(&mut ok_ctx, diamond, main, 1, 0, 100);
-    let mut ok_act = DiamondInscriptionEdit::new();
+    let mut ok_act = DiaInscEdit::new();
     ok_act.diamond = diamond;
     ok_act.index = Uint1::from(0);
     ok_act.protocol_cost = Amount::mei(1);
@@ -218,7 +254,7 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
 
     let dia = CoreState::wrap(ok_ctx.state()).diamond(&diamond).unwrap();
     assert_eq!(
-        dia.inscripts.list()[0].to_readable_or_hex(),
+        dia.inscripts.as_list()[0].to_readable_or_hex(),
         "edited".to_owned()
     );
     assert_eq!(balance_mei(&mut ok_ctx, &main), 1_000_000 - 1);
@@ -244,7 +280,7 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
     seed_balance(&mut fail_ctx, &from, 1_000_000);
     seed_diamond(&mut fail_ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut fail_ctx, to_diamond, to, 10, 0, 200);
-    let mut fail_act = DiamondInscriptionMove::new();
+    let mut fail_act = DiaInscMove::new();
     fail_act.from_diamond = from_diamond;
     fail_act.to_diamond = to_diamond;
     fail_act.index = Uint1::from(0);
@@ -256,7 +292,7 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
     seed_balance(&mut ok_ctx, &from, 1_000_000);
     seed_diamond(&mut ok_ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ok_ctx, to_diamond, to, 10, 0, 200);
-    let mut ok_act = DiamondInscriptionMove::new();
+    let mut ok_act = DiaInscMove::new();
     ok_act.from_diamond = from_diamond;
     ok_act.to_diamond = to_diamond;
     ok_act.index = Uint1::from(0);
@@ -288,7 +324,7 @@ fn diamond_inscription_move_is_free_when_target_has_less_than_ten() {
     seed_balance(&mut ctx, &from, 1_000_000);
     seed_diamond(&mut ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
-    let mut act = DiamondInscriptionMove::new();
+    let mut act = DiaInscMove::new();
     act.from_diamond = from_diamond;
     act.to_diamond = to_diamond;
     act.index = Uint1::from(0);
@@ -310,7 +346,7 @@ fn diamond_inscription_rejects_non_privakey_owner() {
     seed_balance(&mut ctx, &owner, 1_000_000);
     seed_diamond(&mut ctx, diamond, owner, 0, 0, 100);
 
-    let mut act = DiamondInscription::new();
+    let mut act = DiaInscPush::new();
     act.diamonds = DiamondNameListMax200::one(diamond);
     act.protocol_cost = Amount::zero();
     act.engraved_type = Uint1::from(1);
@@ -340,13 +376,13 @@ fn diamond_move_astselect_recovers_failed_child_and_keeps_successful_child() {
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
 
     // Child #1 fails (index out of range), child #2 succeeds.
-    let mut mv_fail = DiamondInscriptionMove::new();
+    let mut mv_fail = DiaInscMove::new();
     mv_fail.from_diamond = from_diamond;
     mv_fail.to_diamond = to_diamond;
     mv_fail.index = Uint1::from(1);
     mv_fail.protocol_cost = Amount::zero();
 
-    let mut mv_ok = DiamondInscriptionMove::new();
+    let mut mv_ok = DiaInscMove::new();
     mv_ok.from_diamond = from_diamond;
     mv_ok.to_diamond = to_diamond;
     mv_ok.index = Uint1::from(0);
@@ -381,13 +417,13 @@ fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
 
     // Child #1 succeeds, child #2 fails. exe_min=2 => whole AstSelect fails and must rollback child #1.
-    let mut mv_ok = DiamondInscriptionMove::new();
+    let mut mv_ok = DiaInscMove::new();
     mv_ok.from_diamond = from_diamond;
     mv_ok.to_diamond = to_diamond;
     mv_ok.index = Uint1::from(0);
     mv_ok.protocol_cost = Amount::zero();
 
-    let mut mv_fail = DiamondInscriptionMove::new();
+    let mut mv_fail = DiaInscMove::new();
     mv_fail.from_diamond = from_diamond;
     mv_fail.to_diamond = to_diamond;
     mv_fail.index = Uint1::from(0);

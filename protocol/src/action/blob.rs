@@ -1,6 +1,6 @@
 
 
-action_define!{TxMessage, 0x0401, 
+action_define!{ TxMessage, 0x0401, 
     ActLv::Guard, // level
     false, [],
     {
@@ -13,7 +13,7 @@ action_define!{TxMessage, 0x0401,
 }
 
 
-action_define!{TxBlob, 0x0402, 
+action_define!{ TxBlob, 0x0402, 
     ActLv::Guard, // level
     false, [],
     {

@@ -1,7 +1,7 @@
 
 
 
-action_define!{AstIf, 26, 
+action_define!{ AstIf, 26, 
     ActLv::Ast, // level
     // burn 90 fee , check child burn 90
     self.cond.burn_90() || self.br_if.burn_90() || self.br_else.burn_90(), 

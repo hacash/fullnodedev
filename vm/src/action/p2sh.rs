@@ -38,7 +38,7 @@ pub struct ScriptmhCalc {
 
 
 /* pay to script hash */
-action_define!{P2SHScriptProve, 36, 
+action_define!{ P2SHScriptProve, 46, 
     ActLv::Ast, // level
     false, [],
     {

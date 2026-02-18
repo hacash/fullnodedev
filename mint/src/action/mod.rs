@@ -28,20 +28,20 @@ action_register! {
 
 
     // channel
-    ChannelOpen           // 2
-    ChannelClose          // 3
-    DiamondMint           // 4
+    ChannelOpen   
+    ChannelClose    
+    DiamondMint   
 
     // asset
-    AssetCreate           // 16
+    AssetCreate 
 
     // inscription
-    DiamondInscription         // 32
-    DiamondInscriptionClear    // 33
+    DiaInscPush  
+    DiaInscClean
 
     // HIP-22 inscription upgrade
-    DiamondInscriptionMove     // 34
-    DiamondInscriptionDrop     // 35
-    DiamondInscriptionEdit     // 36
+    DiaInscMove
+    DiaInscDrop
+    DiaInscEdit
 
 }

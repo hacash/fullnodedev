@@ -272,7 +272,7 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
 
 
 // test define action
-action_define!{Test63856464969364, 9527, 
+action_define!{ Test63856464969364, 9527, 
     ActLv::MainCall, // level
     false, // burn 90 fee
     [],

@@ -31,7 +31,7 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let mut pick_engrave = |tx: &dyn TransactionRead| {
         let txhx = tx.hash();
         for act in tx.actions() {
-            if let Some(a) = action::DiamondInscription::downcast(act) {
+            if let Some(a) = action::DiaInscPush::downcast(act) {
                 let mut obj = serde_json::Map::new();
                 obj.insert("action".to_owned(), json!("inscription"));
                 obj.insert("diamonds".to_owned(), json!(a.diamonds.readable()));
@@ -45,7 +45,7 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
                     json!(a.protocol_cost.to_fin_string()),
                 );
                 push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
-            } else if let Some(a) = action::DiamondInscriptionClear::downcast(act) {
+            } else if let Some(a) = action::DiaInscClean::downcast(act) {
                 let mut obj = serde_json::Map::new();
                 obj.insert("action".to_owned(), json!("clear"));
                 obj.insert("diamonds".to_owned(), json!(a.diamonds.readable()));
@@ -54,7 +54,7 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
                     json!(a.protocol_cost.to_fin_string()),
                 );
                 push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
-            } else if let Some(a) = action::DiamondInscriptionMove::downcast(act) {
+            } else if let Some(a) = action::DiaInscMove::downcast(act) {
                 let from = a.from_diamond.to_readable();
                 let to = a.to_diamond.to_readable();
                 let mut obj = serde_json::Map::new();
@@ -70,7 +70,7 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
                     json!(a.protocol_cost.to_fin_string()),
                 );
                 push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
-            } else if let Some(a) = action::DiamondInscriptionDrop::downcast(act) {
+            } else if let Some(a) = action::DiaInscDrop::downcast(act) {
                 let dia = a.diamond.to_readable();
                 let mut obj = serde_json::Map::new();
                 obj.insert("action".to_owned(), json!("drop"));
@@ -84,7 +84,7 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
                     json!(a.protocol_cost.to_fin_string()),
                 );
                 push_diamond_engrave_item(&mut datalist, &txhx, tx_hash, obj);
-            } else if let Some(a) = action::DiamondInscriptionEdit::downcast(act) {
+            } else if let Some(a) = action::DiaInscEdit::downcast(act) {
                 let dia = a.diamond.to_readable();
                 let mut obj = serde_json::Map::new();
                 obj.insert("action".to_owned(), json!("edit"));

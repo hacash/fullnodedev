@@ -53,10 +53,7 @@ fn check_diamond_status_for_inscription(
 /// Load diamond, verify Normal status and PRIVAKEY owner, return (DiamondSto, owner).
 /// Does NOT require a pre-known owner — used by Move where owners are discovered on-chain.
 #[inline]
-fn load_diamond_for_inscription(
-    state: &mut CoreState,
-    diamond: &DiamondName,
-) -> Ret<DiamondSto> {
+fn load_diamond_for_inscription(state: &mut CoreState, diamond: &DiamondName) -> Ret<DiamondSto> {
     let diasto = must_have!(
         format!("diamond status {}", diamond.to_readable()),
         state.diamond(diamond)
@@ -91,7 +88,7 @@ fn check_inscription_cooldown(
 /*
 *
 */
-action_define! { DiamondInscription, 32,
+action_define! { DiaInscPush, 32,
     ActLv::Top, // level
     true, // burn 90 fee
     [], // need sign
@@ -118,7 +115,7 @@ action_define! { DiamondInscription, 32,
     })
 }
 
-fn diamond_inscription(this: &DiamondInscription, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -172,7 +169,7 @@ fn diamond_inscription(this: &DiamondInscription, ctx: &mut dyn Context) -> Ret<
 
 /************************************ */
 
-action_define! { DiamondInscriptionClear, 33,
+action_define! { DiaInscClean, 33,
     ActLv::Top, // level
     true, // burn 90 fee
     [], // need sign
@@ -195,7 +192,7 @@ action_define! { DiamondInscriptionClear, 33,
 }
 
 fn diamond_inscription_clean(
-    this: &DiamondInscriptionClear,
+    this: &DiaInscClean,
     ctx: &mut dyn Context,
 ) -> Ret<Vec<u8>> {
     let env = ctx.env().clone();
@@ -216,6 +213,7 @@ fn diamond_inscription_clean(
     // do
     let mut state = CoreState::wrap(ctx.state());
     for dia in this.diamonds.as_list() {
+        // Clear semantics: full wipe of inscription traces, including cooldown trace.
         let cc = engraved_clean_one_diamond(pdhei, &mut state, &main_addr, &dia)?;
         ttcost = ttcost.add_mode_u64(&cc)?;
     }
@@ -243,14 +241,114 @@ fn diamond_inscription_clean(
     Ok(vec![])
 }
 
-/************************************** */
+
+/************************************ */
 
 /*
 * HIP-22: Upgrade HACD Inscriptions
 * Transfer / Per-entry Delete / Single-entry Update
 */
 
-action_define! { DiamondInscriptionMove, 34,
+
+action_define! { DiaInscEdit, 34,
+    ActLv::MainCall, // level
+    true, // burn 90% fee
+    [], // need sign
+    {
+        diamond           : DiamondName
+        index             : Uint1
+        protocol_cost     : Amount
+        engraved_type     : Uint1
+        engraved_content  : BytesW1
+    },
+    (self, {
+        let a = self;
+        let ins_str = a.engraved_content.to_readable_or_hex();
+        let mut desc = format!("Edit inscription #{} of HACD {} to \"{}\"",
+            *a.index, a.diamond.to_readable(), ins_str);
+        if a.protocol_cost.is_positive() {
+            desc += &format!(" cost {} HAC fee", a.protocol_cost.to_fin_string());
+        }
+        desc
+    }),
+    (self, ctx, _gas {
+        #[cfg(not(feature = "hip22"))]
+        if true { return errf!("HIP-22 not activated") }
+        diamond_inscription_edit(self, ctx)
+    })
+}
+
+fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+    let env = ctx.env().clone();
+    let main_addr = env.tx.main;
+    let pfee = &this.protocol_cost;
+    if pfee.is_negative() {
+        return errf!("protocol cost cannot be negative");
+    }
+    if pfee.size() > 4 {
+        return errf!("protocol cost amount size cannot over 4 bytes");
+    }
+    ctx.check_sign(&main_addr)?;
+    // check inscription content
+    check_inscription_content(*this.engraved_type, &this.engraved_content)?;
+    let idx = *this.index as usize;
+    let pdhei = env.block.height;
+    // check diamond
+    let mut state = CoreState::wrap(ctx.state());
+    let mut diasto = check_diamond_status_for_inscription(&mut state, &main_addr, &this.diamond)?;
+    let cur_len = diasto.inscripts.length();
+    if cur_len == 0 {
+        return errf!("no inscriptions in HACD {}", this.diamond.to_readable());
+    }
+    if idx >= cur_len {
+        return errf!(
+            "inscription index {} out of range, HACD {} has {} inscriptions",
+            idx,
+            this.diamond.to_readable(),
+            cur_len
+        );
+    }
+    // check cooldown
+    check_inscription_cooldown(*diasto.prev_engraved_height, pdhei, &this.diamond)?;
+    // protocol cost: average_bid_burn / 100
+    let diaslt = must_have!(
+        format!("diamond {}", this.diamond.to_readable()),
+        state.diamond_smelt(&this.diamond)
+    );
+    let cost = calc_edit_inscription_protocol_cost(*diaslt.average_bid_burn);
+    if pfee < &cost {
+        return errf!(
+            "inscription edit cost error need {:?} but got {:?}",
+            cost,
+            pfee
+        );
+    }
+    // replace the inscription entry
+    diasto
+        .inscripts
+        .replace(idx, this.engraved_content.clone())?;
+    diasto.prev_engraved_height = BlockHeight::from(pdhei);
+    state.diamond_set(&this.diamond, &diasto);
+    // burn protocol fee
+    if pfee.is_positive() {
+        let mut ttcount = state.get_total_count();
+        let pfee_zhu = pfee.to_zhu_u64()?;
+        let burn_total = (*ttcount.diamond_insc_burn_zhu)
+            .checked_add(pfee_zhu)
+            .ok_or_else(|| "diamond_insc_burn_zhu overflow".to_string())?;
+        ttcount.diamond_insc_burn_zhu = Uint8::from(burn_total);
+        state.set_total_count(&ttcount);
+        hac_sub(ctx, &main_addr, pfee)?;
+    }
+    // ok
+    Ok(vec![])
+}
+
+
+/************************************** */
+
+
+action_define! { DiaInscMove, 35,
     ActLv::Ast, // level
     true, // urn fee
     [], // need sign
@@ -277,7 +375,7 @@ action_define! { DiamondInscriptionMove, 34,
     })
 }
 
-fn diamond_inscription_move(this: &DiamondInscriptionMove, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -371,7 +469,7 @@ fn diamond_inscription_move(this: &DiamondInscriptionMove, ctx: &mut dyn Context
 
 /************************************ */
 
-action_define! { DiamondInscriptionDrop, 35,
+action_define! { DiaInscDrop, 36,
     ActLv::Top, // level
     true, // burn 90 fee
     [], // need sign
@@ -392,7 +490,7 @@ action_define! { DiamondInscriptionDrop, 35,
     })
 }
 
-fn diamond_inscription_drop(this: &DiamondInscriptionDrop, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -450,102 +548,6 @@ fn diamond_inscription_drop(this: &DiamondInscriptionDrop, ctx: &mut dyn Context
         state.set_total_count(&ttcount);
         hac_sub(ctx, &main_addr, &pfee)?;
     }
-    Ok(vec![])
-}
-
-/************************************ */
-
-action_define! { DiamondInscriptionEdit, 36,
-    ActLv::MainCall, // level
-    true, // burn 90% fee
-    [], // need sign
-    {
-        diamond           : DiamondName
-        index             : Uint1
-        protocol_cost     : Amount
-        engraved_type     : Uint1
-        engraved_content  : BytesW1
-    },
-    (self, {
-        let a = self;
-        let ins_str = a.engraved_content.to_readable_or_hex();
-        let mut desc = format!("Edit inscription #{} of HACD {} to \"{}\"",
-            *a.index, a.diamond.to_readable(), ins_str);
-        if a.protocol_cost.is_positive() {
-            desc += &format!(" cost {} HAC fee", a.protocol_cost.to_fin_string());
-        }
-        desc
-    }),
-    (self, ctx, _gas {
-        #[cfg(not(feature = "hip22"))]
-        if true { return errf!("HIP-22 not activated") }
-        diamond_inscription_edit(self, ctx)
-    })
-}
-
-fn diamond_inscription_edit(this: &DiamondInscriptionEdit, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
-    let env = ctx.env().clone();
-    let main_addr = env.tx.main;
-    let pfee = &this.protocol_cost;
-    if pfee.is_negative() {
-        return errf!("protocol cost cannot be negative");
-    }
-    if pfee.size() > 4 {
-        return errf!("protocol cost amount size cannot over 4 bytes");
-    }
-    ctx.check_sign(&main_addr)?;
-    // check inscription content
-    check_inscription_content(*this.engraved_type, &this.engraved_content)?;
-    let idx = *this.index as usize;
-    let pdhei = env.block.height;
-    // check diamond
-    let mut state = CoreState::wrap(ctx.state());
-    let mut diasto = check_diamond_status_for_inscription(&mut state, &main_addr, &this.diamond)?;
-    let cur_len = diasto.inscripts.length();
-    if cur_len == 0 {
-        return errf!("no inscriptions in HACD {}", this.diamond.to_readable());
-    }
-    if idx >= cur_len {
-        return errf!(
-            "inscription index {} out of range, HACD {} has {} inscriptions",
-            idx,
-            this.diamond.to_readable(),
-            cur_len
-        );
-    }
-    // check cooldown
-    check_inscription_cooldown(*diasto.prev_engraved_height, pdhei, &this.diamond)?;
-    // protocol cost: average_bid_burn / 100
-    let diaslt = must_have!(
-        format!("diamond {}", this.diamond.to_readable()),
-        state.diamond_smelt(&this.diamond)
-    );
-    let cost = calc_edit_inscription_protocol_cost(*diaslt.average_bid_burn);
-    if pfee < &cost {
-        return errf!(
-            "inscription edit cost error need {:?} but got {:?}",
-            cost,
-            pfee
-        );
-    }
-    // replace the inscription entry
-    diasto
-        .inscripts
-        .replace(idx, this.engraved_content.clone())?;
-    diasto.prev_engraved_height = BlockHeight::from(pdhei);
-    state.diamond_set(&this.diamond, &diasto);
-    // burn protocol fee
-    if pfee.is_positive() {
-        let mut ttcount = state.get_total_count();
-        let pfee_zhu = pfee.to_zhu_u64()?;
-        let burn_total = (*ttcount.diamond_insc_burn_zhu)
-            .checked_add(pfee_zhu)
-            .ok_or_else(|| "diamond_insc_burn_zhu overflow".to_string())?;
-        ttcount.diamond_insc_burn_zhu = Uint8::from(burn_total);
-        state.set_total_count(&ttcount);
-        hac_sub(ctx, &main_addr, pfee)?;
-    }
-    // ok
     Ok(vec![])
 }
 
@@ -628,11 +630,11 @@ pub fn engraved_one_diamond(
     Ok(cost)
 }
 
-/*
-* return total cost
-*/
+/// Clear all inscriptions of one diamond and return protocol cost.
+/// Unlike append/drop/edit/move, clear does not enforce cooldown check.
+/// It also removes cooldown trace by resetting `prev_engraved_height` to 0.
 pub fn engraved_clean_one_diamond(
-    pending_height: u64,
+    _pending_height_ignored: u64,
     state: &mut CoreState,
     addr: &Address,
     diamond: &DiamondName,
@@ -649,12 +651,10 @@ pub fn engraved_clean_one_diamond(
             diamond.to_readable()
         );
     }
-    // check height cooldown
-    check_inscription_cooldown(*diasto.prev_engraved_height, pending_height, diamond)?;
     // burning cost bid fee
     let cost = Amount::mei(*diaslt.average_bid_burn as u64);
-    // do clean
-    diasto.prev_engraved_height = BlockHeight::from(pending_height);
+    // Clear is a full reset: wipe inscriptions and wipe cooldown trace.
+    diasto.prev_engraved_height = BlockHeight::from(0);
     diasto.inscripts = Inscripts::default();
     // save
     state.diamond_set(diamond, &diasto);

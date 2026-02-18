@@ -1,7 +1,7 @@
 # Diamond Programmable Inscription Space (English)
 
-Version: 1.0  
-Date: 2026-02-16  
+Version: 1.1  
+Date: 2026-02-18  
 Audience: protocol developers, wallet/indexer engineers, QA and audit teams
 
 ---
@@ -36,8 +36,8 @@ The focus is on business semantics and economic rules, with minimal code-level d
 3. Move (single entry)
 4. Drop (single entry)
 5. Edit (single entry)
-3. Unified cooldown is 200 blocks.  
-4. Any inscription state mutation refreshes inscription height and starts a new cooldown period.
+3. Unified cooldown is 200 blocks for Append/Move/Drop/Edit.  
+4. Clear is a full reset operation: it does not require cooldown pre-check and resets `prev_engraved_height` to `0`.
 
 ---
 
@@ -46,7 +46,7 @@ The focus is on business semantics and economic rules, with minimal code-level d
 | Action | Business Meaning | Signature Requirements | Ownership / Status Gate | Cooldown | Capacity | Minimum Protocol Cost |
 |---|---|---|---|---|---|---|
 | Append | Add inscriptions to one or multiple diamonds | `tx.main` must sign | Diamond must belong to `tx.main`; owner must be PRIVAKEY; status must be Normal | Per target diamond | Before append `<200` | Sum of per-diamond Append tier cost |
-| Clear | Remove all inscriptions from one or multiple diamonds | `tx.main` must sign | Same as Append | Per target diamond | No growth | Per diamond `A`, summed |
+| Clear | Remove all inscriptions from one or multiple diamonds, and clear cooldown trace | `tx.main` must sign | Same as Append | No pre-check; reset `prev_engraved_height=0` | No growth | Per diamond `A`, summed |
 | Move | Move one inscription from source to target | Source owner and target owner must both sign | Both owners must be PRIVAKEY; both diamonds must be Normal; same-diamond move forbidden; owners need not be `tx.main` | Both source and target | Target before append `<200` | Target-side Append tier only |
 | Drop | Delete one inscription by index | `tx.main` must sign | Diamond must belong to `tx.main`; owner PRIVAKEY; status Normal | Target diamond | N/A | `A/50` |
 | Edit | Edit one inscription by index | `tx.main` must sign | Same as Drop | Target diamond | N/A | `A/100` |
@@ -139,10 +139,11 @@ Assessment:
 
 ## 6. Cooldown Model
 
-1. Unified cooldown window: 200 blocks.  
-2. Append/Clear/Drop/Edit: cooldown checked on target diamond(s).  
+1. Unified cooldown window: 200 blocks for Append/Move/Drop/Edit.  
+2. Append/Drop/Edit: cooldown checked on target diamond(s).  
 3. Move: cooldown checked on both source and target.  
-4. If cooldown is not met, action fails atomically with no partial commit.
+4. Clear: no cooldown check; after successful clear, `prev_engraved_height` is reset to `0`.  
+5. If cooldown is not met, action fails atomically with no partial commit (for actions that enforce cooldown).
 
 ---
 
@@ -238,7 +239,7 @@ Error example:
 2. Move to low-load targets (`<10`) can be zero protocol cost; product UX should expose this clearly.  
 3. Diamonds owned by non-PRIVAKEY addresses cannot execute inscription actions.  
 4. Wallet UI should show both minimum and submitted protocol_cost to reduce over-burn mistakes.  
-5. Unified 200-block cooldown strongly limits high-frequency edit/cleanup workflows.
+5. Unified 200-block cooldown strongly limits high-frequency Append/Move/Drop/Edit workflows, while Clear intentionally bypasses cooldown as a full-reset action.
 
 ---
 
@@ -253,8 +254,9 @@ The following cases SHOULD remain in long-lived regression suites:
 2. non-Normal rejection
 3. non-PRIVAKEY owner rejection
 3. Cooldown matrix:
-1. cooldown checked by all five action types
+1. target cooldown checks for Append/Drop/Edit
 2. dual-side cooldown for Move
+3. Clear skips cooldown check and resets `prev_engraved_height` to `0`
 4. Capacity edges:
 1. 0/9/10/39/40/99/100/199/200
 5. Pricing edges:
@@ -291,7 +293,7 @@ Any change to action rules or economics MUST synchronously update:
 
 The current Diamond inscription model is:
 1. Strong authorization: PRIVAKEY owner + Normal status + required signatures.  
-2. Strong cooldown: unified 200 blocks, with dual-side checks for Move.  
+2. Strong cooldown for Append/Move/Drop/Edit: unified 200 blocks with dual-side checks for Move; Clear is an explicit full reset and clears cooldown trace (`prev_engraved_height=0`).  
 3. Tiered incremental pricing: cheaper at low load, more expensive near capacity.  
 4. Compatibility burn policy: `protocol_cost >= min` and burn exactly what is submitted.  
 5. Unified quote and execution formulas: official quote coverage for Append/Move/Edit/Drop.

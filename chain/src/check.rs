@@ -28,7 +28,7 @@ fn try_execute_tx_by(this: &ChainEngine, tx: &dyn TransactionRead, pd_hei: u64, 
         block: BlkInfo {
             height: pd_hei,
             hash,
-            coinbase: Address::default(),
+            coinbase: cnf.external_exec_coinbase(),
         },
         tx: create_tx_info(tx),
     };

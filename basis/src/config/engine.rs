@@ -57,6 +57,16 @@ impl EngineConf {
     pub fn is_mainnet(&self) -> bool {
         self.chain_id == 0
     }
+
+    // Coinbase used by non-block external execution contexts (mempool check/sandbox).
+    // If this node has miner enabled and a configured reward address, use that address;
+    // otherwise keep zero-address semantics.
+    pub fn external_exec_coinbase(&self) -> Address {
+        if self.miner_enable && self.miner_reward_address != Address::default() {
+            return self.miner_reward_address
+        }
+        Address::default()
+    }
     
     pub fn new(ini: &IniObj, dbv: u32) -> EngineConf {
         
@@ -175,4 +185,34 @@ impl EngineConf {
         cnf
     }
     
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_exec_coinbase_returns_zero_when_miner_disabled() {
+        let ini = IniObj::new();
+        let cnf = EngineConf::new(&ini, 1);
+        assert_eq!(cnf.external_exec_coinbase(), Address::default());
+    }
+
+    #[test]
+    fn external_exec_coinbase_returns_miner_reward_when_enabled() {
+        let reward = "1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9".to_owned();
+        let mut ini = IniObj::new();
+        ini.insert(
+            "miner".to_owned(),
+            HashMap::from([
+                ("enable".to_owned(), Some("true".to_owned())),
+                ("reward".to_owned(), Some(reward.clone())),
+            ]),
+        );
+        let cnf = EngineConf::new(&ini, 1);
+        assert_eq!(
+            cnf.external_exec_coinbase(),
+            Address::from_readable(&reward).unwrap()
+        );
+    }
 }
