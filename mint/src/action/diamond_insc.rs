@@ -138,7 +138,7 @@ fn diamond_inscription(this: &DiamondInscription, ctx: &mut dyn Context) -> Ret<
     let pdhei = env.block.height;
     // do
     let mut state = CoreState::wrap(ctx.state());
-    for dia in this.diamonds.list() {
+    for dia in this.diamonds.as_list() {
         let cc = engraved_one_diamond(pdhei, &mut state, &main_addr, &dia, &this.engraved_content)?;
         ttcost = ttcost.add_mode_u64(&cc)?;
     }
@@ -215,7 +215,7 @@ fn diamond_inscription_clean(
     let pdhei = env.block.height;
     // do
     let mut state = CoreState::wrap(ctx.state());
-    for dia in this.diamonds.list() {
+    for dia in this.diamonds.as_list() {
         let cc = engraved_clean_one_diamond(pdhei, &mut state, &main_addr, &dia)?;
         ttcost = ttcost.add_mode_u64(&cc)?;
     }
@@ -345,7 +345,7 @@ fn diamond_inscription_move(this: &DiamondInscriptionMove, ctx: &mut dyn Context
         );
     }
     // extract inscription from source
-    let content = from_sto.inscripts.list()[idx].clone();
+    let content = from_sto.inscripts.as_list()[idx].clone();
     from_sto.inscripts.drop(idx)?;
     from_sto.prev_engraved_height = BlockHeight::from(pdhei);
     let mut state = CoreState::wrap(ctx.state());

@@ -22,7 +22,7 @@ pub struct UnlockScript {
 /// deterministically, without re-implementing the hashing rules and accidentally diverging
 /// from consensus.
 ///
-/// Hashing rules (same as `UnlockScriptProve::get_merkel()`):
+/// Hashing rules (same as `P2SHScriptProve::get_merkel()`):
 /// - Leaf: `sha3("p2sh_leaf_" || libs || lockbox)`
 /// - Branch i: `sha3("p2sh_branch_" || left || right)` where `(left,right)` is decided by `posi`.
 /// - Address: `Address::create_scriptmh(ripemd160(root_sha3))`
@@ -38,7 +38,7 @@ pub struct ScriptmhCalc {
 
 
 /* pay to script hash */
-action_define!{UnlockScriptProve, 90, 
+action_define!{P2SHScriptProve, 36, 
     ActLv::Ast, // level
     false, [],
     {
@@ -72,7 +72,7 @@ impl P2sh for UnlockScript {
 }
 
 
-impl UnlockScriptProve {
+impl P2SHScriptProve {
 
     /// Compute the `SCRIPTMH` address from:
     /// - `adrlibs`: the contract library allowlist used by the P2SH lock script
@@ -96,7 +96,7 @@ impl UnlockScriptProve {
             lockbox.to_vec(),
         ].concat()));
         let mut path = vec![h.clone()];
-        for step in merkels.list().iter() {
+        for step in merkels.as_list().iter() {
             let posi = step.posi.uint();
             if posi > 1 {
                 return errf!("p2sh merkel posi {} invalid, must be 0 or 1", posi)
@@ -129,7 +129,7 @@ impl UnlockScriptProve {
         let hei = ctx.env().block.height;
         let cap = SpaceCap::new(hei);
         // check libs all is contract 
-        let libs = self.adrlibs.list();
+        let libs = self.adrlibs.as_list();
         if libs.len() > cap.librarys_link {
             return errf!("p2sh libs overflow ({}>{})", libs.len(), cap.librarys_link)
         }

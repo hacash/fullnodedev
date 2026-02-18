@@ -1,6 +1,6 @@
 
 /* default to spend 32 gas each call */
-action_define!{ContractMainCall, 100, 
+action_define!{ContractMainCall, 35, 
     ActLv::Ast, // level
     false, [],
     {

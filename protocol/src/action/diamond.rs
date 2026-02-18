@@ -90,7 +90,7 @@ pub fn do_diamonds_transfer(diamonds: &DiamondNameListMax200, from: &Address, to
     let isdf = ctx.env().chain.diamond_form;
     //transfer
     let mut state = CoreState::wrap(ctx.state());
-    for dianame in diamonds.list() {
+    for dianame in diamonds.as_list() {
         hacd_move_one_diamond(&mut state, from, to, &dianame)?; // move one
     }
     if isdf {

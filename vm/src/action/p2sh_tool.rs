@@ -1,4 +1,4 @@
-/* P2SH tooling helpers. Design goals: - Canonical: given the same set of (libs, lockbox) leaves, every implementation should derive the same scriptmh address. We achieve this by sorting leaves by their *leaf hash* (the same leaf commitment used by consensus). - Consensus-aligned: leaf/branch hashing rules are intentionally identical to `UnlockScriptProve::calc_scriptmh_from_lockbox` / `get_merkel()`. - Hard to misuse: APIs return intermediate hashes and generate `UnlockScriptProve` instances for a selected leaf, so wallet/SDK code does not need to hand-roll Merkle paths. */
+/* P2SH tooling helpers. Design goals: - Canonical: given the same set of (libs, lockbox) leaves, every implementation should derive the same scriptmh address. We achieve this by sorting leaves by their *leaf hash* (the same leaf commitment used by consensus). - Consensus-aligned: leaf/branch hashing rules are intentionally identical to `P2SHScriptProve::calc_scriptmh_from_lockbox` / `get_merkel()`. - Hard to misuse: APIs return intermediate hashes and generate `P2SHScriptProve` instances for a selected leaf, so wallet/SDK code does not need to hand-roll Merkle paths. */
 
 
 /// A single P2SH leaf: `(adrlibs, lockbox)`.
@@ -60,7 +60,7 @@ impl P2shTool {
         let empty_path = MerkelStuffs::from_list(vec![])?;
         let mut leaves: Vec<P2shLeaf> = Vec::with_capacity(specs.len());
         for spec in specs.drain(..) {
-            let calc = UnlockScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &empty_path)?;
+            let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &empty_path)?;
             let leaf_hash = calc.sha3_path[0].clone();
             leaves.push(P2shLeaf{ spec, leaf_hash });
         }
@@ -173,19 +173,19 @@ impl P2shMerkleTree {
             .ok_or_else(|| "p2sh tool: leaf (libs, lockbox) not found".to_owned())
     }
 
-    /// Build an `UnlockScriptProve` action for the leaf at canonical index `idx`.
+    /// Build an `P2SHScriptProve` action for the leaf at canonical index `idx`.
     ///
     /// Returns:
     /// - the final `scriptmh` address (should be used as `from` address)
-    /// - the filled `UnlockScriptProve` action (ready to be included in tx)
+    /// - the filled `P2SHScriptProve` action (ready to be included in tx)
     /// - the intermediate `ScriptmhCalc` (leaf->root path), for debugging/tooling
     ///
     /// This function does NOT validate bytecode (it does not know the current `SpaceCap`).
-    /// The chain will validate in `UnlockScriptProve::execute`.
-    pub fn build_unlock_script_prove_unchecked(&self, idx: usize, witness: BytesW2) -> Ret<(Address, UnlockScriptProve, ScriptmhCalc)> {
+    /// The chain will validate in `P2SHScriptProve::execute`.
+    pub fn build_unlock_script_prove_unchecked(&self, idx: usize, witness: BytesW2) -> Ret<(Address, P2SHScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
         let merkels = self.proof_for_index(idx)?;
-        let calc = UnlockScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &merkels)?;
+        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &merkels)?;
         if calc.address != self.calc.address {
             return errf!(
                 "p2sh tool: proof derived address {} mismatch tree address {}",
@@ -193,7 +193,7 @@ impl P2shMerkleTree {
                 self.calc.address
             )
         }
-        let mut act = UnlockScriptProve::new();
+        let mut act = P2SHScriptProve::new();
         act.argvkey = witness;
         act.lockbox = spec.lockbox;
         act.adrlibs = spec.adrlibs;
@@ -203,15 +203,15 @@ impl P2shMerkleTree {
     }
 
     /// Same as `build_unlock_script_prove_unchecked`, but performs local checks using
-    /// the same rules as `UnlockScriptProve::get_stuff`.
-    pub fn build_unlock_script_prove_checked(&self, block_height: u64, idx: usize, witness: BytesW2) -> Ret<(Address, UnlockScriptProve, ScriptmhCalc)> {
+    /// the same rules as `P2SHScriptProve::get_stuff`.
+    pub fn build_unlock_script_prove_checked(&self, block_height: u64, idx: usize, witness: BytesW2) -> Ret<(Address, P2SHScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
         let cap = SpaceCap::new(block_height);
         let ctb = CodeType::Bytecode;
         // lockbox must be valid by itself
         convert_and_check(&cap, ctb, spec.lockbox.as_vec(), block_height)?;
         // witness bytes must fit local constraints
-        UnlockScriptProve::verify_witness_bytes(&cap, witness.as_vec())?;
+        P2SHScriptProve::verify_witness_bytes(&cap, witness.as_vec())?;
         // ok, build action
         self.build_unlock_script_prove_unchecked(idx, witness)
     }
@@ -247,7 +247,7 @@ mod p2sh_tool_test {
         // pick leaf 0 in canonical order
         let proof = tree.proof_for_index(0).unwrap();
         let spec = &tree.leaves()[0].spec;
-        let calc = UnlockScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &proof).unwrap();
+        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &proof).unwrap();
         assert_eq!(calc.address, tree.address());
     }
 }

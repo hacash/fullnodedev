@@ -281,10 +281,10 @@ combi_revenum_old!{ AddrOrList, Address, AddressW1, ADDR_OR_PTR_DIV_NUM }
 impl AddrOrList {
 
     #[allow(dead_code)]
-    pub fn list(&self) -> Vec<Address> {
+    pub fn to_list(&self) -> Vec<Address> {
         match self {
             Self::Val1(v) => vec![*v],
-            Self::Val2(v) => v.list().clone(),
+            Self::Val2(v) => v.as_list().clone(),
         }
     }
 

@@ -51,7 +51,7 @@ async fn balance(State(ctx): State<ApiCtx>, q: Query<Q8364>) -> impl IntoRespons
                         astptr = &astlist;
                     }
                 },
-                _ => astptr = bls.assets.list()
+                _ => astptr = bls.assets.as_list()
             };
             let mut assets = vec![];
             for a in astptr {
@@ -65,7 +65,7 @@ async fn balance(State(ctx): State<ApiCtx>, q: Query<Q8364>) -> impl IntoRespons
         // asset
         if let Some(true) = &q.assets {
             let mut assets = vec![];
-            for a in bls.assets.list() {
+            for a in bls.assets.as_list() {
                 assets.push(json!({
                     "serial": *a.serial,
                     "amount": *a.amount,

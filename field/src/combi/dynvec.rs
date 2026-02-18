@@ -135,7 +135,7 @@ impl $class {
 		self.count = c;
 	}
 
-    pub fn list(&self) -> &Vec<Box<dyn $dynty>> {
+    pub fn as_list(&self) -> &Vec<Box<dyn $dynty>> {
         &self.vlist
     }
 

@@ -2,10 +2,8 @@
 /*
 *
 */
-action_define!{ SubmitHeightLimit, 29, 
-    ActLv::Guard, // level
-    false, // burn 90 fee
-    [], // need sign
+action_define!{ HeightScope, 0x0411, 
+    ActLv::Guard, false, [],
     {
         start: BlockHeight
         end:   BlockHeight
@@ -31,19 +29,23 @@ action_define!{ SubmitHeightLimit, 29,
 }
 
 
-action_define!{ ValidChainID, 30, 
-    ActLv::Guard, // level
-    false, // burn 90 fee
-    [], // need sign
+combi_list!{ ChainIDList, Uint1, Uint4}
+macro_rules! cids_to_str { ($cids:expr) => {
+    $cids.iter().map(|c: &Uint4|c.to_string()).collect::<Vec<_>>().join(",")
+}}
+
+action_define!{ ChainAllow, 0x0412, 
+    ActLv::Guard, false, [],
     {
-        chain_id: Uint4
+        chains: ChainIDList
     },
-    (self, format!("Valid chain ID {}", *self.chain_id)),
+    (self, format!("Valid chain ID list {}", cids_to_str!(self.chains.as_list()))),
     (self, ctx, _gas {
-        let lid = ctx.env().chain.id;
-        let sid = *self.chain_id;
-        if lid != sid {
-            return errf!("transction must belong to chain id {} but on chain {}", sid, lid)
+        let cid = ctx.env().chain.id;
+        let ids = self.chains.as_list();
+        if ! ids.iter().any(|id| id.uint() == cid) {
+            let cids = cids_to_str!(ids);
+            return errf!("transction must belong to chains {} but on chain {}", cids, cid)
         }
         // ok
         Ok(vec![])

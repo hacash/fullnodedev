@@ -60,7 +60,7 @@ impl Balance {
 	}
 
 	pub fn asset(&self, seri: Fold64) -> Option<AssetAmt> {
-		self.assets.list().iter().find(|a|a.serial==seri).map(|a|a.clone())
+		self.assets.as_list().iter().find(|a|a.serial==seri).map(|a|a.clone())
 	}
 
 	pub fn asset_must(&self, seri: Fold64) -> AssetAmt {

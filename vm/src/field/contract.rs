@@ -108,7 +108,7 @@ macro_rules! func_list_merge_define {
 	($ty:ty) => {
 		// return edit or push
 		fn addition(&mut self, func: $ty) -> Ret<bool> {
-			let list = self.list();
+			let list = self.as_list();
 			for i in 0..self.length() {
 				if list[i].sign == func.sign {
 					self.replace(i, func)?;
@@ -122,7 +122,7 @@ macro_rules! func_list_merge_define {
 		// return edit or push
 		fn check_merge(&mut self, src: &Self) -> VmrtRes<bool> {
 			let mut edit = false;
-			for a in src.list() {
+			for a in src.as_list() {
 				if self.addition(a.clone()).map_ire(ContractUpgradeErr)? {
 					edit = true;
 				}
@@ -188,7 +188,7 @@ impl ContractSto {
 		if edit.inherits_replace_at.length() > 0 {
 			did_change = true;
 			let mut idxs = HashSet::new();
-			for r in edit.inherits_replace_at.list() {
+			for r in edit.inherits_replace_at.as_list() {
 				r.addr.check().map_ire(ContractAddrErr)?;
 				let idx = r.idx.uint() as usize;
 				if !idxs.insert(r.idx.uint()) {
@@ -203,7 +203,7 @@ impl ContractSto {
 		if edit.librarys_replace_at.length() > 0 {
 			did_change = true;
 			let mut idxs = HashSet::new();
-			for r in edit.librarys_replace_at.list() {
+			for r in edit.librarys_replace_at.as_list() {
 				r.addr.check().map_ire(ContractAddrErr)?;
 				let idx = r.idx.uint() as usize;
 				if !idxs.insert(r.idx.uint()) {
@@ -224,14 +224,14 @@ impl ContractSto {
 		}
 
 		if edit.inherits_add.length() > 0 {
-			for a in edit.inherits_add.list() {
+			for a in edit.inherits_add.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 			}
 			self.inherits.append(edit.inherits_add.lists.clone()).unwrap();
 			did_append = true;
 		}
 		if edit.librarys_add.length() > 0 {
-			for a in edit.librarys_add.list() {
+			for a in edit.librarys_add.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 			}
 			self.librarys.append(edit.librarys_add.lists.clone()).unwrap();
@@ -240,13 +240,13 @@ impl ContractSto {
 
 		// check repeat after edit
 		let mut inhset: HashSet<ContractAddress> = HashSet::new();
-		for a in self.inherits.list() {
+		for a in self.inherits.as_list() {
 			if !inhset.insert(a.clone()) {
 				return itr_err_fmt!(InheritsError, "inherits cannot repeat")
 			}
 		}
 		let mut libset: HashSet<ContractAddress> = HashSet::new();
-		for a in self.librarys.list() {
+		for a in self.librarys.as_list() {
 			if !libset.insert(a.clone()) {
 				return itr_err_fmt!(LibrarysError, "librarys cannot repeat")
 			}
@@ -256,13 +256,13 @@ impl ContractSto {
 			did_change = true;
 			{
 				let mut seen = HashSet::new();
-				for a in edit.abstcalls.list() {
+				for a in edit.abstcalls.as_list() {
 					if !seen.insert(a.sign[0]) {
 						return itr_err_fmt!(ContractUpgradeErr, "abstcall sign repeat in edit")
 					}
 				}
 			}
-			for a in edit.abstcalls.list() {
+			for a in edit.abstcalls.as_list() {
 				a.check(hei)?;
 				AbstCall::check(a.sign[0])?;
 				let ctype = CodeType::parse(a.cdty[0])?;
@@ -274,14 +274,14 @@ impl ContractSto {
 		if edit.userfuncs.length() > 0 {
 			{
 				let mut seen = HashSet::new();
-				for a in edit.userfuncs.list() {
+				for a in edit.userfuncs.as_list() {
 					let key = a.sign.to_array();
 					if !seen.insert(key) {
 						return itr_err_fmt!(ContractUpgradeErr, "userfunc sign repeat in edit")
 					}
 				}
 			}
-			for a in edit.userfuncs.list() {
+			for a in edit.userfuncs.as_list() {
 				a.check(hei)?;
 				let ctype = CodeType::parse(a.cdty[0])?;
 				convert_and_check(&cap, ctype, &a.code, hei)?;
@@ -304,7 +304,7 @@ impl ContractSto {
 
 
 	pub fn have_abst_call(&self, ac: AbstCall) -> bool {
-		for a in self.abstcalls.list() {
+		for a in self.abstcalls.as_list() {
 			if ac as u8 == a.sign[0] {
 				return true
 			}
@@ -314,7 +314,7 @@ impl ContractSto {
 
 	pub fn drop_abst_call(&mut self, ac: AbstCall) -> bool {
 		let mut k: Option<usize> = None;
-		let funcs = self.abstcalls.list();
+		let funcs = self.abstcalls.as_list();
 		for i in 0..funcs.len() {
 			let a = &funcs[i];
 			if ac as u8 == a.sign[0] {
@@ -388,14 +388,14 @@ impl ContractSto {
 		// inherits/librarys address version & no-duplicate check
 		{
 			let mut inhset: HashSet<ContractAddress> = HashSet::new();
-			for a in self.inherits.list() {
+			for a in self.inherits.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 				if !inhset.insert(a.clone()) {
 					return itr_err_fmt!(InheritsError, "inherits cannot repeat")
 				}
 			}
 			let mut libset: HashSet<ContractAddress> = HashSet::new();
-			for a in self.librarys.list() {
+			for a in self.librarys.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 				if !libset.insert(a.clone()) {
 					return itr_err_fmt!(LibrarysError, "librarys cannot repeat")
@@ -405,13 +405,13 @@ impl ContractSto {
 		// abst call
 		{
 			let mut seen = HashSet::new();
-			for a in self.abstcalls.list() {
+			for a in self.abstcalls.as_list() {
 				if !seen.insert(a.sign[0]) {
 					return itr_err_fmt!(ContractError, "abstcall sign repeat")
 				}
 			}
 		}
-		for a in self.abstcalls.list() {
+		for a in self.abstcalls.as_list() {
 			a.check(hei)?;
 			AbstCall::check(a.sign[0])?;
 			let ctype = CodeType::parse(a.cdty[0])?;
@@ -420,14 +420,14 @@ impl ContractSto {
 		// usrfun call
 		{
 			let mut seen = HashSet::new();
-			for a in self.userfuncs.list() {
+			for a in self.userfuncs.as_list() {
 				let key = a.sign.to_array();
 				if !seen.insert(key) {
 					return itr_err_fmt!(ContractError, "userfunc sign repeat")
 				}
 			}
 		}
-		for a in self.userfuncs.list() {
+		for a in self.userfuncs.as_list() {
 			a.check(hei)?;
 			let ctype = CodeType::parse(a.cdty[0])?;
 			convert_and_check(&cap, ctype, &a.code, hei)?; // check compile

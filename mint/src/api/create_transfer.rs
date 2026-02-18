@@ -66,7 +66,7 @@ fn create_coin_transfer(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         } else if dialist.length() == 1 {
             let mut obj = DiaSingleTrs::new();
             obj.to = AddrOrPtr::from_addr(toaddr.clone());
-            obj.diamond = DiamondName::from(*dialist.list()[0]);
+            obj.diamond = DiamondName::from(*dialist.as_list()[0]);
             Box::new(obj)
         } else {
             let mut obj = DiaToTrs::new();

@@ -1,7 +1,7 @@
 
 
-action_define!{TxMessage, 96, 
-    ActLv::TopUnique, // level
+action_define!{TxMessage, 0x0401, 
+    ActLv::Guard, // level
     false, [],
     {
         data:    BytesW1
@@ -13,8 +13,8 @@ action_define!{TxMessage, 96,
 }
 
 
-action_define!{TxBlob, 97, 
-    ActLv::TopUnique, // level
+action_define!{TxBlob, 0x0402, 
+    ActLv::Guard, // level
     false, [],
     {
         data:    BytesW2

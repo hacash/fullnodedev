@@ -32,7 +32,7 @@ action_register! {
     ContractDeploy       // 122
     ContractUpdate       // 123
     ContractMainCall     // 124
-    UnlockScriptProve
+    P2SHScriptProve
 
     EnvHeight
     EnvMainAddr

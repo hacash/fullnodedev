@@ -185,7 +185,7 @@ async fn diamond_views(State(ctx): State<ApiCtx>, q: Query<Q5395>) -> impl IntoR
         let Ok(names) = DiamondNameListMax200::from_readable(&name) else {
             return api_error("diamond name error")
         };
-        for dian in names.list() {
+        for dian in names.as_list() {
             query_item(&dian);
         }
 
@@ -307,7 +307,7 @@ async fn diamond_inscription_protocol_cost(State(ctx): State<ApiCtx>, q: Query<Q
     };
 
     let mut cost = Amount::new();
-    for dia in names.list() {
+    for dia in names.as_list() {
         let Some(diaobj) = state.diamond(dia) else {
             return api_error(&format!("cannot find diamond {}", dia))
         };

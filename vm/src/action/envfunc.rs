@@ -102,7 +102,7 @@ action_define!{ViewDiamondInscGet, 0x0604,
         if idx >= num {
             return errf!("diamond {} inscripts number overflow", self.diamond.to_readable())
         }
-        let insc = &diaobj.inscripts.list()[idx];
+        let insc = &diaobj.inscripts.as_list()[idx];
         // ok
         Ok(insc.to_vec())
     })

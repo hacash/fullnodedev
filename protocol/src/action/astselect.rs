@@ -1,8 +1,8 @@
 
-action_define!{AstSelect, 21, 
+action_define!{AstSelect, 25, 
     ActLv::Ast, // level
     // burn 90 fee, check any sub child action
-    self.actions.list().iter().any(|a|a.burn_90()),
+    self.actions.as_list().iter().any(|a|a.burn_90()),
     self.collect_req_sign(),
     {
         exe_min: Uint1
@@ -37,7 +37,7 @@ action_define!{AstSelect, 21,
         // execute
         let mut ok = 0;
         let mut rv = vec![];
-        for act in self.actions.list() {
+        for act in self.actions.as_list() {
             if ok >= slt_max {
                 break // ok full
             }
@@ -95,7 +95,7 @@ impl AstSelect {
 
     pub(crate) fn collect_req_sign(&self) -> Vec<AddrOrPtr> {
         let mut req = vec![];
-        for act in self.actions.list() {
+        for act in self.actions.as_list() {
             if let Some(sub) = AstSelect::downcast(act) {
                 req.extend(sub.collect_req_sign());
                 continue;

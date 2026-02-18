@@ -37,7 +37,7 @@ impl TransactionRead for $class {
     }
     
     fn addrs(&self) -> Vec<Address> { 
-        self.addrlist.list() // must
+        self.addrlist.to_list() // must
     }
 
     fn fee(&self) -> &Amount {
@@ -53,11 +53,11 @@ impl TransactionRead for $class {
     }
     
     fn actions(&self) -> &Vec<Box<dyn Action>> {
-        self.actions.list()
+        self.actions.as_list()
     }
 
     fn signs(&self) -> &Vec<Sign> {
-        self.signs.list()
+        self.signs.as_list()
     }
     
     // burn_90_percent_fee
@@ -204,7 +204,7 @@ impl $class {
         // insert
         let apbk = signobj.publickey.as_ref();
         let mut istid = usize::MAX;
-        let sglist = self.signs.list();
+        let sglist = self.signs.as_list();
         for i in 0..plen {
             let pbk = sglist[i].publickey.as_bytes();
             if apbk == pbk {

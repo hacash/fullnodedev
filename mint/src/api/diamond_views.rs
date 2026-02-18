@@ -33,7 +33,7 @@ fn diamond_views(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         let Ok(names) = DiamondNameListMax200::from_readable(&name) else {
             return api_error("diamond name error");
         };
-        for dian in names.list() {
+        for dian in names.as_list() {
             query_item(&dian);
         }
     } else {

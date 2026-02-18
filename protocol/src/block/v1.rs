@@ -52,8 +52,8 @@ impl BlockRead for BlockV1 {
 
     fn transaction_hash_list(&self, hash_with_fee: bool) -> Vec<Hash> {
         let mut list = vec![];
-        // println!("self.transactions.list: {}", self.transactions.list().len());
-        for t in self.transactions.list() {
+        // println!("self.transactions.as_list: {}", self.transactions.as_list().len());
+        for t in self.transactions.as_list() {
             if hash_with_fee {
                 list.push(t.hash_with_fee())
             }else{
@@ -64,7 +64,7 @@ impl BlockRead for BlockV1 {
     }
 
     fn transactions(&self) -> &Vec<Box<dyn Transaction>> {
-        self.transactions.list()
+        self.transactions.as_list()
     }
 
     fn coinbase_transaction(&self) ->  Ret<&dyn TransactionRead> {

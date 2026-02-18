@@ -72,7 +72,7 @@ async fn create_coin_transfer(State(_ctx): State<ApiCtx>, q: Query<Q9374>) -> im
             if dialist.length() == 1 {
                 let mut obj = DiaSingleTrs::new();
                 obj.to = AddrOrPtr::from_addr(toaddr);
-                obj.diamond = DiamondName::from(*dialist.list()[0]);
+                obj.diamond = DiamondName::from(*dialist.as_list()[0]);
                 act = Box::new(obj);
             }else{
                 let mut obj = DiaToTrs::new();

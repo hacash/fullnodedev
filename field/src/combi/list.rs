@@ -112,7 +112,7 @@ impl $class {
 		self.count.uint() as usize
 	}
 
-	pub fn list(&self) -> &Vec<$vty> {
+	pub fn as_list(&self) -> &Vec<$vty> {
 		&self.lists
 	}
 

@@ -1280,7 +1280,7 @@ mod action_coverage {
     }
 
     // ═══════════════════════════════════════════════════
-    // UnlockScriptProve tests
+    // P2SHScriptProve tests
     // ═══════════════════════════════════════════════════
 
     #[test]
@@ -1291,7 +1291,7 @@ mod action_coverage {
         let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
-        let mut act = UnlockScriptProve::new();
+        let mut act = P2SHScriptProve::new();
         act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         act.argvkey = BytesW2::from(vec![]).unwrap();
         // Serialize and corrupt marks
@@ -1301,7 +1301,7 @@ mod action_coverage {
         // marks is the last field, 2 bytes before end
         let len = raw.len();
         raw[len - 2] = 0xFF;
-        let mut act2 = UnlockScriptProve::new();
+        let mut act2 = P2SHScriptProve::new();
         act2.parse(&raw).unwrap();
         let err = act2.execute(&mut ctx).unwrap_err();
         assert!(err.contains("marks"), "{err}");
@@ -1316,7 +1316,7 @@ mod action_coverage {
         let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
-        let mut act = UnlockScriptProve::new();
+        let mut act = P2SHScriptProve::new();
         act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         act.argvkey = BytesW2::from(vec![]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
@@ -1325,11 +1325,11 @@ mod action_coverage {
 
     #[test]
     fn unlock_script_prove_serialize_roundtrip() {
-        let mut act = UnlockScriptProve::new();
+        let mut act = P2SHScriptProve::new();
         act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 42, Bytecode::END as u8]).unwrap();
         act.argvkey = BytesW2::from(vec![1, 2, 3]).unwrap();
         let bytes = act.serialize();
-        let mut act2 = UnlockScriptProve::new();
+        let mut act2 = P2SHScriptProve::new();
         act2.parse(&bytes).unwrap();
         assert_eq!(act, act2);
     }
@@ -1340,7 +1340,7 @@ mod action_coverage {
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let empty_merkels = MerkelStuffs::from_list(vec![]).unwrap();
 
-        let calc = UnlockScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
+        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
         // Single leaf: sha3_path should have exactly 1 entry (the leaf hash = root hash)
         assert_eq!(calc.sha3_path.len(), 1);
         // Address should be a valid scriptmh address
@@ -1353,8 +1353,8 @@ mod action_coverage {
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 99, Bytecode::END as u8]).unwrap();
         let empty_merkels = MerkelStuffs::from_list(vec![]).unwrap();
 
-        let calc1 = UnlockScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
-        let calc2 = UnlockScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
+        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
+        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
         assert_eq!(calc1.address, calc2.address, "same inputs should produce same address");
         assert_eq!(calc1.payload20, calc2.payload20);
     }
@@ -1367,8 +1367,8 @@ mod action_coverage {
         let lockbox1 = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let lockbox2 = BytesW2::from(vec![Bytecode::PU8 as u8, 2, Bytecode::END as u8]).unwrap();
 
-        let calc1 = UnlockScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox1, &empty_merkels).unwrap();
-        let calc2 = UnlockScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox2, &empty_merkels).unwrap();
+        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox1, &empty_merkels).unwrap();
+        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox2, &empty_merkels).unwrap();
         assert_ne!(calc1.address, calc2.address, "different lockbox should produce different address");
     }
 
@@ -1383,7 +1383,7 @@ mod action_coverage {
         };
         let merkels = MerkelStuffs::from_list(vec![bad_step]).unwrap();
 
-        let err = UnlockScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &merkels).unwrap_err();
+        let err = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &merkels).unwrap_err();
         assert!(err.contains("posi") && err.contains("invalid"), "{err}");
     }
 
@@ -1425,7 +1425,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         for idx in 0..2 {
             let proof = tree.proof_for_index(idx).unwrap();
             let spec = &tree.leaves()[idx].spec;
-            let calc = UnlockScriptProve::calc_scriptmh_from_lockbox(
+            let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(
                 &spec.adrlibs, &spec.lockbox, &proof,
             ).unwrap();
             assert_eq!(calc.address, tree.address(), "proof for leaf {idx} should derive tree address");

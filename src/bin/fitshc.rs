@@ -119,13 +119,13 @@ fn main() {
     // Wait, earlier code `self.abstcalls.list()` works.
     let inherit_addrs: Vec<String> = sto
         .inherits
-        .list()
+        .as_list()
         .iter()
         .map(|a| a.to_readable())
         .collect();
     let lib_addrs: Vec<String> = sto
         .librarys
-        .list()
+        .as_list()
         .iter()
         .map(|a| a.to_readable())
         .collect();

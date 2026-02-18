@@ -99,7 +99,7 @@ fn diamond_inscription_protocol_cost_impl(
             let Ok(names) = DiamondNameListMax200::from_readable(&name) else {
                 return api_error("diamond name format or count error");
             };
-            for dia in names.list() {
+            for dia in names.as_list() {
                 let camt = match append_cost_for_one(&state, dia) {
                     Ok(v) => v,
                     Err(e) => return api_error(&e),

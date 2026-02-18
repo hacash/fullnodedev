@@ -129,7 +129,7 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
             }, maybe!(dialist.length() == 1, {
                     let mut obj = DiaSingleTrs::new();
                     obj.to = AddrOrPtr::from_addr(toaddr);
-                    obj.diamond = DiamondName::from(*dialist.list()[0]);
+                    obj.diamond = DiamondName::from(*dialist.as_list()[0]);
                     Box::new(obj)
                 }, {
                     let mut obj = DiaToTrs::new();

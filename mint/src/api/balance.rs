@@ -56,7 +56,7 @@ fn balance(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
                         astptr = &astlist;
                     }
                 }
-                _ => astptr = bls.assets.list(),
+                _ => astptr = bls.assets.as_list(),
             };
             let mut arr = vec![];
             for it in astptr {
@@ -72,7 +72,7 @@ fn balance(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
         if assets {
             let mut arr = vec![];
-            for it in bls.assets.list() {
+            for it in bls.assets.as_list() {
                 arr.push(json!({
                     "serial": *it.serial,
                     "amount": *it.amount,

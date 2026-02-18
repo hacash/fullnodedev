@@ -75,7 +75,7 @@ impl Resoure {
             return Ok(Some((addr.clone(), c.clone())));
         }
         // DFS in inherits list order
-        for ih in csto.sto.inherits.list() {
+        for ih in csto.sto.inherits.as_list() {
             if let Some(found) = self.load_fn_by_search_inherits_rec(vmsta, ih, fnkey, visiting, visited)? {
                 visiting.remove(addr);
                 return Ok(Some(found));
@@ -110,7 +110,7 @@ impl Resoure {
         lib: u8,
     ) -> VmrtRes<ContractAddress> {
         let csto = self.load_contract(vmsta, source)?;
-        self.resolve_lib_addr_by_list(csto.sto.librarys.list(), lib)
+        self.resolve_lib_addr_by_list(csto.sto.librarys.as_list(), lib)
     }
 
     pub fn load_userfn(&mut self, vmsta: &mut VMState, addr: &ContractAddress, fnsg: FnSign) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
@@ -129,7 +129,7 @@ impl Resoure {
         let mut visiting = std::collections::HashSet::new();
         let mut visited = std::collections::HashSet::new();
         let fnkey = FnKey::User(fnsg);
-        for ih in csto.sto.inherits.list() {
+        for ih in csto.sto.inherits.as_list() {
             if let Some((owner, func)) = self.load_fn_by_search_inherits_rec(vmsta, ih, &fnkey, &mut visiting, &mut visited)? {
                 let change = maybe!(&owner == code_owner, None, Some(owner));
                 return Ok(Some((change, func)));

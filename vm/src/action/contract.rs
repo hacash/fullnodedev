@@ -12,7 +12,7 @@ macro_rules! vmsto {
 
 
 
-action_define!{ContractDeploy, 99, 
+action_define!{ContractDeploy, 30, 
     ActLv::TopOnlyWithGuard,
     false, [],
     {   
@@ -37,10 +37,10 @@ action_define!{ContractDeploy, 99,
             return errf!("contract {} already exist", (*caddr).to_readable())
         }
         // cannot inherit self or link self as library
-        if self.contract.inherits.list().iter().any(|a| a == &caddr) {
+        if self.contract.inherits.as_list().iter().any(|a| a == &caddr) {
             return errf!("contract cannot inherit itself {}", (*caddr).to_readable())
         }
-        if self.contract.librarys.list().iter().any(|a| a == &caddr) {
+        if self.contract.librarys.as_list().iter().any(|a| a == &caddr) {
             return errf!("contract cannot link itself as library {}", (*caddr).to_readable())
         }
         // check
@@ -75,7 +75,7 @@ action_define!{ContractDeploy, 99,
 
 
 
-action_define!{ContractUpdate, 98, 
+action_define!{ContractUpdate, 31, 
     ActLv::TopOnlyWithGuard, // level
     false, [], // burn 90% fee
     {   
@@ -100,10 +100,10 @@ action_define!{ContractUpdate, 98,
 		let mut new_contract = contract.clone();
         let (_did_append, did_change) = new_contract.apply_edit(&self.edit, hei)?;
         // cannot inherit self or link self as library
-        if new_contract.inherits.list().iter().any(|a| a == &caddr) {
+        if new_contract.inherits.as_list().iter().any(|a| a == &caddr) {
             return errf!("contract cannot inherit itself {}", (*caddr).to_readable())
         }
-        if new_contract.librarys.list().iter().any(|a| a == &caddr) {
+        if new_contract.librarys.as_list().iter().any(|a| a == &caddr) {
             return errf!("contract cannot link itself as library {}", (*caddr).to_readable())
         }
         precheck_contract_links_and_calls(ctx, &caddr, &new_contract)?;
@@ -162,10 +162,10 @@ fn check_link_contracts_exist(
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
 ) -> Rerr {
-    for a in root_contract.librarys.list() {
+    for a in root_contract.librarys.as_list() {
         let _ = load_contract_for_check(vmsta, root_addr, root_contract, a, "library")?;
     }
-    for a in root_contract.inherits.list() {
+    for a in root_contract.inherits.as_list() {
         let _ = load_contract_for_check(vmsta, root_addr, root_contract, a, "inherits")?;
     }
     Ok(())
@@ -192,7 +192,7 @@ fn check_inherits_acyclic(
         }
         visiting.insert(addr.clone());
         let sto = load_contract_for_check(vmsta, root_addr, root_contract, addr, "inherits")?;
-        for p in sto.inherits.list() {
+        for p in sto.inherits.as_list() {
             dfs(vmsta, root_addr, root_contract, p, visiting, visited)?;
         }
         visiting.remove(addr);
@@ -208,7 +208,7 @@ fn check_inherits_acyclic(
 fn contract_has_userfn(contract: &ContractSto, sign: &FnSign) -> bool {
     contract
         .userfuncs
-        .list()
+        .as_list()
         .iter()
         .any(|f| f.sign.to_array() == *sign)
 }
@@ -234,7 +234,7 @@ fn resolve_userfn_by_inherits(
         visiting.remove(addr);
         return Ok(true)
     }
-    for p in sto.inherits.list() {
+    for p in sto.inherits.as_list() {
         if resolve_userfn_by_inherits(vmsta, root_addr, root_contract, p, sign, visiting, visited)? {
             visiting.remove(addr);
             return Ok(true)
@@ -301,7 +301,7 @@ fn check_static_call_targets(
             let mut sign = [0u8; FN_SIGN_WIDTH];
             match inst {
                 Bytecode::CALL => {
-                    let libs = root_contract.librarys.list();
+                    let libs = root_contract.librarys.as_list();
                     let libidx = params[0] as usize;
                     if libidx >= libs.len() {
                         return errf!(
@@ -335,7 +335,7 @@ fn check_static_call_targets(
                     Ok(())
                 }
                 Bytecode::CALLVIEW | Bytecode::CALLPURE | Bytecode::CALLCODE => {
-                    let libs = root_contract.librarys.list();
+                    let libs = root_contract.librarys.as_list();
                     let libidx = params[0] as usize;
                     if libidx >= libs.len() {
                         return errf!(
@@ -386,7 +386,7 @@ fn check_static_call_targets(
                 Bytecode::CALLSUPER => {
                     sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
                     let mut found = false;
-                    for p in root_contract.inherits.list() {
+                    for p in root_contract.inherits.as_list() {
                         let mut visiting = std::collections::HashSet::new();
                         let mut visited = std::collections::HashSet::new();
                         if resolve_userfn_by_inherits(
@@ -412,7 +412,7 @@ fn check_static_call_targets(
         })
     };
 
-    for f in root_contract.userfuncs.list() {
+    for f in root_contract.userfuncs.as_list() {
         let ctype = CodeType::parse(f.cdty[0]).map_err(|e| e.to_string())?;
         let codes = match ctype {
             CodeType::Bytecode => f.code.to_vec(),
@@ -422,7 +422,7 @@ fn check_static_call_targets(
         check_one(tag, &codes, vmsta)?;
     }
 
-    for f in root_contract.abstcalls.list() {
+    for f in root_contract.abstcalls.as_list() {
         let ctype = CodeType::parse(f.cdty[0]).map_err(|e| e.to_string())?;
         let codes = match ctype {
             CodeType::Bytecode => f.code.to_vec(),

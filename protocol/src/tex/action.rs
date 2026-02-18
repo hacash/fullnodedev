@@ -2,7 +2,7 @@
 /*
 * simple hac to
 */
-action_define!{ TexCellAct, 35, 
+action_define!{ TexCellAct, 22, 
     ActLv::Top, // level
     false, // burn 90 fee
     [], // need sign
