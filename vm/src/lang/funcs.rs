@@ -3,7 +3,8 @@
 impl Syntax {
 
     fn parse_paren_argv_items(&mut self) -> Ret<Vec<Box<dyn IRNode>>> {
-        // Parse `(...)` argument lists as a sequence of value expressions. Note: the tokenizer ignores commas, so argument separation is by expression boundaries.
+        // Parse `(...)` argument lists as a sequence of value expressions.
+        // Note: the tokenizer ignores commas, so argument separation is by expression boundaries.
         self.parse_delimited_value_exprs('(', ')', "call argv format error")
     }
 
@@ -153,12 +154,20 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
             1 => Box::new(IRNodeSingle{hrtv, inst, subx: avg!()}),
             2 => Box::new(IRNodeDouble{hrtv, inst, subx: avg!(), suby: avg!()}),
             3 => {
-                // Special-case CHOOSE: source syntax is choose(cond, yes, no) IRNodeTriple expects (subx, suby, subz) which codegen will emit in order and the runtime expects stack [subx, suby, subz]. To match natural `choose(cond, yes, no)` call order we rearrange arguments so that runtime selection logic works: produce IRNodeTriple{subx=yes, suby=no, subz=cond}.
+                // Special-case CHOOSE: source syntax is choose(cond, yes, no)
+                // IRNodeTriple expects (subx, suby, subz) which codegen will emit
+                // in order and the runtime expects stack [subx, suby, subz].
+                // To match natural `choose(cond, yes, no)` call order we
+                // rearrange arguments so that runtime selection logic works:
+                // produce IRNodeTriple{subx=yes, suby=no, subz=cond}.
                 if inst == Bytecode::CHOOSE {
                     let a = avg!(); // cond
                     let b = avg!(); // yes
                     let c = avg!(); // no
-                    // To make `choose(cond, yes, no)` select `yes` when cond is true (interpreter: pop cond; if false swap; pop unchosen), arrange IR children so that codegen emits [yes, no, cond] -> subx = yes, suby = no, subz = cond.
+                    // To make `choose(cond, yes, no)` select `yes` when cond is true
+                    // (interpreter: pop cond; if false swap; pop unchosen), arrange
+                    // IR children so that codegen emits [yes, no, cond] ->
+                    // subx = yes, suby = no, subz = cond.
                     Box::new(IRNodeTriple{hrtv, inst, subx: b, suby: c, subz: a})
                 } else {
                     Box::new(IRNodeTriple{hrtv, inst, subx: avg!(), suby: avg!(), subz: avg!()})
@@ -238,12 +247,20 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
         },
         _ => return errf!("function argv length cannot more than 15"),
     })
-    /* let mut res = list.pop().unwrap(); while let Some(x) = list.pop() { res = Box::new(IRNodeDouble{hrtv:true, inst:Bytecode::CAT, subx: x, suby: res}); } res */
+    /* 
+    let mut res = list.pop().unwrap();
+    while let Some(x) = list.pop() {
+        res = Box::new(IRNodeDouble{hrtv:true, inst:Bytecode::CAT, subx: x, suby: res});
+    }
+    res
+    */
 }
 
 
 
-/* return (hav_revt, code, para, args_len) */
+/*
+    return (hav_revt, code, para, args_len)
+*/
 fn pick_ext_func(id: &str) -> Option<(bool, Bytecode, u8, usize)> {
     if let Some(x) = CALL_EXTEND_ENV_DEFS.iter().find(|f|f.1==id) {
         return Some((true, Bytecode::EXTENV,  x.0, x.3))

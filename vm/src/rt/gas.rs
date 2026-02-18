@@ -109,7 +109,7 @@ pub struct GasExtra {
     pub storage_key_cost: i64,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
-    space_write_div: i64,
+    stack_write_div: i64,
     stack_op_div: i64,
     heap_read_div: i64,
     heap_write_div: i64,
@@ -215,15 +215,15 @@ impl GasExtra {
             global_key_cost:    32,
             storage_key_cost:   256,
             // Dynamic divisors (byte/N, item/N)
-            stack_copy_div:     24,
-            space_write_div:    24,
+            stack_copy_div:     32,
+            stack_write_div:    24,
             stack_op_div:       16,
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
             storage_read_div:    8,
             storage_write_div:   6,
-            compile_div:        12,
+            compile_div:        16,
             compo_byte_div:     20,
             ntfunc_div:         16,
             extview_div:        16,
@@ -248,8 +248,8 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    pub fn space_write(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.space_write_div)
+    pub fn stack_write(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.stack_write_div)
     }
 
     #[inline(always)]
@@ -430,12 +430,12 @@ mod gas_budget_codec_tests {
     fn dynamic_formula_divisors_match_doc() {
         let gst = GasExtra::new(1);
 
-        assert_eq!(gst.stack_copy(23), 0);
-        assert_eq!(gst.stack_copy(24), 1);
-        assert_eq!(gst.stack_copy(49), 2);
-        assert_eq!(gst.space_write(23), 0);
-        assert_eq!(gst.space_write(24), 1);
-        assert_eq!(gst.space_write(49), 2);
+        assert_eq!(gst.stack_copy(31), 0);
+        assert_eq!(gst.stack_copy(32), 1);
+        assert_eq!(gst.stack_copy(64), 2);
+        assert_eq!(gst.stack_write(23), 0);
+        assert_eq!(gst.stack_write(24), 1);
+        assert_eq!(gst.stack_write(49), 2);
         assert_eq!(gst.stack_op(15), 0);
         assert_eq!(gst.stack_op(16), 1);
         assert_eq!(gst.stack_op(32), 2);
@@ -468,8 +468,8 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.storage_read(8), 1);
         assert_eq!(gst.storage_write(5), 0);
         assert_eq!(gst.storage_write(6), 1);
-        assert_eq!(gst.compile_bytes(7), 0);
-        assert_eq!(gst.compile_bytes(13), 1);
+        assert_eq!(gst.compile_bytes(15), 0);
+        assert_eq!(gst.compile_bytes(16), 1);
         assert_eq!(gst.storage_del(), 0);
     }
 }

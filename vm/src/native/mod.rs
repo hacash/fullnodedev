@@ -11,7 +11,9 @@ include!("address.rs");
 
 use ValueTy::*;
 
-/* Native func define (pure functions, stack 1→1) */
+/*
+    Native func define (pure functions, stack 1→1)
+*/
 native_func_env_define! { func, NativeFunc, NativeFuncError,
     // idx, argv_len, gas, ValueType
     hac_to_mei         = 31,   1,        6,    U64
@@ -30,7 +32,9 @@ native_func_env_define! { func, NativeFunc, NativeFuncError,
     ripemd160          = 103, 1,       20,    Bytes
 }
 
-/* Native env define (VM context reads, stack 0→1) */
+/*
+    Native env define (VM context reads, stack 0→1)
+*/
 native_func_env_define! { env, NativeEnv, NativeEnvError,
     // idx, argv_len, gas, ValueType
     context_address    = 1,    0,        6,    Address

@@ -82,7 +82,7 @@ For dynamic billing based on a VM value object, byte size is `Value::val_size()`
 - 256: every (re)created storage key
 
 
-#### Stack buffer copy and space write
+#### Stack buffer copy and write
 
 For opcode that create/copy byte payload to stack values.
 
@@ -91,7 +91,7 @@ For opcode that create/copy byte payload to stack values.
 - byte/24: DUP, DUPN, GET, GET0, GET1, GET2, GET3, GETX, MGET, GGET, PBUF, PBUFL
   (runtime divisor: `stack_copy_div`)
 - byte/24: PUT, PUTX, MPUT, GPUT
-  (runtime divisor: `space_write_div`, independent from `stack_copy_div`)
+  (runtime divisor: `stack_write_div`, independent from `stack_copy_div`)
 - byte/16: CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP (byte = output value `val_size()`)
 - fixed: REV (only reorders stack values, no real payload copy)
 

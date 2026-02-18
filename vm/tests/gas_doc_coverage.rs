@@ -14,7 +14,7 @@ fn doc_tracks_current_dynamic_metering_groups() {
         "PBUF",
         "PBUFL",
         "PUT, PUTX, MPUT, GPUT",
-        "space_write_div",
+        "stack_write_div",
         "CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP",
         "fixed: REV",
     ] {

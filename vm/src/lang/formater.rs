@@ -235,7 +235,10 @@ impl<'a> Formater<'a> {
         if count % 2 != 0 {
             return None;
         }
-        // Historical IR variants exist: - newer encoding stores total item count (k + v count), - older encoding stores pair count. Accept both to keep decompilation stable across artifacts.
+        // Historical IR variants exist:
+        // - newer encoding stores total item count (k + v count),
+        // - older encoding stores pair count.
+        // Accept both to keep decompilation stable across artifacts.
         if expected != count && expected * 2 != count {
             return None;
         }
@@ -283,7 +286,9 @@ impl<'a> Formater<'a> {
     }
 
     fn format_call_args(&self, args: &[String]) -> String {
-        // Join on argument boundaries (not line boundaries). Some expressions (e.g. `{ ... }` blocks) legitimately contain newlines; splitting by lines would corrupt the argument list and break roundtrip semantics.
+        // Join on argument boundaries (not line boundaries).
+        // Some expressions (e.g. `{ ... }` blocks) legitimately contain newlines; splitting
+        // by lines would corrupt the argument list and break roundtrip semantics.
         args.iter()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
@@ -297,7 +302,10 @@ impl<'a> Formater<'a> {
         let mut current: &dyn IRNode = node;
         let helper = DecompilationHelper::new(&self.opt);
         loop {
-            // `IRLIST` is used both for "packed argv lists" and for actual list/map literals. For system/native/ext calls we use concat-argv mode; the argument node can legitimately be a list literal, so flattening IRLIST here would corrupt argument boundaries and even change call arity.
+            // `IRLIST` is used both for "packed argv lists" and for actual list/map literals.
+            // For system/native/ext calls we use concat-argv mode; the argument node can
+            // legitimately be a list literal, so flattening IRLIST here would corrupt
+            // argument boundaries and even change call arity.
             if self.opt.flatten_call_list && !system_call {
                 if let Some(list) = current.as_any().downcast_ref::<IRNodeArray>() {
                     if let Some(elements) = self.extract_list_elements(list.inst, &list.subs) {
@@ -416,7 +424,10 @@ impl<'a> Formater<'a> {
                     buf.push_str(&line);
                     buf.push('\n');
                 } else {
-                    // If we are trimming the file-level root block but not trimming param-unpack, the decompiled code may still use SourceMap parameter names (e.g. `amt`), which would be unbound without a `param { ... }` statement. Emit a lightweight slot-binding prelude: `var <name> $<i>` (no assignment).
+                    // If we are trimming the file-level root block but not trimming param-unpack,
+                    // the decompiled code may still use SourceMap parameter names (e.g. `amt`),
+                    // which would be unbound without a `param { ... }` statement.
+                    // Emit a lightweight slot-binding prelude: `var <name> $<i>` (no assignment).
                     let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
                     if is_file_level_irblock && self.opt.map.is_some() {
                         // alloc could be at index 0 or 1
@@ -453,9 +464,14 @@ impl<'a> Formater<'a> {
             }
         }
 
-        // Even when `trim_root_block` / `trim_param_unpack` are disabled, we still must keep decompile->recompile closed. IMPORTANT: when `trim_param_unpack == false`, we must NEVER emit `param { ... }`. Instead, we keep the raw `UPLIST(PICK0,P0)` instruction in output, and (when SourceMap provides parameter names) we emit lightweight slot-binding lines: `var <name> $<i>`.
+        // Even when `trim_root_block` / `trim_param_unpack` are disabled, we still must keep
+        // decompile->recompile closed.
+        // IMPORTANT: when `trim_param_unpack == false`, we must NEVER emit `param { ... }`.
+        // Instead, we keep the raw `UPLIST(PICK0,P0)` instruction in output, and (when SourceMap
+        // provides parameter names) we emit lightweight slot-binding lines: `var <name> $<i>`.
         let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
-        // If `trim_param_unpack=true`, we may rewrite the canonical UPLIST node into `param { ... }`. If `trim_param_unpack=false`, we must never emit `param { ... }`.
+        // If `trim_param_unpack=true`, we may rewrite the canonical UPLIST node into `param { ... }`.
+        // If `trim_param_unpack=false`, we must never emit `param { ... }`.
         let (param_rewrite_idx, param_rewrite_line) =
             if is_file_level_irblock && self.opt.trim_param_unpack {
                 // alloc could be at index 0 or 1 (depending on placeholder insertion patterns)
@@ -492,7 +508,8 @@ impl<'a> Formater<'a> {
             buf.push('\n');
 
             if let Some(names) = file_level_param_names {
-                // Bind param names to their canonical slots without changing runtime semantics. Also pre-mark these slots so a later `PUT $i ...` does not print as a `var` declaration.
+                // Bind param names to their canonical slots without changing runtime semantics.
+                // Also pre-mark these slots so a later `PUT $i ...` does not print as a `var` declaration.
                 for (i, name) in names.iter().enumerate() {
                     self.opt.mark_slot_put(i as u8);
                     buf.push_str(&format!(
@@ -536,7 +553,8 @@ impl<'a> Formater<'a> {
         let meta = pss.inst.metadata();
 
         let default_body = match code {
-            // IMPORTANT: keep `0x` prefix so the tokenizer parses it as bytes (0x....), not as a decimal integer. Otherwise the recompiled 4-byte signature differs.
+            // IMPORTANT: keep `0x` prefix so the tokenizer parses it as bytes (0x....),
+            // not as a decimal integer. Otherwise the recompiled 4-byte signature differs.
             CALL => format!(
                 "call {}::0x{}({})",
                 pss.para[0],
@@ -669,7 +687,9 @@ impl<'a> Formater<'a> {
                         return Some(format!("{}{} is not {}", pre, target, ty));
                     }
 
-                    // `!` has the highest precedence in fitsh (see `OpTy::NOT`), so when the operand is a lower-precedence expression we must parenthesize it to preserve semantics.
+                    // `!` has the highest precedence in fitsh (see `OpTy::NOT`),
+                    // so when the operand is a lower-precedence expression we must
+                    // parenthesize it to preserve semantics.
                     let need_wrap = {
                         let lv = s.subx.level();
                         lv > 0 && lv < OpTy::NOT.level()
@@ -692,7 +712,9 @@ impl<'a> Formater<'a> {
         }
         if let Some(d) = node.as_any().downcast_ref::<IRNodeDouble>() {
             if d.inst == ITEMGET {
-                // `ITEMGET` is an expression; receiver must be printed inline. Using `print_sub()` can inject newlines/indentation and break parsing. Also, receiver precedence must be preserved: `(a + b)[0]` is not `a + b[0]`.
+                // `ITEMGET` is an expression; receiver must be printed inline.
+                // Using `print_sub()` can inject newlines/indentation and break parsing.
+                // Also, receiver precedence must be preserved: `(a + b)[0]` is not `a + b[0]`.
                 let mut subxstr = self.print_inline(&*d.subx);
                 if d.subx.level() > 0 {
                     let t = subxstr.trim();
@@ -712,7 +734,8 @@ impl<'a> Formater<'a> {
         }
         if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
             if t.inst == Bytecode::CHOOSE {
-                // IR stores CHOOSE as (yes, no, cond) for codegen/runtime semantics. Source syntax is choose(cond, yes, no); invert when decompiling.
+                // IR stores CHOOSE as (yes, no, cond) for codegen/runtime semantics.
+                // Source syntax is choose(cond, yes, no); invert when decompiling.
                 let cond = self.print_inline(&*t.subz);
                 let yes = self.print_inline(&*t.subx);
                 let no = self.print_inline(&*t.suby);
@@ -1142,7 +1165,8 @@ impl<'a> Formater<'a> {
             CALLCODE => {
                 let i = node.para[0];
                 let f = ::hex::encode(&node.para[1..]);
-                // IMPORTANT: keep `0x` prefix so tokenizer parses it as bytes (0x....), not as a decimal integer/identifier.
+                // IMPORTANT: keep `0x` prefix so tokenizer parses it as bytes (0x....),
+                // not as a decimal integer/identifier.
                 buf.push_str(&format!("callcode {}::0x{}", i, f));
                 // Source syntax requires a trailing `end` token for callcode statements.
                 buf.push_str(&format!("\n{}end", self.line_prefix()));
@@ -1222,7 +1246,9 @@ impl<'a> Formater<'a> {
             panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
         }
 
-        // Emit file-level `lib ...` declarations once, at the top-level. Do NOT rely on `tab == 0 && IRBLOCK` injection during block formatting, because inline contexts may also print with `tab == 0`.
+        // Emit file-level `lib ...` declarations once, at the top-level.
+        // Do NOT rely on `tab == 0 && IRBLOCK` injection during block formatting, because
+        // inline contexts may also print with `tab == 0`.
         let is_top_level = self.opt.tab == 0;
         let is_file_level_irblock = is_top_level
             && node
@@ -1252,7 +1278,10 @@ impl<'a> Formater<'a> {
 
         let res = self.print_inner(node);
 
-        // Emit source-map-derived `const ...` definitions only at file-level. Nested `print()` calls are used to render block items with indentation; draining and emitting `const` there would change scoping/ordering and may break roundtrip semantics.
+        // Emit source-map-derived `const ...` definitions only at file-level.
+        // Nested `print()` calls are used to render block items with indentation;
+        // draining and emitting `const` there would change scoping/ordering and may
+        // break roundtrip semantics.
         if is_top_level {
             let pending = self.opt.take_pending_consts();
             if !pending.is_empty() {
@@ -1329,13 +1358,16 @@ impl<'a> Formater<'a> {
             panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
         }
 
-        // Cast nodes need explicit render to keep `100u64`/`100 as u64` shape. Returning only recovered literal text here would drop the type suffix/cast.
+        // Cast nodes need explicit render to keep `100u64`/`100 as u64` shape.
+        // Returning only recovered literal text here would drop the type suffix/cast.
         if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
             use Bytecode::*;
             match single.inst {
                 CU8 | CU16 | CU32 | CU64 | CU128 => {
                     if let Some(literal) = self.literal_from_node(node) {
-                        // `push_num` encodes larger integers as CU32/CU64/CU128 over raw PBUF bytes. That cast is an encoding detail, not source syntax. Keep decompilation stable by printing the plain number in this case.
+                        // `push_num` encodes larger integers as CU32/CU64/CU128 over raw
+                        // PBUF bytes. That cast is an encoding detail, not source syntax.
+                        // Keep decompilation stable by printing the plain number in this case.
                         let encoded_numeric = single
                             .subx
                             .as_any()
@@ -1375,16 +1407,23 @@ impl<'a> Formater<'a> {
             }
             return literal.text;
         }
-        // Inline contexts must not apply root-block trimming or emit lib prelude. Otherwise, an `IRBLOCK` printed with `tab == 0` may lose its `{}` wrapper, which can break parsing/semantics when used as an expression (e.g. call args).
+        // Inline contexts must not apply root-block trimming or emit lib prelude.
+        // Otherwise, an `IRBLOCK` printed with `tab == 0` may lose its `{}` wrapper,
+        // which can break parsing/semantics when used as an expression (e.g. call args).
         let mut opt = self.opt.with_tab(0);
         opt.trim_root_block = false;
         opt.emit_lib_prelude = false;
         let inline = Self { opt };
-        // IMPORTANT: inline printing must never emit file-level prelude or const definitions. Those are handled by the outer/top-level `print()` only. Using `print()` here would drain `pending consts` and inject `const ...` lines into expression contexts (e.g. call args), breaking parsing/semantics.
+        // IMPORTANT: inline printing must never emit file-level prelude or const
+        // definitions. Those are handled by the outer/top-level `print()` only.
+        // Using `print()` here would drain `pending consts` and inject `const ...`
+        // lines into expression contexts (e.g. call args), breaking parsing/semantics.
         let substr = inline.print_inner(node);
         if substr.contains('\n') {
             let t = substr.trim();
-            // Preserve block braces for expression blocks. Stripping `{ ... }` breaks roundtrip for multi-statement blocks used in inline contexts (e.g. `var x = { print 1; 0 }`).
+            // Preserve block braces for expression blocks.
+            // Stripping `{ ... }` breaks roundtrip for multi-statement blocks
+            // used in inline contexts (e.g. `var x = { print 1; 0 }`).
             if t.starts_with('{') && t.ends_with('}') && t.len() >= 2 {
                 return t.to_owned();
             }
@@ -1429,7 +1468,9 @@ impl<'a> Formater<'a> {
         let llv = dbl.subx.level();
         let rlv = dbl.suby.level();
 
-        // Parenthesize children to preserve the original IR tree semantics. - For left-associative ops, wrap the right child on equal precedence. - For right-associative ops (currently only `**`), wrap the left child on equal precedence.
+        // Parenthesize children to preserve the original IR tree semantics.
+        // - For left-associative ops, wrap the right child on equal precedence.
+        // - For right-associative ops (currently only `**`), wrap the left child on equal precedence.
         let need_wrap_left =
             clv > 0 && llv > 0 && !wrapx && (clv > llv || (is_right_assoc && clv == llv));
         if need_wrap_left {

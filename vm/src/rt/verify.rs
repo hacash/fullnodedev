@@ -1,7 +1,9 @@
 
 use crate::native::{NativeFunc, NativeEnv};
 
-/* Verify bytecode validity and return the instruction table. */
+/*
+    Verify bytecode validity and return the instruction table.
+*/
 pub fn convert_and_check(cap: &SpaceCap, ctype: CodeType, codes: &[u8], height: u64) -> VmrtRes<Vec<u8>> {
     use CodeType::*;
     let bytecodes = match ctype {
@@ -53,7 +55,9 @@ fn ensure_terminal_instruction(inst: Bytecode) -> VmrtErr {
 }
 
 
-/*  */
+/*
+
+*/   
 fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(Vec<u8>, Vec<isize>)> {
     // use Bytecode::*;
     let cdlen = codes.len(); // end/ret/err/abt in tail
