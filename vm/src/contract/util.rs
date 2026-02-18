@@ -15,20 +15,7 @@ pub fn curl_trs_2(acts: Vec<Box<dyn Action>>, fee: &str) {
 
 #[allow(dead_code)]
 pub fn curl_trs_3(acts: Vec<Box<dyn Action>>, fee: &str) {
-        /*
-        emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
-        iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
-        WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
-        bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
-        ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz
-        bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe
-        ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz
-        bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe
-        Yk3wMvJAW1uHUYEbsCjEZrhPAfLWvL4LB
-        kEAVFuGFjMkYPRVDqpLans1SDUYGyKqD5
-        ezXPRoMFaH2SQfY2MCrUFNp4t5nauQWQi
-        fED9X4bJcGhzjjPrETTq1XjDj6RKTicqg
-        */
+        /* emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5 ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz bJASBXHo5SbNWJWbfACqZVNmi2j2hhCpe Yk3wMvJAW1uHUYEbsCjEZrhPAfLWvL4LB kEAVFuGFjMkYPRVDqpLans1SDUYGyKqD5 ezXPRoMFaH2SQfY2MCrUFNp4t5nauQWQi fED9X4bJcGhzjjPrETTq1XjDj6RKTicqg */
     let acc = Account::create_by_password("123456").unwrap();
     let addrs = vec![
         Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap(),
@@ -62,9 +49,7 @@ pub fn curl_trs_fee(mut trs: TransactionType3, acts: Vec<Box<dyn Action>>, acc: 
     trs.gas_max = Uint1::from(8);
     trs.fill_sign(&acc).unwrap();
 
-    // println!("txsize:{}, feepay: {}, feegot: {}, feepurity: {}", 
-    //     trs.size(), trs.fee_pay(), trs.fee_got(), trs.fee_purity() 
-    // );
+    // println!("txsize:{}, feepay: {}, feegot: {}, feepurity: {}", trs.size(), trs.fee_pay(), trs.fee_got(), trs.fee_purity() );
 
     // print
     println!("\n");

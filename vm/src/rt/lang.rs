@@ -226,19 +226,9 @@ impl IrFn {
 irfn_define! {
 
     EXTACTION  : 1, 1, 0,     ext_action  // no return value
-    // EXTVIEW    : 1, 1, 1,     ext_view
-    // EXTENV     : 1, 0, 1,     ext_env
-    // NTFUNC     : 1, 1, 1,     native_func
-    // NTENV      : 1, 0, 1,     native_env
+    // EXTVIEW    : 1, 1, 1,     ext_view EXTENV     : 1, 0, 1,     ext_env NTFUNC     : 1, 1, 1,     native_func NTENV      : 1, 0, 1,     native_env
 
-    // CALLDYN    :   0, 3, 1,   call_dynamic
-    // CALL       : 1+4, 1, 1,   call
-    // CALLTHIS   :   4, 1, 1,   call_this
-    // CALLSELF   :   4, 1, 1,   call_self
-    // CALLSUPER  :   4, 1, 1,   call_super
-    // CALLVIEW   : 1+4, 1, 1,   call_view
-    // CALLPURE   : 1+4, 1, 1,   call_pure
-    // CALLCODE   : 1+4, 0, 0,   call_code
+    // CALLDYN    :   0, 3, 1,   call_dynamic CALL       : 1+4, 1, 1,   call CALLTHIS   :   4, 1, 1,   call_this CALLSELF   :   4, 1, 1,   call_self CALLSUPER  :   4, 1, 1,   call_super CALLVIEW   : 1+4, 1, 1,   call_view CALLPURE   : 1+4, 1, 1,   call_pure CALLCODE   : 1+4, 0, 0,   call_code
 
     PU8        : 1, 0, 1,     push_u8
     PU16       : 2, 0, 1,     push_u16
@@ -268,8 +258,7 @@ irfn_define! {
 
     DUP        : 0, 0, 1,     dump
     DUPN       : 1, 0, 1,     dump_n
-    // POP        : 0, 255, 0,   pop
-    // POPN       : 1, 255, 0,   pop_n
+    // POP        : 0, 255, 0,   pop POPN       : 1, 255, 0,   pop_n
     PICK0      : 0, 0, 1,     pick_0
     PICK       : 1, 0, 1,     pick
     SWAP       : 0, 2, 2,     swap
@@ -287,8 +276,7 @@ irfn_define! {
 
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map
-    // PACKLIST   : 0, 255, 1,   pack_list
-    // PACKMAP    : 0, 255, 1,   pack_map
+    // PACKLIST   : 0, 255, 1,   pack_list PACKMAP    : 0, 255, 1,   pack_map
     INSERT     : 0, 3, 1,     insert
     REMOVE     : 0, 2, 1,     remove
     CLEAR      : 0, 1, 1,     clear
@@ -330,10 +318,7 @@ irfn_define! {
     MPUT       : 0, 2, 0,     memory_put
     MGET       : 0, 1, 1,     memory_get
 
-    // LOG1       : 0, 255, 0,     log_1
-    // LOG2       : 0, 255, 0,     log_2
-    // LOG3       : 0, 255, 0,     log_3
-    // LOG4       : 0, 255, 0,     log_4
+    // LOG1       : 0, 255, 0,     log_1 LOG2       : 0, 255, 0,     log_2 LOG3       : 0, 255, 0,     log_3 LOG4       : 0, 255, 0,     log_4
 
     SREST      : 0, 1, 1,     storage_rest
     SLOAD      : 0, 1, 1,     storage_load
@@ -341,15 +326,7 @@ irfn_define! {
     SSAVE      : 0, 2, 0,     storage_save
     SRENT      : 0, 2, 0,     storage_rent
 
-    // AND        : 0, 2, 1,     and
-    // OR         : 0, 2, 1,     or
-    // EQ         : 0, 2, 1,     equal
-    // NEQ        : 0, 2, 1,     not_equal
-    // LT         : 0, 2, 1,     less_than
-    // GT         : 0, 2, 1,     greater_than
-    // LE         : 0, 2, 1,     less_equal
-    // GE         : 0, 2, 1,     greater_equal
-    // NOT        : 0, 1, 1,     not
+    // AND        : 0, 2, 1,     and OR         : 0, 2, 1,     or EQ         : 0, 2, 1,     equal NEQ        : 0, 2, 1,     not_equal LT         : 0, 2, 1,     less_than GT         : 0, 2, 1,     greater_than LE         : 0, 2, 1,     less_equal GE         : 0, 2, 1,     greater_equal NOT        : 0, 1, 1,     not
 
     BSHR       : 0, 2, 1,     bit_shr
     BSHL       : 0, 2, 1,     bit_shl
@@ -357,60 +334,23 @@ irfn_define! {
     BOR        : 0, 2, 1,     bit_or
     BAND       : 0, 2, 1,     bit_and
 
-    // ADD        : 0, 2, 1,     add
-    // SUB        : 0, 2, 1,     sub
-    // MUL        : 0, 2, 1,     mul
-    // DIV        : 0, 2, 1,     div
-    // MOD        : 0, 2, 1,     mod
-    // POW        : 0, 2, 1,     pow
+    // ADD        : 0, 2, 1,     add SUB        : 0, 2, 1,     sub MUL        : 0, 2, 1,     mul DIV        : 0, 2, 1,     div MOD        : 0, 2, 1,     mod POW        : 0, 2, 1,     pow
     MAX        : 0, 2, 1,     max
     MIN        : 0, 2, 1,     min
     INC        : 1, 1, 1,     increase
     DEC        : 1, 1, 1,     decrease
 
-    // JMPL       : 2, 0, 0,     jump_long
-    // JMPS       : 1, 0, 0,     jump_offset
-    // JMPSL      : 2, 0, 0,     jump_offset_long
-    // BRL        : 2, 1, 0,     branch_long
-    // BRS        : 1, 1, 0,     branch_offset
-    // BRSL       : 2, 1, 0,     branch_offset_long
-    // BRSLN      : 2, 1, 0,     branch_offset_long_not
+    // JMPL       : 2, 0, 0,     jump_long JMPS       : 1, 0, 0,     jump_offset JMPSL      : 2, 0, 0,     jump_offset_long BRL        : 2, 1, 0,     branch_long BRS        : 1, 1, 0,     branch_offset BRSL       : 2, 1, 0,     branch_offset_long BRSLN      : 2, 1, 0,     branch_offset_long_not
 
-    // RET        : 0, 1, 0,     return
-    // END        : 0, 0, 0,     end
-    // AST        : 0, 1, 0,     assert
-    // ERR        : 0, 1, 0,     throw
-    // ABT        : 0, 0, 0,     abort
-    // PRT        : 0, 1, 0,     print
+    // RET        : 0, 1, 0,     return END        : 0, 0, 0,     end AST        : 0, 1, 0,     assert ERR        : 0, 1, 0,     throw ABT        : 0, 0, 0,     abort PRT        : 0, 1, 0,     print
 
-    // IRBYTECODE : 2, 255, 0,   ir_bytecode
-    // IRLIST     : 2, 255, 1,   ir_list
-    // IRBLOCK    : 2, 255, 0,   ir_block
-    // IRBLOCKR   : 2, 255, 1,   ir_block_expr
-    // IRIF       : 0, 3, 0,     ir_if
-    // IRIFR      : 0, 3, 1,     ir_if_expr
-    // IRWHILE    : 0, 2, 0,     ir_while
+    // IRBYTECODE : 2, 255, 0,   ir_bytecode IRLIST     : 2, 255, 1,   ir_list IRBLOCK    : 2, 255, 0,   ir_block IRBLOCKR   : 2, 255, 1,   ir_block_expr IRIF       : 0, 3, 0,     ir_if IRIFR      : 0, 3, 1,     ir_if_expr IRWHILE    : 0, 2, 0,     ir_while
 
-    // BURN       : 2, 0, 0,     gas_burn
-    // NOP        : 0, 0, 0,     nop
-    // NT         : 0, 0, 0,     never_touch
+    // BURN       : 2, 0, 0,     gas_burn NOP        : 0, 0, 0,     nop NT         : 0, 0, 0,     never_touch
 
 }
 
-/********************************
-#[derive(Default, Eq, PartialEq)]
-#[repr(u8)]
-pub enum TokenType {
-    #[default]
-    Blank,  // \s\n\t\r
-    Word,   // _a~zA~Z0~9
-    Number, // 0~9 x b .
-    Str,
-    StrEsc,
-    Split,  // () {} []
-    Symbol, // +-* /|&
-}
-*/
+/* ******************************* #[derive(Default, Eq, PartialEq)] #[repr(u8)] pub enum TokenType { #[default] Blank,  // \s\n\t\r Word,   // _a~zA~Z0~9 Number, // 0~9 x b . Str, StrEsc, Split,  // () {} [] Symbol, // +-* /|& } */
 
 /********************************/
 

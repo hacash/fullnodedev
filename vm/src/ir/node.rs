@@ -22,10 +22,7 @@ impl IRNode for IRNodeTopStackValue {
     fn as_any(&self) -> &dyn Any { self }
     fn hasretval(&self) -> bool { true }
 
-    // This node is an internal, codegen-only placeholder that represents:
-    // “a value is already on the top of the stack”. It must never be serialized
-    // into ircode; if it ever leaks into serialization, it would create
-    // ambiguous/shifted IR streams.
+    // This node is an internal, codegen-only placeholder that represents: “a value is already on the top of the stack”. It must never be serialized into ircode; if it ever leaks into serialization, it would create ambiguous/shifted IR streams.
     fn bytecode(&self) -> u8 { 0 }
 
     fn codegen(&self) -> VmrtRes<Vec<u8>> { Ok(vec![]) }
@@ -75,8 +72,7 @@ impl IRNode for IRNodeLeaf {
     fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
         buf.push(self.bytecode());
         match self.inst {
-            // Keep loop-control placeholder width at 3 bytes in generated body code.
-            // This guarantees that later rewrite to `JMPSL + i16` does not change size.
+            // Keep loop-control placeholder width at 3 bytes in generated body code. This guarantees that later rewrite to `JMPSL + i16` does not change size.
             Bytecode::IRBREAK | Bytecode::IRCONTINUE => buf.extend_from_slice(&[0, 0]),
             _ => {}
         }

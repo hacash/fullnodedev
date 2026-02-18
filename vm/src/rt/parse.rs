@@ -100,10 +100,7 @@ impl BytecodePrint for Vec<u8> {
                         let lib = self[i];
                         let func = hex::encode(&self[i+1..i+1+4]);
                         pms.push(format!(" {}.<{}> ", lib, func));
-                        /* let lx = Address::SIZE;1` FA `Aq1    ``
-                        let addr = Address::must_vec(self[i..i+lx].to_vec());
-                        let func = hex::encode(&self[i+lx..i+lx+4]);
-                        pms.push(format!(" {}.<{}> ", addr.readable(), func)); */
+                        /* let lx = Address::SIZE;1` FA `Aq1    `` let addr = Address::must_vec(self[i..i+lx].to_vec()); let func = hex::encode(&self[i+lx..i+lx+4]); pms.push(format!(" {}.<{}> ", addr.readable(), func)); */
                     }else{
                         nmpm();
                     }
@@ -141,9 +138,7 @@ impl BytecodePrint for Vec<u8> {
 }
 
 
-/*
-    return block mark
-*/
+/* return block mark */
 fn scan_jump_dests(codes: &[u8]) -> Vec<usize> {
     let mut dests = vec![];
     let cdl = codes.len();

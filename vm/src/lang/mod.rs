@@ -30,10 +30,7 @@ include! {"test.rs"}
 pub fn lang_to_irnode_with_sourcemap(langscript: &str) -> Ret<(IRNodeArray, SourceMap)> {
     let tkr = Tokenizer::new(langscript.as_bytes());
     let mut tks = tkr.parse()?;
-    // The formatter may emit a file-level `{ ... }` wrapper when `trim_root_block` is disabled.
-    // That wrapper is intended as a presentation detail, not a semantic block expression.
-    // To keep decompile->recompile closed, treat an outermost brace pair that encloses the
-    // entire file as a no-op wrapper and parse the inner content as the program body.
+    // The formatter may emit a file-level `{ ... }` wrapper when `trim_root_block` is disabled. That wrapper is intended as a presentation detail, not a semantic block expression. To keep decompile->recompile closed, treat an outermost brace pair that encloses the entire file as a no-op wrapper and parse the inner content as the program body.
     if tks.len() >= 2 {
         if let (Partition('{'), Partition('}')) = (&tks[0], &tks[tks.len() - 1]) {
             let mut depth: isize = 0;

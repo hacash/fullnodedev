@@ -266,7 +266,7 @@ impl ContractSto {
 				a.check(hei)?;
 				AbstCall::check(a.sign[0])?;
 				let ctype = CodeType::parse(a.cdty[0])?;
-				convert_and_check(&cap, ctype, &a.code)?;
+				convert_and_check(&cap, ctype, &a.code, hei)?;
 			}
 			self.abstcalls.check_merge(&edit.abstcalls)?;
 		}
@@ -284,7 +284,7 @@ impl ContractSto {
 			for a in edit.userfuncs.list() {
 				a.check(hei)?;
 				let ctype = CodeType::parse(a.cdty[0])?;
-				convert_and_check(&cap, ctype, &a.code)?;
+				convert_and_check(&cap, ctype, &a.code, hei)?;
 			}
 			let replaced = self.userfuncs.check_merge(&edit.userfuncs)?;
 			if replaced {
@@ -330,9 +330,7 @@ impl ContractSto {
 
 	}
 
-	/*
-    	return Upgrade or Append for check
-	*/
+	/* return Upgrade or Append for check */
 	pub fn merge(&mut self, src: &ContractSto, hei: u64) -> VmrtRes<bool> {
 		use ItrErrCode::*;
 		src.check(hei)?;
@@ -417,7 +415,7 @@ impl ContractSto {
 			a.check(hei)?;
 			AbstCall::check(a.sign[0])?;
 			let ctype = CodeType::parse(a.cdty[0])?;
-			convert_and_check(&cap, ctype, &a.code)?; // // check compile
+			convert_and_check(&cap, ctype, &a.code, hei)?; // // check compile
 		}
 		// usrfun call
 		{
@@ -432,7 +430,7 @@ impl ContractSto {
 		for a in self.userfuncs.list() {
 			a.check(hei)?;
 			let ctype = CodeType::parse(a.cdty[0])?;
-			convert_and_check(&cap, ctype, &a.code)?; // check compile
+			convert_and_check(&cap, ctype, &a.code, hei)?; // check compile
 		}
 		// ok
 		Ok(())
@@ -457,8 +455,7 @@ impl ContractSto {
 
 	pub fn into_obj(mut self) -> VmrtRes<ContractObj> {
 		let mut abstfns = HashMap::with_capacity(self.abstcalls.length());
-		// Move function bytecode out of `ContractSto` once. Runtime execution uses `FnObj`,
-		// so keeping another full copy inside `sto` only adds memory and copy cost.
+		// Move function bytecode out of `ContractSto` once. Runtime execution uses `FnObj`, so keeping another full copy inside `sto` only adds memory and copy cost.
 		for a in self.abstcalls.as_mut() {
 			let code_bytes = std::mem::take(&mut a.code).into_vec();
 			let code = FnObj::create(a.cdty[0], code_bytes, None)?;

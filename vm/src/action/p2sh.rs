@@ -37,9 +37,7 @@ pub struct ScriptmhCalc {
 }
 
 
-/*
-    pay to script hash
-*/
+/* pay to script hash */
 action_define!{UnlockScriptProve, 90, 
     ActLv::Ast, // level
     false, [],
@@ -128,7 +126,8 @@ impl UnlockScriptProve {
 
     fn get_stuff(&self, ctx: &dyn Context) -> Ret<UnlockScript> {
         // check bytecodes
-        let cap = SpaceCap::new(ctx.env().block.height);
+        let hei = ctx.env().block.height;
+        let cap = SpaceCap::new(hei);
         // check libs all is contract 
         let libs = self.adrlibs.list();
         if libs.len() > cap.librarys_link {
@@ -140,7 +139,7 @@ impl UnlockScriptProve {
         let ctb = CodeType::Bytecode;
         let lockbox = self.lockbox.as_vec();
         let witness = self.argvkey.as_vec().clone();
-        convert_and_check(&cap, ctb, &lockbox)?;
+        convert_and_check(&cap, ctb, &lockbox, hei)?;
         Self::verify_witness_bytes(&cap, &witness)?;
         // ok
         let merkel = self.get_merkel()?.to_vec();

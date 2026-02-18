@@ -1,7 +1,5 @@
 
-/**
-* 
-*/
+/* * * */
 
 pub fn cast_arithmetic(x: &mut Value, y: &mut Value) -> VmrtErr {
 

@@ -2,16 +2,7 @@
 use std::sync::Arc;
 
 
-/* 
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum CallEntry {
-    Main = 1,
-    Abst = 2,
-}
-
-*/
+/* #[repr(u8)] #[derive(Debug, Clone, Copy)] pub enum CallEntry { Main = 1, Abst = 2, } */
 
 
 
@@ -200,7 +191,7 @@ impl FnObj {
         }
     }
 
-    pub fn exec_bytecodes(&self) -> VmrtRes<ByteView> {
+    pub fn exec_bytecodes(&self, height: u64) -> VmrtRes<ByteView> {
         use CodeType::*;
         Ok(match self.ctype {
             Bytecode => self.codes.clone(),
@@ -208,7 +199,7 @@ impl FnObj {
                 if let Some(cached) = self.compiled.get() {
                     return Ok(cached.clone());
                 }
-                let compiled = ByteView::from_vec(runtime_irs_to_bytecodes(self.codes.as_slice())?);
+                let compiled = ByteView::from_vec(runtime_irs_to_exec_bytecodes(self.codes.as_slice(), height)?);
                 let _ = self.compiled.set(compiled.clone());
                 compiled
             }
@@ -252,10 +243,7 @@ impl CallTarget {
     }
 }
 
-/*
-    Entry mode: Main, P2sh, Abst 
-    Call  mode: Outer, Inner, View, Pure
-*/
+/* Entry mode: Main, P2sh, Abst Call  mode: Outer, Inner, View, Pure */
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ExecMode {
     #[default] Main, // tx main call

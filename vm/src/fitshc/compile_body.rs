@@ -115,8 +115,7 @@ pub fn compile_body(
         // IR mode: store raw block content (without IRBLOCK/IRBLOCKR wrapper)
         let ircodes = drop_irblock_wrap(irnodes.serialize())?;
 
-        // Verify by converting to bytecode. Failures (e.g. CodeNotWithEnd, JumpOverflow) are
-        // fitsh compile errors; they propagate via parse_function -> parse_top_level -> compile.
+        // Verify by converting to bytecode. Failures (e.g. CodeNotWithEnd, JumpOverflow) are fitsh compile errors; they propagate via parse_function -> parse_top_level -> compile.
         let codes = convert_ir_to_bytecode(&ircodes).map_err(|e| e.to_string())?;
         verify_bytecodes(&codes).map_err(|e| e.to_string())?;
 

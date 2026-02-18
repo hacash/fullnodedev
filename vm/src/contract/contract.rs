@@ -65,8 +65,7 @@ impl Contract {
         if charged_bytes == 0 {
             return Amount::zero()
         }
-        // CLI print helper: conservative estimate to reduce "protocol_cost too small" rejection.
-        // Real validation still uses on-chain tx.fee_purity().
+        // CLI print helper: conservative estimate to reduce "protocol_cost too small" rejection. Real validation still uses on-chain tx.fee_purity().
         const TX_SIZE_ESTIMATE_BASE_BYTES: u128 = 220;
         const SAFETY_NUM: u128 = 120; // +20% headroom
         const SAFETY_DEN: u128 = 100;

@@ -31,6 +31,16 @@ fn resolve_outer_frame_addrs(
 }
 
 impl CallFrame {
+    fn prepare_frame(
+        frame: &mut Frame,
+        mode: ExecMode,
+        in_callcode: bool,
+        fnobj: &FnObj,
+        height: u64,
+        param: Option<Value>,
+    ) -> VmrtErr {
+        frame.prepare(mode, in_callcode, fnobj, height, param)
+    }
 
     pub fn start_call(&mut self, r: &mut Resoure, env: &mut ExecEnv, mode: ExecMode, code: &FnObj,
         entry_addr: ContractAddress,
@@ -46,6 +56,7 @@ impl CallFrame {
         use ExecMode::*;
         
         let libs_none: Option<Vec<ContractAddress>> = None;
+        let height = env.ctx.env().block.height;
         
         // Setup root frame (depth=0, nested frames get depth+1 via Frame::next)
         self.contract_count = r.contracts.len();
@@ -53,7 +64,7 @@ impl CallFrame {
         root.state_addr = entry_addr.clone();
         root.code_owner = code_owner.unwrap_or(entry_addr);
         self.push(root);
-        curr!().prepare(mode, false, code, param)?;
+        Self::prepare_frame(curr!(), mode, false, code, height, param)?;
 
         // Main execution loop
         loop {
@@ -92,13 +103,9 @@ impl CallFrame {
                                 callcode_param_count
                             );
                         }
-                        // Keep CALLCODE ABI consistent with normal CALL while preserving caller
-                        // signature checks at the end of delegated tail execution.
-                        // NOTE: Fitsh-compiled functions may POP one argv slot in normal paths.
-                        // Even when CALLCODE target declares 0 params, injecting Nil here avoids
-                        // accidental pop-empty-stack in delegated bodies written as regular funcs.
+                        // Keep CALLCODE ABI consistent with normal CALL while preserving caller signature checks at the end of delegated tail execution. NOTE: Fitsh-compiled functions may POP one argv slot in normal paths. Even when CALLCODE target declares 0 params, injecting Nil here avoids accidental pop-empty-stack in delegated bodies written as regular funcs.
                         let caller_types = curr_ref!().types.clone();
-                        curr!().prepare(fnptr.mode, true, fnobj, Some(Value::Nil))?;
+                        Self::prepare_frame(curr!(), fnptr.mode, true, fnobj, height, Some(Value::Nil))?;
                         curr!().callcode_caller_types = caller_types;
                         continue;
                     }
@@ -120,16 +127,12 @@ impl CallFrame {
                     let param = Some(curr!().pop_value()?);
                     let next = self.increase(r)?;
                     self.push(next);
-                    curr!().prepare(fnptr.mode, false, fnobj, param)?;
+                    Self::prepare_frame(curr!(), fnptr.mode, false, fnobj, height, param)?;
                     
                     // Set context addresses based on call mode
                     match fnptr.mode {
                         Inner | View | Pure => {
-                            // Non-Outer calls keep storage context inherited by Frame::next().
-                            // Only dispatch owner can change (this/self/super or lib lookup).
-                            // CALLCODE may rewrite code_owner in-place, but call instructions are
-                            // blocked while in_callcode=true (check_call_mode), so this branch
-                            // always handles normal nested frames.
+                            // Non-Outer calls keep storage context inherited by Frame::next(). Only dispatch owner can change (this/self/super or lib lookup). CALLCODE may rewrite code_owner in-place, but call instructions are blocked while in_callcode=true (check_call_mode), so this branch always handles normal nested frames.
                             let owner = resolve_non_outer_code_owner(
                                 &fnptr.target,
                                 next_code_owner,
@@ -155,8 +158,7 @@ impl CallFrame {
                         retv = curr!().pop_value()?;
                     }
                     if let Some(caller_types) = curr!().callcode_caller_types.take() {
-                        // CALLCODE is treated as implementation-level delegation:
-                        // only the original caller's return contract is enforced here.
+                        // CALLCODE is treated as implementation-level delegation: only the original caller's return contract is enforced here.
                         caller_types.check_output(&mut retv)?;
                     } else {
                         curr!().check_output_type(&mut retv)?;
@@ -198,8 +200,7 @@ impl CallFrame {
         let ctln = r.contracts.len();
         let delta = ctln.saturating_sub(*ctlnum);
         if delta > 0 || r.contract_load_bytes > 0 {
-            // Library resolve may touch src+lib (usually 1-2 loads), while inheritance
-            // resolve can walk multiple parents, so delta can be >1 in a single CALL.
+            // Library resolve may touch src+lib (usually 1-2 loads), while inheritance resolve can walk multiple parents, so delta can be >1 in a single CALL.
             let fee = (delta as i64) * r.gas_extra.load_new_contract;
             let bytes_fee = (r.contract_load_bytes as i64) / 64;
             *env.gas -= fee + bytes_fee;
@@ -252,6 +253,7 @@ mod gas_tests {
         assert_eq!(r.contract_load_bytes, 0);
         assert_eq!(call.contract_count, 1);
     }
+
 }
 
 #[cfg(test)]

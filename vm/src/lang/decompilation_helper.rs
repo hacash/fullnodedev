@@ -13,9 +13,7 @@ impl<'a> DecompilationHelper<'a> {
 
     pub fn block_prefix(&self, arr: &IRNodeArray) -> String {
         let _ = arr;
-        // NOTE: lib prelude emission is handled explicitly at the formatter top-level
-        // (see `Formater::print`). Keeping this empty avoids injecting file-level
-        // declarations into nested/inline contexts.
+        // NOTE: lib prelude emission is handled explicitly at the formatter top-level (see `Formater::print`). Keeping this empty avoids injecting file-level declarations into nested/inline contexts.
         String::new()
     }
 
@@ -26,8 +24,7 @@ impl<'a> DecompilationHelper<'a> {
 
     pub fn prepare_root_block(&self, arr: &IRNodeArray) -> (usize, Option<String>) {
         use Bytecode::*;
-        // Skip leading empty placeholders (they serialize to nothing but may exist
-        // in the IR array to reserve positions for later ALLOC injection).
+        // Skip leading empty placeholders (they serialize to nothing but may exist in the IR array to reserve positions for later ALLOC injection).
         let mut first_real_idx: usize = 0;
         while first_real_idx < arr.subs.len()
             && arr.subs[first_real_idx]
@@ -38,8 +35,7 @@ impl<'a> DecompilationHelper<'a> {
             first_real_idx += 1;
         }
 
-        // Locate alloc index if present (alloc could be at first_real_idx or first_real_idx+1
-        // due to placeholder insertion patterns).
+        // Locate alloc index if present (alloc could be at first_real_idx or first_real_idx+1 due to placeholder insertion patterns).
         let mut alloc_index: Option<usize> = None;
         for (i, s) in arr
             .subs
@@ -128,13 +124,7 @@ impl<'a> DecompilationHelper<'a> {
             return Some(names);
         }
 
-        // Fallback: infer a param count without SourceMap.
-        // We must avoid binding non-param locals (which would conflict with later `var $i $i = ...`).
-        // Heuristic:
-        // - Read total alloc slots from the nearest preceding ALLOC.
-        // - Look for an early PUT to a slot >= 1 shortly after UPLIST; its slot index
-        //   typically equals the first non-param local slot, so it approximates param count.
-        // - If no such early PUT exists, fall back to alloc_count (or 1).
+        // Fallback: infer a param count without SourceMap. We must avoid binding non-param locals (which would conflict with later `var $i $i = ...`). Heuristic: - Read total alloc slots from the nearest preceding ALLOC. - Look for an early PUT to a slot >= 1 shortly after UPLIST; its slot index typically equals the first non-param local slot, so it approximates param count. - If no such early PUT exists, fall back to alloc_count (or 1).
         let mut alloc_count: usize = 0;
         if start_idx > 0 {
             for i in start_idx.saturating_sub(2)..start_idx {

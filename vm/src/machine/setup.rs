@@ -1,8 +1,6 @@
 
 
-/*
-    return gas, val
-*/
+/* return gas, val */
 /// Call level from exec mode: Main/P2sh → CALL_MAIN, Abst → CALL_CONTRACT
 fn call_level_from_exec_mode(ty: u8) -> Ret<usize> {
     use crate::rt::*;
@@ -31,9 +29,7 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u
     if txty < TY3 {
         return errf!("current transaction type {} too low to setup vm, need at least {}", txty, TY3)
     }
-    // Ensure VM is initialized if a VM assigner is registered.
-    // Protocol normally does this at tx execution entry, but callers may invoke `setup_vm_run`
-    // directly in tests/tools.
+    // Ensure VM is initialized if a VM assigner is registered. Protocol normally does this at tx execution entry, but callers may invoke `setup_vm_run` directly in tests/tools.
     protocol::setup::do_vm_init(ctx);
     if !ctx.vm().usable() {
         let gmx = ctx.tx().fee_extend().unwrap_or(0);
@@ -43,18 +39,7 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u
     let old_level = ctx.level();
     ctx.level_set(call_level_from_exec_mode(ty)?);
 
-    // IMPORTANT: VM execution is re-entrant through EXTACTION -> action.execute() -> setup_vm_run().
-    // We must keep the same VM instance visible via `ctx.vm()` during the whole tx/call chain;
-    // otherwise nested setup_vm_run() would allocate a new VM and then be silently overwritten.
-    //
-    // To avoid Rust borrow aliasing (`&mut ctx` + `&mut ctx.vm()`), we perform a *single* localized
-    // raw-pointer call here, keeping the VM in-place inside Context.
-    //
-    // Safety assumptions (consensus-critical):
-    // - Single-threaded execution.
-    // - No code path replaces `ctx.vm` while `VM::call` is running (only `setup_vm_run` does setup).
-    // - The VM implementation may re-enter `setup_vm_run` via EXTACTION, and that re-entry must
-    //   observe the same VM instance to preserve gas accounting and call-stack invariants.
+    // IMPORTANT: VM execution is re-entrant through EXTACTION -> action.execute() -> setup_vm_run(). We must keep the same VM instance visible via `ctx.vm()` during the whole tx/call chain; otherwise nested setup_vm_run() would allocate a new VM and then be silently overwritten. To avoid Rust borrow aliasing (`&mut ctx` + `&mut ctx.vm()`), we perform a *single* localized raw-pointer call here, keeping the VM in-place inside Context. Safety assumptions (consensus-critical): - Single-threaded execution. - No code path replaces `ctx.vm` while `VM::call` is running (only `setup_vm_run` does setup). - The VM implementation may re-enter `setup_vm_run` via EXTACTION, and that re-entry must observe the same VM instance to preserve gas accounting and call-stack invariants.
     let ctxptr = ctx as *mut dyn Context;
     let res = unsafe {
         let vm = (*ctxptr).vm() as *mut dyn VM;

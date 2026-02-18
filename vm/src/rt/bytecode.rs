@@ -1,10 +1,5 @@
 
-/*
-    Bytecode define
-
-    Add one bytecode
-
-*/
+/* Bytecode define Add one bytecode */
 
 
 #[repr(u8)]
@@ -323,9 +318,7 @@ impl Bytecode {
 
 
 
-/*
-    params, stack input, stack output
-*/
+/* params, stack input, stack output */
 bytecode_metadata_define!{
     EXTACTION  : 1, 1, 0,     ext_action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
     EXTVIEW    : 1, 1, 1,     ext_view

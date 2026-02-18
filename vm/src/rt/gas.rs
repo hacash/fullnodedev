@@ -116,6 +116,7 @@ pub struct GasExtra {
     log_div: i64,
     storage_read_div: i64,
     storage_write_div: i64,
+    compile_div: i64,
     compo_byte_div: i64,
     ntfunc_div: i64,
     extview_div: i64,
@@ -222,6 +223,7 @@ impl GasExtra {
             log_div:             1,
             storage_read_div:    8,
             storage_write_div:   6,
+            compile_div:        12,
             compo_byte_div:     20,
             ntfunc_div:         16,
             extview_div:        16,
@@ -298,6 +300,11 @@ impl GasExtra {
     #[inline(always)]
     pub fn storage_write(&self, val_len: usize) -> i64 {
         Self::div_bytes(val_len, self.storage_write_div)
+    }
+
+    #[inline(always)]
+    pub fn compile_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.compile_div)
     }
 
     #[inline(always)]
@@ -461,6 +468,8 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.storage_read(8), 1);
         assert_eq!(gst.storage_write(5), 0);
         assert_eq!(gst.storage_write(6), 1);
+        assert_eq!(gst.compile_bytes(7), 0);
+        assert_eq!(gst.compile_bytes(13), 1);
         assert_eq!(gst.storage_del(), 0);
     }
 }

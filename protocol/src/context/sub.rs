@@ -65,8 +65,7 @@ pub fn ctx_merge(ctx: &mut dyn Context, snap: CtxSnapshot) {
 
 pub fn ctx_recover(ctx: &mut dyn Context, snap: CtxSnapshot) {
     ctx_state_recover_sub(ctx, snap.state);
-    // VM recover intentionally excludes gas remaining:
-    // failed AST branches rollback state/log/memory, but consumed gas is not refunded.
+    // VM recover rolls back state/log/memory only; gas remaining is not refunded and gas-charged warmup caches (contract preload/load-byte accounting) stay monotonic across AST branch recover.
     ctx.vm().restore_volatile(snap.vm_snap);
     ctx.logs().truncate(snap.log_len);
     ctx.restore_volatile(snap.ctx_snap);

@@ -120,9 +120,7 @@ impl Value {
         Ok(())
     }
 
-    /*
-        return buf: b + a
-    */
+    /* return buf: b + a */
     #[inline(always)]
     pub fn concat(a: &Value, b: &Value, cap: &SpaceCap) -> VmrtRes<Value> {
         let e = BytesHandle;

@@ -170,8 +170,7 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
     x.codegen_into(&mut cond)?;
     let mut body = Vec::new();
     y.codegen_into(&mut body)?;
-    // IRBLOCK already discards return values of its internal statements.
-    // Only append a POP when the body is NOT a statement block container.
+    // IRBLOCK already discards return values of its internal statements. Only append a POP when the body is NOT a statement block container.
     if y.hasretval() && !is_stmt_block(y) {
         body.push(POP as u8); // pop inst
     }

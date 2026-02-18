@@ -30,6 +30,4 @@ mod testexec {
         benchmark1()
     }
 }
-/*
-ALLOC 2 P0 PUT 0 GETX 0 P1 EQ BRSL 0 9 P1 PUT 0 P1 PUT 1 JMPSL 0 3 P0 PUT 1 GETX 0 RET
-*/
+/* ALLOC 2 P0 PUT 0 GETX 0 P1 EQ BRSL 0 9 P1 PUT 0 P1 PUT 1 JMPSL 0 3 P0 PUT 1 GETX 0 RET */

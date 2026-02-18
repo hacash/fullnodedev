@@ -90,16 +90,13 @@ impl GasCounter {
                 extra.max_gas_of_tx
             )
         }
-        // cache fee purity components for settlement (avoid repeated conversion)
-        // gas_price = fee_purity = fee_got / tx_size (miner-received fee per byte)
-        // keep numerator/denominator separate to avoid integer division precision loss
+        // cache fee purity components for settlement (avoid repeated conversion) gas_price = fee_purity = fee_got / tx_size (miner-received fee per byte) keep numerator/denominator separate to avoid integer division precision loss
         let purity_fee = tx.fee_got().to_238_u64().unwrap_or(0) as i128;
         let purity_size = tx.size() as i128;
         if purity_fee <= 0 || purity_size <= 0 {
             return errf!("tx fee or size invalid for gas: purity_fee={} purity_size={}", purity_fee, purity_size)
         }
-        // verify sender has enough balance for worst-case burn:
-        // max_burn = budget * purity_fee / (purity_size * gas_rate), rounded up
+        // verify sender has enough balance for worst-case burn: max_burn = budget * purity_fee / (purity_size * gas_rate), rounded up
         let gas_rate = extra.gas_rate.max(1) as i128;
         let max_burn = {
             let num = (budget as i128)
@@ -226,24 +223,20 @@ impl VM for MachineBox {
 
     fn snapshot_volatile(&self) -> Box<dyn Any> {
         let m = self.machine.as_ref().unwrap();
-        // IMPORTANT: Gas budget is deliberately excluded.
-        // AstSelect/AstIf recover must rollback state/log/memory, but gas consumption stays monotonic.
+        // Snapshot excludes gas and gas-charged warmup/cache accounting so AST recover rolls back state/log/memory only while keeping gas/warmup monotonic.
         Box::new((
             m.r.global_vals.clone(),
             m.r.memory_vals.clone(),
-            m.r.contracts.clone(),
-            m.r.contract_load_bytes,
         ))
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap, HashMap<ContractAddress, Arc<ContractObj>>, usize)>() else { return };
-        let (globals, memorys, contracts, load_bytes) = *snap;
+        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap)>() else { return };
+        let (globals, memorys) = *snap;
         let m = self.machine.as_mut().unwrap();
         m.r.global_vals = globals;
         m.r.memory_vals = memorys;
-        m.r.contracts = contracts;
-        m.r.contract_load_bytes = load_bytes;
+        // Do not restore `r.contracts` or `r.contract_load_bytes` because they are tx-local warmup/cache accounting tied to already-paid gas and must stay monotonic across AST recover.
     }
 
     fn call(&mut self, call: VMCall<'_>) -> Ret<(i64, Vec<u8>)> {
@@ -393,8 +386,7 @@ impl Machine {
         let Some((owner, fnobj)) = self.r.load_abstfn(env.ctx, &contract_addr, cty)? else {
             return errf!("abst call {:?} not find in {}", cty, adr)
         };
-        // Keep state anchored to the concrete contract address, even when abstract entry
-        // body is inherited from a parent owner. This preserves this/self split semantics.
+        // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
         let rv = self.do_call(env, ExecMode::Abst, fnobj.as_ref(), contract_addr, owner, None, Some(param))?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
@@ -493,10 +485,7 @@ mod machine_test {
         let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(2));
         let contract_base = crate::ContractAddress::calculate(&base_addr, &Uint4::from(3));
 
-        // Build an inheritance chain: Child -> Parent -> Base.
-        // The key trick is: `super.f()` moves code_owner to Parent, while state_addr stays Child.
-        // Then inside Parent.f(), `this.g()` must resolve in state_addr (Child), `self.g()` in code_owner (Parent),
-        // and `super.g()` in Parent's direct base (Base).
+        // Build an inheritance chain: Child -> Parent -> Base. The key trick is: `super.f()` moves code_owner to Parent, while state_addr stays Child. Then inside Parent.f(), `this.g()` must resolve in state_addr (Child), `self.g()` in code_owner (Parent), and `super.g()` in Parent's direct base (Base).
 
         let base = Contract::new().func(Func::new("g").unwrap().fitsh("return 3").unwrap());
 
@@ -635,9 +624,7 @@ mod machine_test {
         let outer_script = r##"
             lib C = 0
             let v = C.probe()
-            // In parent.probe():
-            // - self.id() resolves in parent(code_owner)=2
-            // - this.id() resolves in child(state_addr)=1
+            // In parent.probe(): - self.id() resolves in parent(code_owner)=2 - this.id() resolves in child(state_addr)=1
             assert v == 201
             return 0
         "##;
@@ -993,8 +980,9 @@ mod machine_test {
     }
 
     #[test]
-    fn snapshot_restore_volatile_fields_only_except_gas_remaining() {
+    fn snapshot_restore_volatile_fields_only_except_gas_and_warmups() {
         use crate::rt::Bytecode;
+        use std::sync::Arc;
 
         let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let mut env = Env::default();
@@ -1020,12 +1008,20 @@ mod machine_test {
 
         vm.machine.as_mut().unwrap().r.contract_load_bytes = 11;
         let before_load_bytes = vm.machine.as_ref().unwrap().r.contract_load_bytes;
+        vm.machine.as_mut().unwrap().r.contracts.insert(
+            ContractAddress::default(),
+            Arc::new(ContractObj::default()),
+        );
         let snap = vm.snapshot_volatile();
 
         // Mutate fields that are now outside VM volatile snapshot.
         vm.account.remaining = 1;
         // Mutate volatile fields (should be restored)
         vm.machine.as_mut().unwrap().r.contract_load_bytes = 777;
+        vm.machine.as_mut().unwrap().r.contracts.insert(
+            ContractAddress::default(),
+            Arc::new(ContractObj::default()),
+        );
 
         // Mutate non-volatile fields (should NOT be restored — init_once/RAII managed)
         vm.account.purity_fee = 1;
@@ -1039,8 +1035,10 @@ mod machine_test {
 
         // Gas remaining is NOT restored: gas usage must stay monotonic in one tx.
         assert_eq!(vm.account.remaining, 1);
-        // Volatile fields: restored to snapshot values
-        assert_eq!(vm.machine.as_ref().unwrap().r.contract_load_bytes, before_load_bytes);
+        // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
+        assert_ne!(vm.machine.as_ref().unwrap().r.contract_load_bytes, before_load_bytes);
+        assert_eq!(vm.machine.as_ref().unwrap().r.contract_load_bytes, 777);
+        assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 1);
 
         // Non-volatile fields: NOT restored (keep mutated values)
         assert_eq!(vm.account.purity_fee, 1);
@@ -1131,16 +1129,7 @@ mod machine_test {
         assert_eq!(vm.account.reentry_depth, 0, "depth must remain balanced after successful call");
     }
 
-/*
-    i64::MAX  = 9223372036854775807
-    10000 HAC =   10000000000000000:236
-
-    0.00000001 = 1:240 = 10000:236
-
-
-
-
-*/
+/* i64::MAX  = 9223372036854775807 10000 HAC =   10000000000000000:236 0.00000001 = 1:240 = 10000:236 */
 
 
 }

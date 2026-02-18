@@ -1,6 +1,5 @@
 
-// use std::*;
-// use num_traits::FromBytes;
+// use std::*; use num_traits::FromBytes;
 
 fn buf_not_zero(buf: &[u8]) -> bool {
     buf.iter().any(|a|*a>0)

@@ -1,7 +1,5 @@
 
-/*
-    default to spend 32 gas each call
-*/
+/* default to spend 32 gas each call */
 action_define!{ContractMainCall, 100, 
     ActLv::Ast, // level
     false, [],
@@ -16,9 +14,10 @@ action_define!{ContractMainCall, 100,
             return errf!("marks bytes format error")
         }
         // check codes
-        let cap = SpaceCap::new(ctx.env().block.height);
+        let hei = ctx.env().block.height;
+        let cap = SpaceCap::new(hei);
         let cty = CodeType::parse(self.ctype.to_uint())?;
-        convert_and_check(&cap, cty, &self.codes)?;
+        convert_and_check(&cap, cty, &self.codes, hei)?;
         setup_vm_run(
             ctx,
             ExecMode::Main as u8,

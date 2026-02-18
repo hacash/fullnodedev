@@ -1,7 +1,5 @@
 
-/**
-* parse bytecode params
-*/
+/* * * parse bytecode params */
 
 use crate::machine::VmHost;
 
@@ -157,9 +155,7 @@ macro_rules! funcptr {
 }
 
 
-/**
-* execute code
-*/
+/* * * execute code */
 pub fn execute_code(
 
     pc: &mut usize, // pc
@@ -186,8 +182,7 @@ pub fn execute_code(
     context_addr: &ContractAddress, 
     current_addr: &ContractAddress, 
 
-    // _is_sys_call: bool,
-    // _call_depth: usize,
+    // _is_sys_call: bool, _call_depth: usize,
 
 ) -> VmrtRes<CallExit> {
 
@@ -202,9 +197,7 @@ pub fn execute_code(
     let gst = gas_extra;
     let hei: u64 = host.height();
 
-    // check code length
-    // let codelen = codes.len();
-    // let tail = codelen;
+    // check code length let codelen = codes.len(); let tail = codelen;
 
     macro_rules! check_gas { () => { if *gas_usable < 0 { return itr_err_code!(OutOfGas) } } }
     macro_rules! nsr { () => { if let Pure        = mode { return itr_err_code!(InstDisabled) } } } // not read  in pure mode
@@ -227,9 +220,7 @@ pub fn execute_code(
     loop {
         // read inst
         debug_assert!(*pc < codes.len());
-        // if *pc >= codes.len() {
-        //     return itr_err_code!(CodeOverflow)
-        // }
+        // if *pc >= codes.len() { return itr_err_code!(CodeOverflow) }
         let instbyte = unsafe { *codes.get_unchecked(*pc as usize) }; // u8
         let instruction: Bytecode = std_mem_transmute!(instbyte);
         *pc += 1; // next
@@ -245,11 +236,7 @@ pub fn execute_code(
 	            if in_callcode && EXTACTION == $act_kind {
 	                return itr_err_fmt!(ExtActDisabled, "extend action not allowed in callcode")
 	            }
-	            // `ensure_extend_call_allowed` already blocks EXTACTION in non-Main mode.
-	            // Keep `depth > 0` as a belt-and-suspenders runtime guard: with current
-	            // semantics Main starts at depth=0 and CALLCODE is in-place (no new frame),
-	            // so Main+depth>0 should be unreachable today, but this prevents accidental
-	            // privilege widening if future call paths ever re-enter EXTACTION from nested frames.
+                // `ensure_extend_call_allowed` already blocks EXTACTION in non-Main mode. Keep `depth > 0` as a belt-and-suspenders runtime guard: with current semantics Main starts at depth=0 and CALLCODE is in-place (no new frame), so Main+depth>0 should be unreachable today, but this prevents accidental privilege widening if future call paths ever re-enter EXTACTION from nested frames.
 	            if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
 	                return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
 	            }
@@ -392,9 +379,7 @@ pub fn execute_code(
             PICK   => ops.pick(pu8!())?,
             SWAP   => ops.swap()?,
             REV    => ops.reverse(pu8!())?, // reverse
-            // CHOOSE: pop condition; if false swap the remaining two values so
-            // the chosen branch becomes the top of the stack. Leave the
-            // chosen value on the stack for subsequent instructions to consume.
+            // CHOOSE: pop condition; if false swap the remaining two values so the chosen branch becomes the top of the stack. Leave the chosen value on the stack for subsequent instructions to consume.
             CHOOSE => { if ops.pop()?.check_false() { ops.swap()? } ops.pop()?; }, /* x ? a : b */
             CAT    => {
                 let (xlen, ylen) = match ops.datas.len() {
@@ -821,11 +806,7 @@ pub fn execute_code(
                         target: CallTarget::Super,
                         fnsign: pcutbuf!(FN_SIGN_WIDTH),
                     }),
-                    /* CALLDYN =>    exit = Call(Funcptr{ // Outer
-                        mode: Outer,
-                        target: CallTarget::Addr(ops.pop()?.checked_contract_address()?),
-                        fnsign: ops.pop()?.checked_fnsign()?,
-                    }), */
+                    /* CALLDYN =>    exit = Call(Funcptr{ // Outer mode: Outer, target: CallTarget::Addr(ops.pop()?.checked_contract_address()?), fnsign: ops.pop()?.checked_fnsign()?, }), */
                     _ => unreachable!()
                 };
                 break
@@ -863,14 +844,11 @@ fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr
     match mode {
         Main    if not_ist!(CALL, CALLVIEW,   CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInMain),
         P2sh    if not_ist!(         CALLVIEW, CALLPURE,   CALLCODE) => itr_err_code!(CallOtherInP2sh),
-        // Abst intentionally allows this/self/super: root frame keeps state_addr as the
-        // concrete contract address passed by VM entry, while code_owner may come from
-        // inherited abstract function dispatch.
+        // Abst intentionally allows this/self/super: root frame keeps state_addr as the concrete contract address passed by VM entry, while code_owner may come from inherited abstract function dispatch.
         Abst    if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
         View    if not_ist!(         CALLVIEW, CALLPURE            ) => itr_err_code!(CallLocInView),
         Pure    if not_ist!(                  CALLPURE            ) => itr_err_code!(CallInPure),
-        // Outer and Inner allow all call instructions.
-        // Guard-false arms for Main/P2sh/Abst/View/Pure also fall here (call is allowed).
+        // Outer and Inner allow all call instructions. Guard-false arms for Main/P2sh/Abst/View/Pure also fall here (call is allowed).
         Main | P2sh | Abst | Outer | Inner | View | Pure => Ok(()),
     }
 }

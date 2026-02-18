@@ -5,11 +5,7 @@ use super::PrintOption;
 
 
 fn test_irnds() -> Vec<u8> {
-    /*
-    local_var_alloc(1);
-    local_var_set(0, 1u8);
-    return local_var_get(0);
-    */
+    /* local_var_alloc(1); local_var_set(0, 1u8); return local_var_get(0); */
     build_codes!(
         ALLOC 2
         PUT 0 P0

@@ -7,8 +7,7 @@ use super::IRNode;
 use super::action::*;
 use super::rt::*;
 use super::*;
-// use super::rt::BytecodePrint;
-// use super::ir::IRCodePrint;
+// use super::rt::BytecodePrint; use super::ir::IRCodePrint;
 use super::lang::*;
 
 include! {"util.rs"}

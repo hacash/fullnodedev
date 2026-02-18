@@ -51,9 +51,7 @@ impl Stack {
 
 
 
-/*
-* max size u16 = 65536 
-*/
+/* * max size u16 = 65536 */
 impl Stack {
 
     pub fn alloc(&mut self, num: u8) -> VmrtRes<u8> {
@@ -184,9 +182,7 @@ impl Stack {
         Ok(())
     }
 
-    /*
-        return buf: b + a
-    */
+    /* return buf: b + a */
     pub fn cat(&mut self, cap: &SpaceCap) -> VmrtErr {
         let y = self.pop()?;
         let x = self.peek()?;

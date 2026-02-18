@@ -20,9 +20,7 @@ pub const STORAGE_RETAIN_MAX_PERIODS: u64 = 300; // 300 * 8h = 100 days
 pub const STORAGE_KEY_MAX_BYTES: usize = 256;
 
 
-// Storage value with a bounded lease + grace window.
-//
-// NOTE: No backward-compat parsing is provided here; the serialized layout is consensus-critical.
+// Storage value with a bounded lease + grace window. NOTE: No backward-compat parsing is provided here; the serialized layout is consensus-critical.
 combi_struct!{ ValueSto,
     born: BlockHeight
     expire: BlockHeight
@@ -67,11 +65,7 @@ impl ValueSto {
         self.born.uint().saturating_add(STORAGE_SAVE_MAX)
     }
 
-    // return (is_expire, is_delete, expire_height)
-    //
-    // Boundary semantics are strict:
-    // - `chei == expire` -> NOT expired yet (still readable/writable; rest=0)
-    // - `chei == expire + retain_blocks` -> NOT deleted yet
+    // return (is_expire, is_delete, expire_height) Boundary semantics are strict: - `chei == expire` -> NOT expired yet (still readable/writable; rest=0) - `chei == expire + retain_blocks` -> NOT deleted yet
     fn check(&self, chei: u64) -> (bool, bool, u64) {
         let due = self.expire.uint();
         let isexp = chei > due;
@@ -114,8 +108,7 @@ impl ValueSto {
             return self;
         }
         if new_total != old_total {
-            // Maintain "prepaid rent" proportionality:
-            // remaining_time_new = remaining_time_old * old_total_size / new_total_size
+            // Maintain "prepaid rent" proportionality: remaining_time_new = remaining_time_old * old_total_size / new_total_size
             let rest = due.saturating_sub(chei) as u128;
             let old_total = old_total as u128;
             let new_total = new_total as u128;
@@ -222,9 +215,7 @@ mod storage_param_tests {
     fn rent_cannot_exceed_max_lease() {
         let gst = GasExtra::new(1);
         let mut v = ValueSto::new(0, Value::Nil);
-        // rent to exactly the max
-        // `ValueSto::new` already includes the minimum 1-period lease, so we can only add
-        // `STORAGE_PERIOD_MAX - 1` more periods to reach the maximum.
+        // rent to exactly the max `ValueSto::new` already includes the minimum 1-period lease, so we can only add `STORAGE_PERIOD_MAX - 1` more periods to reach the maximum.
         let p = Value::U64((STORAGE_PERIOD_MAX - 1) as u64);
         v.rent(&gst, 0, p).unwrap();
         assert_eq!(v.expire.uint(), STORAGE_SAVE_MAX);
@@ -382,9 +373,7 @@ mod storage_param_tests {
 }
 
 
-/*
-* 
-*/
+/* * */
 inst_state_define!{ VMState,
 
     201, contract,  ContractAddress  :  ContractSto
@@ -397,9 +386,7 @@ inst_state_define!{ VMState,
 
 
 
-/*
-    state storage
-*/
+/* state storage */
 #[allow(dead_code)]
 impl VMState<'_> {
 
@@ -424,9 +411,7 @@ impl VMState<'_> {
         Ok(ValueKey::from(k))
     }
 
-    /*
-        if not find return Nil  
-    */
+    /* if not find return Nil */
     fn sread(&mut self, curhei: u64, cadr: &ContractAddress, k: &Value) -> VmrtRes<Option<ValueSto>> {
         let k = Self::skey(cadr, k)?;
         let Some(v) = self.ctrtkvdb(&k) else {
@@ -444,9 +429,7 @@ impl VMState<'_> {
     }
 
 
-    /*
-        if not find return Nil  
-    */
+    /* if not find return Nil */
     fn sload(&mut self, curhei: u64, cadr: &ContractAddress, k: &Value) -> VmrtRes<Value> {
         let Some(v) = self.sread(curhei, cadr, k)? else {
             return Ok(Value::Nil)
@@ -454,10 +437,7 @@ impl VMState<'_> {
         Ok(v.data)
     }
 
-    /*
-        if not find or expire return Nil.
-        note: at exact due height rest=0 (not expired yet), expiration starts at due+1.
-    */
+    /* if not find or expire return Nil. note: at exact due height rest=0 (not expired yet), expiration starts at due+1. */
     fn srest(&mut self, curhei: u64, cadr: &ContractAddress, k: &Value) -> VmrtRes<Value> {
         let Some(v) = self.sread(curhei, cadr, k)? else {
             return Ok(Value::Nil)
@@ -465,9 +445,7 @@ impl VMState<'_> {
         Ok(Value::U64(v.expire.uint() - curhei))
     }
 
-    /*
-        read old value 
-    */
+    /* read old value */
     fn ssave(&mut self, gst: &GasExtra, curhei: u64, cadr: &ContractAddress, k: Value, v: Value) -> VmrtRes<i64> {
         v.canbe_store()?; // check can store
         let val_len = v.can_get_size()? as usize;
@@ -516,8 +494,7 @@ impl VMState<'_> {
             None => ValueSto::new(curhei, v),
         };
 
-        // If remaining lease is less than 1 period, SSAVE performs an auto-renew to 1 period.
-        // This must not exceed the max lease cap.
+        // If remaining lease is less than 1 period, SSAVE performs an auto-renew to 1 period. This must not exceed the max lease cap.
         if old_valid {
             let due = vobj.expire.uint();
             let rest = due.saturating_sub(curhei);

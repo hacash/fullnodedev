@@ -1,8 +1,6 @@
 
 
-/*
-    return gasuse, retval 
-*/
+/* return gasuse, retval */
 pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: String, params: &str) -> Ret<(i64, String)> {
     use rt::Bytecode::*;
     use rt::verify_bytecodes;

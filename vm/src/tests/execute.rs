@@ -1,9 +1,7 @@
 
 #[allow(dead_code)]
 pub fn execute1() {
-    /*
-
-    */
+    /*  */
     let irnds = build_codes!(
         ALLOC 2
         PUT 0 P0
@@ -24,9 +22,7 @@ pub fn execute1() {
 
 #[allow(dead_code)]
 pub fn execute2() {
-    /*
-
-    */
+    /*  */
     let irnds = build_codes!(
         ALLOC 1
         PUT 0 P0

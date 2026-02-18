@@ -1,6 +1,4 @@
-/*
-    parse ir list
-*/
+/* parse ir list */
 pub fn parse_ir_list(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeArray> {
     let u16max = u16::MAX as usize;
     let codelen = stuff.len();
@@ -20,9 +18,7 @@ pub fn parse_ir_list(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeArray> {
 }
 
 
-/*
-    parse ir block
-*/
+/* parse ir block */
 pub fn parse_ir_block(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeArray> {
     let u16max = u16::MAX as usize;
     let codelen = stuff.len();
@@ -42,17 +38,13 @@ pub fn parse_ir_block(stuff: &[u8], seek: &mut usize) -> VmrtRes<IRNodeArray> {
 }
 
 
-/**
-* parse one node (public interface for serialized IR)
-*/
+/* * * parse one node (public interface for serialized IR) */
 pub fn parse_ir_node_one(stuff: &[u8], seek: &mut usize) -> VmrtRes<Box<dyn IRNode>> {
     parse_ir_node_must(stuff, seek, 0, false)
 }
 
 
-/**
-* parse one node
-*/
+/* * * parse one node */
 fn parse_ir_node(stuff: &[u8], seek: &mut usize) -> VmrtRes<Option<Box<dyn IRNode>>> {
     let codesz = stuff.len();
     if codesz == 0 || *seek >= codesz {
@@ -150,8 +142,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
                 return itr_err_fmt!(InstInvalid, "empty block expr");
             }
             for i in 0..n {
-                // block statement items do not need to produce values, except:
-                // - IRBLOCKR (block expression) requires the last item to produce a value.
+                // block statement items do not need to produce values, except: - IRBLOCKR (block expression) requires the last item to produce a value.
                 let need_rtv = inst == IRBLOCKR && i + 1 == n;
                 block.push( subdph!(ndp, need_rtv) );
             }
@@ -210,8 +201,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             }
         }
     };
-    // check return value based on the actual parsed node (not just bytecode metadata).
-    // This is important for container nodes like IRLIST/IRBLOCK whose return-value-ness is contextual.
+    // check return value based on the actual parsed node (not just bytecode metadata). This is important for container nodes like IRLIST/IRBLOCK whose return-value-ness is contextual.
     if isrtv && !irnode.hasretval() {
         return itr_err_fmt!(InstInvalid, "irnode {} check return value failed", inst as u8)
     }
@@ -242,8 +232,7 @@ mod tests {
 
     #[test]
     fn irlist_must_return_value_in_value_context() {
-        // RET requires its child to produce a value.
-        // If we put an IRLIST that ends with LOG1 (no retval) there, parsing must fail.
+        // RET requires its child to produce a value. If we put an IRLIST that ends with LOG1 (no retval) there, parsing must fail.
         let bytes: Vec<u8> = vec![
             RET as u8,
             IRLIST as u8,

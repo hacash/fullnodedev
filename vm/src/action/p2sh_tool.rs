@@ -1,15 +1,4 @@
-/*
-    P2SH tooling helpers.
-
-    Design goals:
-    - Canonical: given the same set of (libs, lockbox) leaves, every implementation should
-      derive the same scriptmh address. We achieve this by sorting leaves by their *leaf hash*
-      (the same leaf commitment used by consensus).
-    - Consensus-aligned: leaf/branch hashing rules are intentionally identical to
-      `UnlockScriptProve::calc_scriptmh_from_lockbox` / `get_merkel()`.
-    - Hard to misuse: APIs return intermediate hashes and generate `UnlockScriptProve` instances
-      for a selected leaf, so wallet/SDK code does not need to hand-roll Merkle paths.
-*/
+/* P2SH tooling helpers. Design goals: - Canonical: given the same set of (libs, lockbox) leaves, every implementation should derive the same scriptmh address. We achieve this by sorting leaves by their *leaf hash* (the same leaf commitment used by consensus). - Consensus-aligned: leaf/branch hashing rules are intentionally identical to `UnlockScriptProve::calc_scriptmh_from_lockbox` / `get_merkel()`. - Hard to misuse: APIs return intermediate hashes and generate `UnlockScriptProve` instances for a selected leaf, so wallet/SDK code does not need to hand-roll Merkle paths. */
 
 
 /// A single P2SH leaf: `(adrlibs, lockbox)`.
@@ -220,7 +209,7 @@ impl P2shMerkleTree {
         let cap = SpaceCap::new(block_height);
         let ctb = CodeType::Bytecode;
         // lockbox must be valid by itself
-        convert_and_check(&cap, ctb, spec.lockbox.as_vec())?;
+        convert_and_check(&cap, ctb, spec.lockbox.as_vec(), block_height)?;
         // witness bytes must fit local constraints
         UnlockScriptProve::verify_witness_bytes(&cap, witness.as_vec())?;
         // ok, build action

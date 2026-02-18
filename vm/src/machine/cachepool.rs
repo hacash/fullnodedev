@@ -169,8 +169,7 @@ impl ContractCacheInner {
     }
 
     fn estimate_charge_bytes(sto: &ContractSto, obj: &ContractObj) -> usize {
-        // Best-effort estimate (not exact heap accounting).
-        // Keep it stable: use serialized size + raw code sizes + small overhead.
+        // Best-effort estimate (not exact heap accounting). Keep it stable: use serialized size + raw code sizes + small overhead.
         let mut sum = sto.size();
         for f in obj.abstfns.values() {
             sum = sum.saturating_add(f.codes.len());

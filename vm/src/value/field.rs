@@ -103,8 +103,7 @@ impl Serialize for Value {
     }
 
     fn size(&self) -> usize {
-        // Keep size() panic-free for non-storable variants (Compo/HeapSlice).
-        // This matches the serialized length contract directly.
+        // Keep size() panic-free for non-storable variants (Compo/HeapSlice). This matches the serialized length contract directly.
         if self.is_bytes() {
             let base = self.raw().len();
             return 1 + 2 + base // type_id + bytes len prefix + payload

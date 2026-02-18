@@ -11,9 +11,7 @@ where
 }
 
 
-/**
-*   such as: v = x + y
-*/
+/* * *   such as: v = x + y */
 fn binop_arithmetic<F>(operand_stack: &mut Stack, f: F) -> VmrtErr
 where
     F: FnOnce(&Value, &Value) -> VmrtRes<Value>
@@ -24,10 +22,7 @@ where
 }
 
 
-/**
-*   binop_between
-*   such as: v = x && y
-*/
+/* * *   binop_between *   such as: v = x && y */
 
 fn locop_btw<F>(x: &mut Value, y: &mut Value, f: F) -> VmrtErr
 where

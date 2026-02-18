@@ -68,8 +68,7 @@ pub fn search_ext_name_by_id(id: u8, exts: &[ExtDefTy]) -> &'static str {
 }
 
 pub fn ensure_extend_call_id(act_kind: Bytecode, id: u8) -> VmrtErr {
-    // Runtime allowlist: bytecode can be crafted directly, so we must reject unknown ids here
-    // (compile-time checks in the language layer are not sufficient).
+    // Runtime allowlist: bytecode can be crafted directly, so we must reject unknown ids here (compile-time checks in the language layer are not sufficient).
     let ok = match act_kind {
         Bytecode::EXTACTION => search_ext_by_id(id, &CALL_EXTEND_ACTION_DEFS).is_some(),
         Bytecode::EXTENV    => search_ext_by_id(id, &CALL_EXTEND_ENV_DEFS).is_some(),

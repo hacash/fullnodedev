@@ -12,8 +12,7 @@ fn address_ptr(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     Ok(Value::U8(idx + DVN))
 }
 
-// context_address is handled directly by the interpreter (NTENV dispatch)
-// without serialize/deserialize roundtrip.
+// context_address is handled directly by the interpreter (NTENV dispatch) without serialize/deserialize roundtrip.
 
 
 

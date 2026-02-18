@@ -121,10 +121,8 @@ impl Frame {
         }
     }
 
-    /*
-        compile irnode
-    */
-    pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: &FnObj, param: Option<Value>) -> VmrtErr {
+    /* compile irnode */
+    pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: &FnObj, height: u64, param: Option<Value>) -> VmrtErr {
         self.callcode_caller_types = None;
         if let Some(mut p) = param {
             p.canbe_func_argv()?;
@@ -137,7 +135,7 @@ impl Frame {
         self.pc = 0;
         self.mode = mode;
         self.in_callcode = in_callcode;
-        self.codes = fnobj.exec_bytecodes()?;
+        self.codes = fnobj.exec_bytecodes(height)?;
         Ok(())
     }
 

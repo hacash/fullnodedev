@@ -11,14 +11,11 @@ use sys::*;
 
 use super::rt::*;
 use super::*;
-// use super::space::*;
-// use super::util::*;
+// use super::space::*; use super::util::*;
 
 //
 
-// pub fn try_create(_kind: u16, _buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usize)>> {
-//     Ok(None)
-// }
+// pub fn try_create(_kind: u16, _buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usize)>> { Ok(None) }
 
 include! {"blob.rs"}
 include! {"contract.rs"}
@@ -27,9 +24,7 @@ include! {"envfunc.rs"}
 include! {"p2sh.rs"}
 include! {"p2sh_tool.rs"}
 
-/*
-    action register
-*/
+/* action register */
 action_register! {
 
     TxMessage            // 120

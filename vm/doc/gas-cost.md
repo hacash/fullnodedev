@@ -161,6 +161,18 @@ byte = value_byte = ContractSto.size(), not include key_byte. The formula is as 
 
 - 32 + byte/64: every new contract load
 
+#### IR runtime compile fee
+
+IR code real-time compile consumes gas by byte size:
+
+- byte/8: IR compile output byte length (includes runtime-appended `END`)
+
+Execution policy in one tx:
+
+- MainCall IR (`ExecMode::Main`) does **not** use compile-fee cache: each execution charges compile fee.
+- Contract function IR uses tx-local compile-fee dedup cache: same function object is charged once per tx.
+- AST failed-branch recover does not rollback gas-charged warmup/compile markers, avoiding repeated charges after recover.
+
 
 ## Examples (visualized)
 

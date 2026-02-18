@@ -16,9 +16,7 @@ impl MachineManage {
         Self::default()
     }
 
-    /*
-        create a vm machine
-    */
+    /* create a vm machine */
     pub fn assign(&self, hei: u64) -> MachineBox {
         let lk = self.lock.lock().unwrap();
         let res = unsafe{ &mut *self.resoures.get() };

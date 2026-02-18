@@ -4,7 +4,6 @@ include! {"lib.rs"}
 mod tests;
 
 pub fn main() {
-    // tests::do_all_test();
-    // tests::benchmark3();
+    // tests::do_all_test(); tests::benchmark3();
     tests::codes_verify_1();
 }

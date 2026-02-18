@@ -1,8 +1,4 @@
-/*
-
-    contract loader
-
-*/
+/* contract loader */
 
 
 #[derive(Debug, Clone)]
@@ -148,9 +144,7 @@ impl Resoure {
         self.load_fn_by_search_inherits(&mut vmsta, addr, FnKey::Abst(scty))
     }
 
-    /*
-        return call target resolve result
-    */
+    /* return call target resolve result */
     pub fn load_must_call(&mut self, 
         ctx: &mut dyn Context, fptr: Funcptr, 
         state_addr: &ContractAddress, code_owner: &ContractAddress,

@@ -2,8 +2,7 @@
 #[allow(dead_code)]
 #[derive(Default)]
 pub struct Heap {
-    // bsgas: i64,   // 1 2 4 8 16 32 64 128 256 512 1024 2048 4096 8192 
-    // segln: usize, // 256
+    // bsgas: i64,   // 1 2 4 8 16 32 64 128 256 512 1024 2048 4096 8192 segln: usize, // 256
     limit: usize, // 64 seg
     datas: Vec<u8>,
 }
@@ -50,9 +49,7 @@ impl Heap {
         if oldseg + seg > self.limit {
             return itr_err_code!(OutOfHeap)
         }
-        // Gas is an abstraction of space usage: the first 8 segments are charged
-        // exponentially (2,4,8,16,32,64,128,256), then linear 256 per segment.
-        // Price is based on existing heap size so multiple HGROW(1) cannot bypass.
+        // Gas is an abstraction of space usage: the first 8 segments are charged exponentially (2,4,8,16,32,64,128,256), then linear 256 per segment. Price is based on existing heap size so multiple HGROW(1) cannot bypass.
         let mut gas: u64 = 0;
         for s in oldseg..(oldseg + seg) {
             let add = if s < 8 {
@@ -93,15 +90,7 @@ impl Heap {
         Ok(())
     }
 
-    /*
-    pub fn write(&mut self, k: Value, v: Value) -> VmrtErr {
-        let start = k.checked_u32()? as usize;
-        self.do_write(start, v)
-    }
-
-    pub fn write_x(&mut self, start: u8, v: Value) -> VmrtErr {
-        self.do_write(start as usize, v)
-    } */
+    /* pub fn write(&mut self, k: Value, v: Value) -> VmrtErr { let start = k.checked_u32()? as usize; self.do_write(start, v) } pub fn write_x(&mut self, start: u8, v: Value) -> VmrtErr { self.do_write(start as usize, v) } */
 
     pub fn write(&mut self, start: u16, v: Value) -> VmrtErr {
         self.do_write(start as usize, v)
@@ -135,10 +124,7 @@ impl Heap {
         Ok(Value::HeapSlice((start, length)))
     }
 
-    /*
-        2 bit = u8 u16 u32 u64
-        6 bit = seg max 64 (u8:64, u16:128, u32:256, u64:512)
-    */
+    /* 2 bit = u8 u16 u32 u64 6 bit = seg max 64 (u8:64, u16:128, u32:256, u64:512) */
     pub fn read_u(&self, mark: u8) -> VmrtRes<Value> {
         let uty = mark >> 6;
         let seg = mark & 0b00111111;
@@ -155,13 +141,9 @@ impl Heap {
         Ok(val)
     }
 
-    /*
-        3   bit = u8 u16 u32 u64 u128 u256
-        5+8 bit = seg max 64 (u8:64, u16:128, u32:256, u64:512)
-    */
+    /* 3   bit = u8 u16 u32 u64 u128 u256 5+8 bit = seg max 64 (u8:64, u16:128, u32:256, u64:512) */
     pub fn read_ul(&self, mark: u16) -> VmrtRes<Value> {
-        // upper 3 bits indicate uint type; remaining 13 bits indicate segment
-        // shift by 13 (5+8) explicitly to avoid precedence ambiguity
+        // upper 3 bits indicate uint type; remaining 13 bits indicate segment shift by 13 (5+8) explicitly to avoid precedence ambiguity
         let uty = mark >> 13;
         if uty > 4 {
             return itr_err_fmt!(HeapError, "uint type {} not support", uty)

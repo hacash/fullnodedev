@@ -115,24 +115,7 @@ impl Syntax {
         Ok(Box::new(arys))
     }
 
-    /*
-    pub fn bind_uses(&mut self, s: String, adr: Vec<u8>) -> Rerr {
-        if let Some(..) = self.bduses.get(&s) {
-            return errf!("<use> cannot repeat bind the symbol '{}'", s)
-        }
-        let addr = Address::from_vec(adr);
-        addr.must_contract()?;
-        self.bduses.insert(s, addr);
-        Ok(())
-    }
-
-    pub fn link_use(&self, s: &String) -> Ret<Vec<u8>> {
-        match self.bduses.get(s) {
-            Some(i) => Ok(i.to_vec()),
-            _ =>  errf!("cannot find any use bind '{}'", s)
-        }
-    }
-    */
+    /* pub fn bind_uses(&mut self, s: String, adr: Vec<u8>) -> Rerr { if let Some(..) = self.bduses.get(&s) { return errf!("<use> cannot repeat bind the symbol '{}'", s) } let addr = Address::from_vec(adr); addr.must_contract()?; self.bduses.insert(s, addr); Ok(()) } pub fn link_use(&self, s: &String) -> Ret<Vec<u8>> { match self.bduses.get(s) { Some(i) => Ok(i.to_vec()), _ =>  errf!("cannot find any use bind '{}'", s) } } */
 
     fn next(&mut self) -> Ret<Token> {
         if self.idx >= self.tokens.len() {
@@ -505,8 +488,7 @@ impl Syntax {
             let nxt = next!();
             match nxt {
                 Partition('[') => {
-                    // Allow indexing on any value expression, not just identifiers.
-                    // This keeps decompile->recompile closed for `ITEMGET` nodes.
+                    // Allow indexing on any value expression, not just identifiers. This keeps decompile->recompile closed for `ITEMGET` nodes.
                     left.checkretval()?; // receiver must be a value expression
                     let k = self.item_must(0)?;
                     k.checkretval()?; // key must be a value expression
@@ -712,9 +694,7 @@ impl Syntax {
     }
 
     pub fn item_may_list(&mut self, keep_retval: bool) -> Ret<Box<dyn IRNode>> {
-        // NOTE: do NOT unwrap single-item blocks here.
-        // We must preserve IRBLOCK/IRBLOCKR opcodes so ircode -> fitsh -> ircode
-        // can be byte-for-byte stable under any PrintOption settings.
+        // NOTE: do NOT unwrap single-item blocks here. We must preserve IRBLOCK/IRBLOCKR opcodes so ircode -> fitsh -> ircode can be byte-for-byte stable under any PrintOption settings.
         Ok(Box::new(self.item_may_block(keep_retval)?))
     }
 
@@ -1149,25 +1129,7 @@ impl Syntax {
                 self.bind_macro(name.clone(), expr)?;
                 return Ok(Some(push_empty()));
             }
-            /*
-            Keyword(Use) => { // use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
-                let e = errf!("use statement format error");
-                nxt = next!();
-                let Identifier(id) = nxt else {
-                    return e
-                };
-                nxt = next!();
-                let Keyword(KwTy::Assign) = nxt else {
-                    return e
-                };
-                nxt = next!();
-                let Token::Bytes(addr) = nxt else {
-                    return e
-                };
-                self.bind_uses(id.clone(), addr.clone())?;
-                push_empty()
-            }
-            */
+            /* Keyword(Use) => { // use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS let e = errf!("use statement format error"); nxt = next!(); let Identifier(id) = nxt else { return e }; nxt = next!(); let Keyword(KwTy::Assign) = nxt else { return e }; nxt = next!(); let Token::Bytes(addr) = nxt else { return e }; self.bind_uses(id.clone(), addr.clone())?; push_empty() } */
             Keyword(Lib) => {
                 // lib AnySwap = 1 : emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
                 let e = errf!("lib statement format error");
@@ -1386,8 +1348,7 @@ impl Syntax {
             }
             Keyword(Log) => {
                 let e = errf!("log argv number error");
-                // `log` consumes values from the stack (see interpreter: LOG1 pops 2, LOG2 pops 3, ...).
-                // Therefore log arguments must be parsed as value expressions.
+                // `log` consumes values from the stack (see interpreter: LOG1 pops 2, LOG2 pops 3, ...). Therefore log arguments must be parsed as value expressions.
                 let max = self.tokens.len() - 1;
                 if self.idx >= max {
                     return e;

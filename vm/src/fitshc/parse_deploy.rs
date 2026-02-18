@@ -44,10 +44,7 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
         }
 
         if key == "protocol_cost" {
-            // value
-            // If tokenizer splits "1:248", we might see "1" ":" "248" or string "1:248" depending on tokenizer.
-            // Tokenizer treats ':' as symbol. So "1:248" becomes Int(1), Sym(:), Int(248).
-            // But if user quoted it '"1:248"', it becomes Bytes(utf8).
+            // value If tokenizer splits "1:248", we might see "1" ":" "248" or string "1:248" depending on tokenizer. Tokenizer treats ':' as symbol. So "1:248" becomes Int(1), Sym(:), Int(248). But if user quoted it '"1:248"', it becomes Bytes(utf8).
             if let Some(Bytes(v)) = state.current() {
                 let s = String::from_utf8_lossy(v);
                 let amt = Amount::from(s.as_ref()).map_err(|e| e.to_string())?;

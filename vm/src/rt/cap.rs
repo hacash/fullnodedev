@@ -21,9 +21,7 @@ pub struct SpaceCap {
     pub librarys_link:   usize, // 100
     pub max_reentry_depth: u32,  // 1, EXTACTION re-entry depth limit
 
-    // pub max_ctl_func: usize, // 200 cache
-    // pub max_ctl_libx: usize, // 100 cache
-    // pub max_ctl_body: usize, // 50  cache
+    // pub max_ctl_func: usize, // 200 cache pub max_ctl_libx: usize, // 100 cache pub max_ctl_body: usize, // 50  cache
 
 }
 
@@ -47,9 +45,7 @@ impl SpaceCap {
             inherits_parent:      4,
             librarys_link:      100,
             max_reentry_depth:    1, // allow 1 re-entry (2 call layers total)
-            // max_ctl_func:   200,
-            // max_ctl_libx:   100,
-            // max_ctl_body:   50,
+            // max_ctl_func:   200, max_ctl_libx:   100, max_ctl_body:   50,
         }
     }
 

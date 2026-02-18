@@ -294,7 +294,7 @@ fn check_static_call_targets(
     vmsta: &mut VMState,
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
-    _height: u64,
+    height: u64,
 ) -> Rerr {
     let check_one = |func_tag: String, codes: &[u8], vmsta: &mut VMState| -> Rerr {
         scan_call_sites(codes, |inst, params| {
@@ -360,9 +360,7 @@ fn check_static_call_targets(
                     Ok(())
                 }
                 Bytecode::CALLTHIS | Bytecode::CALLSELF => {
-                    // Deploy-time precheck validates callsites against the contract being deployed/updated.
-                    // Runtime CALLSELF resolves from dynamic code_owner, which may differ after inherited
-                    // dispatch. Cross-contract inherited bodies are validated in their own deploy/update.
+                    // Deploy-time precheck validates callsites against the contract being deployed/updated. Runtime CALLSELF resolves from dynamic code_owner, which may differ after inherited dispatch. Cross-contract inherited bodies are validated in their own deploy/update.
                     sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
                     let mut visiting = std::collections::HashSet::new();
                     let mut visited = std::collections::HashSet::new();
@@ -418,7 +416,7 @@ fn check_static_call_targets(
         let ctype = CodeType::parse(f.cdty[0]).map_err(|e| e.to_string())?;
         let codes = match ctype {
             CodeType::Bytecode => f.code.to_vec(),
-            CodeType::IRNode => runtime_irs_to_bytecodes(&f.code).map_err(|e| e.to_string())?,
+            CodeType::IRNode => runtime_irs_to_bytecodes(&f.code, height).map_err(|e| e.to_string())?,
         };
         let tag = format!("userfn 0x{}", hex::encode(f.sign.to_array()));
         check_one(tag, &codes, vmsta)?;
@@ -428,7 +426,7 @@ fn check_static_call_targets(
         let ctype = CodeType::parse(f.cdty[0]).map_err(|e| e.to_string())?;
         let codes = match ctype {
             CodeType::Bytecode => f.code.to_vec(),
-            CodeType::IRNode => runtime_irs_to_bytecodes(&f.code).map_err(|e| e.to_string())?,
+            CodeType::IRNode => runtime_irs_to_bytecodes(&f.code, height).map_err(|e| e.to_string())?,
         };
         let tag = format!("abstcall {}", f.sign[0]);
         check_one(tag, &codes, vmsta)?;
@@ -500,32 +498,4 @@ fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret
 
 
 
-/**************************************
-
-fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, ctlsz: usize, ptcfee: &Amount) -> Rerr {
-    // let _hei = ctx.env().block.height;
-    let e = errf!("contract protocol fee calculate failed");
-    let mul = CONTRACT_STORE_FEE_MUL as u128; // 30
-    let feep = ctx.tx().fee_purity() as u128; // per-byte, no GSCU division
-    let Some(rlfe) = feep.checked_mul(ctlsz as u128) else {
-        return e
-    };
-    let Some(rlfe) = rlfe.checked_mul(mul) else {
-        return e
-    };
-    let tx50fee = &Amount::coin_u128(rlfe, UNIT_238).compress(2, AmtCpr::Grow)?;
-    if tx50fee <= ctx.tx().fee() {
-        return e
-    }
-    println!("{}, {}, {}, {}", ctx.tx().size(), ctlsz, ctx.tx().fee(), tx50fee);
-    let maddr = ctx.env().tx.main;
-    // check fee
-    if ptcfee < tx50fee { 
-        return errf!("protocol fee must need at least {} but just got {}", tx50fee, ptcfee)
-    }
-    operate::hac_sub(ctx, &maddr, ptcfee)?;
-    Ok(())
-}
-
-
-*/
+/* ************************************* fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, ctlsz: usize, ptcfee: &Amount) -> Rerr { // let _hei = ctx.env().block.height; let e = errf!("contract protocol fee calculate failed"); let mul = CONTRACT_STORE_FEE_MUL as u128; // 30 let feep = ctx.tx().fee_purity() as u128; // per-byte, no GSCU division let Some(rlfe) = feep.checked_mul(ctlsz as u128) else { return e }; let Some(rlfe) = rlfe.checked_mul(mul) else { return e }; let tx50fee = &Amount::coin_u128(rlfe, UNIT_238).compress(2, AmtCpr::Grow)?; if tx50fee <= ctx.tx().fee() { return e } println!("{}, {}, {}, {}", ctx.tx().size(), ctlsz, ctx.tx().fee(), tx50fee); let maddr = ctx.env().tx.main; // check fee if ptcfee < tx50fee { return errf!("protocol fee must need at least {} but just got {}", tx50fee, ptcfee) } operate::hac_sub(ctx, &maddr, ptcfee)?; Ok(()) } */

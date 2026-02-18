@@ -9,11 +9,11 @@ pub enum Value {
     U32(u32),                //           4
     U64(u64),                //           5
     U128(u128),              //           6
-    /*U256(u256),*/          //           7
-    /*...*/                  //           ..
+    // U256(u256),           //           7
+    // ...                   //           ..
     Bytes(Vec<u8>),          //           10
     Address(field::Address), //           11
-    /*...*/                  //           ..
+    // ...                   //           ..
     HeapSlice((u32, u32)),   //           14
     Compo(CompoItem),        //           15
 }
@@ -98,7 +98,8 @@ impl Value {
             U32(..) | 
             U64(..) | 
             U128(..) 
-            /*| U256(_)*/ => true,
+            // | U256(_) => true,
+            => true,
             _ => false,
         }
     }
@@ -143,20 +144,7 @@ impl Value {
         }
     }
 
-    /*
-    pub fn _____deval(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
-        match self {
-            Compo(..) => itr_err_code!(CompoToSerialize),
-            HeapSlice((s, l)) => {
-                match heap.do_read(*s as usize, *l as usize)? {
-                    Bytes(buf) => Ok(buf),
-                    _ => never!()
-                }
-            }
-            _ => Ok(self.raw())
-        }
-    }
-    */
+    /* pub fn _____deval(&self, heap: &Heap) -> VmrtRes<Vec<u8>> { match self { Compo(..) => itr_err_code!(CompoToSerialize), HeapSlice((s, l)) => { match heap.do_read(*s as usize, *l as usize)? { Bytes(buf) => Ok(buf), _ => never!() } } _ => Ok(self.raw()) } } */
 
 
     pub fn raw(&self) -> Vec<u8> {

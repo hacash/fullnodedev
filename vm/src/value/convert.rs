@@ -66,24 +66,7 @@ impl Value {
         self.checked_u128()
     }
 
-    /*
-
-
-    pub fn ___checked_bytes(&self) -> VmrtRes<Vec<u8>> {
-        let canto = self.is_bytes() || self.is_addr() || self.is_uint();
-        maybe!(canto, Ok(self.raw()), itr_err_fmt!(CastParamFail, "cannot cast {:?} to buf", self))
-    }
-
-    pub fn checked_bool(&self) -> VmrtRes<bool> {
-        let canto = self.is_nil() || self.is_uint() || self.is_bytes();
-        maybe!(canto, Ok(self.to_bool()), itr_err_fmt!(CastParamFail, "cannot cast {:?} to bool", self))
-    }
-
-    pub fn checked_bool_not(&self) -> VmrtRes<bool> {
-        Ok(!self.checked_bool()?)
-    }
-
-    */
+    /* pub fn ___checked_bytes(&self) -> VmrtRes<Vec<u8>> { let canto = self.is_bytes() || self.is_addr() || self.is_uint(); maybe!(canto, Ok(self.raw()), itr_err_fmt!(CastParamFail, "cannot cast {:?} to buf", self)) } pub fn checked_bool(&self) -> VmrtRes<bool> { let canto = self.is_nil() || self.is_uint() || self.is_bytes(); maybe!(canto, Ok(self.to_bool()), itr_err_fmt!(CastParamFail, "cannot cast {:?} to bool", self)) } pub fn checked_bool_not(&self) -> VmrtRes<bool> { Ok(!self.checked_bool()?) } */
 
     pub fn type_from(ty: ValueTy, stuff: Vec<u8>) -> VmrtRes<Self> {
         let vlen = stuff.len();

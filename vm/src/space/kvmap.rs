@@ -63,16 +63,12 @@ macro_rules! memory_kvmap_define {
 
 
 
-/*
-
-*/
+/*  */
 memory_kvmap_define!{ GKVMap, GlobalError, OutOfGlobal }
 memory_kvmap_define!{ MKVMap, MemoryError, OutOfMemory }
 
 
-/*
-
-*/
+/*  */
 
 
 #[derive(Default, Clone)]
