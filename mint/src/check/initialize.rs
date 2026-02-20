@@ -4,15 +4,22 @@ fn do_initialize(_this: &HacashMinter, db: &mut dyn State) -> Rerr {
 	let addr1 = Address::from_readable("12vi7DEZjh6KrK5PVmmqSgvuJPCsZMmpfi").unwrap();
 	let addr2 = Address::from_readable("1LsQLqkd8FQDh3R7ZhxC5fndNf92WfhM19").unwrap();
 	let addr3 = Address::from_readable("1NUgKsTgM6vQ5nxFHGz1C4METaYTPgiihh").unwrap();
-	let amt1 = Amount::small(1, 244);
+	let addr4 = Address::from_readable("1HVMPyUt3ZR3JCyGA5p2ptCvusZsiX6YV9").unwrap();
+    let addr5 = Address::from_readable("1FSse2degBjVAAiiMzC36t6NgzjeUkxopG").unwrap();
+    let amt1 = Amount::small(1, 244);
 	let amt2 = Amount::small(12, 244);
+    let amt3 = Amount::coin(549, 244);
+    let amt4 = Amount::coin(527, 244);
     let bls1 = Balance::hac(amt1);
     let bls2 = Balance::hac(amt2);
+    let bls3 = Balance::hac(amt3);
+    let bls4 = Balance::hac(amt4);
     let mut state = CoreState::wrap(db);
     state.balance_set(&addr1, &bls2);
     state.balance_set(&addr2, &bls1);
     state.balance_set(&addr3, &bls1);
-
+    state.balance_set(&addr4, &bls3);
+    state.balance_set(&addr5, &bls4);
     // just for test develop
     #[cfg(debug_assertions)] 
     if _this.cnf.test_coin {

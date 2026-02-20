@@ -7,8 +7,8 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let block_nonce = q_u32(&req, "block_nonce", 0);
     let coinbase_nonce = q_string(&req, "coinbase_nonce", "");
 
-    let mut success_stuff = {
-        let mut stf = MINER_PENDING_BLOCK.lock().unwrap();
+    let success_stuff = {
+        let stf = MINER_PENDING_BLOCK.lock().unwrap();
         if stf.is_empty() {
             return api_error("pending block not yet");
         }
@@ -22,7 +22,7 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         let Some(stfidx) = found_idx else {
             return api_error(&format!("pending block height {} not find", height));
         };
-        let tarstf = &mut stf[stfidx];
+        let tarstf = &stf[stfidx];
 
         let Ok(cb_nonce_bytes) = hex::decode(coinbase_nonce.as_bytes()) else {
             return api_error("coinbase nonce format error");
@@ -31,34 +31,47 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             return api_error("coinbase nonce length error");
         }
 
-        tarstf.block.set_nonce(Uint4::from(block_nonce));
-        tarstf
-            .coinbase_tx
-            .set_nonce(Hash::from(cb_nonce_bytes.try_into().unwrap()));
-        let cbhx = tarstf.coinbase_tx.hash();
-        let mkrl = calculate_mrkl_coinbase_update(cbhx, &tarstf.mrklrts);
-        tarstf.block.set_mrklroot(mkrl);
-        let blkhx = tarstf.block.hash();
-        if 1 == hash_diff(&blkhx, &tarstf.target_hash) {
+        let mut local_block = tarstf.block.clone();
+        let mut local_coinbase_tx = tarstf.coinbase_tx.clone();
+        let mut target_hash = tarstf.target_hash.to_vec();
+        let mrklrts = tarstf.mrklrts.clone();
+
+        right_00_to_ff(&mut target_hash);
+        let target_hash = Hash::from(target_hash.try_into().unwrap());
+
+        local_block.set_nonce(Uint4::from(block_nonce));
+        local_coinbase_tx.set_nonce(Hash::from(cb_nonce_bytes.try_into().unwrap()));
+        
+        let cbhx = local_coinbase_tx.hash();
+        let mkrl = calculate_mrkl_coinbase_update(cbhx, &mrklrts);
+        local_block.set_mrklroot(mkrl);
+        
+        let blkhx = local_block.hash();
+        if 1 == hash_diff(&blkhx, &target_hash) {
             return api_error(&format!(
                 "difficulty check fail: at least need {} but got {}",
-                tarstf.target_hash.to_hex(),
+                target_hash.to_hex(),
                 blkhx.to_hex()
             ));
         }
-        let picked = stf.drain(stfidx..stfidx + 1).next_back().unwrap();
-        picked
+        
+        (local_block, local_coinbase_tx)
     };
 
-    let done_height = success_stuff.block.height().uint();
-    success_stuff
-        .block
-        .replace_transaction(0, Box::new(success_stuff.coinbase_tx.clone()))
-        .unwrap();
-    let blkpkg = BlkPkg::create(Box::new(success_stuff.block));
+    let (mut block, coinbase_tx) = success_stuff;
+    let done_height = block.height().uint();
+    
+    block.replace_transaction(0, Box::new(coinbase_tx)).unwrap();
+    let blkpkg = BlkPkg::create(Box::new(block));
     if let Err(e) = ctx.hnoder.submit_block(&blkpkg, true) {
         return api_error(&format!("submit block error: {}", e));
     }
+
+    {
+        let mut stf = MINER_PENDING_BLOCK.lock().unwrap();
+        stf.retain(|it| *it.height != done_height);
+    }
+
     api_ok(vec![
         ("height", json!(done_height)),
         ("mining", json!("success")),

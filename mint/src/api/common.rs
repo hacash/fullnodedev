@@ -28,6 +28,11 @@ pub struct MinerBlockStuff {
 static MINER_PENDING_BLOCK: LazyLock<Arc<Mutex<VecDeque<MinerBlockStuff>>>> =
     LazyLock::new(|| Arc::default());
 
+static MINER_PACKING_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+static BLOCK_NOTIFIER: LazyLock<(Mutex<u64>, std::sync::Condvar)> =
+    LazyLock::new(|| (Mutex::new(0), std::sync::Condvar::new()));
+
 struct MWNCount {
     count: Arc<Mutex<u64>>,
 }
@@ -140,14 +145,15 @@ fn body_data_may_hex(req: &ApiRequest) -> Ret<Vec<u8>> {
 }
 
 fn right_00_to_ff(hx: &mut [u8]) {
-    let m = hx.len();
-    for i in 0..hx.len() {
-        let n = m - i - 1;
-        if hx[n] == 0 {
-            hx[n] = 255;
-        } else {
+    if hx.is_empty() || *hx.last().unwrap() != 0 {
+        return;
+    }
+    for i in (0..hx.len()).rev() {
+        if hx[i] > 0 {
+            hx[i] -= 1;
             break;
         }
+        hx[i] = 255;
     }
 }
 
@@ -175,6 +181,12 @@ fn update_miner_pending_block(block: BlockV1, cbtx: TransactionCoinbase) {
     if stfs.len() > 3 {
         stfs.pop_back();
     }
+    
+    // Notify miner_notice that a new block is ready to be mined
+    let (lock, cvar) = &*BLOCK_NOTIFIER;
+    let mut lasthei = lock.lock().unwrap();
+    *lasthei = stfs[0].height.uint();
+    cvar.notify_all();
 }
 
 fn miner_reset_next_new_block(engine: Arc<dyn Engine>, txpool: &dyn TxPool) {
@@ -206,6 +218,7 @@ fn get_miner_pending_block_stuff(
     let cbhx = stuff.coinbase_tx.hash();
     let mkrl = calculate_mrkl_coinbase_update(cbhx, &stuff.mrklrts);
     stuff.block.set_mrklroot(mkrl);
+    stuff.block.replace_transaction(0, Box::new(stuff.coinbase_tx.clone())).unwrap();
     let intro_data = stuff.block.intro.serialize().to_hex();
 
     let mut tg_hash = stuff.target_hash.to_vec();

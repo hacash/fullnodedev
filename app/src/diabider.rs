@@ -104,7 +104,8 @@ fn check_bidding_step(
         }
     }
 
-    let Some(first_bid_txp) = pick_first_bid_tx(txplptr) else {
+    let (first_bid_txp, my_bid_txp) = pick_first_and_my_bid_tx(txplptr, &my_addr);
+    let Some(first_bid_txp) = first_bid_txp else {
         retry!(3); // tx pool empty
     };
 
@@ -122,7 +123,7 @@ fn check_bidding_step(
         retry!(10); // move step fail
     };
 
-    let Some(my_bid_txp) = pick_my_bid_tx(txplptr, &my_addr) else {
+    let Some(my_bid_txp) = my_bid_txp else {
         retry!(3); // have no my tx
     };
 
@@ -187,27 +188,22 @@ fn check_bidding_step(
 
 ///////////////////////////////////////////////
 
-fn pick_my_bid_tx(tx_pool: &dyn TxPool, my_addr: &Address) -> Option<TxPkg> {
-    let mut my_bid_tx: Option<TxPkg> = None;
+fn pick_first_and_my_bid_tx(tx_pool: &dyn TxPool, my_addr: &Address) -> (Option<TxPkg>, Option<TxPkg>) {
+    let mut first: Option<TxPkg> = None;
+    let mut mine: Option<TxPkg> = None;
     let mut pick_dmint = |a: &TxPkg| {
-        if *my_addr == a.objc.main() {
-            my_bid_tx = Some(a.clone());
-            return false; // end
+        if first.is_none() {
+            first = Some(a.clone());
+        }
+        if mine.is_none() && *my_addr == a.objc.main() {
+            mine = Some(a.clone());
+        }
+        if first.is_some() && mine.is_some() {
+            return false; // end once both found
         }
         true // next
     };
     let _ = tx_pool.iter_at(TXGID_DIAMINT, &mut pick_dmint);
     // ok
-    my_bid_tx
-}
-
-fn pick_first_bid_tx(tx_pool: &dyn TxPool) -> Option<TxPkg> {
-    let mut first: Option<TxPkg> = None;
-    let mut pick_dmint = |a: &TxPkg| {
-        first = Some(a.clone());
-        return false; // end at first
-    };
-    let _ = tx_pool.iter_at(TXGID_DIAMINT, &mut pick_dmint);
-    // ok
-    first
+    (first, mine)
 }

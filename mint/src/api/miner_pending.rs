@@ -32,7 +32,15 @@ fn miner_pending(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     };
 
     if need_create_new {
-        miner_reset_next_new_block(ctx.engine.clone(), ctx.hnoder.txpool().as_ref());
+        let _pack_guard = MINER_PACKING_LOCK.lock().unwrap();
+        // Double check
+        let still_need_create = {
+            let stf = MINER_PENDING_BLOCK.lock().unwrap();
+            stf.is_empty() || *stf[0].height <= lasthei
+        };
+        if still_need_create {
+            miner_reset_next_new_block(ctx.engine.clone(), ctx.hnoder.txpool().as_ref());
+        }
     }
 
     get_miner_pending_block_stuff(detail, transaction, stuff, base64)

@@ -26,7 +26,6 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
     let left_sat  = &left_bls.satoshi;
     let right_sat = &right_bls.satoshi;
 
-
     // check
     if paychan.status != CHANNEL_STATUS_OPENING {
         return errf!("channel status is not opening")

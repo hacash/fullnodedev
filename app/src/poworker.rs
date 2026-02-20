@@ -71,6 +71,7 @@ const ONEDAY_BLOCK_NUM: f64 = 288.0; // one day block
 static MINING_BLOCK_HEIGHT: AtomicU64 = AtomicU64::new(0);
 
 use std::sync::LazyLock;
+static HTTP_CLIENT: LazyLock<HttpClient> = LazyLock::new(|| HttpClient::new());
 static MINING_BLOCK_STUFF: LazyLock<RwLock<Arc<BlockMiningStuff>>> =
     LazyLock::new(|| RwLock::default());
 
@@ -204,6 +205,10 @@ fn run_block_mining_item(
 
     let mut coinbase_nonce = Hash::default();
     getrandom::fill(coinbase_nonce.as_mut()).unwrap();
+    // 说明：这里所有线程都从 nonce_start = 0 开始并不是 BUG。
+    // 因为上面已经为每个线程/任务生成了随机的 coinbase_nonce，
+    // 这会导致 block_intro (即区块头 hash) 完全不同，
+    // 所以即使 nonce_start 相同，实际搜索的 Hash 空间也是完全隔离的，不会产生算力冲突。
     let mut nonce_start: u32 = 0;
     let mut nonce_space: u32 = if !_cnf.useopencl {
         100000
@@ -319,14 +324,19 @@ fn deal_block_mining_results(
     let mut most = Arc::new(BlockMiningResult::new());
     let mut total_nonce_space = 0u64;
     let mut total_use_secs = 0.0;
-    for _ in 0..vene as usize {
-        let res = result_ch_rx.recv().unwrap();
+    let mut recv_count = 0;
+    while let Ok(res) = result_ch_rx.try_recv() {
         deal_hei = res.height;
         total_nonce_space += res.nonce_space as u64;
         total_use_secs += res.use_secs; // Accumulated total time
         if hash_more_power(&res.result_hash, &most.result_hash) {
             most = res.clone();
         }
+        recv_count += 1;
+        if recv_count >= vene as usize * 4 { break; } // prevent infinite loop
+    }
+    if recv_count == 0 {
+        return;
     }
     // total most
     if hash_more_power(&most.result_hash, most_hash) {
@@ -336,9 +346,9 @@ fn deal_block_mining_results(
     let tarhx: [u8; HASH_WIDTH] = most.target_hash.clone().try_into().unwrap();
     let target_rates = hash_to_rates(&tarhx, TARGET_BLOCK_TIME);
     let nonce_rates = if cnf.useopencl {
-        total_nonce_space as f64 / (total_use_secs / vene as f64)
+        total_nonce_space as f64 / (total_use_secs / recv_count as f64)
     } else {
-        total_nonce_space as f64 / MINING_INTERVAL
+        total_nonce_space as f64 / (total_use_secs / recv_count as f64)
     };
     let mut mnper = nonce_rates / target_rates;
     if mnper > 1.0 {
@@ -429,7 +439,7 @@ fn pull_pending_block_stuff(cnf: &PoWorkConf) {
         &cnf.rpcaddr,
         sys::curtimes()
     );
-    let res = HttpClient::new().get(&urlapi_pending).send();
+    let res = HTTP_CLIENT.get(&urlapi_pending).send();
     let Ok(repv) = res else {
         println!("Error: cannot get block data at {}\n", &urlapi_pending);
         delay_return!(30);
@@ -463,7 +473,7 @@ fn pull_pending_block_stuff(cnf: &PoWorkConf) {
             &hex::encode(&rpid)
         );
         // println!("\n-------- {} -------- {}\n", &ctshow(), &urlapi_notice);
-        let res = HttpClient::new()
+        let res = HTTP_CLIENT
             .get(&urlapi_notice)
             .timeout(Duration::from_secs(300))
             .send();
@@ -499,17 +509,11 @@ fn push_block_mining_success(cnf: &PoWorkConf, success: &BlockMiningResult) {
         success.coinbase_nonce.to_hex(),
         sys::curtimes()
     );
-    let _ = HttpClient::new().get(&urlapi_success).send();
-    println!(
-        "{} {}",
-        &urlapi_success,
-        HttpClient::new()
-            .get(&urlapi_success)
-            .send()
-            .unwrap()
-            .text()
-            .unwrap()
-    );
+    let res_text = match HTTP_CLIENT.get(&urlapi_success).send() {
+        Ok(resp) => resp.text().unwrap_or_default(),
+        Err(e) => format!("Request failed: {}", e),
+    };
+    println!("{} {}", &urlapi_success, res_text);
     // print
     println!(
         "\n\n████████████████ [MINING SUCCESS] Find a block height {},\n██ hash {} to submit.",

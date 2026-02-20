@@ -47,6 +47,7 @@ const MINING_INTERVAL: f64 = 3.0; // 3 secs
 static MINING_DIAMOND_NUM: AtomicU32 = AtomicU32::new(0);
 
 use std::sync::LazyLock;
+static HTTP_CLIENT: LazyLock<HttpClient> = LazyLock::new(|| HttpClient::new());
 static MINING_DIAMOND_STUFF: LazyLock<RwLock<Hash>> = LazyLock::new(|| RwLock::default());
 
 #[allow(dead_code)]
@@ -59,6 +60,7 @@ struct DiamondMiningResult {
     msg_nonce: Vec<u8>,
     dia_str: [u8; 16],
     is_success: Option<DiamondMint>,
+    use_secs: f64,
 }
 
 /*
@@ -121,10 +123,12 @@ fn deal_diamond_mining_results(
     let mut most = DiamondMiningResult::default();
     most.dia_str = [b'w'; 16];
     let mut total_nonce_space = 0u64;
-    for _ in 0..vene as usize {
-        let res = result_ch_rx.recv().unwrap();
+    let mut total_use_secs = 0.0;
+    let mut recv_count = 0;
+    while let Ok(res) = result_ch_rx.try_recv() {
         deal_number = res.number;
         total_nonce_space += res.nonce_space as u64;
+        total_use_secs += res.use_secs;
         if diamond_more_power(&res.dia_str, &most.dia_str) {
             most = res.clone();
         }
@@ -132,6 +136,11 @@ fn deal_diamond_mining_results(
         if let Some(success) = &res.is_success {
             push_diamond_mining_success(cnf, success.clone());
         }
+        recv_count += 1;
+        if recv_count >= vene as usize * 4 { break; } // prevent infinite loop
+    }
+    if recv_count == 0 {
+        return;
     }
     // total most
     if diamond_more_power(&most.dia_str, most_dia_str) {
@@ -140,7 +149,7 @@ fn deal_diamond_mining_results(
     // print hashrates
     let diastr = String::from_utf8(most.dia_str.to_vec()).unwrap();
     let most_diastr = String::from_utf8(most_dia_str.to_vec()).unwrap();
-    let hsrts = rates_to_show(total_nonce_space as f64 / MINING_INTERVAL);
+    let hsrts = rates_to_show(total_nonce_space as f64 / (total_use_secs / recv_count as f64));
     flush!(
         "{} {}, {} {}, {}.        \r",
         most.nonce_start,
@@ -190,12 +199,16 @@ fn run_diamond_worker_thread(
     // start mining
     let mut custom_nonce = Hash::default();
     getrandom::fill(custom_nonce.as_mut()).unwrap();
+    // 说明：这里所有线程都从 nonce_start = 0 开始并不是 BUG。
+    // 因为上面已经为每个线程/任务生成了随机的 custom_nonce，
+    // 这会导致 x16rs::mine_diamond 的输入不同，
+    // 所以即使 nonce_start 相同，实际搜索的 Hash 空间也是完全隔离的，不会产生算力冲突。
     let mut nonce_start = 0;
 
     loop {
         let ctn = Instant::now();
         // println!("- nonce_start: {}", nonce_start);
-        let result = do_diamond_group_mining(
+        let mut result = do_diamond_group_mining(
             current_mining_number,
             &current_mining_block_hash,
             &rwd_addr,
@@ -205,6 +218,7 @@ fn run_diamond_worker_thread(
         );
         // println!("do_diamond_group_mining: {:?}", &result);
         let use_secs = Instant::now().duration_since(ctn).as_millis() as f64 / 1000.0;
+        result.use_secs = use_secs;
         result_ch_tx.send(result).unwrap(); // channel send
         let ns = nonce_start.checked_add(nonce_space);
         if let None = ns {
@@ -244,6 +258,7 @@ fn do_diamond_group_mining(
         msg_nonce: custom_nonce.to_vec(),
         dia_str: [b'W'; 16],
         is_success: None,
+        use_secs: 0.0,
     };
     let mut most_firhx = [0u8; HASH_WIDTH];
     let mut most_resxh = [0u8; HASH_WIDTH];
@@ -308,7 +323,7 @@ fn check_diamer_success(
 fn load_init(cnf: &mut DiaWorkConf) {
     let urlapi_pending = format!("http://{}/query/diamondminer/init", &cnf.rpcaddr);
     loop {
-        let res = HttpClient::new().get(&urlapi_pending).send();
+        let res = HTTP_CLIENT.get(&urlapi_pending).send();
         let Ok(repv) = res else {
             println!("Error: cannot init diamond miner from {}", &urlapi_pending);
             delay_continue!(30);
@@ -348,7 +363,7 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
     let urlapi_latest = format!("http://{}/query/latest", &cnf.rpcaddr);
     // get next number
     // println!("urlapi_latest: {}", &urlapi_latest);
-    let res = HttpClient::new().get(&urlapi_latest).send();
+    let res = HTTP_CLIENT.get(&urlapi_latest).send();
     let Ok(repv) = res else {
         println!("Error: cannot get latest from {}", &urlapi_latest);
         delay_return!(30);
@@ -374,7 +389,7 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
         next_num - 1
     );
     // println!("urlapi_diamond: {}", &urlapi_diamond);
-    let res = HttpClient::new().get(&urlapi_diamond).send();
+    let res = HTTP_CLIENT.get(&urlapi_diamond).send();
     let Ok(repv) = res else {
         println!("Error: cannot get diamond from {}", &urlapi_diamond);
         delay_return!(30);
@@ -403,35 +418,33 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
 
 fn push_diamond_mining_success(cnf: &DiaWorkConf, success: DiamondMint) {
     let urlapi_success = format!("http://{}/submit/diamondminer/success", &cnf.rpcaddr);
-    spawn(move || {
-        let actionbody = success.serialize();
-        // println!("\n\ncurl {}?hexbody=true -X POST -d '{}'", &urlapi_success, &actionbody.to_hex());
-        let res = HttpClient::new()
-            .post(&urlapi_success)
-            .body(actionbody)
-            .send();
-        let Ok(repv) = res else {
-            return; // err
-        };
-        let res: JV = serde_json::from_str(&repv.text().unwrap()).unwrap();
-        let jstr = |k: &str| res[k].as_str().unwrap_or("");
-        let tx_err = jstr("err");
-        if tx_err.len() > 0 {
-            println!(
-                "ㄨㄨㄨㄨ Failed submit tx diamond mint to mainnet\n     ERROR: {}\n",
-                tx_err
-            );
-            return;
-        }
-        let tx_hash = jstr("tx_hash");
-        if tx_hash.len() != 64 {
-            return; // err
-        }
+    let actionbody = success.serialize();
+    // println!("\n\ncurl {}?hexbody=true -X POST -d '{}'", &urlapi_success, &actionbody.to_hex());
+    let res = HTTP_CLIENT
+        .post(&urlapi_success)
+        .body(actionbody)
+        .send();
+    let Ok(repv) = res else {
+        return; // err
+    };
+    let res: JV = serde_json::from_str(&repv.text().unwrap()).unwrap();
+    let jstr = |k: &str| res[k].as_str().unwrap_or("");
+    let tx_err = jstr("err");
+    if tx_err.len() > 0 {
         println!(
-            "Success submit tx diamond mint {} ({}) to mainnet, \n        get tx hash: {}\n",
-            success.d.diamond.to_readable(),
-            *success.d.number,
-            tx_hash
+            "ㄨㄨㄨㄨ Failed submit tx diamond mint to mainnet\n     ERROR: {}\n",
+            tx_err
         );
-    });
+        return;
+    }
+    let tx_hash = jstr("tx_hash");
+    if tx_hash.len() != 64 {
+        return; // err
+    }
+    println!(
+        "Success submit tx diamond mint {} ({}) to mainnet, \n        get tx hash: {}\n",
+        success.d.diamond.to_readable(),
+        *success.d.number,
+        tx_hash
+    );
 }

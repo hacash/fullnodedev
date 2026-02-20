@@ -22,6 +22,16 @@ impl Engine for ChainEngine {
             if self.cnf.average_fee_purity {
                 record_avgfee(self, head);
             }
+            
+            // Notify miner workers that a new block has been accepted
+            #[cfg(feature = "mint")]
+            {
+                // We need to notify the condition variable in mint/src/api/common.rs
+                // Since we can't easily access it directly from chain crate, 
+                // we'll rely on the miner_notice loop to pick up the new height
+                // The Condvar approach in miner_notice will handle this automatically
+                // when it checks the latest height.
+            }
         }
         Ok(())
     }
