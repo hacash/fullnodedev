@@ -9,3 +9,8 @@ sys            = {path = "../sys"}
 field          = {path = "../field"}
 basis          = {path = "../basis"}
 protocol       = {path = "../protocol", features = ["ast", "tex", "vm"]}
+x16rs          = {path = "../x16rs"}
+axum = "0.7.9"
+tokio = { version = "1.44.2", features = ["rt-multi-thread", "net", "sync", "time"] }
+serde_json = "1.0.133"
+hex = "0.4.3"

@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering::*};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::*};
 use std::sync::{Arc, RwLock, mpsc};
 
 use std::thread::*;
@@ -19,6 +19,13 @@ include! {"util.rs"}
 
 #[cfg(feature = "ocl")]
 include! {"opencl.rs"}
+
+#[derive(Clone)]
+enum MinerBackend {
+    Cpu,
+    #[cfg(feature = "ocl")]
+    Opencl(Arc<OpenCLResources>),
+}
 
 /*****************************************/
 
@@ -109,6 +116,14 @@ pub fn poworker() {
     let cnfp = "./poworker.config.ini".to_string();
     let inicnf = sys::load_config(cnfp);
     let cnf = PoWorkConf::new(&inicnf);
+    poworker_with_conf(cnf);
+}
+
+pub fn poworker_with_conf(cnf: PoWorkConf) {
+    poworker_with_stop(cnf, None);
+}
+
+pub fn poworker_with_stop(cnf: PoWorkConf, stop_flag: Option<Arc<AtomicBool>>) {
 
     // test start
     // cnfobj.supervene = 1;
@@ -118,85 +133,93 @@ pub fn poworker() {
 
     let (res_tx, res_rx) = mpsc::channel();
 
-    // Initialize OpenCL
-    let opencl_resources: Vec<OpenCLResources> = if cnf.useopencl {
-        #[cfg(feature = "ocl")]
-        {
-            initialize_opencl(&cnf.clone())
-        }
-        #[cfg(not(feature = "ocl"))]
-        Vec::new()
-    } else {
-        // No OpenCL miners
-        Vec::new()
-    };
+    let miner_backends = build_miner_backends(&cnf);
 
     // deal results
     let cnf1 = cnf.clone();
-    let opencl_device_qty = opencl_resources.len();
+    let worker_qty = miner_backends.len();
+    let stop_flag_res = stop_flag.clone();
     spawn(move || {
         let mut most_hash = vec![255u8; 32];
         let mut rstx = res_rx;
         loop {
-            deal_block_mining_results(&cnf1, &mut most_hash, &mut rstx, opencl_device_qty);
+            if should_stop(&stop_flag_res) {
+                return;
+            }
+            deal_block_mining_results(&cnf1, &mut most_hash, &mut rstx, worker_qty);
             delay_continue_ms!(123);
         }
     });
 
-    if cnf.useopencl {
-        // opencl is enabled
-        #[cfg(feature = "ocl")]
-        {
-            // Initialize OpenCL
-            println!("\n[Start] Create GPU block miner worker");
-            for (thrid, opencl_thread) in opencl_resources.into_iter().enumerate() {
-                let opencl_clone = Arc::new(opencl_thread);
-                let cnf2 = cnf.clone();
-                let rstx: mpsc::Sender<Arc<BlockMiningResult>> = res_tx.clone();
-                spawn(move || {
-                    loop {
-                        run_block_mining_item(
-                            &cnf2,
-                            thrid,
-                            rstx.clone(),
-                            Some(opencl_clone.clone()),
-                        );
-                        delay_continue_ms!(9);
-                    }
-                });
-            }
-        }
-    } else {
-        // start worker thread
-        let thrnum = cnf.supervene as usize;
-        println!("\n[Start] Create #{} block miner worker thread.", thrnum);
-        for thrid in 0..thrnum {
-            let cnf2 = cnf.clone();
-            let rstx = res_tx.clone();
-            spawn(move || {
-                loop {
-                    run_block_mining_item(&cnf2, thrid, rstx.clone(), None);
-                    delay_continue_ms!(9);
+    for (thrid, backend) in miner_backends.into_iter().enumerate() {
+        let cnf2 = cnf.clone();
+        let rstx = res_tx.clone();
+        let stop_flag_miner = stop_flag.clone();
+        spawn(move || {
+            loop {
+                if should_stop(&stop_flag_miner) {
+                    return;
                 }
-            });
-        }
+                run_block_mining_item(&cnf2, thrid, rstx.clone(), backend.clone());
+                delay_continue_ms!(9);
+            }
+        });
     }
 
     // loop
     loop {
+        if should_stop(&stop_flag) {
+            return;
+        }
         pull_pending_block_stuff(&cnf);
         delay_continue_ms!(25);
     }
 }
 
-#[cfg(not(feature = "ocl"))]
-struct OpenCLResources {}
+fn should_stop(stop_flag: &Option<Arc<AtomicBool>>) -> bool {
+    stop_flag
+        .as_ref()
+        .map(|f| f.load(Relaxed))
+        .unwrap_or(false)
+}
+
+fn build_miner_backends(cnf: &PoWorkConf) -> Vec<MinerBackend> {
+    let mut backends = Vec::new();
+
+    if cnf.useopencl {
+        #[cfg(feature = "ocl")]
+        {
+            let opencl_resources = initialize_opencl(cnf);
+            if !opencl_resources.is_empty() {
+                println!("\n[Start] Create GPU block miner worker #{}.", opencl_resources.len());
+                for resource in opencl_resources {
+                    backends.push(MinerBackend::Opencl(Arc::new(resource)));
+                }
+            }
+        }
+
+        #[cfg(not(feature = "ocl"))]
+        {
+            println!("\n[Warn] use_opencl=true but app built without `ocl` feature, fallback to CPU miner.");
+        }
+    }
+
+    if backends.is_empty() {
+        let thrnum = cnf.supervene.max(1) as usize;
+        println!("\n[Start] Create #{} CPU block miner worker thread.", thrnum);
+        for _ in 0..thrnum {
+            backends.push(MinerBackend::Cpu);
+        }
+    }
+
+    backends
+}
 
 fn run_block_mining_item(
     _cnf: &PoWorkConf,
     _thrid: usize,
     result_ch_tx: mpsc::Sender<Arc<BlockMiningResult>>,
-    _opencl: Option<Arc<OpenCLResources>>,
+    backend: MinerBackend,
 ) {
     let mining_hei = MINING_BLOCK_HEIGHT.load(Relaxed);
     if mining_hei == 0 {
@@ -210,10 +233,11 @@ fn run_block_mining_item(
     // 这会导致 block_intro (即区块头 hash) 完全不同，
     // 所以即使 nonce_start 相同，实际搜索的 Hash 空间也是完全隔离的，不会产生算力冲突。
     let mut nonce_start: u32 = 0;
-    let mut nonce_space: u32 = if !_cnf.useopencl {
-        100000
-    } else {
-        _cnf.workgroups * _cnf.localsize * _cnf.unitsize
+    let nonce_limit = _cnf.noncemax.max(1);
+    let mut nonce_space: u32 = match backend {
+        MinerBackend::Cpu => 100000,
+        #[cfg(feature = "ocl")]
+        MinerBackend::Opencl(_) => _cnf.workgroups * _cnf.localsize * _cnf.unitsize,
     };
     // stuff data
     let stuff = { MINING_BLOCK_STUFF.read().unwrap().clone() };
@@ -225,29 +249,59 @@ fn run_block_mining_item(
         cbtx.hash(),
         &stuff.mkrl_list,
     ));
-    // nonce total space = u32
-    let mut nonce_finish = false;
     loop {
+        if nonce_start >= nonce_limit {
+            return;
+        }
+
+        let remain = nonce_limit.saturating_sub(nonce_start);
+        let current_nonce_space = nonce_space.min(remain).max(1);
         let ctn = Instant::now();
+        let block_intro_bin = block_intro.serialize();
 
-        #[cfg(not(feature = "ocl"))]
-        let (head_nonce, result_hash) =
-            do_group_block_mining(height, block_intro.serialize(), nonce_start, nonce_space);
+        let (head_nonce, result_hash) = match &backend {
+            MinerBackend::Cpu => {
+                do_group_block_mining(height, block_intro_bin, nonce_start, current_nonce_space)
+            }
+            #[cfg(feature = "ocl")]
+            MinerBackend::Opencl(opencl) => {
+                let unit_batch = (_cnf.localsize as u64) * (_cnf.unitsize as u64);
+                if _cnf.workgroups == 0 || unit_batch == 0 {
+                    do_group_block_mining(height, block_intro_bin, nonce_start, current_nonce_space)
+                } else {
+                    let workgroups_by_space = (current_nonce_space as u64 / unit_batch) as u32;
+                    let workgroups_eff = workgroups_by_space.min(_cnf.workgroups);
+                    let gpu_nonce_space = workgroups_eff
+                        .saturating_mul(_cnf.localsize)
+                        .saturating_mul(_cnf.unitsize);
 
-        #[cfg(feature = "ocl")]
-        let (head_nonce, result_hash) = if _cnf.useopencl {
-            let _opencl = _opencl.as_ref().expect("OpenCL miner is disabled");
-            do_group_block_mining_opencl(
-                &_opencl,
-                height,
-                block_intro.serialize(),
-                nonce_start,
-                _cnf.workgroups,
-                _cnf.localsize,
-                _cnf.unitsize,
-            )
-        } else {
-            do_group_block_mining(height, block_intro.serialize(), nonce_start, nonce_space)
+                    let mut best = if workgroups_eff > 0 {
+                        do_group_block_mining_opencl(
+                            opencl,
+                            height,
+                            block_intro_bin.clone(),
+                            nonce_start,
+                            workgroups_eff,
+                            _cnf.localsize,
+                            _cnf.unitsize,
+                        )
+                    } else {
+                        (0u32, [255u8; 32])
+                    };
+
+                    let tail_space = current_nonce_space.saturating_sub(gpu_nonce_space);
+                    if tail_space > 0 {
+                        let tail_start = nonce_start.saturating_add(gpu_nonce_space);
+                        let cpu_tail =
+                            do_group_block_mining(height, block_intro_bin, tail_start, tail_space);
+                        if hash_more_power(&cpu_tail.1, &best.1) {
+                            best = cpu_tail;
+                        }
+                    }
+
+                    best
+                }
+            }
         };
 
         let use_secs = Instant::now().duration_since(ctn).as_millis() as f64 / 1000.0;
@@ -255,7 +309,7 @@ fn run_block_mining_item(
         let mlres = BlockMiningResult {
             height,
             nonce_start,
-            nonce_space,
+            nonce_space: current_nonce_space,
             head_nonce,
             coinbase_nonce: coinbase_nonce.to_vec(),
             result_hash: result_hash.to_vec(),
@@ -263,20 +317,19 @@ fn run_block_mining_item(
             use_secs,
         };
         result_ch_tx.send(mlres.into()).unwrap();
-        if nonce_finish {
-            return; // end u32 nonce
+
+        if matches!(backend, MinerBackend::Cpu) {
+            if use_secs > 0.0 {
+                nonce_space = (current_nonce_space as f64 * MINING_INTERVAL / use_secs) as u32;
+            }
+            nonce_space = nonce_space.max(1);
         }
-        if !_cnf.useopencl {
-            // nonce space is always the same in opencl
-            // update space
-            nonce_space = (nonce_space as f64 * MINING_INTERVAL / use_secs) as u32;
-        }
-        let Some(nst) = nonce_start.checked_add(nonce_space) else {
-            nonce_finish = true;
-            nonce_space = u32::MAX.saturating_sub(nonce_start);
-            continue; // u32 nonce space finish
+
+        let Some(nst) = nonce_start.checked_add(current_nonce_space) else {
+            return;
         };
         nonce_start = nst;
+
         // check next height
         let check_hei = MINING_BLOCK_HEIGHT.load(Relaxed);
         if check_hei > mining_hei {
@@ -295,7 +348,8 @@ fn do_group_block_mining(
 ) -> (u32, [u8; 32]) {
     let mut most_nonce = 0u32;
     let mut most_hash = [255u8; 32];
-    for nonce in nonce_start..nonce_start + nonce_space {
+    let nonce_end = nonce_start.checked_add(nonce_space).unwrap_or(u32::MAX);
+    for nonce in nonce_start..nonce_end {
         // std::thread::sleep(std::time::Duration::from_millis(1)); // test
         block_intro[79..83].copy_from_slice(&nonce.to_be_bytes());
         let reshx = x16rs::block_hash(height, &block_intro);
@@ -312,13 +366,9 @@ fn deal_block_mining_results(
     cnf: &PoWorkConf,
     most_hash: &mut Vec<u8>,
     result_ch_rx: &mut mpsc::Receiver<Arc<BlockMiningResult>>,
-    opencl_device_qty: usize,
+    worker_qty: usize,
 ) {
-    let vene = if cnf.useopencl {
-        opencl_device_qty as u32
-    } else {
-        cnf.supervene
-    };
+    let vene = worker_qty.max(1) as u32;
     // deal
     let mut deal_hei = 0u64;
     let mut most = Arc::new(BlockMiningResult::new());
@@ -345,11 +395,7 @@ fn deal_block_mining_results(
     // print hashrates
     let tarhx: [u8; HASH_WIDTH] = most.target_hash.clone().try_into().unwrap();
     let target_rates = hash_to_rates(&tarhx, TARGET_BLOCK_TIME);
-    let nonce_rates = if cnf.useopencl {
-        total_nonce_space as f64 / (total_use_secs / recv_count as f64)
-    } else {
-        total_nonce_space as f64 / (total_use_secs / recv_count as f64)
-    };
+    let nonce_rates = total_nonce_space as f64 / (total_use_secs / recv_count as f64);
     let mut mnper = nonce_rates / target_rates;
     if mnper > 1.0 {
         mnper = 1.0;
@@ -521,4 +567,35 @@ fn push_block_mining_success(cnf: &PoWorkConf, success: &BlockMiningResult) {
         success.result_hash.to_hex()
     );
     println!("▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cpu_group_mining_result_matches_manual_scan() {
+        let height = 1u64;
+        let block_intro = BlockIntro::default().serialize();
+        let nonce_start = 11u32;
+        let nonce_space = 256u32;
+
+        let (best_nonce, best_hash) =
+            do_group_block_mining(height, block_intro.clone(), nonce_start, nonce_space);
+
+        let mut manual_nonce = 0u32;
+        let mut manual_hash = [255u8; 32];
+        let mut intro = block_intro;
+        for nonce in nonce_start..nonce_start + nonce_space {
+            intro[79..83].copy_from_slice(&nonce.to_be_bytes());
+            let hx = x16rs::block_hash(height, &intro);
+            if hash_more_power(&hx, &manual_hash) {
+                manual_hash = hx;
+                manual_nonce = nonce;
+            }
+        }
+
+        assert_eq!(best_nonce, manual_nonce);
+        assert_eq!(best_hash, manual_hash);
+    }
 }

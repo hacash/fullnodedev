@@ -22,3 +22,6 @@ ocl = { version = "0.19.7", optional = true }
 [features]
 ocl = ["dep:ocl"]
 
+[dev-dependencies]
+testkit = { path = "../testkit" }
+

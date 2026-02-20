@@ -2,7 +2,6 @@ use std::ffi::CString;
 use std::path::Path;
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use ocl::core::QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
 use ocl::enums::{ProgramInfoResult, ProgramInfo};
 use ocl::{Buffer, Context, Device, EventList, Kernel, Platform, Program, Queue};
 
@@ -16,6 +15,14 @@ struct OpenCLResources {
 }
 
 fn initialize_opencl(cnf: &PoWorkConf) -> Vec<OpenCLResources> {
+    if cnf.localsize != 256 {
+        eprintln!(
+            "[Warn] OpenCL local_size={} is incompatible with kernel fixed local arrays(256), fallback to CPU miner.",
+            cnf.localsize
+        );
+        return Vec::new();
+    }
+
     // Binary file location
     let kernel_file = format!(r"{}x16rs_main.cl", cnf.opencldir);
     let kernel_path = Path::new(&kernel_file);
