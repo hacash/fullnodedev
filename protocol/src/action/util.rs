@@ -1,5 +1,15 @@
 pub const AST_TREE_DEPTH_MAX: usize = 6;
 
+pub fn ast_gas_spent_delta(ctx: &dyn Context, before: i64) -> i64 {
+    let after = ctx.gas_remaining();
+    let spent = before.saturating_sub(after);
+    if spent <= 0 {
+        0
+    } else {
+        spent
+    }
+}
+
 /// Enter an AST branch node: check depth limit and increment level.
 /// Returns a guard that restores level on drop.
 pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {

@@ -326,7 +326,8 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     let exec_res: Rerr = (|| {
         for action in tx.actions() {
             ctx.level_set(ACTION_CTX_LEVEL_TOP);
-            action.execute(ctx)?;
+            // Top-level tx loop intentionally ignores return gas; only AST nesting and VM EXTACTION consume it.
+            let (_ret_gas, _retv) = action.execute(ctx)?;
         }
         Ok(())
     })();

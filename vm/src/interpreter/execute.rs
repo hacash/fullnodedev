@@ -268,7 +268,7 @@ pub fn execute_code(
             }
             let (bgasu, cres) = host.ext_action_call(kid, actbody).map_err(|e|
                 ItrErr::new(ExtActCallError, e.as_str()))?;
-            gas += bgasu as i64;
+            gas += bgasu;
             if $have_retv {
                 let vty = match instruction {
                     EXTENV  => search_ext_by_id(idx, &CALL_EXTEND_ENV_DEFS),
@@ -966,7 +966,7 @@ mod bounds_tests {
             1
         }
 
-        fn ext_action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+        fn ext_action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(i64, Vec<u8>)> {
             Ok((self.ext_gas, self.ext_res.clone()))
         }
 

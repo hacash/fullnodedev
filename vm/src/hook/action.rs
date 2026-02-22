@@ -1,5 +1,5 @@
 
-pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context, _gas: &mut u32) -> Rerr {
+pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context, _gas: &mut i64) -> Rerr {
 
     use AbstCall::*;
 
@@ -27,7 +27,7 @@ pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context, _gas: 
 }
 
 
-fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, action: &dyn Any, ctx: &mut dyn Context, gas: &mut u32) -> Rerr {
+fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, action: &dyn Any, ctx: &mut dyn Context, gas: &mut i64) -> Rerr {
 
     let addrs = &ctx.env().tx.addrs;
     let mut from = ctx.env().tx.main;

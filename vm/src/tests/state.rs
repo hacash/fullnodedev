@@ -31,8 +31,8 @@ impl ActCall for ExtCallMem {
     fn height(&self) -> u64 {
         self.hei
     }
-    fn action_call(&mut self, _: u16, _: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
-        Ok((8, vec![1]))
+    fn action_call(&mut self, _: u16, _: Vec<u8>) -> Ret<(i64, Vec<u8>)> {
+            Ok((8, vec![1]))
     }
 
 }

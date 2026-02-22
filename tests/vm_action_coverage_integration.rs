@@ -97,7 +97,7 @@ mod action_coverage {
         codes
     }
 
-    fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(u32, Vec<u8>)> {
+    fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(i64, Vec<u8>)> {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         // Provide generous protocol fee to cover any contract size

@@ -51,9 +51,7 @@ pub struct CtxSnapshot {
     ctx_snap: Box<dyn Any>,
 }
 
-pub fn ast_item_snapshot(ctx: &mut dyn Context) -> Ret<CtxSnapshot> {
-    const SNAPSHOT_TRY_GAS: u32 = 40;
-    ctx.gas_consume(SNAPSHOT_TRY_GAS)?;
+pub fn ctx_snapshot(ctx: &mut dyn Context) -> Ret<CtxSnapshot> {
     let vm = ctx.vm();
     let vm_is_nil = vm.is_nil();
     let vm_snap = vm.snapshot_volatile();
@@ -61,6 +59,12 @@ pub fn ast_item_snapshot(ctx: &mut dyn Context) -> Ret<CtxSnapshot> {
     let ctx_snap = ctx.snapshot_volatile();
     let state = ctx_state_fork_sub(ctx);
     Ok(CtxSnapshot { state, vm_snap, vm_is_nil, log_len, ctx_snap })
+}
+
+pub fn ast_item_snapshot(ctx: &mut dyn Context) -> Ret<CtxSnapshot> {
+    const SNAPSHOT_TRY_GAS: u32 = 40;
+    ctx.gas_consume(SNAPSHOT_TRY_GAS)?;
+    ctx_snapshot(ctx)
 }
 
 pub fn ctx_merge(ctx: &mut dyn Context, snap: CtxSnapshot) {

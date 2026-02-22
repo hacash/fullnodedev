@@ -54,7 +54,7 @@ fn single_call_codes(lib_idx: u8, sig: FnSign) -> Vec<u8> {
     codes
 }
 
-fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(u32, Vec<u8>)> {
+fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(i64, Vec<u8>)> {
     let mut act = ContractDeploy::new();
     act.nonce = Uint4::from(nonce);
     act.protocol_cost = Amount::zero();

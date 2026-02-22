@@ -21,30 +21,42 @@ action_define!{ AstIf, 26,
         let ctx = guard.ctx();
         // Whole-node savepoint: if branch execution fails, rollback both
         // condition side effects and branch side effects.
-        let whole_snap = ast_item_snapshot(ctx)?;
+        let whole_snap = ctx_snapshot(ctx)?;
+        let snap_before = ctx.gas_remaining();
         let snap = ast_item_snapshot(ctx)?;
+        gas = gas.saturating_add(ast_gas_spent_delta(ctx, snap_before));
+        let cond_before = ctx.gas_remaining();
         let cond_res = self.cond.execute(ctx);
-        let (cond_gas, branch_res) = match cond_res {
+        let cond_shared = ast_gas_spent_delta(ctx, cond_before);
+        gas = gas.saturating_add(cond_shared);
+        let branch_before = ctx.gas_remaining();
+        let branch_res = match cond_res {
             // if br
-            Ok((g, ..)) => {
+            Ok((cond_gas, ..)) => {
+                let cond_extra = cond_gas.saturating_sub(cond_shared).max(0);
+                gas = gas.saturating_add(cond_extra);
                 ctx_merge(ctx, snap);
-                (g, self.br_if.execute(ctx))
+                self.br_if.execute(ctx)
             },
             // else br
             Err(..) => {
                 ctx_recover(ctx, snap)?;
-                (0, self.br_else.execute(ctx))
+                self.br_else.execute(ctx)
             }
         };
-        let (branch_gas, branch_ret) = match branch_res {
-            Ok(v) => v,
+        let branch_shared = ast_gas_spent_delta(ctx, branch_before);
+        gas = gas.saturating_add(branch_shared);
+        let branch_ret = match branch_res {
+            Ok((branch_gas, ret)) => {
+                let branch_extra = branch_gas.saturating_sub(branch_shared).max(0);
+                gas = gas.saturating_add(branch_extra);
+                ret
+            },
             Err(e) => {
                 ctx_recover(ctx, whole_snap)?;
                 return Err(e)
             }
         };
-        gas += cond_gas;
-        gas += branch_gas;
         ctx_merge(ctx, whole_snap);
         Ok(branch_ret)
     })

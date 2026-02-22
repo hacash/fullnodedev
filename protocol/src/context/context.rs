@@ -39,7 +39,7 @@ impl ContextInst<'_> {
 
 impl ActCall for ContextInst<'_> {
     fn height(&self) -> u64 { self.env.block.height }
-    fn action_call(&mut self, k: u16, b: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+    fn action_call(&mut self, k: u16, b: Vec<u8>) -> Ret<(i64, Vec<u8>)> {
         ctx_action_call(self, k, b)
     }
 }
