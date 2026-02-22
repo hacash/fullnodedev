@@ -18,10 +18,7 @@ macro_rules! amount_op_func_define {
             let mut bls = state.balance( $addr ).unwrap_or_default();
             let $hac = bls.hacash;
             let newhac = $exec; // do add or sub
-            if newhac.size() > 12 {
-                return errf!("address {} amount {} size {} over 12 can not to store", 
-                    $addr, newhac, newhac.size())
-            }
+            newhac.check_store_long()?;
             bls.hacash = newhac.clone();
             state.balance_set($addr, &bls);
             Ok(newhac)
@@ -47,6 +44,7 @@ amount_op_func_define!{do_hac_add, hac, addr, amt, {
 pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &Amount) -> Ret<Vec<u8>> {
     // is to self
     if from == to {
+        // historical compatibility: legacy blocks (<200000) allow self-transfer fast path
         if ctx.env().block.height >= 20_0000 {
             // you can transfer it to yourself without changing the status, which is a waste of service fees
             hac_check(ctx, from, amt)?;

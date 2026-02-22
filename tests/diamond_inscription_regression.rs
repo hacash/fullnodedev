@@ -371,7 +371,9 @@ fn diamond_move_astselect_recovers_failed_child_and_keeps_successful_child() {
     let to_diamond = DiamondName::from_readable(b"AEYWTU").unwrap();
 
     let mut ctx = make_ctx(10_000, tx.as_read());
-    seed_balance(&mut ctx, &from, 1_000_000);
+    seed_balance(&mut ctx, &from, 500_000_000_000);
+    ctx.gas_init_tx(10000, 1).unwrap();
+    let balance_after_gas = balance_mei(&mut ctx, &from);
     seed_diamond(&mut ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
 
@@ -393,7 +395,7 @@ fn diamond_move_astselect_recovers_failed_child_and_keeps_successful_child() {
 
     assert_eq!(diamond_insc_len(&mut ctx, &from_diamond), 0);
     assert_eq!(diamond_insc_len(&mut ctx, &to_diamond), 10);
-    assert_eq!(balance_mei(&mut ctx, &from), 1_000_000);
+    assert_eq!(balance_mei(&mut ctx, &from), balance_after_gas);
 }
 
 #[cfg(all(feature = "hip22", feature = "ast"))]
@@ -412,7 +414,9 @@ fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
     let to_diamond = DiamondName::from_readable(b"AKYWTU").unwrap();
 
     let mut ctx = make_ctx(10_000, tx.as_read());
-    seed_balance(&mut ctx, &from, 1_000_000);
+    seed_balance(&mut ctx, &from, 500_000_000_000);
+    ctx.gas_init_tx(10000, 1).unwrap();
+    let balance_after_gas = balance_mei(&mut ctx, &from);
     seed_diamond(&mut ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
 
@@ -435,7 +439,7 @@ fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
 
     assert_eq!(diamond_insc_len(&mut ctx, &from_diamond), 1);
     assert_eq!(diamond_insc_len(&mut ctx, &to_diamond), 9);
-    assert_eq!(balance_mei(&mut ctx, &from), 1_000_000);
+    assert_eq!(balance_mei(&mut ctx, &from), balance_after_gas);
 
     let state = CoreState::wrap(ctx.state());
     let from_sto = state.diamond(&from_diamond).unwrap();

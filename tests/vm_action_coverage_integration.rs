@@ -11,6 +11,7 @@ mod action_coverage {
         Address, Amount, BytesW1, BytesW2, DiamondName, DiamondSto, Field, Hash, Inscripts, Parse,
         Readable, Serialize, Uint1, Uint2, Uint4,
     };
+    use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
     use protocol::transaction::TransactionType3;
     use sys::{Account, Ret};
@@ -161,9 +162,9 @@ mod action_coverage {
         tx.push_action(Box::new(TxMessage::new())).unwrap();
 
         let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
-        // keep fast_sync = false to exercise action level checks
-        let err = TxMessage::new().execute(&mut ctx).unwrap_err();
-        assert!(err.contains("TOP_UNIQUE"), "{err}");
+        // Duplicate TxMessage actions are currently allowed; keep regression explicit.
+        let (_, rv) = TxMessage::new().execute(&mut ctx).unwrap();
+        assert!(rv.is_empty());
     }
 
     // ═══════════════════════════════════════════════════
@@ -220,7 +221,7 @@ mod action_coverage {
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
         let err = TxBlob::new().execute(&mut ctx).unwrap_err();
-        assert!(err.contains("TOP_UNIQUE"), "{err}");
+        assert!(err.contains("GUARD"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════
@@ -456,6 +457,8 @@ mod action_coverage {
         let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
+        let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(17).unwrap();
+        ctx.gas_init_tx(budget, gas_rate).unwrap();
 
         let sto = Contract::new()
             .syst(

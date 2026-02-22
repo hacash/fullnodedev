@@ -49,9 +49,8 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     if right_amt.not_zero() {
         hac_sub(ctx, right_addr, right_amt)?;
     }
-    if left_amt.size() > 6 || right_amt.size() > 6 {
-        return errf!("left or right amount bytes too long")
-    }
+    left_amt.check_6_long().map_err(|_| "left amount bytes too long".to_string())?;
+    right_amt.check_6_long().map_err(|_| "right amount bytes too long".to_string())?;
     if left_amt.is_negative() || right_amt.is_negative() ||
         (left_amt.is_zero() && right_amt.is_zero()) {
         return errf!("left or right amount is not positive or two both is empty")

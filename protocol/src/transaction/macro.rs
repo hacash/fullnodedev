@@ -251,6 +251,7 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     let hx = tx.hash();
     let main = tx.main();
     let fee = tx.fee();
+    let has_ast = tx.actions().iter().any(|a| a.level() == ActLv::Ast);
     let mut state = CoreState::wrap(ctx.state());
     // may fast_sync
     if not_fast_sync {
@@ -270,8 +271,8 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         }
         let mty = tx.ty();
         // check BlockHeight more than 20w trs.Fee.Size() must less than 6 bytes.
-        if blkhei > 20_0000 && fee.size() > 2+4 {
-            return errf!("tx fee size cannot be more than 6 bytes when block height abover 200,000")
+        if blkhei > 20_0000 {
+            fee.check_6_long().map_err(|_| "tx fee size cannot be more than 6 bytes when block height abover 200,000".to_string())?;
         }
         if blkhei > 33033 && mty <= TXTY1 { // last is 33019
             return errf!("Type 1 transactions have been deprecated after height 33,033")
@@ -303,13 +304,39 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         }
     }
     */
-    // pre-initialize VM for this tx (if vm crate is registered)
-    crate::setup::do_vm_init(ctx);
-    // execute actions
-    for action in tx.actions() {
-        ctx.level_set(ACTION_CTX_LEVEL_TOP);
-        action.execute(ctx)?;
+    let gas_max_byte = tx.fee_extend().unwrap_or(0);
+    if has_ast {
+        if gas_max_byte == 0 {
+            return errf!("tx with AST actions must set gas_max > 0")
+        }
+    } else {
+        if gas_max_byte != 0 {
+            return errf!("tx without AST actions must set gas_max = 0")
+        }
     }
+
+    // pre-initialize VM for this tx (if vm crate is registered)
+    crate::setup::do_vm_init(ctx)?;
+    let gas_enabled = gas_max_byte > 0;
+    if gas_enabled {
+        let (budget, gas_rate) = crate::context::tx_gas_params_from_byte(gas_max_byte)?;
+        ctx.gas_init_tx(budget, gas_rate)?;
+    }
+    // execute actions
+    let exec_res: Rerr = (|| {
+        for action in tx.actions() {
+            ctx.level_set(ACTION_CTX_LEVEL_TOP);
+            action.execute(ctx)?;
+        }
+        Ok(())
+    })();
+
+    let mut settle_res: Rerr = Ok(());
+    if gas_enabled {
+        settle_res = ctx.gas_refund();
+    }
+    settle_res?;
+    exec_res?;
     
     #[cfg(feature = "tex")]
     super::tex::do_settlement(ctx)?;

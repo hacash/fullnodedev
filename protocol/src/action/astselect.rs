@@ -33,7 +33,7 @@ action_define!{ AstSelect, 25,
         if slt_num > TX_ACTIONS_MAX {
             return errf!("action ast select num cannot more than {}", TX_ACTIONS_MAX)
         }
-        let whole_snap = ctx_snapshot(ctx);
+        let whole_snap = ast_item_snapshot(ctx)?;
         // execute
         let mut ok = 0;
         let mut rv = vec![];
@@ -41,8 +41,7 @@ action_define!{ AstSelect, 25,
             if ok >= slt_max {
                 break // ok full
             }
-            // try execute
-            let snap = ctx_snapshot(ctx);
+            let snap = ast_item_snapshot(ctx)?;
             let exec_res = act.execute(ctx);
             if let Ok((g, r)) = exec_res {
                 gas += g;
@@ -50,12 +49,12 @@ action_define!{ AstSelect, 25,
                 ok += 1;
                 ctx_merge(ctx, snap);
             } else {
-                ctx_recover(ctx, snap);
+                ctx_recover(ctx, snap)?;
             }
         }
         // check at least
         if ok < slt_min {
-            ctx_recover(ctx, whole_snap);
+            ctx_recover(ctx, whole_snap)?;
             return errf!("action ast select must succeed at least {} but only {}", slt_min, ok)
         }
         // ok

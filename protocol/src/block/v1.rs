@@ -104,7 +104,6 @@ impl BlockExec for BlockV1 {
         // exec each tx
         for tx in txs {
             ctx.reset_for_new_tx(tx.as_read());
-            ctx.txr = tx.as_read();
             tx.execute(ctx)?; // do exec
             total_fee = total_fee.add_mode_u64(&tx.fee_got())?; // add fee
         }

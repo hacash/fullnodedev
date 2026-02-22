@@ -30,8 +30,8 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u
         return errf!("current transaction type {} too low to setup vm, need at least {}", txty, TY3)
     }
     // Ensure VM is initialized if a VM assigner is registered. Protocol normally does this at tx execution entry, but callers may invoke `setup_vm_run` directly in tests/tools.
-    protocol::setup::do_vm_init(ctx);
-    if !ctx.vm().usable() {
+    protocol::setup::do_vm_init(ctx)?;
+    if ctx.vm().is_nil() {
         let gmx = ctx.tx().fee_extend().unwrap_or(0);
         return errf!("vm not initialized for this tx (tx_type={}, gas_max_byte={})", txty, gmx)
     }
@@ -48,6 +48,19 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u
     ctx.level_set(old_level);
     let (cost, rv) = res?;
     Ok((cost, Value::bytes(rv)))
+}
+
+pub fn setup_vm_run_and_collect_gas(
+    ctx: &mut dyn Context,
+    gas_acc: &mut u32,
+    ty: u8,
+    mk: u8,
+    cd: std::sync::Arc<[u8]>,
+    pm: Value,
+) -> Ret<Value> {
+    let (cost, rv) = setup_vm_run(ctx, ty, mk, cd, pm)?;
+    *gas_acc = gas_acc.saturating_add(cost.max(0) as u32);
+    Ok(rv)
 }
 
 /// VM assign function for protocol layer registration.

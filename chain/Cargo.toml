@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 resolver = "2"
 
+[features]
+default = []
+mint = []
+
 [dependencies]
 sys            = {path = "../sys"}
 field          = {path = "../field"}

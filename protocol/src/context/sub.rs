@@ -46,16 +46,21 @@ fn ctx_state_into_box(a: Arc<Box<dyn State>>) -> Box<dyn State> {
 pub struct CtxSnapshot {
     state:   Arc<Box<dyn State>>,
     vm_snap: Box<dyn Any>,
+    vm_is_nil: bool,
     log_len: usize,
     ctx_snap: Box<dyn Any>,
 }
 
-pub fn ctx_snapshot(ctx: &mut dyn Context) -> CtxSnapshot {
-    let vm_snap = ctx.vm().snapshot_volatile();
+pub fn ast_item_snapshot(ctx: &mut dyn Context) -> Ret<CtxSnapshot> {
+    const SNAPSHOT_TRY_GAS: u32 = 40;
+    ctx.gas_consume(SNAPSHOT_TRY_GAS)?;
+    let vm = ctx.vm();
+    let vm_is_nil = vm.is_nil();
+    let vm_snap = vm.snapshot_volatile();
     let log_len = ctx.logs().snapshot_len();
     let ctx_snap = ctx.snapshot_volatile();
     let state = ctx_state_fork_sub(ctx);
-    CtxSnapshot { state, vm_snap, log_len, ctx_snap }
+    Ok(CtxSnapshot { state, vm_snap, vm_is_nil, log_len, ctx_snap })
 }
 
 pub fn ctx_merge(ctx: &mut dyn Context, snap: CtxSnapshot) {
@@ -63,10 +68,23 @@ pub fn ctx_merge(ctx: &mut dyn Context, snap: CtxSnapshot) {
     // vm + logs keep current (successful) values
 }
 
-pub fn ctx_recover(ctx: &mut dyn Context, snap: CtxSnapshot) {
+pub fn ctx_recover(ctx: &mut dyn Context, snap: CtxSnapshot) -> Rerr {
     ctx_state_recover_sub(ctx, snap.state);
-    // VM recover rolls back state/log/memory only; gas remaining is not refunded and gas-charged warmup caches (contract preload/load-byte accounting) stay monotonic across AST branch recover.
-    ctx.vm().restore_volatile(snap.vm_snap);
+    // VM recover rolls back branch-local volatile business state while keeping gas/warmup monotonic.
+    let cur_is_nil = ctx.vm().is_nil();
+    match (snap.vm_is_nil, cur_is_nil) {
+        (true, true) => {}
+        (true, false) => {
+            ctx.vm().restore_but_keep_warmup();
+        }
+        (false, false) => {
+            ctx.vm().restore_volatile(snap.vm_snap);
+        }
+        (false, true) => {
+            return errf!("vm became nil during AST snapshot/recover")
+        }
+    }
     ctx.logs().truncate(snap.log_len);
     ctx.restore_volatile(snap.ctx_snap);
+    Ok(())
 }

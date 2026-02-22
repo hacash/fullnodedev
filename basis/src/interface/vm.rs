@@ -26,7 +26,7 @@ impl<'a> VMCall<'a> {
 }
 
 pub trait VM {
-    fn usable(&self) -> bool { false }
+    fn is_nil(&self) -> bool { false }
     fn call(&mut self, _: VMCall<'_>)
         -> Ret<(i64, Vec<u8>)> { never!() }
     /// Snapshot volatile VM state for AstSelect/AstIf recover paths.
@@ -34,11 +34,16 @@ pub trait VM {
     fn snapshot_volatile(&self) -> Box<dyn Any> { Box::new(()) }
     /// Restore volatile VM state from a previous snapshot (excluding gas remaining).
     fn restore_volatile(&mut self, _: Box<dyn Any>) {}
+    /// Cross-generation fallback restore used when snapshot side had VMNil but current side has initialized VM.
+    /// Must rollback branch-local volatile state while preserving warmup/cache/gas monotonic channels.
+    fn restore_but_keep_warmup(&mut self) {}
 }
 
 
 pub struct VMNil {}
-impl VM for VMNil {}
+impl VM for VMNil {
+    fn is_nil(&self) -> bool { true }
+}
 
 impl VMNil {
     pub fn new() -> Self {

@@ -11,5 +11,6 @@ use super::transaction::*;
 
 // include!{"env.rs"}
 include! {"context.rs"}
+include! {"gas.rs"}
 include! {"actcall.rs"}
 include! {"sub.rs"}

@@ -14,8 +14,9 @@ pub const UNIT_SHUO: u8 = 232;
 pub const UNIT_AI:   u8 = 224;
 pub const UNIT_MIAO: u8 = 216;
 
-
 const FROM_CHARS: &[u8; 13] = b"0123456789-.:"; 
+
+pub const AMOUNT_STORE_MAX_SIZE: usize = 12;
 
 
 pub enum AmtMode {
@@ -187,6 +188,26 @@ impl Amount {
     // check must be negative and cannot be zero
     pub fn is_negative(&self) -> bool {
         self.dist < 0 && bytes_not_zero(&self.byte)
+    }
+
+    fn check_long(&self, max: usize) -> Ret<()> {
+        let amtsz = self.size();
+        if amtsz > max {
+            return errf!("amount {} size {} over {} can not to store", self, amtsz, max)
+        }
+        Ok(())
+    }
+
+    pub fn check_6_long(&self) -> Ret<()> {
+        self.check_long(6)
+    }
+
+    pub fn check_4_long(&self) -> Ret<()> {
+        self.check_long(4)
+    }
+
+    pub fn check_store_long(&self) -> Ret<()> {
+        self.check_long(AMOUNT_STORE_MAX_SIZE)
     }
     
 }
@@ -1182,5 +1203,46 @@ mod amount_tests {
         let huge = BigInt::from(10u64).pow(300u32);
         let amt = Amount::from_bigint(&huge).unwrap();
         assert_eq!(amt.to_bigint(), huge, "unit>255 cap must preserve value");
+    }
+
+    #[test]
+    fn test_check_store_long_guard() {
+        let ok = Amount::from("1234567890:248").unwrap();
+        assert!(ok.size() <= AMOUNT_STORE_MAX_SIZE);
+        assert!(ok.check_store_long().is_ok());
+
+        let long = Amount::from("340282366920938463463374607431768211455:0").unwrap();
+        assert!(long.size() > AMOUNT_STORE_MAX_SIZE);
+        assert!(long.check_store_long().is_err());
+    }
+
+    #[test]
+    fn test_invariant_add_then_sub_u128() {
+        let pairs = [
+            (Amount::from("1:248").unwrap(), Amount::from("2:248").unwrap()),
+            (Amount::from("999999:220").unwrap(), Amount::from("12345:220").unwrap()),
+            (Amount::from("100000000000:200").unwrap(), Amount::from("3:200").unwrap()),
+        ];
+
+        for (a, b) in pairs {
+            let sum = a.add_mode_u128(&b).unwrap();
+            let back = sum.sub_mode_u128(&b).unwrap();
+            assert!(back.equal(&a));
+        }
+    }
+
+    #[test]
+    fn test_invariant_sub_then_add_u128() {
+        let pairs = [
+            (Amount::from("1000:248").unwrap(), Amount::from("1:248").unwrap()),
+            (Amount::from("123456789:210").unwrap(), Amount::from("23456789:210").unwrap()),
+            (Amount::from("340282366920938463463374607431768211455:0").unwrap(), Amount::from("1:0").unwrap()),
+        ];
+
+        for (a, b) in pairs {
+            let diff = a.sub_mode_u128(&b).unwrap();
+            let back = diff.add_mode_u128(&b).unwrap();
+            assert!(back.equal(&a));
+        }
     }
 }

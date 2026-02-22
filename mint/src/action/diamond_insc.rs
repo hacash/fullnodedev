@@ -8,6 +8,11 @@ const APPEND_TIER1_MAX_INSCRIPTIONS: usize = 40;
 const APPEND_TIER2_MAX_INSCRIPTIONS: usize = 100;
 
 #[inline]
+fn check_protocol_cost_4_long(pfee: &Amount) -> Rerr {
+    pfee.check_4_long().map_err(|_| "protocol cost amount size cannot over 4 bytes".to_string())
+}
+
+#[inline]
 fn check_inscription_content(engraved_type: u8, content: &BytesW1) -> Rerr {
     let insc_len = content.length();
     if insc_len == 0 {
@@ -120,13 +125,11 @@ fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
     if pfee.is_negative() {
-        return errf!("protocol fee cannot be negative");
+        return errf!("protocol cost cannot be negative");
     }
     // check
     this.diamonds.check()?;
-    if pfee.size() > 4 {
-        return errf!("protocol fee amount size cannot over 4 bytes");
-    }
+    check_protocol_cost_4_long(pfee)?;
     ctx.check_sign(&main_addr)?;
     // check inscription content
     check_inscription_content(*this.engraved_type, &this.engraved_content)?;
@@ -203,9 +206,7 @@ fn diamond_inscription_clean(
     }
     // check
     this.diamonds.check()?;
-    if pfee.size() > 4 {
-        return errf!("protocol cost amount size cannot over 4 bytes");
-    }
+    check_protocol_cost_4_long(pfee)?;
     ctx.check_sign(&main_addr)?;
     // cost
     let mut ttcost = Amount::zero();
@@ -285,9 +286,7 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
     if pfee.is_negative() {
         return errf!("protocol cost cannot be negative");
     }
-    if pfee.size() > 4 {
-        return errf!("protocol cost amount size cannot over 4 bytes");
-    }
+    check_protocol_cost_4_long(pfee)?;
     ctx.check_sign(&main_addr)?;
     // check inscription content
     check_inscription_content(*this.engraved_type, &this.engraved_content)?;
@@ -329,7 +328,7 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
         .replace(idx, this.engraved_content.clone())?;
     diasto.prev_engraved_height = BlockHeight::from(pdhei);
     state.diamond_set(&this.diamond, &diasto);
-    // burn protocol fee
+    // burn protocol cost
     if pfee.is_positive() {
         let mut ttcount = state.get_total_count();
         let pfee_zhu = pfee.to_zhu_u64()?;
@@ -382,9 +381,7 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
     if pfee.is_negative() {
         return errf!("protocol cost cannot be negative");
     }
-    if pfee.size() > 4 {
-        return errf!("protocol cost amount size cannot over 4 bytes");
-    }
+    check_protocol_cost_4_long(pfee)?;
     let idx = *this.index as usize;
     let pdhei = env.block.height;
     if this.from_diamond == this.to_diamond {
@@ -452,7 +449,7 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
     to_sto.inscripts.push(content)?;
     to_sto.prev_engraved_height = BlockHeight::from(pdhei);
     state.diamond_set(&this.to_diamond, &to_sto);
-    // burn protocol fee
+    // burn protocol cost
     if pfee.is_positive() {
         let mut ttcount = state.get_total_count();
         let pfee_zhu = pfee.to_zhu_u64()?;
@@ -497,9 +494,7 @@ fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> Ret<Ve
     if pfee.is_negative() {
         return errf!("protocol cost cannot be negative");
     }
-    if pfee.size() > 4 {
-        return errf!("protocol cost amount size cannot over 4 bytes");
-    }
+    check_protocol_cost_4_long(pfee)?;
     ctx.check_sign(&main_addr)?;
     let idx = *this.index as usize;
     let pdhei = env.block.height;
@@ -619,7 +614,7 @@ pub fn engraved_one_diamond(
         format!("diamond {}", diamond.to_readable()),
         state.diamond_smelt(&diamond)
     );
-    // cost: stepped append protocol fee
+    // cost: stepped append protocol cost
     let cost = calc_append_inscription_protocol_cost(haveng, *diaslt.average_bid_burn);
     // do engraved
     diasto.prev_engraved_height = BlockHeight::from(pending_height);

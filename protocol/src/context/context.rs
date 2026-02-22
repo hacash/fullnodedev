@@ -9,6 +9,7 @@ pub struct ContextInst<'a> {
     pub vmi: Box<dyn VM>,
 
     pub tex_ledger: TexLedger,
+    gas: GasCounter,
 
     log: Box<dyn Logs>,
     sta: Box<dyn State>,
@@ -27,6 +28,7 @@ impl ContextInst<'_> {
             vmi: VMNil::empty(),
             psh: HashMap::new(),
             tex_ledger: TexLedger::default(),
+            gas: GasCounter::default(),
         }
     }
 
@@ -82,12 +84,14 @@ impl Context for ContextInst<'_> {
     }
 
     fn reset_for_new_tx(&mut self, txr: &dyn TransactionRead) {
+        self.txr = unsafe { std::mem::transmute::<&dyn TransactionRead, &'static dyn TransactionRead>(txr) };
         self.env.replace_tx( create_tx_info(txr) ); // set env
         // Per-tx caches must not leak across transactions.
         self.psh.clear();
         self.check_sign_cache.clear();
         self.tex_ledger = TexLedger::default();
-        self.vm_replace(VMNil::empty());
+        self.vmi = VMNil::empty();
+        self.ctx_gas_reset();
         self.level = ACTION_CTX_LEVEL_TOP;
     }
     fn as_ext_caller(&mut self) -> &mut dyn ActCall { self }
@@ -98,8 +102,30 @@ impl Context for ContextInst<'_> {
 
     fn tx(&self) -> &dyn TransactionRead { self.txr }
     fn vm(&mut self) -> &mut dyn VM { self.vmi.as_mut() }
-    fn vm_replace(&mut self, vm: Box<dyn VM>) -> Box<dyn VM> {
-        std::mem::replace(&mut self.vmi, vm)
+    fn vm_init_once(&mut self, vm: Box<dyn VM>) -> Rerr {
+        if !self.vmi.is_nil() {
+            return errf!("vm already initialized")
+        }
+        self.vmi = vm;
+        Ok(())
+    }
+    fn gas_init_tx(&mut self, budget: i64, gas_rate: i64) -> Rerr {
+        self.ctx_gas_init_tx(budget, gas_rate)
+    }
+    fn gas_refund(&mut self) -> Rerr {
+        self.ctx_gas_refund()
+    }
+    fn gas_initialized(&self) -> bool {
+        self.ctx_gas_initialized()
+    }
+    fn gas_remaining(&self) -> i64 {
+        self.ctx_gas_remaining()
+    }
+    fn gas_remaining_mut(&mut self) -> Ret<&mut i64> {
+        self.ctx_gas_remaining_mut()
+    }
+    fn gas_consume(&mut self, gas: u32) -> Rerr {
+        self.ctx_gas_consume(gas)
     }
     fn addr(&self, ptr :&AddrOrPtr) -> Ret<Address> {
         ptr.real(&self.env.tx.addrs)

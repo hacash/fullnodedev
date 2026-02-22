@@ -1,61 +1,34 @@
 
 
-/// Per-tx gas accounting state. Consolidates gas budget, fee caching,
-/// re-entry depth tracking, and HAC burn settlement into one struct.
-///
-/// Gas price is based on "fee purity" — the miner-received fee per byte:
-///   gas_price = fee_got / tx_size  (= fee_purity)
-/// Settlement formula: burn_amt = ceil(cost * purity_fee / (purity_size * gas_rate))
-/// We keep numerator/denominator separate to avoid integer division precision loss.
+/// Per-tx VM call state. Gas ledger is stored in Context; VM only keeps
+/// re-entry depth guard and call-limit state.
 #[derive(Clone)]
-pub struct GasCounter {
-    pub remaining: i64,     // gas budget left (monotonic in one tx; never restored by AST recover)
-    purity_fee: i128,       // fee purity numerator: fee_got in unit-238 (miner-received portion)
-    purity_size: i128,      // fee purity denominator: tx serialized size in bytes
-    gas_rate: i64,          // burn discount denominator (mainnet=1, L2 can be e.g. 10 or 32)
+pub struct VmCallState {
     initialized: bool,      // whether init_once() has been called
     reentry_depth: u32,     // current EXTACTION re-entry depth (0 = not in call)
     max_reentry: u32,       // hard cap from SpaceCap
 }
 
-struct GasCallGuard<'a> {
-    account: &'a mut GasCounter,
+struct VmCallDepthGuard<'a> {
+    call_state: &'a mut VmCallState,
 }
 
-impl<'a> GasCallGuard<'a> {
-    fn enter(account: &'a mut GasCounter) -> Ret<Self> {
-        account.enter()?;
-        Ok(Self { account })
+impl<'a> VmCallDepthGuard<'a> {
+    fn enter(call_state: &'a mut VmCallState) -> Ret<Self> {
+        call_state.enter()?;
+        Ok(Self { call_state })
     }
 }
 
-impl std::ops::Deref for GasCallGuard<'_> {
-    type Target = GasCounter;
-
-    fn deref(&self) -> &Self::Target {
-        self.account
-    }
-}
-
-impl std::ops::DerefMut for GasCallGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.account
-    }
-}
-
-impl Drop for GasCallGuard<'_> {
+impl Drop for VmCallDepthGuard<'_> {
     fn drop(&mut self) {
-        self.account.leave();
+        self.call_state.leave();
     }
 }
 
-impl Default for GasCounter {
+impl Default for VmCallState {
     fn default() -> Self {
         Self {
-            remaining: 0,
-            purity_fee: 0,
-            purity_size: 0,
-            gas_rate: 1,
             initialized: false,
             reentry_depth: 0,
             max_reentry: 4,
@@ -63,60 +36,13 @@ impl Default for GasCounter {
     }
 }
 
-impl GasCounter {
+impl VmCallState {
 
-    /// Initialize gas budget from tx and chain parameters. Idempotent (only runs once).
-    fn init_once(&mut self, ctx: &mut dyn Context, extra: &GasExtra, cap: &SpaceCap) -> Rerr {
+    /// Initialize VM-side call limits only.
+    fn init_once(&mut self, cap: &SpaceCap) -> Rerr {
         if self.initialized {
-            if self.remaining <= 0 {
-                return errf!("gas has run out")
-            }
             return Ok(())
         }
-        // cache tx ref to avoid repeated vtable dispatch on &dyn TransactionRead
-        let tx = ctx.tx();
-        // decode gas budget from tx.gas_max (1-byte lookup table)
-        let gas_max_byte = tx.fee_extend()?;
-        if gas_max_byte == 0 {
-            return errf!("gas_max_byte is 0: contract call requires tx.gas_max > 0")
-        }
-        let decoded = decode_gas_budget(gas_max_byte);
-        let budget = decoded.min(extra.max_gas_of_tx); // clamp to chain limit
-        if budget <= 0 {
-            return errf!(
-                "gas budget invalid after clamp: gas_max_byte={} decoded={} chain_cap={}",
-                gas_max_byte,
-                decoded,
-                extra.max_gas_of_tx
-            )
-        }
-        // cache fee purity components for settlement (avoid repeated conversion) gas_price = fee_purity = fee_got / tx_size (miner-received fee per byte) keep numerator/denominator separate to avoid integer division precision loss
-        let purity_fee = tx.fee_got().to_238_u64().unwrap_or(0) as i128;
-        let purity_size = tx.size() as i128;
-        if purity_fee <= 0 || purity_size <= 0 {
-            return errf!("tx fee or size invalid for gas: purity_fee={} purity_size={}", purity_fee, purity_size)
-        }
-        // verify sender has enough balance for worst-case burn: max_burn = budget * purity_fee / (purity_size * gas_rate), rounded up
-        let gas_rate = extra.gas_rate.max(1) as i128;
-        let max_burn = {
-            let num = (budget as i128)
-                .checked_mul(purity_fee)
-                .ok_or_else(|| format!("max gas burn overflow: budget={} purity_fee={}", budget, purity_fee))?;
-            let den = purity_size.checked_mul(gas_rate)
-                .ok_or_else(|| format!("gas rate overflow: purity_size={} gas_rate={}", purity_size, gas_rate))?;
-            (num + den - 1) / den // ceil division
-        };
-        if max_burn > u64::MAX as i128 {
-            return errf!("max gas burn overflow: {}", max_burn)
-        }
-        let main = ctx.env().tx.main;
-        let max_burn_amt = Amount::unit238(max_burn as u64);
-        protocol::operate::hac_check(ctx, &main, &max_burn_amt)?;
-
-        self.remaining = budget;
-        self.purity_fee = purity_fee;
-        self.purity_size = purity_size;
-        self.gas_rate = extra.gas_rate.max(1);
         self.max_reentry = cap.max_reentry_depth;
         self.initialized = true;
         Ok(())
@@ -141,52 +67,6 @@ impl GasCounter {
         self.reentry_depth = self.reentry_depth.saturating_sub(1);
     }
 
-    /// Whether we are in the outermost VM call (depth == 1).
-    /// Only the outermost call should settle (burn) HAC.
-    fn is_outermost(&self) -> bool {
-        self.reentry_depth == 1
-    }
-
-    /// Consume gas from the remaining budget.
-    #[allow(dead_code)]
-    fn consume(&mut self, amount: i64) -> Rerr {
-        self.remaining -= amount;
-        if self.remaining < 0 {
-            return errf!("gas has run out")
-        }
-        Ok(())
-    }
-
-    /// Settle gas fee: burn HAC from sender's balance.
-    /// Formula: burn_amt = ceil(cost * purity_fee / (purity_size * gas_rate))
-    /// Single division — fee purity and settle share the same per-byte rate.
-    fn settle(&self, ctx: &mut dyn Context, cost: i64) -> Rerr {
-        if cost <= 0 {
-            return errf!("gas cost invalid: {}", cost)
-        }
-        let gas_rate = self.gas_rate.max(1) as i128;
-        let num = (cost as i128)
-            .checked_mul(self.purity_fee)
-            .ok_or_else(|| format!("gas burn overflow: cost={} purity_fee={}", cost, self.purity_fee))?;
-        let den = self.purity_size
-            .checked_mul(gas_rate)
-            .ok_or_else(|| format!("gas rate overflow: purity_size={} rate={}", self.purity_size, gas_rate))?;
-        if den <= 0 {
-            return errf!("gas settle denominator invalid: purity_size={} rate={}", self.purity_size, gas_rate)
-        }
-        let burn = (num + den - 1) / den; // ceil division, at least 1
-        if burn <= 0 {
-            return errf!("gas burn underflow: cost={} purity_fee={} purity_size={} rate={}",
-                cost, self.purity_fee, self.purity_size, gas_rate)
-        }
-        if burn > u64::MAX as i128 {
-            return errf!("gas burn overflow: {}", burn)
-        }
-        let amt = Amount::unit238(burn as u64);
-        let main = ctx.env().tx.main;
-        protocol::operate::hac_sub(ctx, &main, &amt)?;
-        Ok(())
-    }
 }
 
 
@@ -195,7 +75,7 @@ impl GasCounter {
 
 #[allow(dead_code)]
 pub struct MachineBox {
-    account: GasCounter,
+    call_state: VmCallState,
     machine: Option<Machine>,
 } 
 
@@ -212,15 +92,13 @@ impl MachineBox {
     
     pub fn new(m: Machine) -> Self {
         Self { 
-            account: GasCounter::default(),
+            call_state: VmCallState::default(),
             machine: Some(m),
         }
     }
 }
 
 impl VM for MachineBox {
-    fn usable(&self) -> bool { true }
-
     fn snapshot_volatile(&self) -> Box<dyn Any> {
         let m = self.machine.as_ref().unwrap();
         // Snapshot excludes gas and gas-charged warmup/cache accounting so AST recover rolls back state/log/memory only while keeping gas/warmup monotonic.
@@ -239,6 +117,13 @@ impl VM for MachineBox {
         // Do not restore `r.contracts` or `r.contract_load_bytes` because they are tx-local warmup/cache accounting tied to already-paid gas and must stay monotonic across AST recover.
     }
 
+    fn restore_but_keep_warmup(&mut self) {
+        let m = self.machine.as_mut().unwrap();
+        m.r.global_vals.clear();
+        m.r.memory_vals.clear();
+        // keep warmup/cache channels (`contracts`, `contract_load_bytes`) and gas accounting monotonic.
+    }
+
     fn call(&mut self, call: VMCall<'_>) -> Ret<(i64, Vec<u8>)> {
         use ExecMode::*;
         let VMCall {
@@ -251,11 +136,10 @@ impl VM for MachineBox {
         // (1) initialize gas budget on first call (idempotent)
         {
             let r = &self.machine.as_ref().unwrap().r;
-            self.account.init_once(ctx, &r.gas_extra, &r.space_cap)?;
+            self.call_state.init_once(&r.space_cap)?;
         }
         // (2) enter call layer (depth check). Guard guarantees leave() on all exits.
-        let mut account = GasCallGuard::enter(&mut self.account)?;
-        let is_outermost = account.is_outermost();
+        let _guard = VmCallDepthGuard::enter(&mut self.call_state)?;
         // min gas cost per call type
         let cty: ExecMode = std_mem_transmute!(mode);
         let min_cost = {
@@ -268,10 +152,10 @@ impl VM for MachineBox {
             }
         };
         // (3) execute VM call with shared gas counter
-        let gas = &mut account.remaining;
-        let gas_before = *gas;
+        let gas_before = ctx.gas_remaining();
         // Fail-fast: if remaining gas can't cover the per-call minimum, this call cannot start.
         if gas_before < min_cost {
+            let gas = ctx.gas_remaining_mut()?;
             *gas -= min_cost; // keep the same "min cost consumes from shared counter" semantics
             return errf!(
                 "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
@@ -281,7 +165,14 @@ impl VM for MachineBox {
             )
         }
         let machine = self.machine.as_mut().unwrap();
-        let exenv = &mut ExecEnv{ ctx, gas };
+        let ctxptr = ctx as *mut dyn Context;
+        let gasptr = unsafe { (*ctxptr).gas_remaining_mut()? as *mut i64 };
+        let exenv = unsafe {
+            &mut ExecEnv{
+                ctx: &mut *ctxptr,
+                gas: &mut *gasptr,
+            }
+        };
         let result = match cty {
             Main => {
                 let cty = CodeType::parse(kind)?;
@@ -310,13 +201,13 @@ impl VM for MachineBox {
             _ => unreachable!()
         };
         // (4) compute gas cost, enforce minimum, leave call layer
-        let gas = &mut account.remaining;
-        let gas_after = *gas;
+        let gas_after = ctx.gas_remaining();
         let actual = gas_before - gas_after;
         let mut cost = actual;
         // enforce per-call minimum gas by consuming shortfall from shared counter
         if cost < min_cost {
             let shortfall = min_cost - cost;
+            let gas = ctx.gas_remaining_mut()?;
             *gas -= shortfall;
             if *gas < 0 {
                 return errf!(
@@ -333,10 +224,6 @@ impl VM for MachineBox {
         let resv = result.map(|a| a.raw())?;
         if cost <= 0 {
             return errf!("gas cost error: {}", cost);
-        }
-        // (5) settle: only the outermost call burns HAC
-        if is_outermost {
-            account.settle(ctx, cost)?;
         }
         Ok((cost, resv))
     }
@@ -964,6 +851,7 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         // END is a minimal "return nil" program; actual instruction gas is tiny.
@@ -976,7 +864,7 @@ mod machine_test {
         let min = gsext.main_call_min;
         let budget = decode_gas_budget(17); // lookup-table decoded budget
         // The min-call cost must be reflected in the shared gas counter.
-        assert!(vm.account.remaining <= (budget - min), "account.remaining should include min cost deduction");
+        assert!(ctx.gas_remaining() <= (budget - min), "ctx gas remaining should include min cost deduction");
     }
 
     #[test]
@@ -1001,6 +889,7 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let codes = vec![Bytecode::END as u8];
@@ -1014,8 +903,8 @@ mod machine_test {
         );
         let snap = vm.snapshot_volatile();
 
-        // Mutate fields that are now outside VM volatile snapshot.
-        vm.account.remaining = 1;
+        // Mutate gas remaining in context (outside VM volatile snapshot).
+        *ctx.gas_remaining_mut().unwrap() = 1;
         // Mutate volatile fields (should be restored)
         vm.machine.as_mut().unwrap().r.contract_load_bytes = 777;
         vm.machine.as_mut().unwrap().r.contracts.insert(
@@ -1023,30 +912,15 @@ mod machine_test {
             Arc::new(ContractObj::default()),
         );
 
-        // Mutate non-volatile fields (should NOT be restored — init_once/RAII managed)
-        vm.account.purity_fee = 1;
-        vm.account.purity_size = 1;
-        vm.account.gas_rate = 99;
-        vm.account.initialized = false;
-        vm.account.reentry_depth = 3;
-        vm.account.max_reentry = 99;
-
         vm.restore_volatile(snap);
 
         // Gas remaining is NOT restored: gas usage must stay monotonic in one tx.
-        assert_eq!(vm.account.remaining, 1);
+        assert_eq!(ctx.gas_remaining(), 1);
         // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
         assert_ne!(vm.machine.as_ref().unwrap().r.contract_load_bytes, before_load_bytes);
         assert_eq!(vm.machine.as_ref().unwrap().r.contract_load_bytes, 777);
         assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 1);
 
-        // Non-volatile fields: NOT restored (keep mutated values)
-        assert_eq!(vm.account.purity_fee, 1);
-        assert_eq!(vm.account.purity_size, 1);
-        assert_eq!(vm.account.gas_rate, 99);
-        assert_eq!(vm.account.initialized, false);
-        assert_eq!(vm.account.reentry_depth, 3);
-        assert_eq!(vm.account.max_reentry, 99);
     }
 
     #[test]
@@ -1070,6 +944,7 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_init_tx(decode_gas_budget(1), 1).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let codes = vec![Bytecode::END as u8];
@@ -1103,6 +978,7 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         // Invalid code type causes early return inside Main branch before previous manual leave() point.
@@ -1114,7 +990,7 @@ mod machine_test {
             Box::new(Value::Nil),
         ));
         assert!(early.is_err(), "invalid code type must fail");
-        assert_eq!(vm.account.reentry_depth, 0, "depth must be restored after early return");
+        assert_eq!(vm.call_state.reentry_depth, 0, "depth must be restored after early return");
 
         // Next normal call should still behave as an outermost call.
         let codes = vec![Bytecode::END as u8];
@@ -1126,7 +1002,121 @@ mod machine_test {
             Box::new(Value::Nil),
         ));
         assert!(ok.is_ok(), "subsequent call must not be poisoned by previous early return");
-        assert_eq!(vm.account.reentry_depth, 0, "depth must remain balanced after successful call");
+        assert_eq!(vm.call_state.reentry_depth, 0, "depth must remain balanced after successful call");
+    }
+
+    fn read_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
+        protocol::state::CoreState::wrap(ctx.state())
+            .balance(addr)
+            .unwrap_or_default()
+            .hacash
+    }
+
+    #[test]
+    fn outermost_failed_call_consumes_remaining_without_burn() {
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(3200)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
+
+        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let fail_codes = lang_to_bytecode("return 1").unwrap();
+
+        let bal_before = read_hac_balance(&mut ctx, &main);
+        let call = vm.call(VMCall::new(
+            &mut ctx,
+            ExecMode::Main as u8,
+            CodeType::Bytecode as u8,
+            fail_codes.into(),
+            Box::new(Value::Nil),
+        ));
+        let bal_after = read_hac_balance(&mut ctx, &main);
+
+        assert!(call.is_err(), "vm call should fail when script returns non-zero");
+        assert!(
+            ctx.gas_remaining() < decode_gas_budget(17),
+            "remaining gas should decrease even when call fails"
+        );
+        assert_eq!(
+            bal_before, bal_after,
+            "outermost failed call currently skips settle burn"
+        );
+    }
+
+    #[test]
+    fn fail_then_success_charges_same_as_success_only() {
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let fail_codes = lang_to_bytecode("return 1").unwrap();
+        let ok_codes = vec![crate::rt::Bytecode::END as u8];
+
+        let run = |run_failed_first: bool| -> (Amount, i64) {
+            let mut env = Env::default();
+            env.block.height = 1;
+            env.tx.main = main;
+            env.tx.addrs = vec![main];
+
+            let tx = StubTxBuilder::new()
+                .ty(TransactionType3::TYPE)
+                .main(main)
+                .addrs(vec![main])
+                .fee(Amount::unit238(10_000_000))
+                .gas_max(17)
+                .tx_size(128)
+                .fee_purity(3200)
+                .build();
+            let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+            protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+            ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
+
+            let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+            if run_failed_first {
+                let failed = vm.call(VMCall::new(
+                    &mut ctx,
+                    ExecMode::Main as u8,
+                    CodeType::Bytecode as u8,
+                    fail_codes.clone().into(),
+                    Box::new(Value::Nil),
+                ));
+                assert!(failed.is_err(), "prelude failed call must fail");
+            }
+
+            let ok = vm.call(VMCall::new(
+                &mut ctx,
+                ExecMode::Main as u8,
+                CodeType::Bytecode as u8,
+                ok_codes.clone().into(),
+                Box::new(Value::Nil),
+            ));
+            assert!(ok.is_ok(), "final success call must succeed");
+
+            (read_hac_balance(&mut ctx, &main), ctx.gas_remaining())
+        };
+
+        let (bal_success_only, rem_success_only) = run(false);
+        let (bal_fail_then_success, rem_fail_then_success) = run(true);
+
+        assert_eq!(
+            bal_fail_then_success, bal_success_only,
+            "failed outermost call before a successful one is currently not additionally charged"
+        );
+        assert!(
+            rem_fail_then_success < rem_success_only,
+            "failed call should still consume shared remaining gas"
+        );
     }
 
 /* i64::MAX  = 9223372036854775807 10000 HAC =   10000000000000000:236 0.00000001 = 1:240 = 10000:236 */

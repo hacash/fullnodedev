@@ -1,22 +1,20 @@
 #[cfg(test)]
 mod action_dispatch {
-    use field::{BytesW1, Field, Serialize};
-    use vm::action::{self, EnvCoinbaseAddr, EnvHeight, TxMessage};
+    use field::{Field, Serialize};
+    use vm::action::{self, EnvCoinbaseAddr, EnvHeight};
 
     #[test]
-    fn try_create_dispatches_tx_message_roundtrip() {
-        let mut src = TxMessage::new();
-        src.data = BytesW1::from(b"dispatch-check".to_vec()).unwrap();
+    fn try_create_dispatches_env_height_roundtrip() {
+        let src = EnvHeight::new();
         let raw = src.serialize();
 
-        let (act, sk) = action::try_create(TxMessage::KIND, &raw)
+        let (act, sk) = action::try_create(EnvHeight::KIND, &raw)
             .unwrap()
-            .expect("TxMessage kind should be registered");
+            .expect("EnvHeight kind should be registered");
         assert_eq!(sk, raw.len());
-        assert_eq!(act.kind(), TxMessage::KIND);
+        assert_eq!(act.kind(), EnvHeight::KIND);
 
-        let got = TxMessage::downcast(&act).expect("downcast to TxMessage");
-        assert_eq!(got.data, src.data);
+        assert!(EnvHeight::downcast(&act).is_some());
     }
 
     #[test]

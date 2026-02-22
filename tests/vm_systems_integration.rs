@@ -129,6 +129,8 @@ fn setup_vm_run_executes_after_assigner_registered() {
         Box::new(MemLogs::default()),
     );
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+    let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(17).unwrap();
+    ctx.gas_init_tx(budget, gas_rate).unwrap();
 
     let (gas_used, rv) = machine::setup_vm_run(
         &mut ctx,
