@@ -268,6 +268,9 @@ pub fn execute_code(
             }
             let (bgasu, cres) = host.ext_action_call(kid, actbody).map_err(|e|
                 ItrErr::new(ExtActCallError, e.as_str()))?;
+            if bgasu < 0 {
+                return itr_err_fmt!(ExtActCallError, "negative returned gas {}", bgasu)
+            }
             gas += bgasu;
             if $have_retv {
                 let vty = match instruction {

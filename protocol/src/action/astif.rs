@@ -33,13 +33,20 @@ action_define!{ AstIf, 26,
         let branch_res = match cond_res {
             // if br
             Ok((cond_gas, ..)) => {
+                if cond_gas < 0 {
+                    return errf!("negative returned gas: {}", cond_gas)
+                }
                 let cond_extra = cond_gas.saturating_sub(cond_shared).max(0);
                 gas = gas.saturating_add(cond_extra);
                 ctx_merge(ctx, snap);
                 self.br_if.execute(ctx)
             },
             // else br
-            Err(..) => {
+            Err(e) => {
+                if e.is_unrecoverable() {
+                    ctx_recover(ctx, whole_snap)?;
+                    return errf!("{}", e.as_str())
+                }
                 ctx_recover(ctx, snap)?;
                 self.br_else.execute(ctx)
             }
@@ -48,13 +55,19 @@ action_define!{ AstIf, 26,
         gas = gas.saturating_add(branch_shared);
         let branch_ret = match branch_res {
             Ok((branch_gas, ret)) => {
+                if branch_gas < 0 {
+                    return errf!("negative returned gas: {}", branch_gas)
+                }
                 let branch_extra = branch_gas.saturating_sub(branch_shared).max(0);
                 gas = gas.saturating_add(branch_extra);
                 ret
             },
             Err(e) => {
                 ctx_recover(ctx, whole_snap)?;
-                return Err(e)
+                if e.is_unrecoverable() {
+                    return errf!("{}", e.as_str())
+                }
+                return errf!("{}", e.as_str())
             }
         };
         ctx_merge(ctx, whole_snap);

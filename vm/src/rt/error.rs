@@ -116,6 +116,14 @@ impl From<ItrErr> for Error {
     }
 }
 
+impl From<ItrErr> for BError {
+    fn from(e: ItrErr) -> BError {
+        let ItrErr(code, msg) = e;
+        let text = format!("{:?}({}): {}", code, code as u8, msg);
+        BError::unrecoverable(text)
+    }
+}
+
 
 
 

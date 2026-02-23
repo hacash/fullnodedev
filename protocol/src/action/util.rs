@@ -16,7 +16,7 @@ pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {
     let old_level = ctx.level();
     let next = old_level
         .checked_add(1)
-        .ok_or_else(|| "ast tree depth overflow".to_owned())?;
+        .ok_or_else(|| format!("{}{}", UNRECOVERABLE_PREFIX, "ast tree depth overflow"))?;
     if next > AST_TREE_DEPTH_MAX {
         return errf!("ast tree depth {} exceeded max {}", next, AST_TREE_DEPTH_MAX)
     }

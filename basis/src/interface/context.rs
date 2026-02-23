@@ -2,7 +2,7 @@
 
 pub trait ActCall {
     fn height(&self) -> u64; // ctx blk hei
-    fn action_call(&mut self, _: u16, _: Vec<u8>) -> Ret<(i64, Vec<u8>)>;
+    fn action_call(&mut self, _: u16, _: Vec<u8>) -> BRet<(i64, Vec<u8>)>;
 }
 
 pub trait StateOperat {

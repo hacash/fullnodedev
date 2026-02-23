@@ -28,7 +28,7 @@ impl<'a> VMCall<'a> {
 pub trait VM {
     fn is_nil(&self) -> bool { false }
     fn call(&mut self, _: VMCall<'_>)
-        -> Ret<(i64, Vec<u8>)> { never!() }
+        -> BRet<(i64, Vec<u8>)> { never!() }
     /// Snapshot volatile VM state for AstSelect/AstIf recover paths.
     /// Note: gas remaining is intentionally excluded so gas usage stays monotonic in one tx.
     fn snapshot_volatile(&self) -> Box<dyn Any> { Box::new(()) }

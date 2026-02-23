@@ -37,7 +37,7 @@ asset_operate_define!(asset_sub, addr, asset, oldasset, {
             addr, oldasset, asset)
     }
     // do sub
-    oldasset.checked_sub(asset)?
+        oldasset.checked_sub(asset)?
 });
 
 

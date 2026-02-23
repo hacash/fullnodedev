@@ -124,7 +124,7 @@ impl VM for MachineBox {
         // keep warmup/cache channels (`contracts`, `contract_load_bytes`) and gas accounting monotonic.
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> Ret<(i64, Vec<u8>)> {
+    fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
         use ExecMode::*;
         let VMCall {
             ctx,
@@ -157,7 +157,7 @@ impl VM for MachineBox {
         if gas_before < min_cost {
             let gas = ctx.gas_remaining_mut()?;
             *gas -= min_cost; // keep the same "min cost consumes from shared counter" semantics
-            return errf!(
+            return berrf!(
                 "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
                 gas_before,
                 min_cost,
@@ -181,20 +181,24 @@ impl VM for MachineBox {
             P2sh => {
                 let payload = ByteView::from_arc(payload);
                 let payload_ref = payload.as_slice();
-                let (state_addr, mv1) = Address::create(payload_ref)?;
-                let (calibs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
+                let (state_addr, mv1) = Address::create(payload_ref)
+                    .map_err(BError::unrecoverable)?;
+                let (calibs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])
+                    .map_err(BError::unrecoverable)?;
                 let mv = mv1 + mv2;
-                let realcodes = payload.slice(mv, payload.len())?;
+                let realcodes = payload.slice(mv, payload.len())
+                    .map_err(BError::unrecoverable)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return errf!("p2sh argv type not match")
+                    return berrf!("p2sh argv type not match")
                 };
                 machine.p2sh_call(exenv, state_addr, calibs.into_list(), realcodes, *param)
             }
             Abst => {
                 let kid: AbstCall = std_mem_transmute!(kind);
-                let cadr = ContractAddress::parse(payload.as_ref())?;
+                let cadr = ContractAddress::parse(payload.as_ref())
+                    .map_err(BError::unrecoverable)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return errf!("abst argv type not match")
+                    return berrf!("abst argv type not match")
                 };
                 machine.abst_call(exenv, kid, cadr, *param)
             }
@@ -210,7 +214,7 @@ impl VM for MachineBox {
             let gas = ctx.gas_remaining_mut()?;
             *gas -= shortfall;
             if *gas < 0 {
-                return errf!(
+                return berrf!(
                     "gas has run out after min cost enforcement: remaining={} (before={} min_call_cost={} actual_cost={})",
                     *gas,
                     gas_before,
@@ -223,7 +227,7 @@ impl VM for MachineBox {
         // propagate VM execution error (depth is auto-restored by guard drop)
         let resv = result.map(|a| a.raw())?;
         if cost <= 0 {
-            return errf!("gas cost error: {}", cost);
+            return berrf!("gas cost error: {}", cost);
         }
         Ok((cost, resv))
     }

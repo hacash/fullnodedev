@@ -48,14 +48,24 @@ action_define!{ AstSelect, 25,
             let exec_res = act.execute(ctx);
             let shared = ast_gas_spent_delta(ctx, gas_before);
             gas = gas.saturating_add(shared);
-            if let Ok((child_gas, r)) = exec_res {
-                let extra = child_gas.saturating_sub(shared).max(0);
-                gas = gas.saturating_add(extra);
-                rv = r;
-                ok += 1;
-                ctx_merge(ctx, snap);
-            } else {
-                ctx_recover(ctx, snap)?;
+            match exec_res {
+                Ok((child_gas, r)) => {
+                    if child_gas < 0 {
+                        return errf!("negative returned gas: {}", child_gas)
+                    }
+                    let extra = child_gas.saturating_sub(shared).max(0);
+                    gas = gas.saturating_add(extra);
+                    rv = r;
+                    ok += 1;
+                    ctx_merge(ctx, snap);
+                }
+                Err(e) => {
+                    ctx_recover(ctx, snap)?;
+                    if e.is_unrecoverable() {
+                        ctx_recover(ctx, whole_snap)?;
+                        return errf!("{}", e.as_str())
+                    }
+                }
             }
         }
         // check at least

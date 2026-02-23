@@ -43,7 +43,7 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u
     let ctxptr = ctx as *mut dyn Context;
     let res = unsafe {
         let vm = (*ctxptr).vm() as *mut dyn VM;
-        (*vm).call(VMCall::new(&mut *ctxptr, ty, mk, cd, Box::new(pm)))
+        (*vm).call(VMCall::new(&mut *ctxptr, ty, mk, cd, Box::new(pm))).into_ret()
     };
     ctx.level_set(old_level);
     let (cost, rv) = res?;

@@ -37,7 +37,7 @@ impl VmHost for CtxHost<'_> {
 
     fn ext_action_call(&mut self, kid: u16, body: Vec<u8>) -> Ret<(i64, Vec<u8>)> {
         // ctx.level was already set to the correct call level by setup_vm_run
-        self.ctx.action_call(kid, body)
+        self.ctx.action_call(kid, body).into_ret()
     }
 
     fn log_push(&mut self, cadr: &ContractAddress, items: Vec<Value>) -> VmrtErr {
