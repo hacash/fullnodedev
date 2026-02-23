@@ -33,7 +33,7 @@ fn ctx_state_recover_sub(ctx: &mut dyn Context, old: Arc<Box<dyn State>>) {
 
 fn ctx_state_into_box(a: Arc<Box<dyn State>>) -> Box<dyn State> {
     assert_eq!(1, Arc::strong_count(&a));
-    assert_eq!(0, Arc::weak_count(&a));
+    // Weak references are expected when sub-states keep a parent backlink.
     Arc::into_inner(a).unwrap()
 }
 

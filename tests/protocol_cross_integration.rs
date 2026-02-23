@@ -5,18 +5,21 @@ use protocol::action::*;
 use protocol::transaction::*;
 use sys::*;
 
+#[cfg(feature = "tex")]
+use testkit::sim::context::make_ctx_with_default_tx;
 #[cfg(feature = "ast")]
-use testkit::sim::context::{make_ctx_with_logs as testkit_make_ctx_with_logs, make_ctx_with_state as testkit_make_ctx_with_state};
+use testkit::sim::context::{
+    make_ctx_with_logs as testkit_make_ctx_with_logs,
+    make_ctx_with_state as testkit_make_ctx_with_state,
+};
 #[cfg(feature = "ast")]
 use testkit::sim::logs::MemLogs as AstTestLogs;
+#[cfg(feature = "tex")]
+use testkit::sim::state::FlatMemState as TestMemState;
 #[cfg(feature = "ast")]
 use testkit::sim::state::ForkableMemState as AstTestState;
 #[cfg(feature = "ast")]
 use testkit::sim::vm::CounterMockVm as MockVM;
-#[cfg(feature = "tex")]
-use testkit::sim::context::make_ctx_with_default_tx;
-#[cfg(feature = "tex")]
-use testkit::sim::state::FlatMemState as TestMemState;
 
 #[cfg(feature = "ast")]
 fn build_ast_ctx_with_state<'a>(
@@ -45,6 +48,17 @@ fn ast_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
         .balance(addr)
         .unwrap_or_default()
         .hacash
+}
+
+#[cfg(feature = "ast")]
+static AST_TEST_GLOBAL_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+
+#[cfg(feature = "ast")]
+fn ast_test_global_guard() -> std::sync::MutexGuard<'static, ()> {
+    AST_TEST_GLOBAL_LOCK
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap()
 }
 
 #[cfg(feature = "ast")]
@@ -109,7 +123,7 @@ impl FromJSON for AstTestSet {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestSet {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         Ok((0, vec![]))
     }
@@ -189,7 +203,7 @@ impl FromJSON for AstTestGasOnly {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestGasOnly {
-    fn execute(&self, _ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         Ok((*self.gas as i64, vec![]))
     }
 }
@@ -213,7 +227,9 @@ impl Action for AstTestGasOnly {
 #[cfg(feature = "ast")]
 impl AstTestGasOnly {
     fn create_by(gas: u8) -> Self {
-        Self { gas: Uint1::from(gas) }
+        Self {
+            gas: Uint1::from(gas),
+        }
     }
 }
 
@@ -264,7 +280,7 @@ impl FromJSON for AstTestConsumeAndReport {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestConsumeAndReport {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let g = *self.gas as i64;
         if g > 0 {
             ctx.gas_consume(g as u32)?;
@@ -292,7 +308,9 @@ impl Action for AstTestConsumeAndReport {
 #[cfg(feature = "ast")]
 impl AstTestConsumeAndReport {
     fn create_by(gas: u8) -> Self {
-        Self { gas: Uint1::from(gas) }
+        Self {
+            gas: Uint1::from(gas),
+        }
     }
 }
 
@@ -346,7 +364,7 @@ impl FromJSON for AstTestConsumeReportSplit {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestConsumeReportSplit {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let c = *self.consume as i64;
         let r = *self.report as i64;
         if c > 0 {
@@ -427,8 +445,8 @@ impl FromJSON for AstTestFail {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestFail {
-    fn execute(&self, _ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
-        errf!("ast test forced fail")
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+        berruf!("ast test forced fail")
     }
 }
 
@@ -451,8 +469,12 @@ impl Action for AstTestFail {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true; // keep focus on AST semantics
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -474,8 +496,12 @@ fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_plain_actions_no_over_or_under_charge() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
     let run_case = |payload: (u8, u8, u8)| {
@@ -502,15 +528,31 @@ fn test_ast_nested_plain_actions_no_over_or_under_charge() {
     // 实验组：child 报告 7/11/5，期望只多出 23，不应多扣也不应漏扣
     let (ret1, shared1) = run_case((7, 11, 5));
 
-    assert_eq!(shared1, shared0, "shared0={} shared1={} ret0={} ret1={}", shared0, shared1, ret0, ret1);
-    assert_eq!(ret1 - ret0, 23, "ret0={} ret1={} shared0={} shared1={}", ret0, ret1, shared0, shared1);
+    assert_eq!(
+        shared1, shared0,
+        "shared0={} shared1={} ret0={} ret1={}",
+        shared0, shared1, ret0, ret1
+    );
+    assert_eq!(
+        ret1 - ret0,
+        23,
+        "ret0={} ret1={} shared0={} shared1={}",
+        ret0,
+        ret1,
+        shared0,
+        shared1
+    );
 }
 
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_shared_consume_report_no_double_count() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
     let run_case = |n: u8| {
@@ -543,8 +585,12 @@ fn test_ast_nested_shared_consume_report_no_double_count() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_shared_gt_returned_clamped_no_underflow() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
     let run_case = |consume: u8, report: u8| {
@@ -577,8 +623,12 @@ fn test_ast_nested_shared_gt_returned_clamped_no_underflow() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_static_size_repeated_charge_is_additive_per_execution() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
     let child_size = AstSelect::nop().size() as i64;
@@ -605,14 +655,21 @@ fn test_ast_static_size_repeated_charge_is_additive_per_execution() {
     // one more child attempt adds one more snapshot try cost
     assert_eq!(shared2 - shared1, 40);
     // ret delta = snapshot_try_delta + parent-size-delta + one more executed-child size
-    assert_eq!((ret2 - ret1) - (shared2 - shared1), (outer2_size - outer1_size) + child_size);
+    assert_eq!(
+        (ret2 - ret1) - (shared2 - shared1),
+        (outer2_size - outer1_size) + child_size
+    );
 }
 
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_single_select_plain_reported_gas_propagates() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
     let run_case = |a: u8, b: u8| {
@@ -630,14 +687,29 @@ fn test_ast_single_select_plain_reported_gas_propagates() {
 
     let (ret0, shared0) = run_case(0, 0);
     let (ret1, shared1) = run_case(7, 11);
-    assert_eq!(shared1, shared0, "shared0={} shared1={} ret0={} ret1={}", shared0, shared1, ret0, ret1);
-    assert_eq!(ret1 - ret0, 18, "ret0={} ret1={} shared0={} shared1={}", ret0, ret1, shared0, shared1);
+    assert_eq!(
+        shared1, shared0,
+        "shared0={} shared1={} ret0={} ret1={}",
+        shared0, shared1, ret0, ret1
+    );
+    assert_eq!(
+        ret1 - ret0,
+        18,
+        "ret0={} ret1={} shared0={} shared1={}",
+        ret0,
+        ret1,
+        shared0,
+        shared1
+    );
 }
 
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType2::TYPE);
     tx.actions
         .push(Box::new(AstSelect::create_by(
@@ -650,7 +722,8 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
         )))
         .unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
@@ -662,7 +735,11 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     let old = ctx.state_fork(); // tx-level isolation
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("must succeed at least") || err.contains("gas_max > 0"), "{}", err);
+    assert!(
+        err.contains("must succeed at least") || err.contains("gas_max > 0"),
+        "{}",
+        err
+    );
     ctx.state_recover(old); // tx-level rollback on failure
 
     assert_eq!(ast_state_get_u8(&mut ctx, 9), Some(99)); // baseline kept
@@ -672,8 +749,12 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_if_select_else_path_commits_expected_layers() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -707,7 +788,10 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType2::TYPE);
     tx.actions
         .push(Box::new(AstSelect::create_by(
@@ -717,7 +801,8 @@ fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
         )))
         .unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
@@ -726,22 +811,35 @@ fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("tx with AST actions must set gas_max > 0"), "{}", err);
+    assert!(
+        err.contains("tx with AST actions must set gas_max > 0"),
+        "{}",
+        err
+    );
 }
 
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.fee = Amount::unit238(1_000_000);
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
-    protocol::operate::hac_add(&mut ctx, &field::ADDRESS_ONEX, &Amount::unit238(1_000_000_000)).unwrap();
+    protocol::operate::hac_add(
+        &mut ctx,
+        &field::ADDRESS_ONEX,
+        &Amount::unit238(1_000_000_000),
+    )
+    .unwrap();
     ctx.gas_init_tx(1000, 1).unwrap();
 
     let inner_1 = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(31, 31))]);
@@ -760,16 +858,22 @@ fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_tx_gas_settlement_charges_fee_plus_used_and_refunds_unused() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType2::TYPE);
     tx.gas_max = Uint1::from(17);
     tx.fee = Amount::unit238(1_000_000);
     tx.actions
-        .push(Box::new(AstSelect::create_list(vec![Box::new(AstTestSet::create_by(41, 41))])))
+        .push(Box::new(AstSelect::create_list(vec![Box::new(
+            AstTestSet::create_by(41, 41),
+        )])))
         .unwrap();
 
     let main = tx.main();
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = main;
     env.tx.addrs = vec![main];
@@ -792,8 +896,12 @@ fn test_ast_tx_gas_settlement_charges_fee_plus_used_and_refunds_unused() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -827,7 +935,10 @@ fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType2::TYPE);
 
     let act = AstIf::create_by(
@@ -844,7 +955,8 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     );
     tx.actions.push(Box::new(act)).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
@@ -855,7 +967,11 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     let old = ctx.state_fork();
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("must succeed at least") || err.contains("gas_max > 0"), "{}", err);
+    assert!(
+        err.contains("must succeed at least") || err.contains("gas_max > 0"),
+        "{}",
+        err
+    );
     ctx.state_recover(old);
 
     assert_eq!(ast_state_get_u8(&mut ctx, 79), Some(79)); // baseline kept
@@ -867,8 +983,12 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_4level_success_path_commits_expected_state() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -911,8 +1031,12 @@ fn test_ast_deep_4level_success_path_commits_expected_state() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -960,8 +1084,12 @@ fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_tree_depth_limit_6_rejects_7th_level() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1027,7 +1155,7 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
         }
     }
     impl ActExec for AstTestTexP2shSet {
-        fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+        fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
             ctx.tex_ledger().sat += 7;
             let adr = Address::create_scriptmh([7u8; 20]);
             ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
@@ -1047,8 +1175,12 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
         }
     }
 
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
@@ -1121,7 +1253,7 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
     }
 
     impl ActExec for AstTestP2shSetOnly {
-        fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+        fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
             let adr = Address::create_scriptmh([8u8; 20]);
             ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
             Ok((0, vec![]))
@@ -1140,8 +1272,12 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
         }
     }
 
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
@@ -1164,7 +1300,10 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
 }
 
 #[cfg(feature = "tex")]
-fn build_tex_ctx_with_state(env: Env, sta: Box<dyn State>) -> protocol::context::ContextInst<'static> {
+fn build_tex_ctx_with_state(
+    env: Env,
+    sta: Box<dyn State>,
+) -> protocol::context::ContextInst<'static> {
     make_ctx_with_default_tx(env, sta)
 }
 
@@ -1173,7 +1312,8 @@ fn build_tex_ctx_with_state(env: Env, sta: Box<dyn State>) -> protocol::context:
 fn test_tex_sat_pay_records_sat_not_zhu() {
     use protocol::tex::*;
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let addr = field::ADDRESS_ONEX.clone();
@@ -1198,7 +1338,8 @@ fn test_tex_sat_pay_records_sat_not_zhu() {
 fn test_tex_asset_serial_must_exist_and_cache() {
     use protocol::tex::*;
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let addr = field::ADDRESS_ONEX.clone();
@@ -1228,11 +1369,10 @@ fn test_tex_asset_serial_must_exist_and_cache() {
     ok1.execute(&mut ctx, &addr).unwrap();
     let ok2 = CellCondAssetEq::new(AssetAmt::from(9, 0).unwrap());
     ok2.execute(&mut ctx, &addr).unwrap();
-    assert!(
-        ctx.tex_ledger()
-            .asset_checked
-            .contains(&Fold64::from(9).unwrap())
-    );
+    assert!(ctx
+        .tex_ledger()
+        .asset_checked
+        .contains(&Fold64::from(9).unwrap()));
     assert_eq!(ctx.tex_ledger().asset_checked.len(), 1);
 }
 
@@ -1241,7 +1381,8 @@ fn test_tex_asset_serial_must_exist_and_cache() {
 fn test_tex_diamond_get_zero_rejected_early() {
     use protocol::tex::*;
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let addr = field::ADDRESS_ONEX.clone();
@@ -1273,7 +1414,8 @@ fn test_tex_cell_json_must_use_cellid() {
 fn test_tex_action_signature_rejects_payload_tamper() {
     use protocol::tex::*;
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     env.block.height = 10;
@@ -1309,15 +1451,25 @@ struct AstTestLog {
 
 #[cfg(feature = "ast")]
 impl Parse for AstTestLog {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> { self.tag.parse(buf) }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.tag.parse(buf)
+    }
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestLog {
-    fn serialize(&self) -> Vec<u8> { self.tag.serialize() }
-    fn size(&self) -> usize { self.tag.size() }
+    fn serialize(&self) -> Vec<u8> {
+        self.tag.serialize()
+    }
+    fn size(&self) -> usize {
+        self.tag.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestLog { fn new() -> Self { Self::default() } }
+impl Field for AstTestLog {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestLog {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
@@ -1328,13 +1480,17 @@ impl ToJSON for AstTestLog {
 impl FromJSON for AstTestLog {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
-        for (k, v) in pairs { if k == "tag" { self.tag.from_json(v)?; } }
+        for (k, v) in pairs {
+            if k == "tag" {
+                self.tag.from_json(v)?;
+            }
+        }
         Ok(())
     }
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestLog {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         ctx.logs().push(&self.tag);
         Ok((0, vec![]))
     }
@@ -1343,13 +1499,23 @@ impl ActExec for AstTestLog {
 impl Description for AstTestLog {}
 #[cfg(feature = "ast")]
 impl Action for AstTestLog {
-    fn kind(&self) -> u16 { 65005 }
-    fn level(&self) -> ActLv { ActLv::Ast }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65005
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestLog {
-    fn create_by(tag: u8) -> Self { Self { tag: Uint1::from(tag) } }
+    fn create_by(tag: u8) -> Self {
+        Self {
+            tag: Uint1::from(tag),
+        }
+    }
 }
 
 // --- Test helper: action that modifies tex_ledger ---
@@ -1360,15 +1526,25 @@ struct AstTestTexAdd {
 }
 #[cfg(feature = "ast")]
 impl Parse for AstTestTexAdd {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> { self.zhu_add.parse(buf) }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.zhu_add.parse(buf)
+    }
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestTexAdd {
-    fn serialize(&self) -> Vec<u8> { self.zhu_add.serialize() }
-    fn size(&self) -> usize { self.zhu_add.size() }
+    fn serialize(&self) -> Vec<u8> {
+        self.zhu_add.serialize()
+    }
+    fn size(&self) -> usize {
+        self.zhu_add.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestTexAdd { fn new() -> Self { Self::default() } }
+impl Field for AstTestTexAdd {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestTexAdd {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
@@ -1379,13 +1555,17 @@ impl ToJSON for AstTestTexAdd {
 impl FromJSON for AstTestTexAdd {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
-        for (k, v) in pairs { if k == "zhu_add" { self.zhu_add.from_json(v)?; } }
+        for (k, v) in pairs {
+            if k == "zhu_add" {
+                self.zhu_add.from_json(v)?;
+            }
+        }
         Ok(())
     }
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestTexAdd {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         ctx.tex_ledger().zhu += *self.zhu_add as i64;
         Ok((0, vec![]))
     }
@@ -1394,13 +1574,23 @@ impl ActExec for AstTestTexAdd {
 impl Description for AstTestTexAdd {}
 #[cfg(feature = "ast")]
 impl Action for AstTestTexAdd {
-    fn kind(&self) -> u16 { 65006 }
-    fn level(&self) -> ActLv { ActLv::Ast }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65006
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestTexAdd {
-    fn create_by(zhu: u8) -> Self { Self { zhu_add: Uint1::from(zhu) } }
+    fn create_by(zhu: u8) -> Self {
+        Self {
+            zhu_add: Uint1::from(zhu),
+        }
+    }
 }
 
 // --- Test helper: action that sets P2SH with configurable address byte ---
@@ -1411,15 +1601,25 @@ struct AstTestP2shSetN {
 }
 #[cfg(feature = "ast")]
 impl Parse for AstTestP2shSetN {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> { self.addr_byte.parse(buf) }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.addr_byte.parse(buf)
+    }
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestP2shSetN {
-    fn serialize(&self) -> Vec<u8> { self.addr_byte.serialize() }
-    fn size(&self) -> usize { self.addr_byte.size() }
+    fn serialize(&self) -> Vec<u8> {
+        self.addr_byte.serialize()
+    }
+    fn size(&self) -> usize {
+        self.addr_byte.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestP2shSetN { fn new() -> Self { Self::default() } }
+impl Field for AstTestP2shSetN {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestP2shSetN {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
@@ -1430,7 +1630,11 @@ impl ToJSON for AstTestP2shSetN {
 impl FromJSON for AstTestP2shSetN {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
-        for (k, v) in pairs { if k == "addr_byte" { self.addr_byte.from_json(v)?; } }
+        for (k, v) in pairs {
+            if k == "addr_byte" {
+                self.addr_byte.from_json(v)?;
+            }
+        }
         Ok(())
     }
 }
@@ -1438,12 +1642,16 @@ impl FromJSON for AstTestP2shSetN {
 struct AstTestP2shImpl;
 #[cfg(feature = "ast")]
 impl P2sh for AstTestP2shImpl {
-    fn code_stuff(&self) -> &[u8] { b"code" }
-    fn witness(&self) -> &[u8] { b"wit" }
+    fn code_stuff(&self) -> &[u8] {
+        b"code"
+    }
+    fn witness(&self) -> &[u8] {
+        b"wit"
+    }
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestP2shSetN {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
         ctx.p2sh_set(adr, Box::new(AstTestP2shImpl))?;
         Ok((0, vec![]))
@@ -1453,13 +1661,23 @@ impl ActExec for AstTestP2shSetN {
 impl Description for AstTestP2shSetN {}
 #[cfg(feature = "ast")]
 impl Action for AstTestP2shSetN {
-    fn kind(&self) -> u16 { 65007 }
-    fn level(&self) -> ActLv { ActLv::Ast }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65007
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestP2shSetN {
-    fn create_by(n: u8) -> Self { Self { addr_byte: Uint1::from(n) } }
+    fn create_by(n: u8) -> Self {
+        Self {
+            addr_byte: Uint1::from(n),
+        }
+    }
 }
 
 // --- Test helper: action that does state set + tex + log in one shot ---
@@ -1479,15 +1697,27 @@ impl Parse for AstTestCombo {
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestCombo {
-    fn serialize(&self) -> Vec<u8> { [self.key.serialize(), self.val.serialize()].concat() }
-    fn size(&self) -> usize { self.key.size() + self.val.size() }
+    fn serialize(&self) -> Vec<u8> {
+        [self.key.serialize(), self.val.serialize()].concat()
+    }
+    fn size(&self) -> usize {
+        self.key.size() + self.val.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestCombo { fn new() -> Self { Self::default() } }
+impl Field for AstTestCombo {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestCombo {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
-        format!("{{\"key\":{},\"val\":{}}}", self.key.to_json_fmt(fmt), self.val.to_json_fmt(fmt))
+        format!(
+            "{{\"key\":{},\"val\":{}}}",
+            self.key.to_json_fmt(fmt),
+            self.val.to_json_fmt(fmt)
+        )
     }
 }
 #[cfg(feature = "ast")]
@@ -1495,15 +1725,18 @@ impl FromJSON for AstTestCombo {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
         for (k, v) in pairs {
-            if k == "key" { self.key.from_json(v)?; }
-            else if k == "val" { self.val.from_json(v)?; }
+            if k == "key" {
+                self.key.from_json(v)?;
+            } else if k == "val" {
+                self.val.from_json(v)?;
+            }
         }
         Ok(())
     }
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestCombo {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         ctx.tex_ledger().zhu += *self.val as i64;
         ctx.logs().push(&self.key);
@@ -1514,14 +1747,23 @@ impl ActExec for AstTestCombo {
 impl Description for AstTestCombo {}
 #[cfg(feature = "ast")]
 impl Action for AstTestCombo {
-    fn kind(&self) -> u16 { 65008 }
-    fn level(&self) -> ActLv { ActLv::Ast }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65008
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestCombo {
     fn create_by(key: u8, val: u8) -> Self {
-        Self { key: Uint1::from(key), val: Uint1::from(val) }
+        Self {
+            key: Uint1::from(key),
+            val: Uint1::from(val),
+        }
     }
 }
 
@@ -1551,8 +1793,12 @@ fn build_ast_ctx_with_logs<'a>(
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_fail_recovers_whole_snap() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1578,8 +1824,12 @@ fn test_ast_if_branch_fail_recovers_whole_snap() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_else_branch_fail_recovers_whole_snap() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1601,8 +1851,12 @@ fn test_ast_if_else_branch_fail_recovers_whole_snap() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_validation_early_return_no_state_leak() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1626,8 +1880,12 @@ fn test_ast_select_validation_early_return_no_state_leak() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_logs_truncated_on_child_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -1635,10 +1893,14 @@ fn test_ast_select_logs_truncated_on_child_failure() {
 
     // child 1: log + succeed, child 2: log + fail
     // AstSelect(min=1, max=2): child1 ok, child2 fail -> ok with 1
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestLog::create_by(1)),
-        Box::new(AstTestFail::new()), // fails, its snap should recover logs
-    ]);
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(AstTestLog::create_by(1)),
+            Box::new(AstTestFail::new()), // fails, its snap should recover logs
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -1652,8 +1914,12 @@ fn test_ast_select_logs_truncated_on_child_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_fail_truncates_logs() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -1662,10 +1928,14 @@ fn test_ast_if_branch_fail_truncates_logs() {
     // cond logs + succeeds, br_if logs + fails -> whole_snap recover should truncate all
     let astif = AstIf::create_by(
         AstSelect::create_list(vec![Box::new(AstTestLog::create_by(10))]),
-        AstSelect::create_by(2, 2, vec![
-            Box::new(AstTestLog::create_by(11)),
-            Box::new(AstTestFail::new()),
-        ]),
+        AstSelect::create_by(
+            2,
+            2,
+            vec![
+                Box::new(AstTestLog::create_by(11)),
+                Box::new(AstTestFail::new()),
+            ],
+        ),
         AstSelect::create_list(vec![Box::new(AstTestLog::create_by(12))]),
     );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -1680,8 +1950,12 @@ fn test_ast_if_branch_fail_truncates_logs() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_tex_ledger_restored_on_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1690,10 +1964,14 @@ fn test_ast_select_tex_ledger_restored_on_failure() {
     // child1: adds 10 to zhu + succeeds
     // child2: adds 20 to zhu + fails
     // min=1, max=2 -> child1 ok, child2 fail -> ok
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestTexAdd::create_by(10)),
-        Box::new(AstTestFail::new()),
-    ]);
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(AstTestTexAdd::create_by(10)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -1705,8 +1983,12 @@ fn test_ast_select_tex_ledger_restored_on_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_fail_rolls_back_tex_ledger() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1731,22 +2013,34 @@ fn test_ast_if_fail_rolls_back_tex_ledger() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_p2sh_kept_on_success_removed_on_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
     // child1: set p2sh(addr_byte=30) + succeed
     // child2: set p2sh(addr_byte=31) + fail (wrapped in select that requires 2 but only 1 succeeds)
-    let inner_fail = AstSelect::create_by(2, 2, vec![
-        Box::new(AstTestP2shSetN::create_by(31)),
-        Box::new(AstTestFail::new()),
-    ]);
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestP2shSetN::create_by(30)),
-        Box::new(inner_fail),
-    ]);
+    let inner_fail = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestP2shSetN::create_by(31)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(AstTestP2shSetN::create_by(30)),
+            Box::new(inner_fail),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -1760,17 +2054,22 @@ fn test_ast_select_p2sh_kept_on_success_removed_on_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_min_zero_all_fail_succeeds() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
     ctx.state().set(vec![230], vec![230]);
 
-    let act = AstSelect::create_by(0, 2, vec![
-        Box::new(AstTestFail::new()),
-        Box::new(AstTestFail::new()),
-    ]);
+    let act = AstSelect::create_by(
+        0,
+        2,
+        vec![Box::new(AstTestFail::new()), Box::new(AstTestFail::new())],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap(); // should succeed
 
@@ -1781,8 +2080,12 @@ fn test_ast_select_min_zero_all_fail_succeeds() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_combo_all_channels_restored_on_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -1790,10 +2093,14 @@ fn test_ast_combo_all_channels_restored_on_failure() {
     ctx.tex_ledger().zhu = 10;
 
     // combo writes state + tex + log, then fail forces rollback
-    let act = AstSelect::create_by(2, 2, vec![
-        Box::new(AstTestCombo::create_by(240, 5)),
-        Box::new(AstTestFail::new()),
-    ]);
+    let act = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestCombo::create_by(240, 5)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least"));
@@ -1807,8 +2114,12 @@ fn test_ast_combo_all_channels_restored_on_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -1821,11 +2132,15 @@ fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
         AstSelect::nop(),
     );
     // outer select: child1=combo(251,2) ok, child2=inner_if fail, child3=combo(252,3) ok
-    let act = AstSelect::create_by(2, 3, vec![
-        Box::new(AstTestCombo::create_by(251, 2)),
-        Box::new(inner_if),
-        Box::new(AstTestCombo::create_by(252, 3)),
-    ]);
+    let act = AstSelect::create_by(
+        2,
+        3,
+        vec![
+            Box::new(AstTestCombo::create_by(251, 2)),
+            Box::new(inner_if),
+            Box::new(AstTestCombo::create_by(252, 3)),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -1834,7 +2149,7 @@ fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
     assert_eq!(ast_state_get_u8(&mut ctx, 252), Some(3));
     assert_eq!(ast_state_get_u8(&mut ctx, 250), None); // inner_if cond rolled back
     assert_eq!(ctx.tex_ledger().zhu, 5); // 2 + 3, not 1
-    // logs: child1 pushed 1, inner_if's cond pushed 1 but rolled back, child3 pushed 1 = 2
+                                         // logs: child1 pushed 1, inner_if's cond pushed 1 but rolled back, child3 pushed 1 = 2
     assert_eq!(unsafe { &*logs_ptr }.len(), 2);
 }
 
@@ -1844,18 +2159,26 @@ fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_state_overwrite_in_failed_branch_does_not_leak() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
     ctx.state().set(vec![1], vec![100]); // pre-existing value
 
     // child1: overwrite key=1 to 200, then fail
-    let inner = AstSelect::create_by(2, 2, vec![
-        Box::new(AstTestSet::create_by(1, 200)),
-        Box::new(AstTestFail::new()),
-    ]);
+    let inner = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(1, 200)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
     let act = AstSelect::create_by(0, 1, vec![Box::new(inner)]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
@@ -1868,8 +2191,12 @@ fn test_ast_state_overwrite_in_failed_branch_does_not_leak() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_else_with_nested_select_partial_success() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1879,11 +2206,15 @@ fn test_ast_if_else_with_nested_select_partial_success() {
     let astif = AstIf::create_by(
         AstSelect::create_list(vec![Box::new(AstTestFail::new())]),
         AstSelect::nop(),
-        AstSelect::create_by(1, 3, vec![
-            Box::new(AstTestSet::create_by(160, 160)),
-            Box::new(AstTestFail::new()),
-            Box::new(AstTestSet::create_by(162, 162)),
-        ]),
+        AstSelect::create_by(
+            1,
+            3,
+            vec![
+                Box::new(AstTestSet::create_by(160, 160)),
+                Box::new(AstTestFail::new()),
+                Box::new(AstTestSet::create_by(162, 162)),
+            ],
+        ),
     );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     astif.execute(&mut ctx).unwrap();
@@ -1896,8 +2227,12 @@ fn test_ast_if_else_with_nested_select_partial_success() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_all_channels_committed_on_success() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -1929,8 +2264,12 @@ fn test_ast_all_channels_committed_on_success() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_double_nested_if_inner_else_outer_if() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -1961,18 +2300,26 @@ fn test_ast_double_nested_if_inner_else_outer_if() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_stops_at_max() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestSet::create_by(190, 1)),
-        Box::new(AstTestSet::create_by(191, 2)),
-        Box::new(AstTestSet::create_by(192, 3)), // should not execute
-        Box::new(AstTestSet::create_by(193, 4)), // should not execute
-    ]);
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(AstTestSet::create_by(190, 1)),
+            Box::new(AstTestSet::create_by(191, 2)),
+            Box::new(AstTestSet::create_by(192, 3)), // should not execute
+            Box::new(AstTestSet::create_by(193, 4)), // should not execute
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -1986,16 +2333,18 @@ fn test_ast_select_stops_at_max() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_max_gt_num_rejected_no_leak() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
     ctx.state().set(vec![1], vec![1]);
 
-    let bad = AstSelect::create_by(1, 5, vec![
-        Box::new(AstTestSet::create_by(2, 2)),
-    ]);
+    let bad = AstSelect::create_by(1, 5, vec![Box::new(AstTestSet::create_by(2, 2))]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = bad.execute(&mut ctx).unwrap_err();
     assert!(err.contains("max cannot more than list num"));
@@ -2011,8 +2360,12 @@ fn test_ast_select_max_gt_num_rejected_no_leak() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_sequential_operations_on_same_context() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -2044,8 +2397,12 @@ fn test_ast_sequential_operations_on_same_context() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_p2sh_duplicate_address_rejected() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -2058,8 +2415,11 @@ fn test_ast_p2sh_duplicate_address_rejected() {
     let act = AstSelect::create_list(vec![Box::new(AstTestP2shSetN::create_by(50))]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("already proved") || err.contains("must succeed at least"),
-        "unexpected error: {}", err);
+    assert!(
+        err.contains("already proved") || err.contains("must succeed at least"),
+        "unexpected error: {}",
+        err
+    );
 }
 
 // ---- Test 20: P2SH set in failed AstSelect child is rolled back,
@@ -2067,22 +2427,34 @@ fn test_ast_p2sh_duplicate_address_rejected() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_p2sh_rollback_allows_retry_in_next_child() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
     // child1: set p2sh(60) then fail -> rolled back
     // child2: set p2sh(60) succeeds (because child1's set was rolled back)
-    let inner_fail = AstSelect::create_by(2, 2, vec![
-        Box::new(AstTestP2shSetN::create_by(60)),
-        Box::new(AstTestFail::new()),
-    ]);
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(inner_fail),
-        Box::new(AstTestP2shSetN::create_by(60)),
-    ]);
+    let inner_fail = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestP2shSetN::create_by(60)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(inner_fail),
+            Box::new(AstTestP2shSetN::create_by(60)),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -2103,26 +2475,40 @@ struct AstTestVMCall {
 
 #[cfg(feature = "ast")]
 impl Parse for AstTestVMCall {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> { self.increment.parse(buf) }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.increment.parse(buf)
+    }
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestVMCall {
-    fn serialize(&self) -> Vec<u8> { self.increment.serialize() }
-    fn size(&self) -> usize { self.increment.size() }
+    fn serialize(&self) -> Vec<u8> {
+        self.increment.serialize()
+    }
+    fn size(&self) -> usize {
+        self.increment.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestVMCall { fn new() -> Self { Self::default() } }
+impl Field for AstTestVMCall {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestVMCall {
-    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String { "{}".to_owned() }
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        "{}".to_owned()
+    }
 }
 #[cfg(feature = "ast")]
 impl FromJSON for AstTestVMCall {
-    fn from_json(&mut self, _json: &str) -> Ret<()> { Ok(()) }
+    fn from_json(&mut self, _json: &str) -> Ret<()> {
+        Ok(())
+    }
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVMCall {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         // The MockVM's counter is behind an Arc<AtomicI64>, so we can
         // mutate it through the shared reference obtained via ctx.vm().
         // snapshot_volatile captures the current value; restore_volatile resets it.
@@ -2146,13 +2532,23 @@ impl ActExec for AstTestVMCall {
 impl Description for AstTestVMCall {}
 #[cfg(feature = "ast")]
 impl Action for AstTestVMCall {
-    fn kind(&self) -> u16 { 65009 }
-    fn level(&self) -> ActLv { ActLv::Ast }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65009
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestVMCall {
-    fn create_by(inc: u8) -> Self { Self { increment: Uint1::from(inc) } }
+    fn create_by(inc: u8) -> Self {
+        Self {
+            increment: Uint1::from(inc),
+        }
+    }
 }
 
 #[cfg(feature = "ast")]
@@ -2185,11 +2581,13 @@ impl VM for AstRecoverTrackVm {
 
 #[cfg(feature = "ast")]
 static AST_RECOVER_TRACK_HANDLES: std::sync::OnceLock<
-    std::sync::Mutex<Option<(
-        std::sync::Arc<std::sync::atomic::AtomicI64>,
-        std::sync::Arc<std::sync::atomic::AtomicUsize>,
-        std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    )>>,
+    std::sync::Mutex<
+        Option<(
+            std::sync::Arc<std::sync::atomic::AtomicI64>,
+            std::sync::Arc<std::sync::atomic::AtomicUsize>,
+            std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        )>,
+    >,
 > = std::sync::OnceLock::new();
 
 #[cfg(feature = "ast")]
@@ -2206,7 +2604,10 @@ fn set_ast_recover_track_handles(
 fn take_ast_recover_track_vm() -> Box<dyn VM> {
     let lock = AST_RECOVER_TRACK_HANDLES.get_or_init(|| std::sync::Mutex::new(None));
     let guards = lock.lock().unwrap();
-    let (v, r, c) = guards.as_ref().expect("recover track handles not set").clone();
+    let (v, r, c) = guards
+        .as_ref()
+        .expect("recover track handles not set")
+        .clone();
     Box::new(AstRecoverTrackVm {
         value: v,
         restore_count: r,
@@ -2261,11 +2662,10 @@ impl FromJSON for AstTestVmInitReplace {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitReplace {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let vm = take_ast_recover_track_vm();
         ctx.vm_init_once(vm)?;
-        ctx.vm()
-            .restore_volatile(Box::new(*self.value as i64));
+        ctx.vm().restore_volatile(Box::new(*self.value as i64));
         Ok((0, vec![]))
     }
 }
@@ -2289,7 +2689,9 @@ impl Action for AstTestVmInitReplace {
 #[cfg(feature = "ast")]
 impl AstTestVmInitReplace {
     fn create_by(v: u8) -> Self {
-        Self { value: Uint1::from(v) }
+        Self {
+            value: Uint1::from(v),
+        }
     }
 }
 
@@ -2365,12 +2767,12 @@ impl FromJSON for AstTestVmSetNilAndFail {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmSetNilAndFail {
-    fn execute(&self, _ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
         if let Some(flag) = lock.lock().unwrap().as_ref() {
             flag.store(false, std::sync::atomic::Ordering::SeqCst);
         }
-        errf!("flip to nil and fail")
+        berruf!("flip to nil and fail")
     }
 }
 
@@ -2418,10 +2820,10 @@ impl VM for AstDeepDelayVm {
         self.volatile.store(0, std::sync::atomic::Ordering::SeqCst);
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> Ret<(i64, Vec<u8>)> {
+    fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
         let data = call.payload.as_ref();
         if data.len() < 3 {
-            return errf!("deep delay vm payload too short")
+            return berrf!("deep delay vm payload too short");
         }
         let vol_add = data[0] as i64;
         let warm_add = data[1] as i64;
@@ -2431,7 +2833,7 @@ impl VM for AstDeepDelayVm {
         self.warmup
             .fetch_add(warm_add, std::sync::atomic::Ordering::SeqCst);
         if should_fail {
-            return errf!("deep delay vm forced fail")
+            return berruf!("deep delay vm forced fail");
         }
         Ok((0, vec![]))
     }
@@ -2439,12 +2841,14 @@ impl VM for AstDeepDelayVm {
 
 #[cfg(feature = "ast")]
 static AST_DEEP_DELAY_VM_HANDLES: std::sync::OnceLock<
-    std::sync::Mutex<Option<(
-        std::sync::Arc<std::sync::atomic::AtomicI64>,
-        std::sync::Arc<std::sync::atomic::AtomicI64>,
-        std::sync::Arc<std::sync::atomic::AtomicUsize>,
-        std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    )>>,
+    std::sync::Mutex<
+        Option<(
+            std::sync::Arc<std::sync::atomic::AtomicI64>,
+            std::sync::Arc<std::sync::atomic::AtomicI64>,
+            std::sync::Arc<std::sync::atomic::AtomicUsize>,
+            std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        )>,
+    >,
 > = std::sync::OnceLock::new();
 
 #[cfg(feature = "ast")]
@@ -2519,7 +2923,7 @@ impl FromJSON for AstTestDeepDelayVmInit {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmInit {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         ctx.vm_init_once(take_ast_deep_delay_vm())?;
         Ok((0, vec![]))
     }
@@ -2598,12 +3002,18 @@ impl FromJSON for AstTestDeepDelayVmCall {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmCall {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let payload = vec![*self.vol_add, *self.warm_add, *self.fail];
         let ctxptr = ctx as *mut dyn Context;
         let (gas, rv) = unsafe {
             let vm = (*ctxptr).vm() as *mut dyn VM;
-            (*vm).call(VMCall::new(&mut *ctxptr, 0, 0, payload.into(), Box::new(())))?
+            (*vm).call(VMCall::new(
+                &mut *ctxptr,
+                0,
+                0,
+                payload.into(),
+                Box::new(()),
+            ))?
         };
         Ok((gas, rv))
     }
@@ -2681,7 +3091,7 @@ impl FromJSON for AstTestVmInitFlip {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitFlip {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
         let non_nil = lock
             .lock()
@@ -2752,19 +3162,21 @@ impl VM for AstBugAssumeVm {
         }
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> Ret<(i64, Vec<u8>)> {
+    fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
         let data = call.payload.as_ref();
         if data.len() < 2 {
-            return errf!("ast bug assume vm payload too short")
+            return berrf!("ast bug assume vm payload too short");
         }
         let should_fail = data[0] != 0;
         let gas_cost = data[1] as i64;
-        self.remaining.fetch_sub(gas_cost, std::sync::atomic::Ordering::SeqCst);
+        self.remaining
+            .fetch_sub(gas_cost, std::sync::atomic::Ordering::SeqCst);
         self.volatile_mark += gas_cost;
         if should_fail {
-            return errf!("ast bug assume vm forced fail")
+            return berruf!("ast bug assume vm forced fail");
         }
-        self.burned.fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
+        self.burned
+            .fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
         Ok((gas_cost, vec![]))
     }
 }
@@ -2819,7 +3231,7 @@ impl FromJSON for AstTestBugVmCall {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestBugVmCall {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let payload = vec![*self.fail, *self.cost];
         let ctxptr = ctx as *mut dyn Context;
         let (gas, rv) = unsafe {
@@ -2872,18 +3284,26 @@ impl AstTestBugVmCall {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
     ctx.vm_init_once(vm).unwrap();
 
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestBugVmCall::fail(30)),
-        Box::new(AstTestBugVmCall::ok(5)),
-    ]);
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(AstTestBugVmCall::fail(30)),
+            Box::new(AstTestBugVmCall::ok(5)),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -2894,8 +3314,12 @@ fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -2913,18 +3337,26 @@ fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_control_all_success_children_no_burn_gap() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
     ctx.vm_init_once(vm).unwrap();
 
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestBugVmCall::ok(30)),
-        Box::new(AstTestBugVmCall::ok(5)),
-    ]);
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(AstTestBugVmCall::ok(30)),
+            Box::new(AstTestBugVmCall::ok(5)),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -2938,8 +3370,12 @@ fn test_ast_bug_control_all_success_children_no_burn_gap() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_control_min_zero_success_child_charged() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -2960,8 +3396,13 @@ fn test_ast_bug_control_min_zero_success_child_charged() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -3000,8 +3441,12 @@ fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_repeat_init_returns_error() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (mock_vm, _counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3014,15 +3459,21 @@ fn test_ast_vm_recover_repeat_init_returns_error() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_true_to_false_returns_error() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
     let non_nil = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     set_ast_recover_flip_handle(non_nil.clone());
-    ctx.vm_init_once(Box::new(AstRecoverFlipVm { non_nil })).unwrap();
+    ctx.vm_init_once(Box::new(AstRecoverFlipVm { non_nil }))
+        .unwrap();
 
     let act = AstSelect::create_by(0, 1, vec![Box::new(AstTestVmSetNilAndFail::new())]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -3033,8 +3484,13 @@ fn test_ast_vm_recover_true_to_false_returns_error() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_recoverable_rollback_warmup_kept() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -3073,10 +3529,7 @@ fn test_ast_vm_delay_init_deep_nested_recoverable_rollback_warmup_kept() {
     let act = AstSelect::create_by(
         1,
         2,
-        vec![
-            Box::new(middle),
-            Box::new(AstTestSet::create_by(167, 167)),
-        ],
+        vec![Box::new(middle), Box::new(AstTestSet::create_by(167, 167))],
     );
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -3097,8 +3550,13 @@ fn test_ast_vm_delay_init_deep_nested_recoverable_rollback_warmup_kept() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_success_commits_recoverables() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -3150,8 +3608,13 @@ fn test_ast_vm_delay_init_deep_nested_success_commits_recoverables() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_true_to_false_returns_error_and_no_leak() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -3181,8 +3644,13 @@ fn test_ast_vm_delay_init_deep_nested_true_to_false_returns_error_and_no_leak() 
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_kept() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -3250,15 +3718,25 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_depth6_recoverable_and_nonrecoverable_channels() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.fee = Amount::unit238(1_000_000);
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    protocol::operate::hac_add(&mut ctx, &field::ADDRESS_ONEX, &Amount::unit238(1_000_000_000)).unwrap();
+    protocol::operate::hac_add(
+        &mut ctx,
+        &field::ADDRESS_ONEX,
+        &Amount::unit238(1_000_000_000),
+    )
+    .unwrap();
     ctx.gas_init_tx(4000, 1).unwrap();
 
     let volatile = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
@@ -3298,10 +3776,7 @@ fn test_ast_vm_delay_init_depth6_recoverable_and_nonrecoverable_channels() {
     let root = AstSelect::create_by(
         1,
         2,
-        vec![
-            Box::new(lvl3),
-            Box::new(AstTestSet::create_by(233, 233)),
-        ],
+        vec![Box::new(lvl3), Box::new(AstTestSet::create_by(233, 233))],
     );
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -3323,15 +3798,25 @@ fn test_ast_vm_delay_init_depth6_recoverable_and_nonrecoverable_channels() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.fee = Amount::unit238(1_000_000);
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    protocol::operate::hac_add(&mut ctx, &field::ADDRESS_ONEX, &Amount::unit238(1_000_000_000)).unwrap();
+    protocol::operate::hac_add(
+        &mut ctx,
+        &field::ADDRESS_ONEX,
+        &Amount::unit238(1_000_000_000),
+    )
+    .unwrap();
     ctx.gas_init_tx(2000, 1).unwrap();
 
     let volatile = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
@@ -3375,15 +3860,25 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_layered_with_mid_vm_failure_recoverable_and_warmup_monotonic() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.fee = Amount::unit238(1_000_000);
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    protocol::operate::hac_add(&mut ctx, &field::ADDRESS_ONEX, &Amount::unit238(1_000_000_000)).unwrap();
+    protocol::operate::hac_add(
+        &mut ctx,
+        &field::ADDRESS_ONEX,
+        &Amount::unit238(1_000_000_000),
+    )
+    .unwrap();
     ctx.gas_init_tx(2000, 1).unwrap();
 
     let volatile = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
@@ -3436,25 +3931,36 @@ fn test_ast_layered_with_mid_vm_failure_recoverable_and_warmup_monotonic() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balance() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let _guard = ast_test_global_guard();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType2::TYPE);
     tx.gas_max = Uint1::from(17);
     tx.fee = Amount::unit238(1_000_000);
-    tx.actions.push(Box::new(AstSelect::create_list(vec![
-        Box::new(AstTestSet::create_by(201, 201)),
-    ]))).unwrap();
-    tx.actions.push(Box::new(AstSelect::create_list(vec![
-        Box::new(AstTestDeepDelayVmInit::new()),
-        Box::new(AstTestDeepDelayVmCall::create_by(1, 1, 0)),
-    ]))).unwrap();
-    tx.actions.push(Box::new(AstIf::create_by(
-        AstSelect::create_list(vec![Box::new(AstTestDeepDelayVmCall::create_by(2, 1, 0))]),
-        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(202, 202))]),
-        AstSelect::nop(),
-    ))).unwrap();
+    tx.actions
+        .push(Box::new(AstSelect::create_list(vec![Box::new(
+            AstTestSet::create_by(201, 201),
+        )])))
+        .unwrap();
+    tx.actions
+        .push(Box::new(AstSelect::create_list(vec![
+            Box::new(AstTestDeepDelayVmInit::new()),
+            Box::new(AstTestDeepDelayVmCall::create_by(1, 1, 0)),
+        ])))
+        .unwrap();
+    tx.actions
+        .push(Box::new(AstIf::create_by(
+            AstSelect::create_list(vec![Box::new(AstTestDeepDelayVmCall::create_by(2, 1, 0))]),
+            AstSelect::create_list(vec![Box::new(AstTestSet::create_by(202, 202))]),
+            AstSelect::nop(),
+        )))
+        .unwrap();
 
     let main = tx.main();
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = main;
     env.tx.addrs = vec![main];
@@ -3490,7 +3996,10 @@ fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balanc
 #[cfg(feature = "ast")]
 #[test]
 fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType2::TYPE);
     tx.gas_max = Uint1::from(17);
     tx.fee = Amount::unit238(1_000_000);
@@ -3503,7 +4012,8 @@ fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
         .unwrap();
 
     let main = tx.main();
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     env.tx.main = main;
     env.tx.addrs = vec![main];
@@ -3518,9 +4028,15 @@ fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
     let after = ast_hac_balance(&mut ctx, &main);
 
     let used = ctx.ctx_gas_used_charge().unwrap();
-    assert!(used.is_positive(), "failed tx should still consume gas via AST snapshots");
+    assert!(
+        used.is_positive(),
+        "failed tx should still consume gas via AST snapshots"
+    );
 
-    assert!(after >= Amount::zero(), "failed tx should keep a valid balance amount");
+    assert!(
+        after >= Amount::zero(),
+        "failed tx should keep a valid balance amount"
+    );
 }
 
 // PLACEHOLDER_VM_TESTS
@@ -3540,11 +4056,19 @@ impl Parse for AstTestMainSet {
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestMainSet {
-    fn serialize(&self) -> Vec<u8> { [self.key.serialize(), self.val.serialize()].concat() }
-    fn size(&self) -> usize { self.key.size() + self.val.size() }
+    fn serialize(&self) -> Vec<u8> {
+        [self.key.serialize(), self.val.serialize()].concat()
+    }
+    fn size(&self) -> usize {
+        self.key.size() + self.val.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestMainSet { fn new() -> Self { Self::default() } }
+impl Field for AstTestMainSet {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestMainSet {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
@@ -3571,7 +4095,7 @@ impl FromJSON for AstTestMainSet {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainSet {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         Ok((0, vec![]))
     }
@@ -3580,9 +4104,15 @@ impl ActExec for AstTestMainSet {
 impl Description for AstTestMainSet {}
 #[cfg(feature = "ast")]
 impl Action for AstTestMainSet {
-    fn kind(&self) -> u16 { 65011 }
-    fn level(&self) -> ActLv { ActLv::MainCall }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65011
+    }
+    fn level(&self) -> ActLv {
+        ActLv::MainCall
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestMainSet {
@@ -3601,15 +4131,25 @@ struct AstTestMainP2shSetN {
 }
 #[cfg(feature = "ast")]
 impl Parse for AstTestMainP2shSetN {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> { self.addr_byte.parse(buf) }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.addr_byte.parse(buf)
+    }
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestMainP2shSetN {
-    fn serialize(&self) -> Vec<u8> { self.addr_byte.serialize() }
-    fn size(&self) -> usize { self.addr_byte.size() }
+    fn serialize(&self) -> Vec<u8> {
+        self.addr_byte.serialize()
+    }
+    fn size(&self) -> usize {
+        self.addr_byte.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestMainP2shSetN { fn new() -> Self { Self::default() } }
+impl Field for AstTestMainP2shSetN {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestMainP2shSetN {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
@@ -3630,7 +4170,7 @@ impl FromJSON for AstTestMainP2shSetN {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainP2shSetN {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
         ctx.p2sh_set(adr, Box::new(AstTestP2shImpl))?;
         Ok((0, vec![]))
@@ -3640,13 +4180,23 @@ impl ActExec for AstTestMainP2shSetN {
 impl Description for AstTestMainP2shSetN {}
 #[cfg(feature = "ast")]
 impl Action for AstTestMainP2shSetN {
-    fn kind(&self) -> u16 { 65012 }
-    fn level(&self) -> ActLv { ActLv::MainCall }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65012
+    }
+    fn level(&self) -> ActLv {
+        ActLv::MainCall
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestMainP2shSetN {
-    fn create_by(n: u8) -> Self { Self { addr_byte: Uint1::from(n) } }
+    fn create_by(n: u8) -> Self {
+        Self {
+            addr_byte: Uint1::from(n),
+        }
+    }
 }
 
 #[cfg(feature = "ast")]
@@ -3656,26 +4206,40 @@ struct AstTestMainVMCall {
 }
 #[cfg(feature = "ast")]
 impl Parse for AstTestMainVMCall {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> { self.increment.parse(buf) }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.increment.parse(buf)
+    }
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestMainVMCall {
-    fn serialize(&self) -> Vec<u8> { self.increment.serialize() }
-    fn size(&self) -> usize { self.increment.size() }
+    fn serialize(&self) -> Vec<u8> {
+        self.increment.serialize()
+    }
+    fn size(&self) -> usize {
+        self.increment.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestMainVMCall { fn new() -> Self { Self::default() } }
+impl Field for AstTestMainVMCall {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestMainVMCall {
-    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String { "{}".to_owned() }
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        "{}".to_owned()
+    }
 }
 #[cfg(feature = "ast")]
 impl FromJSON for AstTestMainVMCall {
-    fn from_json(&mut self, _json: &str) -> Ret<()> { Ok(()) }
+    fn from_json(&mut self, _json: &str) -> Ret<()> {
+        Ok(())
+    }
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainVMCall {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         let snap = ctx.vm().snapshot_volatile();
         if let Ok(cur) = snap.downcast::<i64>() {
             let new_val = *cur + *self.increment as i64;
@@ -3688,13 +4252,23 @@ impl ActExec for AstTestMainVMCall {
 impl Description for AstTestMainVMCall {}
 #[cfg(feature = "ast")]
 impl Action for AstTestMainVMCall {
-    fn kind(&self) -> u16 { 65013 }
-    fn level(&self) -> ActLv { ActLv::MainCall }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65013
+    }
+    fn level(&self) -> ActLv {
+        ActLv::MainCall
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestMainVMCall {
-    fn create_by(inc: u8) -> Self { Self { increment: Uint1::from(inc) } }
+    fn create_by(inc: u8) -> Self {
+        Self {
+            increment: Uint1::from(inc),
+        }
+    }
 }
 
 #[cfg(feature = "ast")]
@@ -3704,15 +4278,25 @@ struct AstTestRet {
 }
 #[cfg(feature = "ast")]
 impl Parse for AstTestRet {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> { self.tag.parse(buf) }
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        self.tag.parse(buf)
+    }
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestRet {
-    fn serialize(&self) -> Vec<u8> { self.tag.serialize() }
-    fn size(&self) -> usize { self.tag.size() }
+    fn serialize(&self) -> Vec<u8> {
+        self.tag.serialize()
+    }
+    fn size(&self) -> usize {
+        self.tag.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestRet { fn new() -> Self { Self::default() } }
+impl Field for AstTestRet {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestRet {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
@@ -3733,7 +4317,7 @@ impl FromJSON for AstTestRet {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestRet {
-    fn execute(&self, _ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         Ok((0, vec![*self.tag]))
     }
 }
@@ -3741,13 +4325,23 @@ impl ActExec for AstTestRet {
 impl Description for AstTestRet {}
 #[cfg(feature = "ast")]
 impl Action for AstTestRet {
-    fn kind(&self) -> u16 { 65014 }
-    fn level(&self) -> ActLv { ActLv::Ast }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65014
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestRet {
-    fn create_by(tag: u8) -> Self { Self { tag: Uint1::from(tag) } }
+    fn create_by(tag: u8) -> Self {
+        Self {
+            tag: Uint1::from(tag),
+        }
+    }
 }
 
 #[cfg(feature = "ast")]
@@ -3784,7 +4378,11 @@ impl Serialize for AstTestMutateAllFail {
     }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestMutateAllFail { fn new() -> Self { Self::default() } }
+impl Field for AstTestMutateAllFail {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestMutateAllFail {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
@@ -3817,7 +4415,7 @@ impl FromJSON for AstTestMutateAllFail {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMutateAllFail {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         ctx.tex_ledger().zhu += *self.val as i64;
         ctx.logs().push(&self.key);
@@ -3828,16 +4426,22 @@ impl ActExec for AstTestMutateAllFail {
             let new_val = *cur + *self.vm_add as i64;
             ctx.vm().restore_volatile(Box::new(new_val));
         }
-        errf!("ast test mutate-all fail")
+        berruf!("ast test mutate-all fail")
     }
 }
 #[cfg(feature = "ast")]
 impl Description for AstTestMutateAllFail {}
 #[cfg(feature = "ast")]
 impl Action for AstTestMutateAllFail {
-    fn kind(&self) -> u16 { 65015 }
-    fn level(&self) -> ActLv { ActLv::MainCall }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65015
+    }
+    fn level(&self) -> ActLv {
+        ActLv::MainCall
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestMutateAllFail {
@@ -3855,8 +4459,12 @@ impl AstTestMutateAllFail {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_state_restored_on_select_child_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3865,14 +4473,19 @@ fn test_ast_vm_state_restored_on_select_child_failure() {
 
     // child1: vm += 5, succeed
     // child2: vm += 10, then fail -> vm should be rolled back to 5
-    let inner_fail = AstSelect::create_by(2, 2, vec![
-        Box::new(AstTestVMCall::create_by(10)),
-        Box::new(AstTestFail::new()),
-    ]);
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestVMCall::create_by(5)),
-        Box::new(inner_fail),
-    ]);
+    let inner_fail = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestVMCall::create_by(10)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![Box::new(AstTestVMCall::create_by(5)), Box::new(inner_fail)],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -3883,8 +4496,12 @@ fn test_ast_vm_state_restored_on_select_child_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3895,10 +4512,14 @@ fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
     // whole_snap recover should restore vm to 0
     let astif = AstIf::create_by(
         AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(3))]),
-        AstSelect::create_by(2, 2, vec![
-            Box::new(AstTestVMCall::create_by(7)),
-            Box::new(AstTestFail::new()),
-        ]),
+        AstSelect::create_by(
+            2,
+            2,
+            vec![
+                Box::new(AstTestVMCall::create_by(7)),
+                Box::new(AstTestFail::new()),
+            ],
+        ),
         AstSelect::nop(),
     );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -3911,8 +4532,12 @@ fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_state_committed_on_success() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3935,8 +4560,12 @@ fn test_ast_vm_state_committed_on_success() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_all_five_channels_restored_on_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -3948,9 +4577,9 @@ fn test_ast_all_five_channels_restored_on_failure() {
     // All channels modified, then fail
     let astif = AstIf::create_by(
         AstSelect::create_list(vec![
-            Box::new(AstTestCombo::create_by(110, 10)),  // state + tex + log
-            Box::new(AstTestVMCall::create_by(5)),       // vm
-            Box::new(AstTestP2shSetN::create_by(70)),    // p2sh
+            Box::new(AstTestCombo::create_by(110, 10)), // state + tex + log
+            Box::new(AstTestVMCall::create_by(5)),      // vm
+            Box::new(AstTestP2shSetN::create_by(70)),   // p2sh
         ]),
         AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]), // force fail
         AstSelect::nop(),
@@ -3970,8 +4599,12 @@ fn test_ast_all_five_channels_restored_on_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3987,11 +4620,15 @@ fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
         AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]),
         AstSelect::nop(),
     );
-    let act = AstSelect::create_by(2, 3, vec![
-        Box::new(AstTestVMCall::create_by(10)),
-        Box::new(inner_if),
-        Box::new(AstTestVMCall::create_by(30)),
-    ]);
+    let act = AstSelect::create_by(
+        2,
+        3,
+        vec![
+            Box::new(AstTestVMCall::create_by(10)),
+            Box::new(inner_if),
+            Box::new(AstTestVMCall::create_by(30)),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -4017,15 +4654,27 @@ impl Parse for AstTestExtCall {
 }
 #[cfg(feature = "ast")]
 impl Serialize for AstTestExtCall {
-    fn serialize(&self) -> Vec<u8> { [self.key.serialize(), self.val.serialize()].concat() }
-    fn size(&self) -> usize { self.key.size() + self.val.size() }
+    fn serialize(&self) -> Vec<u8> {
+        [self.key.serialize(), self.val.serialize()].concat()
+    }
+    fn size(&self) -> usize {
+        self.key.size() + self.val.size()
+    }
 }
 #[cfg(feature = "ast")]
-impl Field for AstTestExtCall { fn new() -> Self { Self::default() } }
+impl Field for AstTestExtCall {
+    fn new() -> Self {
+        Self::default()
+    }
+}
 #[cfg(feature = "ast")]
 impl ToJSON for AstTestExtCall {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
-        format!("{{\"key\":{},\"val\":{}}}", self.key.to_json_fmt(fmt), self.val.to_json_fmt(fmt))
+        format!(
+            "{{\"key\":{},\"val\":{}}}",
+            self.key.to_json_fmt(fmt),
+            self.val.to_json_fmt(fmt)
+        )
     }
 }
 #[cfg(feature = "ast")]
@@ -4033,15 +4682,18 @@ impl FromJSON for AstTestExtCall {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
         for (k, v) in pairs {
-            if k == "key" { self.key.from_json(v)?; }
-            else if k == "val" { self.val.from_json(v)?; }
+            if k == "key" {
+                self.key.from_json(v)?;
+            } else if k == "val" {
+                self.val.from_json(v)?;
+            }
         }
         Ok(())
     }
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestExtCall {
-    fn execute(&self, ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         // Simulate what EXTACTION does: modify state through ctx_action_call path.
         // We directly set state here since ctx_action_call ultimately calls action.execute(ctx).
         ctx.state().set(vec![*self.key], vec![*self.val]);
@@ -4054,14 +4706,23 @@ impl ActExec for AstTestExtCall {
 impl Description for AstTestExtCall {}
 #[cfg(feature = "ast")]
 impl Action for AstTestExtCall {
-    fn kind(&self) -> u16 { 65010 }
-    fn level(&self) -> ActLv { ActLv::Ast }
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn kind(&self) -> u16 {
+        65010
+    }
+    fn level(&self) -> ActLv {
+        ActLv::Ast
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 #[cfg(feature = "ast")]
 impl AstTestExtCall {
     fn create_by(key: u8, val: u8) -> Self {
-        Self { key: Uint1::from(key), val: Uint1::from(val) }
+        Self {
+            key: Uint1::from(key),
+            val: Uint1::from(val),
+        }
     }
 }
 
@@ -4069,22 +4730,34 @@ impl AstTestExtCall {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_extcall_state_rolled_back_on_select_child_failure() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
     // child1: extcall sets key=120 val=1, sat+=1, ok
     // child2: extcall sets key=121 val=2, sat+=2, then fail -> rolled back
-    let inner_fail = AstSelect::create_by(2, 2, vec![
-        Box::new(AstTestExtCall::create_by(121, 2)),
-        Box::new(AstTestFail::new()),
-    ]);
-    let act = AstSelect::create_by(1, 2, vec![
-        Box::new(AstTestExtCall::create_by(120, 1)),
-        Box::new(inner_fail),
-    ]);
+    let inner_fail = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestExtCall::create_by(121, 2)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(AstTestExtCall::create_by(120, 1)),
+            Box::new(inner_fail),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     act.execute(&mut ctx).unwrap();
 
@@ -4097,8 +4770,12 @@ fn test_ast_extcall_state_rolled_back_on_select_child_failure() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_sequential_accumulation() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -4112,10 +4789,14 @@ fn test_ast_vm_sequential_accumulation() {
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 3);
 
     // Op2: select(vm += 7, fail) -> fail, counter stays 3
-    let act2 = AstSelect::create_by(2, 2, vec![
-        Box::new(AstTestVMCall::create_by(7)),
-        Box::new(AstTestFail::new()),
-    ]);
+    let act2 = AstSelect::create_by(
+        2,
+        2,
+        vec![
+            Box::new(AstTestVMCall::create_by(7)),
+            Box::new(AstTestFail::new()),
+        ],
+    );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let _ = act2.execute(&mut ctx);
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 3);
@@ -4136,8 +4817,12 @@ fn test_ast_vm_sequential_accumulation() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_3level_all_channels() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -4165,10 +4850,7 @@ fn test_ast_deep_3level_all_channels() {
             Box::new(AstTestVMCall::create_by(2)),
             Box::new(AstTestP2shSetN::create_by(80)),
         ]),
-        AstSelect::create_list(vec![
-            Box::new(lvl2),
-            Box::new(AstTestTexAdd::create_by(5)),
-        ]),
+        AstSelect::create_list(vec![Box::new(lvl2), Box::new(AstTestTexAdd::create_by(5))]),
         AstSelect::nop(),
     );
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -4188,10 +4870,14 @@ fn test_ast_deep_3level_all_channels() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
 
     let (mock_vm, counter) = MockVM::create();
@@ -4234,10 +4920,14 @@ fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
 
     let (mock_vm, counter) = MockVM::create();
@@ -4266,7 +4956,7 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
         3,
         vec![
             Box::new(AstTestMainVMCall::create_by(5)),    // success #1
-            Box::new(nested_if_fail),                      // fail, must be isolated
+            Box::new(nested_if_fail),                     // fail, must be isolated
             Box::new(AstTestMainP2shSetN::create_by(93)), // success #2
         ],
     );
@@ -4285,10 +4975,14 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
 
     let (mock_vm, counter) = MockVM::create();
@@ -4341,8 +5035,12 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_num_over_tx_actions_max_rejected_no_leak() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4368,8 +5066,12 @@ fn test_ast_select_num_over_tx_actions_max_rejected_no_leak() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_max_zero_executes_no_children() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -4398,8 +5100,12 @@ fn test_ast_select_max_zero_executes_no_children() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_returns_last_success_result_bytes() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4422,8 +5128,12 @@ fn test_ast_select_returns_last_success_result_bytes() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_returns_selected_branch_result_and_restores_level() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4444,8 +5154,12 @@ fn test_ast_if_returns_selected_branch_result_and_restores_level() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_error_restores_ctx_level() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4472,21 +5186,21 @@ fn test_ast_if_error_restores_ctx_level() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
     let astif = AstIf::create_by(
         // invalid cond: min > max, should return Err and execute else branch
-        AstSelect::create_by(
-            2,
-            1,
-            vec![Box::new(AstTestMainSet::create_by(246, 246))],
-        ),
+        AstSelect::create_by(2, 1, vec![Box::new(AstTestMainSet::create_by(246, 246))]),
         AstSelect::create_list(vec![Box::new(AstTestMainSet::create_by(247, 247))]),
         AstSelect::create_list(vec![Box::new(AstTestMainSet::create_by(248, 248))]),
     );
@@ -4503,10 +5217,14 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -4516,9 +5234,9 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
     ctx.tex_ledger().zhu = 10;
 
     let child_ok = AstSelect::create_list(vec![
-        Box::new(AstTestCombo::create_by(249, 2)),       // state + tex + log
-        Box::new(AstTestMainP2shSetN::create_by(97)),    // p2sh
-        Box::new(AstTestMainVMCall::create_by(3)),       // vm
+        Box::new(AstTestCombo::create_by(249, 2)), // state + tex + log
+        Box::new(AstTestMainP2shSetN::create_by(97)), // p2sh
+        Box::new(AstTestMainVMCall::create_by(3)), // vm
     ]);
     let child_fail = AstTestMutateAllFail::create_by(250, 5, 98, 7); // all channels mutate then Err
     let act = AstSelect::create_by(1, 2, vec![Box::new(child_ok), Box::new(child_fail)]);
@@ -4539,10 +5257,14 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -4595,8 +5317,12 @@ fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_num_eq_tx_actions_max_allowed() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4616,8 +5342,12 @@ fn test_ast_select_num_eq_tx_actions_max_allowed() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_error_restores_ctx_level() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4633,8 +5363,12 @@ fn test_ast_select_error_restores_ctx_level() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_nop_takes_if_branch() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4655,8 +5389,12 @@ fn test_ast_if_cond_nop_takes_if_branch() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_tree_depth_exact_6_is_allowed() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
@@ -4677,10 +5415,14 @@ fn test_ast_tree_depth_exact_6_is_allowed() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -4727,10 +5469,14 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.actions.push(Box::new(AstSelect::nop())).unwrap();
 
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = false; // keep check_action_level enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
@@ -4747,11 +5493,7 @@ fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
             Box::new(AstTestMainP2shSetN::create_by(107)),
             Box::new(AstTestMainVMCall::create_by(4)),
         ]),
-        AstSelect::create_by(
-            3,
-            1,
-            vec![Box::new(AstTestMainSet::create_by(216, 216))],
-        ),
+        AstSelect::create_by(3, 1, vec![Box::new(AstTestMainSet::create_by(216, 216))]),
         AstSelect::nop(),
     );
 
@@ -4771,17 +5513,17 @@ fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_nested_invalid_select_isolated() {
-    let mut tx = TransactionType2::default(); tx.fee = Amount::unit238(1000); tx.addrlist = AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default(); env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
+    let mut tx = TransactionType2::default();
+    tx.fee = Amount::unit238(1000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    let mut env = Env::default();
+    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
-    let bad_nested = AstSelect::create_by(
-        2,
-        1,
-        vec![Box::new(AstTestSet::create_by(217, 217))],
-    );
+    let bad_nested = AstSelect::create_by(2, 1, vec![Box::new(AstTestSet::create_by(217, 217))]);
     let outer = AstSelect::create_by(
         1,
         2,

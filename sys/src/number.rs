@@ -21,6 +21,11 @@ pub const UINT_MAX_DEFS: [u64; 9] = [
     UINT_MAX_W8,
 ];
 
+#[inline]
+pub fn gas_add(gas: &mut i64, spent: i64) {
+    *gas = gas.saturating_add(spent);
+}
+
 
 // bytes <=> uint common fn
 

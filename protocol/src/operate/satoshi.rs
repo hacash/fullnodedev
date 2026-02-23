@@ -6,7 +6,7 @@ macro_rules! satoshi_operate_define {
         pub fn $func_name(ctx: &mut dyn Context, $addr: &Address, $sat: &Satoshi) -> Ret<Satoshi> {
             $addr.check_version()?;
             if $sat.uint() == 0 {
-                return errf!("satoshi value cannot be zero")
+                return erruf!("satoshi value cannot be zero")
             }    
             let mut state = CoreState::wrap(ctx.state());
             let mut userbls = state.balance( $addr ).unwrap_or_default();
@@ -34,7 +34,7 @@ satoshi_operate_define!(sat_add, addr, sat, oldsat, {
 satoshi_operate_define!(sat_sub, addr, sat, oldsat, {  
     // check
     if *oldsat < *sat {
-        return errf!("address {} satoshi {} is insufficient, at least {}", 
+        return erruf!("address {} satoshi {} is insufficient, at least {}", 
             addr, oldsat, sat)
     }
     // do sub
@@ -49,7 +49,7 @@ satoshi_operate_define!(sat_sub, addr, sat, oldsat, {
 pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &Satoshi
 ) -> Ret<Vec<u8>> {
     if from == to {
-		return errf!("cannot trs to self")
+		return erruf!("cannot trs to self")
     }
     /*p2sh check*/
     #[cfg(not(feature = "vm"))]
@@ -69,7 +69,7 @@ pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &S
 pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Satoshi> {
     addr.check_version()?;
     if sat.uint() == 0 {
-        return errf!("check satoshi is cannot empty")
+        return erruf!("check satoshi is cannot empty")
     }
     let state = CoreState::wrap(ctx.state());
     if let Some(bls) = state.balance( addr ) {
@@ -78,7 +78,7 @@ pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Sa
             return Ok(usrsat)
         }
     }
-    errf!("address {} satoshi is insufficient", addr)
+    erruf!("address {} satoshi is insufficient", addr)
 }
 
 

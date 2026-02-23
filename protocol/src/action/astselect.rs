@@ -1,5 +1,4 @@
-
-action_define!{ AstSelect, 25, 
+action_define! { AstSelect, 25,
     ActLv::Ast, // level
     // burn 90 fee, check any sub child action
     self.actions.as_list().iter().any(|a|a.burn_90()),
@@ -9,7 +8,7 @@ action_define!{ AstSelect, 25,
         exe_max: Uint1
         actions: DynListActionW1
     },
-    (self, format!("Execute select {} to {} in {} actions", 
+    (self, format!("Execute select {} to {} in {} actions",
         *self.exe_min, *self.exe_max, self.actions.length())),
     (self, ctx, gas {
         #[cfg(not(feature = "ast"))]
@@ -25,13 +24,13 @@ action_define!{ AstSelect, 25,
         let slt_num = self.actions.length();
         // check number before snapshot to avoid state fork leak on early return
         if slt_min > slt_max {
-            return errf!("action ast select max cannot less than min")
+            return erruf!("action ast select max cannot less than min")
         }
         if slt_max > slt_num {
-            return errf!("action ast select max cannot more than list num")
+            return erruf!("action ast select max cannot more than list num")
         }
         if slt_num > TX_ACTIONS_MAX {
-            return errf!("action ast select num cannot more than {}", TX_ACTIONS_MAX)
+            return erruf!("action ast select num cannot more than {}", TX_ACTIONS_MAX)
         }
         let whole_snap = ctx_snapshot(ctx)?;
         // execute
@@ -43,18 +42,18 @@ action_define!{ AstSelect, 25,
             }
             let snap_before = ctx.gas_remaining();
             let snap = ast_item_snapshot(ctx)?;
-            gas = gas.saturating_add(ast_gas_spent_delta(ctx, snap_before));
+            gas_add(&mut gas, ast_gas_spent_delta(ctx, snap_before));
             let gas_before = ctx.gas_remaining();
             let exec_res = act.execute(ctx);
             let shared = ast_gas_spent_delta(ctx, gas_before);
-            gas = gas.saturating_add(shared);
+            gas_add(&mut gas, shared);
             match exec_res {
                 Ok((child_gas, r)) => {
                     if child_gas < 0 {
                         return errf!("negative returned gas: {}", child_gas)
                     }
                     let extra = child_gas.saturating_sub(shared).max(0);
-                    gas = gas.saturating_add(extra);
+                    gas_add(&mut gas, extra);
                     rv = r;
                     ok += 1;
                     ctx_merge(ctx, snap);
@@ -63,7 +62,7 @@ action_define!{ AstSelect, 25,
                     ctx_recover(ctx, snap)?;
                     if e.is_unrecoverable() {
                         ctx_recover(ctx, whole_snap)?;
-                        return errf!("{}", e.as_str())
+                        return ast_rethrow(e)
                     }
                 }
             }
@@ -71,7 +70,7 @@ action_define!{ AstSelect, 25,
         // check at least
         if ok < slt_min {
             ctx_recover(ctx, whole_snap)?;
-            return errf!("action ast select must succeed at least {} but only {}", slt_min, ok)
+            return erruf!("action ast select must succeed at least {} but only {}", slt_min, ok)
         }
         // ok
         ctx_merge(ctx, whole_snap);
@@ -79,10 +78,7 @@ action_define!{ AstSelect, 25,
     })
 }
 
-
-
 impl AstSelect {
-
     pub fn nop() -> Self {
         Self::new()
     }
@@ -123,5 +119,4 @@ impl AstSelect {
         }
         req
     }
-
 }

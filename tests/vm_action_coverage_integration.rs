@@ -14,7 +14,7 @@ mod action_coverage {
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
     use protocol::transaction::TransactionType3;
-    use sys::{Account, Ret};
+    use sys::{Account, BRet, Ret};
     use testkit::sim::integration::{
         make_ctx_from_tx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
         vm_alt_addr as alt_addr, vm_main_addr as main_addr,
@@ -97,7 +97,7 @@ mod action_coverage {
         codes
     }
 
-    fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(i64, Vec<u8>)> {
+    fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> BRet<(i64, Vec<u8>)> {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         // Provide generous protocol fee to cover any contract size
@@ -264,7 +264,10 @@ mod action_coverage {
         act.ctype = Uint1::from(99); // invalid code type
         act.codes = BytesW2::from(vec![Bytecode::END as u8]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.to_lowercase().contains("code type") || err.contains("CodeType"), "{err}");
+        assert!(
+            err.as_str().to_lowercase().contains("code type") || err.contains("CodeType"),
+            "{err}"
+        );
     }
 
     #[test]

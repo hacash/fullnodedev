@@ -18,10 +18,10 @@ action_define!{ HeightScope, 0x0411,
             h => h,
         };
         if left > right {
-            return errf!("left height {} cannot big than rigth height {}", left, right)
+            return erruf!("left height {} cannot big than rigth height {}", left, right)
         }
         if pdhei < left || pdhei > right {
-            return errf!("transction must submit in height between {} and {}", left, right)
+            return erruf!("transction must submit in height between {} and {}", left, right)
         }
         // ok
         Ok(vec![])
@@ -45,7 +45,7 @@ action_define!{ ChainAllow, 0x0412,
         let ids = self.chains.as_list();
         if ! ids.iter().any(|id| id.uint() == cid) {
             let cids = cids_to_str!(ids);
-            return errf!("transction must belong to chains {} but on chain {}", cids, cid)
+            return erruf!("transction must belong to chains {} but on chain {}", cids, cid)
         }
         // ok
         Ok(vec![])

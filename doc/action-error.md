@@ -17,8 +17,11 @@ This separation enables:
 ## 2. Error model and signaling
 
 - `BRet<T> = Result<T, BError>` and `BRerr = Result<(), BError>` are the typed error carriers.
-- `BError::Recoverable(msg)` means business/runtime failure that can be handled by caller logic.
-- `BError::Unrecoverable(msg)` means hard failure and must stop the current execution path.
+- `BError::Unwind(msg)` means business/runtime failure that can be handled by caller logic.
+- `BError::Interrupt(msg)` means hard failure and must stop the current execution path.
+- Wire protocol between `Ret<String>` and `BRet<BError>`:
+  - Recoverable: `"[UNWIND] " + msg`
+  - Unrecoverable: plain message with no prefix
 
 In action code:
 
@@ -63,8 +66,7 @@ External action bridge:
 
 `ExtActCallError` uses dynamic prefix classification:
 
-- `Recoverable: ...` => recoverable.
-- `Unrecoverable: ...` => unrecoverable.
+- `[UNWIND] ...` => recoverable.
 - No explicit prefix => unrecoverable by default.
 
 Why recoverable:
@@ -124,43 +126,72 @@ Use this strict split in all action implementations:
 
 This keeps action semantics aligned with VM and snapshot rollback strategy.
 
-## 6. Explicit classification (business vs system)
+## 6. One-to-one recoverable checklist
 
-### 6.1 Business errors (recoverable)
+This checklist is the authoritative reference for recoverable errors.
 
-Only the following are business errors and recoverable:
+### 6.0 Guard Action checks/judgement failures
 
-- State-data business failures (balance/transfer state constraint failures).
-- All state-data checks and state operation failures.
-- Guard-action decision failures.
-- VM opcode explicit throw/return failures (`ThrowAbort`).
-- `ExtActCallError` with explicit `Recoverable: ...` prefix.
+- `HeightScope`: invalid range / out-of-range height check failure.
+- `ChainAllow`: chain-id allowlist check failure.
+- Guard-level judgement failures in Guard actions use explicit recoverable signaling.
 
-### 6.2 System errors (unrecoverable)
+### 6.1 HAC/HACD/BTC/ASSET state failures
 
-Everything else is system error and unrecoverable, including:
+- HAC: amount non-positive, insufficient balance, balance check insufficient.
+	- module: `protocol/src/operate/hacash.rs`
+- BTC(Satoshi): amount empty/zero, insufficient satoshi, transfer self-denied.
+	- module: `protocol/src/operate/satoshi.rs`
+- ASSET: amount empty/zero, insufficient asset, transfer self-denied.
+	- module: `protocol/src/operate/asset.rs`
+- HACD: insufficient diamond number, transfer self-denied, ownership/status mismatch (`not belong`, mortgaged/not transferable), owned-form missing.
+	- module: `protocol/src/operate/diamond.rs`
 
-- VM control-flow/bounds failures.
-- Instruction permission/context failures.
-- Execution-time resource failures.
-- Runtime subsystem operation failures.
-- Call semantic failures.
-- Type/cast/data-shape failures.
-- Composite-data operation failures.
-- Arithmetic/native/data utility failures.
-- Storage constraint failures.
-- `Action::execute` framework/policy/usage failures (feature, height gate, kind/range limits, meta validation, protocol fee/rule checks, snapshot/gas accounting anomalies).
-- `ExtActCallError` with `Unrecoverable: ...` or without explicit prefix.
+### 6.2 Channel insufficient balance on open
 
-## 7. Current recoverable list (audited)
+- `ChannelOpen` fails via HAC balance debit path (`hac_sub`) when either side is insufficient.
+	- module: `mint/src/action/channel.rs` + `protocol/src/operate/hacash.rs`
 
-Current code-level recoverable points are:
+### 6.3 `maincall` / `p2shcall` / `abstcall` return error codes
 
-- State operation check/failure paths in `protocol/src/operate` (hacash/satoshi/asset/diamond modules).
-- `ThrowAbort` path from VM return error throw.
-- `ExtActCallError` only when downstream error text is explicitly prefixed with `Recoverable: `.
+Recoverable here means: `Machine::main_call`, `Machine::p2sh_call`, and
+`Machine::abst_call` fail in `check_vm_return_value` because the return value is
+non-zero (error code).
 
-Current code scan result:
+Rule:
 
-- State operation modules now emit explicit recoverable errors for state checks and operation failures.
-- Recoverable behavior additionally includes VM throw (`ThrowAbort`) and external-call explicit recoverable prefixing.
+- Only `nil` or `0` is success.
+- Any non-zero return value is treated as business error code and recoverable.
+
+Mapping location:
+
+- `vm/src/machine/setup.rs` (`check_vm_return_value`)
+- `vm/src/machine/machine.rs` (`main_call` / `p2sh_call` / `abst_call` call sites)
+
+### 6.4 Contract-thrown errors by AST / ERR / ABT bytecode
+
+- VM frame converts `Abort|Throw` exits into `ThrowAbort`.
+- `ThrowAbort` is classified as recoverable.
+
+Mapping location:
+
+- `vm/src/frame/call.rs`
+- `vm/src/rt/error.rs`
+
+### 6.5 Ext action recoverability pass-through
+
+- `ExtActCallError` with `[UNWIND] ` => recoverable.
+- `ExtActCallError` without explicit prefix => unrecoverable.
+
+Mapping location:
+
+- `vm/src/interpreter/execute.rs` (error passthrough source)
+- `vm/src/rt/error.rs` (classification sink)
+
+## 7. Additional business-failure candidates (optional)
+
+Potentially recoverable if product policy confirms:
+
+- Explicit business quota/limit exceeded.
+- Idempotent duplicate-request rejection.
+- Business-state transition denied (without protocol-format violation).

@@ -352,7 +352,7 @@ fn diamond_inscription_rejects_non_privakey_owner() {
     act.engraved_type = Uint1::from(1);
     act.engraved_content = BytesW1::from_str("hello").unwrap();
     let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.to_lowercase().contains("privakey"), "{}", err);
+    assert!(err.as_str().to_lowercase().contains("privakey"), "{}", err);
 }
 
 #[cfg(all(feature = "hip22", feature = "ast"))]

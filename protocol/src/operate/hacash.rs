@@ -3,7 +3,7 @@ use std::vec;
 macro_rules! check_amount_is_positive {
     ($amt:expr) => {
         if ! $amt.is_positive() {
-            return errf!("amount {} value is not positive", $amt)
+            return erruf!("amount {} value is not positive", $amt)
         }
     };
 }
@@ -30,7 +30,7 @@ macro_rules! amount_op_func_define {
 
 amount_op_func_define!{do_hac_sub, hac, addr, amt, {
     if hac < *amt {
-        return errf!("address {} balance {} is insufficient, at least {}", 
+        return erruf!("address {} balance {} is insufficient, at least {}", 
             addr, hac, amt)
     }
     hac.sub_mode_u128(amt)?
@@ -82,7 +82,7 @@ pub fn hac_check(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Amo
             return Ok(bls.hacash)
         }
     }
-    errf!("address {} balance is insufficient, at least {}", addr, amt)
+    erruf!("address {} balance is insufficient, at least {}", addr, amt)
 }
 
 

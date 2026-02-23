@@ -17,7 +17,7 @@ fn call_level_from_exec_mode(ty: u8) -> Ret<usize> {
 /// Any other value indicates execution failure.
 pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
     if rv.check_true() {
-        return errf!("{} return error code {}", err_msg, rv.to_uint())
+        return erruf!("{} return error code {}", err_msg, rv.to_uint())
     }
     Ok(())
 }

@@ -11,3 +11,4 @@ use super::value::Value::*;
 include!("operand.rs");
 include!("instruction.rs");
 include!("execute.rs");
+include!("test.rs");

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use basis::interface::ActExec;
 use basis::interface::{Context, State};
 use field::{Address, Amount, Field, Uint4};
-use sys::Ret;
+use sys::{BRet, Ret};
 use testkit::sim::integration::{
     make_ctx_from_tx as make_ctx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
     vm_main_addr as main_addr,
@@ -54,7 +54,7 @@ fn single_call_codes(lib_idx: u8, sig: FnSign) -> Vec<u8> {
     codes
 }
 
-fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> Ret<(i64, Vec<u8>)> {
+fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> BRet<(i64, Vec<u8>)> {
     let mut act = ContractDeploy::new();
     act.nonce = Uint4::from(nonce);
     act.protocol_cost = Amount::zero();

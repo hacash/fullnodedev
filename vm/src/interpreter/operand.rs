@@ -1,120 +1,77 @@
 
 
-fn locop_arithmetic<F>(x: &mut Value, y: &mut Value, f: F) -> VmrtErr
-where
-    F: FnOnce(&Value, &Value) -> VmrtRes<Value>
-{
-    cast_arithmetic(x, y)?;
-    let v = f(&x, &y)?;
-    *x = v;
+fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr {
+    use ExecMode::*;
+    use Bytecode::*;
+    if in_callcode {
+        // In CALLCODE execution, no further call instructions are allowed.
+        return itr_err_code!(CallInCallcode)
+    }
+    macro_rules! not_ist {
+        ( $( $ist: expr ),+ ) => {
+            ![$( $ist ),+].contains(&inst)
+        }
+    }
+    match mode {
+        Main if not_ist!(CALL, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallOtherInMain),
+        P2sh if not_ist!(CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallOtherInP2sh),
+        // Abst intentionally allows this/self/super: root frame keeps state_addr as the
+        // concrete contract address passed by VM entry, while code_owner may come from
+        // inherited abstract function dispatch.
+        Abst if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
+        View if not_ist!(CALLVIEW, CALLPURE) => itr_err_code!(CallLocInView),
+        Pure if not_ist!(CALLPURE) => itr_err_code!(CallInPure),
+        // Outer and Inner allow all call instructions.
+        // Guard-false arms for Main/P2sh/Abst/View/Pure also fall here (call is allowed).
+        Main | P2sh | Abst | Outer | Inner | View | Pure => Ok(()),
+    }
+}
+
+
+fn local_operand(mark: u8, locals: &mut Stack, mut value: Value) -> VmrtErr {
+    let opt = mark >> 6; // 0b00000011
+    let idx = mark & 0b00111111; // max=64
+    let basev = locals.edit(idx)?;
+    match opt {
+        0 => locop_arithmetic(basev, &mut value, add_checked), // +=
+        1 => locop_arithmetic(basev, &mut value, sub_checked), // -=
+        2 => locop_arithmetic(basev, &mut value, mul_checked), // *=
+        3 => locop_arithmetic(basev, &mut value, div_checked), // /=
+        _ => unreachable!(), // return itr_err_fmt!(InstParamsErr, "local operand {} not find", a)
+    }?;
     Ok(())
 }
 
 
-/* * *   such as: v = x + y */
-fn binop_arithmetic<F>(operand_stack: &mut Stack, f: F) -> VmrtErr
-where
-    F: FnOnce(&Value, &Value) -> VmrtRes<Value>
-{
-    let mut y = operand_stack.pop()?;
-    let x = operand_stack.peek()?;
-    locop_arithmetic(x, &mut y, f)
-}
-
-
-/* * *   binop_between *   such as: v = x && y */
-
-fn locop_btw<F>(x: &mut Value, y: &mut Value, f: F) -> VmrtErr
-where
-    F: FnOnce(&Value, &Value) -> VmrtRes<Value>
-{
-    let v = f(&x, &y)?;
-    *x = v;
+fn local_logic(mark: u8, locals: &mut Stack, value: &mut Value) -> VmrtErr {
+    let opt = mark >> 5; // 0b00000111
+    let idx = mark & 0b00011111; // max=32
+    let basev = locals.edit(idx)?;
+    match opt {
+        0 => locop_btw(value, basev, lgc_and),
+        1 => locop_btw(value, basev, lgc_or),
+        2 => locop_btw(value, basev, lgc_equal),
+        3 => locop_btw(value, basev, lgc_not_equal),
+        4 => locop_btw(value, basev, lgc_less),
+        5 => locop_btw(value, basev, lgc_less_equal),
+        6 => locop_btw(value, basev, lgc_greater),
+        7 => locop_btw(value, basev, lgc_greater_equal),
+        _ => unreachable!(), // return itr_err_fmt!(InstParamsErr, "local operand {} not find", a)
+    }?;
     Ok(())
 }
 
-fn binop_btw<F>(operand_stack: &mut Stack, f: F) -> VmrtErr
-where
-    F: FnOnce(&Value, &Value) -> VmrtRes<Value>
-{
-    let mut y = operand_stack.pop()?;
-    let x = operand_stack.peek()?;
-    locop_btw(x, &mut y, f)
-}
 
-
-
-
-macro_rules! bitop {
-    ( $x: expr, $y: expr, $op: ident ) => {
-        Ok(match ($x, $y) {
-            (U8(l), U8(r))     => Value::U8((*l).$op(*r)),
-            (U16(l), U16(r))   => Value::U16((*l).$op(*r)),
-            (U32(l), U32(r))   => Value::U32((*l).$op(*r)),
-            (U64(l), U64(r))   => Value::U64((*l).$op(*r)),
-            (U128(l), U128(r)) => Value::U128((*l).$op(*r)),
-            (_, _) => return itr_err_fmt!(Arithmetic, 
-                "cannot do bit ops between {:?} and {:?}", $x, $y),
-        })
+fn unpack_list(mut i: u8, locals: &mut Stack, list: &VecDeque<Value>) -> VmrtErr {
+    let start = i as usize;
+    if locals.len() < start + list.len() {
+        return itr_err_code!(OutOfLocal)
     }
-}
-
-
-macro_rules! ahmtdo {
-    ( $x: expr, $y: expr, $op: ident ) => {
-        match ($x, $y) {
-            (U8(l), U8(r))     => <u8>::$op(*l, *r).map(Value::U8),
-            (U16(l), U16(r))   => <u16>::$op(*l, *r).map(Value::U16),
-            (U32(l), U32(r))   => <u32>::$op(*l, *r).map(Value::U32),
-            (U64(l), U64(r))   => <u64>::$op(*l, *r).map(Value::U64),
-            (U128(l), U128(r)) => <u128>::$op(*l, *r).map(Value::U128),
-            (_, _) => return itr_err_fmt!(Arithmetic, 
-                "cannot do arithmetic between {:?} and {:?}", $x, $y),
-        }
+    // replace
+    for item in list.iter() {
+        *locals.edit(i)? = item.clone();
+        i += 1;
     }
+    Ok(())
 }
-
-
-macro_rules! lgcyuintmatch {
-    ($op: ident, $x: expr, $y: expr) => {
-        match ($x, $y) {
-            (U8(l), U8(r)) =>     lgcdo!($op, l, r, u8),
-            (U8(l), U16(r)) =>    lgcdo!($op, l, r, u16),
-            (U8(l), U32(r)) =>    lgcdo!($op, l, r, u32),
-            (U8(l), U64(r)) =>    lgcdo!($op, l, r, u64),
-            (U8(l), U128(r)) =>   lgcdo!($op, l, r, u128),
-
-            (U16(l), U8(r)) =>    lgcdo!($op, l, r, u16),
-            (U16(l), U16(r)) =>   lgcdo!($op, l, r, u16),
-            (U16(l), U32(r)) =>   lgcdo!($op, l, r, u32),
-            (U16(l), U64(r)) =>   lgcdo!($op, l, r, u64),
-            (U16(l), U128(r)) =>  lgcdo!($op, l, r, u128),
-
-            (U32(l), U8(r)) =>    lgcdo!($op, l, r, u32),
-            (U32(l), U16(r)) =>   lgcdo!($op, l, r, u32),
-            (U32(l), U32(r)) =>   lgcdo!($op, l, r, u32),
-            (U32(l), U64(r)) =>   lgcdo!($op, l, r, u64),
-            (U32(l), U128(r)) =>  lgcdo!($op, l, r, u128),
-
-            (U64(l), U8(r)) =>    lgcdo!($op, l, r, u64),
-            (U64(l), U16(r)) =>   lgcdo!($op, l, r, u64),
-            (U64(l), U32(r)) =>   lgcdo!($op, l, r, u64),
-            (U64(l), U64(r)) =>   lgcdo!($op, l, r, u64),
-            (U64(l), U128(r)) =>  lgcdo!($op, l, r, u128),
-
-            (U128(l), U8(r)) =>    lgcdo!($op, l, r, u128),
-            (U128(l), U16(r)) =>   lgcdo!($op, l, r, u128),
-            (U128(l), U32(r)) =>   lgcdo!($op, l, r, u128),
-            (U128(l), U64(r)) =>   lgcdo!($op, l, r, u128),
-            (U128(l), U128(r)) =>  lgcdo!($op, l, r, u128),
-
-            (_l, _r) => return itr_err_fmt!(Arithmetic, 
-                "cannot do logic operand <{}> between {:?} and {:?}", stringify!($op), $x, $y),
-        }
-    }
-}
-
-
-
-
 

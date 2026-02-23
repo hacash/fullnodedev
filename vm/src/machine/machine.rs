@@ -1,12 +1,10 @@
-
-
 /// Per-tx VM call state. Gas ledger is stored in Context; VM only keeps
 /// re-entry depth guard and call-limit state.
 #[derive(Clone)]
 pub struct VmCallState {
-    initialized: bool,      // whether init_once() has been called
-    reentry_depth: u32,     // current EXTACTION re-entry depth (0 = not in call)
-    max_reentry: u32,       // hard cap from SpaceCap
+    initialized: bool,  // whether init_once() has been called
+    reentry_depth: u32, // current EXTACTION re-entry depth (0 = not in call)
+    max_reentry: u32,   // hard cap from SpaceCap
 }
 
 struct VmCallDepthGuard<'a> {
@@ -37,11 +35,10 @@ impl Default for VmCallState {
 }
 
 impl VmCallState {
-
     /// Initialize VM-side call limits only.
     fn init_once(&mut self, cap: &SpaceCap) -> Rerr {
         if self.initialized {
-            return Ok(())
+            return Ok(());
         }
         self.max_reentry = cap.max_reentry_depth;
         self.initialized = true;
@@ -56,7 +53,11 @@ impl VmCallState {
             .ok_or_else(|| "re-entry depth overflow".to_owned())?;
         if next_depth > self.max_reentry + 1 {
             // depth 1 = outermost call, depth 2 = first re-entry, etc.
-            return errf!("re-entry depth {} exceeded limit {}", next_depth - 1, self.max_reentry)
+            return errf!(
+                "re-entry depth {} exceeded limit {}",
+                next_depth - 1,
+                self.max_reentry
+            );
         }
         self.reentry_depth = next_depth;
         Ok(())
@@ -66,32 +67,28 @@ impl VmCallState {
     fn leave(&mut self) {
         self.reentry_depth = self.reentry_depth.saturating_sub(1);
     }
-
 }
 
-
 /*********************************/
-
 
 #[allow(dead_code)]
 pub struct MachineBox {
     call_state: VmCallState,
     machine: Option<Machine>,
-} 
+}
 
 impl Drop for MachineBox {
     fn drop(&mut self) {
         match self.machine.take() {
             Some(m) => global_machine_manager().reclaim(m.r),
-            _ => ()
+            _ => (),
         }
     }
 }
 
 impl MachineBox {
-    
     pub fn new(m: Machine) -> Self {
-        Self { 
+        Self {
             call_state: VmCallState::default(),
             machine: Some(m),
         }
@@ -102,14 +99,13 @@ impl VM for MachineBox {
     fn snapshot_volatile(&self) -> Box<dyn Any> {
         let m = self.machine.as_ref().unwrap();
         // Snapshot excludes gas and gas-charged warmup/cache accounting so AST recover rolls back state/log/memory only while keeping gas/warmup monotonic.
-        Box::new((
-            m.r.global_vals.clone(),
-            m.r.memory_vals.clone(),
-        ))
+        Box::new((m.r.global_vals.clone(), m.r.memory_vals.clone()))
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap)>() else { return };
+        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap)>() else {
+            return;
+        };
         let (globals, memorys) = *snap;
         let m = self.machine.as_mut().unwrap();
         m.r.global_vals = globals;
@@ -162,13 +158,13 @@ impl VM for MachineBox {
                 gas_before,
                 min_cost,
                 cty
-            )
+            );
         }
         let machine = self.machine.as_mut().unwrap();
         let ctxptr = ctx as *mut dyn Context;
         let gasptr = unsafe { (*ctxptr).gas_remaining_mut()? as *mut i64 };
         let exenv = unsafe {
-            &mut ExecEnv{
+            &mut ExecEnv {
                 ctx: &mut *ctxptr,
                 gas: &mut *gasptr,
             }
@@ -181,28 +177,29 @@ impl VM for MachineBox {
             P2sh => {
                 let payload = ByteView::from_arc(payload);
                 let payload_ref = payload.as_slice();
-                let (state_addr, mv1) = Address::create(payload_ref)
-                    .map_err(BError::unrecoverable)?;
+                let (state_addr, mv1) =
+                    Address::create(payload_ref).map_err(BError::unrecoverable)?;
                 let (calibs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])
                     .map_err(BError::unrecoverable)?;
                 let mv = mv1 + mv2;
-                let realcodes = payload.slice(mv, payload.len())
+                let realcodes = payload
+                    .slice(mv, payload.len())
                     .map_err(BError::unrecoverable)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return berrf!("p2sh argv type not match")
+                    return berrf!("p2sh argv type not match");
                 };
                 machine.p2sh_call(exenv, state_addr, calibs.into_list(), realcodes, *param)
             }
             Abst => {
                 let kid: AbstCall = std_mem_transmute!(kind);
-                let cadr = ContractAddress::parse(payload.as_ref())
-                    .map_err(BError::unrecoverable)?;
+                let cadr =
+                    ContractAddress::parse(payload.as_ref()).map_err(BError::unrecoverable)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return berrf!("abst argv type not match")
+                    return berrf!("abst argv type not match");
                 };
                 machine.abst_call(exenv, kid, cadr, *param)
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         };
         // (4) compute gas cost, enforce minimum, leave call layer
         let gas_after = ctx.gas_remaining();
@@ -225,7 +222,7 @@ impl VM for MachineBox {
             cost = min_cost;
         }
         // propagate VM execution error (depth is auto-restored by guard drop)
-        let resv = result.map(|a| a.raw())?;
+        let resv = result.map(|a| a.raw()).into_bret()?;
         if cost <= 0 {
             return berrf!("gas cost error: {}", cost);
         }
@@ -233,14 +230,7 @@ impl VM for MachineBox {
     }
 }
 
-
-
-
 /*********************************/
-
-
-
-
 
 #[allow(dead_code)]
 pub struct Machine {
@@ -248,61 +238,118 @@ pub struct Machine {
     frames: Vec<CallFrame>,
 }
 
-
-
 impl Machine {
-
     pub fn is_in_calling(&self) -> bool {
-        ! self.frames.is_empty()
+        !self.frames.is_empty()
     }
 
     pub fn create(r: Resoure) -> Self {
-        Self {
-            r,
-            frames: vec![],
-        }
+        Self { r, frames: vec![] }
     }
 
-    pub fn main_call(&mut self, env: &mut ExecEnv, ctype: CodeType, codes: Arc<[u8]>) -> Ret<Value> {
+    pub fn main_call(
+        &mut self,
+        env: &mut ExecEnv,
+        ctype: CodeType,
+        codes: Arc<[u8]>,
+    ) -> Ret<Value> {
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
-        let lib_adr = env.ctx.env().tx.addrs.iter().map(|a|ContractAddress::from_unchecked(*a)).collect();
-        let rv = self.do_call(env, ExecMode::Main, &fnobj, ctx_adr, None, Some(lib_adr), None)?;
+        let lib_adr = env
+            .ctx
+            .env()
+            .tx
+            .addrs
+            .iter()
+            .map(|a| ContractAddress::from_unchecked(*a))
+            .collect();
+        let rv = self.do_call(
+            env,
+            ExecMode::Main,
+            &fnobj,
+            ctx_adr,
+            None,
+            Some(lib_adr),
+            None,
+        )?;
         check_vm_return_value(&rv, "main call")?;
         Ok(rv)
     }
 
-    pub fn abst_call(&mut self, env: &mut ExecEnv, cty: AbstCall, contract_addr: ContractAddress, param: Value) -> Ret<Value> {
+    pub fn abst_call(
+        &mut self,
+        env: &mut ExecEnv,
+        cty: AbstCall,
+        contract_addr: ContractAddress,
+        param: Value,
+    ) -> Ret<Value> {
         let adr = contract_addr.to_readable();
         let Some((owner, fnobj)) = self.r.load_abstfn(env.ctx, &contract_addr, cty)? else {
-            return errf!("abst call {:?} not find in {}", cty, adr)
+            return errf!("abst call {:?} not find in {}", cty, adr);
         };
         // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
-        let rv = self.do_call(env, ExecMode::Abst, fnobj.as_ref(), contract_addr, owner, None, Some(param))?;
+        let rv = self.do_call(
+            env,
+            ExecMode::Abst,
+            fnobj.as_ref(),
+            contract_addr,
+            owner,
+            None,
+            Some(param),
+        )?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
     }
 
-    fn p2sh_call(&mut self, env: &mut ExecEnv, p2sh_addr: Address, libs: Vec<ContractAddress>, codes: ByteView, param: Value) -> Ret<Value> {
+    fn p2sh_call(
+        &mut self,
+        env: &mut ExecEnv,
+        p2sh_addr: Address,
+        libs: Vec<ContractAddress>,
+        codes: ByteView,
+        param: Value,
+    ) -> Ret<Value> {
         let ctype = CodeType::Bytecode;
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
-        let rv = self.do_call(env, ExecMode::P2sh, &fnobj, ctx_adr, None, Some(libs), Some(param))?;
+        let rv = self.do_call(
+            env,
+            ExecMode::P2sh,
+            &fnobj,
+            ctx_adr,
+            None,
+            Some(libs),
+            Some(param),
+        )?;
         check_vm_return_value(&rv, "p2sh call")?;
         Ok(rv)
     }
 
-    fn do_call(&mut self, env: &mut ExecEnv, mode: ExecMode, code: &FnObj, entry_addr: ContractAddress, code_owner: Option<ContractAddress>, libs: Option<Vec<ContractAddress>>, param: Option<Value>) -> VmrtRes<Value> {
+    fn do_call(
+        &mut self,
+        env: &mut ExecEnv,
+        mode: ExecMode,
+        code: &FnObj,
+        entry_addr: ContractAddress,
+        code_owner: Option<ContractAddress>,
+        libs: Option<Vec<ContractAddress>>,
+        param: Option<Value>,
+    ) -> VmrtRes<Value> {
         self.frames.push(CallFrame::new()); // for reclaim
-        let res = self.frames.last_mut().unwrap().start_call(&mut self.r, env, mode, code, entry_addr, code_owner, libs, param);
+        let res = self.frames.last_mut().unwrap().start_call(
+            &mut self.r,
+            env,
+            mode,
+            code,
+            entry_addr,
+            code_owner,
+            libs,
+            param,
+        );
         self.frames.pop().unwrap().reclaim(&mut self.r); // do reclaim
         res
     }
-
-
-
 }
-
 
 #[cfg(test)]
 mod machine_test {
@@ -312,13 +359,13 @@ mod machine_test {
     use crate::lang::lang_to_bytecode;
     use crate::rt::CodeType;
 
+    use crate::value::ValueTy as VT;
     use basis::component::Env;
     use basis::interface::Context;
     use field::{Address, Amount, Uint4};
     use testkit::sim::context::make_ctx_with_state;
     use testkit::sim::state::FlatMemState as StateMem;
     use testkit::sim::tx::StubTxBuilder;
-    use crate::value::ValueTy as VT;
 
     fn test_base_addr() -> Address {
         Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap()
@@ -384,7 +431,8 @@ mod machine_test {
             .inh(contract_base.to_addr())
             .func(Func::new("g").unwrap().fitsh("return 2").unwrap())
             .func(
-                Func::new("f").unwrap()
+                Func::new("f")
+                    .unwrap()
                     .fitsh(
                         r##"
                         return this.g() * 10000 + self.g() * 100 + super.g()
@@ -397,7 +445,8 @@ mod machine_test {
             .inh(contract_parent.to_addr())
             .func(Func::new("g").unwrap().fitsh("return 1").unwrap())
             .func(
-                Func::new("run").unwrap()
+                Func::new("run")
+                    .unwrap()
                     .public()
                     .fitsh(
                         r##"
@@ -474,7 +523,13 @@ mod machine_test {
         let child_sto = Contract::new()
             .inh(contract_parent.to_addr())
             .func(Func::new("id").unwrap().fitsh("return 1").unwrap())
-            .func(Func::new("noop").unwrap().public().fitsh("return 0").unwrap())
+            .func(
+                Func::new("noop")
+                    .unwrap()
+                    .public()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
 
         let run_main = |main_script: &str| -> Ret<Value> {
@@ -519,27 +574,39 @@ mod machine_test {
             assert v == 201
             return 0
         "##;
-        assert!(run_main(outer_script).is_ok(), "CALL should resolve through inherits");
+        assert!(
+            run_main(outer_script).is_ok(),
+            "CALL should resolve through inherits"
+        );
 
         // CALLVIEW/CALLPURE/CALLCODE: should keep exact local lookup, so inherited-only fn is not found.
         let view_script = r##"
             lib C = 0
             return C:probe()
         "##;
-        assert!(run_main(view_script).is_err(), "CALLVIEW should not resolve inherits");
+        assert!(
+            run_main(view_script).is_err(),
+            "CALLVIEW should not resolve inherits"
+        );
 
         let pure_script = r##"
             lib C = 0
             return C::probe()
         "##;
-        assert!(run_main(pure_script).is_err(), "CALLPURE should not resolve inherits");
+        assert!(
+            run_main(pure_script).is_err(),
+            "CALLPURE should not resolve inherits"
+        );
 
         let callcode_script = r##"
             lib C = 0
             callcode C::probe
             end
         "##;
-        assert!(run_main(callcode_script).is_err(), "CALLCODE should not resolve inherits");
+        assert!(
+            run_main(callcode_script).is_err(),
+            "CALLCODE should not resolve inherits"
+        );
     }
 
     #[test]
@@ -649,7 +716,10 @@ mod machine_test {
                 Value::Bytes(vec![]),
             )
             .unwrap();
-        assert!(!rv.check_true(), "abst call should finish without assertion failure");
+        assert!(
+            !rv.check_true(),
+            "abst call should finish without assertion failure"
+        );
     }
 
     #[test]
@@ -743,7 +813,8 @@ mod machine_test {
         );
         assert_err_contains(arg_res, "CallArgvTypeFail");
 
-        let nested_res = run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
+        let nested_res =
+            run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
         assert_err_contains(nested_res, "CallInCallcode");
     }
 
@@ -789,7 +860,10 @@ mod machine_test {
             return C.run()
         "##;
         let res = run_main_script(base_addr, vec![contract_child], ext_state, script);
-        assert!(res.is_ok(), "super should choose first direct parent in inherits order");
+        assert!(
+            res.is_ok(),
+            "super should choose first direct parent in inherits order"
+        );
     }
 
     #[test]
@@ -797,24 +871,9 @@ mod machine_test {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 27);
         let target_sto = Contract::new()
-            .func(
-                Func::new("view_ok")
-                    .unwrap()
-                    .fitsh("return 7")
-                    .unwrap(),
-            )
-            .func(
-                Func::new("pure_ok")
-                    .unwrap()
-                    .fitsh("return 8")
-                    .unwrap(),
-            )
-            .func(
-                Func::new("code_ok")
-                    .unwrap()
-                    .fitsh("return 0")
-                    .unwrap(),
-            )
+            .func(Func::new("view_ok").unwrap().fitsh("return 7").unwrap())
+            .func(Func::new("pure_ok").unwrap().fitsh("return 8").unwrap())
+            .func(Func::new("code_ok").unwrap().fitsh("return 0").unwrap())
             .into_sto();
         let mut ext_state = StateMem::default();
         {
@@ -830,7 +889,10 @@ mod machine_test {
             end
         "##;
         let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
-        assert!(res.is_ok(), "local lookup should succeed for view/pure/callcode");
+        assert!(
+            res.is_ok(),
+            "local lookup should succeed for view/pure/callcode"
+        );
     }
 
     #[test]
@@ -861,14 +923,23 @@ mod machine_test {
         // END is a minimal "return nil" program; actual instruction gas is tiny.
         let codes = vec![Bytecode::END as u8];
 
-        vm.call(VMCall::new(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, codes.clone().into(), Box::new(Value::Nil)))
-            .unwrap();
+        vm.call(VMCall::new(
+            &mut ctx,
+            ExecMode::Main as u8,
+            CodeType::Bytecode as u8,
+            codes.clone().into(),
+            Box::new(Value::Nil),
+        ))
+        .unwrap();
 
         let gsext = GasExtra::new(1);
         let min = gsext.main_call_min;
         let budget = decode_gas_budget(17); // lookup-table decoded budget
-        // The min-call cost must be reflected in the shared gas counter.
-        assert!(ctx.gas_remaining() <= (budget - min), "ctx gas remaining should include min cost deduction");
+                                            // The min-call cost must be reflected in the shared gas counter.
+        assert!(
+            ctx.gas_remaining() <= (budget - min),
+            "ctx gas remaining should include min cost deduction"
+        );
     }
 
     #[test]
@@ -897,34 +968,47 @@ mod machine_test {
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let codes = vec![Bytecode::END as u8];
-        vm.call(VMCall::new(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, codes.clone().into(), Box::new(Value::Nil))).unwrap();
+        vm.call(VMCall::new(
+            &mut ctx,
+            ExecMode::Main as u8,
+            CodeType::Bytecode as u8,
+            codes.clone().into(),
+            Box::new(Value::Nil),
+        ))
+        .unwrap();
 
         vm.machine.as_mut().unwrap().r.contract_load_bytes = 11;
         let before_load_bytes = vm.machine.as_ref().unwrap().r.contract_load_bytes;
-        vm.machine.as_mut().unwrap().r.contracts.insert(
-            ContractAddress::default(),
-            Arc::new(ContractObj::default()),
-        );
+        vm.machine
+            .as_mut()
+            .unwrap()
+            .r
+            .contracts
+            .insert(ContractAddress::default(), Arc::new(ContractObj::default()));
         let snap = vm.snapshot_volatile();
 
         // Mutate gas remaining in context (outside VM volatile snapshot).
         *ctx.gas_remaining_mut().unwrap() = 1;
         // Mutate volatile fields (should be restored)
         vm.machine.as_mut().unwrap().r.contract_load_bytes = 777;
-        vm.machine.as_mut().unwrap().r.contracts.insert(
-            ContractAddress::default(),
-            Arc::new(ContractObj::default()),
-        );
+        vm.machine
+            .as_mut()
+            .unwrap()
+            .r
+            .contracts
+            .insert(ContractAddress::default(), Arc::new(ContractObj::default()));
 
         vm.restore_volatile(snap);
 
         // Gas remaining is NOT restored: gas usage must stay monotonic in one tx.
         assert_eq!(ctx.gas_remaining(), 1);
         // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
-        assert_ne!(vm.machine.as_ref().unwrap().r.contract_load_bytes, before_load_bytes);
+        assert_ne!(
+            vm.machine.as_ref().unwrap().r.contract_load_bytes,
+            before_load_bytes
+        );
         assert_eq!(vm.machine.as_ref().unwrap().r.contract_load_bytes, 777);
         assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 1);
-
     }
 
     #[test]
@@ -954,7 +1038,13 @@ mod machine_test {
         let codes = vec![Bytecode::END as u8];
 
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            vm.call(VMCall::new(&mut ctx, ExecMode::Main as u8, CodeType::Bytecode as u8, codes.clone().into(), Box::new(Value::Nil)))
+            vm.call(VMCall::new(
+                &mut ctx,
+                ExecMode::Main as u8,
+                CodeType::Bytecode as u8,
+                codes.clone().into(),
+                Box::new(Value::Nil),
+            ))
         }));
         assert!(res.is_ok(), "settle must not panic");
         // low fee may cause an error return, but must never panic
@@ -994,7 +1084,10 @@ mod machine_test {
             Box::new(Value::Nil),
         ));
         assert!(early.is_err(), "invalid code type must fail");
-        assert_eq!(vm.call_state.reentry_depth, 0, "depth must be restored after early return");
+        assert_eq!(
+            vm.call_state.reentry_depth, 0,
+            "depth must be restored after early return"
+        );
 
         // Next normal call should still behave as an outermost call.
         let codes = vec![Bytecode::END as u8];
@@ -1005,8 +1098,14 @@ mod machine_test {
             codes.into(),
             Box::new(Value::Nil),
         ));
-        assert!(ok.is_ok(), "subsequent call must not be poisoned by previous early return");
-        assert_eq!(vm.call_state.reentry_depth, 0, "depth must remain balanced after successful call");
+        assert!(
+            ok.is_ok(),
+            "subsequent call must not be poisoned by previous early return"
+        );
+        assert_eq!(
+            vm.call_state.reentry_depth, 0,
+            "depth must remain balanced after successful call"
+        );
     }
 
     fn read_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
@@ -1050,7 +1149,10 @@ mod machine_test {
         ));
         let bal_after = read_hac_balance(&mut ctx, &main);
 
-        assert!(call.is_err(), "vm call should fail when script returns non-zero");
+        assert!(
+            call.is_err(),
+            "vm call should fail when script returns non-zero"
+        );
         assert!(
             ctx.gas_remaining() < decode_gas_budget(17),
             "remaining gas should decrease even when call fails"
@@ -1123,7 +1225,5 @@ mod machine_test {
         );
     }
 
-/* i64::MAX  = 9223372036854775807 10000 HAC =   10000000000000000:236 0.00000001 = 1:240 = 10000:236 */
-
-
+    /* i64::MAX  = 9223372036854775807 10000 HAC =   10000000000000000:236 0.00000001 = 1:240 = 10000:236 */
 }

@@ -4,7 +4,6 @@ use crate::transaction::*;
 use basis::component::*;
 use basis::interface::*;
 use field::*;
-#[cfg(feature = "ast")]
 use std::sync::Once;
 use sys::*;
 
@@ -74,7 +73,7 @@ impl Description for TestExtEnvReadOnly {
 }
 
 impl ActExec for TestExtEnvReadOnly {
-    fn execute(&self, _ctx: &mut dyn Context) -> Ret<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
         Ok((0, vec![1u8]))
     }
 }
@@ -115,6 +114,57 @@ fn init_ext_env_test_registry() {
     INIT_EXT_ENV.call_once(|| {
         crate::setup::action_register(ext_env_try_create, ext_env_try_json_decode);
     });
+}
+
+#[cfg(feature = "ast")]
+#[derive(Default, Clone)]
+struct AstForkableState {
+    parent: std::sync::Weak<Box<dyn State>>,
+    mem: MemMap,
+}
+
+#[cfg(feature = "ast")]
+impl State for AstForkableState {
+    fn fork_sub(&self, parent: std::sync::Weak<Box<dyn State>>) -> Box<dyn State> {
+        Box::new(Self {
+            parent,
+            mem: MemMap::default(),
+        })
+    }
+
+    fn merge_sub(&mut self, sta: Box<dyn State>) {
+        self.mem.extend(sta.as_mem().clone());
+    }
+
+    fn detach(&mut self) {
+        self.parent = std::sync::Weak::<Box<dyn State>>::new();
+    }
+
+    fn clone_state(&self) -> Box<dyn State> {
+        Box::new(self.clone())
+    }
+
+    fn as_mem(&self) -> &MemMap {
+        &self.mem
+    }
+
+    fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+        if let Some(v) = self.mem.get(&k) {
+            return v.clone();
+        }
+        if let Some(parent) = self.parent.upgrade() {
+            return parent.get(k);
+        }
+        None
+    }
+
+    fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+        self.mem.insert(k, Some(v));
+    }
+
+    fn del(&mut self, k: Vec<u8>) {
+        self.mem.insert(k, None);
+    }
 }
 
 #[test]
@@ -323,7 +373,7 @@ fn test_ctx_action_call_extenv_does_not_require_tx_main_signature() {
     use crate::state::EmptyLogs;
     use crate::transaction::TransactionType2;
 
-    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    let tx = TransactionType2::default();
 
     let mut env = Env::default();
     env.tx.main = tx.main();
@@ -376,7 +426,7 @@ fn test_ctx_action_call_must_check_nested_ast_req_sign() {
     use crate::transaction::TransactionType2;
 
     // tx without any signatures
-    let tx = TransactionType2::default();
+    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
 
     let mut env = Env::default();
     env.tx.main = field::ADDRESS_ONEX.clone();
@@ -480,6 +530,104 @@ fn test_ctx_action_call_astif_must_check_unreachable_branch_req_sign() {
         "{}",
         err
     );
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_select_min_failure_is_recoverable() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let main = field::ADDRESS_ONEX.clone();
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::unit238(1_000_000_000);
+        state.balance_set(&main, &bls);
+    }
+    ctx.gas_init_tx(10_000, 1).unwrap();
+
+    let mut bad_guard = HeightScope::new();
+    bad_guard.start = BlockHeight::from(10);
+    bad_guard.end = BlockHeight::from(1);
+    let act = AstSelect::create_by(1, 1, vec![Box::new(bad_guard)]);
+    let bytes = act.serialize();
+
+    let err = ctx
+        .action_call(AstSelect::KIND, bytes[2..].to_vec())
+        .unwrap_err();
+    assert!(err.is_recoverable(), "{}", err);
+    assert!(err.contains("must succeed at least"), "{}", err);
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_ast_if_rethrow_preserves_recoverable_kind() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let main = field::ADDRESS_ONEX.clone();
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::unit238(1_000_000_000);
+        state.balance_set(&main, &bls);
+    }
+    ctx.gas_init_tx(10_000, 1).unwrap();
+
+    let mut cond_guard = HeightScope::new();
+    cond_guard.start = BlockHeight::from(20);
+    cond_guard.end = BlockHeight::from(10);
+    let cond = AstSelect::create_by(1, 1, vec![Box::new(cond_guard)]);
+
+    let mut else_guard = HeightScope::new();
+    else_guard.start = BlockHeight::from(30);
+    else_guard.end = BlockHeight::from(10);
+    let br_else = AstSelect::create_by(1, 1, vec![Box::new(else_guard)]);
+
+    let act = AstIf::create_by(cond, AstSelect::nop(), br_else);
+    let bytes = act.serialize();
+
+    let err = ctx
+        .action_call(AstIf::KIND, bytes[2..].to_vec())
+        .unwrap_err();
+    assert!(err.is_recoverable(), "{}", err);
 }
 
 #[test]
