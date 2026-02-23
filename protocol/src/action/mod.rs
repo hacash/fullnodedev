@@ -10,7 +10,7 @@ use super::operate::*;
 use super::setup::*;
 use super::state::*;
 
-include! {"util.rs"}
+include! {"asthelper.rs"}
 include! {"macro.rs"}
 include! {"create.rs"}
 
@@ -34,36 +34,36 @@ include! {"astif.rs"}
 action_register! {
 
     // hac
-    HacToTrs      
-    HacFromTrs    
-    HacFromToTrs    
-    // HacAmountCompress  
+    HacToTrs
+    HacFromTrs
+    HacFromToTrs
+    // HacAmountCompress
 
-    DiaSingleTrs       
-    DiaFromToTrs   
-    DiaToTrs       
-    DiaFromTrs     
+    DiaSingleTrs
+    DiaFromToTrs
+    DiaToTrs
+    DiaFromTrs
 
     // satoshi
-    // SatoshiGenesis   
-    SatToTrs            
-    SatFromTrs         
-    SatFromToTrs     
+    // SatoshiGenesis
+    SatToTrs
+    SatFromTrs
+    SatFromToTrs
 
     // asset
-    // AssetCreate     
-    AssetToTrs         
-    AssetFromTrs      
-    AssetFromToTrs    
+    // AssetCreate
+    AssetToTrs
+    AssetFromTrs
+    AssetFromToTrs
 
-    AstSelect           
-    AstIf          
+    AstSelect
+    AstIf
 
     TxMessage
     TxBlob
 
-    HeightScope       
-    ChainAllow     
+    HeightScope
+    ChainAllow
 
 
 }

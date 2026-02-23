@@ -100,7 +100,7 @@ Deployment flow must preserve the following ordering semantics:
 9. Persist contract on success.
 10. Execute constructor abstract call if defined.
 
-On failure, consistency must ensure "not persisted" or "recoverable to non-persisted" state.
+On failure, consistency must ensure "not persisted" or "rolled back to non-persisted" state.
 
 ## 5.4 Contract Update Phase
 

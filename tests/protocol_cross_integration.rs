@@ -1105,7 +1105,7 @@ fn test_ast_tree_depth_limit_6_rejects_7th_level() {
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = lvl1.execute(&mut ctx).unwrap_err();
     assert!(
-        err.contains("must succeed at least 1 but only 0"),
+        err.contains("ast tree depth 7 exceeded max 6"),
         "{}",
         err
     );
@@ -3483,7 +3483,7 @@ fn test_ast_vm_recover_true_to_false_returns_error() {
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_vm_delay_init_deep_nested_recoverable_rollback_warmup_kept() {
+fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
     let _guard = ast_test_global_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -3549,7 +3549,7 @@ fn test_ast_vm_delay_init_deep_nested_recoverable_rollback_warmup_kept() {
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_vm_delay_init_deep_nested_success_commits_recoverables() {
+fn test_ast_vm_delay_init_deep_nested_success_commits_unwinds() {
     let _guard = ast_test_global_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -3666,7 +3666,7 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
         clean_count.clone(),
     );
 
-    // op1: deep delayed init succeeds and commits recoverable channels.
+    // op1: deep delayed init succeeds and commits unwind channels.
     let op1 = AstIf::create_by(
         AstSelect::create_list(vec![
             Box::new(AstTestDeepDelayVmInit::new()),
@@ -3684,7 +3684,7 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
     assert!(volatile.load(std::sync::atomic::Ordering::SeqCst) >= 0);
     assert!(warmup.load(std::sync::atomic::Ordering::SeqCst) >= 1);
 
-    // op2: deep nested duplicate init fails; whole recover should rollback recoverables,
+    // op2: deep nested duplicate init fails; whole recover should rollback unwind channels,
     // while warmup-like counter stays monotonic.
     let op2 = AstIf::create_by(
         AstSelect::create_list(vec![
@@ -3717,7 +3717,7 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_vm_delay_init_depth6_recoverable_and_nonrecoverable_channels() {
+fn test_ast_vm_delay_init_depth6_unwind_and_interrupt_channels() {
     let _guard = ast_test_global_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -3780,15 +3780,16 @@ fn test_ast_vm_delay_init_depth6_recoverable_and_nonrecoverable_channels() {
     );
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    root.execute(&mut ctx).unwrap();
+    let err = root.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
 
-    // recoverable business channels rolled back from failed deep branch
+    // interrupt path aborts whole root AST node
     assert_eq!(ast_state_get_u8(&mut ctx, 230), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 231), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 232), None);
-    assert_eq!(ast_state_get_u8(&mut ctx, 233), Some(233));
+    assert_eq!(ast_state_get_u8(&mut ctx, 233), None);
 
-    // non-recoverable warmup-like channel remains monotonic
+    // interrupt-like warmup channel remains monotonic
     assert_eq!(volatile.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert!(warmup.load(std::sync::atomic::Ordering::SeqCst) > 0);
     assert!(restore_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
@@ -3859,7 +3860,7 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_layered_with_mid_vm_failure_recoverable_and_warmup_monotonic() {
+fn test_ast_layered_with_mid_vm_failure_unwind_and_warmup_monotonic() {
     let _guard = ast_test_global_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -5199,18 +5200,19 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
     ctx.gas_init_tx(10000, 1).unwrap();
 
     let astif = AstIf::create_by(
-        // invalid cond: min > max, should return Err and execute else branch
+        // invalid cond: min > max, now treated as interrupt and aborts whole AstIf
         AstSelect::create_by(2, 1, vec![Box::new(AstTestMainSet::create_by(246, 246))]),
         AstSelect::create_list(vec![Box::new(AstTestMainSet::create_by(247, 247))]),
         AstSelect::create_list(vec![Box::new(AstTestMainSet::create_by(248, 248))]),
     );
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    astif.execute(&mut ctx).unwrap();
+    let err = astif.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("action ast select max cannot less than min"), "{}", err);
 
     assert_eq!(ast_state_get_u8(&mut ctx, 246), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 247), None);
-    assert_eq!(ast_state_get_u8(&mut ctx, 248), Some(248));
+    assert_eq!(ast_state_get_u8(&mut ctx, 248), None);
 }
 
 // ---- Test 38: AstSelect child that mutates all channels then fails is fully recovered ----
@@ -5534,7 +5536,8 @@ fn test_ast_select_nested_invalid_select_isolated() {
     );
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    outer.execute(&mut ctx).unwrap();
+    let err = outer.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("action ast select max cannot less than min"), "{}", err);
     assert_eq!(ast_state_get_u8(&mut ctx, 217), None);
-    assert_eq!(ast_state_get_u8(&mut ctx, 218), Some(218));
+    assert_eq!(ast_state_get_u8(&mut ctx, 218), None);
 }

@@ -36,24 +36,36 @@ fn mk_ctx<'a>(
     ctx
 }
 
-fn expect_recoverable_ret<T>(ret: Ret<T>, msg: &str) -> BError {
+fn expect_unwind_ret<T>(ret: Ret<T>, msg: &str) -> BError {
     let err = match ret.into_bret() {
-        Ok(_) => panic!("expect recoverable error but got Ok"),
+        Ok(_) => panic!("expect unwind error but got Ok"),
         Err(err) => err,
     };
-    assert!(err.is_recoverable(), "expect recoverable but got {err}");
+    assert!(err.is_unwind(), "expect unwind but got {err}");
     if !msg.is_empty() {
         assert!(err.contains(msg), "expect '{msg}' in '{err}'");
     }
     err
 }
 
-fn expect_recoverable_bret<T>(ret: BRet<T>, msg: &str) -> BError {
+fn expect_unwind_bret<T>(ret: BRet<T>, msg: &str) -> BError {
     let err = match ret {
-        Ok(_) => panic!("expect recoverable error but got Ok"),
+        Ok(_) => panic!("expect unwind error but got Ok"),
         Err(err) => err,
     };
-    assert!(err.is_recoverable(), "expect recoverable but got {err}");
+    assert!(err.is_unwind(), "expect unwind but got {err}");
+    if !msg.is_empty() {
+        assert!(err.contains(msg), "expect '{msg}' in '{err}'");
+    }
+    err
+}
+
+fn expect_interrupt_ret<T>(ret: Ret<T>, msg: &str) -> BError {
+    let err = match ret.into_bret() {
+        Ok(_) => panic!("expect interrupt error but got Ok"),
+        Err(err) => err,
+    };
+    assert!(err.is_interrupt(), "expect interrupt but got {err}");
     if !msg.is_empty() {
         assert!(err.contains(msg), "expect '{msg}' in '{err}'");
     }
@@ -74,7 +86,7 @@ fn seed_diamond_status(ctx: &mut dyn Context, name: DiamondName, owner: Address,
 }
 
 #[test]
-fn guard_action_failures_are_recoverable() {
+fn guard_action_failures_are_unwind() {
     let _guard = test_guard();
     let main = main_addr();
     let tx = make_tx(3, main, vec![main], 17);
@@ -83,20 +95,20 @@ fn guard_action_failures_are_recoverable() {
     let mut bad_range = HeightScope::new();
     bad_range.start = BlockHeight::from(20);
     bad_range.end = BlockHeight::from(10);
-    expect_recoverable_bret(bad_range.execute(&mut ctx), "cannot big than");
+    expect_unwind_bret(bad_range.execute(&mut ctx), "cannot big than");
 
     let mut out_of_range = HeightScope::new();
     out_of_range.start = BlockHeight::from(200);
     out_of_range.end = BlockHeight::from(300);
-    expect_recoverable_bret(out_of_range.execute(&mut ctx), "submit in height between");
+    expect_unwind_bret(out_of_range.execute(&mut ctx), "submit in height between");
 
     let mut allow = ChainAllow::new();
     allow.chains = ChainIDList::from_list(vec![Uint4::from(1), Uint4::from(2)]).unwrap();
-    expect_recoverable_bret(allow.execute(&mut ctx), "must belong to chains");
+    expect_unwind_bret(allow.execute(&mut ctx), "must belong to chains");
 }
 
 #[test]
-fn state_data_business_failures_are_recoverable() {
+fn state_data_business_failures_split_unwind_and_interrupt() {
     let _guard = test_guard();
     let main = main_addr();
     let alt = alt_addr();
@@ -104,32 +116,32 @@ fn state_data_business_failures_are_recoverable() {
     let mut ctx = mk_ctx(100, 1, &tx, Box::new(StateMem::default()));
 
     // HAC
-    expect_recoverable_ret(hac_sub(&mut ctx, &main, &Amount::zero()), "not positive");
-    expect_recoverable_ret(hac_sub(&mut ctx, &main, &Amount::mei(1)), "insufficient");
-    expect_recoverable_ret(hac_check(&mut ctx, &main, &Amount::mei(1)), "insufficient");
+    expect_interrupt_ret(hac_sub(&mut ctx, &main, &Amount::zero()), "not positive");
+    expect_unwind_ret(hac_sub(&mut ctx, &main, &Amount::mei(1)), "insufficient");
+    expect_unwind_ret(hac_check(&mut ctx, &main, &Amount::mei(1)), "insufficient");
 
     // BTC (Satoshi)
-    expect_recoverable_ret(
+    expect_interrupt_ret(
         sat_check(&mut ctx, &main, &Satoshi::from(0)),
         "cannot empty",
     );
-    expect_recoverable_ret(sat_sub(&mut ctx, &main, &Satoshi::from(1)), "insufficient");
-    expect_recoverable_ret(
+    expect_unwind_ret(sat_sub(&mut ctx, &main, &Satoshi::from(1)), "insufficient");
+    expect_interrupt_ret(
         sat_transfer(&mut ctx, &main, &main, &Satoshi::from(1)),
         "cannot trs to self",
     );
 
     // ASSET
     let zero_asset = AssetAmt::from(7, 0).unwrap();
-    expect_recoverable_ret(asset_check(&mut ctx, &main, &zero_asset), "cannot empty");
+    expect_interrupt_ret(asset_check(&mut ctx, &main, &zero_asset), "cannot empty");
     {
         let mut state = CoreState::wrap(ctx.state());
-        expect_recoverable_ret(
+        expect_unwind_ret(
             asset_sub(&mut state, &main, &AssetAmt::from(7, 1).unwrap()),
             "insufficient",
         );
     }
-    expect_recoverable_ret(
+    expect_interrupt_ret(
         asset_transfer(&mut ctx, &main, &main, &AssetAmt::from(7, 1).unwrap()),
         "cannot trs to self",
     );
@@ -137,7 +149,7 @@ fn state_data_business_failures_are_recoverable() {
     // HACD
     {
         let mut state = CoreState::wrap(ctx.state());
-        expect_recoverable_ret(
+        expect_unwind_ret(
             hacd_sub(&mut state, &main, &DiamondNumber::from(1)),
             "insufficient",
         );
@@ -145,7 +157,7 @@ fn state_data_business_failures_are_recoverable() {
     let dlist_self = DiamondNameListMax200::one(DiamondName::from_readable(b"WTYUIA").unwrap());
     {
         let mut state = CoreState::wrap(ctx.state());
-        expect_recoverable_ret(
+        expect_interrupt_ret(
             hacd_transfer(
                 &mut state,
                 &main,
@@ -168,16 +180,16 @@ fn state_data_business_failures_are_recoverable() {
     seed_diamond_status(&mut ctx, dia_not_belong, main, DIAMOND_STATUS_NORMAL);
     {
         let mut state = CoreState::wrap(ctx.state());
-        expect_recoverable_ret(
+        expect_unwind_ret(
             check_diamond_status(&mut state, &main, &dia_mortgaged),
             "mortgaged",
         );
-        expect_recoverable_ret(
+        expect_unwind_ret(
             check_diamond_status(&mut state, &alt, &dia_not_belong),
             "not belong",
         );
         let miss = DiamondNameListMax200::one(DiamondName::from_readable(b"WTYUKB").unwrap());
-        expect_recoverable_ret(
+        expect_interrupt_ret(
             diamond_owned_move(&mut state, &main, &alt, &miss),
             "not find",
         );
@@ -185,7 +197,7 @@ fn state_data_business_failures_are_recoverable() {
 }
 
 #[test]
-fn channel_open_insufficient_balance_is_recoverable() {
+fn channel_open_insufficient_balance_is_unwind() {
     let _guard = test_guard();
     let main = main_addr();
     let alt = alt_addr();
@@ -203,15 +215,15 @@ fn channel_open_insufficient_balance_is_recoverable() {
         amount: Amount::mei(1),
     };
 
-    expect_recoverable_bret(open.execute(&mut ctx), "insufficient");
+    expect_unwind_bret(open.execute(&mut ctx), "insufficient");
 }
 
 #[test]
-fn vm_non_zero_return_code_is_recoverable() {
+fn vm_non_zero_return_code_is_unwind() {
     let _guard = test_guard();
     assert!(check_vm_return_value(&Value::nil(), "main call").is_ok());
     assert!(check_vm_return_value(&Value::u8(0), "main call").is_ok());
-    expect_recoverable_ret(
+    expect_unwind_ret(
         check_vm_return_value(&Value::u8(7), "main call"),
         "return error code 7",
     );
@@ -222,7 +234,7 @@ fn vm_throw_abort_and_ext_action_pass_through_policy() {
     let _guard = test_guard();
 
     let throw_abort: BError = ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
-    assert!(throw_abort.is_recoverable(), "{throw_abort}");
+    assert!(throw_abort.is_unwind(), "{throw_abort}");
     let throw_abort_wire: Error =
         ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
     assert!(
@@ -235,7 +247,7 @@ fn vm_throw_abort_and_ext_action_pass_through_policy() {
         format!("{UNWIND_PREFIX}biz fail"),
     )
     .into();
-    assert!(ext_prefixed.is_recoverable(), "{ext_prefixed}");
+    assert!(ext_prefixed.is_unwind(), "{ext_prefixed}");
     assert!(ext_prefixed.contains("ExtActCallError"), "{ext_prefixed}");
 
     let ext_prefixed_wire: Error = ItrErr(
@@ -249,7 +261,7 @@ fn vm_throw_abort_and_ext_action_pass_through_policy() {
     );
 
     let ext_plain: BError = ItrErr(ItrErrCode::ExtActCallError, "plain fail".to_owned()).into();
-    assert!(ext_plain.is_unrecoverable(), "{ext_plain}");
+    assert!(ext_plain.is_interrupt(), "{ext_plain}");
     let ext_plain_wire: Error = ItrErr(ItrErrCode::ExtActCallError, "plain fail".to_owned()).into();
     assert!(
         !ext_plain_wire.starts_with(UNWIND_PREFIX),
@@ -258,7 +270,7 @@ fn vm_throw_abort_and_ext_action_pass_through_policy() {
 }
 
 #[test]
-fn vm_itr_err_code_recoverable_mapping_is_strict() {
+fn vm_itr_err_code_unwind_mapping_is_strict() {
     let _guard = test_guard();
     use ItrErrCode::*;
 
@@ -351,11 +363,11 @@ fn vm_itr_err_code_recoverable_mapping_is_strict() {
 
     for code in all_codes {
         let berr: BError = ItrErr(code, "x".to_owned()).into();
-        let should_recoverable = matches!(code, ThrowAbort);
+        let should_unwind = matches!(code, ThrowAbort);
         assert_eq!(
-            berr.is_recoverable(),
-            should_recoverable,
-            "ItrErrCode::{:?} recoverable mismatch: {}",
+            berr.is_unwind(),
+            should_unwind,
+            "ItrErrCode::{:?} unwind mismatch: {}",
             code,
             berr
         );
@@ -421,60 +433,42 @@ fn expect_set_eq(label: &str, actual: &BTreeSet<String>, expected: BTreeSet<Stri
 }
 
 #[test]
-fn recoverable_macro_callsites_are_allowlisted() {
+fn unwind_macro_callsites_are_allowlisted() {
     let _guard = test_guard();
     let actual = scan_lines_with_patterns(&["erru!(", "erruf!(", "berru!(", "berruf!("]);
     let expected: BTreeSet<String> = [
-        "mint/src/action/diamond_insc.rs:397:return erruf!(",
-        "mint/src/action/diamond_insc.rs:403:return erruf!(",
-        "protocol/src/action/astselect.rs:27:return erruf!(\"action ast select max cannot less than min\")",
-        "protocol/src/action/astselect.rs:30:return erruf!(\"action ast select max cannot more than list num\")",
-        "protocol/src/action/astselect.rs:33:return erruf!(\"action ast select num cannot more than {}\", TX_ACTIONS_MAX)",
-        "protocol/src/action/astselect.rs:73:return erruf!(\"action ast select must succeed at least {} but only {}\", slt_min, ok)",
+        "protocol/src/action/asthelper.rs:133:BError::Unwind(msg) => erru!(msg),",
+        "protocol/src/action/astselect.rs:46:return erruf!(\"action ast select must succeed at least {} but only {}\", slt_min, ok)",
         "protocol/src/action/chain.rs:21:return erruf!(\"left height {} cannot big than rigth height {}\", left, right)",
         "protocol/src/action/chain.rs:24:return erruf!(\"transction must submit in height between {} and {}\", left, right)",
         "protocol/src/action/chain.rs:48:return erruf!(\"transction must belong to chains {} but on chain {}\", cids, cid)",
-        "protocol/src/action/util.rs:19:None => return erruf!(\"ast tree depth overflow\"),",
-        "protocol/src/action/util.rs:22:return erruf!(",
-        "protocol/src/action/util.rs:35:BError::Unwind(msg) => erru!(msg),",
-        "protocol/src/operate/asset.rs:8:return erruf!(\"Asset operate amount cannot be zero\")",
         "protocol/src/operate/asset.rs:36:return erruf!(\"address {} asset {} is insufficient, at least {}\",",
-        "protocol/src/operate/asset.rs:51:return erruf!(\"cannot trs to self\")",
-        "protocol/src/operate/asset.rs:70:return erruf!(\"check asset is cannot empty\")",
         "protocol/src/operate/asset.rs:81:erruf!(\"address {} asset is insufficient, at least {}\", addr, ast)",
         "protocol/src/operate/diamond.rs:34:return erruf!(\"address {} diamond {} is insufficient, at least {}\",",
-        "protocol/src/operate/diamond.rs:50:return erruf!(\"cannot transfer to self\")",
-        "protocol/src/operate/diamond.rs:73:return erruf!(\"cannot transfer to self\")",
         "protocol/src/operate/diamond.rs:92:return erruf!(\"diamond {} has been mortgaged and cannot be transferred\", hacd_name.to_readable())",
         "protocol/src/operate/diamond.rs:95:return erruf!(\"diamond {} not belong to address {}\", hacd_name.to_readable(), addr_from)",
-        "protocol/src/operate/diamond.rs:126:return erruf!(\"cannot transfer to self\")",
-        "protocol/src/operate/diamond.rs:131:return erruf!(\"from diamond owned form not find\")",
-        "protocol/src/operate/hacash.rs:6:return erruf!(\"amount {} value is not positive\", $amt)",
         "protocol/src/operate/hacash.rs:33:return erruf!(\"address {} balance {} is insufficient, at least {}\",",
         "protocol/src/operate/hacash.rs:85:erruf!(\"address {} balance is insufficient, at least {}\", addr, amt)",
-        "protocol/src/operate/satoshi.rs:9:return erruf!(\"satoshi value cannot be zero\")",
         "protocol/src/operate/satoshi.rs:37:return erruf!(\"address {} satoshi {} is insufficient, at least {}\",",
-        "protocol/src/operate/satoshi.rs:52:return erruf!(\"cannot trs to self\")",
-        "protocol/src/operate/satoshi.rs:72:return erruf!(\"check satoshi is cannot empty\")",
         "protocol/src/operate/satoshi.rs:81:erruf!(\"address {} satoshi is insufficient\", addr)",
         "vm/src/machine/setup.rs:20:return erruf!(\"{} return error code {}\", err_msg, rv.to_uint())",
     ]
     .into_iter()
     .map(str::to_string)
     .collect();
-    expect_set_eq("recoverable macro callsites", &actual, expected);
+    expect_set_eq("unwind macro callsites", &actual, expected);
 }
 
 #[test]
-fn direct_berror_recoverable_callsites_are_allowlisted() {
+fn direct_berror_unwind_callsites_are_allowlisted() {
     let _guard = test_guard();
-    let actual = scan_lines_with_patterns(&["BError::recoverable("]);
+    let actual = scan_lines_with_patterns(&["BError::unwind("]);
     let expected: BTreeSet<String> = [
-        "vm/src/rt/error.rs:138:return BError::recoverable(format!(\"{:?}({}): {}\", code, code as u8, m));",
-        "vm/src/rt/error.rs:144:BError::recoverable(text)",
+        "vm/src/rt/error.rs:138:return BError::unwind(format!(\"{:?}({}): {}\", code, code as u8, m));",
+        "vm/src/rt/error.rs:143:BError::unwind(text),",
     ]
     .into_iter()
     .map(str::to_string)
     .collect();
-    expect_set_eq("direct BError::recoverable callsites", &actual, expected);
+    expect_set_eq("direct BError::unwind callsites", &actual, expected);
 }

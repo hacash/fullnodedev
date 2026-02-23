@@ -18,54 +18,22 @@ action_define! { AstIf, 26,
         let ctx = guard.ctx();
         // Whole-node savepoint: if branch execution fails, rollback both
         // condition side effects and branch side effects.
-        let whole_snap = ctx_snapshot(ctx)?;
-        let snap_before = ctx.gas_remaining();
-        let snap = ast_item_snapshot(ctx)?;
-        gas_add(&mut gas, ast_gas_spent_delta(ctx, snap_before));
-        let cond_before = ctx.gas_remaining();
-        let cond_res = self.cond.execute(ctx);
-        let cond_shared = ast_gas_spent_delta(ctx, cond_before);
-        gas_add(&mut gas, cond_shared);
-        let branch_before = ctx.gas_remaining();
-        let branch_res = match cond_res {
-            // if br
-            Ok((cond_gas, ..)) => {
-                if cond_gas < 0 {
-                    return errf!("negative returned gas: {}", cond_gas)
+        ast_with_whole_snapshot(ctx, |ctx| {
+            let cond_ok = match ast_run_item_snapshot(ctx, &mut gas, |ctx| self.cond.execute(ctx))? {
+                Ok((_cond_gas, _)) => true,
+                Err(e) => {
+                    if e.is_interrupt() {
+                        return ast_rethrow(e)
+                    }
+                    false
                 }
-                let cond_extra = cond_gas.saturating_sub(cond_shared).max(0);
-                gas_add(&mut gas, cond_extra);
-                ctx_merge(ctx, snap);
-                self.br_if.execute(ctx)
-            },
-            // else br
-            Err(e) => {
-                if e.is_unrecoverable() {
-                    ctx_recover(ctx, whole_snap)?;
-                    return ast_rethrow(e)
-                }
-                ctx_recover(ctx, snap)?;
-                self.br_else.execute(ctx)
+            };
+            let branch = if cond_ok { &self.br_if } else { &self.br_else };
+            match ast_run_shared_gas(ctx, &mut gas, |ctx| branch.execute(ctx))? {
+                Ok((_branch_gas, ret)) => Ok(ret),
+                Err(e) => ast_rethrow(e),
             }
-        };
-        let branch_shared = ast_gas_spent_delta(ctx, branch_before);
-        gas_add(&mut gas, branch_shared);
-        let branch_ret = match branch_res {
-            Ok((branch_gas, ret)) => {
-                if branch_gas < 0 {
-                    return errf!("negative returned gas: {}", branch_gas)
-                }
-                let branch_extra = branch_gas.saturating_sub(branch_shared).max(0);
-                gas_add(&mut gas, branch_extra);
-                ret
-            },
-            Err(e) => {
-                ctx_recover(ctx, whole_snap)?;
-                return ast_rethrow(e)
-            }
-        };
-        ctx_merge(ctx, whole_snap);
-        Ok(branch_ret)
+        })
     })
 }
 

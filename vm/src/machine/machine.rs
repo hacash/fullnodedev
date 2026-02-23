@@ -177,14 +177,13 @@ impl VM for MachineBox {
             P2sh => {
                 let payload = ByteView::from_arc(payload);
                 let payload_ref = payload.as_slice();
-                let (state_addr, mv1) =
-                    Address::create(payload_ref).map_err(BError::unrecoverable)?;
-                let (calibs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])
-                    .map_err(BError::unrecoverable)?;
+                let (state_addr, mv1) = Address::create(payload_ref).map_err(BError::interrupt)?;
+                let (calibs, mv2) =
+                    ContractAddressW1::create(&payload_ref[mv1..]).map_err(BError::interrupt)?;
                 let mv = mv1 + mv2;
                 let realcodes = payload
                     .slice(mv, payload.len())
-                    .map_err(BError::unrecoverable)?;
+                    .map_err(BError::interrupt)?;
                 let Ok(param) = param.downcast::<Value>() else {
                     return berrf!("p2sh argv type not match");
                 };
@@ -192,8 +191,7 @@ impl VM for MachineBox {
             }
             Abst => {
                 let kid: AbstCall = std_mem_transmute!(kind);
-                let cadr =
-                    ContractAddress::parse(payload.as_ref()).map_err(BError::unrecoverable)?;
+                let cadr = ContractAddress::parse(payload.as_ref()).map_err(BError::interrupt)?;
                 let Ok(param) = param.downcast::<Value>() else {
                     return berrf!("abst argv type not match");
                 };

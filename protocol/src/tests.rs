@@ -534,7 +534,7 @@ fn test_ctx_action_call_astif_must_check_unreachable_branch_req_sign() {
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_select_min_failure_is_recoverable() {
+fn test_ast_select_min_failure_is_unwind() {
     init_test_registry();
 
     use crate::context::ContextInst;
@@ -574,13 +574,13 @@ fn test_ast_select_min_failure_is_recoverable() {
     let err = ctx
         .action_call(AstSelect::KIND, bytes[2..].to_vec())
         .unwrap_err();
-    assert!(err.is_recoverable(), "{}", err);
+    assert!(err.is_unwind(), "{}", err);
     assert!(err.contains("must succeed at least"), "{}", err);
 }
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_if_rethrow_preserves_recoverable_kind() {
+fn test_ast_if_rethrow_preserves_unwind_kind() {
     init_test_registry();
 
     use crate::context::ContextInst;
@@ -627,7 +627,7 @@ fn test_ast_if_rethrow_preserves_recoverable_kind() {
     let err = ctx
         .action_call(AstIf::KIND, bytes[2..].to_vec())
         .unwrap_err();
-    assert!(err.is_recoverable(), "{}", err);
+    assert!(err.is_unwind(), "{}", err);
 }
 
 #[test]

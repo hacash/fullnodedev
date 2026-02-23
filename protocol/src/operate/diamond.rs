@@ -47,7 +47,7 @@ pub fn hacd_transfer(state: &mut CoreState,
     from: &Address, to: &Address, hacd: &DiamondNumber, _dlist: &DiamondNameListMax200
 ) -> Ret<Vec<u8>> {
     if from == to {
-		return erruf!("cannot transfer to self")
+		return errf!("cannot transfer to self")
     }
     /*p2sh check*/
     #[cfg(not(feature = "vm"))]
@@ -70,7 +70,7 @@ pub fn hacd_move_one_diamond(state: &mut CoreState, addr_from: &Address, addr_to
     addr_from.check_version()?;
     addr_to.check_version()?;
     if addr_from == addr_to {
-		return erruf!("cannot transfer to self")
+		return errf!("cannot transfer to self")
     }
     // query
     let mut diaitem = check_diamond_status(state, addr_from, hacd_name)?;
@@ -123,12 +123,12 @@ pub fn diamond_owned_append(state: &mut CoreState, address: &Address, list: Diam
 
 pub fn diamond_owned_move(state: &mut CoreState, from: &Address, to: &Address, list: &DiamondNameListMax200) -> Rerr {
     if from == to {
-        return erruf!("cannot transfer to self")
+        return errf!("cannot transfer to self")
     }
     // do drop
     let from_owned = state.diamond_owned(from);
     if let None = from_owned {
-        return erruf!("from diamond owned form not find")
+        return errf!("from diamond owned form not find")
     }
     let mut from_owned = from_owned.unwrap();
     let _blsnum = from_owned.drop(list)?;

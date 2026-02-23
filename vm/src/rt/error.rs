@@ -119,9 +119,9 @@ impl From<ItrErr> for Error {
             }
             return text;
         }
-        let is_recoverable = matches!(code, ThrowAbort);
-        if is_recoverable {
-            format!("{}{}", RECOVERABLE_PREFIX, text)
+        let is_unwind = matches!(code, ThrowAbort);
+        if is_unwind {
+            format!("{}{}", UNWIND_PREFIX, text)
         } else {
             text
         }
@@ -135,16 +135,14 @@ impl From<ItrErr> for BError {
         let text = format!("{:?}({}): {}", code, code as u8, msg);
         if code == ExtActCallError {
             if let Some(m) = msg.strip_prefix(UNWIND_PREFIX) {
-                return BError::recoverable(format!("{:?}({}): {}", code, code as u8, m));
+                return BError::unwind(format!("{:?}({}): {}", code, code as u8, m));
             }
-            return BError::unrecoverable(text);
+            return BError::interrupt(text);
         }
-        let is_recoverable = matches!(code, ThrowAbort);
-        if is_recoverable {
-            BError::recoverable(text)
-        } else {
-            BError::unrecoverable(text)
-        }
+        maybe!(matches!(code, ThrowAbort),
+            BError::unwind(text),
+            BError::interrupt(text)
+        )
     }
 }
 

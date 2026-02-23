@@ -394,13 +394,13 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
         let from_owner = from_sto.address.clone();
         let from_insc_len = from_sto.inscripts.length();
         if from_insc_len == 0 {
-            return erruf!(
+            return errf!(
                 "no inscriptions in source HACD {}",
                 this.from_diamond.to_readable()
             );
         }
         if idx >= from_insc_len {
-            return erruf!(
+            return errf!(
                 "inscription index {} out of range, HACD {} has {} inscriptions",
                 idx,
                 this.from_diamond.to_readable(),

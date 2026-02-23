@@ -17,64 +17,36 @@ action_define! { AstSelect, 25,
         }
         let mut guard = ast_enter(ctx)?;
         let ctx = guard.ctx();
-        // Whole-node savepoint: if this AstSelect finally returns Err,
-        // rollback all partial commits done by successful children.
         let slt_min = *self.exe_min as usize;
         let slt_max = *self.exe_max as usize;
         let slt_num = self.actions.length();
-        // check number before snapshot to avoid state fork leak on early return
-        if slt_min > slt_max {
-            return erruf!("action ast select max cannot less than min")
-        }
-        if slt_max > slt_num {
-            return erruf!("action ast select max cannot more than list num")
-        }
-        if slt_num > TX_ACTIONS_MAX {
-            return erruf!("action ast select num cannot more than {}", TX_ACTIONS_MAX)
-        }
-        let whole_snap = ctx_snapshot(ctx)?;
+        validate_ast_select(slt_min, slt_max, slt_num)?;
         // execute
         let mut ok = 0;
         let mut rv = vec![];
-        for act in self.actions.as_list() {
-            if ok >= slt_max {
-                break // ok full
-            }
-            let snap_before = ctx.gas_remaining();
-            let snap = ast_item_snapshot(ctx)?;
-            gas_add(&mut gas, ast_gas_spent_delta(ctx, snap_before));
-            let gas_before = ctx.gas_remaining();
-            let exec_res = act.execute(ctx);
-            let shared = ast_gas_spent_delta(ctx, gas_before);
-            gas_add(&mut gas, shared);
-            match exec_res {
-                Ok((child_gas, r)) => {
-                    if child_gas < 0 {
-                        return errf!("negative returned gas: {}", child_gas)
-                    }
-                    let extra = child_gas.saturating_sub(shared).max(0);
-                    gas_add(&mut gas, extra);
-                    rv = r;
-                    ok += 1;
-                    ctx_merge(ctx, snap);
+        ast_with_whole_snapshot(ctx, |ctx| {
+            for act in self.actions.as_list() {
+                if ok >= slt_max {
+                    break // ok full
                 }
-                Err(e) => {
-                    ctx_recover(ctx, snap)?;
-                    if e.is_unrecoverable() {
-                        ctx_recover(ctx, whole_snap)?;
-                        return ast_rethrow(e)
+                match ast_run_item_snapshot(ctx, &mut gas, |ctx| act.execute(ctx))? {
+                    Ok((_child_gas, r)) => {
+                        rv = r;
+                        ok += 1;
+                    }
+                    Err(e) => {
+                        if e.is_interrupt() {
+                            return ast_rethrow(e)
+                        }
                     }
                 }
             }
-        }
-        // check at least
-        if ok < slt_min {
-            ctx_recover(ctx, whole_snap)?;
-            return erruf!("action ast select must succeed at least {} but only {}", slt_min, ok)
-        }
-        // ok
-        ctx_merge(ctx, whole_snap);
-        Ok(rv)
+            // check at least
+            if ok < slt_min {
+                return erruf!("action ast select must succeed at least {} but only {}", slt_min, ok)
+            }
+            Ok(rv)
+        })
     })
 }
 

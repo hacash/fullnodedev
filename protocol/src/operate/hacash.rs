@@ -3,7 +3,7 @@ use std::vec;
 macro_rules! check_amount_is_positive {
     ($amt:expr) => {
         if ! $amt.is_positive() {
-            return erruf!("amount {} value is not positive", $amt)
+            return errf!("amount {} value is not positive", $amt)
         }
     };
 }

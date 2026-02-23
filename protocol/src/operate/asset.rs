@@ -5,7 +5,7 @@ macro_rules! asset_operate_define {
 
         pub fn $func_name(state: &mut CoreState, $addr: &Address, $amt: &AssetAmt) -> Ret<AssetAmt> {
             if *$amt.amount == 0 {
-                return erruf!("Asset operate amount cannot be zero")
+                return errf!("Asset operate amount cannot be zero")
             }
             $addr.check_version()?;
             let mut userbls = state.balance( $addr ).unwrap_or_default();
@@ -48,7 +48,7 @@ asset_operate_define!(asset_sub, addr, asset, oldasset, {
 pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset: &AssetAmt
 ) -> Ret<Vec<u8>> {
     if from == to {
-		return erruf!("cannot trs to self")
+		return errf!("cannot trs to self")
     }
     /*p2sh check*/
     #[cfg(not(feature = "vm"))]
@@ -67,7 +67,7 @@ pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset
 
 pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> Ret<AssetAmt> {
     if *ast.amount == 0 {
-        return erruf!("check asset is cannot empty")
+        return errf!("check asset is cannot empty")
     }
     addr.check_version()?;
     let state = CoreState::wrap(ctx.state());
