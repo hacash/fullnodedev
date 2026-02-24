@@ -32,7 +32,7 @@ impl<'a> CtxHost<'a> {
 
 impl VmHost for CtxHost<'_> {
     fn height(&mut self) -> u64 {
-        self.ctx.height()
+        self.ctx.env().block.height
     }
 
     fn ext_action_call(&mut self, kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {

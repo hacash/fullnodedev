@@ -286,11 +286,10 @@ fn test_ctx_action_call_must_check_req_sign() {
     use crate::transaction::TransactionType2;
 
     // tx without any signatures
-    let tx = TransactionType2::default();
+    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
 
     let mut env = Env::default();
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
 
     let mut ctx = ContextInst::new(
         env,
@@ -327,8 +326,7 @@ fn test_tx_execute_must_verify_signature_before_actions() {
     tx.actions.push(Box::new(act)).unwrap();
 
     let mut env = Env::default();
-    env.tx.main = tx.main();
-    env.tx.addrs = tx.addrs();
+    env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
         Box::new(crate::context::EmptyState {}),
@@ -376,8 +374,7 @@ fn test_ctx_action_call_extenv_does_not_require_tx_main_signature() {
     let tx = TransactionType2::default();
 
     let mut env = Env::default();
-    env.tx.main = tx.main();
-    env.tx.addrs = tx.addrs();
+    env.tx = crate::transaction::create_tx_info(&tx);
 
     let mut ctx = ContextInst::new(
         env,
@@ -429,8 +426,7 @@ fn test_ctx_action_call_must_check_nested_ast_req_sign() {
     let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
 
     let mut env = Env::default();
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone(), field::ADDRESS_TWOX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
 
     let mut ctx = ContextInst::new(
         env,
@@ -499,10 +495,9 @@ fn test_ctx_action_call_astif_must_check_unreachable_branch_req_sign() {
     use crate::transaction::TransactionType2;
 
     // tx without any signatures
-    let tx = TransactionType2::default();
+    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
     let mut env = Env::default();
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone(), field::ADDRESS_TWOX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
 
     let mut ctx = ContextInst::new(
         env,
@@ -548,8 +543,7 @@ fn test_ast_select_min_failure_is_unwind() {
     );
     let mut env = Env::default();
     env.chain.fast_sync = true;
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
         Box::new(AstForkableState::default()),
@@ -594,8 +588,7 @@ fn test_ast_if_rethrow_preserves_unwind_kind() {
     );
     let mut env = Env::default();
     env.chain.fast_sync = true;
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
         Box::new(AstForkableState::default()),
@@ -646,8 +639,7 @@ fn test_balance_floor_empty_and_duplicate_asset_rejected() {
     );
     let mut env = Env::default();
     env.chain.fast_sync = true;
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
         Box::new(AstForkableState::default()),
@@ -693,8 +685,7 @@ fn test_balance_floor_success_and_insufficient() {
     );
     let mut env = Env::default();
     env.chain.fast_sync = true;
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
         Box::new(AstForkableState::default()),
@@ -744,8 +735,7 @@ fn test_ctx_action_call_must_reject_trailing_bytes() {
 
     let tx = TransactionType2::default();
     let mut env = Env::default();
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
         Box::new(crate::context::EmptyState {}),

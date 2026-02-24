@@ -6,7 +6,7 @@ mod action_coverage {
 
     use basis::component::{ACTION_CTX_LEVEL_CALL_CONTRACT, ACTION_CTX_LEVEL_CALL_MAIN};
     use basis::interface::ActExec;
-    use basis::interface::{ActCall, Context, Logs, State, StateOperat, Transaction};
+    use basis::interface::{Context, Logs, State, StateOperat, Transaction};
     use field::{
         Address, Amount, BytesW1, BytesW2, DiamondName, DiamondSto, Field, Hash, Inscripts, Parse,
         Readable, Serialize, Uint1, Uint2, Uint4,

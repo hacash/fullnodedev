@@ -151,7 +151,7 @@ impl VM for MachineBox {
         let gas_before = ctx.gas_remaining();
         // Fail-fast: if remaining gas can't cover the per-call minimum, this call cannot start.
         if gas_before < min_cost {
-            let gas = ctx.gas_remaining_mut()?;
+            let gas = ctx.vm_gas_mut().into_bret()?.gas_remaining_mut().into_bret()?;
             *gas -= min_cost; // keep the same "min cost consumes from shared counter" semantics
             return berrf!(
                 "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
@@ -162,7 +162,10 @@ impl VM for MachineBox {
         }
         let machine = self.machine.as_mut().unwrap();
         let ctxptr = ctx as *mut dyn Context;
-        let gasptr = unsafe { (*ctxptr).gas_remaining_mut()? as *mut i64 };
+        let gasptr = unsafe {
+            let gasctx = (*ctxptr).vm_gas_mut().into_bret()?;
+            gasctx.gas_remaining_mut().into_bret()? as *mut i64
+        };
         let exenv = unsafe {
             &mut ExecEnv {
                 ctx: &mut *ctxptr,
@@ -206,7 +209,7 @@ impl VM for MachineBox {
         // enforce per-call minimum gas by consuming shortfall from shared counter
         if cost < min_cost {
             let shortfall = min_cost - cost;
-            let gas = ctx.gas_remaining_mut()?;
+            let gas = ctx.vm_gas_mut().into_bret()?.gas_remaining_mut().into_bret()?;
             *gas -= shortfall;
             if *gas < 0 {
                 return berrf!(
@@ -986,7 +989,7 @@ mod machine_test {
         let snap = vm.snapshot_volatile();
 
         // Mutate gas remaining in context (outside VM volatile snapshot).
-        *ctx.gas_remaining_mut().unwrap() = 1;
+        *ctx.vm_gas_mut().unwrap().gas_remaining_mut().unwrap() = 1;
         // Mutate volatile fields (should be restored)
         vm.machine.as_mut().unwrap().r.contract_load_bytes = 777;
         vm.machine

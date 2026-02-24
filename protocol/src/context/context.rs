@@ -32,15 +32,51 @@ impl ContextInst<'_> {
         }
     }
 
+    #[inline]
+    fn tx_ref(&self) -> &dyn TransactionRead {
+        self.txr
+    }
+
+    #[inline]
+    fn tx_addrs(&self) -> &Vec<Address> {
+        &self.env.tx.addrs
+    }
+
+    #[inline]
+    fn debug_assert_tx_bound_consistent(&self) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert_eq!(self.env.tx.ty, self.tx_ref().ty());
+            debug_assert_eq!(self.env.tx.main, self.tx_ref().main());
+            debug_assert_eq!(self.env.tx.addrs, self.tx_ref().addrs());
+        }
+    }
+
+    #[inline]
+    fn reset_tx_runtime_state(&mut self) {
+        // Per-tx caches must not leak across transactions.
+        self.psh.clear();
+        self.check_sign_cache.clear();
+        self.tex_ledger = TexLedger::default();
+        self.vmi = VMNil::empty();
+        self.ctx_gas_reset();
+        self.level = ACTION_CTX_LEVEL_TOP;
+    }
+
+    #[inline]
+    fn bind_tx(&mut self, txr: &dyn TransactionRead) {
+        self.txr = unsafe { std::mem::transmute::<&dyn TransactionRead, &'static dyn TransactionRead>(txr) };
+        self.env.replace_tx(create_tx_info(txr));
+        self.debug_assert_tx_bound_consistent();
+    }
+
+    #[inline]
+    fn state_replace(&mut self, sta: Box<dyn State>) -> Box<dyn State> {
+        std::mem::replace(&mut self.sta, sta)
+    }
+
     pub fn release(self) -> (Box<dyn State>, Box<dyn Logs>) {
         (self.sta, self.log)
-    }
-}
-
-impl ActCall for ContextInst<'_> {
-    fn height(&self) -> u64 { self.env.block.height }
-    fn action_call(&mut self, k: u16, b: Vec<u8>) -> BRet<(u32, Vec<u8>)> {
-        ctx_action_call(self, k, b)
     }
 }
 
@@ -56,12 +92,13 @@ impl StateOperat for ContextInst<'_> {
     fn state_recover(&mut self, old: Arc<Box<dyn State>>) {
         ctx_state_recover_sub(self, old)
     }
-    fn state_replace(&mut self, sta: Box<dyn State>) -> Box<dyn State> {
-        std::mem::replace(&mut self.sta, sta)
-    }
 }
 
 impl Context for ContextInst<'_> {
+
+    fn action_call(&mut self, k: u16, b: Vec<u8>) -> BRet<(u32, Vec<u8>)> {
+        ctx_action_call(self, k, b)
+    }
 
     fn logs(&mut self) -> &mut dyn Logs {
         self.log.as_mut()
@@ -84,23 +121,15 @@ impl Context for ContextInst<'_> {
     }
 
     fn reset_for_new_tx(&mut self, txr: &dyn TransactionRead) {
-        self.txr = unsafe { std::mem::transmute::<&dyn TransactionRead, &'static dyn TransactionRead>(txr) };
-        self.env.replace_tx( create_tx_info(txr) ); // set env
-        // Per-tx caches must not leak across transactions.
-        self.psh.clear();
-        self.check_sign_cache.clear();
-        self.tex_ledger = TexLedger::default();
-        self.vmi = VMNil::empty();
-        self.ctx_gas_reset();
-        self.level = ACTION_CTX_LEVEL_TOP;
+        self.bind_tx(txr);
+        self.reset_tx_runtime_state();
     }
-    fn as_ext_caller(&mut self) -> &mut dyn ActCall { self }
     fn env(&self) -> &Env { &self.env }
     
     fn level(&self) -> usize { self.level }
     fn level_set(&mut self, level: usize) { self.level = level }
 
-    fn tx(&self) -> &dyn TransactionRead { self.txr }
+    fn tx(&self) -> &dyn TransactionRead { self.tx_ref() }
     fn vm(&mut self) -> &mut dyn VM { self.vmi.as_mut() }
     fn vm_init_once(&mut self, vm: Box<dyn VM>) -> Rerr {
         if !self.vmi.is_nil() {
@@ -115,28 +144,27 @@ impl Context for ContextInst<'_> {
     fn gas_refund(&mut self) -> Rerr {
         self.ctx_gas_refund()
     }
-    fn gas_initialized(&self) -> bool {
-        self.ctx_gas_initialized()
-    }
     fn gas_remaining(&self) -> i64 {
         self.ctx_gas_remaining()
-    }
-    fn gas_remaining_mut(&mut self) -> Ret<&mut i64> {
-        self.ctx_gas_remaining_mut()
     }
     fn gas_consume(&mut self, gas: u32) -> Rerr {
         self.ctx_gas_consume(gas)
     }
+    fn vm_gas_mut(&mut self) -> Ret<&mut dyn VmGasMut> {
+        Ok(self)
+    }
     fn addr(&self, ptr :&AddrOrPtr) -> Ret<Address> {
-        ptr.real(&self.env.tx.addrs)
+        self.debug_assert_tx_bound_consistent();
+        ptr.real(self.tx_addrs())
     }
     fn check_sign(&mut self, adr: &Address) -> Rerr {
+        self.debug_assert_tx_bound_consistent();
         if let Some(isok) = self.check_sign_cache.get(adr) {
             return isok.clone().map(|_|())
         }
         // Must check privkey after cache lookup to avoid unnecessary checks on cached entries
         adr.must_privakey()?;
-        let isok = verify_target_signature(adr, self.txr);
+        let isok = verify_target_signature(adr, self.tx_ref());
         self.check_sign_cache.insert(*adr, isok.clone());
         isok.map(|_|())
     }
@@ -162,4 +190,10 @@ impl Context for ContextInst<'_> {
     }
     // psh: HashMap<Address, Box<dyn P2sh>>,
 
+}
+
+impl VmGasMut for ContextInst<'_> {
+    fn gas_remaining_mut(&mut self) -> Ret<&mut i64> {
+        self.ctx_gas_remaining_mut()
+    }
 }

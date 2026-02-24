@@ -181,10 +181,6 @@ impl ContextInst<'_> {
         Ok(())
     }
 
-    fn ctx_gas_initialized(&self) -> bool {
-        self.gas.initialized
-    }
-
     fn ctx_gas_remaining(&self) -> i64 {
         self.gas.remaining
     }

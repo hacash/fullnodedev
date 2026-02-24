@@ -77,6 +77,18 @@ macro_rules! combi_revenum {
                 } else if ty == 2 {
                     let mut v = <$t2>::new();
                     v.from_json(val_str)?;
+                    // Keep JSON decode semantics consistent with binary parse branch split.
+                    let raw = v.serialize();
+                    if raw.is_empty() {
+                        return errf!("invalid revenum type2 value: empty serialization");
+                    }
+                    if raw[0] < $swtv {
+                        return errf!(
+                            "invalid revenum type2 value: leading byte {} less than switch {}",
+                            raw[0],
+                            $swtv
+                        );
+                    }
                     *self = Self::Val2(v);
                 } else {
                     return errf!("invalid revenum type: {}", ty);

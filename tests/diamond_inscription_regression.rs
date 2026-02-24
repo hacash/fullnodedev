@@ -18,8 +18,7 @@ fn make_ctx<'a>(height: u64, tx: &'a dyn TransactionRead) -> ContextInst<'a> {
     let mut env = Env::default();
     env.chain.fast_sync = true;
     env.block.height = height;
-    env.tx.main = tx.main();
-    env.tx.addrs = tx.addrs();
+    env.tx = create_tx_info(tx);
     make_ctx_with_state(env, Box::new(ForkableMemState::default()), tx)
 }
 

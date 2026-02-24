@@ -6,7 +6,7 @@ pub struct AstNodeTxn {
 
 impl AstNodeTxn {
     pub fn begin(ctx: &mut dyn Context) -> Ret<Self> {
-        let snap = ctx_snapshot(ctx)?;
+        let snap = CtxSnapshot::begin(ctx)?;
         Ok(Self { snap })
     }
 
@@ -14,11 +14,11 @@ impl AstNodeTxn {
         let snap = self.snap;
         match res {
             Ok(v) => {
-                ctx_merge(ctx, snap);
+                snap.commit(ctx);
                 Ok(v)
             }
             Err(e) => {
-                match ctx_recover(ctx, snap) {
+                match snap.rollback(ctx) {
                     Ok(()) => Err(e),
                     Err(recover_err) => errf!(
                         "ast node recover failed: {}; original error: {}",
@@ -36,16 +36,16 @@ impl AstNodeTxn {
 /// On error: recover snapshot.
 macro_rules! ast_try_item {
     ($ctx:expr, $exec:expr) => {{
-        let __snap = ast_item_snapshot($ctx)?;
+        let __snap = CtxSnapshot::begin_ast_item($ctx)?;
         let __raw: BRet<(u32, Vec<u8>)> = $exec;
         let __out = match __raw {
             Ok((child_gas, ret)) => {
                 $ctx.gas_consume(child_gas)?;
-                ctx_merge($ctx, __snap);
+                __snap.commit($ctx);
                 Ok(ret)
             }
             Err(e) => {
-                if let Err(re) = ctx_recover($ctx, __snap) {
+                if let Err(re) = __snap.rollback($ctx) {
                     return errf!("ast item recover failed: {}; original error: {}", re, e);
                 }
                 Err(e)

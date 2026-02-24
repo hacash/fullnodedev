@@ -340,7 +340,10 @@ impl AddrOrPtr {
     } 
 
     pub fn from_ptr(i: u8) -> Self {
-        Self::Val2(Addrptr::from(i + ADDR_OR_PTR_DIV_NUM))
+        let raw = i
+            .checked_add(ADDR_OR_PTR_DIV_NUM)
+            .expect("AddrOrPtr::from_ptr index overflow");
+        Self::Val2(Addrptr::from(raw))
     } 
 
     pub fn to_readable(&self) -> String {
@@ -350,7 +353,10 @@ impl AddrOrPtr {
     pub fn readable(&self) -> String {
         match self {
             Self::Val1(v) => v.to_readable(),
-            Self::Val2(v) => format!("<address pointer {}>", v.uint() - ADDR_OR_PTR_DIV_NUM),
+            Self::Val2(v) => match v.uint().checked_sub(ADDR_OR_PTR_DIV_NUM) {
+                Some(ix) => format!("<address pointer {}>", ix),
+                None => format!("<invalid address pointer raw {}>", v.uint()),
+            },
         }
     }
 
@@ -388,6 +394,26 @@ mod address_tests {
         let adrc = "1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9";
         assert_eq!(adrc, Account::create_by("123456").unwrap().readable());
 
+    }
+
+    #[test]
+    fn test_addr_or_ptr_type2_json_reject_low_raw_value() {
+        let mut ptr = AddrOrPtr::default();
+        let err = ptr.from_json(r#"{"type":2,"value":1}"#).unwrap_err();
+        assert!(err.contains("leading byte"));
+    }
+
+    #[test]
+    fn test_addr_or_ptr_readable_invalid_raw_no_underflow() {
+        let ptr = AddrOrPtr::Val2(Addrptr::from(1));
+        let s = ptr.to_readable();
+        assert!(s.contains("invalid address pointer raw 1"));
+    }
+
+    #[test]
+    #[should_panic(expected = "AddrOrPtr::from_ptr index overflow")]
+    fn test_addr_or_ptr_from_ptr_overflow_panics() {
+        let _ = AddrOrPtr::from_ptr(u8::MAX - ADDR_OR_PTR_DIV_NUM + 1);
     }
 
 }
