@@ -126,21 +126,20 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         .ok_or_else(|| "minted_diamond overflow".to_string())?;
     ttcount.minted_diamond = DiamondNumber::from_usize(minted)?;
     if dianum > DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES {
-        let mut sub = tx_bid_fee.clone();
-        if sub.unit() > 1 {
-            sub = sub.unit_sub(1).unwrap();
-        }
-        let burn = tx_bid_fee.clone().sub_mode_u64(&sub)?; // 90%
-        let burn_zhu = burn.to_zhu_u64()?;
-        let total_burn = (*ttcount.hacd_bid_burn_zhu)
-            .checked_add(burn_zhu)
-            .ok_or_else(|| "hacd_bid_burn_zhu overflow".to_string())?;
-        ttcount.hacd_bid_burn_zhu = Uint8::from(total_burn);
+        // Burn 90% by subtracting a safe floor(10%) part.
+        let keep_ten_percent = tx_bid_fee.ten_percent_floor()?;
+        let burn = tx_bid_fee.clone().sub_mode_u64(&keep_ten_percent)?;
+        let burn_238 = burn.to_238_u64()?;
+        let total_burn = (*ttcount.hacd_bid_burn_238)
+            .checked_add(burn_238)
+            .ok_or_else(|| "hacd_bid_burn_238 overflow".to_string())?;
+        ttcount.hacd_bid_burn_238 = Uint8::from(total_burn);
     }
     // gene
     let (life_gene, _visual_gene) = calculate_diamond_gene(dianum, &mediumhx, &diahx, &pending_hash, &tx_bid_fee);
-    // bid_burn    
-    let average_bid_burn = calculate_diamond_average_bid_burn(dianum, *ttcount.hacd_bid_burn_zhu);
+    // The running average here uses cumulative burned bid fee that already
+    // includes the current diamond update in ttcount.
+    let average_bid_burn = calculate_diamond_average_bid_burn(dianum, *ttcount.hacd_bid_burn_238);
     // save diamond smelt
     let diasmelt = DiamondSmelt {
         diamond: name.clone(),
@@ -176,8 +175,6 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     // ok
     Ok(vec![])
 }
-
-
 
 
 

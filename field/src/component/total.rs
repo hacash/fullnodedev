@@ -6,17 +6,18 @@
 */
 combi_struct!(TotalCount, 
 	minted_diamond           : DiamondNumber
-	hacd_bid_burn_zhu        : Uint8 // HAC zhu
+	hacd_bid_burn_238        : Uint8 // HAC unit238
+	tx_fee_burn90_238        : Uint8 // HAC unit238
+	ast_vm_gas_burn_238      : Uint8 // HAC unit238
 	// channel
 	opening_channel          : Uint5
-	channel_deposit_zhu      : Uint8 // HAC zhu
+	channel_deposit_238      : Uint8 // HAC unit238
 	channel_deposit_sat      : Uint8 // BTC sat
-	channel_interest_zhu     : Uint8 // HAC zhu
+	channel_interest_238     : Uint8 // HAC unit238
 	// diamond
 	diamond_engraved         : Uint8
-	diamond_insc_burn_zhu    : Uint8 // HAC zhu
+	diamond_insc_burn_238    : Uint8 // HAC unit238
 	// asset
 	created_asset            : Uint4
-	asset_issue_burn_mei     : Uint4 // HAC mei
+	asset_issue_burn_238     : Uint8 // HAC unit238
 );
-

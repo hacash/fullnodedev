@@ -540,11 +540,11 @@ fn test_ast_single_select_plain_reported_gas_propagates() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
-    let mut tx = TransactionType2::default();
+    let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.ty = Uint1::from(TransactionType3::TYPE);
     tx.actions
         .push(Box::new(AstSelect::create_by(
             2,
@@ -569,11 +569,7 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     let old = ctx.state_fork(); // tx-level isolation
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(
-        err.contains("must succeed at least") || err.contains("gas_max > 0"),
-        "{}",
-        err
-    );
+    assert!(err.contains("must succeed at least"), "{}", err);
     ctx.state_recover(old); // tx-level rollback on failure
 
     assert_eq!(ast_state_get_u8(&mut ctx, 9), Some(99)); // baseline kept
@@ -622,11 +618,11 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
-    let mut tx = TransactionType2::default();
+    let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.ty = Uint1::from(TransactionType3::TYPE);
     tx.actions
         .push(Box::new(AstSelect::create_by(
             0,
@@ -636,20 +632,17 @@ fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
         .unwrap();
 
     let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
+    env.tx = create_tx_info(&tx);
+    let mut ctx = testkit_make_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    let mut state = protocol::state::CoreState::wrap(ctx.state());
+    let mut bls = state.balance(&tx.main()).unwrap_or_default();
+    bls.hacash = Amount::unit238(5_000_000_000);
+    state.balance_set(&tx.main(), &bls);
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(
-        err.contains("tx with AST actions must set gas_max > 0"),
-        "{}",
-        err
-    );
+    assert!(err.contains("gas has run out"), "{}", err);
 }
 
 #[cfg(feature = "ast")]
@@ -691,12 +684,37 @@ fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
 
 #[cfg(feature = "ast")]
 #[test]
+fn test_tx_without_ast_allows_nonzero_gasmax() {
+    let mut tx = TransactionType3::default();
+    tx.fee = Amount::unit238(1_000_000);
+    tx.addrlist =
+        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
+    tx.ty = Uint1::from(TransactionType3::TYPE);
+    tx.gas_max = Uint1::from(17);
+    tx.actions.push(Box::new(TxMessage::new())).unwrap();
+
+    let main = tx.main();
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = create_tx_info(&tx);
+    let mut ctx = testkit_make_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+
+    let mut state = protocol::state::CoreState::wrap(ctx.state());
+    let mut bls = state.balance(&main).unwrap_or_default();
+    bls.hacash = Amount::unit238(5_000_000_000);
+    state.balance_set(&main, &bls);
+
+    tx.execute(&mut ctx).unwrap();
+}
+
+#[cfg(feature = "ast")]
+#[test]
 fn test_ast_tx_gas_settlement_charges_fee_plus_used_and_refunds_unused() {
-    let mut tx = TransactionType2::default();
+    let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.ty = Uint1::from(TransactionType3::TYPE);
     tx.gas_max = Uint1::from(17);
     tx.fee = Amount::unit238(1_000_000);
     tx.actions
@@ -769,11 +787,11 @@ fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
-    let mut tx = TransactionType2::default();
+    let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.ty = Uint1::from(TransactionType3::TYPE);
 
     let act = AstIf::create_by(
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(70, 70))]), // cond=true and committed by AstIf
@@ -801,11 +819,7 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     let old = ctx.state_fork();
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(
-        err.contains("must succeed at least") || err.contains("gas_max > 0"),
-        "{}",
-        err
-    );
+    assert!(err.contains("must succeed at least"), "{}", err);
     ctx.state_recover(old);
 
     assert_eq!(ast_state_get_u8(&mut ctx, 79), Some(79)); // baseline kept
@@ -3772,11 +3786,11 @@ fn test_ast_layered_with_mid_vm_failure_unwind_and_warmup_monotonic() {
 #[test]
 fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balance() {
     let _guard = ast_test_global_guard();
-    let mut tx = TransactionType2::default();
+    let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.ty = Uint1::from(TransactionType3::TYPE);
     tx.gas_max = Uint1::from(17);
     tx.fee = Amount::unit238(1_000_000);
     tx.actions
@@ -3836,11 +3850,11 @@ fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balanc
 #[cfg(feature = "ast")]
 #[test]
 fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
-    let mut tx = TransactionType2::default();
+    let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.ty = Uint1::from(TransactionType3::TYPE);
     tx.gas_max = Uint1::from(17);
     tx.fee = Amount::unit238(1_000_000);
     tx.actions

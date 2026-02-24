@@ -36,19 +36,12 @@ action_define!{ ContractDeploy, 40,
         if vmsto!(ctx).contract_exist(&caddr) {
             return errf!("contract {} already exist", (*caddr).to_readable())
         }
-        // cannot inherit self or link self as library
-        if self.contract.inherits.as_list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot inherit itself {}", (*caddr).to_readable())
-        }
-        if self.contract.librarys.as_list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot link itself as library {}", (*caddr).to_readable())
-        }
         // check
         self.contract.check(hei)?;
         if self.contract.metas.revision.uint() != 0 {
             return errf!("contract revision must be 0 on deploy")
         }
-        precheck_contract_links_and_calls(ctx, &caddr, &self.contract)?;
+        precheck_contract_store(&caddr, &self.contract, ctx)?;
         let accf  = AbstCall::Construct;
         let hvaccf = self.contract.have_abst_call(accf);
         let charge_bytes = self.contract.size();
@@ -105,14 +98,7 @@ action_define!{ ContractUpdate, 41,
         // apply edit (in memory)
 		let mut new_contract = contract.clone();
         let (_did_append, did_change) = new_contract.apply_edit(&self.edit, hei)?;
-        // cannot inherit self or link self as library
-        if new_contract.inherits.as_list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot inherit itself {}", (*caddr).to_readable())
-        }
-        if new_contract.librarys.as_list().iter().any(|a| a == &caddr) {
-            return errf!("contract cannot link itself as library {}", (*caddr).to_readable())
-        }
-        precheck_contract_links_and_calls(ctx, &caddr, &new_contract)?;
+        precheck_contract_store(&caddr, &new_contract, ctx)?;
         // spend protocol fee only when storage grows
         let old_size = contract.size();
         let new_size = new_contract.size();
@@ -140,17 +126,32 @@ action_define!{ ContractUpdate, 41,
 
 
 
-fn precheck_contract_links_and_calls(
-    ctx: &mut dyn Context,
-    root_addr: &ContractAddress,
-    root_contract: &ContractSto,
-) -> Rerr {
+fn check_contract_self_reference(root_addr: &ContractAddress, root_contract: &ContractSto) -> Rerr {
+    if root_contract.inherits.as_list().iter().any(|a| a == root_addr) {
+        return errf!("contract cannot inherit itself {}", root_addr.to_readable())
+    }
+    if root_contract.librarys.as_list().iter().any(|a| a == root_addr) {
+        return errf!("contract cannot link itself as library {}", root_addr.to_readable())
+    }
+    Ok(())
+}
+
+fn precheck_contract_links_and_calls(ctx: &mut dyn Context, root_addr: &ContractAddress, root_contract: &ContractSto) -> Rerr {
     let height = ctx.env().block.height;
     let mut vmsta = VMState::wrap(ctx.state());
     check_link_contracts_exist(&mut vmsta, root_addr, root_contract)?;
     check_inherits_acyclic(&mut vmsta, root_addr, root_contract)?;
     check_static_call_targets(&mut vmsta, root_addr, root_contract, height)?;
     Ok(())
+}
+
+fn precheck_contract_store(
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    ctx: &mut dyn Context,
+) -> Rerr {
+    check_contract_self_reference(root_addr, root_contract)?;
+    precheck_contract_links_and_calls(ctx, root_addr, root_contract)
 }
 
 fn load_contract_for_check(

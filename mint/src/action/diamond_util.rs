@@ -93,15 +93,19 @@ pub fn calculate_diamond_gene(dianum: u32, diamhash: &[u8;32], diamondstr: &[u8;
 /**
  * calculate diamond average bid burn
  */
-pub fn calculate_diamond_average_bid_burn(diamond_number: u32, hacd_burn_zhu: u64) -> Uint2 {
+pub fn calculate_diamond_average_bid_burn(diamond_number: u32, hacd_burn_238: u64) -> Uint2 {
     // old
     if diamond_number <= DIAMOND_ABOVE_NUMBER_OF_STATISTICS_AVERAGE_BIDDING_BURNING {
         return Uint2::from(10)
     }
     // average
     let bsnum = diamond_number - DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES;
-    let bidfee = hacd_burn_zhu / 1_0000_0000 / (bsnum as u64) + 1;
+    // Intentional upward bias (+1 mei): easier settlement for inscription fees
+    // and future collateral-lending business accounting.
+    let avgbid = hacd_burn_238 / 100_0000_0000 / (bsnum as u64) + 1;
+    // The burned amount is economically bounded in business assumptions, so
+    // this value is not expected to exceed u16::MAX.
+    assert!(avgbid <= u16::MAX as u64, "average bid burn overflow u16");
     // ok
-    Uint2::from(bidfee as u16)
+    Uint2::from(avgbid as u16)
 }
-

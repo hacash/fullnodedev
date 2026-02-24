@@ -57,8 +57,8 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     }
 
     let lock_total = left_amt.add_mode_u64(right_amt)?;
-    // TotalCount is tracked in HAC zhu (u64).
-    let lock_total_zhu = lock_total.to_zhu_u64()?;
+    // TotalCount is tracked in HAC unit238 (u64).
+    let lock_total_238 = lock_total.to_238_u64()?;
 
     // check exist
     let mut reuse_version = Uint4::from(1);
@@ -112,10 +112,10 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         .checked_add(1)
         .ok_or_else(|| "opening_channel overflow".to_string())?;
     ttcount.opening_channel = Uint5::from(opening);
-    let dep = (*ttcount.channel_deposit_zhu)
-        .checked_add(lock_total_zhu)
-        .ok_or_else(|| "channel_deposit_zhu overflow".to_string())?;
-    ttcount.channel_deposit_zhu = Uint8::from(dep);
+    let dep = (*ttcount.channel_deposit_238)
+        .checked_add(lock_total_238)
+        .ok_or_else(|| "channel_deposit_238 overflow".to_string())?;
+    ttcount.channel_deposit_238 = Uint8::from(dep);
     cstate.set_total_count(&ttcount);
 
     // ok finish

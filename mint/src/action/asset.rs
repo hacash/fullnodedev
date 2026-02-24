@@ -77,13 +77,11 @@ action_define!{ AssetCreate, 16,
             .checked_add(1)
             .ok_or("created_asset overflow".to_string())?;
         ttcount.created_asset = Uint4::from(new_created_asset);
-        let pfee_mei = pfee.to_mei_u64()?;
-        let pfee_mei_u32 = u32::try_from(pfee_mei)
-            .map_err(|_| "protocol fee mei overflow uint4".to_string())?;
-        let new_asset_issue_burn_mei = ttcount.asset_issue_burn_mei.uint()
-            .checked_add(pfee_mei_u32)
-            .ok_or("asset_issue_burn_mei overflow".to_string())?;
-        ttcount.asset_issue_burn_mei = Uint4::from(new_asset_issue_burn_mei);
+        let pfee_238 = pfee.to_238_u64()?;
+        let new_asset_issue_burn_238 = (*ttcount.asset_issue_burn_238)
+            .checked_add(pfee_238)
+            .ok_or("asset_issue_burn_238 overflow".to_string())?;
+        ttcount.asset_issue_burn_238 = Uint8::from(new_asset_issue_burn_238);
         sta.set_total_count(&ttcount);
         // do mint
         let mut asset_obj = AssetAmt::from_serial(amd.serial);

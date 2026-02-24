@@ -41,9 +41,6 @@ pub fn decode_gas_budget(b: u8) -> i64 {
 }
 
 pub fn tx_gas_params_from_byte(gas_max_byte: u8) -> Ret<(i64, i64)> {
-    if gas_max_byte == 0 {
-        return errf!("gas_max_byte is 0: contract call requires tx.gas_max > 0")
-    }
     let decoded = decode_gas_budget(gas_max_byte);
     let budget = decoded.min(TX_GAS_BUDGET_CAP);
     if budget <= 0 {
@@ -177,6 +174,18 @@ impl ContextInst<'_> {
         if refund.is_positive() {
             let main = self.env().tx.main;
             crate::operate::hac_add(self, &main, &refund)?;
+        }
+        if used_charge.is_positive() {
+            let used_238 = used_charge.to_238_u64()?;
+            if used_238 > 0 {
+                let mut state = crate::state::CoreState::wrap(self.state());
+                let mut ttcount = state.get_total_count();
+                let next_burn = (*ttcount.ast_vm_gas_burn_238)
+                    .checked_add(used_238)
+                    .ok_or_else(|| "ast_vm_gas_burn_238 overflow".to_string())?;
+                ttcount.ast_vm_gas_burn_238 = Uint8::from(next_burn);
+                state.set_total_count(&ttcount);
+            }
         }
         Ok(())
     }

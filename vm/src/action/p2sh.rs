@@ -55,7 +55,8 @@ action_define!{ P2SHScriptProve, 46,
             return errf!("marks bytes format error")
         }
         let adr = self.get_merkel()?;
-        ctx.p2sh_set(adr, Box::new(self.get_stuff(ctx)?))?;
+        let stuff = self.get_stuff_with_merkel(ctx, &adr)?;
+        ctx.p2sh_set(adr, Box::new(stuff))?;
         // finish
         Ok(vec![])
     })
@@ -124,7 +125,7 @@ impl P2SHScriptProve {
         Ok(())
     }
 
-    fn get_stuff(&self, ctx: &dyn Context) -> Ret<UnlockScript> {
+    fn get_stuff_with_merkel(&self, ctx: &dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
         // check bytecodes
         let hei = ctx.env().block.height;
         let cap = SpaceCap::new(hei);
@@ -142,7 +143,7 @@ impl P2SHScriptProve {
         convert_and_check(&cap, ctb, &lockbox, hei)?;
         Self::verify_witness_bytes(&cap, &witness)?;
         // ok
-        let merkel = self.get_merkel()?.to_vec();
+        let merkel = scriptmh.to_vec();
         let libs = self.adrlibs.serialize();
         let mut stuff = Vec::with_capacity(
             merkel.len() + libs.len() + lockbox.len()

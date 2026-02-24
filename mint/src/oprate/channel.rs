@@ -39,7 +39,7 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
     if  left_amt.add_mode_u64(right_amt)? != ttamt {
         return errf!("HAC distribution amount must equal with lock in.")
     }
-    let ttamt_zhu = ttamt.to_zhu_u64()?;
+    let ttamt_238 = ttamt.to_238_u64()?;
     let ttsat = paychan.left_bill.balance.satoshi + paychan.right_bill.balance.satoshi;
     if *left_sat + *right_sat != ttsat {
         return errf!("BTC distribution amount must equal with lock in.")
@@ -65,15 +65,15 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
             return errf!("interest calculate error!")
         }
         let ttiesthac = ttnewhac.sub_mode_u64(&ttamt)?;
-        let ttiesthac_zhu = ttiesthac.to_zhu_u64()?;
-        let interest = (*ttcount.channel_interest_zhu)
-            .checked_add(ttiesthac_zhu)
-            .ok_or_else(|| "channel_interest_zhu overflow".to_string())?;
-        ttcount.channel_interest_zhu = Uint8::from(interest);
-        let dep = (*ttcount.channel_deposit_zhu)
-            .checked_sub(ttamt_zhu)
-            .ok_or_else(|| "channel_deposit_zhu underflow".to_string())?;
-        ttcount.channel_deposit_zhu = Uint8::from(dep);
+        let ttiesthac_238 = ttiesthac.to_238_u64()?;
+        let interest = (*ttcount.channel_interest_238)
+            .checked_add(ttiesthac_238)
+            .ok_or_else(|| "channel_interest_238 overflow".to_string())?;
+        ttcount.channel_interest_238 = Uint8::from(interest);
+        let dep = (*ttcount.channel_deposit_238)
+            .checked_sub(ttamt_238)
+            .ok_or_else(|| "channel_deposit_238 underflow".to_string())?;
+        ttcount.channel_deposit_238 = Uint8::from(dep);
         if newamt1.is_positive() {
             hac_add(ctx, left_addr, &newamt1)?;
         }

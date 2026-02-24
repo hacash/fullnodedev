@@ -696,6 +696,26 @@ impl Amount {
         Ok(Self::coin_u128(du, self.unit))
     }
 
+    pub fn ratio_floor(&self, numerator: u64, denominator: u64) -> Ret<Self> {
+        if denominator == 0 {
+            return errf!("ratio_floor denominator cannot be zero")
+        }
+        if self.is_negative() {
+            return errf!("cannot ratio_floor for negative")
+        }
+        if self.is_zero() || numerator == 0 {
+            return Ok(Self::zero())
+        }
+        let base = self.to_bigint();
+        let scaled = base * BigInt::from(numerator);
+        let part = scaled / BigInt::from(denominator);
+        Self::from_bigint(&part)
+    }
+
+    pub fn ten_percent_floor(&self) -> Ret<Self> {
+        self.ratio_floor(1, 10)
+    }
+
     pub fn unit_sub(&self, sub: u8) -> Ret<Self> {
         if sub == 0 {
             return Ok(self.clone())
@@ -1169,6 +1189,18 @@ mod amount_tests {
         let b = a.unit_sub(UNIT_MEI).unwrap();
         assert_eq!(b.unit(), 0, "unit_sub(248) on unit 248 should yield unit 0");
         assert!(b.equal(&Amount::from("1:0").unwrap()));
+    }
+
+    #[test]
+    fn test_ten_percent_floor_behaviour() {
+        let a = Amount::from("100:0").unwrap();
+        assert!(a.ten_percent_floor().unwrap().equal(&Amount::from("10:0").unwrap()));
+
+        let b = Amount::from("9:0").unwrap();
+        assert!(b.ten_percent_floor().unwrap().is_zero(), "9 * 10% floor should be zero");
+
+        let c = Amount::from("123:0").unwrap();
+        assert!(c.ten_percent_floor().unwrap().equal(&Amount::from("12:0").unwrap()));
     }
 
     #[test]

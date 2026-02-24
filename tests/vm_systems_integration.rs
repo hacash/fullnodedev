@@ -116,6 +116,34 @@ fn setup_vm_run_requires_registered_assigner() {
 }
 
 #[test]
+fn setup_vm_run_without_gas_init_reports_run_out() {
+    let _guard = test_guard();
+    set_vm_assigner(Some(machine::vm_assign));
+
+    let main = main_addr();
+    let tx = make_tx(3, main, vec![], 0);
+    let mut ctx = make_ctx(
+        1,
+        &tx,
+        Box::new(StateMem::default()),
+        Box::new(MemLogs::default()),
+    );
+
+    let err = machine::setup_vm_run(
+        &mut ctx,
+        ExecMode::Main as u8,
+        CodeType::Bytecode as u8,
+        Arc::from(vec![Bytecode::END as u8]),
+        Value::Nil,
+    )
+    .unwrap_err();
+
+    assert!(err.contains("gas has run out"), "{err}");
+
+    set_vm_assigner(None);
+}
+
+#[test]
 fn setup_vm_run_executes_after_assigner_registered() {
     let _guard = test_guard();
     set_vm_assigner(Some(machine::vm_assign));

@@ -1,7 +1,5 @@
 
 
-use basis::component::ActLv;
-
 /*
     VM assigner: allows vm crate to register its assign function
     so that protocol layer can pre-initialize VM at TX execution entry.
@@ -18,13 +16,7 @@ pub fn vm_assigner(f: FnVmAssignFunc) {
 }
 
 fn tx_vm_enabled(ctx: &dyn Context) -> bool {
-    if ctx.env().tx.ty < crate::transaction::TransactionType3::TYPE {
-        return false
-    }
-    if matches!(ctx.tx().fee_extend(), Ok(v) if v > 0) {
-        return true
-    }
-    ctx.tx().actions().iter().any(|a| a.level() == ActLv::Ast)
+    ctx.env().tx.ty >= crate::transaction::TransactionType3::TYPE
 }
 
 /// Initialize VM on context if an assigner is registered and VM is not yet created.

@@ -78,8 +78,10 @@ impl TransactionRead for $class {
     }
 
     fn fee_extend(&self) -> Ret<u8> {
-        // Return the raw 1-byte gas_max value.
-        // The VM decodes it via decode_gas_budget().
+        // Only type3+ participates in gas_max fee extension; type1/2 must be 0.
+        if $tyid < TransactionType3::TYPE {
+            return Ok(0)
+        }
         Ok(*self.gas_max)
     }
 
@@ -244,7 +246,7 @@ impl $class {
 fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     const TXTY1: u8 = TransactionType1::TYPE;
     const _TXTY2: u8 = TransactionType2::TYPE;
-    const _TXTY3: u8 = TransactionType3::TYPE;
+    const TXTY3: u8 = TransactionType3::TYPE;
     let env = ctx.env();
     let blkhei = env.block.height;
     let not_fast_sync = !env.chain.fast_sync;
@@ -290,6 +292,13 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
             // pass the BUG
         }
     }
+    if tx.ty() < TXTY3 && has_ast {
+        return errf!(
+            "tx type {} cannot include AST actions, need at least {}",
+            tx.ty(),
+            TXTY3
+        )
+    }
     // set tx exist mark
     state.tx_exist_set(&hx, &BlockHeight::from(blkhei));
     /*
@@ -305,15 +314,6 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     }
     */
     let gas_max_byte = tx.fee_extend().unwrap_or(0);
-    if has_ast {
-        if gas_max_byte == 0 {
-            return errf!("tx with AST actions must set gas_max > 0")
-        }
-    } else {
-        if gas_max_byte != 0 {
-            return errf!("tx without AST actions must set gas_max = 0")
-        }
-    }
 
     // pre-initialize VM for this tx (if vm crate is registered)
     crate::setup::do_vm_init(ctx)?;
@@ -344,6 +344,22 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
 
     // spend fee
     operate::hac_sub(ctx, &main, fee)?;
+    let fee_got = tx.fee_got();
+    let burn_fee = fee.sub_mode_u128(&fee_got)?;
+    if burn_fee.is_positive() {
+        // TotalCount stores burn stats in unit238 (u64). Converting here floors any amount
+        // below one unit238; this is an intentional precision/storage trade-off.
+        let burn_238 = burn_fee.to_238_u64()?;
+        if burn_238 > 0 {
+            let mut state = CoreState::wrap(ctx.state());
+            let mut ttcount = state.get_total_count();
+            let next_burn = (*ttcount.tx_fee_burn90_238)
+                .checked_add(burn_238)
+                .ok_or_else(|| "tx_fee_burn90_238 overflow".to_string())?;
+            ttcount.tx_fee_burn90_238 = Uint8::from(next_burn);
+            state.set_total_count(&ttcount);
+        }
+    }
     // ok finish
     Ok(())
 }
