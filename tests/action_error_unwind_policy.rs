@@ -1,6 +1,6 @@
 #![cfg(feature = "vm")]
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -395,7 +395,7 @@ fn walk_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn scan_lines_with_patterns(patterns: &[&str]) -> BTreeSet<String> {
+fn scan_lines_with_patterns(patterns: &[&str]) -> BTreeMap<String, usize> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = vec![];
     for rel in ["protocol/src", "mint/src", "vm/src"] {
@@ -403,23 +403,44 @@ fn scan_lines_with_patterns(patterns: &[&str]) -> BTreeSet<String> {
     }
     files.sort();
 
-    let mut found = BTreeSet::new();
+    let mut found = BTreeMap::new();
     for file in files {
         let rel = file.strip_prefix(root).unwrap().display().to_string();
         let src = fs::read_to_string(&file)
             .unwrap_or_else(|e| panic!("read_to_string {} failed: {}", file.display(), e));
-        for (ln, line) in src.lines().enumerate() {
+        for line in src.lines() {
             if patterns.iter().any(|pat| line.contains(pat)) {
-                found.insert(format!("{}:{}:{}", rel, ln + 1, normalized(line)));
+                let key = format!("{}:{}", rel, normalized(line));
+                *found.entry(key).or_insert(0) += 1;
             }
         }
     }
     found
 }
 
-fn expect_set_eq(label: &str, actual: &BTreeSet<String>, expected: BTreeSet<String>) {
-    let missing: Vec<_> = expected.difference(actual).cloned().collect();
-    let extra: Vec<_> = actual.difference(&expected).cloned().collect();
+fn expected_multiset(entries: &[&str]) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    for e in entries {
+        *out.entry((*e).to_owned()).or_insert(0) += 1;
+    }
+    out
+}
+
+fn expect_multiset_eq(label: &str, actual: &BTreeMap<String, usize>, expected: BTreeMap<String, usize>) {
+    let mut missing = vec![];
+    let mut extra = vec![];
+    for (k, need) in &expected {
+        let got = *actual.get(k).unwrap_or(&0);
+        if got < *need {
+            missing.push(format!("{} x{}", k, need - got));
+        }
+    }
+    for (k, got) in actual {
+        let need = *expected.get(k).unwrap_or(&0);
+        if *got > need {
+            extra.push(format!("{} x{}", k, got - need));
+        }
+    }
     if !missing.is_empty() || !extra.is_empty() {
         panic!(
             "{} mismatch\nmissing({}):\n{}\nextra({}):\n{}",
@@ -436,39 +457,32 @@ fn expect_set_eq(label: &str, actual: &BTreeSet<String>, expected: BTreeSet<Stri
 fn unwind_macro_callsites_are_allowlisted() {
     let _guard = test_guard();
     let actual = scan_lines_with_patterns(&["erru!(", "erruf!(", "berru!(", "berruf!("]);
-    let expected: BTreeSet<String> = [
-        "protocol/src/action/asthelper.rs:133:BError::Unwind(msg) => erru!(msg),",
-        "protocol/src/action/astselect.rs:46:return erruf!(\"action ast select must succeed at least {} but only {}\", slt_min, ok)",
-        "protocol/src/action/chain.rs:21:return erruf!(\"left height {} cannot big than rigth height {}\", left, right)",
-        "protocol/src/action/chain.rs:24:return erruf!(\"transction must submit in height between {} and {}\", left, right)",
-        "protocol/src/action/chain.rs:48:return erruf!(\"transction must belong to chains {} but on chain {}\", cids, cid)",
-        "protocol/src/operate/asset.rs:36:return erruf!(\"address {} asset {} is insufficient, at least {}\",",
-        "protocol/src/operate/asset.rs:81:erruf!(\"address {} asset is insufficient, at least {}\", addr, ast)",
-        "protocol/src/operate/diamond.rs:34:return erruf!(\"address {} diamond {} is insufficient, at least {}\",",
-        "protocol/src/operate/diamond.rs:92:return erruf!(\"diamond {} has been mortgaged and cannot be transferred\", hacd_name.to_readable())",
-        "protocol/src/operate/diamond.rs:95:return erruf!(\"diamond {} not belong to address {}\", hacd_name.to_readable(), addr_from)",
-        "protocol/src/operate/hacash.rs:33:return erruf!(\"address {} balance {} is insufficient, at least {}\",",
-        "protocol/src/operate/hacash.rs:85:erruf!(\"address {} balance is insufficient, at least {}\", addr, amt)",
-        "protocol/src/operate/satoshi.rs:37:return erruf!(\"address {} satoshi {} is insufficient, at least {}\",",
-        "protocol/src/operate/satoshi.rs:81:erruf!(\"address {} satoshi is insufficient\", addr)",
-        "vm/src/machine/setup.rs:20:return erruf!(\"{} return error code {}\", err_msg, rv.to_uint())",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect();
-    expect_set_eq("unwind macro callsites", &actual, expected);
+    let expected = expected_multiset(&[
+        "protocol/src/action/astselect.rs:return erruf!(\"action ast select must succeed at least {} but only {}\", slt_min, ok);",
+        "protocol/src/action/chain.rs:return erruf!(\"left height {} cannot big than rigth height {}\", left, right)",
+        "protocol/src/action/chain.rs:return erruf!(\"transction must submit in height between {} and {}\", left, right)",
+        "protocol/src/action/chain.rs:return erruf!(\"transction must belong to chains {} but on chain {}\", cids, cid)",
+        "protocol/src/operate/asset.rs:return erruf!(\"address {} asset {} is insufficient, at least {}\",",
+        "protocol/src/operate/asset.rs:erruf!(\"address {} asset is insufficient, at least {}\", addr, ast)",
+        "protocol/src/operate/diamond.rs:return erruf!(\"address {} diamond {} is insufficient, at least {}\",",
+        "protocol/src/operate/diamond.rs:return erruf!(\"diamond {} has been mortgaged and cannot be transferred\", hacd_name.to_readable())",
+        "protocol/src/operate/diamond.rs:return erruf!(\"diamond {} not belong to address {}\", hacd_name.to_readable(), addr_from)",
+        "protocol/src/operate/hacash.rs:return erruf!(\"address {} balance {} is insufficient, at least {}\",",
+        "protocol/src/operate/hacash.rs:erruf!(\"address {} balance is insufficient, at least {}\", addr, amt)",
+        "protocol/src/operate/satoshi.rs:return erruf!(\"address {} satoshi {} is insufficient, at least {}\",",
+        "protocol/src/operate/satoshi.rs:erruf!(\"address {} satoshi is insufficient\", addr)",
+        "vm/src/machine/setup.rs:return erruf!(\"{} return error code {}\", err_msg, rv.to_uint())",
+    ]);
+    expect_multiset_eq("unwind macro callsites", &actual, expected);
 }
 
 #[test]
 fn direct_berror_unwind_callsites_are_allowlisted() {
     let _guard = test_guard();
     let actual = scan_lines_with_patterns(&["BError::unwind("]);
-    let expected: BTreeSet<String> = [
-        "vm/src/rt/error.rs:138:return BError::unwind(format!(\"{:?}({}): {}\", code, code as u8, m));",
-        "vm/src/rt/error.rs:143:BError::unwind(text),",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect();
-    expect_set_eq("direct BError::unwind callsites", &actual, expected);
+    let expected = expected_multiset(&[
+        "vm/src/rt/error.rs:return BError::unwind(format!(\"{:?}({}): {}\", code, code as u8, m));",
+        "vm/src/rt/error.rs:BError::unwind(text)",
+    ]);
+    expect_multiset_eq("direct BError::unwind callsites", &actual, expected);
 }

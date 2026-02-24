@@ -4,6 +4,9 @@ pub type Rerr = Result<(), Error>;
 pub type BRet<T> = Result<T, BError>;
 pub type BRerr = Result<(), BError>;
 pub const UNWIND_PREFIX: &str = "[UNWIND] ";
+// Keep compatibility aliases for existing call sites.
+pub const RECOVERABLE_PREFIX: &str = UNWIND_PREFIX;
+pub const UNRECOVERABLE_PREFIX: &str = "";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BError {
@@ -20,12 +23,28 @@ impl BError {
         Self::Interrupt(msg.into())
     }
 
+    pub fn recoverable(msg: impl Into<String>) -> Self {
+        Self::Unwind(msg.into())
+    }
+
+    pub fn unrecoverable(msg: impl Into<String>) -> Self {
+        Self::Interrupt(msg.into())
+    }
+
     pub fn is_unwind(&self) -> bool {
         matches!(self, Self::Unwind(_))
     }
 
     pub fn is_interrupt(&self) -> bool {
         matches!(self, Self::Interrupt(_))
+    }
+
+    pub fn is_recoverable(&self) -> bool {
+        self.is_unwind()
+    }
+
+    pub fn is_unrecoverable(&self) -> bool {
+        self.is_interrupt()
     }
 
     pub fn as_str(&self) -> &str {
@@ -80,9 +99,9 @@ impl<T> IntoBRet<T> for Ret<T> {
     fn into_bret(self) -> BRet<T> {
         self.map_err(|e| {
             if let Some(msg) = e.strip_prefix(UNWIND_PREFIX) {
-                BError::unwind(msg.to_owned())
+                BError::recoverable(msg.to_owned())
             } else {
-                BError::interrupt(e)
+                BError::unrecoverable(e)
             }
         })
     }
@@ -134,14 +153,14 @@ macro_rules! err {
 #[macro_export]
 macro_rules! berr {
     ($v:expr) => {
-        Err($crate::BError::interrupt(($v).to_string()))
+        Err($crate::BError::unrecoverable(($v).to_string()))
     };
 }
 
 #[macro_export]
 macro_rules! berru {
     ($v:expr) => {
-        Err($crate::BError::unwind(($v).to_string()))
+        Err($crate::BError::recoverable(($v).to_string()))
     };
 }
 
@@ -187,7 +206,7 @@ macro_rules! berrunbox {
     ($errbox:expr) => {
         match $errbox {
             Ok(v) => Ok(v),
-            Err(e) => Err($crate::BError::interrupt(e.to_string())),
+            Err(e) => Err($crate::BError::unrecoverable(e.to_string())),
         }
     };
 }
@@ -206,7 +225,7 @@ macro_rules! ifer {
 macro_rules! ifber {
     ( $value:expr ) => {
         if let Some(e) = $value {
-            return Err($crate::BError::interrupt(e));
+            return Err($crate::BError::unrecoverable(e));
         }
     };
 }
@@ -224,9 +243,9 @@ mod tests {
 
     #[test]
     fn berror_into_error_uses_unwind_prefix_only_for_unwind() {
-        let u: Error = BError::unwind("biz fail").into();
+        let u: Error = BError::recoverable("biz fail").into();
         assert_eq!(u, "[UNWIND] biz fail");
-        let i: Error = BError::interrupt("sys fail").into();
+        let i: Error = BError::unrecoverable("sys fail").into();
         assert_eq!(i, "sys fail");
     }
 
@@ -234,24 +253,24 @@ mod tests {
     fn ret_into_bret_recovers_unwind_prefix() {
         let r: Ret<()> = Err("[UNWIND] fallback".to_owned());
         let e = r.into_bret().unwrap_err();
-        assert!(e.is_unwind());
+        assert!(e.is_recoverable());
         assert_eq!(e.as_str(), "fallback");
     }
 
     #[test]
-    fn ret_into_bret_without_prefix_is_interrupt() {
+    fn ret_into_bret_without_prefix_is_unrecoverable() {
         let r: Ret<()> = Err("hard fail".to_owned());
         let e = r.into_bret().unwrap_err();
-        assert!(e.is_interrupt());
+        assert!(e.is_unrecoverable());
         assert_eq!(e.as_str(), "hard fail");
     }
 
     #[test]
     fn berror_display_uses_wire_format() {
-        let unwind = BError::unwind("biz fail").to_string();
-        assert_eq!(unwind, "[UNWIND] biz fail");
+        let rec = BError::recoverable("biz fail").to_string();
+        assert_eq!(rec, "[UNWIND] biz fail");
 
-        let int = BError::interrupt("sys fail").to_string();
+        let int = BError::unrecoverable("sys fail").to_string();
         assert_eq!(int, "sys fail");
     }
 }

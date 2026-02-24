@@ -139,10 +139,12 @@ impl From<ItrErr> for BError {
             }
             return BError::interrupt(text);
         }
-        maybe!(matches!(code, ThrowAbort),
-            BError::unwind(text),
+        let is_unwind = matches!(code, ThrowAbort);
+        if is_unwind {
+            BError::unwind(text)
+        } else {
             BError::interrupt(text)
-        )
+        }
     }
 }
 

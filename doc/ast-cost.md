@@ -1,224 +1,215 @@
-# AST / VM Return-Gas Cost Model
+# AST Cost Model (Ctx-Gas + Child Return-Gas)
 
-## 1. Overall Goals
+## 1. Scope
 
-This specification defines a unified cost model for combined AST and VM execution, with the following goals:
+This document defines the current AST gas model implemented by:
 
-1. Historical compatibility: do not change top-level transaction charging behavior before AST/VM introduction.
-2. Verifiability: every cost category has a clear ownership and settlement path, directly convertible into test assertions.
-3. Anti-abuse: failed branches, rolled-back branches, and repeated probing must still pay cost, preventing “free branch search”.
-4. No double charge: overlapping shared dynamic consumption and returned gas must not be charged twice.
+1. `ast_try_item!` in `protocol/src/action/asthelper.rs`
+2. `AstSelect` in `protocol/src/action/astselect.rs`
+3. `AstIf` in `protocol/src/action/astif.rs`
+4. snapshot helpers in `protocol/src/context/sub.rs`
 
----
+Current model summary:
 
-## 2. Charging Architecture (Four Layers)
-
-### A. Transaction-Level Cost (HAC)
-
-- `tx.fee`: fixed transaction fee, settled on the transaction success path.
-- `gas_max` budget: enabled only for gas-enabled transactions (AST transactions require `gas_max > 0`), pre-charged at max and refunded by actual usage.
-
-### B. Static Size Cost (returned domain)
-
-- Every action execution produces returned gas (base comes from action size plus action-internal aggregation).
-- Returned gas itself is not an automatic burn signal; the caller decides whether and how to fold it into shared budget.
-
-### C. Dynamic Execution Cost (shared domain)
-
-- VM opcodes, storage, per-call minimum cost, snapshot try cost, etc. are deducted directly from the shared gas budget.
-- Shared is a transaction-global monotonic counter and is not restored by branch rollback.
-
-### D. Snapshot / Recovery Cost (AST-specific)
-
-- AST per-item execution attempts have fixed snapshot try cost (current policy: fixed charge per attempt).
-- AST whole-node savepoint is used only as a consistency rollback boundary and does not add extra whole-snapshot fee.
+1. all actual charging is reflected in `ctx.gas_remaining()`
+2. `AstSelect`/`AstIf` always return gas `0`
+3. each AST item attempt charges fixed snapshot try cost (`40`)
+4. on child success, AST charges child returned gas (`u32`) via `ctx.gas_consume`
+5. child internal runtime gas (including VM runtime gas) is charged by child logic itself
 
 ---
 
-## 3. Top-Level Transaction Loop Rule (Compatibility Critical)
+## 2. Core Invariants
 
-- In top-level `for action in tx.actions`, action returned gas is intentionally discarded.
-- Consequence: top-level regular actions do not charge extra through returned gas.
-- Meaning: returned gas semantics are active only in AST internal nesting and VM `EXTACTION` path.
-
-This rule preserves historical block compatibility and avoids retroactively applying new returned-gas semantics to legacy execution.
+1. Gas monotonicity:
+   rollback never refunds gas.
+2. Control-flow node return gas:
+   `AstSelect` and `AstIf` returned gas is always `0`.
+3. Child return-gas handling:
+   only `ast_try_item!` consumes child returned gas in AST path.
+4. Item snapshot policy:
+   every child attempt goes through `ast_item_snapshot(...)` (`+40`).
+5. Top-level tx policy:
+   transaction main loop still discards action returned gas.
 
 ---
 
-## 4. AST Charging Standard
+## 3. Execution Semantics
 
-## 4.1 AstSelect
+### 3.1 AstSelect
 
 For each attempted child action:
 
-1. Charge one “attempt snapshot fee” (shared deduction).
-2. Execute child action and measure shared consumption during child execution: `shared_child`.
-3. Read child returned gas `ret_child`, and only supplement the non-shared portion:
-   - `extra_child = max(ret_child - shared_child, 0)`.
-4. Node-level accumulated cost increases by:
-   - `snapshot_try + shared_child + extra_child`.
+1. `ast_item_snapshot(ctx)`:
+   consume fixed `40` gas, then snapshot state/vm/log/context volatile.
+2. execute child action (`act.execute(ctx)`).
+3. success path:
+   - `ctx.gas_consume(child_gas)` where `child_gas` is child's returned `u32`
+   - merge snapshot.
+4. failure path:
+   - recover snapshot.
+   - `Unwind` means "skip and continue".
+   - `Interrupt` means abort current node.
 
-If a child fails, state is rolled back but consumed gas is not rolled back; if a child succeeds, state is merged.
+`AstSelect` returns `(0, last_success_ret_or_empty)`.
 
-## 4.2 AstIf
+### 3.2 AstIf
 
-- Execute cond branch first (including cond snapshot try fee), then execute if/else branch according to cond result.
-- Branch charging uses the same `shared + extra(max(ret-shared,0))` aggregation.
-- If final branch fails, roll back whole-node state; gas consumption remains monotonic.
+Execution order:
 
-## 4.3 AST Core Invariants
+1. create whole-node snapshot (`AstNodeTxn`) for if-node rollback.
+2. cond attempt via `ast_try_item!(ctx, self.cond.execute(ctx))`.
+3. select branch (`br_if` or `br_else`).
+4. branch attempt via `ast_try_item!(ctx, branch.execute(ctx))`.
+5. finalize node snapshot:
+   - success => merge
+   - failure => recover
 
-- Rollback reverts state only, not gas.
-- For one child execution, shared part is counted once; extra only supplements the uncovered returned part.
-- Whole savepoint is not charged separately and does not overlap with item snapshot try fee.
-
----
-
-## 5. VM / EXTACTION Charging Standard
-
-### 5.1 VM Dynamic Cost
-
-- VM runs on shared budget; opcode-level and storage-level costs are directly deducted from shared.
-- Every VM call has a minimum-call-cost floor; if actual cost is lower, shortfall is additionally deducted, ensuring each call has a minimum cost.
-
-### 5.2 EXTACTION (VM -> action)
-
-- `EXTACTION` invokes protocol action and receives action returned gas.
-- This returned gas is included in VM-side call cost and finally reflected as shared deduction.
-- Therefore EXTACTION is one returned-gas active path (the other is AST internal nested aggregation).
+`AstIf` returns `(0, branch_ret_bytes)`.
 
 ---
 
-## 6. Double-Charge vs De-dup Rules
+## 4. Gas Consumption Inventory
 
-## 6.1 Explicitly Repeated Charges (by attempt / call count)
+AST path gas consists of the following channels:
 
-1. AST child attempt snapshot fee: charged once per attempt (charged for both success and failure).
-2. Multiple AST branch attempts: each actual child execution is charged independently.
-3. VM minimum call cost: applied independently per VM call.
+1. **snapshot try cost**
+   - source: `ast_item_snapshot(...)`
+   - amount: `40` per item attempt
+   - refunded on rollback: no
 
-> These repetitions are intentional policy behavior, not accounting bugs, and are used to resist probing attacks.
+2. **child returned gas (size/channel gas)**
+   - source: child `execute()` returned `u32`
+   - charged at: `ast_try_item!` success path (`ctx.gas_consume(child_gas)`)
+   - refunded on rollback: no
 
-## 6.2 Explicit De-dup (avoid double charge)
+3. **child internal runtime gas**
+   - source: any `ctx.gas_consume(...)` done during child execution
+   - includes VM opcode/runtime/min-call and other dynamic runtime charges
+   - refunded on rollback: no
 
-1. AST child aggregation uses `extra = max(ret - shared, 0)`, so shared-returned overlap is not charged twice.
-2. Top-level transaction loop discards returned gas, preventing returned from being layered again at top-level shared settlement.
+4. **whole-node snapshot operations (`AstNodeTxn`)**
+   - source: `ctx_snapshot`/`ctx_merge`/`ctx_recover`
+   - fixed gas: none
+   - effect: state/log/vm-volatile rollback only, not gas rollback
 
-## 6.3 Explicitly Not De-duplicated (business-intended additive charging)
-
-1. Static size costs at different levels/nodes are additive whenever execution happens.
-2. Shared consumption produced by failed branches is not refunded or offset.
-
----
-
-## 7. User Cost View
-
-1. User-visible cap: defined by `gas_max`, pre-charged at cap and refunded by actual use.
-2. Actual user payment: fixed `tx.fee` + actual gas burn (used shared mapped to HAC).
-3. Higher AST complexity (more branches, more rollbacks) implies higher probing cost.
-4. High-frequency/deep VM calls are constrained by both minimum call cost and dynamic gas.
-
----
-
-## 8. Anti-Attack Design Intent
-
-1. No free probing: failed branches do not refund gas.
-2. Branch explosion control: fixed AST snapshot try cost per attempt.
-3. Low-cost call spam resistance: VM minimum-call-cost floor per call.
-4. Accounting double-charge prevention: AST internal `shared + extra` model de-duplicates overlap.
-5. Historical replay/fork safety: top-level keeps discarding returned gas to preserve legacy semantics.
+5. **AST control-flow node static size gas**
+   - `AstSelect` / `AstIf` local `gas` is explicitly set to `0`
+   - so control-flow node size itself does not flow through returned-gas channel
 
 ---
 
-## 9. Test Checklist (Recommended Assertion Template)
+## 5. Formulas
 
-1. When top-level action returned gas changes, non-AST top-level transaction charging must remain unchanged.
-2. After AST child failure, state must roll back while gas remaining must decrease.
-3. AST node returned gas must satisfy:
-   - `node_ret = Σ(snapshot_try + shared + extra)`.
-4. For one child execution, `extra` must never be negative; shared must not be double-counted.
-5. Whole savepoint must not introduce extra fixed snapshot charging.
-6. VM call must satisfy minimum-call-cost floor even for very short execution.
-7. Returned gas from EXTACTION must enter VM cost and be reflected in shared deduction.
-8. Gas settlement must satisfy: max pre-charge - used charge = refund, and refund must never be negative.
+### 5.1 Generic AST Item Attempt
 
----
+For one attempt `i`:
 
-## 10. One-Line Summary
+`G_attempt_i = 40 + G_run_i + I_success_i * G_ret_i`
 
-- Top-level discards returned; AST/EXTACTION use returned; dynamic cost goes through shared; AST uses `shared + max(ret-shared,0)` to avoid double charge; failed branches roll back state but never roll back gas.
+where:
 
----
+1. `40` is snapshot try cost
+2. `G_run_i` is child runtime gas charged during execution
+3. `G_ret_i` is child returned gas (`u32`)
+4. `I_success_i` is `1` on success, `0` on failure
 
-## 11. AST Item Cost Composition (Formal)
+### 5.2 AstSelect Node
 
-For each attempted AST child item, define:
+For `N` attempted children:
 
-- `S_snap`: shared gas spent by `ast_item_snapshot`.
-- `S_exec`: shared gas spent while executing the child action.
-- `R_child`: child returned gas from `action.execute`.
-- `E_child`: non-overlap supplement, `E_child = max(R_child - S_exec, 0)`.
+`G_select = sum_{i=1..N} (40 + G_run_i + I_success_i * G_ret_i)`
 
-Then the AST node-level increment contributed by this child is:
+`AstSelect` returned gas is always `0`.
 
-- `C_child = S_snap + S_exec + E_child`.
+### 5.3 AstIf Node
 
-Equivalent piecewise form:
+Let cond attempt be `c`, branch attempt be `b`:
 
-- If `R_child >= S_exec`, then `C_child = S_snap + R_child`.
-- If `R_child < S_exec`, then `C_child = S_snap + S_exec`.
+`G_if = (40 + G_run_c + I_success_c * G_ret_c) + (40 + G_run_b + I_success_b * G_ret_b)`
 
-This is exactly what `AstSelect`/`AstIf` implement by adding shared delta first, then adding only `max(ret-shared,0)`.
+`AstIf` returned gas is always `0`.
 
-## 11.1 Why this has no double-charge bug
+Note:
 
-For one child execution, overlap between returned and shared is `min(R_child, S_exec)`.
-
-- Without de-dup, naive sum would be `S_exec + R_child`, double-counting the overlap.
-- Current model uses `S_exec + max(R_child-S_exec,0)`.
-
-So effective counted part is:
-
-- shared-covered part counted once,
-- returned-only tail counted once,
-- no negative tail when `R_child < S_exec`.
-
-Therefore the model is both:
-
-1. No over-charge (no overlap counted twice).
-2. No under-charge (returned-only part is still charged).
-
-## 11.2 Failure path consistency
-
-- Child failure still consumes `S_snap` and already-burned shared gas.
-- State rollback does not imply gas rollback.
-- This prevents free probing and keeps branch-search costly.
+1. when `cond`/`branch` is itself an AST node, its own returned gas is `0`, but its internal child attempts still charge normally.
 
 ---
 
-## 12. Static Size Repeated Charge Semantics
+## 6. Worked Examples
 
-Static size cost is additive by execution count, not by semantic deduplication.
+All numbers below are examples for auditing and reasoning.
 
-If the same action type is executed twice in two AST attempts/calls, its static size contribution is charged twice because two independent executions occurred.
+### 6.1 Nested AST + Plain Actions
 
-This is intentional and belongs to anti-probing economics.
+Structure:
 
-## 12.1 Practical check pattern
+1. outer `AstSelect` (min=2, max=2)
+2. child A: plain action, returned gas `30`, runtime gas `0`
+3. child B: inner `AstSelect` (min=2, max=2)
+4. inner child B1: plain action, returned gas `20`, runtime gas `0`
+5. inner child B2: plain action, returned gas `10`, runtime gas `0`
 
-For two scenarios where the only extra operation is one more successful action execution:
+Charge breakdown:
 
-- `Δret = ret_case2 - ret_case1`
-- `Δshared = shared_case2 - shared_case1`
+1. outer child A attempt: `40 + 0 + 30 = 70`
+2. outer child B attempt (inner select node): `40 + 0 + 0 = 40`
+3. inner child B1 attempt: `40 + 0 + 20 = 60`
+4. inner child B2 attempt: `40 + 0 + 10 = 50`
 
-Then for a pure static-size child (no extra shared dynamic behavior inside action body):
+Total:
 
-- `Δret - Δshared = child_static_size`
+`70 + 40 + 60 + 50 = 220`
 
-This pattern proves static size is charged once per extra execution and is not hidden by shared snapshot overhead.
+### 6.2 Nested AST + VM Call
 
-## 12.2 Test mapping
+Structure:
 
-- De-dup invariant (`max(ret-shared,0)`): assert no doubling when child both consumes shared and reports returned.
-- Non-negative supplement clamp: when `shared > returned`, AST must not subtract or underflow.
-- Repeated size additive: extra identical action execution adds exactly one more static size unit.
+1. outer `AstSelect` has two children:
+   - child A: plain action, returned gas `30`, runtime gas `0`
+   - child B: `AstIf`
+2. `AstIf.cond`: one-child `AstSelect`, inner plain action returned gas `12`, runtime gas `0`
+3. selected branch: one-child `AstSelect`, inner `ContractMainCall`
+   - returned gas (action-size channel) `52`
+   - VM runtime dynamic charge `480`
+
+Charge breakdown:
+
+1. outer child A attempt: `40 + 0 + 30 = 70`
+2. outer child B (`AstIf`) attempt at outer level: `40 + 0 + 0 = 40`
+3. `AstIf` cond wrapper attempt: `40 + 0 + 0 = 40`
+4. cond inner child attempt: `40 + 0 + 12 = 52`
+5. `AstIf` branch wrapper attempt: `40 + 0 + 0 = 40`
+6. branch inner VM action attempt: `40 + 480 + 52 = 572`
+
+Total:
+
+`70 + 40 + 40 + 52 + 40 + 572 = 814`
+
+Interpretation:
+
+1. VM runtime `480` is charged by VM runtime path directly in shared context gas.
+2. VM action returned gas (`52`) is charged once at AST item success.
+3. no extra "VM dynamic gas through returned-gas channel" double charge.
+
+---
+
+## 7. Error and Recovery
+
+1. `ast_try_item!` recover failure message keeps both recover error and original child error.
+2. `AstNodeTxn::finish` recover failure message keeps both recover error and original node error.
+3. `Unwind` is recoverable control flow in AST select/if policy; `Interrupt` is non-recoverable for current node.
+
+---
+
+## 8. Settlement Notes
+
+1. tx settlement still uses context gas usage and normal refund/burn flow.
+2. top-level tx loop still ignores returned gas from actions.
+3. AST path charging correctness should always be validated against `ctx.gas_remaining()` deltas, not returned gas of `AstSelect`/`AstIf`.
+
+---
+
+## 9. One-Line Summary
+
+AST charging is now: `snapshot try cost + child runtime gas + child returned gas(on success)`, all paid through context gas; control-flow node returned gas stays `0`.

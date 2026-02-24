@@ -14,26 +14,14 @@ action_define! { AstIf, 26,
         if true {
             return errf!("ast if not open")
         }
+        gas = 0; // control-flow node: all gas consumed via ctx
         let mut guard = ast_enter(ctx)?;
         let ctx = guard.ctx();
         // Whole-node savepoint: if branch execution fails, rollback both
         // condition side effects and branch side effects.
-        ast_with_whole_snapshot(ctx, |ctx| {
-            let cond_ok = match ast_run_item_snapshot(ctx, &mut gas, |ctx| self.cond.execute(ctx))? {
-                Ok((_cond_gas, _)) => true,
-                Err(e) => {
-                    if e.is_interrupt() {
-                        return ast_rethrow(e)
-                    }
-                    false
-                }
-            };
-            let branch = if cond_ok { &self.br_if } else { &self.br_else };
-            match ast_run_shared_gas(ctx, &mut gas, |ctx| branch.execute(ctx))? {
-                Ok((_branch_gas, ret)) => Ok(ret),
-                Err(e) => ast_rethrow(e),
-            }
-        })
+        let node = AstNodeTxn::begin(ctx)?;
+        let res = self.execute_if_core(ctx);
+        node.finish(ctx, res)
     })
 }
 
@@ -52,5 +40,12 @@ impl AstIf {
         req.extend(self.br_if.collect_req_sign());
         req.extend(self.br_else.collect_req_sign());
         req
+    }
+
+    fn execute_if_core(&self, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+        let cond_ok = ast_unwind_continue(ast_try_item!(ctx, self.cond.execute(ctx)))?.is_some();
+        let branch = maybe!(cond_ok, &self.br_if, &self.br_else);
+        let ret = ast_try_item!(ctx, branch.execute(ctx)).into_ret()?;
+        Ok(ret)
     }
 }

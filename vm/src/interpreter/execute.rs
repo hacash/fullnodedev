@@ -268,10 +268,7 @@ pub fn execute_code(
             }
             let (bgasu, cres) = host.ext_action_call(kid, actbody).map_err(|e|
                 ItrErr::new(ExtActCallError, e.as_str()))?;
-            if bgasu < 0 {
-                return itr_err_fmt!(ExtActCallError, "negative returned gas {}", bgasu)
-            }
-            gas += bgasu;
+            gas += bgasu as i64;
             if $have_retv {
                 let vty = match instruction {
                     EXTENV  => search_ext_by_id(idx, &CALL_EXTEND_ENV_DEFS),
@@ -863,5 +860,4 @@ fn debug_print_stack(ops: &Stack, lcs: &Stack, pc: &usize, inst: Bytecode) {
     *pc, inst);
 
 }
-
 

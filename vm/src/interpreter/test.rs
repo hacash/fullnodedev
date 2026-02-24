@@ -25,7 +25,7 @@ mod bounds_tests {
             1
         }
 
-        fn ext_action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(i64, Vec<u8>)> {
+        fn ext_action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
             Ok((self.ext_gas, self.ext_res.clone()))
         }
 

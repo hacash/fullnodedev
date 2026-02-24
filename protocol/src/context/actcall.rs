@@ -1,6 +1,6 @@
 use crate::action;
 
-fn ctx_action_call(this: &mut ContextInst, k: u16, b: Vec<u8>) -> BRet<(i64, Vec<u8>)> {
+fn ctx_action_call(this: &mut ContextInst, k: u16, b: Vec<u8>) -> BRet<(u32, Vec<u8>)> {
     // create
     let body = vec![k.to_be_bytes().to_vec(), b].concat();
     let (action, used) = action::action_create(&body).into_bret()?;

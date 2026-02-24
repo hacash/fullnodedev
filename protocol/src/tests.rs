@@ -73,7 +73,7 @@ impl Description for TestExtEnvReadOnly {
 }
 
 impl ActExec for TestExtEnvReadOnly {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         Ok((0, vec![1u8]))
     }
 }
@@ -628,6 +628,110 @@ fn test_ast_if_rethrow_preserves_unwind_kind() {
         .action_call(AstIf::KIND, bytes[2..].to_vec())
         .unwrap_err();
     assert!(err.is_unwind(), "{}", err);
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_balance_floor_empty_and_duplicate_asset_rejected() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+
+    let mut empty = BalanceFloor::new();
+    empty.addr = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    let err = ctx
+        .action_call(BalanceFloor::KIND, empty.serialize()[2..].to_vec())
+        .unwrap_err();
+    assert!(err.contains("is empty"), "{}", err);
+
+    let mut dup = BalanceFloor::new();
+    dup.addr = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    dup.hacash = Amount::mei(1);
+    dup.assets
+        .push(AssetAmt::from(9527u64, 1u64).unwrap())
+        .unwrap();
+    dup.assets
+        .push(AssetAmt::from(9527u64, 2u64).unwrap())
+        .unwrap();
+    let err = ctx
+        .action_call(BalanceFloor::KIND, dup.serialize()[2..].to_vec())
+        .unwrap_err();
+    assert!(err.contains("duplicate"), "{}", err);
+}
+
+#[cfg(feature = "ast")]
+#[test]
+fn test_balance_floor_success_and_insufficient() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&field::ADDRESS_ONEX).unwrap_or_default();
+        bls.hacash = Amount::mei(1000);
+        bls.satoshi = SatoshiAuto::from_satoshi(&Satoshi::from(20u64));
+        bls.diamond = DiamondNumberAuto::from_diamond(&DiamondNumber::from(3u32));
+        bls.asset_set(AssetAmt::from(88u64, 9u64).unwrap()).unwrap();
+        state.balance_set(&field::ADDRESS_ONEX, &bls);
+    }
+
+    let mut ok = BalanceFloor::new();
+    ok.addr = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    ok.hacash = Amount::mei(900);
+    ok.satoshi = Satoshi::from(10u64);
+    ok.diamond = DiamondNumber::from(2u32);
+    ok.assets
+        .push(AssetAmt::from(88u64, 7u64).unwrap())
+        .unwrap();
+    let _ = ctx
+        .action_call(BalanceFloor::KIND, ok.serialize()[2..].to_vec())
+        .unwrap();
+
+    let mut bad = BalanceFloor::new();
+    bad.addr = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    bad.assets
+        .push(AssetAmt::from(88u64, 10u64).unwrap())
+        .unwrap();
+    let err = ctx
+        .action_call(BalanceFloor::KIND, bad.serialize()[2..].to_vec())
+        .unwrap_err();
+    assert!(err.contains("lower than floor"), "{}", err);
 }
 
 #[test]

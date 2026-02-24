@@ -97,7 +97,7 @@ macro_rules! action_define {
         }
 
         impl ActExec for $class {
-            fn execute(&$pself, $pctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+            fn execute(&$pself, $pctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
                 use std::any::Any;
                 if !$pctx.env().chain.fast_sync {
                     check_action_level($pctx.level(), $pself, $pctx.tx().actions()).into_bret()?;
@@ -106,12 +106,12 @@ macro_rules! action_define {
                 // NOTE: burn_90 gas multiplier is handled centrally in ctx_action_call(),
                 // not here, to keep the logic in one place.
                 #[allow(unused_mut)]
-                let mut $pgas: i64 = $pself.size() as i64;
+                let mut $pgas: u32 = $pself.size() as u32;
                 // execute action body
                 let res: Ret<Vec<u8>> = (|| -> Ret<Vec<u8>> { $exec })();
                 let res = res.into_bret()?;
                 // call action hook (post-hook: audit after state change)
-                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx, &mut $pgas).into_bret()?;
+                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx).into_bret()?;
                 Ok(($pgas, res))
             }
         }

@@ -64,6 +64,7 @@ action_register! {
 
     HeightScope
     ChainAllow
+    BalanceFloor
 
 
 }

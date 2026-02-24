@@ -50,19 +50,6 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u
     Ok((cost, Value::bytes(rv)))
 }
 
-pub fn setup_vm_run_and_collect_gas(
-    ctx: &mut dyn Context,
-    gas_acc: &mut i64,
-    ty: u8,
-    mk: u8,
-    cd: std::sync::Arc<[u8]>,
-    pm: Value,
-) -> Ret<Value> {
-    let (cost, rv) = setup_vm_run(ctx, ty, mk, cd, pm)?;
-    *gas_acc = gas_acc.saturating_add(cost.max(0));
-    Ok(rv)
-}
-
 /// VM assign function for protocol layer registration.
 /// Called by `do_vm_init` at TX execution entry.
 pub fn vm_assign(height: u64) -> Box<dyn VM> {

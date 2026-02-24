@@ -18,9 +18,8 @@ action_define!{ ContractMainCall, 45,
         let cap = SpaceCap::new(hei);
         let cty = CodeType::parse(self.ctype.to_uint())?;
         convert_and_check(&cap, cty, &self.codes, hei)?;
-        let _ = setup_vm_run_and_collect_gas(
+        let _ = setup_vm_run(
             ctx,
-            &mut _gas,
             ExecMode::Main as u8,
             *self.ctype,
             self.codes.as_vec().clone().into(),
@@ -39,4 +38,3 @@ impl ContractMainCall {
         Ok(s)
     }
 }
-

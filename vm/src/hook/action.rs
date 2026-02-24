@@ -1,5 +1,5 @@
 
-pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context, _gas: &mut i64) -> Rerr {
+pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context) -> Rerr {
 
     use AbstCall::*;
 
@@ -7,27 +7,27 @@ pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context, _gas: 
         HacFromToTrs::KIND
         | HacFromTrs::KIND
         | HacToTrs::KIND
-            => coin_asset_transfer_call(kid, PermitHAC, PayableHAC, action, ctx, _gas),
+            => coin_asset_transfer_call(kid, PermitHAC, PayableHAC, action, ctx),
         | SatFromToTrs::KIND
         | SatFromTrs::KIND
         | SatToTrs::KIND
-            => coin_asset_transfer_call(kid, PermitSAT, PayableSAT, action, ctx, _gas),
+            => coin_asset_transfer_call(kid, PermitSAT, PayableSAT, action, ctx),
         | DiaSingleTrs::KIND
         | DiaFromToTrs::KIND
         | DiaFromTrs::KIND
         | DiaToTrs::KIND 
-            => coin_asset_transfer_call(kid, PermitHACD, PayableHACD, action, ctx, _gas),
+            => coin_asset_transfer_call(kid, PermitHACD, PayableHACD, action, ctx),
         | AssetFromToTrs::KIND
         | AssetFromTrs::KIND
         | AssetToTrs::KIND 
-            => coin_asset_transfer_call(kid, PermitAsset, PayableAsset, action, ctx, _gas),
+            => coin_asset_transfer_call(kid, PermitAsset, PayableAsset, action, ctx),
         _ => Ok(())
     }
 
 }
 
 
-fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, action: &dyn Any, ctx: &mut dyn Context, gas: &mut i64) -> Rerr {
+fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, action: &dyn Any, ctx: &mut dyn Context) -> Rerr {
 
     let addrs = &ctx.env().tx.addrs;
     let mut from = ctx.env().tx.main;
@@ -121,7 +121,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
         }
         let param = Value::Compo(CompoItem::list(VecDeque::from(params))?);
         let cm = ExecMode::P2sh as u8;
-        let _ = setup_vm_run_and_collect_gas(ctx, gas, cm, 0, codes.into(), param)?;
+        let _ = setup_vm_run(ctx, cm, 0, codes.into(), param)?;
         // return value checked inside p2sh_call
     }
 
@@ -130,9 +130,8 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
         let mut argvs = argvs.clone();
         argvs.push_front( Value::Address(to) );
         let param = Value::Compo(CompoItem::list(argvs)?);
-        let _ = setup_vm_run_and_collect_gas(
+        let _ = setup_vm_run(
             ctx,
-            gas,
             absty,
             abstfrom as u8,
             Arc::from(from.as_bytes()),
@@ -145,9 +144,8 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
     if tc {
         argvs.push_front( Value::Address(from) );
         let param = Value::Compo(CompoItem::list(argvs)?);
-        let _ = setup_vm_run_and_collect_gas(
+        let _ = setup_vm_run(
             ctx,
-            gas,
             absty,
             abstto as u8,
             Arc::from(to.as_bytes()),

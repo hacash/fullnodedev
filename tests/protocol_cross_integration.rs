@@ -123,7 +123,7 @@ impl FromJSON for AstTestSet {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestSet {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         Ok((0, vec![]))
     }
@@ -203,8 +203,8 @@ impl FromJSON for AstTestGasOnly {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestGasOnly {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
-        Ok((*self.gas as i64, vec![]))
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+        Ok((*self.gas as u32, vec![]))
     }
 }
 
@@ -229,173 +229,6 @@ impl AstTestGasOnly {
     fn create_by(gas: u8) -> Self {
         Self {
             gas: Uint1::from(gas),
-        }
-    }
-}
-
-#[cfg(feature = "ast")]
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-struct AstTestConsumeAndReport {
-    gas: Uint1,
-}
-
-#[cfg(feature = "ast")]
-impl Parse for AstTestConsumeAndReport {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-        self.gas.parse(buf)
-    }
-}
-
-#[cfg(feature = "ast")]
-impl Serialize for AstTestConsumeAndReport {
-    fn serialize(&self) -> Vec<u8> {
-        self.gas.serialize()
-    }
-
-    fn size(&self) -> usize {
-        self.gas.size()
-    }
-}
-
-#[cfg(feature = "ast")]
-impl Field for AstTestConsumeAndReport {
-    fn new() -> Self {
-        Self::default()
-    }
-}
-
-#[cfg(feature = "ast")]
-impl ToJSON for AstTestConsumeAndReport {
-    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-        "{}".to_owned()
-    }
-}
-
-#[cfg(feature = "ast")]
-impl FromJSON for AstTestConsumeAndReport {
-    fn from_json(&mut self, _json: &str) -> Ret<()> {
-        Ok(())
-    }
-}
-
-#[cfg(feature = "ast")]
-impl ActExec for AstTestConsumeAndReport {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
-        let g = *self.gas as i64;
-        if g > 0 {
-            ctx.gas_consume(g as u32)?;
-        }
-        Ok((g, vec![]))
-    }
-}
-
-#[cfg(feature = "ast")]
-impl Description for AstTestConsumeAndReport {}
-
-#[cfg(feature = "ast")]
-impl Action for AstTestConsumeAndReport {
-    fn kind(&self) -> u16 {
-        65031
-    }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-#[cfg(feature = "ast")]
-impl AstTestConsumeAndReport {
-    fn create_by(gas: u8) -> Self {
-        Self {
-            gas: Uint1::from(gas),
-        }
-    }
-}
-
-#[cfg(feature = "ast")]
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-struct AstTestConsumeReportSplit {
-    consume: Uint1,
-    report: Uint1,
-}
-
-#[cfg(feature = "ast")]
-impl Parse for AstTestConsumeReportSplit {
-    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-        let mut mv = self.consume.parse(buf)?;
-        mv += self.report.parse(&buf[mv..])?;
-        Ok(mv)
-    }
-}
-
-#[cfg(feature = "ast")]
-impl Serialize for AstTestConsumeReportSplit {
-    fn serialize(&self) -> Vec<u8> {
-        [self.consume.serialize(), self.report.serialize()].concat()
-    }
-
-    fn size(&self) -> usize {
-        self.consume.size() + self.report.size()
-    }
-}
-
-#[cfg(feature = "ast")]
-impl Field for AstTestConsumeReportSplit {
-    fn new() -> Self {
-        Self::default()
-    }
-}
-
-#[cfg(feature = "ast")]
-impl ToJSON for AstTestConsumeReportSplit {
-    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-        "{}".to_owned()
-    }
-}
-
-#[cfg(feature = "ast")]
-impl FromJSON for AstTestConsumeReportSplit {
-    fn from_json(&mut self, _json: &str) -> Ret<()> {
-        Ok(())
-    }
-}
-
-#[cfg(feature = "ast")]
-impl ActExec for AstTestConsumeReportSplit {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
-        let c = *self.consume as i64;
-        let r = *self.report as i64;
-        if c > 0 {
-            ctx.gas_consume(c as u32)?;
-        }
-        Ok((r, vec![]))
-    }
-}
-
-#[cfg(feature = "ast")]
-impl Description for AstTestConsumeReportSplit {}
-
-#[cfg(feature = "ast")]
-impl Action for AstTestConsumeReportSplit {
-    fn kind(&self) -> u16 {
-        65032
-    }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-#[cfg(feature = "ast")]
-impl AstTestConsumeReportSplit {
-    fn create_by(consume: u8, report: u8) -> Self {
-        Self {
-            consume: Uint1::from(consume),
-            report: Uint1::from(report),
         }
     }
 }
@@ -445,7 +278,7 @@ impl FromJSON for AstTestFail {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestFail {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         berruf!("ast test forced fail")
     }
 }
@@ -523,30 +356,19 @@ fn test_ast_nested_plain_actions_no_over_or_under_charge() {
         (ret_gas, before - after)
     };
 
-    // 对照组：结构完全一致，仅 child 报告 gas 为 0
+    // AST control-flow nodes return gas=0; child return-gas is charged via ctx.gas_consume.
     let (ret0, shared0) = run_case((0, 0, 0));
-    // 实验组：child 报告 7/11/5，期望只多出 23，不应多扣也不应漏扣
     let (ret1, shared1) = run_case((7, 11, 5));
 
-    assert_eq!(
-        shared1, shared0,
-        "shared0={} shared1={} ret0={} ret1={}",
-        shared0, shared1, ret0, ret1
-    );
-    assert_eq!(
-        ret1 - ret0,
-        23,
-        "ret0={} ret1={} shared0={} shared1={}",
-        ret0,
-        ret1,
-        shared0,
-        shared1
-    );
+    assert_eq!(ret0, 0);
+    assert_eq!(ret1, 0);
+    // Children report 7+11+5=23 as return-gas, all charged via ctx.gas_consume.
+    assert_eq!(shared1 - shared0, 23);
 }
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_nested_shared_consume_report_no_double_count() {
+fn test_ast_multilayer_nested_innermost_plain_return_gas_charged_once() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -555,36 +377,44 @@ fn test_ast_nested_shared_consume_report_no_double_count() {
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
-    let run_case = |n: u8| {
+    let run_case = |inner_gas: u8| {
         let mut ctx = build_ast_ctx_with_state(env.clone(), Box::new(AstTestState::default()), &tx);
         ctx.gas_init_tx(10000, 1).unwrap();
 
-        let inner = AstSelect::create_list(vec![
-            Box::new(AstTestConsumeAndReport::create_by(n)),
-            Box::new(AstTestGasOnly::create_by(0)),
-        ]);
-        let outer = AstSelect::create_list(vec![
-            Box::new(inner),
-            Box::new(AstTestGasOnly::create_by(0)),
-        ]);
+        // Multi-layer tree:
+        // select(root) -> if -> select -> select -> select -> AstTestGasOnly(inner_gas)
+        // Keep the tree shape fixed and vary only the innermost plain action return-gas.
+        let level3 = AstSelect::create_list(vec![Box::new(AstTestGasOnly::create_by(inner_gas))]);
+        let level2 = AstSelect::create_list(vec![Box::new(level3)]);
+        let level1 = AstSelect::create_list(vec![Box::new(level2)]);
+        let branch_if = AstSelect::create_list(vec![Box::new(level1)]);
+        let node_if = AstIf::create_by(
+            AstSelect::nop(), // cond succeeds with empty-select semantics
+            branch_if,
+            AstSelect::nop(),
+        );
+        let root = AstSelect::create_list(vec![Box::new(node_if)]);
 
         let before = ctx.gas_remaining();
-        let (ret_gas, _) = outer.execute(&mut ctx).unwrap();
+        let (ret_gas, _) = root.execute(&mut ctx).unwrap();
         let after = ctx.gas_remaining();
-        (ret_gas, before - after)
+        assert_eq!(ret_gas, 0, "AST control-flow node must return gas=0");
+        before - after
     };
 
-    let (ret0, shared0) = run_case(0);
-    let (ret1, shared1) = run_case(13);
+    let used0 = run_case(0);
+    let used7 = run_case(7);
+    let used19 = run_case(19);
 
-    // child 同时“共享扣费+返回报告”只应增加 13，不应被记成 26
-    assert_eq!(shared1 - shared0, 13);
-    assert_eq!(ret1 - ret0, 13);
+    // Only the innermost plain action return-gas changes between runs.
+    // If return-gas were charged twice, these deltas would be doubled.
+    assert_eq!(used7 - used0, 7);
+    assert_eq!(used19 - used7, 12);
 }
 
 #[cfg(feature = "ast")]
 #[test]
-fn test_ast_nested_shared_gt_returned_clamped_no_underflow() {
+fn test_ast_multilayer_innermost_unwind_does_not_charge_return_gas() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -593,31 +423,50 @@ fn test_ast_nested_shared_gt_returned_clamped_no_underflow() {
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
-    let run_case = |consume: u8, report: u8| {
+    let run_success = || {
         let mut ctx = build_ast_ctx_with_state(env.clone(), Box::new(AstTestState::default()), &tx);
         ctx.gas_init_tx(10000, 1).unwrap();
 
-        let inner = AstSelect::create_list(vec![
-            Box::new(AstTestConsumeReportSplit::create_by(consume, report)),
-            Box::new(AstTestGasOnly::create_by(0)),
-        ]);
-        let outer = AstSelect::create_list(vec![
-            Box::new(inner),
-            Box::new(AstTestGasOnly::create_by(0)),
-        ]);
+        // Same multilayer shape as control:
+        // select(root) -> if -> select -> select -> select -> AstTestGasOnly(17)
+        let level3 = AstSelect::create_by(0, 1, vec![Box::new(AstTestGasOnly::create_by(17))]);
+        let level2 = AstSelect::create_by(0, 1, vec![Box::new(level3)]);
+        let level1 = AstSelect::create_by(0, 1, vec![Box::new(level2)]);
+        let branch_if = AstSelect::create_by(0, 1, vec![Box::new(level1)]);
+        let node_if = AstIf::create_by(AstSelect::nop(), branch_if, AstSelect::nop());
+        let root = AstSelect::create_by(0, 1, vec![Box::new(node_if)]);
 
         let before = ctx.gas_remaining();
-        let (ret_gas, _) = outer.execute(&mut ctx).unwrap();
+        root.execute(&mut ctx).unwrap();
         let after = ctx.gas_remaining();
-        (ret_gas, before - after)
+        before - after
     };
 
-    let (ret0, shared0) = run_case(0, 0);
-    let (ret1, shared1) = run_case(13, 5);
+    let run_unwind = || {
+        let mut ctx = build_ast_ctx_with_state(env.clone(), Box::new(AstTestState::default()), &tx);
+        ctx.gas_init_tx(10000, 1).unwrap();
 
-    // when shared > returned, extra is clamped to 0, so delta follows shared only
-    assert_eq!(shared1 - shared0, 13);
-    assert_eq!(ret1 - ret0, 13);
+        // Keep exactly the same multilayer structure, but replace the innermost
+        // plain-gas action with a forced Unwind action.
+        let level3 = AstSelect::create_by(0, 1, vec![Box::new(AstTestFail::new())]);
+        let level2 = AstSelect::create_by(0, 1, vec![Box::new(level3)]);
+        let level1 = AstSelect::create_by(0, 1, vec![Box::new(level2)]);
+        let branch_if = AstSelect::create_by(0, 1, vec![Box::new(level1)]);
+        let node_if = AstIf::create_by(AstSelect::nop(), branch_if, AstSelect::nop());
+        let root = AstSelect::create_by(0, 1, vec![Box::new(node_if)]);
+
+        let before = ctx.gas_remaining();
+        root.execute(&mut ctx).unwrap();
+        let after = ctx.gas_remaining();
+        before - after
+    };
+
+    let used_success = run_success();
+    let used_unwind = run_unwind();
+
+    // In success path, innermost AstTestGasOnly returns 17 gas and should be charged once.
+    // In unwind path, innermost action has no successful return gas channel.
+    assert_eq!(used_success - used_unwind, 17);
 }
 
 #[cfg(feature = "ast")]
@@ -631,9 +480,6 @@ fn test_ast_static_size_repeated_charge_is_additive_per_execution() {
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
 
-    let child_size = AstSelect::nop().size() as i64;
-    assert!(child_size > 0);
-
     let run_case = |num_children: usize| {
         let mut ctx = build_ast_ctx_with_state(env.clone(), Box::new(AstTestState::default()), &tx);
         ctx.gas_init_tx(10000, 1).unwrap();
@@ -642,23 +488,20 @@ fn test_ast_static_size_repeated_charge_is_additive_per_execution() {
             acts.push(Box::new(AstSelect::nop()));
         }
         let outer = AstSelect::create_list(acts);
-        let outer_size = outer.size() as i64;
         let before = ctx.gas_remaining();
         let (ret_gas, _) = outer.execute(&mut ctx).unwrap();
         let after = ctx.gas_remaining();
-        (ret_gas, before - after, outer_size)
+        (ret_gas, before - after)
     };
 
-    let (ret1, shared1, outer1_size) = run_case(1);
-    let (ret2, shared2, outer2_size) = run_case(2);
+    let (ret1, shared1) = run_case(1);
+    let (ret2, shared2) = run_case(2);
 
-    // one more child attempt adds one more snapshot try cost
+    // AST nodes return gas=0; ret_gas is always 0.
+    assert_eq!(ret1, 0);
+    assert_eq!(ret2, 0);
+    // one more child attempt adds one more snapshot try cost (40 gas)
     assert_eq!(shared2 - shared1, 40);
-    // ret delta = snapshot_try_delta + parent-size-delta + one more executed-child size
-    assert_eq!(
-        (ret2 - ret1) - (shared2 - shared1),
-        (outer2_size - outer1_size) + child_size
-    );
 }
 
 #[cfg(feature = "ast")]
@@ -685,22 +528,13 @@ fn test_ast_single_select_plain_reported_gas_propagates() {
         (ret_gas, before - after)
     };
 
+    // AST control-flow nodes return gas=0; child return-gas is charged via ctx.gas_consume.
     let (ret0, shared0) = run_case(0, 0);
     let (ret1, shared1) = run_case(7, 11);
-    assert_eq!(
-        shared1, shared0,
-        "shared0={} shared1={} ret0={} ret1={}",
-        shared0, shared1, ret0, ret1
-    );
-    assert_eq!(
-        ret1 - ret0,
-        18,
-        "ret0={} ret1={} shared0={} shared1={}",
-        ret0,
-        ret1,
-        shared0,
-        shared1
-    );
+    assert_eq!(ret0, 0);
+    assert_eq!(ret1, 0);
+    // Children report 7+11=18 as return-gas, all charged via ctx.gas_consume.
+    assert_eq!(shared1 - shared0, 18);
 }
 
 #[cfg(feature = "ast")]
@@ -1155,7 +989,7 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
         }
     }
     impl ActExec for AstTestTexP2shSet {
-        fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+        fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
             ctx.tex_ledger().sat += 7;
             let adr = Address::create_scriptmh([7u8; 20]);
             ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
@@ -1253,7 +1087,7 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
     }
 
     impl ActExec for AstTestP2shSetOnly {
-        fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+        fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
             let adr = Address::create_scriptmh([8u8; 20]);
             ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
             Ok((0, vec![]))
@@ -1490,7 +1324,7 @@ impl FromJSON for AstTestLog {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestLog {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         ctx.logs().push(&self.tag);
         Ok((0, vec![]))
     }
@@ -1565,7 +1399,7 @@ impl FromJSON for AstTestTexAdd {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestTexAdd {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         ctx.tex_ledger().zhu += *self.zhu_add as i64;
         Ok((0, vec![]))
     }
@@ -1651,7 +1485,7 @@ impl P2sh for AstTestP2shImpl {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestP2shSetN {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
         ctx.p2sh_set(adr, Box::new(AstTestP2shImpl))?;
         Ok((0, vec![]))
@@ -1736,7 +1570,7 @@ impl FromJSON for AstTestCombo {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestCombo {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         ctx.tex_ledger().zhu += *self.val as i64;
         ctx.logs().push(&self.key);
@@ -2508,7 +2342,7 @@ impl FromJSON for AstTestVMCall {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVMCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         // The MockVM's counter is behind an Arc<AtomicI64>, so we can
         // mutate it through the shared reference obtained via ctx.vm().
         // snapshot_volatile captures the current value; restore_volatile resets it.
@@ -2662,7 +2496,7 @@ impl FromJSON for AstTestVmInitReplace {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitReplace {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let vm = take_ast_recover_track_vm();
         ctx.vm_init_once(vm)?;
         ctx.vm().restore_volatile(Box::new(*self.value as i64));
@@ -2767,7 +2601,7 @@ impl FromJSON for AstTestVmSetNilAndFail {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmSetNilAndFail {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
         if let Some(flag) = lock.lock().unwrap().as_ref() {
             flag.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -2923,7 +2757,7 @@ impl FromJSON for AstTestDeepDelayVmInit {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmInit {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         ctx.vm_init_once(take_ast_deep_delay_vm())?;
         Ok((0, vec![]))
     }
@@ -3002,10 +2836,10 @@ impl FromJSON for AstTestDeepDelayVmCall {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let payload = vec![*self.vol_add, *self.warm_add, *self.fail];
         let ctxptr = ctx as *mut dyn Context;
-        let (gas, rv) = unsafe {
+        let (_gas, rv) = unsafe {
             let vm = (*ctxptr).vm() as *mut dyn VM;
             (*vm).call(VMCall::new(
                 &mut *ctxptr,
@@ -3015,7 +2849,9 @@ impl ActExec for AstTestDeepDelayVmCall {
                 Box::new(()),
             ))?
         };
-        Ok((gas, rv))
+        // VM dynamic gas is charged through shared ctx remaining inside VM runtime.
+        // Keep action return-gas channel as size-only (0 here for this custom test action).
+        Ok((0, rv))
     }
 }
 
@@ -3091,7 +2927,7 @@ impl FromJSON for AstTestVmInitFlip {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitFlip {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
         let non_nil = lock
             .lock()
@@ -3231,10 +3067,10 @@ impl FromJSON for AstTestBugVmCall {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestBugVmCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let payload = vec![*self.fail, *self.cost];
         let ctxptr = ctx as *mut dyn Context;
-        let (gas, rv) = unsafe {
+        let (_gas, rv) = unsafe {
             let vm = (*ctxptr).vm() as *mut dyn VM;
             (*vm).call(VMCall::new(
                 &mut *ctxptr,
@@ -3244,7 +3080,9 @@ impl ActExec for AstTestBugVmCall {
                 Box::new(()),
             ))?
         };
-        Ok((gas, rv))
+        // VM dynamic gas is charged through shared ctx remaining inside VM runtime.
+        // Keep action return-gas channel as size-only (0 here for this custom test action).
+        Ok((0, rv))
     }
 }
 
@@ -3543,7 +3381,7 @@ fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
     assert!(ctx.p2sh(&Address::create_scriptmh([116u8; 20])).is_err());
     assert_eq!(volatile.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_eq!(warmup.load(std::sync::atomic::Ordering::SeqCst), 5);
-    assert_eq!(restore_count.load(std::sync::atomic::Ordering::SeqCst), 4);
+    assert_eq!(restore_count.load(std::sync::atomic::Ordering::SeqCst), 5);
     assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
 
@@ -3849,7 +3687,8 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
     let after = ctx.gas_remaining();
 
     // Top-level loop discards return gas; only shared snapshot/dynamic gas is charged here.
-    assert_eq!(before - after, 360);
+    // +40 compared to old model: AstIf branch now uses isolated snapshot instead of shared.
+    assert_eq!(before - after, 400);
     assert_eq!(ast_state_get_u8(&mut ctx, 241), Some(241));
     assert_eq!(ast_state_get_u8(&mut ctx, 242), Some(242));
     assert!(volatile.load(std::sync::atomic::Ordering::SeqCst) >= 0);
@@ -4096,7 +3935,7 @@ impl FromJSON for AstTestMainSet {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainSet {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         Ok((0, vec![]))
     }
@@ -4171,7 +4010,7 @@ impl FromJSON for AstTestMainP2shSetN {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainP2shSetN {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
         ctx.p2sh_set(adr, Box::new(AstTestP2shImpl))?;
         Ok((0, vec![]))
@@ -4240,7 +4079,7 @@ impl FromJSON for AstTestMainVMCall {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainVMCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         let snap = ctx.vm().snapshot_volatile();
         if let Ok(cur) = snap.downcast::<i64>() {
             let new_val = *cur + *self.increment as i64;
@@ -4318,7 +4157,7 @@ impl FromJSON for AstTestRet {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestRet {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         Ok((0, vec![*self.tag]))
     }
 }
@@ -4416,7 +4255,7 @@ impl FromJSON for AstTestMutateAllFail {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMutateAllFail {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         ctx.tex_ledger().zhu += *self.val as i64;
         ctx.logs().push(&self.key);
@@ -4694,7 +4533,7 @@ impl FromJSON for AstTestExtCall {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestExtCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(i64, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
         // Simulate what EXTACTION does: modify state through ctx_action_call path.
         // We directly set state here since ctx_action_call ultimately calls action.execute(ctx).
         ctx.state().set(vec![*self.key], vec![*self.val]);

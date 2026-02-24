@@ -31,7 +31,7 @@ impl ActCall for ExtCallMem {
     fn height(&self) -> u64 {
         self.hei
     }
-        fn action_call(&mut self, _: u16, _: Vec<u8>) -> BRet<(i64, Vec<u8>)> {
+        fn action_call(&mut self, _: u16, _: Vec<u8>) -> BRet<(u32, Vec<u8>)> {
             Ok((8, vec![1]))
     }
 
