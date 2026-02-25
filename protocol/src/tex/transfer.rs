@@ -147,6 +147,7 @@ impl CellTrsDiaPay {
 impl CellExec for CellTrsDiaPay {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
+        tex_check_settlement_addr_privakey()?;
         self.diamonds.check()?;
         do_diamonds_transfer(&self.diamonds, taradr, &SETTLEMENT_ADDR, ctx)?;
         // tex add

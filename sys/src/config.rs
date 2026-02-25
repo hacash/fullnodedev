@@ -4,10 +4,10 @@
 
 
 pub fn get_current_exe_absolute_dir(dir: &str) -> PathBuf {
-    let mut ddrp = PathBuf::from(&dir);
+    let mut ddrp = PathBuf::from(dir);
     // println!("{:?} {}", ddrp, ddrp.is_absolute());
     if ! ddrp.is_absolute() {
-        ddrp = std::env::current_exe().unwrap().parent().unwrap().to_path_buf().join(&dir);
+        ddrp = std::env::current_exe().unwrap().parent().unwrap().to_path_buf().join(dir);
     }
     ddrp
 }

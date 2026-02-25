@@ -21,15 +21,15 @@ macro_rules! define_func_codes {
             // ircodes should be raw block content (without IRBLOCK header)
             let cds = convert_ir_to_bytecode(&ircodes)?;
             verify_bytecodes(&cds)?;
-            self.func.cdty[0] |= CodeType::IRNode as u8;
-            self.func.code = BytesW2::from(ircodes)?;
+            self.func.code_stuff.conf = Uint1::from(CodeConf::from_type(CodeType::IRNode).raw());
+            self.func.code_stuff.data = BytesW2::from(ircodes)?;
             Ok(self)
         }
         
         pub fn bytecode(mut self, cds: Vec<u8>) -> Ret<Self> {
             verify_bytecodes(&cds)?;
-            self.func.cdty[0] |= CodeType::Bytecode as u8;
-            self.func.code = BytesW2::from(cds).unwrap();
+            self.func.code_stuff.conf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
+            self.func.code_stuff.data = BytesW2::from(cds).unwrap();
             Ok(self)
         }
 
@@ -84,7 +84,7 @@ impl Func {
     define_func_codes!{}
 
     pub fn public(mut self) -> Self {
-        self.func.cdty[0] |= FnConf::Public as u8;
+        self.func.fncnf[0] |= FnConf::Public as u8;
         self
     }
 

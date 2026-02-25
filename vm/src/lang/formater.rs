@@ -1013,12 +1013,16 @@ impl<'a> Formater<'a> {
             EXTVIEW => self.format_extend_call(node, &CALL_EXTEND_VIEW_DEFS),
             EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS),
             NTFUNC => {
-                let ntfn: NativeFunc = std_mem_transmute!(node.para);
                 let argv = self.build_call_args(&*node.subx, true);
+                let Ok(ntfn) = NativeFunc::try_from_u8(node.para) else {
+                    return format!("__unknown_native_func_{}({})", node.para, argv);
+                };
                 format!("{}({})", ntfn.name(), argv)
             }
             NTENV => {
-                let ntfn: NativeEnv = std_mem_transmute!(node.para);
+                let Ok(ntfn) = NativeEnv::try_from_u8(node.para) else {
+                    return format!("__unknown_native_env_{}()", node.para);
+                };
                 let args = maybe!(
                     self.opt.hide_default_call_argv,
                     String::new(),
@@ -1113,7 +1117,13 @@ impl<'a> Formater<'a> {
                 buf.push_str(&format!("{}()", f));
             }
             NTENV => {
-                let ntfn: NativeEnv = std_mem_transmute!(node.para);
+                let Ok(ntfn) = NativeEnv::try_from_u8(node.para) else {
+                    return format!(
+                        "{}__unknown_native_env_{}()",
+                        self.opt.indent.repeat(self.opt.tab),
+                        node.para
+                    );
+                };
                 if self.opt.hide_default_call_argv {
                     buf.push_str(&format!("{}()", ntfn.name()));
                 } else {

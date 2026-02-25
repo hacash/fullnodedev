@@ -6,7 +6,7 @@ pub fn block_hash_repeat(height: u64) -> i32 {
     if repeat > 16 {
         repeat = 16;
     }
-    return repeat as i32;
+    repeat as i32
 }
 
 /*

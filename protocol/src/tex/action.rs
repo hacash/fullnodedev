@@ -4,7 +4,7 @@
 */
 action_define!{ TexCellAct, 22, 
     ActLv::Top, // level
-    false, // burn 90 fee
+    true, // burn 90 fee
     [], // need sign
     {
         addr  : Address

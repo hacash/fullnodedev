@@ -14,7 +14,7 @@ mod other {
     #[test]
     fn test1() {
         let mut act2 = ContractMainCall::new();
-        act2.ctype = Uint1::from(1);
+        act2.codeconf = Uint1::from(CodeConf::from_type(CodeType::IRNode).raw());
         act2.codes = BytesW2::from(hex::decode("4e010101414b8059f00000").unwrap()).unwrap();
         // print
         // curl_trs(vec![Box::new(act2)]);
@@ -26,24 +26,27 @@ mod other {
 
         let mut syscal1 = ContractAbstCall::new();
         syscal1.sign = Fixed1::from([5]); // PermitHAC   : 5
-        syscal1.cdty = Fixed1::from([0]);
+        syscal1.fncnf = Fixed1::from([0]);
         let codes = vec![
             hex::decode("0601434e03").unwrap(),
             150000000u32.to_be_bytes().to_vec(),
             hex::decode("437cec").unwrap(),
         ]
         .concat();
-        syscal1.code = BytesW2::from(codes).unwrap(); // return true
+        syscal1.code_stuff.conf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
+        syscal1.code_stuff.data = BytesW2::from(codes).unwrap(); // return true
         // amt < 1 zhu
         let mut syscal2 = ContractAbstCall::new();
         syscal2.sign = Fixed1::from([15]); // PayableHAC   : 15
-        syscal2.cdty = Fixed1::from([0]);
-        syscal2.code = BytesW2::from(hex::decode("070143480c437bEC").unwrap()).unwrap(); // return true
+        syscal2.fncnf = Fixed1::from([0]);
+        syscal2.code_stuff.conf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
+        syscal2.code_stuff.data = BytesW2::from(hex::decode("070143480c437bEC").unwrap()).unwrap(); // return true
         // height > 12
         let mut usrfun1 = ContractUserFunc::new();
         usrfun1.sign = Fixed4::from(calc_func_sign("testadd"));
-        usrfun1.cdty = Fixed1::from([0b10000000]);
-        usrfun1.code = BytesW2::from(build_codes!(
+        usrfun1.fncnf = Fixed1::from([FnConf::Public as u8]);
+        usrfun1.code_stuff.conf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
+        usrfun1.code_stuff.data = BytesW2::from(build_codes!(
             CU16 DUP ADD RET
         ))
         .unwrap(); /* a = a + a; return a */

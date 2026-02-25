@@ -5,10 +5,10 @@ action_define!{ ContractMainCall, 45,
     false, [],
     {
         marks: Fixed3
-        ctype: Uint1
+        codeconf: Uint1
         codes: BytesW2
     },
-    (self, format!("Run main codes with type {}", *self.ctype)),
+    (self, format!("Run main codes with conf {}", *self.codeconf)),
     (self, ctx, _gas {
         if self.marks.not_zero() {
             return errf!("marks bytes format error")
@@ -16,12 +16,12 @@ action_define!{ ContractMainCall, 45,
         // check codes
         let hei = ctx.env().block.height;
         let cap = SpaceCap::new(hei);
-        let cty = CodeType::parse(self.ctype.to_uint())?;
-        convert_and_check(&cap, cty, &self.codes, hei)?;
+        let codeconf = CodeConf::parse(self.codeconf.to_uint())?;
+        convert_and_check(&cap, codeconf.code_type(), &self.codes, hei)?;
         let _ = setup_vm_run(
             ctx,
             ExecMode::Main as u8,
-            *self.ctype,
+            codeconf.raw(),
             self.codes.as_vec().clone().into(),
             Value::Nil,
         )?;
@@ -33,7 +33,7 @@ action_define!{ ContractMainCall, 45,
 impl ContractMainCall {
     pub fn from_bytecode(codes: Vec<u8>) -> Ret<Self> {
         let mut s = Self::new();
-        s.ctype = Uint1::from(CodeType::Bytecode as u8);
+        s.codeconf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
         s.codes = BytesW2::from(codes)?;
         Ok(s)
     }

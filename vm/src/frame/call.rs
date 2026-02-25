@@ -157,18 +157,16 @@ impl CallFrame {
                     if matches!(exit, Return | Throw) {
                         retv = curr!().pop_value()?;
                     }
+                    // Error exits must bypass output-type validation and bubble original throw/abort semantics.
+                    if matches!(exit, Abort | Throw) {
+                        return itr_err_fmt!(ThrowAbort, "VM return error: {}", retv);
+                    }
                     if let Some(caller_types) = curr!().callcode_caller_types.take() {
                         // CALLCODE is treated as implementation-level delegation: only the original caller's return contract is enforced here.
                         caller_types.check_output(&mut retv)?;
                     } else {
                         curr!().check_output_type(&mut retv)?;
                     }
-                    
-                    // Handle abort/throw
-                    if matches!(exit, Abort | Throw) {
-                        return itr_err_fmt!(ThrowAbort, "VM return error: {}", retv);
-                    }
-                    
                     // Pop current frame and reclaim resources
                     self.pop().unwrap().reclaim(r);
                     

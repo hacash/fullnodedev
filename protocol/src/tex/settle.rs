@@ -3,6 +3,7 @@
 
 
 pub fn do_settlement(ctx: &mut dyn Context) -> Rerr {
+    tex_check_settlement_addr_privakey()?;
     // Validate and materialize settlement operations while holding a short borrow to the ledger.
     // Then execute state mutations without holding `&mut TexLedger` to avoid borrow cycles.
     let mut diamond_trs: Vec<(Address, DiamondNameListMax200)> = vec![];

@@ -16,6 +16,17 @@ use super::*;
 
 static SETTLEMENT_ADDR: Address = ADDRESS_ONEX;
 
+#[inline]
+fn tex_check_settlement_addr_privakey() -> Rerr {
+    if !SETTLEMENT_ADDR.is_privakey() {
+        return errf!(
+            "tex settlement address {} must be PRIVAKEY type",
+            SETTLEMENT_ADDR
+        );
+    }
+    Ok(())
+}
+
 fn tex_check_asset_serial(ctx: &mut dyn Context, serial: Fold64) -> Rerr {
     if serial.is_zero() {
         return errf!("tex asset serial cannot be zero");

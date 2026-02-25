@@ -39,11 +39,7 @@ pub fn bytes_to_uint(buf: &[u8], msz: usize, len: usize) -> Ret<u64> {
     }
     let mut vbts = [0u8; 8];
     let left = 8 - len;
-    let mut i = 0;
-    for k in left..8 {
-        vbts[k] = buf[i];
-        i += 1;
-    }
+    vbts[left..].copy_from_slice(&buf[..len]);
     // println!("{} {} {} {}", msz, len, hex::encode(buf), hex::encode(vbts));
     Ok(u64::from_be_bytes(vbts))
 }

@@ -12,6 +12,7 @@ combi_list!{ MerkelStuffs,
 
 
 pub struct UnlockScript {
+    codeconf: u8,
     stuff: Vec<u8>,
     witness: Vec<u8>,
 }
@@ -23,7 +24,7 @@ pub struct UnlockScript {
 /// from consensus.
 ///
 /// Hashing rules (same as `P2SHScriptProve::get_merkel()`):
-/// - Leaf: `sha3("p2sh_leaf_" || libs || lockbox)`
+/// - Leaf: `sha3("p2sh_leaf_v2_" || libs || codeconf || lockbox)`
 /// - Branch i: `sha3("p2sh_branch_" || left || right)` where `(left,right)` is decided by `posi`.
 /// - Address: `Address::create_scriptmh(ripemd160(root_sha3))`
 #[derive(Debug, Clone)]
@@ -44,8 +45,9 @@ action_define!{ P2SHScriptProve, 46,
     {
         // calc hash: script + calibs
         argvkey: BytesW2 // unlock witness bytes (not executed)
-        lockbox: BytesW2 // verify bytecodes
         adrlibs: ContractAddressW1 // lib address list for pure and callcode call
+        codeconf: Uint1 // low 2 bits: CodeType, high 6 bits: reserved (must be 0)
+        lockbox: BytesW2 // verify bytecodes
         merkels: MerkelStuffs
         _marks_: Fixed2
     },
@@ -64,6 +66,9 @@ action_define!{ P2SHScriptProve, 46,
 
 
 impl P2sh for UnlockScript {
+    fn code_conf(&self) -> u8 {
+        self.codeconf
+    }
     fn code_stuff(&self) -> &[u8] {
         &self.stuff
     }
@@ -77,6 +82,7 @@ impl P2SHScriptProve {
 
     /// Compute the `SCRIPTMH` address from:
     /// - `adrlibs`: the contract library allowlist used by the P2SH lock script
+    /// - `codeconf`: script code config byte
     /// - `lockbox`: the P2SH lock script bytecode (as it appears in this action field)
     /// - `merkels`: the Merkle proof path (siblings + left/right positions) used to commit
     ///   the lock script into a Merkle root.
@@ -87,13 +93,15 @@ impl P2SHScriptProve {
     /// - avoid subtle encoding mistakes
     ///
     /// Notes for tooling authors:
+    /// - `codeconf` is hashed as one raw byte.
     /// - `lockbox` is hashed as its field serialization bytes (i.e. `BytesW2::to_vec()`),
     ///   not as a custom encoding.
     /// - Each sibling `hash` is hashed as `hash.serialize()` (type `field::Hash`).
-    pub fn calc_scriptmh_from_lockbox(adrlibs: &ContractAddressW1, lockbox: &BytesW2, merkels: &MerkelStuffs) -> Ret<ScriptmhCalc> {
+    pub fn calc_scriptmh_from_lockbox(adrlibs: &ContractAddressW1, codeconf: CodeConf, lockbox: &BytesW2, merkels: &MerkelStuffs) -> Ret<ScriptmhCalc> {
         let mut h = Hash::from(sha3(vec![
-            "p2sh_leaf_".as_bytes().to_vec(), // domain separator for safety
+            "p2sh_leaf_v2_".as_bytes().to_vec(), // domain separator for safety
             adrlibs.serialize(),
+            vec![codeconf.raw()],
             lockbox.to_vec(),
         ].concat()));
         let mut path = vec![h.clone()];
@@ -103,6 +111,9 @@ impl P2SHScriptProve {
                 return errf!("p2sh merkel posi {} invalid, must be 0 or 1", posi)
             }
             let ch = h.clone();
+            if step.hash == ch {
+                return errf!("p2sh merkel self pair is not allowed")
+            }
             // left or right: posi==0 means sibling on the left, posi==1 means sibling on the right.
             let pair = maybe!(posi == 0, [step.hash, ch], [ch, step.hash]);
             let mut buf: Vec<_> = pair.iter().map(|a|a.serialize()).collect();
@@ -118,6 +129,25 @@ impl P2SHScriptProve {
         })
     }
 
+    fn verify_adrlibs(cap: &SpaceCap, adrlibs: &ContractAddressW1) -> Ret<()> {
+        let libs = adrlibs.as_list();
+        if libs.len() > cap.librarys_link {
+            return errf!("p2sh libs overflow ({}>{})", libs.len(), cap.librarys_link)
+        }
+        if ! libs.iter().all(|a|a.is_contract()) {
+            return errf!("contract libs error")
+        }
+        Ok(())
+    }
+
+    pub fn verify_unlock_inputs(block_height: u64, adrlibs: &ContractAddressW1, codeconf: CodeConf, lockbox: &BytesW2, witness: &BytesW2) -> Ret<()> {
+        let cap = SpaceCap::new(block_height);
+        Self::verify_adrlibs(&cap, adrlibs)?;
+        convert_and_check(&cap, codeconf.code_type(), lockbox.as_vec(), block_height)?;
+        Self::verify_witness_bytes(&cap, witness.as_vec())?;
+        Ok(())
+    }
+
     fn verify_witness_bytes(cap: &SpaceCap, witness: &[u8]) -> Ret<()> {
         if witness.len() > cap.max_value_size {
             return errf!("p2sh witness bytes too long")
@@ -126,22 +156,11 @@ impl P2SHScriptProve {
     }
 
     fn get_stuff_with_merkel(&self, ctx: &dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
-        // check bytecodes
         let hei = ctx.env().block.height;
-        let cap = SpaceCap::new(hei);
-        // check libs all is contract 
-        let libs = self.adrlibs.as_list();
-        if libs.len() > cap.librarys_link {
-            return errf!("p2sh libs overflow ({}>{})", libs.len(), cap.librarys_link)
-        }
-        if ! libs.iter().all(|a|a.is_contract()) {
-            return errf!("contract libs error")
-        }
-        let ctb = CodeType::Bytecode;
+        let codeconf = CodeConf::parse(self.codeconf.uint())?;
+        Self::verify_unlock_inputs(hei, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
         let lockbox = self.lockbox.as_vec();
         let witness = self.argvkey.as_vec().clone();
-        convert_and_check(&cap, ctb, &lockbox, hei)?;
-        Self::verify_witness_bytes(&cap, &witness)?;
         // ok
         let merkel = scriptmh.to_vec();
         let libs = self.adrlibs.serialize();
@@ -151,11 +170,44 @@ impl P2SHScriptProve {
         stuff.extend_from_slice(&merkel);
         stuff.extend_from_slice(&libs);
         stuff.extend_from_slice(&lockbox);
-        Ok(UnlockScript{ stuff, witness })
+        Ok(UnlockScript{ codeconf: codeconf.raw(), stuff, witness })
     }
 
     fn get_merkel(&self) -> Ret<Address> {
-        Ok(Self::calc_scriptmh_from_lockbox(&self.adrlibs, &self.lockbox, &self.merkels)?.address)
+        let codeconf = CodeConf::parse(self.codeconf.uint())?;
+        Ok(Self::calc_scriptmh_from_lockbox(&self.adrlibs, codeconf, &self.lockbox, &self.merkels)?.address)
     }
     
+}
+
+#[cfg(test)]
+mod p2sh_test {
+    use super::*;
+
+    fn dummy_lockbox(byte: u8) -> BytesW2 {
+        BytesW2::from(vec![Bytecode::PU8 as u8, byte, Bytecode::END as u8]).unwrap()
+    }
+
+    #[test]
+    fn reject_merkel_self_pair() {
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let lockbox = dummy_lockbox(11);
+        let empty_path = MerkelStuffs::from_list(vec![]).unwrap();
+        let leaf = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_path).unwrap();
+        let bad_path = MerkelStuffs::from_list(vec![PosiHash{
+            posi: Uint1::from(1u8),
+            hash: leaf.sha3_path[0].clone(),
+        }]).unwrap();
+        assert!(P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &bad_path).is_err());
+    }
+
+    #[test]
+    fn codeconf_affects_leaf_hash() {
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let lockbox = dummy_lockbox(12);
+        let empty_path = MerkelStuffs::from_list(vec![]).unwrap();
+        let c0 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_path).unwrap();
+        let c1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::IRNode), &lockbox, &empty_path).unwrap();
+        assert_ne!(c0.address, c1.address);
+    }
 }

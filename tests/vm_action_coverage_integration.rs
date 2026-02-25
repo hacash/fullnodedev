@@ -28,7 +28,7 @@ mod action_coverage {
     use vm::frame::ExecEnv;
     use vm::lang::lang_to_bytecode;
     use vm::machine::{self, Machine, Resoure};
-    use vm::rt::{AbstCall, Bytecode, Bytecode::*, CodeType, SpaceCap, calc_func_sign};
+    use vm::rt::{AbstCall, Bytecode, Bytecode::*, CodeConf, CodeType, SpaceCap, calc_func_sign};
     use vm::value::Value;
     use vm::{ContractAddress, ContractAddressW1, ContractAddrsssW1, ContractSto, VMState};
 
@@ -261,7 +261,7 @@ mod action_coverage {
         ctx.env.chain.fast_sync = true;
 
         let mut act = ContractMainCall::new();
-        act.ctype = Uint1::from(99); // invalid code type
+        act.codeconf = Uint1::from(99); // invalid code config
         act.codes = BytesW2::from(vec![Bytecode::END as u8]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
@@ -279,7 +279,7 @@ mod action_coverage {
         ctx.env.chain.fast_sync = true;
 
         let mut act = ContractMainCall::new();
-        act.ctype = Uint1::from(0);
+        act.codeconf = Uint1::from(0);
         act.codes = BytesW2::from(vec![Bytecode::END as u8]).unwrap();
         // Set marks to non-zero
         let bytes = act.serialize();
@@ -287,7 +287,7 @@ mod action_coverage {
         act2.parse(&bytes).unwrap();
         // Manually set marks field to non-zero via raw parse
         let mut raw = act2.serialize();
-        // kind(2) + marks(3) + ctype(1) + codes(2+len)
+        // kind(2) + marks(3) + codeconf(1) + codes(2+len)
         // marks starts at offset 2
         raw[2] = 0xFF;
         let mut act3 = ContractMainCall::new();
@@ -1346,7 +1346,7 @@ mod action_coverage {
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let empty_merkels = MerkelStuffs::from_list(vec![]).unwrap();
 
-        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
+        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_merkels).unwrap();
         // Single leaf: sha3_path should have exactly 1 entry (the leaf hash = root hash)
         assert_eq!(calc.sha3_path.len(), 1);
         // Address should be a valid scriptmh address
@@ -1359,8 +1359,8 @@ mod action_coverage {
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 99, Bytecode::END as u8]).unwrap();
         let empty_merkels = MerkelStuffs::from_list(vec![]).unwrap();
 
-        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
-        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &empty_merkels).unwrap();
+        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_merkels).unwrap();
+        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_merkels).unwrap();
         assert_eq!(calc1.address, calc2.address, "same inputs should produce same address");
         assert_eq!(calc1.payload20, calc2.payload20);
     }
@@ -1373,8 +1373,8 @@ mod action_coverage {
         let lockbox1 = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let lockbox2 = BytesW2::from(vec![Bytecode::PU8 as u8, 2, Bytecode::END as u8]).unwrap();
 
-        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox1, &empty_merkels).unwrap();
-        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox2, &empty_merkels).unwrap();
+        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox1, &empty_merkels).unwrap();
+        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox2, &empty_merkels).unwrap();
         assert_ne!(calc1.address, calc2.address, "different lockbox should produce different address");
     }
 
@@ -1389,7 +1389,7 @@ mod action_coverage {
         };
         let merkels = MerkelStuffs::from_list(vec![bad_step]).unwrap();
 
-        let err = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, &lockbox, &merkels).unwrap_err();
+        let err = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &merkels).unwrap_err();
         assert!(err.contains("posi") && err.contains("invalid"), "{err}");
     }
 
@@ -1403,7 +1403,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 42, Bytecode::END as u8]).unwrap();
 
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, lockbox },
+            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
         ]).unwrap();
 
         assert_eq!(tree.leaves().len(), 1);
@@ -1421,8 +1421,8 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lb2 = BytesW2::from(vec![Bytecode::PU8 as u8, 2, Bytecode::END as u8]).unwrap();
 
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs.clone(), lockbox: lb1 },
-            P2shLeafSpec { adrlibs: libs.clone(), lockbox: lb2 },
+            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb1 },
+            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb2 },
         ]).unwrap();
 
         assert_eq!(tree.leaves().len(), 2);
@@ -1432,7 +1432,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
             let proof = tree.proof_for_index(idx).unwrap();
             let spec = &tree.leaves()[idx].spec;
             let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(
-                &spec.adrlibs, &spec.lockbox, &proof,
+                &spec.adrlibs, spec.codeconf, &spec.lockbox, &proof,
             ).unwrap();
             assert_eq!(calc.address, tree.address(), "proof for leaf {idx} should derive tree address");
         }
@@ -1445,8 +1445,8 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lb2 = BytesW2::from(vec![Bytecode::PU8 as u8, 20, Bytecode::END as u8]).unwrap();
 
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs.clone(), lockbox: lb1 },
-            P2shLeafSpec { adrlibs: libs.clone(), lockbox: lb2 },
+            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb1 },
+            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb2 },
         ]).unwrap();
 
         let witness = BytesW2::from(vec![0xAA, 0xBB]).unwrap();
@@ -1469,8 +1469,8 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lb = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
 
         let err = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs.clone(), lockbox: lb.clone() },
-            P2shLeafSpec { adrlibs: libs.clone(), lockbox: lb },
+            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb.clone() },
+            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb },
         ]).unwrap_err();
         assert!(err.contains("duplicate"), "{err}");
     }
@@ -1480,7 +1480,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 7, Bytecode::END as u8]).unwrap();
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, lockbox },
+            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
         ]).unwrap();
         let witness = BytesW2::from(vec![0x11, 0x22, 0x33]).unwrap();
 
@@ -1496,7 +1496,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         // 0x01 is an invalid bytecode in current ISA metadata table
         let invalid_lockbox = BytesW2::from(vec![0x01]).unwrap();
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, lockbox: invalid_lockbox },
+            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: invalid_lockbox },
         ]).unwrap();
         let witness = BytesW2::from(vec![]).unwrap();
 
@@ -1509,7 +1509,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, lockbox },
+            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
         ]).unwrap();
         let over = SpaceCap::new(1).max_value_size + 1;
         let witness = BytesW2::from(vec![0u8; over]).unwrap();
@@ -1523,7 +1523,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, lockbox },
+            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
         ]).unwrap();
         let witness = BytesW2::from(vec![]).unwrap();
 

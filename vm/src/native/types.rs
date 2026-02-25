@@ -10,7 +10,7 @@
 macro_rules! native_dispatch_method {
     (func, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
         pub fn call(hei: u64, idx: u8, v: &[u8]) -> VmrtRes<(Value, i64)> {
-            let cty: $EnumName = std_mem_transmute!(idx);
+            let cty = Self::try_from_u8(idx)?;
             match cty {
                 $(
                     Self::$name => $name(hei, v).map(|r| {
@@ -18,7 +18,7 @@ macro_rules! native_dispatch_method {
                         (r, $gas)
                     }),
                 )+
-                _ => return itr_err_fmt!($ErrCode, "not find native func idx {}", idx),
+                _ => unreachable!(),
             }
         }
     };
@@ -53,6 +53,14 @@ impl $EnumName {
     pub const const_name: u8 = $v;
     }}
     )+
+
+    #[inline]
+    pub fn try_from_u8(idx: u8) -> VmrtRes<Self> {
+        match idx {
+            $( x if x == Self::$name as u8 => Ok(Self::$name), )+
+            _ => itr_err_fmt!($ErrCode, "not find {} idx {}", stringify!($EnumName), idx),
+        }
+    }
 
     native_dispatch_method!($kind, $EnumName, $ErrCode, $( $name = $v, $argv_len, $gas, $rty )+);
 
@@ -94,4 +102,3 @@ impl $EnumName {
 
     };
 }
-

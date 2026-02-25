@@ -5,7 +5,7 @@
 fn call_level_from_exec_mode(ty: u8) -> Ret<usize> {
     use crate::rt::*;
     use crate::rt::ExecMode::*;
-    let mode: ExecMode = std_mem_transmute!(ty);
+    let mode = ExecMode::try_from_u8(ty).map_err(|e| e.to_string())?;
     match mode {
         Main | P2sh => Ok(ACTION_CTX_LEVEL_CALL_MAIN),
         Abst        => Ok(ACTION_CTX_LEVEL_CALL_CONTRACT),

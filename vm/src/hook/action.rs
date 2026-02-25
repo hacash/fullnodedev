@@ -106,6 +106,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
     // call from p2sh script
     if fs {
         let p2sh = ctx.p2sh(&from)?;
+        let codeconf = p2sh.code_conf();
         let witness = p2sh.witness().to_vec();
         let codes = p2sh.code_stuff().to_vec();
         let mut params: Vec<Value> = Vec::with_capacity(P2SH_PARAM_LEN);
@@ -121,7 +122,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
         }
         let param = Value::Compo(CompoItem::list(VecDeque::from(params))?);
         let cm = ExecMode::P2sh as u8;
-        let _ = setup_vm_run(ctx, cm, 0, codes.into(), param)?;
+        let _ = setup_vm_run(ctx, cm, codeconf, codes.into(), param)?;
         // return value checked inside p2sh_call
     }
 

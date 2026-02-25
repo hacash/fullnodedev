@@ -33,5 +33,5 @@ pub fn bufeat_ref(buf: &[u8], n: usize) -> Ret<&[u8]> {
 * 
 */
 pub fn bufeatone(buf: &[u8]) -> Ret<u8> {
-    maybe!(buf.len() >= 1, Ok(buf[0]), Err(s!("buf length too short")))
+    maybe!(!buf.is_empty(), Ok(buf[0]), Err(s!("buf length too short")))
 }

@@ -2,8 +2,8 @@
 pub type IniObj = HashMap<String, HashMap<String, Option<String>>>;
 
 
-pub fn join_path(a: &PathBuf, b: &str) -> PathBuf {
-    let mut a = a.clone();
+pub fn join_path(a: &std::path::Path, b: &str) -> PathBuf {
+    let mut a = a.to_path_buf();
     a.push(b);
     a
 }
@@ -57,13 +57,12 @@ pub fn ini_must_bool(sec: &HashMap<String, Option<String>>, key: &str, dv: bool)
         dfv = "true";
     }
     let val = ini_must(sec, key, dfv);
-    match val.as_str() {
+    !matches!(val.as_str(), 
         "false"|"False"|"FALSE"|
         "none"|"None"|"NONE"|
         "null"|"Null"|"NULL"|
-        "0"|"_"|""=> false,
-        _ => true,
-    }
+        "0"|"_"|""
+    )
 }
 
 

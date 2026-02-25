@@ -65,17 +65,15 @@ impl Account {
 
     pub fn create_by(pass: &str) -> Ret<Account> {
         // is private key
-        if pass.len() == PRIVATE_SIZE * 2 {
-            if let Ok(bts) = hex::decode(pass) {
-                if bts.len() == PRIVATE_SIZE {
-                    if let Ok(key) = bts.try_into() {
-                        return Account::create_by_secret_key_value(key);
-                    }
-                }
-            }
+        if pass.len() == PRIVATE_SIZE * 2
+            && let Ok(bts) = hex::decode(pass)
+            && bts.len() == PRIVATE_SIZE
+            && let Ok(key) = bts.try_into()
+        {
+            return Account::create_by_secret_key_value(key);
         }
         // is passward
-        return Account::create_by_password(pass)
+        Account::create_by_password(pass)
     }
 
     pub fn create_by_password(pass: &str) -> Ret<Account> {
@@ -100,9 +98,9 @@ impl Account {
         let address = Account::get_address_by_public_key( pubkey.serialize_compressed() );
         let addrshow = Account::to_readable(&address);
         Account {
-            secret_key: seckey.clone(),
+            secret_key: *seckey,
             public_key: pubkey,
-            address: address,
+            address,
             address_readable: addrshow,
         }
     }
@@ -125,8 +123,8 @@ impl Account {
     }
 
     pub fn to_base58check(s: &[u8]) -> String {
-        let v = maybe!(s.len() > 0, s[0], 0);
-        let b = maybe!(s.len() > 0, &s[1..], &[] as &[u8]);
+        let v = maybe!(!s.is_empty(), s[0], 0);
+        let b = maybe!(!s.is_empty(), &s[1..], &[] as &[u8]);
         b.to_base58check(v)
     }
 
@@ -145,18 +143,17 @@ impl Account {
     }
 
     pub fn verify_signature(msg: &[u8; 32], publickey: &[u8; 33], signature: &[u8; 64]) -> bool {
-        if let Ok(pubkey) = PublicKey::parse_compressed(publickey) {
-            if let Ok(sigobj) = Signature::parse_standard(signature) {
-                return libsecp256k1::verify(
-                    &Message::parse(msg),
-                    &sigobj,
-                    &pubkey,
-                )
-            }
+        if let Ok(pubkey) = PublicKey::parse_compressed(publickey)
+            && let Ok(sigobj) = Signature::parse_standard(signature)
+        {
+            return libsecp256k1::verify(
+                &Message::parse(msg),
+                &sigobj,
+                &pubkey,
+            )
         }
         false
     }
 
 }
         
-

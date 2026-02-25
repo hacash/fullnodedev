@@ -14,17 +14,17 @@ combi_struct!{ ContractMeta,
 combi_struct!{ ContractAbstCall, 
 	sign: Fixed1
 	mark: Fixed2
-	cdty: Fixed1 // 3bit8 = codetype
-    code: BytesW2
+	fncnf: Fixed1 // abstract call flags, currently must be zero
+    code_stuff: CodeStuff
 }
 
 // Contract User Func
 combi_struct!{ ContractUserFunc, 
 	sign: Fixed4
 	mark: Fixed3
-	cdty: Fixed1 // 1bit = is_public, 3bit8 = codetype
+	fncnf: Fixed1 // function flags, e.g. public
 	pmdf: FuncArgvTypes // params type define
-    code: BytesW2
+    code_stuff: CodeStuff
 }
 
 // Contract address list
@@ -84,8 +84,7 @@ impl ContractAbstCall {
 		if self.mark.not_zero() {
 			return e
 		}
-		let c = self.cdty[0] >> 3;
-		if c > 0 {
+		if self.fncnf.not_zero() {
 			return e
 		}
 		Ok(())
@@ -99,8 +98,18 @@ impl ContractUserFunc {
 		if self.mark.not_zero() {
 			return e
 		}
+		let known = FnConf::Public as u8;
+		if self.fncnf[0] & !known != 0 {
+			return e
+		}
 		Ok(())
 	}
+}
+
+fn verify_code_stuff(cap: &SpaceCap, code_stuff: &CodeStuff, hei: u64) -> VmrtErr {
+	let code_pkg = CodePkg::try_from(code_stuff)?;
+	convert_and_check(cap, code_pkg.code_type()?, &code_pkg.data, hei)?;
+	Ok(())
 }
 
 
@@ -265,8 +274,7 @@ impl ContractSto {
 			for a in edit.abstcalls.as_list() {
 				a.check(hei)?;
 				AbstCall::check(a.sign[0])?;
-				let ctype = CodeType::parse(a.cdty[0])?;
-				convert_and_check(&cap, ctype, &a.code, hei)?;
+				verify_code_stuff(&cap, &a.code_stuff, hei)?;
 			}
 			self.abstcalls.check_merge(&edit.abstcalls)?;
 		}
@@ -283,8 +291,7 @@ impl ContractSto {
 			}
 			for a in edit.userfuncs.as_list() {
 				a.check(hei)?;
-				let ctype = CodeType::parse(a.cdty[0])?;
-				convert_and_check(&cap, ctype, &a.code, hei)?;
+				verify_code_stuff(&cap, &a.code_stuff, hei)?;
 			}
 			let replaced = self.userfuncs.check_merge(&edit.userfuncs)?;
 			if replaced {
@@ -414,8 +421,7 @@ impl ContractSto {
 		for a in self.abstcalls.as_list() {
 			a.check(hei)?;
 			AbstCall::check(a.sign[0])?;
-			let ctype = CodeType::parse(a.cdty[0])?;
-			convert_and_check(&cap, ctype, &a.code, hei)?; // // check compile
+			verify_code_stuff(&cap, &a.code_stuff, hei)?; // check compile
 		}
 		// usrfun call
 		{
@@ -429,8 +435,7 @@ impl ContractSto {
 		}
 		for a in self.userfuncs.as_list() {
 			a.check(hei)?;
-			let ctype = CodeType::parse(a.cdty[0])?;
-			convert_and_check(&cap, ctype, &a.code, hei)?; // check compile
+			verify_code_stuff(&cap, &a.code_stuff, hei)?; // check compile
 		}
 		// ok
 		Ok(())
@@ -457,19 +462,18 @@ impl ContractSto {
 		let mut abstfns = HashMap::with_capacity(self.abstcalls.length());
 		// Move function bytecode out of `ContractSto` once. Runtime execution uses `FnObj`, so keeping another full copy inside `sto` only adds memory and copy cost.
 		for a in self.abstcalls.as_mut() {
-			let code_bytes = std::mem::take(&mut a.code).into_vec();
-			let code = FnObj::create(a.cdty[0], code_bytes, None)?;
-			let cty = std_mem_transmute!(a.sign[0]);
+			let code_pkg = CodePkg::try_from(std::mem::take(&mut a.code_stuff))?;
+			let code = FnObj::create(a.fncnf[0], code_pkg, None)?;
+			let cty = AbstCall::try_from_u8(a.sign[0])?;
 			abstfns.insert(cty, code.into());
 		}
 		let mut userfns = HashMap::with_capacity(self.userfuncs.length());
 		for a in self.userfuncs.as_mut() {
-			let code_bytes = std::mem::take(&mut a.code).into_vec();
-			let code = FnObj::create(a.cdty[0], code_bytes, Some(a.pmdf.clone()))?;
+			let code_pkg = CodePkg::try_from(std::mem::take(&mut a.code_stuff))?;
+			let code = FnObj::create(a.fncnf[0], code_pkg, Some(a.pmdf.clone()))?;
 			let cty = a.sign.to_array();
 			userfns.insert(cty, code.into());
 		}
 		Ok(ContractObj { sto: self, abstfns, userfns })
 	}
 }
-

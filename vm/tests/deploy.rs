@@ -257,7 +257,7 @@ mod deploy {
         println!("{}", maincodes.bytecode_print(true).unwrap());
 
         let mut act = ContractMainCall::new();
-        act.ctype = Uint1::from(0);
+        act.codeconf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
         act.codes = BytesW2::from(maincodes).unwrap();
 
         // print

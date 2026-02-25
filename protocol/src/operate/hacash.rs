@@ -44,6 +44,9 @@ amount_op_func_define!{do_hac_add, hac, addr, amt, {
 pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &Amount) -> Ret<Vec<u8>> {
     // is to self
     if from == to {
+        if !from.is_privakey() {
+            return errf!("non-privakey address cannot transfer HAC to self")
+        }
         // historical compatibility: legacy blocks (<200000) allow self-transfer fast path
         if ctx.env().block.height >= 20_0000 {
             // you can transfer it to yourself without changing the status, which is a waste of service fees

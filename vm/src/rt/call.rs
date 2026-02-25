@@ -45,16 +45,68 @@ pub enum CodeType {
     IRNode      = 1,
 }
 
+enum_try_from_u8_by_variant!(
+    CodeType,
+    ItrErrCode::CodeTypeError,
+    "code type {} not find",
+    [Bytecode, IRNode]
+);
+
 impl CodeType {
+    pub const TYPE_MASK: u8 = 0b0000_0011;
+
+    // Parse only the lower 2 bits as code type selector.
     pub fn parse(n: u8) -> VmrtRes<Self> {
-        let ct = n & 0b00000111;
-        if ![
-            Self::Bytecode as u8,
-            Self::IRNode as u8,
-        ].contains(&ct) {
+        Self::try_from_u8(n & Self::TYPE_MASK)
+    }
+}
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct CodeConf(u8);
+
+impl CodeConf {
+    pub const RESERVED_MASK: u8 = 0b1111_1100;
+
+    // Current rule: high 6 bits are reserved and must be zero.
+    pub fn parse(raw: u8) -> VmrtRes<Self> {
+        if raw & Self::RESERVED_MASK != 0 {
             return itr_err_code!(ItrErrCode::CodeTypeError)
         }
-        Ok(std_mem_transmute!(ct))
+        let _ = CodeType::parse(raw)?;
+        Ok(Self(raw))
+    }
+
+    pub const fn from_type(code_type: CodeType) -> Self {
+        Self(code_type as u8)
+    }
+
+    pub const fn raw(self) -> u8 {
+        self.0
+    }
+
+    pub fn code_type(self) -> CodeType {
+        // Safe by construction: CodeConf::parse() already validates type bits.
+        match CodeType::try_from_u8(self.0 & CodeType::TYPE_MASK) {
+            Ok(v) => v,
+            Err(_) => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CodePkg {
+    pub conf: u8,
+    pub data: Vec<u8>,
+}
+
+impl CodePkg {
+    pub fn code_conf(&self) -> VmrtRes<CodeConf> {
+        CodeConf::parse(self.conf)
+    }
+
+    pub fn code_type(&self) -> VmrtRes<CodeType> {
+        Ok(self.code_conf()?.code_type())
     }
 }
 
@@ -150,6 +202,34 @@ mod call_tests {
         let err = checked_func_sign(&[1, 2, 3]).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastParamFail);
     }
+
+    #[test]
+    fn codeconf_rejects_reserved_bits() {
+        let err = CodeConf::parse(0b1000_0000).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CodeTypeError);
+    }
+
+    #[test]
+    fn codeconf_rejects_bit2() {
+        let err = CodeConf::parse(0b0000_0100).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CodeTypeError);
+    }
+
+    #[test]
+    fn codeconf_roundtrip_bytecode() {
+        let conf = CodeConf::parse(CodeType::Bytecode as u8).unwrap();
+        assert_eq!(conf.raw(), CodeType::Bytecode as u8);
+        assert!(matches!(conf.code_type(), CodeType::Bytecode));
+    }
+
+    #[test]
+    fn codepkg_parses_code_type_from_conf() {
+        let pkg = CodePkg{
+            conf: CodeConf::from_type(CodeType::IRNode).raw(),
+            data: vec![],
+        };
+        assert!(matches!(pkg.code_type().unwrap(), CodeType::IRNode));
+    }
 }
 
 
@@ -170,13 +250,13 @@ impl FnObj {
         self.confs & cnfset == cnfset
     } 
 
-    pub fn create(mks: u8, codes: Vec<u8>, agvty: Option<FuncArgvTypes>) -> VmrtRes<Self> {
-        let ctype = CodeType::parse(mks)?;
+    pub fn create(fncnf: u8, pkg: CodePkg, agvty: Option<FuncArgvTypes>) -> VmrtRes<Self> {
+        let ctype = pkg.code_type()?;
         Ok(Self {
-            confs: mks & 0b11111000,
+            confs: fncnf,
             agvty,
             ctype,
-            codes: ByteView::from_vec(codes),
+            codes: ByteView::from_vec(pkg.data),
             compiled: Arc::new(std::sync::OnceLock::new()),
         })
     }
@@ -244,6 +324,7 @@ impl CallTarget {
 }
 
 /* Entry mode: Main, P2sh, Abst Call  mode: Outer, Inner, View, Pure */
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ExecMode {
     #[default] Main, // tx main call
@@ -254,6 +335,13 @@ pub enum ExecMode {
     View,  // read-only (can read state, cannot write)
     Pure,  // no-state (cannot read or write state)
 }
+
+enum_try_from_u8_by_variant!(
+    ExecMode,
+    ItrErrCode::CallInvalid,
+    "exec mode {} not find",
+    [Main, P2sh, Abst, Outer, Inner, View, Pure]
+);
 
 
 #[derive(Debug, Clone)]
@@ -279,12 +367,15 @@ macro_rules! abst_call_type_define {
             $k = $v,
         )+
         }
+        enum_try_from_u8_by_variant!(
+            AbstCall,
+            ItrErrCode::AbstTypeError,
+            "AbstCall type {} not find",
+            [$( $k ),+]
+        );
         impl AbstCall {
             pub fn check(n: u8) -> VmrtErr {
-                if [$($v),+].contains(&n) {
-                    return Ok(())
-                }
-                itr_err_fmt!(ItrErrCode::AbstTypeError, "AbstCall type {} not find", n)
+                Self::try_from_u8(n).map(|_| ())
             }
             pub fn from_name(name: &str) -> VmrtRes<Self> {
                 Ok(match name {

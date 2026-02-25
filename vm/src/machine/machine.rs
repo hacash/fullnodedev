@@ -137,7 +137,7 @@ impl VM for MachineBox {
         // (2) enter call layer (depth check). Guard guarantees leave() on all exits.
         let _guard = VmCallDepthGuard::enter(&mut self.call_state)?;
         // min gas cost per call type
-        let cty: ExecMode = std_mem_transmute!(mode);
+        let cty = ExecMode::try_from_u8(mode).map_err(BError::from)?;
         let min_cost = {
             let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
             match cty {
@@ -174,10 +174,11 @@ impl VM for MachineBox {
         };
         let result = match cty {
             Main => {
-                let cty = CodeType::parse(kind)?;
-                machine.main_call(exenv, cty, payload)
+                let codeconf = CodeConf::parse(kind)?;
+                machine.main_call(exenv, codeconf.code_type(), payload)
             }
             P2sh => {
+                let codeconf = CodeConf::parse(kind)?;
                 let payload = ByteView::from_arc(payload);
                 let payload_ref = payload.as_slice();
                 let (state_addr, mv1) = Address::create(payload_ref).map_err(BError::interrupt)?;
@@ -190,10 +191,10 @@ impl VM for MachineBox {
                 let Ok(param) = param.downcast::<Value>() else {
                     return berrf!("p2sh argv type not match");
                 };
-                machine.p2sh_call(exenv, state_addr, calibs.into_list(), realcodes, *param)
+                machine.p2sh_call(exenv, codeconf.code_type(), state_addr, calibs.into_list(), realcodes, *param)
             }
             Abst => {
-                let kid: AbstCall = std_mem_transmute!(kind);
+                let kid = AbstCall::try_from_u8(kind).map_err(BError::from)?;
                 let cadr = ContractAddress::parse(payload.as_ref()).map_err(BError::interrupt)?;
                 let Ok(param) = param.downcast::<Value>() else {
                     return berrf!("abst argv type not match");
@@ -305,12 +306,12 @@ impl Machine {
     fn p2sh_call(
         &mut self,
         env: &mut ExecEnv,
+        ctype: CodeType,
         p2sh_addr: Address,
         libs: Vec<ContractAddress>,
         codes: ByteView,
         param: Value,
     ) -> Ret<Value> {
-        let ctype = CodeType::Bytecode;
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
         let rv = self.do_call(

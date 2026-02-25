@@ -6,7 +6,7 @@ pub fn curtimes() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0) as u64
+        .unwrap_or(0)
 }
 
 
@@ -30,5 +30,4 @@ pub fn timefmt(t: u64, fmts: &str) -> String {
         .map(|dt| dt.format(fmts).to_string())
         .unwrap_or_else(|| format!("invalid timestamp {}", t))
 }
-
 

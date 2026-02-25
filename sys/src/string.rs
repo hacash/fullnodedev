@@ -6,13 +6,13 @@ macro_rules! s {
 
 
 pub fn start_with_char(s: &str, c: char) -> bool {
-    maybe!(s.len() > 0, s.as_bytes()[0] == c as u8, false)
+    maybe!(!s.is_empty(), s.as_bytes()[0] == c as u8, false)
 }
 
 pub fn bytes_to_readable_string(bts: &[u8]) -> String {
     let ss: Vec<u8> = bts.iter().map(|x|match x {
         32..=126 => *x,
-        _ => ' ' as u8,
+        _ => b' ',
     }).collect();
     let resstr = String::from_utf8(ss).ok().unwrap();
     resstr.trim_end().to_string()
@@ -20,7 +20,7 @@ pub fn bytes_to_readable_string(bts: &[u8]) -> String {
 
 
 pub fn bytes_from_readable_string(stuff: &[u8], len: usize) -> Vec<u8> {
-    let ept = ' ' as u8;
+    let ept = b' ';
     let mut bts = vec![ept; len];
     for i in 0..stuff.len() {
         if i >= len {
@@ -35,7 +35,7 @@ pub fn bytes_from_readable_string(stuff: &[u8], len: usize) -> Vec<u8> {
 }
 
 pub fn bytes_try_to_readable_string(bts: &[u8]) -> Option<String> {
-    if false == check_readable_string(bts) {
+    if !check_readable_string(bts) {
         return None
     }
     let resstr = String::from_utf8(bts.to_vec()).ok().unwrap();
@@ -54,7 +54,7 @@ pub fn check_readable_string(bts: &[u8]) -> bool {
             return false // cannot read
         }
     }
-    return true
+    true
 }
 
 
@@ -68,4 +68,3 @@ pub fn left_readable_string(bts: &[u8]) -> String {
     }
     String::from_utf8(ss).ok().unwrap().trim_end().to_string()
 }
-

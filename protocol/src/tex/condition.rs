@@ -255,3 +255,30 @@ define_cell_cond_height!{ 24, CellCondHeightAtLeast, le }
 
 
 /*****************************************************/
+
+
+combi_struct!{ CellCondChainIdEq,
+    cellid: Uint1
+    chainid: Uint4
+}
+
+impl CellCondChainIdEq {
+    pub const CID: u8 = 25;
+
+    pub fn new(chainid: u32) -> Self {
+        Self {
+            cellid: Uint1::from(Self::CID),
+            chainid: Uint4::from(chainid),
+        }
+    }
+}
+
+impl CellExec for CellCondChainIdEq {
+    fn execute(&self, ctx: &mut dyn Context, _: &Address) -> Rerr {
+        let cur = ctx.env().chain.id;
+        let exp = self.chainid.uint();
+        maybe!(cur == exp, Ok(()), errf!("cell condition chain id check failed"))
+    }
+}
+
+impl TexCell for CellCondChainIdEq { fn kind(&self) -> u16 { Self::CID as u16 } }

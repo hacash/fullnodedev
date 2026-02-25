@@ -112,6 +112,13 @@ pub struct Exiter {
 }
 
 
+impl Default for Exiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 impl Exiter {
 
     pub fn new() -> Self {

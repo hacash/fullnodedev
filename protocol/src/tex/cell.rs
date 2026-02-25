@@ -68,6 +68,7 @@ define_tex_cell_create!{ tex_cell_create,
     CellCondAssetEq  // 22
     CellCondHeightAtMost  // 23
     CellCondHeightAtLeast // 24
+    CellCondChainIdEq // 25
     
 
 }

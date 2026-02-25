@@ -1,4 +1,63 @@
 
+combi_struct!{ CodeStuff,
+    conf: Uint1
+    data: BytesW2
+}
+
+impl CodeStuff {
+    pub fn parse_conf(&self) -> VmrtRes<CodeConf> {
+        CodeConf::parse(self.conf.uint())
+    }
+}
+
+impl TryFrom<&CodeStuff> for CodePkg {
+    type Error = ItrErr;
+
+    fn try_from(src: &CodeStuff) -> Result<Self, Self::Error> {
+        let conf = src.parse_conf()?.raw();
+        Ok(Self {
+            conf,
+            data: src.data.to_vec(),
+        })
+    }
+}
+
+impl TryFrom<CodeStuff> for CodePkg {
+    type Error = ItrErr;
+
+    fn try_from(src: CodeStuff) -> Result<Self, Self::Error> {
+        let conf = src.parse_conf()?.raw();
+        Ok(Self {
+            conf,
+            data: src.data.into_vec(),
+        })
+    }
+}
+
+impl TryFrom<&CodePkg> for CodeStuff {
+    type Error = ItrErr;
+
+    fn try_from(src: &CodePkg) -> Result<Self, Self::Error> {
+        let conf = CodeConf::parse(src.conf)?.raw();
+        Ok(Self {
+            conf: Uint1::from(conf),
+            data: BytesW2::from(src.data.clone()).map_ire(ItrErrCode::CastParamFail)?,
+        })
+    }
+}
+
+impl TryFrom<CodePkg> for CodeStuff {
+    type Error = ItrErr;
+
+    fn try_from(src: CodePkg) -> Result<Self, Self::Error> {
+        let conf = CodeConf::parse(src.conf)?.raw();
+        Ok(Self {
+            conf: Uint1::from(conf),
+            data: BytesW2::from(src.data).map_ire(ItrErrCode::CastParamFail)?,
+        })
+    }
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct FuncArgvTypes {
     typnum: Uint1, // [ 4bit: output type, 4bit: inputs num]
@@ -153,4 +212,27 @@ impl_field_only_new!{FuncArgvTypes}
 
 
 
+#[cfg(test)]
+mod code_stuff_tests {
+    use super::*;
 
+    #[test]
+    fn code_stuff_to_pkg_rejects_invalid_conf() {
+        let mut code_stuff = CodeStuff::new();
+        code_stuff.conf = Uint1::from(0b0000_0100);
+        code_stuff.data = BytesW2::from(vec![Bytecode::END as u8]).unwrap();
+        let err = CodePkg::try_from(&code_stuff).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CodeTypeError);
+    }
+
+    #[test]
+    fn code_pkg_to_stuff_roundtrip() {
+        let pkg = CodePkg{
+            conf: CodeConf::from_type(CodeType::Bytecode).raw(),
+            data: vec![Bytecode::END as u8],
+        };
+        let code_stuff = CodeStuff::try_from(pkg.clone()).unwrap();
+        let back = CodePkg::try_from(code_stuff).unwrap();
+        assert_eq!(back, pkg);
+    }
+}

@@ -425,7 +425,7 @@ mod amm {
         println!("{}\n", maincodes.to_hex());
 
         let mut act = ContractMainCall::new();
-        act.ctype = Uint1::from(0);
+        act.codeconf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");
@@ -453,7 +453,7 @@ mod amm {
         println!("{}\n", maincodes.to_hex());
 
         let mut act = ContractMainCall::new();
-        act.ctype = Uint1::from(0);
+        act.codeconf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");
@@ -479,7 +479,7 @@ mod amm {
         println!("{}\n", maincodes.to_hex());
 
         let mut act = ContractMainCall::new();
-        act.ctype = Uint1::from(0);
+        act.codeconf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");
@@ -505,7 +505,7 @@ mod amm {
         println!("{}\n", maincodes.to_hex());
 
         let mut act = ContractMainCall::new();
-        act.ctype = Uint1::from(0);
+        act.codeconf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
         act.codes = BytesW2::from(maincodes).unwrap();
 
         curl_trs_3(vec![Box::new(act)], "22:244");

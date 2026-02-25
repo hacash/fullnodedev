@@ -30,10 +30,15 @@ combi_struct!{ ValueSto,
 
 impl ValueSto {
 
+    #[inline(always)]
+    fn lease_due(base: u64, blocks: u64) -> u64 {
+        base.saturating_add(blocks).min(BlockHeight::MAX)
+    }
+
     fn new(chei: u64, v: Value) -> Self {
         Self {
             born: BlockHeight::from(chei),
-            expire: BlockHeight::from(chei + STORAGE_PERIOD),
+            expire: BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD)),
             data: v,
         }
     }
@@ -62,7 +67,7 @@ impl ValueSto {
     }
 
     fn max_expire(&self) -> u64 {
-        self.born.uint().saturating_add(STORAGE_SAVE_MAX)
+        Self::lease_due(self.born.uint(), STORAGE_SAVE_MAX)
     }
 
     // return (is_expire, is_delete, expire_height) Boundary semantics are strict: - `chei == expire` -> NOT expired yet (still readable/writable; rest=0) - `chei == expire + retain_blocks` -> NOT deleted yet
@@ -82,7 +87,7 @@ impl ValueSto {
         if is_expire {
             self.data = v;
             self.born = BlockHeight::from(chei);
-            self.expire = BlockHeight::from(chei + STORAGE_PERIOD);
+            self.expire = BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD));
             return self;
         }
         // update
@@ -93,7 +98,7 @@ impl ValueSto {
                 // should not happen for storable values, but keep consensus safe
                 self.data = v;
                 self.born = BlockHeight::from(chei);
-                self.expire = BlockHeight::from(chei + STORAGE_PERIOD);
+                self.expire = BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD));
                 return self;
             }
         };
@@ -104,7 +109,7 @@ impl ValueSto {
             // avoid divide-by-zero; treat as fresh save with minimum lease
             self.data = v;
             self.born = BlockHeight::from(chei);
-            self.expire = BlockHeight::from(chei + STORAGE_PERIOD);
+            self.expire = BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD));
             return self;
         }
         if new_total != old_total {
@@ -116,7 +121,7 @@ impl ValueSto {
             if new_rest > STORAGE_SAVE_MAX {
                 new_rest = STORAGE_SAVE_MAX;
             }
-            let exp = (chei + new_rest).min(self.max_expire());
+            let exp = Self::lease_due(chei, new_rest).min(self.max_expire());
             self.expire = BlockHeight::from(exp);
         }
         self.data = v;
@@ -226,6 +231,24 @@ mod storage_param_tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("rent overflow"));
+    }
+
+    #[test]
+    fn lease_due_near_blockheight_max_saturates_instead_of_wrapping() {
+        let near = BlockHeight::MAX - 3;
+
+        let fresh = ValueSto::new(near, Value::U8(1));
+        assert_eq!(fresh.expire.uint(), BlockHeight::MAX);
+
+        let mut expired = ValueSto::new(0, Value::U8(1));
+        expired.expire = BlockHeight::from(0);
+        let refreshed = expired.update(near, Value::U8(2), 0);
+        assert_eq!(refreshed.expire.uint(), BlockHeight::MAX);
+
+        let mut scaled = ValueSto::new(BlockHeight::MAX - 100, Value::Bytes(vec![1, 2, 3, 4]));
+        scaled.expire = BlockHeight::from(BlockHeight::MAX - 1);
+        let scaled = scaled.update(BlockHeight::MAX - 2, Value::Bytes(vec![1]), 0);
+        assert!(scaled.expire.uint() >= BlockHeight::MAX - 2);
     }
 
     #[test]
@@ -419,6 +442,7 @@ impl VMState<'_> {
         };
         let (is_expire, is_delete, _) = v.check(curhei);
         if is_delete {
+            // Maintenance-only cleanup for over-retention keys; no external billing side effects.
             self.ctrtkvdb_del(&k);
             return Ok(None) // over delete
         }

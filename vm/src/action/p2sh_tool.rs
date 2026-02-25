@@ -1,13 +1,14 @@
 /* P2SH tooling helpers. Design goals: - Canonical: given the same set of (libs, lockbox) leaves, every implementation should derive the same scriptmh address. We achieve this by sorting leaves by their *leaf hash* (the same leaf commitment used by consensus). - Consensus-aligned: leaf/branch hashing rules are intentionally identical to `P2SHScriptProve::calc_scriptmh_from_lockbox` / `get_merkel()`. - Hard to misuse: APIs return intermediate hashes and generate `P2SHScriptProve` instances for a selected leaf, so wallet/SDK code does not need to hand-roll Merkle paths. */
 
 
-/// A single P2SH leaf: `(adrlibs, lockbox)`.
+/// A single P2SH leaf: `(adrlibs, codeconf, lockbox)`.
 ///
-/// Note: libs are part of the leaf commitment. If libs differ, even with identical lockbox
-/// bytecode, the leaf hash (and therefore the final scriptmh address) will differ.
+/// Note: both libs and codeconf are part of the leaf commitment.
+/// If either differs, even with identical lockbox bytes, the final scriptmh address differs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct P2shLeafSpec {
     pub adrlibs: ContractAddressW1,
+    pub codeconf: CodeConf,
     pub lockbox: BytesW2,
 }
 
@@ -25,11 +26,11 @@ pub struct P2shTreeCalc {
     pub address: Address,
 }
 
-/// Canonical Merkle rule: if a level has an odd count, duplicate the last node.
+/// Canonical Merkle rule: if a level has an odd count, promote the last node to next level.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum MerkleRule {
     #[default]
-    DuplicateLastWhenOdd,
+    PromoteLastWhenOdd,
 }
 
 /// A canonical P2SH Merkle tree (leaves sorted by leaf commitment hash).
@@ -60,7 +61,7 @@ impl P2shTool {
         let empty_path = MerkelStuffs::from_list(vec![])?;
         let mut leaves: Vec<P2shLeaf> = Vec::with_capacity(specs.len());
         for spec in specs.drain(..) {
-            let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &empty_path)?;
+            let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, spec.codeconf, &spec.lockbox, &empty_path)?;
             let leaf_hash = calc.sha3_path[0].clone();
             leaves.push(P2shLeaf{ spec, leaf_hash });
         }
@@ -70,17 +71,17 @@ impl P2shTool {
                 return errf!("p2sh tool: duplicate leaf hash {}", hex::encode(leaves[i].leaf_hash.serialize()))
             }
         }
-        Self::build_tree_from_sorted_leaves(MerkleRule::DuplicateLastWhenOdd, leaves)
+        Self::build_tree_from_sorted_leaves(MerkleRule::PromoteLastWhenOdd, leaves)
     }
 
-    /// Convenience: build a canonical tree from a list of lockbox scripts that share the same libs.
-    pub fn build_canonical_tree_shared_libs(adrlibs: ContractAddressW1, lockboxes: Vec<BytesW2>) -> Ret<P2shMerkleTree> {
+    /// Convenience: build a canonical tree from lockboxes that share the same libs + codeconf.
+    pub fn build_canonical_tree_shared_libs(adrlibs: ContractAddressW1, codeconf: CodeConf, lockboxes: Vec<BytesW2>) -> Ret<P2shMerkleTree> {
         if lockboxes.is_empty() {
             return errf!("p2sh tool: lockbox list cannot be empty")
         }
         let specs: Vec<_> = lockboxes
             .into_iter()
-            .map(|lockbox| P2shLeafSpec{ adrlibs: adrlibs.clone(), lockbox })
+            .map(|lockbox| P2shLeafSpec{ adrlibs: adrlibs.clone(), codeconf, lockbox })
             .collect();
         Self::build_canonical_tree(specs)
     }
@@ -95,11 +96,16 @@ impl P2shTool {
             let mut i = 0usize;
             while i < cur.len() {
                 let left = cur[i].clone();
-                let right = match (i + 1).cmp(&cur.len()) {
-                    std::cmp::Ordering::Less => cur[i + 1].clone(),
-                    _ => match rule {
-                        MerkleRule::DuplicateLastWhenOdd => cur[i].clone(),
-                    },
+                let right = if i + 1 < cur.len() {
+                    cur[i + 1].clone()
+                } else {
+                    match rule {
+                        MerkleRule::PromoteLastWhenOdd => {
+                            next.push(left);
+                            i += 1;
+                            continue;
+                        }
+                    }
                 };
                 let mut buf = Vec::with_capacity("p2sh_branch_".len() + 32 + 32);
                 buf.extend_from_slice("p2sh_branch_".as_bytes());
@@ -144,16 +150,21 @@ impl P2shMerkleTree {
         // levels[0] is leaf level, levels.last() is root level (len==1)
         for level in &self.levels[..self.levels.len() - 1] {
             let n = level.len();
-            let (sib_idx, posi) = if i % 2 == 0 {
-                let sib = if i + 1 < n { i + 1 } else { i };
-                (sib, 1u8) // sibling on the right
+            let sib = if i % 2 == 0 {
+                if i + 1 < n {
+                    Some((i + 1, 1u8)) // sibling on the right
+                } else {
+                    None // odd tail was promoted
+                }
             } else {
-                (i - 1, 0u8) // sibling on the left
+                Some((i - 1, 0u8)) // sibling on the left
             };
-            path.push(PosiHash{
-                posi: Uint1::from(posi),
-                hash: level[sib_idx].clone(),
-            });
+            if let Some((sib_idx, posi)) = sib {
+                path.push(PosiHash{
+                    posi: Uint1::from(posi),
+                    hash: level[sib_idx].clone(),
+                });
+            }
             i /= 2;
         }
         MerkelStuffs::from_list(path)
@@ -166,11 +177,11 @@ impl P2shMerkleTree {
             .ok_or_else(|| format!("p2sh tool: leaf hash {} not found", hex::encode(leaf_hash.serialize())))
     }
 
-    pub fn select_index_by_spec(&self, adrlibs: &ContractAddressW1, lockbox: &BytesW2) -> Ret<usize> {
+    pub fn select_index_by_spec(&self, adrlibs: &ContractAddressW1, codeconf: CodeConf, lockbox: &BytesW2) -> Ret<usize> {
         self.leaves
             .iter()
-            .position(|l| &l.spec.adrlibs == adrlibs && &l.spec.lockbox == lockbox)
-            .ok_or_else(|| "p2sh tool: leaf (libs, lockbox) not found".to_owned())
+            .position(|l| &l.spec.adrlibs == adrlibs && l.spec.codeconf == codeconf && &l.spec.lockbox == lockbox)
+            .ok_or_else(|| "p2sh tool: leaf (libs, codeconf, lockbox) not found".to_owned())
     }
 
     /// Build an `P2SHScriptProve` action for the leaf at canonical index `idx`.
@@ -185,7 +196,7 @@ impl P2shMerkleTree {
     pub fn build_unlock_script_prove_unchecked(&self, idx: usize, witness: BytesW2) -> Ret<(Address, P2SHScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
         let merkels = self.proof_for_index(idx)?;
-        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &merkels)?;
+        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, spec.codeconf, &spec.lockbox, &merkels)?;
         if calc.address != self.calc.address {
             return errf!(
                 "p2sh tool: proof derived address {} mismatch tree address {}",
@@ -195,8 +206,9 @@ impl P2shMerkleTree {
         }
         let mut act = P2SHScriptProve::new();
         act.argvkey = witness;
-        act.lockbox = spec.lockbox;
         act.adrlibs = spec.adrlibs;
+        act.codeconf = Uint1::from(spec.codeconf.raw());
+        act.lockbox = spec.lockbox;
         act.merkels = merkels;
         // `_marks_` keeps default zero (Fixed2::default), which passes the on-chain check.
         Ok((calc.address, act, calc))
@@ -206,12 +218,7 @@ impl P2shMerkleTree {
     /// the same rules as `P2SHScriptProve::get_stuff`.
     pub fn build_unlock_script_prove_checked(&self, block_height: u64, idx: usize, witness: BytesW2) -> Ret<(Address, P2SHScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
-        let cap = SpaceCap::new(block_height);
-        let ctb = CodeType::Bytecode;
-        // lockbox must be valid by itself
-        convert_and_check(&cap, ctb, spec.lockbox.as_vec(), block_height)?;
-        // witness bytes must fit local constraints
-        P2SHScriptProve::verify_witness_bytes(&cap, witness.as_vec())?;
+        P2SHScriptProve::verify_unlock_inputs(block_height, &spec.adrlibs, spec.codeconf, &spec.lockbox, &witness)?;
         // ok, build action
         self.build_unlock_script_prove_unchecked(idx, witness)
     }
@@ -230,8 +237,8 @@ mod p2sh_tool_test {
     #[test]
     fn canonical_tree_is_order_independent() {
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
-        let s1 = P2shLeafSpec{ adrlibs: libs.clone(), lockbox: dummy_lockbox(1) };
-        let s2 = P2shLeafSpec{ adrlibs: libs.clone(), lockbox: dummy_lockbox(2) };
+        let s1 = P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(1) };
+        let s2 = P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(2) };
         let t1 = P2shTool::build_canonical_tree(vec![s1.clone(), s2.clone()]).unwrap();
         let t2 = P2shTool::build_canonical_tree(vec![s2, s1]).unwrap();
         assert_eq!(t1.address(), t2.address());
@@ -241,13 +248,60 @@ mod p2sh_tool_test {
     #[test]
     fn proof_derives_tree_address() {
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
-        let s1 = P2shLeafSpec{ adrlibs: libs.clone(), lockbox: dummy_lockbox(7) };
-        let s2 = P2shLeafSpec{ adrlibs: libs.clone(), lockbox: dummy_lockbox(9) };
+        let s1 = P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(7) };
+        let s2 = P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(9) };
         let tree = P2shTool::build_canonical_tree(vec![s1, s2]).unwrap();
         // pick leaf 0 in canonical order
         let proof = tree.proof_for_index(0).unwrap();
         let spec = &tree.leaves()[0].spec;
-        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, &spec.lockbox, &proof).unwrap();
+        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, spec.codeconf, &spec.lockbox, &proof).unwrap();
         assert_eq!(calc.address, tree.address());
+    }
+
+    #[test]
+    fn canonical_tree_rejects_duplicate_leaf_hash() {
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let leaf = P2shLeafSpec{ adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(3) };
+        assert!(P2shTool::build_canonical_tree(vec![leaf.clone(), leaf]).is_err());
+    }
+
+    #[test]
+    fn odd_leaf_count_proofs_derive_tree_address() {
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let tree = P2shTool::build_canonical_tree(vec![
+            P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(1) },
+            P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(2) },
+            P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(3) },
+        ]).unwrap();
+        for idx in 0..tree.leaves().len() {
+            let spec = &tree.leaves()[idx].spec;
+            let proof = tree.proof_for_index(idx).unwrap();
+            let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&spec.adrlibs, spec.codeconf, &spec.lockbox, &proof).unwrap();
+            assert_eq!(calc.address, tree.address());
+        }
+    }
+
+    #[test]
+    fn checked_builder_rejects_invalid_libs() {
+        let bad = ContractAddress::from_unchecked(Address::create_privakey([8u8; 20]));
+        let libs = ContractAddressW1::from_list(vec![bad]).unwrap();
+        let tree = P2shTool::build_canonical_tree(vec![
+            P2shLeafSpec{ adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: dummy_lockbox(5) },
+        ]).unwrap();
+        let witness = BytesW2::from(vec![]).unwrap();
+        assert!(tree.build_unlock_script_prove_checked(1, 0, witness).is_err());
+    }
+
+    #[test]
+    fn same_script_different_codeconf_gets_different_address() {
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let lockbox = dummy_lockbox(6);
+        let t1 = P2shTool::build_canonical_tree(vec![
+            P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lockbox.clone() },
+        ]).unwrap();
+        let t2 = P2shTool::build_canonical_tree(vec![
+            P2shLeafSpec{ adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::IRNode), lockbox },
+        ]).unwrap();
+        assert_ne!(t1.address(), t2.address());
     }
 }

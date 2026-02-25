@@ -33,16 +33,16 @@ pub fn check_diamond_hash_result(stuff: impl AsRef<[u8]>) -> Option<[u8; DMD_N]>
     if hxval.len() != DMD_M {
         return None; // invalid legnth
     }
-    for i in 0..DMD_L {
-        if hxval[i] != b'0' {
+    for a in hxval.iter().take(DMD_L) {
+        if *a != b'0' {
             return None; // left 10 char must be '0'
         }
     }
-    for i in DMD_L..DMD_M {
-        if hxval[i] == b'0' {
+    for a in hxval.iter().take(DMD_M).skip(DMD_L) {
+        if *a == b'0' {
             return None; // right 6 char must NOT be '0'
         }
-        if ! DIAMOND_HASH_BASE_CHARS.iter().any(|x|*x==hxval[i]) {
+        if !DIAMOND_HASH_BASE_CHARS.contains(a) {
             return None; // invalid char
         }
     }
@@ -103,7 +103,7 @@ pub fn check_diamond_difficulty(number: u32, sha3hx: &[u8; H32S], x16rshx: &[u8;
 pub fn mine_diamond_hash_repeat(number: u32) -> i32 {
     // adjust the hashing times every 8192 diamonds (about 140 days and half a year)
     let repeat = number / 8192 + 1;
-    return repeat as i32; // max 2048
+    repeat as i32 // max 2048
 }
 
 /*
