@@ -1,13 +1,24 @@
 
-// use std::*; use num_traits::FromBytes;
+pub const ACTIVE_UINT_BITS: [u16; 5] = [8, 16, 32, 64, 128];
+pub const ACTIVE_UINT_BYTES: [usize; 5] = [1, 2, 4, 8, 16];
+pub const ACTIVE_UINT_MAX_BYTES: usize = 16;
 
-fn buf_not_zero(buf: &[u8]) -> bool {
-    buf.iter().any(|a|*a>0)
+pub const RESERVED_U256_TYPE_ID: u8 = 7;
+pub const RESERVED_U256_BITS: u16 = 256;
+pub const RESERVED_U256_BYTES: usize = 32;
+
+#[inline(always)]
+pub fn trim_leading_zero_bytes(buf: &[u8]) -> &[u8] {
+    let first_nz = buf.iter().position(|b| *b != 0).unwrap_or(buf.len());
+    &buf[first_nz..]
 }
 
-#[allow(dead_code)]
-fn buf_is_zero(buf: &[u8]) -> bool {
-    ! buf_not_zero(buf)
+#[inline(always)]
+pub fn minimal_active_uint_bytes(non_zero_len: usize) -> Option<usize> {
+    ACTIVE_UINT_BYTES
+        .iter()
+        .copied()
+        .find(|w| non_zero_len <= *w)
 }
 
 pub fn buf_drop_left_zero(buf: &[u8], minl: usize) -> Vec<u8> {
@@ -27,14 +38,3 @@ pub fn buf_drop_left_zero(buf: &[u8], minl: usize) -> Vec<u8> {
     // ok
     buf[l..].into()
 }
-
-pub fn buf_fill_left_zero(buf: &[u8], zn: usize) -> Vec<u8> {
-    let sz = buf.len();
-    if sz >= zn {
-        return buf[0..zn].into()
-    }
-    let res = buf[..].into();
-    let pdn = zn - sz;
-    [vec![0].repeat(pdn), res].concat()
-}
-

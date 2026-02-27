@@ -142,7 +142,7 @@ impl Tokenizer<'_> {
                 let without_underscores: String =
                     without_suffix.chars().filter(|c| *c != '_').collect();
                 if !without_underscores.is_empty() && without_underscores.parse::<u128>().is_ok() {
-                    num_part = without_suffix.to_string();
+                    num_part = without_underscores;
                     if let Ok(kw) = KwTy::build(suffix) {
                         suffix_kw = Some(kw);
                     }

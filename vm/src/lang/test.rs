@@ -347,6 +347,14 @@ mod token_t {
         assert!(result.is_ok(), "100u64 should be valid");
     }
 
+    #[test]
+    fn test_number_with_suffix_allows_underscore() {
+        use super::lang_to_irnode;
+
+        assert!(lang_to_irnode("1000_u64").is_ok());
+        assert!(lang_to_irnode("1_000u64").is_ok());
+    }
+
     // ==================== Simplify Numeric As Suffix Test ====================
 
     #[test]

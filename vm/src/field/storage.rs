@@ -134,10 +134,9 @@ impl ValueSto {
         if is_delete {
             return itr_err_fmt!(StorageError, "renewal failed, data invalid")
         }
-        if ! v.is_uint() {
-            return itr_err_fmt!(StorageError, "period value {:?} is not uint type", v)
-        }
-        let period = v.to_uint();
+        let period = v
+            .checked_u128()
+            .map_err(|_| ItrErr::new(StorageError, &format!("period value {:?} is not uint type", v)))?;
         if period < 1 {
             return itr_err_fmt!(StorageError, "period min is 1")
         }
@@ -393,6 +392,23 @@ mod storage_param_tests {
         let gas = st.srent(&gst, 0, &cadr, key, Value::U8(3)).unwrap();
         assert_eq!(gas, (gst.storege_value_base_size + 40i64) * 3);
     }
+
+    #[test]
+    fn srent_period_requires_strict_uint_type() {
+        let gst = GasExtra::new(1);
+        let cadr = test_contract();
+        let mut sta = StateMem::default();
+        let mut st = crate::VMState::wrap(&mut sta);
+
+        let key = Value::Bytes(vec![0x66u8]);
+        st.ssave(&gst, 0, &cadr, key.clone(), Value::U8(1)).unwrap();
+
+        let err = st
+            .srent(&gst, 0, &cadr, key, Value::Bool(true))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not uint type"));
+    }
 }
 
 
@@ -471,7 +487,7 @@ impl VMState<'_> {
 
     /* read old value */
     fn ssave(&mut self, gst: &GasExtra, curhei: u64, cadr: &ContractAddress, k: Value, v: Value) -> VmrtRes<i64> {
-        v.canbe_store()?; // check can store
+        v.canbe_value()?; // check can store
         let val_len = v.can_get_size()? as usize;
         let max_val = SpaceCap::new(curhei).max_value_size;
         if val_len > max_val {

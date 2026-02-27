@@ -237,7 +237,7 @@ mod action_coverage {
 
         let codes = lang_to_bytecode("return 0").unwrap();
         let rv = execute_main_bytecode(&mut ctx, codes).unwrap();
-        assert!(!rv.check_true(), "return 0 should yield falsy value");
+        assert!(!rv.canbe_bool().unwrap(), "return 0 should yield falsy value");
     }
 
     #[test]
@@ -986,7 +986,7 @@ mod action_coverage {
         assert!(codes.contains(&(Bytecode::EXTENV as u8)));
 
         let rv = execute_main_bytecode_as_call_ctx(&mut ctx, codes).unwrap();
-        assert!(!rv.check_true());
+        assert!(!rv.canbe_bool().unwrap());
     }
 
     // ═══════════════════════════════════════════════════
@@ -1106,7 +1106,7 @@ mod action_coverage {
         assert!(codes.contains(&(Bytecode::EXTVIEW as u8)));
 
         let rv = execute_main_bytecode_as_call_ctx(&mut ctx, codes).unwrap();
-        assert!(!rv.check_true());
+        assert!(!rv.canbe_bool().unwrap());
     }
 
     // ═══════════════════════════════════════════════════

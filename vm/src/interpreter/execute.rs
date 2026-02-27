@@ -117,7 +117,7 @@ macro_rules! ostjump {
 
 macro_rules! branch {
     ( $ops: expr, $codes: expr, $pc: expr, $l: expr) => {
-        if $ops.pop()?.check_true() {
+        if $ops.pop()?.canbe_bool()? {
             jump!($codes, $pc, $l);
         }else{
             $pc += $l;
@@ -126,8 +126,8 @@ macro_rules! branch {
 }
 
 macro_rules! ostbranchex {
-    ( $ops: expr, $codes: expr, $pc: expr, $l: expr, $cond: ident) => {
-        if $ops.pop()?.$cond() {
+    ( $ops: expr, $codes: expr, $pc: expr, $l: expr, $expect: expr) => {
+        if $ops.pop()?.canbe_bool()? == $expect {
             ostjump!($codes, $pc, $l);
         }else{
             $pc += $l;
@@ -137,7 +137,7 @@ macro_rules! ostbranchex {
 // is_not_zero
 macro_rules! ostbranch {
     ( $ops: expr, $codes: expr, $pc: expr, $l: expr) => {
-        ostbranchex!($ops, $codes, $pc, $l, check_true)
+        ostbranchex!($ops, $codes, $pc, $l, true)
     }
 }
 
@@ -320,6 +320,12 @@ pub fn execute_code(
             }    
         }}}
 
+        macro_rules! local_get { ($idx: expr) => {{
+            let v = locals.load($idx as usize)?.valid(cap)?;
+            gas += gst.stack_copy(v.val_size());
+            ops.push(v)?;
+        }}}
+
         match instruction {
             // ext action
             EXTACTION => { extcall!(EXTACTION, true,  false); },
@@ -395,7 +401,7 @@ pub fn execute_code(
             // CHOOSE: pop condition; if false swap the remaining two values so
             // the chosen branch becomes the top of the stack. Leave the
             // chosen value on the stack for subsequent instructions to consume.
-            CHOOSE => { if ops.pop()?.check_false() { ops.swap()? } ops.pop()?; }, /* x ? a : b */
+            CHOOSE => { if !ops.pop()?.canbe_bool()? { ops.swap()? } ops.pop()?; }, /* x ? a : b */
             CAT    => {
                 let (xlen, ylen) = match ops.datas.len() {
                     l if l >= 2 => (ops.datas[l - 2].val_size(), ops.datas[l - 1].val_size()),
@@ -467,13 +473,13 @@ pub fn execute_code(
                 let k = ops.pop()?;
                 let len = ops.compo()?.len();
                 ops.compo()?.insert(cap, k, v)?;
-                gas += gst.compo_items(len, 2);
+                gas += gst.compo_items_edit(len);
             }
             REMOVE   => {
                 let k = ops.pop()?;
                 let len = ops.compo()?.len();
                 ops.compo()?.remove(k)?;
-                gas += gst.compo_items(len, 2);
+                gas += gst.compo_items_edit(len);
             }
             CLEAR    => { ops.compo()?.clear() }
             MERGE    => {
@@ -494,7 +500,7 @@ pub fn execute_code(
                     _ => (0, 0),
                 };
                 ops.compo()?.merge(cap, a.compo_get()?)?;
-                gas += gst.compo_items(src_len, 1);
+                gas += gst.compo_items_copy(src_len);
                 gas += gst.compo_bytes(src_bsz);
             }
             LENGTH   => { let l = ops.compo()?.length(cap)?; *ops.peek()? = l; }
@@ -503,13 +509,13 @@ pub fn execute_code(
                 let len = ops.compo()?.len();
                 let h = ops.compo()?.haskey(k)?;
                 *ops.peek()? = h;
-                gas += gst.compo_items(len, 4);
+                gas += gst.compo_items_read(len);
             }
 	        ITEMGET  => {
                 let k = ops.pop()?;
                 let len = ops.compo()?.len();
                 let v = ops.compo()?.itemget(k)?.valid(cap)?;
-                gas += gst.compo_items(len, 4);
+                gas += gst.compo_items_read(len);
                 gas += gst.compo_bytes(v.val_size());
                 *ops.peek()? = v;
             }
@@ -518,7 +524,7 @@ pub fn execute_code(
                 let bsz = { let c = ops.compo()?; c.map_ref()?.keys().map(|k| k.len()).sum() };
                 let v = { let c = ops.compo()?; c.keys()? };
                 *ops.peek()? = v;
-                gas += gst.compo_items(len, 2);
+                gas += gst.compo_items_edit(len);
                 gas += gst.compo_bytes(bsz);
             }
             VALUES   => {
@@ -532,14 +538,14 @@ pub fn execute_code(
                 };
                 let v = { let c = ops.compo()?; c.values()? };
                 *ops.peek()? = v;
-                gas += gst.compo_items(len, 2);
+                gas += gst.compo_items_edit(len);
                 gas += gst.compo_bytes(bsz);
             }
             HEAD     => {
                 let mut compo_val = ops.pop()?;
                 let len = compo_val.compo()?.len();
                 let v = compo_val.compo()?.head()?.valid(cap)?;
-                gas += gst.compo_items(len, 4);
+                gas += gst.compo_items_read(len);
                 gas += gst.compo_bytes(v.val_size());
                 ops.push(v)?;
             }
@@ -547,7 +553,7 @@ pub fn execute_code(
                 let mut compo_val = ops.pop()?;
                 let len = compo_val.compo()?.len();
                 let v = compo_val.compo()?.back()?.valid(cap)?;
-                gas += gst.compo_items(len, 4);
+                gas += gst.compo_items_read(len);
                 gas += gst.compo_bytes(v.val_size());
                 ops.push(v)?;
             }
@@ -555,7 +561,7 @@ pub fn execute_code(
                 let v = ops.pop()?;
                 let len = ops.compo()?.len();
                 ops.compo()?.append(cap, v)?;
-                gas += gst.compo_items(len, 4);
+                gas += gst.compo_items_read(len);
             }
             CLONE    => {
                 let (len, bsz, c) = {
@@ -572,15 +578,13 @@ pub fn execute_code(
                     (len, bsz, compo.copy())
                 };
                 *ops.peek()? = Compo(c);
-                gas += gst.compo_items(len, 1);
+                gas += gst.compo_items_copy(len);
                 gas += gst.compo_bytes(bsz);
             }
             UPLIST   => {
                 let i = ops.pop()?.checked_u8()?;
-                let list_len = { let c = ops.compo()?; c.list_ref()?.len() };
-                unpack_list(i, locals, ops.compo()?.list_ref()?)?;
-                ops.pop()?;
-                gas += gst.compo_items(list_len, 4);
+                gas += unpack_list(i, locals, ops.compo()?.list_ref()?, gst)?;
+                ops.pop()?; // pop compo after unpack
             }
             // heap
             HGROW    => gas += heap.grow(pu8!())?,
@@ -626,48 +630,28 @@ pub fn execute_code(
             XLG   => local_logic(pu8!(), locals, ops.peek()?)?,
             XOP   => local_operand(pu8!(), locals, ops.pop()?)?,
             ALLOC => { gas += gst.local_one_alloc * locals.alloc(pu8!())? as i64 } 
-	            GETX   => {
-	                let v = locals.load(ops_peek_to_u16!() as usize)?.valid(cap)?;
-	                gas += gst.stack_copy(v.val_size());
-	                *ops.peek()? = v;
-	            }
-                PUTX   => {
-                    let v = ops.pop()?.valid(cap)?;
-                    let vlen = v.val_size();
-                    locals.save(ops_pop_to_u16!(), v)?;
-                    gas += gst.stack_write(vlen);
-                }
-                PUT   => {
-                    let v = ops.pop()?.valid(cap)?;
-                    let vlen = v.val_size();
-                    locals.save(pu8_as_u16!(), v)?;
-                    gas += gst.stack_write(vlen);
-                }
-	            GET   => {
-	                let v = locals.load(pu8!() as usize)?.valid(cap)?;
-	                gas += gst.stack_copy(v.val_size());
-	                ops.push(v)?;
-	            }
-	            GET0  => {
-	                let v = locals.load(0)?.valid(cap)?;
-	                gas += gst.stack_copy(v.val_size());
-	                ops.push(v)?;
-	            }
-	            GET1  => {
-	                let v = locals.load(1)?.valid(cap)?;
-	                gas += gst.stack_copy(v.val_size());
-	                ops.push(v)?;
-	            }
-	            GET2  => {
-	                let v = locals.load(2)?.valid(cap)?;
-	                gas += gst.stack_copy(v.val_size());
-	                ops.push(v)?;
-	            }
-	            GET3  => {
-	                let v = locals.load(3)?.valid(cap)?;
-	                gas += gst.stack_copy(v.val_size());
-	                ops.push(v)?;
-	            }
+            GETX   => {
+                let v = locals.load(ops_peek_to_u16!() as usize)?.valid(cap)?;
+                gas += gst.stack_copy(v.val_size());
+                *ops.peek()? = v;
+            }
+            PUTX   => {
+                let v = ops.pop()?.valid(cap)?;
+                let vlen = v.val_size();
+                locals.save(ops_pop_to_u16!(), v)?;
+                gas += gst.stack_write(vlen);
+            }
+            PUT   => {
+                let v = ops.pop()?.valid(cap)?;
+                let vlen = v.val_size();
+                locals.save(pu8_as_u16!(), v)?;
+                gas += gst.stack_write(vlen);
+            }
+            GET   => local_get!(pu8!()),
+            GET0  => local_get!(0),
+            GET1  => local_get!(1),
+            GET2  => local_get!(2),
+            GET3  => local_get!(3),
             // storage
             SREST => {
                 nsr!();
@@ -771,7 +755,7 @@ pub fn execute_code(
             BRL   =>      branch!(ops, codes, *pc, 2),
             BRS   =>   ostbranch!(ops, codes, *pc, 1),
             BRSL  =>   ostbranch!(ops, codes, *pc, 2),   
-            BRSLN => ostbranchex!(ops, codes, *pc, 2, check_false),   
+            BRSLN => ostbranchex!(ops, codes, *pc, 2, false),   
             // other
             NT   => return itr_err_code!(InstNeverTouch), // never touch
             NOP  => {}, // do nothing
@@ -781,7 +765,7 @@ pub fn execute_code(
             END => { exit = Finish; break }, // func end
             ERR => { exit = Throw;  break },  // throw <ERROR>
             ABT => { exit = Abort;  break },  // panic
-            AST => { if ops.pop()?.check_false() { exit = Abort;  break } }, // assert(..)
+            AST => { if !ops.pop()?.canbe_bool()? { exit = Abort;  break } }, // assert(..)
             PRT => { debug_print_value(context_addr, current_addr, mode, depth, ops.pop()?) }
             // call CALLDYN
             CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALL => {
@@ -860,4 +844,3 @@ fn debug_print_stack(ops: &Stack, lcs: &Stack, pc: &usize, inst: Bytecode) {
     *pc, inst);
 
 }
-

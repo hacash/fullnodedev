@@ -13,13 +13,31 @@ fn call_level_from_exec_mode(ty: u8) -> Ret<usize> {
     }
 }
 
-/// Check VM return value: only nil or 0 is considered success.
-/// Any other value indicates execution failure.
-pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
-    if rv.check_true() {
-        return erruf!("{} return error code {}", err_msg, rv.to_uint())
+/// Check VM return value using unified truthiness:
+/// falsy (`canbe_bool == false`) is success, otherwise execution failure.
+fn vm_error_detail(rv: &Value) -> String {
+    match rv {
+        Value::Nil => "code 0".to_owned(),
+        Value::Bool(b) => format!("code {}", maybe!(b, 1, 0)),
+        Value::U8(n) => format!("code {}", n),
+        Value::U16(n) => format!("code {}", n),
+        Value::U32(n) => format!("code {}", n),
+        Value::U64(n) => format!("code {}", n),
+        Value::U128(n) => format!("code {}", n),
+        Value::Bytes(buf) => match ascii_show_string(buf) {
+            Some(s) => format!("bytes {:?}", s),
+            None => format!("bytes 0x{}", buf.to_hex()),
+        },
+        Value::Address(a) => format!("address {}", a.to_readable()),
+        _ => "error <object>".to_owned(),
     }
-    Ok(())
+}
+
+pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
+    match rv.canbe_bool() {
+        Ok(false) => Ok(()),
+        Ok(true) | Err(_) => erruf!("{} return error {}", err_msg, vm_error_detail(rv)),
+    }
 }
 
 pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u8]>, pm: Value) -> Ret<(i64, Value)> {

@@ -62,16 +62,21 @@ fn local_logic(mark: u8, locals: &mut Stack, value: &mut Value) -> VmrtErr {
 }
 
 
-fn unpack_list(mut i: u8, locals: &mut Stack, list: &VecDeque<Value>) -> VmrtErr {
+fn unpack_list(
+    i: u8,
+    locals: &mut Stack,
+    list: &VecDeque<Value>,
+    gst: &GasExtra,
+) -> VmrtRes<i64> {
     let start = i as usize;
     if locals.len() < start + list.len() {
-        return itr_err_code!(OutOfLocal)
+        return itr_err_code!(OutOfStack)
     }
-    // replace
-    for item in list.iter() {
-        *locals.edit(i)? = item.clone();
-        i += 1;
+    let mut gas = 0i64;
+    for (off, item) in list.iter().enumerate() {
+        let v = item.clone();
+        gas += gst.stack_write(v.val_size());
+        *locals.edit((start + off) as u8)? = v;
     }
-    Ok(())
+    Ok(gas)
 }
-

@@ -1,7 +1,7 @@
 
 
 fn mei_to_hac(_: u64, buf: &[u8]) -> VmrtRes<Value> {
-    let num = buf_to_uint(buf)?.to_uint();
+    let num = buf_to_uint(buf)?.checked_u128()?;
     if num > u64::MAX as u128 {
         return itr_err_fmt!(NativeFuncError, "call mei_to_hac amount too big")
     }
@@ -27,7 +27,7 @@ fn hac_to_zhu(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 
 
 fn zhu_to_hac(_: u64, buf: &[u8]) -> VmrtRes<Value> {
-    let num = buf_to_uint(buf)?.to_uint();
+    let num = buf_to_uint(buf)?.checked_u128()?;
     if num > u64::MAX as u128 {
         return itr_err_fmt!(NativeFuncError, "call zhu_to_hac overflow")
     }
@@ -50,7 +50,7 @@ fn pack_asset(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 }
 
 fn u64_to_fold64(_: u64, buf: &[u8]) -> VmrtRes<Value> {
-    let num = buf_to_uint(buf)?.to_uint();
+    let num = buf_to_uint(buf)?.checked_u128()?;
     if num > u64::MAX as u128 {
         return itr_err_fmt!(NativeFuncError, "call u64_to_fold64 overflow")
     }

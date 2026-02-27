@@ -2,22 +2,40 @@
 
 impl Value {
 
-    pub fn canbe_bytes_ec(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
-        Ok(match self {
-            Bool(b)    => vec![maybe!(b, 1, 0)],
-            U8(n)      => n.to_be_bytes().into(),
-            U16(n)     => n.to_be_bytes().into(),
-            U32(n)     => n.to_be_bytes().into(),
-            U64(n)     => n.to_be_bytes().into(),
-            U128(n)    => n.to_be_bytes().into(),
-            Bytes(b)   => b.clone(),
-            Address(a) => a.to_vec(),
-            _ => return itr_err_code!(ec)
-        })
+    fn check_func_boundary_no_heapslice(value: &Value, ec: ItrErrCode) -> VmrtErr {
+        match value {
+            HeapSlice(..) => itr_err_code!(ec),
+            Compo(compo) => {
+                if let Ok(list) = compo.list_ref() {
+                    for v in list {
+                        Self::check_func_boundary_no_heapslice(v, ec)?;
+                    }
+                    return Ok(())
+                }
+                if let Ok(map) = compo.map_ref() {
+                    for v in map.values() {
+                        Self::check_func_boundary_no_heapslice(v, ec)?;
+                    }
+                    return Ok(())
+                }
+                itr_err_code!(ec)
+            }
+            _ => Ok(()),
+        }
     }
 
-    pub fn canbe_bytes(&self) -> VmrtRes<Vec<u8>> {
-        self.canbe_bytes_ec(CastBeBytesFail)
+    pub fn canbe_bytes_ec(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
+        match self {
+            Bool(b) => Ok(vec![maybe!(b, 1, 0)]),
+            U8(n) => Ok(n.to_be_bytes().into()),
+            U16(n) => Ok(n.to_be_bytes().into()),
+            U32(n) => Ok(n.to_be_bytes().into()),
+            U64(n) => Ok(n.to_be_bytes().into()),
+            U128(n) => Ok(n.to_be_bytes().into()),
+            Bytes(b) => Ok(b.clone()),
+            Address(a) => Ok(a.to_vec()),
+            _ => itr_err_code!(ec),
+        }
     }
 
     pub fn canbe_key(&self) -> VmrtRes<Vec<u8>> {
@@ -44,44 +62,48 @@ impl Value {
         }
     }
 
-    pub fn canbe_store(&self) -> VmrtErr {
-        self.canbe_value()
-    }
-
-    pub fn canbe_uint(&self) -> VmrtErr {
-        match self {
-            U8(..)   |
-            U16(..)  |
-            U32(..)  |
-            U64(..)  |
-            U128(..) => Ok(()),
-            _ => itr_err_code!(CastBeUintFail)
-        }
-    }
-
     pub fn canbe_ext_call_data(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
         let ec = CastBeCallDataFail;
         match self {
             Nil => Ok(vec![]),
-            HeapSlice((s, l)) => {
-                match heap.do_read(*s as usize, *l as usize)? {
-                    Bytes(buf) => Ok(buf),
-                    _ => never!()
-                }
-            },
+            HeapSlice((start, length)) => {
+                let Value::Bytes(buf) = heap.do_read(*start as usize, *length as usize)? else {
+                    never!()
+                };
+                Ok(buf)
+            }
             _ => self.canbe_bytes_ec(ec),
         }
     }
 
     pub fn canbe_func_argv(&self) -> VmrtErr {
-        match self {
-            HeapSlice(..) => itr_err_code!(CastBeFnArgvFail),
-            _ => Ok(())
-        }
+        Self::check_func_boundary_no_heapslice(self, CastBeFnArgvFail)
+    }
+
+    pub fn canbe_func_retv(&self) -> VmrtErr {
+        Self::check_func_boundary_no_heapslice(self, CallArgvTypeFail)
     }
 
 
 
 
 
+}
+
+#[cfg(test)]
+mod canbe_tests {
+    use super::*;
+
+    #[test]
+    fn heapslice_ext_call_data_reads_heap_bytes_only_here() {
+        let mut heap = Heap::new(64);
+        heap.grow(1).unwrap();
+        heap.write(0, Value::Bytes(vec![1, 2, 3, 4])).unwrap();
+        let hs = Value::HeapSlice((1, 2));
+
+        assert_eq!(hs.canbe_ext_call_data(&heap).unwrap(), vec![2, 3]);
+        assert!(hs.canbe_bytes_ec(CastBeBytesFail).is_err());
+        assert!(hs.canbe_func_argv().is_err());
+        assert!(hs.canbe_func_retv().is_err());
+    }
 }

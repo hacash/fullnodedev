@@ -124,7 +124,11 @@ impl Value {
     #[inline(always)]
     pub fn concat(a: &Value, b: &Value, cap: &SpaceCap) -> VmrtRes<Value> {
         let e = BytesHandle;
-        let v = vec![a.canbe_bytes_ec(e)?, b.canbe_bytes_ec(e)?].concat();
+        let av = a.canbe_bytes_ec(e)?;
+        let bv = b.canbe_bytes_ec(e)?;
+        let mut v = Vec::with_capacity(av.len() + bv.len());
+        v.extend_from_slice(&av);
+        v.extend_from_slice(&bv);
         Ok(Value::bytes(v).valid(cap)?)
     }
 

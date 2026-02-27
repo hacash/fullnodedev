@@ -1,4 +1,3 @@
-
 /// Block heights at which VM protocol upgrades activate.
 /// Append new heights here for hard forks that change GasTable/GasExtra/SpaceCap.
 /// Must be sorted in ascending order.
@@ -6,27 +5,22 @@ const UPGRADE_HEIGHTS: &[u64] = &[
     // 200000,  // example: v1 adjustments
 ];
 
-
-
 #[derive(Default)]
 pub struct Resoure {
-    cfg_height: u64,        // height used to build current config
-    next_upgrade: u64,      // cached: next upgrade height (skip rebuild if height < this)
+    cfg_height: u64,   // height used to build current config
+    next_upgrade: u64, // cached: next upgrade height (skip rebuild if height < this)
     pub gas_table: GasTable,
     pub gas_extra: GasExtra,
     pub space_cap: SpaceCap,
     pub global_vals: GKVMap,
     pub memory_vals: CtcKVMap,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
-    pub contract_load_bytes: usize,
     // stack heap
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
 }
 
-
 impl Resoure {
-
     pub fn create(height: u64) -> Self {
         let cap = SpaceCap::new(height);
         Self {
@@ -45,9 +39,8 @@ impl Resoure {
         self.global_vals.clear();
         self.memory_vals.clear();
         self.contracts.clear();
-        self.contract_load_bytes = 0;
         if height < self.next_upgrade {
-            return // same protocol version, skip config rebuild
+            return; // same protocol version, skip config rebuild
         }
         // crossed an upgrade boundary — rebuild config
         self.reset_gascap(height);
@@ -65,10 +58,19 @@ impl Resoure {
         self.gas_table = GasTable::new(height);
     }
 
+    // Charge one cold contract load with per-load bytes fee.
+    pub fn settle_new_contract_load_gas(&mut self, gas: &mut i64, bytes: usize) -> VmrtErr {
+        *gas -= self.gas_extra.load_new_contract + (bytes as i64 / 64);
+        if *gas < 0 {
+            return itr_err_code!(OutOfGas);
+        }
+        Ok(())
+    }
+
     pub fn stack_allocat(&mut self) -> Stack {
         self.stack_pool.pop().unwrap_or(Stack::default())
     }
-    
+
     pub fn stack_reclaim(&mut self, stk: Stack) {
         self.stack_pool.push(stk);
     }
@@ -76,7 +78,7 @@ impl Resoure {
     pub fn heap_allocat(&mut self) -> Heap {
         self.heap_pool.pop().unwrap_or(Heap::default())
     }
-    
+
     pub fn heap_reclaim(&mut self, heap: Heap) {
         self.heap_pool.push(heap);
     }
@@ -88,11 +90,23 @@ impl Resoure {
     fn next_upgrade_after(height: u64) -> u64 {
         for &h in UPGRADE_HEIGHTS {
             if h > height {
-                return h
+                return h;
             }
         }
         u64::MAX
     }
-
 }
 
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+
+    #[test]
+    fn settle_new_contract_load_gas_charges_base_plus_bytes_div_64() {
+        let mut r = Resoure::create(1);
+        let base = r.gas_extra.load_new_contract;
+        let mut gas = 1000i64;
+        r.settle_new_contract_load_gas(&mut gas, 129).unwrap();
+        assert_eq!(gas, 1000 - base - 2);
+    }
+}

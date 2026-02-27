@@ -55,14 +55,6 @@ impl Value {
         Bool(b)
     }
 
-    pub fn bool_true() -> Self {
-        Bool(true)
-    }
-
-    pub fn bool_false() -> Self {
-        Bool(false)
-    }
-
     pub fn u8(n: u8) -> Self {
         U8(n)
     }
@@ -91,15 +83,7 @@ impl Value {
 
 
     pub fn is_uint(&self) -> bool {
-        match self {
-            U8(..) | 
-            U16(..) | 
-            U32(..) | 
-            U64(..) | 
-            U128(..) => true,
-            // | U256(_) => true,
-            _ => false,
-        }
+        self.ty().is_uint()
     }
 
     pub fn is_bytes(&self) -> bool {
@@ -122,24 +106,6 @@ impl Value {
             return itr_err_code!(CompoOpNotMatch)
         };
         Ok(compo)
-    }
-
-    pub fn check_false(&self) -> bool {
-        ! self.check_true()
-    }
-    
-    pub fn check_true(&self) -> bool {
-        match self {
-            Nil     => false,
-            Bool(b) => *b,
-            U8(n)   => *n!=0,
-            U16(n)  => *n!=0,
-            U32(n)  => *n!=0,
-            U64(n)  => *n!=0,
-            U128(n) => *n!=0,
-            Bytes(b)=> buf_not_zero(b),
-            _       => true, // Addr Compo ....
-        }
     }
 
     /* pub fn _____deval(&self, heap: &Heap) -> VmrtRes<Vec<u8>> { match self { Compo(..) => itr_err_code!(CompoToSerialize), HeapSlice((s, l)) => { match heap.do_read(*s as usize, *l as usize)? { Bytes(buf) => Ok(buf), _ => never!() } } _ => Ok(self.raw()) } } */
@@ -215,24 +181,6 @@ impl Value {
             _ => {}
         };
         Ok(self)
-    }
-
-    pub fn to_uint(&self) -> u128 {
-        match self {
-            Nil =>          0,
-            Bool(true) =>   1,
-            Bool(false) =>  0,
-            U8(n) =>   *n as u128,
-            U16(n) =>  *n as u128,
-            U32(n) =>  *n as u128,
-            U64(n) =>  *n as u128,
-            U128(n) => *n as u128,
-            Bytes(b) => match buf_to_uint(b) {
-                Ok(b) => b.to_uint(),
-                _ => 0
-            },
-            _ => 0,
-        }
     }
 
     pub fn to_string(&self) -> String {

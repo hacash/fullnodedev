@@ -1,18 +1,9 @@
-
-
-
-
-
-
 #[derive(Debug, Default)]
 pub struct CallFrame {
-    contract_count: usize,
     frames: Vec<Frame>,
 }
 
-
 impl CallFrame {
-
     pub fn new() -> Self {
         Self::default()
     }
@@ -32,7 +23,7 @@ impl CallFrame {
     pub fn increase(&mut self, r: &mut Resoure) -> VmrtRes<Frame> {
         let cap = &r.space_cap;
         if self.frames.len() >= cap.call_depth {
-            return itr_err_code!(OutOfCallDepth)
+            return itr_err_code!(OutOfCallDepth);
         }
         Ok(match self.frames.last() {
             Some(f) => f.next(r),
@@ -47,11 +38,7 @@ impl CallFrame {
     }
 }
 
-
-
 /***************************************/
-
-
 
 #[allow(dead_code)]
 #[derive(Debug, Default)]
@@ -70,10 +57,7 @@ pub struct Frame {
     pub code_owner: ContractAddress,
 }
 
-
-
 impl Frame {
-
     pub fn reclaim(self, r: &mut Resoure) {
         r.stack_reclaim(self.oprnds);
         r.stack_reclaim(self.locals);
@@ -81,7 +65,7 @@ impl Frame {
     }
 
     pub fn new(r: &mut Resoure) -> Self {
-        let mut f = Self{
+        let mut f = Self {
             oprnds: r.stack_allocat(),
             locals: r.stack_allocat(),
             heap: r.heap_allocat(),
@@ -115,14 +99,22 @@ impl Frame {
     }
 
     pub fn check_output_type(&self, v: &mut Value) -> VmrtErr {
+        v.canbe_func_retv()?;
         match &self.types {
             Some(ty) => ty.check_output(v),
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 
     /* compile irnode */
-    pub fn prepare(&mut self, mode: ExecMode, in_callcode: bool, fnobj: &FnObj, height: u64, param: Option<Value>) -> VmrtErr {
+    pub fn prepare(
+        &mut self,
+        mode: ExecMode,
+        in_callcode: bool,
+        fnobj: &FnObj,
+        height: u64,
+        param: Option<Value>,
+    ) -> VmrtErr {
         self.callcode_caller_types = None;
         if let Some(mut p) = param {
             p.canbe_func_argv()?;
@@ -161,5 +153,17 @@ impl Frame {
             &self.code_owner,
         )
     }
+}
 
+#[cfg(test)]
+mod frame_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn check_output_type_rejects_heapslice_without_declared_output_type() {
+        let frame = Frame::default();
+        let mut retv = Value::HeapSlice((0, 1));
+        let err = frame.check_output_type(&mut retv).unwrap_err();
+        assert!(matches!(err, ItrErr(CallArgvTypeFail, _)));
+    }
 }

@@ -15,6 +15,7 @@ mod bounds_tests {
     struct DummyHost {
         ext_res: Vec<u8>,
         ext_gas: u32,
+        ext_body: Vec<u8>,
         srest_res: Option<Value>,
         sload_res: Option<Value>,
         log_calls: usize,
@@ -25,7 +26,8 @@ mod bounds_tests {
             1
         }
 
-        fn ext_action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+        fn ext_action_call(&mut self, _kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+            self.ext_body = body;
             Ok((self.ext_gas, self.ext_res.clone()))
         }
 
@@ -710,6 +712,91 @@ mod bounds_tests {
     }
 
     #[test]
+    fn heapslice_can_be_used_as_ext_and_nt_call_param() {
+        use crate::native::NativeFunc;
+        use crate::rt::Bytecode;
+
+        let cadr = ContractAddress::default();
+
+        {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            operands.push(Value::HeapSlice((1, 2))).unwrap();
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            heap.grow(1).unwrap();
+            heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let codes = vec![Bytecode::EXTACTION as u8, 1, Bytecode::END as u8];
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )
+            .unwrap();
+            assert_eq!(host.ext_body, vec![8, 7]);
+        }
+
+        {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            operands.push(Value::HeapSlice((1, 2))).unwrap();
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            heap.grow(1).unwrap();
+            heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let codes = vec![Bytecode::NTFUNC as u8, NativeFunc::idx_sha2, Bytecode::END as u8];
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )
+            .unwrap();
+            assert_eq!(
+                operands.pop().unwrap(),
+                Value::Bytes(sys::sha2(&[8, 7]).to_vec())
+            );
+        }
+    }
+
+    #[test]
     fn hread_dynamic_gas_uses_read_length() {
         use crate::rt::Bytecode;
 
@@ -855,6 +942,91 @@ mod bounds_tests {
         // local alloc: 5 gas per slot
         assert_eq!(run(3), run(2) + 5);
         assert_eq!(run(10), run(3) + 35);
+    }
+
+    #[test]
+    fn uplist_space_write_charges_like_put_per_item() {
+        use crate::rt::Bytecode;
+        use std::collections::VecDeque;
+
+        let run = |item_len: usize| -> i64 {
+            run_with_setup(
+                vec![Bytecode::UPLIST as u8, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, locals, _heap, _globals, _memorys, _cadr| {
+                    locals.alloc(2).unwrap();
+                    let list = Value::Compo(
+                        CompoItem::list(VecDeque::from(vec![
+                            Value::Bytes(vec![0u8; item_len]),
+                            Value::Bytes(vec![0u8; item_len]),
+                        ]))
+                        .unwrap(),
+                    );
+                    ops.push(list).unwrap();
+                    ops.push(Value::U8(0)).unwrap();
+                },
+            )
+        };
+
+        // stack_write uses byte/24; 23 -> 0 each, 24 -> 1 each
+        assert_eq!(run(24), run(23) + 2);
+    }
+
+    #[test]
+    fn uplist_accepts_oversize_value_without_spacecap_validation() {
+        use crate::rt::Bytecode;
+        use std::collections::VecDeque;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+
+        let mut heap = Heap::new(64);
+        let mut globals = GKVMap::new(20);
+        let mut memorys = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        let mut locals = Stack::new(256);
+        locals.alloc(2).unwrap();
+        locals.save(0, Value::U8(7)).unwrap();
+        locals.save(1, Value::U8(9)).unwrap();
+
+        let mut operands = Stack::new(256);
+        let list = Value::Compo(
+            CompoItem::list(VecDeque::from(vec![
+                Value::U8(1),
+                Value::Bytes(vec![0u8; 1281]),
+            ]))
+            .unwrap(),
+        );
+        operands.push(list).unwrap();
+        operands.push(Value::U8(0)).unwrap();
+
+        let codes = vec![Bytecode::UPLIST as u8, Bytecode::END as u8];
+        let exit = execute_code(
+            &mut pc,
+            &codes,
+            ExecMode::Main,
+            false,
+            0,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &mut globals,
+            &mut memorys,
+            &mut host,
+            &cadr,
+            &cadr,
+        )
+        .unwrap();
+
+        assert!(matches!(exit, crate::rt::CallExit::Finish));
+        assert_eq!(locals.load(0).unwrap(), Value::U8(1));
+        assert_eq!(locals.load(1).unwrap(), Value::Bytes(vec![0u8; 1281]));
     }
 
     #[test]

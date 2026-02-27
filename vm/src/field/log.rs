@@ -33,7 +33,7 @@ impl VmLog {
         }
         // check can store
         for a in &tds {
-            a.canbe_store()?;
+            a.canbe_value()?;
         }
         let mut tp = || tds.pop().unwrap();
         let mut log = Self {
@@ -58,4 +58,3 @@ impl VmLog {
 
 
 }
-

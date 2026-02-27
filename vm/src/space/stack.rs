@@ -16,7 +16,6 @@ impl Stack {
 
     pub fn clear(&mut self) {
         self.datas.clear();
-        self.limit = 0;
     }
 
     pub fn new(lmt: usize) -> Stack {
@@ -28,7 +27,7 @@ impl Stack {
 
     pub fn reset(&mut self, lmt: usize) {
         self.limit = lmt;
-        self.datas.clear();
+        self.clear();
     }
 
     pub fn limit(&self) -> usize {
@@ -216,7 +215,7 @@ impl Stack {
     pub fn save(&mut self, idx: u16, it: Value) -> VmrtErr {
         let idx = idx as usize;
         if idx >= self.datas.len() {
-            return itr_err_fmt!(LocalError, "Save local overflow")
+            return itr_err_code!(OutOfStack)
         }
         self.datas[idx] = it;
         Ok(())
@@ -225,7 +224,7 @@ impl Stack {
     #[inline(always)]
     pub fn load(&self, idx: usize) -> VmrtRes<Value> {
         if idx >= self.datas.len() {
-            return itr_err_fmt!(LocalError, "Read local overflow")
+            return itr_err_code!(OutOfStack)
         }
         Ok(self.datas[idx].clone())
     }

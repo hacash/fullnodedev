@@ -94,16 +94,31 @@ impl Parse for Value {
 
 impl Serialize for Value {
     fn serialize(&self) -> Vec<u8> {
-        let ty = self.ty_num();
-        let mut buf = self.raw();
-        if self.is_bytes() { // Uint
-            buf = [(buf.len() as u16).to_be_bytes().to_vec(), buf].concat()
+        match self {
+            // Runtime-only variants are intentionally excluded from field serialization.
+            // Parse also rejects them, so serialize must keep the same type boundary.
+            HeapSlice(..) | Compo(..) => {
+                panic!("Value::serialize does not support HeapSlice/Compo")
+            }
+            Bytes(buf) => {
+                let mut out = Vec::with_capacity(1 + 2 + buf.len());
+                out.push(self.ty_num());
+                out.extend_from_slice(&(buf.len() as u16).to_be_bytes());
+                out.extend_from_slice(buf);
+                out
+            }
+            _ => {
+                let buf = self.raw();
+                let mut out = Vec::with_capacity(1 + buf.len());
+                out.push(self.ty_num());
+                out.extend_from_slice(&buf);
+                out
+            }
         }
-        iter::once(ty).chain(buf).collect()
     }
 
     fn size(&self) -> usize {
-        // Keep size() panic-free for non-storable variants (Compo/HeapSlice). This matches the serialized length contract directly.
+        // Keep size() panic-free for gas/accounting use; runtime-only variants are not serializable.
         if self.is_bytes() {
             let base = self.raw().len();
             return 1 + 2 + base // type_id + bytes len prefix + payload
@@ -140,5 +155,21 @@ mod field_tests {
         let cv = Value::Compo(compo);
         let sz = <Value as Serialize>::size(&cv);
         assert!(sz > 1);
+    }
+
+    #[test]
+    fn value_serialize_panics_for_runtime_only_variants() {
+        let hv = Value::HeapSlice((3, 7));
+        let hp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            <Value as Serialize>::serialize(&hv)
+        }));
+        assert!(hp.is_err());
+
+        let compo = CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap();
+        let cv = Value::Compo(compo);
+        let cp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            <Value as Serialize>::serialize(&cv)
+        }));
+        assert!(cp.is_err());
     }
 }

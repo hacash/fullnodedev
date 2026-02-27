@@ -22,7 +22,7 @@ use testkit::sim::logs::MemLogs;
 use testkit::sim::state::FlatMemState as StateMem;
 use vm::machine::check_vm_return_value;
 use vm::rt::{ItrErr, ItrErrCode};
-use vm::value::Value;
+use vm::value::{CompoItem, Value};
 
 fn mk_ctx<'a>(
     height: u64,
@@ -226,6 +226,32 @@ fn vm_non_zero_return_code_is_unwind() {
     expect_unwind_ret(
         check_vm_return_value(&Value::u8(7), "main call"),
         "return error code 7",
+    );
+}
+
+#[test]
+fn vm_non_numeric_return_is_unwind_with_stable_detail() {
+    let _guard = test_guard();
+    expect_unwind_ret(
+        check_vm_return_value(&Value::bytes(b"bad".to_vec()), "main call"),
+        "return error bytes \"bad\"",
+    );
+    expect_unwind_ret(
+        check_vm_return_value(&Value::bytes(vec![0xff, 0x00]), "main call"),
+        "return error bytes 0xff00",
+    );
+    let addr = main_addr();
+    expect_unwind_ret(
+        check_vm_return_value(&Value::Address(addr), "main call"),
+        &format!("return error address {}", addr.to_readable()),
+    );
+    expect_unwind_ret(
+        check_vm_return_value(&Value::HeapSlice((0, 2)), "main call"),
+        "return error error <object>",
+    );
+    expect_unwind_ret(
+        check_vm_return_value(&Value::Compo(CompoItem::new_list()), "main call"),
+        "return error error <object>",
     );
 }
 
@@ -475,7 +501,7 @@ fn unwind_macro_callsites_are_allowlisted() {
         "protocol/src/operate/hacash.rs:erruf!(\"address {} balance is insufficient, at least {}\", addr, amt)",
         "protocol/src/operate/satoshi.rs:return erruf!(\"address {} satoshi {} is insufficient, at least {}\",",
         "protocol/src/operate/satoshi.rs:erruf!(\"address {} satoshi is insufficient\", addr)",
-        "vm/src/machine/setup.rs:return erruf!(\"{} return error code {}\", err_msg, rv.to_uint())",
+        "vm/src/machine/setup.rs:Ok(true) | Err(_) => erruf!(\"{} return error {}\", err_msg, vm_error_detail(rv)),",
     ]);
     expect_multiset_eq("unwind macro callsites", &actual, expected);
 }

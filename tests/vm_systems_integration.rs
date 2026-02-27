@@ -170,7 +170,7 @@ fn setup_vm_run_executes_after_assigner_registered() {
     .unwrap();
 
     assert!(gas_used > 0);
-    assert!(!rv.check_true());
+    assert!(!rv.canbe_bool().unwrap());
 
     set_vm_assigner(None);
 }
@@ -429,11 +429,11 @@ fn runtime_log_roundtrip_is_readable() {
     let log = VmLog::build(&raw).expect("log item should decode");
 
     assert_eq!(log.addr, main);
-    assert_eq!(log.topic0.to_uint(), 9);
-    assert_eq!(log.topic1.to_uint(), 1);
-    assert_eq!(log.topic2.to_uint(), 2);
-    assert_eq!(log.topic3.to_uint(), 3);
-    assert_eq!(log.data.to_uint(), 4);
+    assert_eq!(log.topic0.canbe_u128().unwrap(), 9);
+    assert_eq!(log.topic1.canbe_u128().unwrap(), 1);
+    assert_eq!(log.topic2.canbe_u128().unwrap(), 2);
+    assert_eq!(log.topic3.canbe_u128().unwrap(), 3);
+    assert_eq!(log.data.canbe_u128().unwrap(), 4);
 }
 
 #[test]

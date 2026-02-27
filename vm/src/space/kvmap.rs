@@ -89,6 +89,7 @@ impl CtcKVMap {
 
     pub fn reset(&mut self, lmt: usize) {
         self.limit = lmt;
+        self.clear();
     }
 
     pub fn clear(&mut self) {
@@ -100,4 +101,25 @@ impl CtcKVMap {
         Ok(self.datas.entry(addr.clone()).or_insert_with(||MKVMap::new(self.limit)))
     }
 
+}
+
+#[cfg(test)]
+mod kvmap_tests {
+    use super::*;
+
+    #[test]
+    fn ctc_reset_clears_datas_and_uses_new_limit() {
+        let addr = Address::zero();
+        let key = Value::Bytes(vec![1u8]);
+        let mut m = CtcKVMap::new(1);
+
+        m.entry(&addr).unwrap().put(key.clone(), Value::U8(7)).unwrap();
+        m.reset(0);
+
+        let got = m.entry(&addr).unwrap().get(&key).unwrap();
+        assert_eq!(got, Value::Nil);
+
+        let err = m.entry(&addr).unwrap().put(key.clone(), Value::U8(9)).unwrap_err();
+        assert!(matches!(err, ItrErr(OutOfMemory, _)));
+    }
 }

@@ -1,310 +1,215 @@
-# Value Casting Rules
-===
+# Value Conversion and Normalization Spec
 
-This document describes **all implicit (automatic)** and **explicit (manual)** type conversion rules used by the Hacash VM value system, focusing on:
+This document is the single source of truth for `Value` conversion, normalization, and comparison behavior.
 
-- `u8 ~ u128` integer arithmetic and comparisons
-- integer ↔ bytes conversions used by arithmetic and byte-manipulation opcodes
-- function-call argument casting rules
+## 1. Scope
 
-The goal is to make conversions predictable for contract developers, and to highlight places where the rules may be surprising or inconsistent.
+`Value` variants:
 
+- Scalar/value domain: `Nil`, `Bool`, `U8`, `U16`, `U32`, `U64`, `U128`, `Bytes`, `Address`
+- Special domain: `HeapSlice`, `Compo`
 
-## Value Types (Runtime)
+Unless explicitly stated, all conversion and comparison rules only apply to the scalar/value domain.
 
-The VM value types relevant to casting are:
+## 2. API Orthogonality
 
-- `Nil`
-- `Bool`
-- Unsigned integers: `U8`, `U16`, `U32`, `U64`, `U128`
-- `Bytes`
-- `Address`
+- `canbe_*`: convert to Rust/native type, does not mutate `self`
+- `to_*`: convert to normalized `Value`, does not mutate `self`
+- `cast_*`: explicit cast in place, mutates `self`
 
-There are other internal types (e.g. `HeapSlice`, `Compo`) that appear in the runtime, but their casting behavior is mostly “not allowed” (except for truthiness, see below).
+This separation is strict and must remain stable.
 
+## 3. Canonical Normalization Primitives
 
-## Implicit (Automatic) Conversions
+## 3.1 Byte normalization (`canbe_bytes_ec`)
 
-Implicit conversions happen **without any explicit cast opcode**. They are triggered by specific operations.
+Output type: `Vec<u8>`.
 
+- `Bool` -> `[0x01]` or `[0x00]`
+- `U8/U16/U32/U64/U128` -> fixed-width big-endian bytes (leading zero bytes preserved)
+- `Bytes` -> raw bytes
+- `Address` -> raw address bytes
+- Other types (`Nil`, `HeapSlice`, `Compo`) -> error
 
-### 1) Arithmetic Operands: integer widening + Bytes→Uint
+## 3.2 Bool normalization (`canbe_bool`)
 
-Arithmetic opcodes (and some bit opcodes, because they are executed through the same arithmetic wrapper) apply an implicit normalization step before the real operation runs.
+Output type: `bool`.
 
-**Trigger path**
+- `Bool(b)` -> `b`
+- `Nil` -> `false`
+- `U*` -> `n != 0`
+- `Bytes` -> any non-zero byte => `true`, otherwise `false`
+- `Address` -> any non-zero byte => `true`, otherwise `false`
+- `HeapSlice`, `Compo` -> error
 
-- `binop_arithmetic` / `locop_arithmetic` → `cast_arithmetic(x, y)` → run the operation
+## 3.3 Minimal Uint normalization (`to_uint`)
 
-**Rule A — Integer widening**
+Output type: `Value` (`U8/U16/U32/U64/U128`).
 
-If both operands are unsigned integers of different widths, the smaller one is **promoted to the larger width** (no range checks needed because it is widening).
+- `U*` -> keep current uint value/type
+- `Nil` -> `U8(0)`
+- `Bool` -> `U8(0|1)`
+- `Bytes` / `Address`:
+  - drop leading zero bytes
+  - map remaining byte length to minimal uint width:
+    - `0` -> `U8(0)`
+    - `1` -> `U8`
+    - `2` -> `U16`
+    - `3..=4` -> `U32`
+    - `5..=8` -> `U64`
+    - `9..=16` -> `U128`
+    - `>16` -> error
+- `HeapSlice`, `Compo` -> error
 
-Examples:
+## 3.4 Numeric scalar normalization (`canbe_u128`)
 
-- `U8 + U16` → `U16 + U16`
-- `U32 ^ U64` → `U64 ^ U64`
-- `U64 << U8` → `U64 << U64` (shift-count is promoted too)
+Output type: `u128`.
 
-**Rule B — Bytes→Uint for arithmetic**
+- `U*` -> value widening to `u128`
+- `Nil` -> `0`
+- `Bool` -> `0|1`
+- `Bytes` / `Address`:
+  - drop leading zero bytes
+  - remaining length `<=16` => parse as big-endian `u128`
+  - remaining length `>16` => error
+- `HeapSlice`, `Compo` -> error
 
-If one or both operands are `Bytes`, they are first converted to an unsigned integer via **big-endian interpretation with leading-zero trimming**:
+## 4. Explicit Cast Rules (`cast_*` / `CU*` / `CTO`)
 
-1. Drop left (most-significant) zero bytes.
-   - Note: for a non-empty buffer, trimming keeps at least 1 byte (so “all-zero bytes” becomes `U8(0)`).
-2. Choose the target integer width based on remaining length:
-   - 1 byte  → `U8`
-   - 2 bytes → `U16`
-   - 3–4     → `U32` (left padded to 4)
-   - 5–8     → `U64` (left padded to 8)
-   - 9–16    → `U128` (left padded to 16)
-3. Then apply **Rule A** (widening) to make both operands the same width.
+## 4.1 `cast_bool` / `CTO Bool`
 
-Examples:
+- Uses `canbe_bool`
+- Same acceptance/failure set as section 3.2
 
-- `Bytes([0x01]) + U8(2)` → `U8(1) + U8(2)`
-- `Bytes([0x00, 0x01]) + U8(2)` → `U16(1) + U16(2)`
-- `Bytes([0x01,0x02,0x03])` becomes `U32(0x00010203)`
+## 4.2 `cast_u8/u16/u32/u64/u128` / `CU8..CU128`
 
-**Failure cases**
+For target width `W` bits (`N = W/8` bytes):
 
-- `Bytes` is empty (`Bytes([])`) → arithmetic cast fails.
-- `Bytes` length after trimming is `> 16` → arithmetic cast fails.
-- Any non-uint, non-bytes types (e.g. `Bool`, `Address`, `Nil`) → arithmetic cast fails.
+- If source is `Bytes`:
+  - if `len <= N`: left-pad zeros to `N` and parse
+  - if `len > N`: only allowed when truncated prefix bytes are all zero; otherwise error
+- If source is not `Bytes`:
+  - normalize by `canbe_u128`
+  - check target range (`u8/u16/u32/u64/u128`)
+  - overflow => error
 
-**Note: some arithmetic ops still have extra restrictions**
+So explicit uint cast and implicit numeric normalization share the same scalar domain (`Nil/Bool/U*/Address` are all normalized by numeric rules), while `Bytes` keeps width-aware cast semantics.
 
-Even after casting, the operation itself may reject the operand width. The most notable case is `POW`:
+## 4.3 `cast_buf` / `CBUF`
 
-- `POW` only supports `(U8,U8)`, `(U16,U16)`, `(U32,U32)`.
-- Therefore `U64 POW U8` will be promoted to `(U64,U64)` and then **fail** because `U64` is unsupported for pow.
+- Uses byte normalization from section 3.1
+- `Nil`, `HeapSlice`, `Compo` are rejected
 
+## 4.4 `cast_addr`
 
-### 2) Bytes Consumers: Uint/Bool/Address → Bytes
+- First `cast_buf`
+- Then parse exact `Address` byte length
+- Length mismatch or invalid address bytes => error
 
-Many byte operations accept non-`Bytes` values and implicitly view them as bytes.
+## 4.5 `cast_to` / `CTO <type>`
 
-**Trigger**
+- Dispatches to `cast_bool`, `cast_u*`, `cast_buf`, `cast_addr`
+- Unsupported target type (`Nil`, `HeapSlice`, `Compo`) => error
 
-Operations that need “byte-like” inputs call a helper that accepts several types and returns a byte buffer.
+## 5. Implicit Conversion Trigger Map
 
-**Rule**
+## 5.1 Bool context (implicit bool normalization)
 
-When a value is consumed as bytes:
+Uses section 3.2 (`canbe_bool`):
 
-- `Bool(true)`  → `[0x01]`, `Bool(false)` → `[0x00]`
-- `U8`..`U128`  → **fixed-width big-endian** encoding (`1/2/4/8/16` bytes)
-- `Bytes`       → unchanged (clone)
-- `Address`     → address raw bytes (fixed length, chain-defined)
-- Other types   → error
+- Logic ops: `AND`, `OR`, `NOT`
+- Control-flow condition: `CHOOSE`, `BRL`, `BRS`, `BRSL`, `BRSLN`, `AST`
+- `CTO Bool`
 
-Examples:
+## 5.2 Numeric arithmetic context (implicit uint normalization)
 
-- `CAT` can concatenate `U32(1)` with `Bytes("abc")` by converting `U32(1)` to `00 00 00 01` first.
-- `JOIN` can join a list of `U8` and `Bytes` values into one byte buffer.
+Uses: `to_uint(x)`, `to_uint(y)`, then width promotion (`cast_arithmetic`) to the wider uint type.
 
-**Important consequence (non-symmetry)**
+Applied by:
 
-This encoding is *not* the inverse of arithmetic `Bytes→Uint`:
+- Arithmetic: `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `POW`, `MAX`, `MIN`
+- Bit ops: `BSHL`, `BSHR`, `BAND`, `BOR`, `BXOR`
+- Unary numeric: `INC`, `DEC` (single operand normalized by `to_uint` when needed)
 
-- Uint→Bytes uses **fixed width**.
-- Bytes→Uint uses **trim + variable width**.
+Failure in either operand normalization or width/range checks => immediate error.
 
-So `U16(1)` → bytes `00 01`, but `Bytes(00 01)` → `U16(1)` (ok), while `Bytes(01)` → `U8(1)`.
+## 5.3 Equality context (`EQ`, `NEQ`)
 
+- Build equality byte view:
+  - `Nil` => empty bytes `[]`
+  - others => `canbe_bytes_ec`
+- If either operand is uint type (`U8/U16/U32/U64/U128`):
+  - compare after left-zero-padding shorter side to equal length
+- If neither operand is uint:
+  - compare byte view directly
 
-### 3) Truthiness (used by branching and some operators)
+Unsupported byte-source types => error.
 
-The VM defines a “truthiness” check that is used by:
+## 5.4 Ordered compare context (`LT`, `LE`, `GT`, `GE`)
 
-- Branching opcodes (e.g. `BR*`)
-- Conditional selection (e.g. `CHOOSE`)
-- Logical operators (`AND`, `OR`, `NOT`)
+- Both sides use `canbe_u128`
+- Compare numeric values
+- Any normalization failure => immediate error
 
-Rule:
+## 5.5 Byte-handle context
 
-- `Nil` → false
-- `Bool(b)` → `b`
-- `U*` → `n != 0`
-- `Bytes` → true iff **any** byte is non-zero
-- Other types (e.g. `Address`, `Compo`) → true
+Uses section 3.1 (`canbe_bytes_ec`):
 
-This is **not** a cast; it is a boolean interpretation.
+- `CAT`, `JOIN`, `BYTE`, `CUT`, `LEFT`, `RIGHT`, `LDROP`, `RDROP`
 
+`Nil`, `HeapSlice`, `Compo` are rejected in this path.
 
-### 4) Comparisons and Equality (logic operands)
+## 5.6 External/native call data context
 
-The VM’s comparison operators are **not** unified with arithmetic casting. In particular, `Bytes→Uint` does *not* happen automatically for comparisons.
+Uses `canbe_ext_call_data`:
 
-**Equality / inequality (`==`, `!=`)**
+- `Nil` => `[]`
+- `HeapSlice(start, len)` => read bytes from heap slice
+- Otherwise => `canbe_bytes_ec`
 
-Supported pairs:
+This is the only allowed conversion path where `HeapSlice` participates.
 
-- `Nil` vs `Nil` → true; `Nil` vs non-`Nil` → false (and vice-versa)
-- `Bool` vs `Bool` → compare booleans
-- `Address` vs `Address` → compare addresses
-- `Bytes` vs `Bytes` → compare raw bytes (byte-for-byte)
-- Unsigned integers (`U8..U128`) vs unsigned integers → compare numerically with integer widening
+## 6. Function Param/Return Type Check Rules
 
-All other pairs are rejected (type mismatch error).
+## 6.1 Signature-level constraints (`ValueTy`)
 
-**Ordering (`<`, `<=`, `>`, `>=`)**
+- Param type cannot be `Nil`, `HeapSlice`, `Compo`
+- Return type cannot be `Nil`, `HeapSlice`
 
-- Only unsigned integers (`U8..U128`) are supported.
-- Mixed widths are compared by widening to a chosen target width.
-- `Bytes`, `Bool`, `Address`, `Nil`, etc. are rejected.
+## 6.2 Runtime checked cast (`checked_param_cast`)
 
+- If target type is `Nil`: wildcard, skip type check/cast (no mutation)
+- If source and target are identical: pass
+- Allowed widening/bridge casts only:
+  - `U8 -> U16/U32/U64/U128`
+  - `U16 -> U32/U64/U128`
+  - `U32 -> U64/U128`
+  - `U64 -> U128`
+  - `Bytes <-> Address`
+- All other source/target combinations: fail
 
-### 5) Call Argument Casting (ABI-level)
+Note: in normal function signatures, param type `Nil` is rejected by section 6.1, so wildcard behavior is for low-level/internal call sites.
 
-When a function expects a specific parameter type, the VM may accept some “nearby” types and cast automatically during argument checking.
+## 7. Deterministic Edge Cases (Normative)
 
-Allowed implicit casts in parameter checking:
+- `Nil == U8(0)` is `true` (uint path with zero-padding)
+- `Nil == Bool(false)` is `false` (non-uint direct byte-view compare: `[]` vs `[0]`)
+- `Bytes([0,1]) == U8(1)` is `true`
+- `Bytes([0,1]) == Bytes([1])` is `false` when neither side is uint
+- Ordered compare with `HeapSlice`/`Compo` always fails
 
-- Integer widening only:
-  - `U8 → U16 → U32 → U64 → U128`
-- `Bytes ↔ Address` (mutual)
+## 8. U256 Reservation Contract (Forward Compatibility)
 
-Everything else is rejected as “argument type mismatch”.
+This section defines mandatory constraints before enabling `U256`, to prevent compatibility breaks and normalization drift.
 
-Notably:
-
-- `Bytes → Uint` is **not** allowed at this layer (even though arithmetic allows it).
-- `Bool ↔ Uint` is **not** allowed.
-
-
-## Explicit (Manual) Conversions
-
-Explicit conversions are performed by dedicated cast operations (cast opcodes) that mutate the top stack value.
-
-Note: the `NOT` opcode is implemented as “cast to bool using truthiness, then invert”. So `NOT` always produces a `Bool` even if the input is not a `Bool`.
-
-
-### A) Cast to Bool
-
-Manual cast-to-bool sets the value to `Bool(check_true(value))`.
-
-This means it accepts essentially any value:
-
-- `Nil` becomes `false`
-- Numeric `0` becomes `false`, non-zero becomes `true`
-- `Bytes([0,0])` becomes `false`, `Bytes([0,1])` becomes `true`
-- `Address` becomes `true` (always)
-- `Compo` becomes `true` (always)
-
-This is powerful but easy to misuse: casting an `Address` to bool does **not** check “is non-zero address”.
-
-
-### B) Cast to Unsigned Integers (`U8..U128`)
-
-Manual integer casts are stricter than arithmetic implicit casts.
-
-**From another integer type**
-
-- Widening is always allowed (`U8 → U128`, etc.).
-- Narrowing is allowed only if the value fits the target range (checked).
-
-**From `Bytes`**
-
-Manual integer casts interpret bytes as a big-endian integer, with flexible length handling:
-
-- If `Bytes` is **shorter** than the target width: left-pad with zeros.
-- If `Bytes` is **longer** than the target width: drop left zeros first; if it still doesn’t fit, fail.
-- Then decode using `from_be_bytes` of the target width.
-
-Examples:
-
-- Cast-to-`U32`:
-  - `Bytes([0x01])` → `U32(1)` (pads to `00 00 00 01`)
-  - `Bytes([0x00,0x00,0x01,0x02])` → `U32(258)`
-  - `Bytes([0x00,0x01,0x02,0x03,0x04])` → may fit after dropping zeros; otherwise fails
-
-**Invalid sources**
-
-- `Nil`, `Bool`, `Address`, `Compo`, `HeapSlice` cannot be cast to integer directly.
-
-
-### C) Cast to Bytes
-
-Manual cast-to-bytes follows the same encoding described in “Bytes consumers”:
-
-- `Bool` → `[0x00]` or `[0x01]`
-- `U8..U128` → fixed-width big-endian
-- `Address` → raw address bytes
-- `Bytes` → no-op
-
-Invalid sources:
-
-- `Nil`, `Compo`, `HeapSlice` (and others) fail.
-
-
-### D) Cast to Address
-
-Manual cast-to-address works in two steps:
-
-1. Cast-to-bytes (see above)
-2. Parse bytes as an `Address`
-
-In practice, this means only byte buffers of the expected address length will succeed.
-
-Common valid cases:
-
-- `Bytes(addr_bytes)` where `len == Address::SIZE`
-- `Address` (roundtrips through bytes)
-
-Common invalid cases:
-
-- Integer types (they become fixed-width 1/2/4/8/16 bytes, which will not match address length)
-- `Bytes` with wrong length
-
-
-## “Valid vs Invalid” Summary Tables
-
-
-### Implicit conversions summary (by context)
-
-| Context | Allowed implicit conversions | Notable rejects |
-|---|---|---|
-| Arithmetic (+,-,*,/,%,pow,max,min and bit ops via arithmetic wrapper) | Uint widening; Bytes→Uint (length 1..16 after trim) | Empty bytes; bytes >16; Bool/Address/Nil |
-| Byte operations (concat/cat/join, slicing helpers) | Bool/Uint/Address→Bytes | Nil/Compo/HeapSlice |
-| Branching / truthiness | Interprets any value as boolean (truthy/falsey) | (no cast; interpretation only) |
-| Call argument checking | Uint widening; Bytes↔Address | Bytes→Uint, Bool→anything |
-
-
-### Explicit cast summary (source → target)
-
-| Target | Valid sources | Common invalid sources |
-|---|---|---|
-| Bool | Any (uses truthiness) | (none) |
-| U8..U128 | Uint types (widen always; narrow if fits), Bytes (big-endian with padding/trim-to-fit) | Nil/Bool/Address/Compo/HeapSlice |
-| Bytes | Bool, Uint, Bytes, Address | Nil/Compo/HeapSlice |
-| Address | Bytes of correct length; Address | Integers (wrong length), Bytes wrong length |
-
-
-## Known Pitfalls / “Possibly Unreasonable” Parts
-
-These are not necessarily bugs, but they are areas developers should treat as sharp edges:
-
-1. **Arithmetic allows Bytes→Uint implicitly, but comparisons do not.**
-   - `Bytes([0x01]) + U8(1)` may work (after cast)
-   - but `Bytes([0x01]) == U8(1)` will fail (type mismatch), unless you explicitly cast.
-
-2. **Bytes↔Uint conversions are not canonical.**
-   - Uint→Bytes is fixed-width; Bytes→Uint is trim+variable width.
-   - Multiple byte encodings can represent the same numeric value in arithmetic, which can be surprising for hashing, storage keys, or equality checks.
-
-3. **Empty bytes are a special “error value” for arithmetic.**
-   - `PNBUF` (empty bytes) exists as a constant, but cannot participate in arithmetic as zero.
-   - If developers expect empty bytes to mean numeric zero, they must explicitly normalize it (e.g. to `U8(0)`) in contract logic.
-
-4. **Casting to Bool treats complex types as always-true.**
-   - `Address` and `Compo` become `true` when cast to bool, which may not match developer intent.
-
-
-## Practical Guidance for Contract Developers
-
-- For anything security-sensitive (conditions, auth, invariants), **do not rely on implicit casting**. Use explicit cast opcodes or write explicit normalization logic.
-- If you want numeric semantics on bytes, choose a convention:
-  - Either always use fixed-width numeric bytes (e.g. always 16 bytes for `U128`)
-  - Or always cast bytes to a specific integer width before comparing/operating
-- Avoid mixing `Bytes` and `Uint` in comparisons unless you explicitly cast one side to match the other.
+- Type id `7` and keyword `u256` are reserved and currently disabled.
+- Any decode/build path receiving type id `7` must fail explicitly (not silently downgraded).
+- Any type parser receiving `u256` must fail explicitly with a reserved/not-enabled error.
+- Activation must be version-gated (e.g. codeconf/height fork switch), not implicit by parser/runtime fallback.
+- `U256` activation is all-or-nothing for conversion paths:
+  - update scalar domain (`Value`, `ValueTy`, serialization/parse)
+  - update explicit cast family (`cast_u256`, `CU256`, `CTO U256`)
+  - update implicit numeric normalization (`to_uint`, arithmetic width promotion, ordered compare)
+  - update equality uint-padding path to include `U256` as uint operand
+- While `U256` is disabled, numeric scalar normalization remains bounded by current active max width (`u128` / 16 bytes).
+- No mixed mode is allowed: enabling parser keyword without runtime normalization support is forbidden.

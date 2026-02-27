@@ -110,14 +110,14 @@ impl VM for MachineBox {
         let m = self.machine.as_mut().unwrap();
         m.r.global_vals = globals;
         m.r.memory_vals = memorys;
-        // Do not restore `r.contracts` or `r.contract_load_bytes` because they are tx-local warmup/cache accounting tied to already-paid gas and must stay monotonic across AST recover.
+        // Do not restore `r.contracts` because tx-local warmup/cache accounting tied to already-paid gas must stay monotonic across AST recover.
     }
 
     fn restore_but_keep_warmup(&mut self) {
         let m = self.machine.as_mut().unwrap();
         m.r.global_vals.clear();
         m.r.memory_vals.clear();
-        // keep warmup/cache channels (`contracts`, `contract_load_bytes`) and gas accounting monotonic.
+        // keep warmup/cache channel (`contracts`) and gas accounting monotonic.
     }
 
     fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
@@ -151,7 +151,11 @@ impl VM for MachineBox {
         let gas_before = ctx.gas_remaining();
         // Fail-fast: if remaining gas can't cover the per-call minimum, this call cannot start.
         if gas_before < min_cost {
-            let gas = ctx.vm_gas_mut().into_bret()?.gas_remaining_mut().into_bret()?;
+            let gas = ctx
+                .vm_gas_mut()
+                .into_bret()?
+                .gas_remaining_mut()
+                .into_bret()?;
             *gas -= min_cost; // keep the same "min cost consumes from shared counter" semantics
             return berrf!(
                 "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
@@ -191,7 +195,14 @@ impl VM for MachineBox {
                 let Ok(param) = param.downcast::<Value>() else {
                     return berrf!("p2sh argv type not match");
                 };
-                machine.p2sh_call(exenv, codeconf.code_type(), state_addr, calibs.into_list(), realcodes, *param)
+                machine.p2sh_call(
+                    exenv,
+                    codeconf.code_type(),
+                    state_addr,
+                    calibs.into_list(),
+                    realcodes,
+                    *param,
+                )
             }
             Abst => {
                 let kid = AbstCall::try_from_u8(kind).map_err(BError::from)?;
@@ -210,7 +221,11 @@ impl VM for MachineBox {
         // enforce per-call minimum gas by consuming shortfall from shared counter
         if cost < min_cost {
             let shortfall = min_cost - cost;
-            let gas = ctx.vm_gas_mut().into_bret()?.gas_remaining_mut().into_bret()?;
+            let gas = ctx
+                .vm_gas_mut()
+                .into_bret()?
+                .gas_remaining_mut()
+                .into_bret()?;
             *gas -= shortfall;
             if *gas < 0 {
                 return berrf!(
@@ -286,7 +301,10 @@ impl Machine {
         param: Value,
     ) -> Ret<Value> {
         let adr = contract_addr.to_readable();
-        let Some((owner, fnobj)) = self.r.load_abstfn(env.ctx, &contract_addr, cty)? else {
+        let Some((owner, fnobj)) =
+            self.r
+                .load_abstfn_with_gas(env.ctx, &mut *env.gas, &contract_addr, cty)?
+        else {
             return errf!("abst call {:?} not find in {}", cty, adr);
         };
         // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
@@ -503,7 +521,10 @@ mod machine_test {
             .main_call(&mut exec, CodeType::Bytecode, main_codes.into())
             .unwrap();
 
-        assert!(!rv.check_true(), "main call should return success (nil/0)");
+        assert!(
+            !rv.canbe_bool().unwrap(),
+            "main call should return success (nil/0)"
+        );
     }
 
     #[test]
@@ -719,8 +740,78 @@ mod machine_test {
             )
             .unwrap();
         assert!(
-            !rv.check_true(),
+            !rv.canbe_bool().unwrap(),
             "abst call should finish without assertion failure"
+        );
+    }
+
+    #[test]
+    fn abst_call_first_cold_load_costs_more_than_second_warm_call() {
+        let base_addr = test_base_addr();
+        let contract_child = test_contract(&base_addr, 31);
+        let contract_parent = test_contract(&base_addr, 32);
+
+        let parent_sto = Contract::new()
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+            .into_sto();
+        let child_sto = Contract::new().inh(contract_parent.to_addr()).into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_parent, &parent_sto);
+            vmsta.contract_set(&contract_child, &child_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        let mut machine = Machine::create(Resoure::create(1));
+        let gas_budget = 1_000_000i64;
+
+        let mut gas_1 = gas_budget;
+        let mut exec_1 = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas_1,
+        };
+        machine
+            .abst_call(
+                &mut exec_1,
+                AbstCall::Construct,
+                contract_child.clone(),
+                Value::Bytes(vec![]),
+            )
+            .unwrap();
+        let used_1 = gas_budget - gas_1;
+
+        let mut gas_2 = gas_budget;
+        let mut exec_2 = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas_2,
+        };
+        machine
+            .abst_call(
+                &mut exec_2,
+                AbstCall::Construct,
+                contract_child,
+                Value::Bytes(vec![]),
+            )
+            .unwrap();
+        let used_2 = gas_budget - gas_2;
+
+        assert!(
+            used_1 > used_2,
+            "first cold abst_call should consume more gas than second warm call"
         );
     }
 
@@ -869,6 +960,45 @@ mod machine_test {
     }
 
     #[test]
+    fn callsuper_never_resolves_back_to_current_owner() {
+        let base_addr = test_base_addr();
+        let contract_parent = test_contract(&base_addr, 41);
+        let contract_child = test_contract(&base_addr, 42);
+
+        let parent_sto = Contract::new().inh(contract_child.to_addr()).into_sto();
+        let child_sto = Contract::new()
+            .inh(contract_parent.to_addr())
+            .func(Func::new("f").unwrap().fitsh("return 7").unwrap())
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .public()
+                    .fitsh(
+                        r##"
+                        let _ = super.f()
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set(&contract_parent, &parent_sto);
+            vmsta.contract_set(&contract_child, &child_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            return C.run()
+        "##;
+        let res = run_main_script(base_addr, vec![contract_child], ext_state, script);
+        assert_err_contains(res, "CallNotExist");
+    }
+
+    #[test]
     fn callview_callpure_and_callcode_local_lookup_positive_paths() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 27);
@@ -979,38 +1109,39 @@ mod machine_test {
         ))
         .unwrap();
 
-        vm.machine.as_mut().unwrap().r.contract_load_bytes = 11;
-        let before_load_bytes = vm.machine.as_ref().unwrap().r.contract_load_bytes;
+        let warm_a = test_contract(&main, 201);
+        let warm_b = test_contract(&main, 202);
         vm.machine
             .as_mut()
             .unwrap()
             .r
             .contracts
-            .insert(ContractAddress::default(), Arc::new(ContractObj::default()));
+            .insert(warm_a.clone(), Arc::new(ContractObj::default()));
         let snap = vm.snapshot_volatile();
 
         // Mutate gas remaining in context (outside VM volatile snapshot).
         *ctx.vm_gas_mut().unwrap().gas_remaining_mut().unwrap() = 1;
         // Mutate volatile fields (should be restored)
-        vm.machine.as_mut().unwrap().r.contract_load_bytes = 777;
         vm.machine
             .as_mut()
             .unwrap()
             .r
             .contracts
-            .insert(ContractAddress::default(), Arc::new(ContractObj::default()));
+            .insert(warm_b.clone(), Arc::new(ContractObj::default()));
 
         vm.restore_volatile(snap);
 
         // Gas remaining is NOT restored: gas usage must stay monotonic in one tx.
         assert_eq!(ctx.gas_remaining(), 1);
         // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
-        assert_ne!(
-            vm.machine.as_ref().unwrap().r.contract_load_bytes,
-            before_load_bytes
-        );
-        assert_eq!(vm.machine.as_ref().unwrap().r.contract_load_bytes, 777);
-        assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 1);
+        assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 2);
+        assert!(vm
+            .machine
+            .as_ref()
+            .unwrap()
+            .r
+            .contracts
+            .contains_key(&warm_b));
     }
 
     #[test]

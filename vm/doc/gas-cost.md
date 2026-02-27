@@ -41,9 +41,14 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
 - min_of_p2sh_call: 72. The VM call will consume at least this gas from the shared counter.
 - min_of_abst_call: 96. The VM call will consume at least this gas from the shared counter.
 
+Min-call enforcement behavior (non-bytecode):
+
+- Fail-fast path: if `remaining < min_of_*_call`, the VM still deducts that min cost and returns error.
+- Normal path: VM executes first, then if actual consumed gas is below min, it deducts the shortfall to make total cost equal the min.
+
 ## tx.gas_max (1-byte) encoding
 
-`TransactionType3.gas_max` is a 1-byte lookup key. The VM reads it via `TransactionRead::fee_extend()` and decodes it with `decode_gas_budget()` (see `vm/src/rt/gas.rs`).
+`TransactionType3.gas_max` is a 1-byte lookup key. Runtime decodes it with `decode_gas_budget()` and applies chain cap clamp before `gas_init_tx` (see `protocol/src/context/gas.rs`; VM mirror constants are in `vm/src/rt/gas.rs`).
 
 - `gas_max=0`: no VM gas budget (non-contract tx); any contract/p2sh call will fail to initialize gas.
 - `gas_max>0`: decoded budget is read from `GAS_BUDGET_LOOKUP_1P07_FROM_138` and then clamped by `max_gas_of_tx` (chain hard cap).
@@ -60,6 +65,22 @@ Practical notes on current L1 parameters (`max_gas_of_tx=8192`):
 
 - The lookup table is dense and strictly increasing (1-byte full scale), suitable for future L2/high-cap settings.
 - Under current L1 cap, bytes above the clamp threshold are still equivalent after clamping.
+
+## Tx-level gas settle (non-bytecode)
+
+This section describes account-level gas charging/refund outside opcode execution.
+
+- Precharge at tx start (only when `gas_max > 0`): deduct max possible charge for `budget` from tx main address before action execution.
+- Refund at tx end: refund `max_charge - used_charge`.
+- Burn accounting: used charge is added into `ast_vm_gas_burn_238` stats.
+- Rounding: burn amount uses ceil division.
+
+Formula:
+
+- `burn_amount(cost) = ceil(cost * fee_got_238 / (tx_size * gas_rate))`
+- `max_charge = burn_amount(initial_budget)`
+- `used_charge = burn_amount(initial_budget - gas_remaining)`
+- `refund = max_charge - used_charge`
 
 
 ## Extra cost every behavior
@@ -84,14 +105,16 @@ For dynamic billing based on a VM value object, byte size is `Value::val_size()`
 
 #### Stack buffer copy and write
 
-For opcode that create/copy byte payload to stack values.
+For opcode that create/copy byte payload to stack values, or write value payload into local/global/memory slots.
 
-`byte` is of type i64, and calculations like byte/24 lead to a normal side effect: free for value bytes < 24
+`byte` is of type i64. Integer truncation applies.
 
-- byte/24: DUP, DUPN, GET, GET0, GET1, GET2, GET3, GETX, MGET, GGET, PBUF, PBUFL
+- byte/32: DUP, DUPN, GET, GET0, GET1, GET2, GET3, GETX, MGET, GGET, PBUF, PBUFL
   (runtime divisor: `stack_copy_div`)
 - byte/24: PUT, PUTX, MPUT, GPUT
   (runtime divisor: `stack_write_div`, independent from `stack_copy_div`)
+- byte/24: UPLIST local-slot writes, per unpacked item
+  (`unpack_list` charges `stack_write(item.val_size())` for each written local slot)
 - byte/16: CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP (byte = output value `val_size()`)
 - fixed: REV (only reorders stack values, no real payload copy)
 
@@ -120,7 +143,7 @@ KEYS, VALUES byte refers to the total bytes output (create on stack). map byte =
 
 The byte in ITEMGET/HEAD/BACK refers to outputting value_byte; list types do not include key_byte.
 
-- item/4:  ITEMGET, HEAD, BACK, HASKEY, UPLIST, APPEND
+- item/4:  ITEMGET, HEAD, BACK, HASKEY, APPEND
 - item/2:  KEYS, VALUES, INSERT, REMOVE
 - item/1:  CLONE, MERGE
 - byte/20: CLONE, KEYS, VALUES, ITEMGET, HEAD, BACK
@@ -160,18 +183,22 @@ byte = value_byte = ContractSto.size(), not include key_byte. The formula is as 
 
 
 - 32 + byte/64: every new contract load
+- Charging point: immediate at each cold-load event (not delayed batch settlement at call boundary)
+- Truncation scope: per loaded contract (`floor(byte_i / 64)`), no cross-contract remainder carry
+- Warm tx-local cache hit: no contract-load gas charge
 
 #### IR runtime compile fee
 
 IR code real-time compile consumes gas by byte size:
 
-- byte/8: IR compile output byte length (includes runtime-appended `END`)
+- byte/16: IR compile output byte length (includes runtime-appended `END`)
+- Runtime encoding path wraps executable stream as `BURN(compile_fee) + code + END`.
 
 Execution policy in one tx:
 
-- MainCall IR (`ExecMode::Main`) does **not** use compile-fee cache: each execution charges compile fee.
-- Contract function IR uses tx-local compile-fee dedup cache: same function object is charged once per tx.
-- AST failed-branch recover does not rollback gas-charged warmup/compile markers, avoiding repeated charges after recover.
+- Compile-fee charging is executed by `BURN(compile_fee)` in runtime bytecode, so it is charged on every execution of that IR function body.
+- MainCall/P2sh paths construct transient `FnObj` values; IR-to-bytecode conversion cache is not reused across separate top-level calls.
+- Contract function `FnObj` keeps a `OnceLock`-cached compiled bytecode view when the same function object is reused (commonly via contract cache), but `BURN` still runs each call.
 
 
 ## Examples (visualized)
@@ -209,7 +236,7 @@ Assumptions and notes:
 
 - These are estimation templates. Real costs depend on opcode mix, contract sizes, host-returned gas from `EXTACTION/EXTVIEW/EXTENV`, and whether `SSAVE` triggers renewals or (re)creates a storage key.
 - The “Other compute opcodes” column is meant to count opcodes **excluding** those already accounted for as IO/heavy ops in this table (e.g. `SLOAD/SSAVE/LOG*/HGROW/HREAD/HWRITE/EXT*/NTFUNC`), to avoid double counting.
-- Contract load cost: `32 * new_loads + sum(contract_bytes/64)` (integer truncation).
+- Contract load cost: `32 * new_loads + sum(floor(contract_bytes_i / 64))` (integer truncation per loaded contract).
 - `SSAVE` has two typical pricing cases:
   - **Normal write**: `64 + value_byte/6`
   - **New / expired-recreate / auto-renew triggered**: on top of normal write, add `rent_one_period = 32 + value_byte`; for new/recreate also add `storage_key_cost=256`.

@@ -118,6 +118,9 @@ pub struct GasExtra {
     storage_write_div: i64,
     compile_div: i64,
     compo_byte_div: i64,
+    compo_item_read_div: i64,
+    compo_item_edit_div: i64,
+    compo_item_copy_div: i64,
     ntfunc_div: i64,
     extview_div: i64,
     extaction_div: i64,
@@ -224,11 +227,15 @@ impl GasExtra {
             storage_read_div:    8,
             storage_write_div:   6,
             compile_div:        16,
-            compo_byte_div:     20,
             ntfunc_div:         16,
             extview_div:        16,
             extaction_div:      10,
             extenv_div:         16,
+            // Compo
+            compo_byte_div:     20,
+            compo_item_read_div: 4,
+            compo_item_edit_div: 2,
+            compo_item_copy_div: 1,
         }
     }
 
@@ -313,8 +320,18 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    pub fn compo_items(&self, n: usize, div: i64) -> i64 {
-        Self::div_items(n, div)
+    pub fn compo_items_read(&self, n: usize) -> i64 {
+        Self::div_items(n, self.compo_item_read_div)
+    }
+
+    #[inline(always)]
+    pub fn compo_items_edit(&self, n: usize) -> i64 {
+        Self::div_items(n, self.compo_item_edit_div)
+    }
+
+    #[inline(always)]
+    pub fn compo_items_copy(&self, n: usize) -> i64 {
+        Self::div_items(n, self.compo_item_copy_div)
     }
 
     #[inline(always)]
@@ -454,10 +471,10 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.heap_write(11), 0);
         assert_eq!(gst.heap_write(12), 1);
 
-        assert_eq!(gst.compo_items(3, 4), 0);
-        assert_eq!(gst.compo_items(4, 4), 1);
-        assert_eq!(gst.compo_items(5, 2), 2);
-        assert_eq!(gst.compo_items(5, 1), 5);
+        assert_eq!(gst.compo_items_read(3), 0);
+        assert_eq!(gst.compo_items_read(4), 1);
+        assert_eq!(gst.compo_items_edit(5), 2);
+        assert_eq!(gst.compo_items_copy(5), 5);
         assert_eq!(gst.compo_bytes(19), 0);
         assert_eq!(gst.compo_bytes(20), 1);
 
