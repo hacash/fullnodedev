@@ -141,6 +141,18 @@ macro_rules! ostbranch {
     }
 }
 
+macro_rules! call { ($mode: ident, $sig: expr, $tar: expr, $isc: expr) =>{
+    Call(Funcptr{
+        mode: $mode,
+        is_callcode: $isc,
+        target: $tar,
+        fnsign: $sig,
+    })
+}}
+macro_rules! callinner { ($tar: expr) =>{
+    call!(Inner, pcutbuf!(FN_SIGN_WIDTH), $tar, false)
+}}
+
 macro_rules! funcptr {
     ($codes: expr, $pc: expr, $mode: expr) => {
         {
@@ -777,34 +789,14 @@ pub fn execute_code(
                         // CALLCODE inherits current mode permissions, and marks in_callcode
                         let idx = itrparamu8!(codes, *pc);
                         let sig = itrbuf!(codes, *pc, FN_SIGN_WIDTH);
-                        exit = Call(Funcptr{
-                            mode,
-                            is_callcode: true,
-                            target: CallTarget::Libidx(idx),
-                            fnsign: sig,
-                        })
+                        exit = call!(mode, sig, CallTarget::Libidx(idx), true);
                     },
-                    CALLPURE => exit = funcptr!(codes, *pc, Pure),
-                    CALLVIEW => exit = funcptr!(codes, *pc, View),
-                    CALL =>       exit = funcptr!(codes, *pc, Outer),
-                    CALLTHIS =>   exit = Call(Funcptr{
-                        mode: Inner,
-                        is_callcode: false,
-                        target: CallTarget::This,
-                        fnsign: pcutbuf!(FN_SIGN_WIDTH),
-                    }),
-                    CALLSELF =>   exit = Call(Funcptr{
-                        mode: Inner,
-                        is_callcode: false,
-                        target: CallTarget::Self_,
-                        fnsign: pcutbuf!(FN_SIGN_WIDTH),
-                    }),
-                    CALLSUPER =>  exit = Call(Funcptr{
-                        mode: Inner,
-                        is_callcode: false,
-                        target: CallTarget::Super,
-                        fnsign: pcutbuf!(FN_SIGN_WIDTH),
-                    }),
+                    CALLPURE  => exit = funcptr!(codes, *pc, Pure),
+                    CALLVIEW  => exit = funcptr!(codes, *pc, View),
+                    CALL      => exit = funcptr!(codes, *pc, Outer),
+                    CALLTHIS  => exit = callinner!(CallTarget::This),
+                    CALLSELF  => exit = callinner!(CallTarget::Self_),
+                    CALLSUPER => exit = callinner!(CallTarget::Super),
                     /* CALLDYN =>    exit = Call(Funcptr{ // Outer
                         mode: Outer,
                         target: CallTarget::Addr(ops.pop()?.checked_contract_address()?),
