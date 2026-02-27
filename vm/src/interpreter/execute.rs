@@ -406,8 +406,8 @@ pub fn execute_code(
             }
             POP    => { ops.pop()?; } // drop
             POPN   => { ops.popn(pu8!())?; },
-            PICK0  => ops.pick(0)?,
-            PICK   => ops.pick(pu8!())?,
+            ROLL0  => ops.roll(0)?,
+            ROLL   => ops.roll(pu8!())?,
             SWAP   => ops.swap()?,
             REV    => ops.reverse(pu8!())?, // reverse
             // CHOOSE: pop condition; if false swap the remaining two values so

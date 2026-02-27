@@ -280,7 +280,7 @@ param { owner amount fee }
 ```
 
 - 必须出现在函数体开头
-- 规范 IR：`UPLIST(PICK0, P0)`
+- 规范 IR：`UPLIST(ROLL0, P0)`
 
 ### 6.2 `callcode lib_idx::func_sig`
 

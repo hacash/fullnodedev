@@ -313,7 +313,7 @@ mod amm {
         let shares_codes = compile_fitsh_bytecode(
             r##"
             // get shares
-            var lq_k = pick(0) ++ "_shares"
+            var lq_k = roll(0) ++ "_shares"
             var my_shares = storage_load(lq_k)
             if my_shares is nil {
                 return 0

@@ -11,7 +11,7 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
     POP, NOP, NT, END, RET, ABT, ERR, AST, PRT
 - 2: `all other opcode`
 - 3: BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE
-- 4: DUPN, POPN, PICK,
+- 4: DUPN, POPN, ROLL,
     PBUF, PBUFL,
     MOD, MUL, DIV, XOP, 
     HREAD, HREADU, HREADUL, HSLICE, HGROW,

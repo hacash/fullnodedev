@@ -153,7 +153,7 @@ impl Stack {
     }
 
     #[inline(always)]
-    pub fn pick(&mut self, x: u8) -> VmrtErr {
+    pub fn roll(&mut self, x: u8) -> VmrtErr {
         let x = x as usize;
         let idx = self.datas.len() as i32 - x as i32 - 1;
         if idx < 0 {

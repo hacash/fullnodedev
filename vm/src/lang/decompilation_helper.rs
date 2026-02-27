@@ -91,22 +91,22 @@ impl<'a> DecompilationHelper<'a> {
             return None;
         }
         let node = &arr.subs[start_idx];
-        // Canonical param-unpack IR form for stable roundtrip: UPLIST(PICK0, P0)
+        // Canonical param-unpack IR form for stable roundtrip: UPLIST(ROLL0, P0)
         let is_param_unpack = if let Some(double) = node.as_any().downcast_ref::<IRNodeDouble>() {
             if double.inst != UPLIST {
                 false
             } else {
-                let subx_is_pick0 = double
+                let subx_is_roll0 = double
                     .subx
                     .as_any()
                     .downcast_ref::<IRNodeLeaf>()
-                    .is_some_and(|leaf| leaf.inst == PICK0);
+                    .is_some_and(|leaf| leaf.inst == ROLL0);
                 let suby_is_p0 = double
                     .suby
                     .as_any()
                     .downcast_ref::<IRNodeLeaf>()
                     .is_some_and(|leaf| leaf.inst == P0);
-                subx_is_pick0 && suby_is_p0
+                subx_is_roll0 && suby_is_p0
             }
         } else {
             false

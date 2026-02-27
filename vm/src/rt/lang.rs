@@ -259,8 +259,8 @@ irfn_define! {
     DUP        : 0, 0, 1,     dump
     DUPN       : 1, 0, 1,     dump_n
     // POP        : 0, 255, 0,   pop POPN       : 1, 255, 0,   pop_n
-    PICK0      : 0, 0, 1,     pick_0
-    PICK       : 1, 0, 1,     pick
+    ROLL0      : 0, 0, 1,     roll_0
+    ROLL       : 1, 0, 1,     roll
     SWAP       : 0, 2, 2,     swap
     // REV        : 1, 255, 255, reverse
     CAT        : 0, 2, 1,     concat

@@ -43,7 +43,7 @@ impl GasTable {
         gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE]);
         // "Medium" cost ops (includes some O(n) stack ops that were previously default-2).
         gst.set(4,  &[
-            DUPN, POPN, PICK,
+            DUPN, POPN, ROLL,
             PBUF, PBUFL,
             MOD, MUL, DIV, XOP, 
             HREAD, HREADU, HREADUL, HSLICE, HGROW,
@@ -385,7 +385,7 @@ mod gas_budget_codec_tests {
             ]),
             (3, &[BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE]),
             (4, &[
-                DUPN, POPN, PICK,
+                DUPN, POPN, ROLL,
                 PBUF, PBUFL,
                 MOD, MUL, DIV, XOP,
                 HREAD, HREADU, HREADUL, HSLICE, HGROW,

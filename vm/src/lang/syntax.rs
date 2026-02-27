@@ -792,11 +792,11 @@ impl Syntax {
         }
         self.source_map.register_param_names(param_names)?;
         if params == 1 {
-            // Single param: PUT 0 PICK0 (PICK0 moves top to top, PUT consumes; no POP needed)
-            Ok(push_single_p1(PUT, 0, push_inst(PICK0)))
+            // Single param: PUT 0 ROLL0 (ROLL0 moves top to top, PUT consumes; no POP needed)
+            Ok(push_single_p1(PUT, 0, push_inst(ROLL0)))
         } else {
-            // Multi param: UPLIST(PICK0, P0) (caller pushes list)
-            Ok(push_double(UPLIST, PICK0, P0))
+            // Multi param: UPLIST(ROLL0, P0) (caller pushes list)
+            Ok(push_double(UPLIST, ROLL0, P0))
         }
     }
 
@@ -1498,12 +1498,12 @@ impl Syntax {
                     self.irnode.push(push_inst_noret(POP));
                 }
                 1 => {
-                    // Single param: PUT 0 PICK0 (PICK0 moves top to top, PUT consumes; no POP needed)
-                    self.irnode.push(push_single_p1(PUT, 0, push_inst(PICK0)));
+                    // Single param: PUT 0 ROLL0 (ROLL0 moves top to top, PUT consumes; no POP needed)
+                    self.irnode.push(push_single_p1(PUT, 0, push_inst(ROLL0)));
                 }
                 _ => {
-                    // Multi param: UPLIST(PICK0, P0) (caller pushes list)
-                    let unpack = push_double(UPLIST, PICK0, P0);
+                    // Multi param: UPLIST(ROLL0, P0) (caller pushes list)
+                    let unpack = push_double(UPLIST, ROLL0, P0);
                     self.irnode.push(unpack);
                 }
             }

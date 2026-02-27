@@ -467,7 +467,7 @@ impl<'a> Formater<'a> {
         // Even when `trim_root_block` / `trim_param_unpack` are disabled, we still must keep
         // decompile->recompile closed.
         // IMPORTANT: when `trim_param_unpack == false`, we must NEVER emit `param { ... }`.
-        // Instead, we keep the raw `UPLIST(PICK0,P0)` instruction in output, and (when SourceMap
+        // Instead, we keep the raw `UPLIST(ROLL0,P0)` instruction in output, and (when SourceMap
         // provides parameter names) we emit lightweight slot-binding lines: `var <name> $<i>`.
         let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
         // If `trim_param_unpack=true`, we may rewrite the canonical UPLIST node into `param { ... }`.

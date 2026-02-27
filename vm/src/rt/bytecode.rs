@@ -74,8 +74,8 @@ pub enum Bytecode {
     DUPN                = 0x41, // *+     copy u8
     POP                 = 0x42, // a      pop top
     POPN                = 0x43, // *a...b pop n
-    PICK0               = 0x44, // +      pick0 
-    PICK                = 0x45, // *+     pick
+    ROLL0               = 0x44, // +      roll0 
+    ROLL                = 0x45, // *+     roll
     SWAP                = 0x46, // a,b++  swap  b,a = a,b
     REV                 = 0x47, // a...b  reverse u8
     CAT                 = 0x48, // a,b+   buf: b + a
@@ -365,8 +365,8 @@ bytecode_metadata_define!{
     DUPN       : 1, 0, 1,     dump_n
     POP        : 0, 255, 0,   pop
     POPN       : 1, 255, 0,   pop_n
-    PICK0      : 0, 0, 1,     pick_0
-    PICK       : 1, 0, 1,     pick
+    ROLL0      : 0, 0, 1,     roll_0
+    ROLL       : 1, 0, 1,     roll
     SWAP       : 0, 2, 2,     swap
     REV        : 1, 255, 255, reverse
     CAT        : 0, 2, 1,     concat

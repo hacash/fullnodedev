@@ -280,7 +280,7 @@ param { owner amount fee }
 ```
 
 - Must appear at the top of the function body
-- Canonical IR: `UPLIST(PICK0, P0)`
+- Canonical IR: `UPLIST(ROLL0, P0)`
 
 ### 6.2 `callcode lib_idx::func_sig`
 

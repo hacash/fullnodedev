@@ -54,7 +54,7 @@ Rule of thumb:
 - `let name = expr`: immutable slot binding that runs eagerly and cannot be reassigned; var declarations without further updates are decompiled into `let` statements.  
 - `bind name = expr`: lazy/cached macro binding; declarations store the expression template and never emit `PUT`/`GET`. Every reference to `name` clones the template, so it behaves like an inline macro. Because `bind` does not allocate slots, there is no `$slot` form anymore; use `var` whenever you need a reusable slot.
 - `lib Foo = idx [: address]?`: binds a short alias to an external library/contract, optionally with an explicit address, for use in `Foo.method(...)` calls.  
-- `param { a b c }`: declares function parameters at the top of the body; the implementation uses `PICK` and `UPLIST` to populate slots (`syntax.rs:412-452`).  
+- `param { a b c }`: declares function parameters at the top of the body; the implementation uses `ROLL` and `UPLIST` to populate slots (`syntax.rs:412-452`).  
 - `callcode Foo::bar` and `bytecode {...}` inject low-level bytecode directly; use them sparingly, as the compiler does not enforce safety and they can bypass language invariants (`syntax.rs:738-780`).  
 - `log`, `print`, `assert`, `throw`, `return`, `end`, and `abort` map directly to IR primitives.  
 - Avoid naming `list`/`map` blocks the same as `bind` bindings, and do not reuse slots or empty keys to prevent runtime errors.

@@ -89,7 +89,7 @@ mod call {
     #[test]
     fn deploy() {
         let recursion_fn = r##"
-            var num = pick(0)
+            var num = roll(0)
             // print num 
             if num >= 30 {
                 return "overflow"

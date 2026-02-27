@@ -187,7 +187,7 @@ mod deploy {
 
         let payable_hac_codes = compile_fitsh_bytecode(
             r##"
-            var pms $0 = pick(0)
+            var pms $0 = roll(0)
             var adr $1 = 0
             var res $2 = 0
             assert type_id(pms) == 15
