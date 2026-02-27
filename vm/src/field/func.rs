@@ -68,10 +68,7 @@ impl FuncArgvTypes {
 
     fn def_size(&self) -> usize {
         let n = bit4r!(self.typnum.uint()) as usize;
-        match n {
-            0 => 0,
-            _ => n / 2 + 1
-        }
+        (n + 1) / 2
     }
 
     pub fn param_count(&self) -> usize {
@@ -120,7 +117,7 @@ impl FuncArgvTypes {
                 define: vec![],
             })
         }
-        let z = n / 2 + 1;
+        let z = (n + 1) / 2;
         let mut dfs = vec![0u8; z];
         for i in 0..n {
             let ty = tys[i]; 
@@ -154,7 +151,7 @@ impl FuncArgvTypes {
             return Ok(vec![])
         }
         let mut tys = vec![ValueTy::Nil; n];
-        let z = n / 2 + 1;
+        let z = (n + 1) / 2;
         if z > self.define.len() {
             return errf!("FuncArgvTypes to bytes error")
         }
@@ -234,5 +231,31 @@ mod code_stuff_tests {
         let code_stuff = CodeStuff::try_from(pkg.clone()).unwrap();
         let back = CodePkg::try_from(code_stuff).unwrap();
         assert_eq!(back, pkg);
+    }
+
+    #[test]
+    fn func_argv_types_even_params_uses_exact_nibble_bytes() {
+        let src = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U16]).unwrap();
+        let raw = src.serialize();
+        assert_eq!(raw.len(), 2);
+
+        let mut parsed = FuncArgvTypes::new();
+        let used = parsed.parse(&raw).unwrap();
+        assert_eq!(used, raw.len());
+        assert_eq!(parsed.param_count(), 2);
+        assert_eq!(parsed.param_types().unwrap(), vec![ValueTy::U8, ValueTy::U16]);
+    }
+
+    #[test]
+    fn func_argv_types_odd_params_still_roundtrip() {
+        let src = FuncArgvTypes::from_types(Some(ValueTy::U64), vec![ValueTy::U8, ValueTy::U16, ValueTy::U32]).unwrap();
+        let raw = src.serialize();
+        assert_eq!(raw.len(), 3);
+
+        let mut parsed = FuncArgvTypes::new();
+        let used = parsed.parse(&raw).unwrap();
+        assert_eq!(used, raw.len());
+        assert_eq!(parsed.output_type().unwrap(), Some(ValueTy::U64));
+        assert_eq!(parsed.param_types().unwrap(), vec![ValueTy::U8, ValueTy::U16, ValueTy::U32]);
     }
 }

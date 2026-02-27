@@ -9,7 +9,15 @@ fn mei_to_hac(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 }
 
 fn hac_to_mei(_: u64, buf: &[u8]) -> VmrtRes<Value> {
-    let hacash = Amount::build(buf).map_ire(NativeFuncError)?;
+    let (hacash, used) = Amount::create(buf).map_ire(NativeFuncError)?;
+    if used != buf.len() {
+        return itr_err_fmt!(
+            NativeFuncError,
+            "call hac_to_mei parse length mismatch: used {}, total {}",
+            used,
+            buf.len()
+        )
+    }
     let Ok(mei) = hacash.to_mei_u64() else {
         return itr_err_fmt!(NativeFuncError, "call hac_to_mei overflow")
     };
@@ -70,4 +78,22 @@ fn fold64_to_u64(_: u64, buf: &[u8]) -> VmrtRes<Value> {
         )
     }
     Ok(Value::U64(fold.uint()))
+}
+
+#[cfg(test)]
+mod amount_native_tests {
+    use super::*;
+
+    #[test]
+    fn hac_to_mei_rejects_trailing_bytes() {
+        let mut raw = Amount::mei(1).serialize();
+        raw.push(0xAA);
+        assert!(hac_to_mei(0, &raw).is_err());
+    }
+
+    #[test]
+    fn hac_to_mei_accepts_canonical_amount_bytes() {
+        let raw = Amount::mei(1).serialize();
+        assert_eq!(hac_to_mei(0, &raw).unwrap(), Value::U64(1));
+    }
 }
