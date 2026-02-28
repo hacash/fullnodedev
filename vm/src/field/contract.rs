@@ -335,24 +335,6 @@ impl ContractSto {
 		false
 	}
 
-	pub fn drop_abst_call(&mut self, ac: AbstCall) -> bool {
-		let mut k: Option<usize> = None;
-		let funcs = self.abstcalls.as_list();
-		for i in 0..funcs.len() {
-			let a = &funcs[i];
-			if ac as u8 == a.sign[0] {
-				k = Some(i);
-				break;
-			}
-		}
-		if let Some(i) = k {
-			self.abstcalls.drop(i).unwrap();
-			return true
-		}
-		false
-
-	}
-
 	/* return Upgrade or Append for check */
 	pub fn merge(&mut self, src: &ContractSto, hei: u64) -> VmrtRes<bool> {
 		use ItrErrCode::*;

@@ -132,6 +132,100 @@ impl Resoure {
         Ok(None)
     }
 
+    fn find_contract_no_warm(
+        &mut self,
+        vmsta: &mut VMState,
+        addr: &ContractAddress,
+    ) -> VmrtRes<Arc<ContractObj>> {
+        use ItrErrCode::*;
+        let Some(state_ed) = vmsta.contract_edition(addr) else {
+            return itr_err_fmt!(
+                NotFindContract,
+                "cannot find contract edition {}",
+                addr.to_readable()
+            );
+        };
+        if let Some(c) = self.contracts.get(addr) {
+            if c.edition == state_ed {
+                return Ok(c.clone());
+            }
+        }
+        let Some(c) = vmsta.contract(addr) else {
+            return itr_err_fmt!(
+                NotFindContract,
+                "cannot find contract {}",
+                addr.to_readable()
+            );
+        };
+        let cobj = Arc::new(c.into_obj()?);
+        if cobj.edition != state_ed {
+            return itr_err_fmt!(
+                ContractError,
+                "contract edition mismatch {}",
+                addr.to_readable()
+            );
+        }
+        Ok(cobj)
+    }
+
+    fn find_fn_by_search_inherits(
+        &mut self,
+        vmsta: &mut VMState,
+        addr: &ContractAddress,
+        fnkey: FnKey,
+    ) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
+        let mut visiting = std::collections::HashSet::new();
+        let mut visited = std::collections::HashSet::new();
+        let res = self.find_fn_by_search_inherits_rec(
+            vmsta,
+            addr,
+            &fnkey,
+            &mut visiting,
+            &mut visited,
+        )?;
+        Ok(res.map(|(owner, func)| {
+            let change = maybe!(&owner == addr, None, Some(owner));
+            (change, func)
+        }))
+    }
+
+    fn find_fn_by_search_inherits_rec(
+        &mut self,
+        vmsta: &mut VMState,
+        addr: &ContractAddress,
+        fnkey: &FnKey,
+        visiting: &mut std::collections::HashSet<ContractAddress>,
+        visited: &mut std::collections::HashSet<ContractAddress>,
+    ) -> VmrtRes<Option<(ContractAddress, Arc<FnObj>)>> {
+        if visiting.contains(addr) {
+            return itr_err_fmt!(InheritsError, "inherits cyclic");
+        }
+        if visited.contains(addr) {
+            return Ok(None);
+        }
+        visiting.insert(addr.clone());
+        let csto = self.find_contract_no_warm(vmsta, addr)?;
+        let found = match fnkey {
+            FnKey::Abst(s) => csto.abstfns.get(s),
+            FnKey::User(u) => csto.userfns.get(u),
+        };
+        if let Some(c) = found {
+            visiting.remove(addr);
+            return Ok(Some((addr.clone(), c.clone())));
+        }
+        for ih in csto.sto.inherits.as_list() {
+            if let Some(found) =
+                self.find_fn_by_search_inherits_rec(vmsta, ih, fnkey, visiting, visited)?
+            {
+                visiting.remove(addr);
+                return Ok(Some(found));
+            }
+        }
+        visiting.remove(addr);
+        visited.insert(addr.clone());
+        Ok(None)
+    }
+
     fn resolve_lib_addr_by_list(
         &self,
         adrlist: &Vec<ContractAddress>,
@@ -198,27 +292,25 @@ impl Resoure {
         Ok(None)
     }
 
+    pub fn find_abstfn(
+        &mut self,
+        ctx: &mut dyn Context,
+        addr: &ContractAddress,
+        scty: AbstCall,
+    ) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
+        let mut vmsta = VMState::wrap(ctx.state());
+        self.find_fn_by_search_inherits(&mut vmsta, addr, FnKey::Abst(scty))
+    }
+
     pub fn load_abstfn(
         &mut self,
         ctx: &mut dyn Context,
+        gas: &mut Option<&mut i64>,
         addr: &ContractAddress,
         scty: AbstCall,
     ) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
         let mut vmsta = VMState::wrap(ctx.state());
-        let mut gas = None;
-        self.load_fn_by_search_inherits(&mut vmsta, &mut gas, addr, FnKey::Abst(scty))
-    }
-
-    pub fn load_abstfn_with_gas(
-        &mut self,
-        ctx: &mut dyn Context,
-        gas: &mut i64,
-        addr: &ContractAddress,
-        scty: AbstCall,
-    ) -> VmrtRes<Option<(Option<ContractAddress>, Arc<FnObj>)>> {
-        let mut vmsta = VMState::wrap(ctx.state());
-        let mut gas = Some(gas);
-        self.load_fn_by_search_inherits(&mut vmsta, &mut gas, addr, FnKey::Abst(scty))
+        self.load_fn_by_search_inherits(&mut vmsta, gas, addr, FnKey::Abst(scty))
     }
 
     /* return call target resolve result */

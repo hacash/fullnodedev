@@ -535,7 +535,7 @@ fn contract_has_abst_call_by_inherits(
 ) -> Ret<bool> {
     let mut loader = Resoure::create(ctx.env().block.height);
     let found = loader
-        .load_abstfn(ctx, addr, call)
+        .find_abstfn(ctx, addr, call)
         .map_err(|e| e.to_string())?;
     Ok(found.is_some())
 }
