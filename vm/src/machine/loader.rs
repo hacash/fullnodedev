@@ -21,6 +21,22 @@ impl Resoure {
         if self.contracts.len() >= self.space_cap.load_contract {
             return itr_err_code!(OutOfLoadContract);
         }
+        let Some(rev) = vmsta.contractrev(addr) else {
+            return itr_err_fmt!(
+                NotFindContract,
+                "cannot find contract revision {}",
+                addr.to_readable()
+            );
+        };
+        let rev = rev.uint();
+        if let Some(obj) = global_machine_manager().contract_cache().get(addr, rev) {
+            let cbytes = obj.sto.size();
+            self.contracts.insert(addr.clone(), obj.clone()); // tx-local cache
+            if let Some(g) = gas.as_deref_mut() {
+                self.settle_new_contract_load_gas(g, cbytes)?;
+            }
+            return Ok(obj);
+        }
         let Some(c) = vmsta.contract(addr) else {
             return itr_err_fmt!(
                 NotFindContract,
@@ -28,15 +44,7 @@ impl Resoure {
                 addr.to_readable()
             );
         };
-        let rev = c.metas.revision.uint();
         let cbytes = c.size();
-        if let Some(obj) = global_machine_manager().contract_cache().get(addr, rev) {
-            self.contracts.insert(addr.clone(), obj.clone()); // tx-local cache
-            if let Some(g) = gas.as_deref_mut() {
-                self.settle_new_contract_load_gas(g, cbytes)?;
-            }
-            return Ok(obj);
-        }
         let cobj = Arc::new(c.into_obj()?);
         self.contracts.insert(addr.clone(), cobj.clone()); // tx-local cache
         global_machine_manager()

@@ -31,6 +31,7 @@ impl Logs for BlockLogs {
             let k = Self::wnk(height, i);
             self.disk.remove(&k);
         }
+        self.disk.remove(&lnk);
     }
 
     fn height(&self) -> u64 {
@@ -124,4 +125,53 @@ impl BlockLogs {
     }
 
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct MemDisk {
+        kv: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
+    }
+
+    impl DiskDB for MemDisk {
+        fn read(&self, key: &[u8]) -> Option<Vec<u8>> {
+            self.kv.lock().unwrap().get(key).cloned()
+        }
+
+        fn save(&self, key: &[u8], val: &[u8]) {
+            self.kv.lock().unwrap().insert(key.to_vec(), val.to_vec());
+        }
+
+        fn remove(&self, key: &[u8]) {
+            self.kv.lock().unwrap().remove(key);
+        }
+    }
+
+    #[test]
+    fn remove_clears_items_and_length_key() {
+        let disk: Arc<dyn DiskDB> = Arc::new(MemDisk::default());
+        let height = 88u64;
+
+        let mut wr = BlockLogs::wrap(disk.clone()).next(height);
+        wr.push(&Uint1::from(7));
+        wr.push(&Uint1::from(8));
+        wr.write_to_disk();
+
+        let rd = BlockLogs::wrap(disk.clone()).next(height);
+        assert_eq!(rd.len(), 2);
+        assert!(rd.load(height, 0).is_some());
+        rd.remove(height);
+
+        let after = BlockLogs::wrap(disk.clone()).next(height);
+        assert_eq!(after.len(), 0);
+        assert!(after.load(height, 0).is_none());
+
+        after.remove(height);
+        let final_view = BlockLogs::wrap(disk).next(height);
+        assert_eq!(final_view.len(), 0);
+    }
 }

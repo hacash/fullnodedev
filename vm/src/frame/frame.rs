@@ -48,13 +48,21 @@ pub struct Frame {
     pub in_callcode: bool,
     pub depth: usize,
     pub types: Option<FuncArgvTypes>,
-    pub callcode_caller_types: Option<FuncArgvTypes>,
+    pub ret_check_policy: RetCheckPolicy,
     pub codes: ByteView,
     pub oprnds: Stack,
     pub locals: Stack,
     pub heap: Heap,
     pub state_addr: ContractAddress,
     pub code_owner: ContractAddress,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum RetCheckPolicy {
+    #[default]
+    NonCallcode,
+    CallcodeCallerNoRetContract,
+    CallcodeCallerRetContract(FuncArgvTypes),
 }
 
 impl Frame {
@@ -115,7 +123,7 @@ impl Frame {
         height: u64,
         param: Option<Value>,
     ) -> VmrtErr {
-        self.callcode_caller_types = None;
+        self.ret_check_policy = RetCheckPolicy::NonCallcode;
         if let Some(mut p) = param {
             p.canbe_func_argv()?;
             if let Some(vtys) = &fnobj.agvty {

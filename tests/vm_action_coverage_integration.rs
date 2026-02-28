@@ -57,7 +57,7 @@ mod action_coverage {
     }
 
     fn insert_contract(state: &mut dyn State, addr: &ContractAddress, sto: &ContractSto) {
-        VMState::wrap(state).contract_set(addr, sto);
+        VMState::wrap(state).contract_set_sync_revision(addr, sto);
     }
 
     fn make_public_contract(func_name: &str, body: &str) -> ContractSto {

@@ -134,7 +134,10 @@ impl CallFrame {
                             height,
                             Some(Value::Nil),
                         )?;
-                        curr!().callcode_caller_types = caller_types;
+                        curr!().ret_check_policy = match caller_types {
+                            Some(types) => RetCheckPolicy::CallcodeCallerRetContract(types),
+                            None => RetCheckPolicy::CallcodeCallerNoRetContract,
+                        };
                         continue;
                     }
 
@@ -195,12 +198,19 @@ impl CallFrame {
                     if matches!(exit, Abort | Throw) {
                         return itr_err_fmt!(ThrowAbort, "VM return error: {}", retv);
                     }
-                    if let Some(caller_types) = curr!().callcode_caller_types.take() {
-                        // CALLCODE is treated as implementation-level delegation: only the original caller's return contract is enforced here.
-                        retv.canbe_func_retv()?;
-                        caller_types.check_output(&mut retv)?;
-                    } else {
-                        curr!().check_output_type(&mut retv)?;
+                    let ret_policy = std::mem::replace(
+                        &mut curr!().ret_check_policy,
+                        RetCheckPolicy::NonCallcode,
+                    );
+                    match ret_policy {
+                        RetCheckPolicy::NonCallcode => curr!().check_output_type(&mut retv)?,
+                        // CALLCODE without caller return contract keeps only base return-value validity checks.
+                        RetCheckPolicy::CallcodeCallerNoRetContract => retv.canbe_func_retv()?,
+                        // CALLCODE with caller return contract must follow caller contract, not callee's.
+                        RetCheckPolicy::CallcodeCallerRetContract(caller_types) => {
+                            retv.canbe_func_retv()?;
+                            caller_types.check_output(&mut retv)?;
+                        }
                     }
                     // Pop current frame and reclaim resources
                     self.pop().unwrap().reclaim(r);

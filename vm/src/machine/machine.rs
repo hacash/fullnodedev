@@ -120,6 +120,16 @@ impl VM for MachineBox {
         // keep warmup/cache channel (`contracts`) and gas accounting monotonic.
     }
 
+    fn invalidate_contract_cache(&mut self, addr: &Address) {
+        let Ok(caddr) = ContractAddress::from_addr(*addr) else {
+            return;
+        };
+        if let Some(m) = self.machine.as_mut() {
+            m.r.contracts.remove(&caddr);
+        }
+        global_machine_manager().contract_cache().remove_addr(&caddr);
+    }
+
     fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
         use ExecMode::*;
         let VMCall {
@@ -270,6 +280,7 @@ impl Machine {
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> Ret<Value> {
+        // Caller must pre-validate code bytes. Production entry actions run convert_and_check before setup_vm_run.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
         let lib_adr = env
@@ -330,6 +341,7 @@ impl Machine {
         codes: ByteView,
         param: Value,
     ) -> Ret<Value> {
+        // Caller must pre-validate lock script bytes. Production P2SH flow verifies inputs before VM call.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
         let rv = self.do_call(
@@ -482,9 +494,9 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_base, &base.into_sto());
-            vmsta.contract_set(&contract_parent, &parent.into_sto());
-            vmsta.contract_set(&contract_child, &child.into_sto());
+            vmsta.contract_set_sync_revision(&contract_base, &base.into_sto());
+            vmsta.contract_set_sync_revision(&contract_parent, &parent.into_sto());
+            vmsta.contract_set_sync_revision(&contract_child, &child.into_sto());
         }
 
         // Main script calls contract_main.run() using tx-provided libs (index 0).
@@ -560,8 +572,8 @@ mod machine_test {
             let mut ext_state = StateMem::default();
             {
                 let mut vmsta = crate::VMState::wrap(&mut ext_state);
-                vmsta.contract_set(&contract_parent, &parent_sto.clone());
-                vmsta.contract_set(&contract_child, &child_sto.clone());
+                vmsta.contract_set_sync_revision(&contract_parent, &parent_sto.clone());
+                vmsta.contract_set_sync_revision(&contract_child, &child_sto.clone());
             }
 
             let mut env = Env::default();
@@ -643,7 +655,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_target, &target_sto);
+            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
         }
 
         let script = r##"
@@ -707,8 +719,8 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_parent, &parent_sto);
-            vmsta.contract_set(&contract_child, &child_sto);
+            vmsta.contract_set_sync_revision(&contract_parent, &parent_sto);
+            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
         }
 
         let mut env = Env::default();
@@ -759,8 +771,8 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_parent, &parent_sto);
-            vmsta.contract_set(&contract_child, &child_sto);
+            vmsta.contract_set_sync_revision(&contract_parent, &parent_sto);
+            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
         }
 
         let mut env = Env::default();
@@ -838,7 +850,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_target, &target_sto);
+            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
         }
 
         let view_script = r##"
@@ -884,7 +896,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_target, &target_sto);
+            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
         }
 
         let need_arg_script = r##"
@@ -909,6 +921,35 @@ mod machine_test {
         let nested_res =
             run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
         assert_err_contains(nested_res, "CallInCallcode");
+    }
+
+    #[test]
+    fn callcode_without_caller_ret_contract_ignores_callee_ret_contract() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 33);
+        let target_sto = Contract::new()
+            .func(
+                Func::new("ret_mismatch")
+                    .unwrap()
+                    .types(Some(VT::Address), vec![])
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            callcode C::ret_mismatch
+            end
+        "##;
+        let rv = run_main_script(base_addr, vec![contract_target], ext_state, script)
+            .expect("callcode should follow caller(no contract) return policy");
+        assert_eq!(rv, Value::U8(0));
     }
 
     #[test]
@@ -943,9 +984,9 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_a, &a_sto);
-            vmsta.contract_set(&contract_b, &b_sto);
-            vmsta.contract_set(&contract_child, &child_sto);
+            vmsta.contract_set_sync_revision(&contract_a, &a_sto);
+            vmsta.contract_set_sync_revision(&contract_b, &b_sto);
+            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
         }
 
         let script = r##"
@@ -986,8 +1027,8 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_parent, &parent_sto);
-            vmsta.contract_set(&contract_child, &child_sto);
+            vmsta.contract_set_sync_revision(&contract_parent, &parent_sto);
+            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
         }
 
         let script = r##"
@@ -1010,7 +1051,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set(&contract_target, &target_sto);
+            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
         }
 
         let script = r##"

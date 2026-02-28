@@ -37,6 +37,8 @@ pub trait VM {
     /// Cross-generation fallback restore used when snapshot side had VMNil but current side has initialized VM.
     /// Must rollback branch-local volatile state while preserving warmup/cache/gas monotonic channels.
     fn restore_but_keep_warmup(&mut self) {}
+    /// Invalidate contract caches by address (global and tx-local, if implementation supports it).
+    fn invalidate_contract_cache(&mut self, _: &Address) {}
 }
 
 

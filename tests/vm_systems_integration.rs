@@ -27,7 +27,7 @@ fn contract_addr(main: &Address, nonce: u32) -> ContractAddress {
 
 fn insert_contract(state: &mut dyn State, addr: &ContractAddress, sto: &ContractSto) {
     let mut vm_state = VMState::wrap(state);
-    vm_state.contract_set(addr, sto);
+    vm_state.contract_set_sync_revision(addr, sto);
 }
 
 fn make_public_contract(func_name: &str, body: &str) -> ContractSto {

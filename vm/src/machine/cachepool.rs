@@ -306,6 +306,20 @@ impl ContractCacheInner {
         self.probation_lru.clear();
         self.protected_lru.clear();
     }
+
+    fn remove_addr(&mut self, addr: &ContractAddress) -> usize {
+        let keys: Vec<ContractCacheKey> = self
+            .map
+            .keys()
+            .filter(|k| &k.addr == addr)
+            .cloned()
+            .collect();
+        let removed = keys.len();
+        for key in keys {
+            self.remove_entry(&key);
+        }
+        removed
+    }
 }
 
 /// Global contract cache pool (cross-transaction, cross-block).
@@ -383,6 +397,12 @@ impl ContractCachePool {
         let inner = unsafe { &mut *self.inner.get() };
         inner.insert(addr, sto, obj);
     }
+
+    pub fn remove_addr(&self, addr: &ContractAddress) -> usize {
+        let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
+        let inner = unsafe { &mut *self.inner.get() };
+        inner.remove_addr(addr)
+    }
 }
 
 #[cfg(test)]
@@ -403,6 +423,31 @@ mod tests {
 
     fn create_test_contract_obj() -> ContractObj {
         ContractObj::default()
+    }
+
+    #[test]
+    fn test_remove_addr_clears_all_revisions_of_same_addr() {
+        let pool = ContractCachePool::default();
+        pool.configure(ContractCacheConfig {
+            max_bytes: 10000,
+            ..ContractCacheConfig::default()
+        });
+        let addr_a = create_test_contract_address(1);
+        let addr_b = create_test_contract_address(2);
+        let obj = Arc::new(create_test_contract_obj());
+        let sto_a1 = create_test_contract_sto(1);
+        let sto_a2 = create_test_contract_sto(2);
+        let sto_b1 = create_test_contract_sto(1);
+        pool.insert(&addr_a, &sto_a1, obj.clone());
+        pool.insert(&addr_a, &sto_a2, obj.clone());
+        pool.insert(&addr_b, &sto_b1, obj.clone());
+        assert!(pool.get(&addr_a, 1).is_some());
+        assert!(pool.get(&addr_a, 2).is_some());
+        assert!(pool.get(&addr_b, 1).is_some());
+        assert_eq!(pool.remove_addr(&addr_a), 2);
+        assert!(pool.get(&addr_a, 1).is_none());
+        assert!(pool.get(&addr_a, 2).is_none());
+        assert!(pool.get(&addr_b, 1).is_some());
     }
 
     #[test]

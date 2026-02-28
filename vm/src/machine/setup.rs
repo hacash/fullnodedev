@@ -41,6 +41,7 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
 }
 
 pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u8]>, pm: Value) -> Ret<(i64, Value)> {
+    // Bytecode verification is intentionally handled by upper-layer action validators before calling setup_vm_run.
     // check tx type
     const TY3: u8 = TransactionType3::TYPE;
     let txty = ctx.env().tx.ty;
