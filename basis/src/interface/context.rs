@@ -16,6 +16,8 @@ pub trait Context : StateOperat {
     /// This must be called whenever the underlying tx/env is replaced for a new transaction.
     fn reset_for_new_tx(&mut self, _: &dyn TransactionRead);
     fn action_call(&mut self, _: u16, _: Vec<u8>) -> BRet<(u32, Vec<u8>)>;
+    fn action_exec_from(&self) -> ActExecFrom { ActExecFrom::TxLoop }
+    fn action_exec_from_set(&mut self, _: ActExecFrom) {}
     fn env(&self) -> &Env;
     fn addr(&self, _:&AddrOrPtr) -> Ret<Address>;
     fn check_sign(&mut self, _: &Address) -> Rerr;

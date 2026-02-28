@@ -47,7 +47,7 @@ action_define!{ ContractDeploy, 40,
         // spend protocol fee
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, charge_bytes)?;
         // save the contract
-        vmsto!(ctx).contract_set_sync_revision(&caddr, &self.contract);
+        vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
         // call the construct function
         let cargv = self.construct_argv.to_vec();
         if cargv.len() > SpaceCap::new(hei).max_value_size {
@@ -114,7 +114,7 @@ action_define!{ ContractUpdate, 41,
             Value::Nil,
         )?;
         // save the new
-        vmsto!(ctx).contract_set_sync_revision(&caddr, &new_contract);
+        vmsto!(ctx).contract_set_sync_edition(&caddr, &new_contract);
         let caddr_real = caddr.to_addr();
         ctx.vm().invalidate_contract_cache(&caddr_real);
         Ok(vec![]) 
@@ -640,7 +640,7 @@ mod contract_test {
         {
             let mut vmsta = VMState::wrap(&mut ext_state);
             for (addr, sto) in preload {
-                vmsta.contract_set_sync_revision(&addr, &sto);
+                vmsta.contract_set_sync_edition(&addr, &sto);
             }
         }
 

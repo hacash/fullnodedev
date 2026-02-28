@@ -8,6 +8,21 @@ pub struct CallLoad {
 }
 
 impl Resoure {
+    fn charge_then_warm_tx_cache(
+        &mut self,
+        gas: &mut Option<&mut i64>,
+        addr: &ContractAddress,
+        obj: Arc<ContractObj>,
+        cbytes: usize,
+    ) -> VmrtRes<Arc<ContractObj>> {
+        // No pay, no warm.
+        if let Some(g) = gas.as_deref_mut() {
+            self.settle_new_contract_load_gas(g, cbytes)?;
+        }
+        self.contracts.insert(addr.clone(), obj.clone());
+        Ok(obj)
+    }
+
     pub fn load_contract(
         &mut self,
         vmsta: &mut VMState,
@@ -15,27 +30,25 @@ impl Resoure {
         addr: &ContractAddress,
     ) -> VmrtRes<Arc<ContractObj>> {
         use ItrErrCode::*;
+        let Some(state_ed) = vmsta.contract_edition(addr) else {
+            return itr_err_fmt!(
+                NotFindContract,
+                "cannot find contract edition {}",
+                addr.to_readable()
+            );
+        };
         if let Some(c) = self.contracts.get(addr) {
-            return Ok(c.clone());
+            if c.edition == state_ed {
+                return Ok(c.clone());
+            }
+            self.contracts.remove(addr);
         }
         if self.contracts.len() >= self.space_cap.load_contract {
             return itr_err_code!(OutOfLoadContract);
         }
-        let Some(rev) = vmsta.contractrev(addr) else {
-            return itr_err_fmt!(
-                NotFindContract,
-                "cannot find contract revision {}",
-                addr.to_readable()
-            );
-        };
-        let rev = rev.uint();
-        if let Some(obj) = global_machine_manager().contract_cache().get(addr, rev) {
-            let cbytes = obj.sto.size();
-            self.contracts.insert(addr.clone(), obj.clone()); // tx-local cache
-            if let Some(g) = gas.as_deref_mut() {
-                self.settle_new_contract_load_gas(g, cbytes)?;
-            }
-            return Ok(obj);
+        let cbytes = state_ed.raw_size.uint() as usize;
+        if let Some(obj) = global_machine_manager().contract_cache().get(addr, &state_ed) {
+            return self.charge_then_warm_tx_cache(gas, addr, obj, cbytes);
         }
         let Some(c) = vmsta.contract(addr) else {
             return itr_err_fmt!(
@@ -44,15 +57,16 @@ impl Resoure {
                 addr.to_readable()
             );
         };
-        let cbytes = c.size();
         let cobj = Arc::new(c.into_obj()?);
-        self.contracts.insert(addr.clone(), cobj.clone()); // tx-local cache
-        global_machine_manager()
-            .contract_cache()
-            .insert(addr, &cobj.sto, cobj.clone());
-        if let Some(g) = gas.as_deref_mut() {
-            self.settle_new_contract_load_gas(g, cbytes)?;
+        if cobj.edition != state_ed {
+            return itr_err_fmt!(
+                ContractError,
+                "contract edition mismatch {}",
+                addr.to_readable()
+            );
         }
+        let cobj = self.charge_then_warm_tx_cache(gas, addr, cobj, cbytes)?;
+        global_machine_manager().contract_cache().insert(addr, cobj.clone());
         Ok(cobj)
     }
 
@@ -293,5 +307,67 @@ impl Resoure {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod loader_tests {
+    use super::*;
+    use field::{Address, Uint4};
+    use testkit::sim::state::FlatMemState as StateMem;
+
+    fn test_contract(base: &Address, nonce: u32) -> ContractAddress {
+        ContractAddress::calculate(base, &Uint4::from(nonce))
+    }
+
+    #[test]
+    fn out_of_gas_on_cold_load_does_not_warm_tx_cache() {
+        let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let caddr = test_contract(&base, 700_001);
+        let csto = ContractSto::new();
+
+        let mut state = StateMem::default();
+        VMState::wrap(&mut state).contract_set_sync_edition(&caddr, &csto);
+
+        let mut vmsta = VMState::wrap(&mut state);
+        let mut res = Resoure::create(1);
+        let mut gas_budget = 0i64;
+        let mut gas = Some(&mut gas_budget);
+        let err = match res.load_contract(&mut vmsta, &mut gas, &caddr) {
+            Ok(_) => panic!("expected OutOfGas"),
+            Err(e) => e,
+        };
+        assert_eq!(err.0, ItrErrCode::OutOfGas);
+        assert!(!res.contracts.contains_key(&caddr));
+    }
+
+    #[test]
+    fn cold_load_charges_before_warming_and_hit_is_free() {
+        let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let caddr = test_contract(&base, 700_002);
+        let csto = ContractSto::new();
+        let cbytes = csto.calc_edition().raw_size.uint() as usize;
+
+        let mut state = StateMem::default();
+        VMState::wrap(&mut state).contract_set_sync_edition(&caddr, &csto);
+
+        let mut vmsta = VMState::wrap(&mut state);
+        let mut res = Resoure::create(1);
+        let one_cold_fee = res.gas_extra.load_new_contract + (cbytes as i64 / 64);
+        let mut gas_budget = 10_000i64;
+
+        {
+            let mut gas = Some(&mut gas_budget);
+            let _ = res.load_contract(&mut vmsta, &mut gas, &caddr).unwrap();
+        }
+        assert!(res.contracts.contains_key(&caddr));
+        assert_eq!(gas_budget, 10_000 - one_cold_fee);
+
+        let gas_after_first = gas_budget;
+        {
+            let mut gas = Some(&mut gas_budget);
+            let _ = res.load_contract(&mut vmsta, &mut gas, &caddr).unwrap();
+        }
+        assert_eq!(gas_budget, gas_after_first);
     }
 }

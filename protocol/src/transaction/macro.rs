@@ -257,13 +257,8 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     let mut state = CoreState::wrap(ctx.state());
     // may fast_sync
     if not_fast_sync {
-        if tx.action_count() == 0 {
-            return errf!("tx actions cannot empty.")
-        }
-        // Guard actions are environment constraints and cannot form a standalone transaction.
-        if tx.actions().iter().all(|a| a.level() == ActLv::Guard) {
-            return errf!("tx actions cannot be all GUARD")
-        }
+        // Tx-level action-set checks (length bounds) are centralized here.
+        check_tx_action_set(tx.actions())?;
         // main check
         if ! main.is_privakey() {
             return errf!("tx fee address version must be PRIVAKEY type.")
@@ -326,6 +321,7 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     let exec_res: Rerr = (|| {
         for action in tx.actions() {
             ctx.level_set(ACTION_CTX_LEVEL_TOP);
+            ctx.action_exec_from_set(ActExecFrom::TxLoop);
             // Top-level tx loop intentionally ignores return gas; only AST nesting and VM EXTACTION consume it.
             let (_ret_gas, _retv) = action.execute(ctx)?;
         }

@@ -343,6 +343,35 @@ fn test_tx_execute_must_verify_signature_before_actions() {
 }
 
 #[test]
+fn test_tx_execute_must_reject_action_count_over_max() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let mut tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    for _ in 0..(TX_ACTIONS_MAX + 1) {
+        let mut act = HacToTrs::new();
+        act.to = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
+        act.hacash = Amount::mei(1);
+        tx.actions.push(Box::new(act)).unwrap();
+    }
+
+    let mut env = Env::default();
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("one transaction max actions"), "{}", err);
+}
+
+#[test]
 fn test_tx_req_sign_must_be_privakey_address() {
     init_test_registry();
 

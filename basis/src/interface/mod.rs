@@ -7,7 +7,7 @@ use dyn_clone::*;
 use field::*;
 use sys::*;
 
-use super::component::{ActLv, BlkPkg, ChainInfo, Env, MemMap, RecentBlockInfo, TexLedger, TxPkg};
+use super::component::*;
 use super::config::*;
 
 include! {"peer.rs"}

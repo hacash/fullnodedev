@@ -31,6 +31,9 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
     verify_bytecodes(&codes)?;
 
     // do call
+    // Intentionally do not restore level: sandbox call is one-shot and its context
+    // state is discarded by the caller after return.
+    ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
     let mut exenv = ExecEnv{ ctx, gas };
     let mut vmb = global_machine_manager().assign(hei);
     let res = vmb.machine.as_mut().unwrap().main_call(&mut exenv, CodeType::Bytecode, codes.into());

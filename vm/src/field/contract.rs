@@ -49,6 +49,14 @@ combi_struct!{ LibReplaceAt,
 
 combi_list!(LibReplaceAtList, Uint1, LibReplaceAt);
 
+combi_struct!{ ContractEdition,
+	revision: Uint2
+	raw_size: Uint4
+	hash: Hash
+}
+
+impl Copy for ContractEdition {}
+
 
 // Contract Edit
 combi_struct!{ ContractEdit,
@@ -162,6 +170,14 @@ combi_struct!{ ContractSto,
 
 
 impl ContractSto {
+
+	pub fn calc_edition(&self) -> ContractEdition {
+		ContractEdition {
+			revision: self.metas.revision,
+			raw_size: Uint4::from(self.size() as u32),
+			hash: Hash::from(sha3(self.serialize())),
+		}
+	}
 
 	pub fn apply_edit(&mut self, edit: &ContractEdit, hei: u64) -> VmrtRes<(bool, bool)> {
 		use ItrErrCode::*;
@@ -453,12 +469,14 @@ pub struct ContractObj {
 	pub sto: ContractSto,
 	pub abstfns: HashMap<AbstCall, Arc<FnObj>>,
 	pub userfns: HashMap<FnSign, Arc<FnObj>>,
+	pub edition: ContractEdition,
 }
 
 
 impl ContractSto {
 
 	pub fn into_obj(mut self) -> VmrtRes<ContractObj> {
+		let edition = self.calc_edition();
 		let mut abstfns = HashMap::with_capacity(self.abstcalls.length());
 		// Move function bytecode out of `ContractSto` once. Runtime execution uses `FnObj`, so keeping another full copy inside `sto` only adds memory and copy cost.
 		for a in self.abstcalls.as_mut() {
@@ -474,6 +492,34 @@ impl ContractSto {
 			let cty = a.sign.to_array();
 			userfns.insert(cty, code.into());
 		}
-		Ok(ContractObj { sto: self, abstfns, userfns })
+		Ok(ContractObj {
+			sto: self,
+			abstfns,
+			userfns,
+			edition,
+		})
+	}
+}
+
+#[cfg(test)]
+mod contract_obj_tests {
+	use super::*;
+
+	#[test]
+	fn into_obj_keeps_original_edition_before_taking_code() {
+		let mut sto = ContractSto::new();
+		let mut f = ContractUserFunc::new();
+		f.sign = Fixed4::from([1u8, 2, 3, 4]);
+		let pkg = CodePkg {
+			conf: CodeConf::from_type(CodeType::Bytecode).raw(),
+			data: vec![Bytecode::END as u8],
+		};
+		f.code_stuff = CodeStuff::try_from(pkg).unwrap();
+		sto.userfuncs.push(f).unwrap();
+		let raw = sto.size() as u32;
+		let hx = Hash::from(sha3(sto.serialize()));
+		let obj = sto.into_obj().unwrap();
+		assert_eq!(obj.edition.raw_size.uint(), raw);
+		assert_eq!(obj.edition.hash, hx);
 	}
 }

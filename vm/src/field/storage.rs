@@ -415,9 +415,9 @@ mod storage_param_tests {
 /* * */
 inst_state_define!{ VMState,
 
-    201, contract,    ContractAddress  : ContractSto
-    202, contractrev, ContractAddress  : Uint2
-    205, ctrtkvdb,    ValueKey         : ValueSto
+    201, contract,         ContractAddress  : ContractSto
+    202, contract_edition, ContractAddress  : ContractEdition
+    205, ctrtkvdb,         ValueKey         : ValueSto
 
 }
 
@@ -430,9 +430,9 @@ inst_state_define!{ VMState,
 #[allow(dead_code)]
 impl VMState<'_> {
 
-    pub fn contract_set_sync_revision(&mut self, addr: &ContractAddress, sto: &ContractSto) {
+    pub fn contract_set_sync_edition(&mut self, addr: &ContractAddress, sto: &ContractSto) {
         self.contract_set(addr, sto);
-        self.contractrev_set(addr, &sto.metas.revision);
+        self.contract_edition_set(addr, &sto.calc_edition());
     }
 
     fn skey(cadr: &Address, key: &Value) -> VmrtRes<ValueKey> {

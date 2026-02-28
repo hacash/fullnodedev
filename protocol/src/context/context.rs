@@ -4,6 +4,7 @@
 pub struct ContextInst<'a> {
     pub env: Env,
     pub level: usize,
+    pub exec_from: ActExecFrom,
     pub txr: &'a dyn TransactionRead,
 
     pub vmi: Box<dyn VM>,
@@ -24,6 +25,7 @@ impl ContextInst<'_> {
     pub fn new<'a>(env: Env, sta: Box<dyn State>, log: Box<dyn Logs>, txr: &'a dyn TransactionRead) -> ContextInst<'a> {
         ContextInst{ env, sta, log, txr,
             level: ACTION_CTX_LEVEL_TOP,
+            exec_from: ActExecFrom::TxLoop,
             check_sign_cache: HashMap::new(),
             vmi: VMNil::empty(),
             psh: HashMap::new(),
@@ -61,6 +63,7 @@ impl ContextInst<'_> {
         self.vmi = VMNil::empty();
         self.ctx_gas_reset();
         self.level = ACTION_CTX_LEVEL_TOP;
+        self.exec_from = ActExecFrom::TxLoop;
     }
 
     #[inline]
@@ -99,6 +102,8 @@ impl Context for ContextInst<'_> {
     fn action_call(&mut self, k: u16, b: Vec<u8>) -> BRet<(u32, Vec<u8>)> {
         ctx_action_call(self, k, b)
     }
+    fn action_exec_from(&self) -> ActExecFrom { self.exec_from }
+    fn action_exec_from_set(&mut self, src: ActExecFrom) { self.exec_from = src }
 
     fn logs(&mut self) -> &mut dyn Logs {
         self.log.as_mut()

@@ -57,7 +57,7 @@ mod action_coverage {
     }
 
     fn insert_contract(state: &mut dyn State, addr: &ContractAddress, sto: &ContractSto) {
-        VMState::wrap(state).contract_set_sync_revision(addr, sto);
+        VMState::wrap(state).contract_set_sync_edition(addr, sto);
     }
 
     fn make_public_contract(func_name: &str, body: &str) -> ContractSto {
@@ -879,6 +879,19 @@ mod action_coverage {
 
         let (_, res) = ctx.action_call(EnvMainAddr::KIND, vec![]).unwrap();
         assert_eq!(res, main.to_vec());
+    }
+
+    #[test]
+    fn ctx_action_call_rejects_top_only_with_guard_action() {
+        let _guard = test_guard();
+        init_action_registry();
+        let main = main_addr();
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+
+        let body = ContractDeploy::new().serialize()[2..].to_vec();
+        let err = ctx.action_call(ContractDeploy::KIND, body).unwrap_err();
+        assert!(err.contains("tx action loop"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════

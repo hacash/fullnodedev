@@ -17,7 +17,7 @@ fn check_alive_blk_hei(ctx: &mut dyn Context) -> Ret<(u64, u64)> {
 
 
 action_define!{ AssetCreate, 16, 
-    ActLv::TopUnique, // level
+    ActLv::TopOnlyWithGuard, // level
     false, // burn 90 fee
     [], {
         metadata: AssetSmelt

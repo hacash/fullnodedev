@@ -100,7 +100,12 @@ macro_rules! action_define {
             fn execute(&$pself, $pctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
                 use std::any::Any;
                 if !$pctx.env().chain.fast_sync {
-                    check_action_level($pctx.level(), $pself, $pctx.tx().actions()).into_bret()?;
+                    check_action_level(
+                        $pctx.level(),
+                        $pctx.action_exec_from(),
+                        $pself,
+                        $pctx.tx().actions(),
+                    ).into_bret()?;
                 }
                 // act size is base gas use
                 // NOTE: burn_90 gas multiplier is handled centrally in ctx_action_call(),
@@ -182,10 +187,7 @@ macro_rules! action_register {
 
 
 
-// check action level
-pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<dyn Action>>) -> Rerr {
-    let kid = act.kind();
-    let alv = act.level();
+pub fn check_tx_action_set(actions: &Vec<Box<dyn Action>>) -> Rerr {
     let actlen = actions.len();
     if actlen < 1 || actlen > TX_ACTIONS_MAX {
         return errf!(
@@ -194,6 +196,29 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
             TX_ACTIONS_MAX
         )
     }
+    // Guard actions are environment constraints and cannot form a standalone tx.
+    if actions.iter().all(|a| a.level() == ActLv::Guard) {
+        return errf!("tx actions cannot be all GUARD")
+    }
+    Ok(())
+}
+
+// check action level
+pub fn check_action_level(
+    ctx_level: usize,
+    exec_from: ActExecFrom,
+    act: &dyn Action,
+    actions: &Vec<Box<dyn Action>>,
+) -> Rerr {
+    let kid = act.kind();
+    let alv = act.level();
+    let actlen = actions.len();
+    let check_top_source = || -> Rerr {
+        if exec_from != ActExecFrom::TxLoop {
+            return errf!("action {} just can execute in tx action loop", kid)
+        }
+        Ok(())
+    };
 
     macro_rules! check_level_top { ($actname: expr) => {
         if ctx_level != ACTION_CTX_LEVEL_TOP {
@@ -202,12 +227,15 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
     }}
 
     if alv == ActLv::TopOnly {
+        check_top_source()?;
         check_level_top!{"TOP_ONLY"}
-        if actlen > 1 {
+        if actlen != 1 {
             return errf!("action {} just can execute on TOP_ONLY", kid)
         }
     } else if alv == ActLv::TopOnlyWithGuard {
+        check_top_source()?;
         check_level_top!{"TOP_ONLY_WITH_GUARD"}
+        // Order is intentionally unrestricted: guard actions do not need to be a prefix.
         let mut non_guard = 0;
         for txact in actions {
             if txact.level() != ActLv::Guard {
@@ -221,6 +249,7 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
             )
         }
     } else if alv == ActLv::TopUnique {
+        check_top_source()?;
         check_level_top!{"TOP_UNIQUE"}
         let mut smalv = 0;
         for act in actions {
@@ -228,7 +257,7 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
                 smalv += 1;
             }
         }
-        if smalv > 1 {
+        if smalv != 1 {
             return errf!("action {} just can execute on level TOP_UNIQUE", kid)
         }
     } else if alv == ActLv::Guard {
@@ -240,6 +269,7 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
             )
         }
     } else if alv == ActLv::AnyInCall {
+        // AnyInCall is the only level using lower-bound enforcement.
         if ctx_level < ACTION_CTX_LEVEL_CALL_MAIN {
             return errf!(
                 "action {} just can execute in VM call context (ctx >= {})",
@@ -250,6 +280,7 @@ pub fn check_action_level(ctx_level: usize, act: &dyn Action, actions: &Vec<Box<
     } else if alv == ActLv::Top {
         check_level_top!{"TOP"}
     } else if let Some(max_ctx_level) = alv.max_ctx_level() {
+        // All other levels are upper-bound compatible: shallower ctx is allowed.
         if ctx_level > max_ctx_level {
             return errf!(
                 "action {} max ctx level {} but call in {}",

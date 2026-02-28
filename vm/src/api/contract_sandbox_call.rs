@@ -19,6 +19,8 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         tx: protocol::transaction::create_tx_info(&tx),
     };
     let mut ctxobj = ContextInst::new(env, substa, Box::new(EmptyLogs {}), &tx);
+    // One-shot sandbox context: created per request and dropped after this call.
+    // `sandbox_call` may mutate runtime level/addrs and does not need to restore them.
 
     let contract = req.query("contract").unwrap_or("");
     let function = req.query("function").unwrap_or("").to_owned();

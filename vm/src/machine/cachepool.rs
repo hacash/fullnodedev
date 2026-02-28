@@ -1,6 +1,5 @@
 use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
-use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -47,23 +46,11 @@ pub struct ContractCacheStats {
     pub evicts: u64,
 }
 
-#[derive(Clone, Eq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 struct ContractCacheKey {
     addr: ContractAddress,
     revision: u16,
-}
-
-impl PartialEq for ContractCacheKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.revision == other.revision && self.addr == other.addr
-    }
-}
-
-impl Hash for ContractCacheKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.addr.hash(state);
-        self.revision.hash(state);
-    }
+    edition_hash: Hash,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -95,6 +82,14 @@ struct ContractCacheInner {
 }
 
 impl ContractCacheInner {
+    fn make_key(addr: &ContractAddress, edition: &ContractEdition) -> ContractCacheKey {
+        ContractCacheKey {
+            addr: addr.clone(),
+            revision: edition.revision.uint(),
+            edition_hash: edition.hash,
+        }
+    }
+
     fn enabled(&self) -> bool {
         self.config.max_bytes > 0
     }
@@ -168,9 +163,9 @@ impl ContractCacheInner {
         None
     }
 
-    fn estimate_charge_bytes(sto: &ContractSto, obj: &ContractObj) -> usize {
-        // Best-effort estimate (not exact heap accounting). Keep it stable: use serialized size + raw code sizes + small overhead.
-        let mut sum = sto.size();
+    fn estimate_charge_bytes(obj: &ContractObj) -> usize {
+        // Best-effort estimate (not exact heap accounting). Keep it stable: use raw loaded bytes + compiled code sizes + small overhead.
+        let mut sum = obj.edition.raw_size.uint() as usize;
         for f in obj.abstfns.values() {
             sum = sum.saturating_add(f.codes.len());
         }
@@ -180,17 +175,13 @@ impl ContractCacheInner {
         sum.saturating_add(256)
     }
 
-    fn insert(&mut self, addr: &ContractAddress, sto: &ContractSto, obj: Arc<ContractObj>) {
+    fn insert(&mut self, addr: &ContractAddress, obj: Arc<ContractObj>) {
         if !self.enabled() {
             return;
         }
-        let rev = sto.metas.revision.uint();
-        let key = ContractCacheKey {
-            addr: addr.clone(),
-            revision: rev,
-        };
+        let key = Self::make_key(addr, &obj.edition);
 
-        let charge = Self::estimate_charge_bytes(sto, &obj);
+        let charge = Self::estimate_charge_bytes(&obj);
         if self.config.max_entry_bytes > 0 && charge > self.config.max_entry_bytes {
             return;
         }
@@ -383,19 +374,16 @@ impl ContractCachePool {
         }
     }
 
-    pub fn get(&self, addr: &ContractAddress, revision: u16) -> Option<Arc<ContractObj>> {
+    pub fn get(&self, addr: &ContractAddress, edition: &ContractEdition) -> Option<Arc<ContractObj>> {
         let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
         let inner = unsafe { &mut *self.inner.get() };
-        inner.get(&ContractCacheKey {
-            addr: addr.clone(),
-            revision,
-        })
+        inner.get(&ContractCacheInner::make_key(addr, edition))
     }
 
-    pub fn insert(&self, addr: &ContractAddress, sto: &ContractSto, obj: Arc<ContractObj>) {
+    pub fn insert(&self, addr: &ContractAddress, obj: Arc<ContractObj>) {
         let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
         let inner = unsafe { &mut *self.inner.get() };
-        inner.insert(addr, sto, obj);
+        inner.insert(addr, obj);
     }
 
     pub fn remove_addr(&self, addr: &ContractAddress) -> usize {
@@ -415,14 +403,18 @@ mod tests {
         ContractAddress::calculate(&addr, &Uint4::from(nonce))
     }
 
-    fn create_test_contract_sto(revision: u16) -> ContractSto {
-        let mut sto = ContractSto::new();
-        sto.metas.revision = Uint2::from(revision);
-        sto
+    fn create_test_contract_edition(revision: u16, tag: u8) -> ContractEdition {
+        ContractEdition {
+            revision: Uint2::from(revision),
+            raw_size: Uint4::from(128),
+            hash: Hash::from([tag; Hash::SIZE]),
+        }
     }
 
-    fn create_test_contract_obj() -> ContractObj {
-        ContractObj::default()
+    fn create_test_contract_obj(edition: ContractEdition) -> ContractObj {
+        let mut obj = ContractObj::default();
+        obj.edition = edition;
+        obj
     }
 
     #[test]
@@ -434,20 +426,19 @@ mod tests {
         });
         let addr_a = create_test_contract_address(1);
         let addr_b = create_test_contract_address(2);
-        let obj = Arc::new(create_test_contract_obj());
-        let sto_a1 = create_test_contract_sto(1);
-        let sto_a2 = create_test_contract_sto(2);
-        let sto_b1 = create_test_contract_sto(1);
-        pool.insert(&addr_a, &sto_a1, obj.clone());
-        pool.insert(&addr_a, &sto_a2, obj.clone());
-        pool.insert(&addr_b, &sto_b1, obj.clone());
-        assert!(pool.get(&addr_a, 1).is_some());
-        assert!(pool.get(&addr_a, 2).is_some());
-        assert!(pool.get(&addr_b, 1).is_some());
+        let ed_a1 = create_test_contract_edition(1, 1);
+        let ed_a2 = create_test_contract_edition(2, 2);
+        let ed_b1 = create_test_contract_edition(1, 3);
+        pool.insert(&addr_a, Arc::new(create_test_contract_obj(ed_a1)));
+        pool.insert(&addr_a, Arc::new(create_test_contract_obj(ed_a2)));
+        pool.insert(&addr_b, Arc::new(create_test_contract_obj(ed_b1)));
+        assert!(pool.get(&addr_a, &ed_a1).is_some());
+        assert!(pool.get(&addr_a, &ed_a2).is_some());
+        assert!(pool.get(&addr_b, &ed_b1).is_some());
         assert_eq!(pool.remove_addr(&addr_a), 2);
-        assert!(pool.get(&addr_a, 1).is_none());
-        assert!(pool.get(&addr_a, 2).is_none());
-        assert!(pool.get(&addr_b, 1).is_some());
+        assert!(pool.get(&addr_a, &ed_a1).is_none());
+        assert!(pool.get(&addr_a, &ed_a2).is_none());
+        assert!(pool.get(&addr_b, &ed_b1).is_some());
     }
 
     #[test]
@@ -464,16 +455,16 @@ mod tests {
         pool.configure(config);
 
         let addr = create_test_contract_address(0);
-        let sto = create_test_contract_sto(1);
-        let obj = Arc::new(create_test_contract_obj());
+        let ed = create_test_contract_edition(1, 1);
+        let obj = Arc::new(create_test_contract_obj(ed));
 
-        pool.insert(&addr, &sto, obj.clone());
+        pool.insert(&addr, obj.clone());
 
         let stats1 = pool.stats();
         assert_eq!(stats1.entries, 1);
 
         for _ in 0..10 {
-            let _ = pool.get(&addr, 1);
+            let _ = pool.get(&addr, &ed);
         }
 
         let stats2 = pool.stats();
@@ -496,13 +487,13 @@ mod tests {
         pool.configure(config);
 
         let addr = create_test_contract_address(0);
-        let sto = create_test_contract_sto(1);
-        let obj = Arc::new(create_test_contract_obj());
+        let ed = create_test_contract_edition(1, 1);
+        let obj = Arc::new(create_test_contract_obj(ed));
 
-        pool.insert(&addr, &sto, obj.clone());
+        pool.insert(&addr, obj.clone());
 
         for _ in 0..3 {
-            let _ = pool.get(&addr, 1);
+            let _ = pool.get(&addr, &ed);
         }
 
         let stats = pool.stats();
@@ -524,19 +515,19 @@ mod tests {
 
         let addr1 = create_test_contract_address(0);
         let addr2 = create_test_contract_address(1);
-        let sto1 = create_test_contract_sto(1);
-        let sto2 = create_test_contract_sto(1);
-        let obj1 = Arc::new(create_test_contract_obj());
-        let obj2 = Arc::new(create_test_contract_obj());
+        let ed1 = create_test_contract_edition(1, 1);
+        let ed2 = create_test_contract_edition(1, 2);
+        let obj1 = Arc::new(create_test_contract_obj(ed1));
+        let obj2 = Arc::new(create_test_contract_obj(ed2));
 
-        pool.insert(&addr1, &sto1, obj1.clone());
-        pool.insert(&addr2, &sto2, obj2.clone());
+        pool.insert(&addr1, obj1.clone());
+        pool.insert(&addr2, obj2.clone());
 
         let stats1 = pool.stats();
         assert_eq!(stats1.entries, 2);
 
-        let _ = pool.get(&addr1, 1);
-        let _ = pool.get(&addr2, 1);
+        let _ = pool.get(&addr1, &ed1);
+        let _ = pool.get(&addr2, &ed2);
 
         let stats2 = pool.stats();
         assert_eq!(stats2.entries, 2);
@@ -559,9 +550,9 @@ mod tests {
 
         for i in 0..10 {
             let addr = create_test_contract_address(i);
-            let sto = create_test_contract_sto(1);
-            let obj = Arc::new(create_test_contract_obj());
-            pool.insert(&addr, &sto, obj);
+            let ed = create_test_contract_edition(1, i as u8);
+            let obj = Arc::new(create_test_contract_obj(ed));
+            pool.insert(&addr, obj);
         }
 
         let stats = pool.stats();

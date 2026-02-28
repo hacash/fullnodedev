@@ -23,7 +23,12 @@ fn ctx_action_call(this: &mut ContextInst, k: u16, b: Vec<u8>) -> BRet<(u32, Vec
             this.check_sign(&adr).into_bret()?;
         }
     }
-    let (mut gas, res) = action.execute(this)?;
+    // Explicit call origin for level checks: this path is runtime EXTACTION.
+    let old_from = this.action_exec_from();
+    this.action_exec_from_set(ActExecFrom::ExtActionCall);
+    let exec_res = action.execute(this);
+    this.action_exec_from_set(old_from);
+    let (mut gas, res) = exec_res?;
     // burn_90 OR rule: if either the tx or the action is burn_90, apply 10x gas multiplier.
     // This is the single place where burn_90 gas penalty is applied — action.execute()
     // returns base gas (size only), and we multiply here.

@@ -494,9 +494,9 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_base, &base.into_sto());
-            vmsta.contract_set_sync_revision(&contract_parent, &parent.into_sto());
-            vmsta.contract_set_sync_revision(&contract_child, &child.into_sto());
+            vmsta.contract_set_sync_edition(&contract_base, &base.into_sto());
+            vmsta.contract_set_sync_edition(&contract_parent, &parent.into_sto());
+            vmsta.contract_set_sync_edition(&contract_child, &child.into_sto());
         }
 
         // Main script calls contract_main.run() using tx-provided libs (index 0).
@@ -572,8 +572,8 @@ mod machine_test {
             let mut ext_state = StateMem::default();
             {
                 let mut vmsta = crate::VMState::wrap(&mut ext_state);
-                vmsta.contract_set_sync_revision(&contract_parent, &parent_sto.clone());
-                vmsta.contract_set_sync_revision(&contract_child, &child_sto.clone());
+                vmsta.contract_set_sync_edition(&contract_parent, &parent_sto.clone());
+                vmsta.contract_set_sync_edition(&contract_child, &child_sto.clone());
             }
 
             let mut env = Env::default();
@@ -655,7 +655,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
         }
 
         let script = r##"
@@ -719,8 +719,8 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_parent, &parent_sto);
-            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
+            vmsta.contract_set_sync_edition(&contract_parent, &parent_sto);
+            vmsta.contract_set_sync_edition(&contract_child, &child_sto);
         }
 
         let mut env = Env::default();
@@ -771,8 +771,8 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_parent, &parent_sto);
-            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
+            vmsta.contract_set_sync_edition(&contract_parent, &parent_sto);
+            vmsta.contract_set_sync_edition(&contract_child, &child_sto);
         }
 
         let mut env = Env::default();
@@ -850,7 +850,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
         }
 
         let view_script = r##"
@@ -896,7 +896,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
         }
 
         let need_arg_script = r##"
@@ -939,7 +939,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
         }
 
         let script = r##"
@@ -984,9 +984,9 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_a, &a_sto);
-            vmsta.contract_set_sync_revision(&contract_b, &b_sto);
-            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
+            vmsta.contract_set_sync_edition(&contract_a, &a_sto);
+            vmsta.contract_set_sync_edition(&contract_b, &b_sto);
+            vmsta.contract_set_sync_edition(&contract_child, &child_sto);
         }
 
         let script = r##"
@@ -1027,8 +1027,8 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_parent, &parent_sto);
-            vmsta.contract_set_sync_revision(&contract_child, &child_sto);
+            vmsta.contract_set_sync_edition(&contract_parent, &parent_sto);
+            vmsta.contract_set_sync_edition(&contract_child, &child_sto);
         }
 
         let script = r##"
@@ -1051,7 +1051,7 @@ mod machine_test {
         let mut ext_state = StateMem::default();
         {
             let mut vmsta = crate::VMState::wrap(&mut ext_state);
-            vmsta.contract_set_sync_revision(&contract_target, &target_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
         }
 
         let script = r##"

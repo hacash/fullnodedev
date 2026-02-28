@@ -6,18 +6,24 @@ pub const ACTION_CTX_LEVEL_CALL_MAIN: usize = ACTION_CTX_LEVEL_CALL_BASE;
 pub const ACTION_CTX_LEVEL_CALL_CONTRACT: usize = ACTION_CTX_LEVEL_CALL_BASE + 1;
 pub const ACTION_CTX_LEVEL_AST_MAX: usize = ACTION_CTX_LEVEL_CALL_BASE - 1;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ActExecFrom {
+    TxLoop,
+    ExtActionCall,
+}
+
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ActLv {
     TopOnly,      // only this single one on top
-    TopOnlyWithGuard, // only one non-guard action on top, guards allowed as prefix
+    TopOnlyWithGuard, // only one non-guard action on top, guards can appear anywhere in tx actions
     TopUnique,    // top and unique
     Guard,        // guard action, allowed in AST and above
     Top,          // must on top
     Ast,          // in act cond AST
     MainCall,     // tx main call (depth=0)
-    ContractCall, // contract/abst call
-    AnyInCall,    // only callable inside VM call context (main/contract call)
+    ContractCall, // max ctx is contract call; shallower ctx is compatible by upper-bound rule
+    AnyInCall,    // strict lower-bound: only callable inside VM call context (main/contract call)
     Any,          // any context
 }
 
