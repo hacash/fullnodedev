@@ -14,6 +14,7 @@ use sys::{Account, curtimes};
 fn estimate_protocol_cost_auto(
     txfee: &Amount,
     nonce: Uint4,
+    call_construct: Bool,
     argv: BytesW2,
     sto: &vm::ContractSto,
 ) -> Amount {
@@ -31,6 +32,7 @@ fn estimate_protocol_cost_auto(
         let mut act = ContractDeploy::default();
         act.protocol_cost = cur.clone();
         act.nonce = nonce;
+        act.construct_call = call_construct;
         act.construct_argv = argv.clone();
         act.contract = sto.clone();
 
@@ -146,10 +148,15 @@ fn main() {
     println!("Generated: {}", map_file.display());
 
     // Deploy
-    let (d_fee, d_nonce, d_argv) = if let Some(info) = deploy_opt {
-        (info.protocol_cost, info.nonce, info.construct_argv)
+    let (d_fee, d_nonce, d_call_construct, d_argv) = if let Some(info) = deploy_opt {
+        (
+            info.protocol_cost,
+            info.nonce,
+            info.call_construct,
+            info.construct_argv,
+        )
     } else {
-        (None, None, None)
+        (None, None, None, None)
     };
 
     let fee_str = args.get(2).map(|s| s.as_str()).unwrap_or("1:248");
@@ -157,14 +164,18 @@ fn main() {
 
     let nonce_val = args.get(3).and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
     let nonce = d_nonce.unwrap_or(Uint4::from(nonce_val));
+    let call_construct = d_call_construct.unwrap_or_else(|| Bool::new(false));
 
     let argv = d_argv.unwrap_or_default();
     let protocol_cost =
-        d_fee.unwrap_or_else(|| estimate_protocol_cost_auto(&txfee, nonce, argv.clone(), &sto));
+        d_fee.unwrap_or_else(|| {
+            estimate_protocol_cost_auto(&txfee, nonce, call_construct, argv.clone(), &sto)
+        });
 
     let mut action = ContractDeploy::default();
     action.protocol_cost = protocol_cost;
     action.nonce = nonce;
+    action.construct_call = call_construct;
     action.construct_argv = argv;
     action.contract = sto;
 

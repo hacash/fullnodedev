@@ -513,7 +513,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_rejects_inherits_cycle_in_existing_graph() {
+    fn deploy_rejects_nested_parent_inherits_in_existing_graph() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
@@ -538,7 +538,10 @@ mod action_coverage {
             .func(Func::new("f").unwrap().public().fitsh("return 0").unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, root).unwrap_err();
-        assert!(err.contains("inherits cyclic detected"), "{err}");
+        assert!(
+            err.contains("inherits parent") && err.contains("cannot have parent inherits"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -743,7 +746,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn update_rejects_inherits_cycle_after_edit() {
+    fn update_rejects_nested_parent_inherits_after_edit() {
         let _guard = test_guard();
         let main = main_addr();
         let root = contract_addr(&main, 1);
@@ -770,7 +773,10 @@ mod action_coverage {
         act.edit.expect_revision = Uint2::from(1u16);
         act.edit.inherits_add = ContractAddrsssW1::from_list(vec![parent]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("inherits cyclic detected"), "{err}");
+        assert!(
+            err.contains("inherits parent") && err.contains("cannot have parent inherits"),
+            "{err}"
+        );
     }
 
     #[test]

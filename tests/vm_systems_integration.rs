@@ -238,7 +238,7 @@ fn deploy_rejects_missing_library_contract() {
 }
 
 #[test]
-fn deploy_rejects_inherits_cycle_before_runtime() {
+fn deploy_rejects_nested_parent_inherits_before_runtime() {
     let _guard = test_guard();
 
     let main = main_addr();
@@ -266,7 +266,10 @@ fn deploy_rejects_inherits_cycle_before_runtime() {
         .into_sto();
 
     let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
-    assert!(err.contains("inherits cyclic"), "{err}");
+    assert!(
+        err.contains("inherits parent") && err.contains("cannot have parent inherits"),
+        "{err}"
+    );
 }
 
 #[test]

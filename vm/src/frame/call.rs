@@ -1,35 +1,5 @@
 // println!("CALLCODE() state_addr={}, code_owner={}", state_addr.prefix(7), code_owner.prefix(7));
 
-fn resolve_non_outer_code_owner(
-    target: &CallTarget,
-    next_code_owner: Option<ContractAddress>,
-    state_addr: &ContractAddress,
-    code_owner: &ContractAddress,
-) -> VmrtRes<ContractAddress> {
-    match target {
-        CallTarget::Libidx(_) => {
-            // Invariant: lib-index lookup must always produce concrete code owner.
-            let Some(owner) = next_code_owner else {
-                return itr_err_fmt!(CallNotExist, "libidx call target missing code owner");
-            };
-            Ok(owner)
-        }
-        CallTarget::This => Ok(next_code_owner.unwrap_or(state_addr.clone())),
-        CallTarget::Self_ | CallTarget::Super => Ok(next_code_owner.unwrap_or(code_owner.clone())),
-    }
-}
-
-fn resolve_outer_frame_addrs(
-    next_state_addr: Option<ContractAddress>,
-    next_code_owner: Option<ContractAddress>,
-) -> VmrtRes<(ContractAddress, ContractAddress)> {
-    let Some(state_addr) = next_state_addr else {
-        return itr_err_fmt!(CallNotExist, "outer call target missing state address");
-    };
-    let owner = next_code_owner.unwrap_or_else(|| state_addr.clone());
-    Ok((state_addr, owner))
-}
-
 impl CallFrame {
     fn prepare_frame(
         frame: &mut Frame,
@@ -92,27 +62,23 @@ impl CallFrame {
                     );
 
                     let libs_ptr = if depth == 0 { &libs } else { &libs_none };
-                    let loaded = r.load_must_call(
+                    let plan = r.plan_call(
                         env.ctx,
                         &mut *env.gas,
-                        fnptr.clone(),
-                        &state_addr,
-                        &code_owner,
-                        libs_ptr,
+                        CallPlanReq {
+                            fptr: fnptr.clone(),
+                            state_addr: &state_addr,
+                            code_owner: &code_owner,
+                            tx_libs: libs_ptr,
+                        },
                     )?;
-                    let next_state_addr = loaded.state_addr;
-                    let next_code_owner = loaded.code_owner;
-                    let fnobj_arc = loaded.fnobj;
+                    let fnobj_arc = plan.fnobj().clone();
                     let fnobj = fnobj_arc.as_ref();
                     let fn_is_public = fnobj.check_conf(FnConf::Public);
 
                     // CALLCODE: in-place execution
                     if fnptr.is_callcode {
-                        let owner = next_code_owner
-                            .as_ref()
-                            .cloned()
-                            .unwrap_or_else(|| state_addr.clone());
-                        curr!().code_owner = owner;
+                        curr!().code_owner = plan.code_owner().clone();
                         let callcode_param_count = match &fnobj.agvty {
                             Some(types) => types.param_count(),
                             None => 0,
@@ -144,17 +110,15 @@ impl CallFrame {
                     // Check public access for outer calls
                     if let Outer = fnptr.mode {
                         if !fn_is_public {
-                            let Some(cadr) = next_state_addr.as_ref().or(next_code_owner.as_ref())
-                            else {
-                                return itr_err_fmt!(
-                                    CallNotExist,
-                                    "outer call target missing address for visibility check"
-                                );
-                            };
+                            let vis = plan.visibility_addr();
+                            let owner = plan.code_owner();
+                            let impl_in = maybe!(vis == owner, s!(""), 
+                                format!(" (impl in {})", owner.to_readable()));
                             return itr_err_fmt!(
                                 CallNotPublic,
-                                "contract {} func sign {}",
-                                cadr.to_readable(),
+                                "contract {}{} func sign {}",
+                                vis.to_readable(),
+                                impl_in,
                                 fnptr.fnsign.to_hex()
                             );
                         }
@@ -166,25 +130,21 @@ impl CallFrame {
                     self.push(next);
                     Self::prepare_frame(curr!(), fnptr.mode, false, fnobj, height, param)?;
 
-                    // Set context addresses based on call mode
-                    match fnptr.mode {
-                        Inner | View | Pure => {
-                            // Non-Outer calls keep storage context inherited by Frame::next(). Only dispatch owner can change (this/self/super or lib lookup). CALLCODE may rewrite code_owner in-place, but call instructions are blocked while in_callcode=true (check_call_mode), so this branch always handles normal nested frames.
-                            let owner = resolve_non_outer_code_owner(
-                                &fnptr.target,
-                                next_code_owner,
-                                &state_addr,
-                                &code_owner,
-                            )?;
-                            curr!().code_owner = owner;
+                    // plan_call already enforces mode/address contract; frame applies result directly.
+                    match plan {
+                        DispatchPlan::KeepState { code_owner, .. } => {
+                            debug_assert!(matches!(fnptr.mode, Inner | View | Pure));
+                            curr!().code_owner = code_owner;
                         }
-                        Outer => {
-                            let (target_state_addr, owner) =
-                                resolve_outer_frame_addrs(next_state_addr, next_code_owner)?;
-                            curr!().state_addr = target_state_addr;
-                            curr!().code_owner = owner;
+                        DispatchPlan::SwitchState {
+                            state_addr,
+                            code_owner,
+                            ..
+                        } => {
+                            debug_assert!(matches!(fnptr.mode, Outer));
+                            curr!().state_addr = state_addr;
+                            curr!().code_owner = code_owner;
                         }
-                        _ => unreachable!(),
                     }
                 }
 
@@ -241,6 +201,7 @@ impl CallFrame {
 mod owner_resolution_tests {
     use super::*;
     use field::{Address, Uint4};
+    use std::sync::Arc;
 
     fn mk_contract_addr(n: u32) -> ContractAddress {
         let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
@@ -248,60 +209,38 @@ mod owner_resolution_tests {
     }
 
     #[test]
-    fn libidx_requires_loader_owner() {
+    fn dispatch_plan_visibility_addr_prefers_state_addr_when_present() {
         let state_addr = mk_contract_addr(1);
-        let code_owner = mk_contract_addr(2);
-        let err =
-            resolve_non_outer_code_owner(&CallTarget::Libidx(0), None, &state_addr, &code_owner)
-                .unwrap_err();
-        assert_eq!(err.0, ItrErrCode::CallNotExist);
+        let owner = mk_contract_addr(2);
+        let plan = DispatchPlan::SwitchState {
+            state_addr: state_addr.clone(),
+            code_owner: owner,
+            fnobj: Arc::new(FnObj::plain(CodeType::Bytecode, vec![], 0, None)),
+        };
+        assert_eq!(plan.visibility_addr(), &state_addr);
     }
 
     #[test]
-    fn libidx_prefers_loader_owner() {
-        let state_addr = mk_contract_addr(1);
-        let code_owner = mk_contract_addr(2);
-        let loader_owner = mk_contract_addr(3);
-        let got = resolve_non_outer_code_owner(
-            &CallTarget::Libidx(0),
-            Some(loader_owner.clone()),
-            &state_addr,
-            &code_owner,
-        )
-        .unwrap();
-        assert_eq!(got, loader_owner);
+    fn dispatch_plan_visibility_addr_uses_owner_for_keep_state() {
+        let owner = mk_contract_addr(3);
+        let plan = DispatchPlan::KeepState {
+            code_owner: owner.clone(),
+            fnobj: Arc::new(FnObj::plain(CodeType::Bytecode, vec![], 0, None)),
+        };
+        assert_eq!(plan.visibility_addr(), &owner);
     }
 
     #[test]
-    fn this_falls_back_to_state_addr() {
-        let state_addr = mk_contract_addr(1);
-        let code_owner = mk_contract_addr(2);
-        let got = resolve_non_outer_code_owner(&CallTarget::This, None, &state_addr, &code_owner)
-            .unwrap();
-        assert_eq!(got, state_addr);
-    }
-
-    #[test]
-    fn self_falls_back_to_current_code_owner() {
-        let state_addr = mk_contract_addr(1);
-        let code_owner = mk_contract_addr(2);
-        let got = resolve_non_outer_code_owner(&CallTarget::Self_, None, &state_addr, &code_owner)
-            .unwrap();
-        assert_eq!(got, code_owner);
-    }
-
-    #[test]
-    fn outer_requires_state_addr() {
-        let err = resolve_outer_frame_addrs(None, Some(mk_contract_addr(2))).unwrap_err();
-        assert_eq!(err.0, ItrErrCode::CallNotExist);
-    }
-
-    #[test]
-    fn outer_falls_back_owner_to_state_addr() {
-        let state_addr = mk_contract_addr(1);
-        let (resolved_state, resolved_owner) =
-            resolve_outer_frame_addrs(Some(state_addr.clone()), None).unwrap();
-        assert_eq!(resolved_state, state_addr);
-        assert_eq!(resolved_owner, state_addr);
+    fn dispatch_plan_into_parts_roundtrip() {
+        let state_addr = mk_contract_addr(4);
+        let owner = mk_contract_addr(5);
+        let plan = DispatchPlan::SwitchState {
+            state_addr: state_addr.clone(),
+            code_owner: owner.clone(),
+            fnobj: Arc::new(FnObj::plain(CodeType::Bytecode, vec![], 0, None)),
+        };
+        let (next_state, next_owner, _fnobj) = plan.into_parts();
+        assert_eq!(next_state, Some(state_addr));
+        assert_eq!(next_owner, owner);
     }
 }

@@ -310,14 +310,15 @@ pub enum CallTarget {
     This,
     Self_,
     Super,
-    Libidx(u8),
+    // Index points to a dispatch-root contract; the actual lookup scope is selected by runtime policy.
+    Idx(u8),
     // Addr(ContractAddress),
 }
 
 impl CallTarget {
-    pub fn idx(&self) -> u8 {
+    pub fn root_idx(&self) -> u8 {
         match self {
-            CallTarget::Libidx(i) => *i,
+            CallTarget::Idx(i) => *i,
             _ => 0,
         }
     }

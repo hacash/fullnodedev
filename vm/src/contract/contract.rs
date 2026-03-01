@@ -90,6 +90,7 @@ impl Contract {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         act.contract = self.ctrt.clone();
+        act.construct_call = Bool::new(self.argv.length() > 0);
         act.construct_argv = self.argv.clone();
         let bytes = act.contract.size();
         act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes);

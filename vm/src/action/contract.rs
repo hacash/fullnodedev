@@ -18,6 +18,7 @@ action_define!{ ContractDeploy, 40,
     {   
         protocol_cost: Amount
         nonce: Uint4 
+        construct_call: Bool
         construct_argv: BytesW2 // checked by SpaceCap::max_value_size at runtime
         _marks_:   Fixed4 // zero
         contract: ContractSto
@@ -42,24 +43,22 @@ action_define!{ ContractDeploy, 40,
             return errf!("contract revision must be 0 on deploy")
         }
         precheck_contract_store(&caddr, &self.contract, ctx)?;
-        let accf  = AbstCall::Construct;
         let charge_bytes = self.contract.size();
         // spend protocol fee
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, charge_bytes)?;
         // save the contract
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
-        // call the construct function
         let cargv = self.construct_argv.to_vec();
         if cargv.len() > SpaceCap::new(hei).max_value_size {
             return errf!("construct argv size overflow")
         }
-        let hvaccf = contract_has_abst_call_by_inherits(ctx, &caddr, accf)?;
-        if hvaccf { // have Construct func
+        // call construct only when explicitly enabled by action flag
+        if self.construct_call.check() {
             let cty = ExecMode::Abst as u8;
             let _ = setup_vm_run(
                 ctx,
                 cty,
-                accf as u8,
+                AbstCall::Construct as u8,
                 Arc::from(caddr.as_bytes()),
                 Value::Bytes(cargv),
             )?;
@@ -142,7 +141,7 @@ fn precheck_contract_links_and_calls(ctx: &mut dyn Context, root_addr: &Contract
     let height = ctx.env().block.height;
     let mut vmsta = VMState::wrap(ctx.state());
     check_link_contracts_exist(&mut vmsta, root_addr, root_contract)?;
-    check_inherits_acyclic(&mut vmsta, root_addr, root_contract)?;
+    check_inherits_direct_parents_flat(&mut vmsta, root_addr, root_contract)?;
     check_static_call_targets(&mut vmsta, root_addr, root_contract, height)?;
     Ok(())
 }
@@ -186,38 +185,21 @@ fn check_link_contracts_exist(
     Ok(())
 }
 
-fn check_inherits_acyclic(
+fn check_inherits_direct_parents_flat(
     vmsta: &mut VMState,
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
 ) -> Rerr {
-    fn dfs(
-        vmsta: &mut VMState,
-        root_addr: &ContractAddress,
-        root_contract: &ContractSto,
-        addr: &ContractAddress,
-        visiting: &mut std::collections::HashSet<ContractAddress>,
-        visited: &mut std::collections::HashSet<ContractAddress>,
-    ) -> Rerr {
-        if visiting.contains(addr) {
-            return errf!("inherits cyclic detected at {}", addr.to_readable())
+    for p in root_contract.inherits.as_list() {
+        let sto = load_contract_for_check(vmsta, root_addr, root_contract, p, "inherits")?;
+        if sto.inherits.length() > 0 {
+            return errf!(
+                "inherits parent {} cannot have parent inherits",
+                p.to_readable()
+            )
         }
-        if visited.contains(addr) {
-            return Ok(())
-        }
-        visiting.insert(addr.clone());
-        let sto = load_contract_for_check(vmsta, root_addr, root_contract, addr, "inherits")?;
-        for p in sto.inherits.as_list() {
-            dfs(vmsta, root_addr, root_contract, p, visiting, visited)?;
-        }
-        visiting.remove(addr);
-        visited.insert(addr.clone());
-        Ok(())
     }
-
-    let mut visiting = std::collections::HashSet::new();
-    let mut visited = std::collections::HashSet::new();
-    dfs(vmsta, root_addr, root_contract, root_addr, &mut visiting, &mut visited)
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -239,35 +221,26 @@ fn contract_userfn_meta(contract: &ContractSto, sign: &FnSign) -> Option<UserfnM
     })
 }
 
-fn resolve_userfn_meta_by_inherits(
+fn resolve_userfn_meta_self_or_direct_parents(
     vmsta: &mut VMState,
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
     addr: &ContractAddress,
     sign: &FnSign,
-    visiting: &mut std::collections::HashSet<ContractAddress>,
-    visited: &mut std::collections::HashSet<ContractAddress>,
+    include_self: bool,
 ) -> Ret<Option<(ContractAddress, UserfnMeta)>> {
-    if visiting.contains(addr) {
-        return errf!("inherits cyclic detected at {}", addr.to_readable())
-    }
-    if visited.contains(addr) {
-        return Ok(None)
-    }
-    visiting.insert(addr.clone());
     let sto = load_contract_for_check(vmsta, root_addr, root_contract, addr, "inherits")?;
-    if let Some(meta) = contract_userfn_meta(&sto, sign) {
-        visiting.remove(addr);
-        return Ok(Some((addr.clone(), meta)))
-    }
-    for p in sto.inherits.as_list() {
-        if let Some(found) = resolve_userfn_meta_by_inherits(vmsta, root_addr, root_contract, p, sign, visiting, visited)? {
-            visiting.remove(addr);
-            return Ok(Some(found))
+    if include_self {
+        if let Some(meta) = contract_userfn_meta(&sto, sign) {
+            return Ok(Some((addr.clone(), meta)))
         }
     }
-    visiting.remove(addr);
-    visited.insert(addr.clone());
+    for p in sto.inherits.as_list() {
+        let psto = load_contract_for_check(vmsta, root_addr, root_contract, p, "inherits")?;
+        if let Some(meta) = contract_userfn_meta(&psto, sign) {
+            return Ok(Some((p.clone(), meta)))
+        }
+    }
     Ok(None)
 }
 
@@ -339,19 +312,16 @@ fn check_static_call_targets(
                     }
                     sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
                     let tar = &libs[libidx];
-                    let mut visiting = std::collections::HashSet::new();
-                    let mut visited = std::collections::HashSet::new();
-                    let Some((owner, meta)) = resolve_userfn_meta_by_inherits(
+                    let Some((owner, meta)) = resolve_userfn_meta_self_or_direct_parents(
                         vmsta,
                         root_addr,
                         root_contract,
                         tar,
                         &sign,
-                        &mut visiting,
-                        &mut visited,
+                        true,
                     )? else {
                         return errf!(
-                            "{}: call target {} function 0x{} not found in inherits",
+                            "{}: call target {} function 0x{} not found in self/direct parents",
                             func_tag,
                             tar.to_readable(),
                             hex::encode(sign)
@@ -430,16 +400,13 @@ fn check_static_call_targets(
                 Bytecode::CALLTHIS | Bytecode::CALLSELF => {
                     // Deploy-time precheck validates callsites against the contract being deployed/updated. Runtime CALLSELF resolves from dynamic code_owner, which may differ after inherited dispatch. Cross-contract inherited bodies are validated in their own deploy/update.
                     sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    let mut visiting = std::collections::HashSet::new();
-                    let mut visited = std::collections::HashSet::new();
-                    let found = resolve_userfn_meta_by_inherits(
+                    let found = resolve_userfn_meta_self_or_direct_parents(
                         vmsta,
                         root_addr,
                         root_contract,
                         root_addr,
                         &sign,
-                        &mut visiting,
-                        &mut visited,
+                        true,
                     )?;
                     if found.is_none() {
                         return errf!(
@@ -453,23 +420,15 @@ fn check_static_call_targets(
                 }
                 Bytecode::CALLSUPER => {
                     sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    let mut found = false;
-                    for p in root_contract.inherits.as_list() {
-                        let mut visiting = std::collections::HashSet::new();
-                        let mut visited = std::collections::HashSet::new();
-                        if resolve_userfn_meta_by_inherits(
-                            vmsta,
-                            root_addr,
-                            root_contract,
-                            p,
-                            &sign,
-                            &mut visiting,
-                            &mut visited,
-                        )?.is_some() {
-                            found = true;
-                            break;
-                        }
-                    }
+                    let found = resolve_userfn_meta_self_or_direct_parents(
+                        vmsta,
+                        root_addr,
+                        root_contract,
+                        root_addr,
+                        &sign,
+                        false,
+                    )?
+                    .is_some();
                     if !found {
                         return errf!("{}: super function 0x{} not found", func_tag, hex::encode(sign))
                     }
@@ -526,18 +485,6 @@ fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, pfee: &Amount, charge_
     }
     operate::hac_sub(ctx, &maddr, pfee)?;
     Ok(())
-}
-
-fn contract_has_abst_call_by_inherits(
-    ctx: &mut dyn Context,
-    addr: &ContractAddress,
-    call: AbstCall,
-) -> Ret<bool> {
-    let mut loader = Resoure::create(ctx.env().block.height);
-    let found = loader
-        .find_abstfn(ctx, addr, call)
-        .map_err(|e| e.to_string())?;
-    Ok(found.is_some())
 }
 
 #[inline(always)]
@@ -651,6 +598,7 @@ mod contract_test {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         act.protocol_cost = Amount::unit238(10_000_000);
+        act.construct_call = Bool::new(true);
         act.contract = deploy_contract;
         let _ = act.execute(&mut ctx).into_ret()?;
         Ok(())
@@ -706,19 +654,13 @@ mod contract_test {
     }
 
     #[test]
-    fn deploy_construct_searches_deep_inherits_chain() {
+    fn deploy_rejects_parent_with_nested_inherits() {
         let main = test_main_addr();
         let grand_addr = test_contract(&main, 35);
         let parent_addr = test_contract(&main, 36);
         let child_nonce = 37;
 
-        let grand = Contract::new()
-            .syst(
-                Abst::new(AbstCall::Construct)
-                    .fitsh("return 1")
-                    .unwrap(),
-            )
-            .into_sto();
+        let grand = Contract::new().into_sto();
         let parent = Contract::new().inh(grand_addr.to_addr()).into_sto();
         let child = Contract::new().inh(parent_addr.to_addr()).into_sto();
 
@@ -727,15 +669,15 @@ mod contract_test {
             vec![(grand_addr, grand), (parent_addr, parent)],
             child,
         )
-        .expect_err("deep inherited Construct should execute");
+        .expect_err("deploy must reject parent with nested inherits");
         assert!(
-            err.contains("Construct") && err.contains("return error code 1"),
+            err.contains("cannot have parent inherits"),
             "unexpected deploy error: {err}"
         );
     }
 
     #[test]
-    fn deploy_without_any_construct_still_succeeds() {
+    fn deploy_without_any_construct_returns_not_find() {
         let main = test_main_addr();
         let parent_addr = test_contract(&main, 38);
         let child_nonce = 39;
@@ -743,7 +685,11 @@ mod contract_test {
         let parent = Contract::new().into_sto();
         let child = Contract::new().inh(parent_addr.to_addr()).into_sto();
 
-        let res = run_deploy_with_preloaded(child_nonce, vec![(parent_addr, parent)], child);
-        assert!(res.is_ok(), "deploy without Construct should keep old success path");
+        let err = run_deploy_with_preloaded(child_nonce, vec![(parent_addr, parent)], child)
+            .expect_err("deploy should fail when Construct is absent");
+        assert!(
+            err.contains("Construct") && err.contains("not find"),
+            "unexpected deploy error: {err}"
+        );
     }
 }

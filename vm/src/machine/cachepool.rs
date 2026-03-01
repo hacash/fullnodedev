@@ -1,4 +1,3 @@
-use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
@@ -72,6 +71,7 @@ struct ContractCacheInner {
     config: ContractCacheConfig,
     tick: u64,
     used_bytes: usize,
+    protected_used_bytes: usize,
     map: HashMap<ContractCacheKey, Entry>,
     probation_lru: VecDeque<(ContractCacheKey, u64)>,
     protected_lru: VecDeque<(ContractCacheKey, u64)>,
@@ -79,6 +79,24 @@ struct ContractCacheInner {
     misses: u64,
     inserts: u64,
     evicts: u64,
+}
+
+impl Default for ContractCacheInner {
+    fn default() -> Self {
+        Self {
+            config: ContractCacheConfig::default(),
+            tick: 0,
+            used_bytes: 0,
+            protected_used_bytes: 0,
+            map: HashMap::new(),
+            probation_lru: VecDeque::new(),
+            protected_lru: VecDeque::new(),
+            hits: 0,
+            misses: 0,
+            inserts: 0,
+            evicts: 0,
+        }
+    }
 }
 
 impl ContractCacheInner {
@@ -104,23 +122,22 @@ impl ContractCacheInner {
         self.tick
     }
 
-    fn remove_from_lru_queue(queue: &mut VecDeque<(ContractCacheKey, u64)>, key: &ContractCacheKey) {
-        let mut i = 0;
-        while i < queue.len() {
-            if queue[i].0 == *key {
-                queue.remove(i);
-            } else {
-                i += 1;
-            }
+    fn push_lru_front(&mut self, segment: Segment, key: ContractCacheKey, tag: u64) {
+        match segment {
+            Segment::Probation => self.probation_lru.push_front((key, tag)),
+            Segment::Protected => self.protected_lru.push_front((key, tag)),
         }
     }
 
-    fn touch(&mut self, key: &ContractCacheKey) {
-        let now = self.now_tick();
-        let Some(ent) = self.map.get_mut(key) else {
-            return;
-        };
-        let hl = self.config.heat_half_life;
+    fn pop_lru_back(&mut self, segment: Segment) -> Option<(ContractCacheKey, u64)> {
+        match segment {
+            Segment::Probation => self.probation_lru.pop_back(),
+            Segment::Protected => self.protected_lru.pop_back(),
+        }
+    }
+
+    fn apply_heat(ent: &mut Entry, now: u64, heat_half_life: u64, hit_boost: u32) {
+        let hl = heat_half_life;
         let decayed = if hl == 0 {
             ent.heat
         } else {
@@ -128,25 +145,35 @@ impl ContractCacheInner {
             let shift = (dt / hl).min(31) as u32;
             ent.heat >> shift
         };
-        ent.heat = decayed.saturating_add(self.config.hit_boost);
+        ent.heat = decayed.saturating_add(hit_boost);
         ent.last_tick = now;
         ent.lru_tag = now;
+    }
 
-        match ent.segment {
-            Segment::Probation => {
-                Self::remove_from_lru_queue(&mut self.probation_lru, key);
-                self.probation_lru.push_front((key.clone(), ent.lru_tag));
-                if ent.heat >= self.config.promote_threshold {
-                    ent.segment = Segment::Protected;
-                    Self::remove_from_lru_queue(&mut self.probation_lru, key);
-                    self.protected_lru.push_front((key.clone(), ent.lru_tag));
-                }
+    fn touch(&mut self, key: &ContractCacheKey) {
+        let now = self.now_tick();
+        let (target_segment, new_tag, promoted_charge) = {
+            let Some(ent) = self.map.get_mut(key) else {
+                return;
+            };
+            Self::apply_heat(
+                ent,
+                now,
+                self.config.heat_half_life,
+                self.config.hit_boost,
+            );
+            let mut promoted_charge = 0usize;
+            if ent.segment == Segment::Probation && ent.heat >= self.config.promote_threshold {
+                ent.segment = Segment::Protected;
+                promoted_charge = ent.charge_bytes;
             }
-            Segment::Protected => {
-                Self::remove_from_lru_queue(&mut self.protected_lru, key);
-                self.protected_lru.push_front((key.clone(), ent.lru_tag));
-            }
+            (ent.segment, ent.lru_tag, promoted_charge)
+        };
+        if promoted_charge > 0 {
+            self.protected_used_bytes = self.protected_used_bytes.saturating_add(promoted_charge);
         }
+        self.push_lru_front(target_segment, key.clone(), new_tag);
+        self.maybe_compact_lru_queues();
     }
 
     fn get(&mut self, key: &ContractCacheKey) -> Option<Arc<ContractObj>> {
@@ -206,7 +233,8 @@ impl ContractCacheInner {
         };
         self.used_bytes = self.used_bytes.saturating_add(charge);
         self.map.insert(key.clone(), ent);
-        self.probation_lru.push_front((key, now));
+        self.push_lru_front(Segment::Probation, key, now);
+        self.maybe_compact_lru_queues();
 
         self.evict_until_fit();
     }
@@ -220,9 +248,10 @@ impl ContractCacheInner {
         if self.used_bytes <= max {
             return;
         }
+        self.maybe_compact_lru_queues();
         let mut consecutive_failures = 0;
         while self.used_bytes > max {
-            if !self.evict_one_from_probation() && !self.evict_one_from_protected() {
+            if !self.evict_one_from(Segment::Probation) && !self.evict_one_from(Segment::Protected) {
                 consecutive_failures += 1;
                 if consecutive_failures >= 2 {
                     break;
@@ -234,8 +263,8 @@ impl ContractCacheInner {
         // Optional balancing: if protected is too large, evict from protected tail.
         let pb = self.protected_budget();
         consecutive_failures = 0;
-        while self.used_bytes > 0 && self.protected_used_bytes() > pb {
-            if !self.evict_one_from_protected() {
+        while self.used_bytes > 0 && self.protected_used_bytes > pb {
+            if !self.evict_one_from(Segment::Protected) {
                 consecutive_failures += 1;
                 if consecutive_failures >= 2 {
                     break;
@@ -246,34 +275,43 @@ impl ContractCacheInner {
         }
     }
 
-    fn protected_used_bytes(&self) -> usize {
-        self.map
-            .values()
-            .filter(|e| e.segment == Segment::Protected)
-            .map(|e| e.charge_bytes)
-            .sum()
-    }
-
-    fn evict_one_from_probation(&mut self) -> bool {
-        while let Some((key, tag)) = self.probation_lru.pop_back() {
-            let Some(ent) = self.map.get(&key) else {
-                continue;
-            };
-            if ent.segment != Segment::Probation || ent.lru_tag != tag {
-                continue;
-            }
-            self.remove_entry(&key);
-            return true;
+    fn maybe_compact_lru_queues(&mut self) {
+        let map_len = self.map.len();
+        if map_len == 0 {
+            self.probation_lru.clear();
+            self.protected_lru.clear();
+            return;
         }
-        false
+        let threshold = map_len.saturating_mul(4);
+        if self.probation_lru.len() <= threshold && self.protected_lru.len() <= threshold {
+            return;
+        }
+        self.rebuild_lru_queues();
     }
 
-    fn evict_one_from_protected(&mut self) -> bool {
-        while let Some((key, tag)) = self.protected_lru.pop_back() {
+    fn rebuild_lru_queues(&mut self) {
+        let mut probation = Vec::new();
+        let mut protected = Vec::new();
+        for (key, ent) in self.map.iter() {
+            match ent.segment {
+                Segment::Probation => probation.push((key.clone(), ent.lru_tag)),
+                Segment::Protected => protected.push((key.clone(), ent.lru_tag)),
+            }
+        }
+        probation.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        protected.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        self.probation_lru.clear();
+        self.protected_lru.clear();
+        self.probation_lru.extend(probation);
+        self.protected_lru.extend(protected);
+    }
+
+    fn evict_one_from(&mut self, segment: Segment) -> bool {
+        while let Some((key, tag)) = self.pop_lru_back(segment) {
             let Some(ent) = self.map.get(&key) else {
                 continue;
             };
-            if ent.segment != Segment::Protected || ent.lru_tag != tag {
+            if ent.segment != segment || ent.lru_tag != tag {
                 continue;
             }
             self.remove_entry(&key);
@@ -285,14 +323,17 @@ impl ContractCacheInner {
     fn remove_entry(&mut self, key: &ContractCacheKey) {
         if let Some(ent) = self.map.remove(key) {
             self.used_bytes = self.used_bytes.saturating_sub(ent.charge_bytes);
+            if ent.segment == Segment::Protected {
+                self.protected_used_bytes =
+                    self.protected_used_bytes.saturating_sub(ent.charge_bytes);
+            }
             self.evicts += 1;
-            Self::remove_from_lru_queue(&mut self.probation_lru, key);
-            Self::remove_from_lru_queue(&mut self.protected_lru, key);
         }
     }
 
     fn clear_all(&mut self) {
         self.used_bytes = 0;
+        self.protected_used_bytes = 0;
         self.map.clear();
         self.probation_lru.clear();
         self.protected_lru.clear();
@@ -309,6 +350,9 @@ impl ContractCacheInner {
         for key in keys {
             self.remove_entry(&key);
         }
+        if removed > 0 {
+            self.maybe_compact_lru_queues();
+        }
         removed
     }
 }
@@ -324,44 +368,26 @@ impl ContractCacheInner {
 /// - Probation->Protected promotion happens when `heat >= promote_threshold`.
 /// - Eviction is SLRU by bytes: evict LRU from probation first; then from protected.
 pub struct ContractCachePool {
-    lock: Mutex<()>,
-    inner: UnsafeCell<ContractCacheInner>,
+    inner: Mutex<ContractCacheInner>,
 }
-
-unsafe impl Send for ContractCachePool {}
-unsafe impl Sync for ContractCachePool {}
 
 impl Default for ContractCachePool {
     fn default() -> Self {
         Self {
-            lock: Mutex::new(()),
-            inner: UnsafeCell::new(ContractCacheInner {
-                config: ContractCacheConfig::default(),
-                tick: 0,
-                used_bytes: 0,
-                map: HashMap::new(),
-                probation_lru: VecDeque::new(),
-                protected_lru: VecDeque::new(),
-                hits: 0,
-                misses: 0,
-                inserts: 0,
-                evicts: 0,
-            }),
+            inner: Mutex::new(ContractCacheInner::default()),
         }
     }
 }
 
 impl ContractCachePool {
     pub fn configure(&self, config: ContractCacheConfig) {
-        let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
-        let inner = unsafe { &mut *self.inner.get() };
+        let mut inner = self.inner.lock().expect("ContractCachePool lock poisoned");
         inner.config = config;
         inner.evict_until_fit();
     }
 
     pub fn stats(&self) -> ContractCacheStats {
-        let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
-        let inner = unsafe { &*self.inner.get() };
+        let inner = self.inner.lock().expect("ContractCachePool lock poisoned");
         ContractCacheStats {
             enabled: inner.enabled(),
             max_bytes: inner.config.max_bytes,
@@ -375,20 +401,17 @@ impl ContractCachePool {
     }
 
     pub fn get(&self, addr: &ContractAddress, edition: &ContractEdition) -> Option<Arc<ContractObj>> {
-        let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
-        let inner = unsafe { &mut *self.inner.get() };
+        let mut inner = self.inner.lock().expect("ContractCachePool lock poisoned");
         inner.get(&ContractCacheInner::make_key(addr, edition))
     }
 
     pub fn insert(&self, addr: &ContractAddress, obj: Arc<ContractObj>) {
-        let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
-        let inner = unsafe { &mut *self.inner.get() };
+        let mut inner = self.inner.lock().expect("ContractCachePool lock poisoned");
         inner.insert(addr, obj);
     }
 
     pub fn remove_addr(&self, addr: &ContractAddress) -> usize {
-        let _lk = self.lock.lock().expect("ContractCachePool lock poisoned");
-        let inner = unsafe { &mut *self.inner.get() };
+        let mut inner = self.inner.lock().expect("ContractCachePool lock poisoned");
         inner.remove_addr(addr)
     }
 }

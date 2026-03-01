@@ -312,10 +312,9 @@ impl Machine {
         param: Value,
     ) -> Ret<Value> {
         let adr = contract_addr.to_readable();
-        let mut gas = Some(&mut *env.gas);
-        let Some((owner, fnobj)) =
+        let Some(hit) =
             self.r
-                .load_abstfn(env.ctx, &mut gas, &contract_addr, cty)?
+                .resolve_abstfn(env.ctx, env.gas, &contract_addr, cty)?
         else {
             return errf!("abst call {:?} not find in {}", cty, adr);
         };
@@ -323,9 +322,9 @@ impl Machine {
         let rv = self.do_call(
             env,
             ExecMode::Abst,
-            fnobj.as_ref(),
+            hit.fnobj.as_ref(),
             contract_addr,
-            owner,
+            Some(hit.owner),
             None,
             Some(param),
         )?;

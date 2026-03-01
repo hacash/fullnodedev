@@ -17,7 +17,7 @@ pub struct SpaceCap {
 
     pub max_contract_size: usize, // 65535 * 2
     pub one_function_size: usize, // 65535 / 4
-    pub inherits_parent: usize, // 4
+    pub inherits_parent: usize, // 8
     pub librarys_link:   usize, // 100
     pub max_reentry_depth: u32,  // 1, EXTACTION re-entry depth limit
 
@@ -42,13 +42,12 @@ impl SpaceCap {
             max_memory:          16,
             max_contract_size: U16M * 2, // 65535*2
             one_function_size: U16M / 4, // 65535/4
-            inherits_parent:      4,
+            inherits_parent:      8,
             librarys_link:      100,
             max_reentry_depth:    1, // allow 1 re-entry (2 call layers total)
             // max_ctl_func:   200, max_ctl_libx:   100, max_ctl_body:   50,
         }
     }
-
 }
 
 
