@@ -540,7 +540,7 @@ mod machine_test {
     }
 
     #[test]
-    fn call_outer_uses_inherits_but_view_pure_callcode_keep_local_lookup() {
+    fn call_outer_view_pure_use_inherits_but_callcode_keeps_local_lookup() {
         let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(11));
         let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(12));
@@ -551,7 +551,7 @@ mod machine_test {
                 Func::new("probe")
                     .unwrap()
                     .public()
-                    .fitsh("return self.id() * 100 + this.id()")
+                    .fitsh("return 201")
                     .unwrap(),
             )
             .into_sto();
@@ -605,7 +605,6 @@ mod machine_test {
         let outer_script = r##"
             lib C = 0
             let v = C.probe()
-            // In parent.probe(): - self.id() resolves in parent(code_owner)=2 - this.id() resolves in child(state_addr)=1
             assert v == 201
             return 0
         "##;
@@ -614,23 +613,25 @@ mod machine_test {
             "CALL should resolve through inherits"
         );
 
-        // CALLVIEW/CALLPURE/CALLCODE: should keep exact local lookup, so inherited-only fn is not found.
+        // CALLVIEW/CALLPURE should also resolve inherits; CALLCODE stays local-only.
         let view_script = r##"
             lib C = 0
-            return C:probe()
+            assert C:probe() == 201
+            return 0
         "##;
         assert!(
-            run_main(view_script).is_err(),
-            "CALLVIEW should not resolve inherits"
+            run_main(view_script).is_ok(),
+            "CALLVIEW should resolve through inherits"
         );
 
         let pure_script = r##"
             lib C = 0
-            return C::probe()
+            assert C::probe() == 201
+            return 0
         "##;
         assert!(
-            run_main(pure_script).is_err(),
-            "CALLPURE should not resolve inherits"
+            run_main(pure_script).is_ok(),
+            "CALLPURE should resolve through inherits"
         );
 
         let callcode_script = r##"

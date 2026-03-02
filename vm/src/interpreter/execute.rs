@@ -161,7 +161,7 @@ macro_rules! funcptr {
             Call(Funcptr{
                 mode: $mode,
                 is_callcode: false,
-                target: CallTarget::Libidx(idx),
+                target: CallTarget::Idx(idx),
                 fnsign: sig,
             })
         }
@@ -789,7 +789,7 @@ pub fn execute_code(
                         // CALLCODE inherits current mode permissions, and marks in_callcode
                         let idx = itrparamu8!(codes, *pc);
                         let sig = itrbuf!(codes, *pc, FN_SIGN_WIDTH);
-                        exit = call!(mode, sig, CallTarget::Libidx(idx), true);
+                        exit = call!(mode, sig, CallTarget::Idx(idx), true);
                     },
                     CALLPURE  => exit = funcptr!(codes, *pc, Pure),
                     CALLVIEW  => exit = funcptr!(codes, *pc, View),

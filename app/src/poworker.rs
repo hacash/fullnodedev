@@ -78,7 +78,8 @@ const ONEDAY_BLOCK_NUM: f64 = 288.0; // one day block
 static MINING_BLOCK_HEIGHT: AtomicU64 = AtomicU64::new(0);
 
 use std::sync::LazyLock;
-static HTTP_CLIENT: LazyLock<HttpClient> = LazyLock::new(|| HttpClient::new());
+static HTTP_CLIENT: LazyLock<HttpClient> =
+    LazyLock::new(|| HttpClient::builder().no_proxy().build().unwrap());
 static MINING_BLOCK_STUFF: LazyLock<RwLock<Arc<BlockMiningStuff>>> =
     LazyLock::new(|| RwLock::default());
 
@@ -490,7 +491,18 @@ fn pull_pending_block_stuff(cnf: &PoWorkConf) {
         println!("Error: cannot get block data at {}\n", &urlapi_pending);
         delay_return!(30);
     };
-    let res: JV = serde_json::from_str(&repv.text().unwrap()).unwrap();
+    let Ok(jsdata) = repv.text() else {
+        println!("Error: cannot read block data body at {}\n", &urlapi_pending);
+        delay_return!(10);
+    };
+    let Ok(res) = serde_json::from_str::<JV>(&jsdata) else {
+        println!(
+            "Error: invalid block data json at {} (body len {})\n",
+            &urlapi_pending,
+            jsdata.len()
+        );
+        delay_return!(10);
+    };
     let jstr = |k| res[k].as_str().unwrap_or("");
     let jnum = |k| res[k].as_u64().unwrap_or(0);
     let JV::String(ref _blkhd) = res["block_intro"] else {

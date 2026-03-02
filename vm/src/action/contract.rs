@@ -351,11 +351,17 @@ fn check_static_call_targets(
                     }
                     sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
                     let tar = &libs[libidx];
-                    let sto =
-                        load_contract_for_check(vmsta, root_addr, root_contract, tar, "library")?;
-                    if contract_userfn_meta(&sto, &sign).is_none() {
+                    let found = resolve_userfn_meta_self_or_direct_parents(
+                        vmsta,
+                        root_addr,
+                        root_contract,
+                        tar,
+                        &sign,
+                        true,
+                    )?;
+                    if found.is_none() {
                         return errf!(
-                            "{}: library {} function 0x{} not found",
+                            "{}: call target {} function 0x{} not found in self/direct parents",
                             func_tag,
                             tar.to_readable(),
                             hex::encode(sign)

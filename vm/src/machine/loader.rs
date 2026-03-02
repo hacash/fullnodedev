@@ -350,11 +350,16 @@ impl Resoure {
                         fnobj: hit.fnobj,
                     });
                 }
+                let scope = if req.fptr.is_callcode {
+                    LookupScope::RootOnly
+                } else {
+                    LookupScope::RootThenDirectParents
+                };
                 let hit = Self::require_resolved(self.resolve_userfn(
                     &mut vmsta,
                     gas,
                     &target_state,
-                    LookupScope::RootOnly,
+                    scope,
                     req.fptr.fnsign,
                 )?)?;
                 Ok(DispatchPlan::KeepState {
