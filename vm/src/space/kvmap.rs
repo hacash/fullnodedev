@@ -1,4 +1,11 @@
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 
+use field::Address;
+
+use crate::rt::ItrErrCode::*;
+use crate::rt::*;
+use crate::value::Value;
 
 
 macro_rules! memory_kvmap_define {
@@ -39,11 +46,21 @@ macro_rules! memory_kvmap_define {
 
             pub fn put(&mut self, k: Value, v: Value) -> VmrtErr {
                 v.canbe_value()?;
-                self.datas.insert(Self::key(&k)?, v);
-                if self.datas.len() > self.limit {
-                    return itr_err_code!($er2) // out of limit
+                let key = Self::key(&k)?;
+                let full = self.datas.len() >= self.limit;
+                match self.datas.entry(key) {
+                    Entry::Occupied(mut hit) => {
+                        hit.insert(v);
+                        Ok(())
+                    }
+                    Entry::Vacant(slot) => {
+                        if full {
+                            return itr_err_code!($er2) // out of limit
+                        }
+                        slot.insert(v);
+                        Ok(())
+                    }
                 }
-                Ok(())
             }
 
             pub fn get(&self, k: &Value) -> VmrtRes<Value> {
@@ -80,6 +97,14 @@ pub struct CtcKVMap {
 
 impl CtcKVMap {
 
+    #[inline(always)]
+    fn check_addr(addr: &Address) -> VmrtErr {
+        addr.check_version().map_ires(
+            MemoryError,
+            format!("memory use must in dffective address but in {}", addr),
+        )
+    }
+
     pub fn new(limit: usize) -> Self {
         Self {
             limit,
@@ -96,9 +121,17 @@ impl CtcKVMap {
         self.datas.clear();
     }
 
-    pub fn entry(&mut self, addr: &Address) -> VmrtRes<&mut MKVMap> {
-        addr.check_version().map_ires(MemoryError, format!("memory use must in dffective address but in {}", addr))?;
+    pub fn entry_mut(&mut self, addr: &Address) -> VmrtRes<&mut MKVMap> {
+        Self::check_addr(addr)?;
         Ok(self.datas.entry(addr.clone()).or_insert_with(||MKVMap::new(self.limit)))
+    }
+
+    pub fn get(&self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+        Self::check_addr(addr)?;
+        match self.datas.get(addr) {
+            Some(mem) => mem.get(key),
+            None => Ok(Value::Nil),
+        }
     }
 
 }
@@ -113,13 +146,17 @@ mod kvmap_tests {
         let key = Value::Bytes(vec![1u8]);
         let mut m = CtcKVMap::new(1);
 
-        m.entry(&addr).unwrap().put(key.clone(), Value::U8(7)).unwrap();
+        m.entry_mut(&addr).unwrap().put(key.clone(), Value::U8(7)).unwrap();
         m.reset(0);
 
-        let got = m.entry(&addr).unwrap().get(&key).unwrap();
+        let got = m.get(&addr, &key).unwrap();
         assert_eq!(got, Value::Nil);
 
-        let err = m.entry(&addr).unwrap().put(key.clone(), Value::U8(9)).unwrap_err();
+        let err = m
+            .entry_mut(&addr)
+            .unwrap()
+            .put(key.clone(), Value::U8(9))
+            .unwrap_err();
         assert!(matches!(err, ItrErr(OutOfMemory, _)));
     }
 }

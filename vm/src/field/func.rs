@@ -96,9 +96,14 @@ impl FuncArgvTypes {
             // do not check
             0 => Ok(()),
             // check one argv
-            1 => v.checked_param_cast(types[0]),
+            1 => v.checked_param_type(types[0]),
             // check list
-            _ => v.compo()?.check_list_param_cast(&types),
+            _ => {
+                let compo = v.compo().map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?;
+                compo
+                    .check_list_param_type(&types)
+                    .map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))
+            }
         }
     }
 
@@ -212,6 +217,7 @@ impl_field_only_new!{FuncArgvTypes}
 #[cfg(test)]
 mod code_stuff_tests {
     use super::*;
+    use std::collections::VecDeque;
 
     #[test]
     fn code_stuff_to_pkg_rejects_invalid_conf() {
@@ -257,5 +263,72 @@ mod code_stuff_tests {
         assert_eq!(used, raw.len());
         assert_eq!(parsed.output_type().unwrap(), Some(ValueTy::U64));
         assert_eq!(parsed.param_types().unwrap(), vec![ValueTy::U8, ValueTy::U16, ValueTy::U32]);
+    }
+
+    #[test]
+    fn check_params_single_no_longer_auto_casts() {
+        let tys = FuncArgvTypes::from_types(None, vec![ValueTy::U16]).unwrap();
+        let mut argv = Value::U8(7);
+        let err = tys.check_params(&mut argv).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+        assert_eq!(argv, Value::U8(7));
+    }
+
+    #[test]
+    fn check_params_list_no_mutation_on_type_mismatch() {
+        let types = FuncArgvTypes::from_types(None, vec![ValueTy::U16, ValueTy::U8]).unwrap();
+        let shared = CompoItem::list(VecDeque::from([Value::U8(1), Value::U8(2)])).unwrap();
+        let mut argv = Value::Compo(shared.clone());
+        let alias = Value::Compo(shared);
+        let snapshot = |v: &Value| -> Vec<Value> {
+            v.compo_ref()
+                .unwrap()
+                .list_ref()
+                .unwrap()
+                .iter()
+                .cloned()
+                .collect()
+        };
+
+        assert_eq!(snapshot(&argv), vec![Value::U8(1), Value::U8(2)]);
+        assert_eq!(snapshot(&alias), vec![Value::U8(1), Value::U8(2)]);
+
+        let err = types.check_params(&mut argv).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+
+        assert_eq!(snapshot(&argv), vec![Value::U8(1), Value::U8(2)]);
+        assert_eq!(snapshot(&alias), vec![Value::U8(1), Value::U8(2)]);
+    }
+
+    #[test]
+    fn check_params_multi_non_list_input_uses_call_argv_type_fail() {
+        let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U16]).unwrap();
+        let mut argv = Value::U8(1);
+        let err = types.check_params(&mut argv).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+    }
+
+    #[test]
+    fn check_params_multi_map_input_uses_call_argv_type_fail() {
+        let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U16]).unwrap();
+        let mut argv = Value::Compo(CompoItem::new_map());
+        let err = types.check_params(&mut argv).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+    }
+
+    #[test]
+    fn check_output_uses_full_cast_set_for_bool() {
+        let tys = FuncArgvTypes::from_types(Some(ValueTy::Bool), vec![]).unwrap();
+        let mut out = Value::U16(7);
+        tys.check_output(&mut out).unwrap();
+        assert_eq!(out, Value::Bool(true));
+    }
+
+    #[test]
+    fn check_output_uses_call_argv_type_fail_for_unreachable_target() {
+        let tys = FuncArgvTypes::from_types(Some(ValueTy::Compo), vec![]).unwrap();
+        let mut out = Value::U8(1);
+        let err = tys.check_output(&mut out).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 }

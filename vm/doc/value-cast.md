@@ -109,7 +109,11 @@ So explicit uint cast and implicit numeric normalization share the same scalar d
 ## 4.5 `cast_to` / `CTO <type>`
 
 - Dispatches to `cast_bool`, `cast_u*`, `cast_buf`, `cast_addr`
-- Unsupported target type (`Nil`, `HeapSlice`, `Compo`) => error
+- `CTO` target type param must be in the explicit-cast set: `Bool/U8/U16/U32/U64/U128/Bytes/Address`
+- `CTO` target outside this set (`Nil`, `HeapSlice`, `Compo`) => `InstParamsErr`
+- `TIS` type param accepts all declared `ValueTy` (including `Nil/HeapSlice/Compo`) for type checking
+- `TIS` unknown or reserved type id => `InstParamsErr`
+- `CTO` unknown or reserved type id => `InstParamsErr`
 
 ## 5. Implicit Conversion Trigger Map
 
@@ -135,21 +139,25 @@ Failure in either operand normalization or width/range checks => immediate error
 
 ## 5.3 Equality context (`EQ`, `NEQ`)
 
-- Build equality byte view:
-  - `Nil` => empty bytes `[]`
-  - others => `canbe_bytes_ec`
-- If either operand is uint type (`U8/U16/U32/U64/U128`):
-  - compare after left-zero-padding shorter side to equal length
-- If neither operand is uint:
-  - compare byte view directly
-
-Unsupported byte-source types => error.
+- If both operands are uint types (`U8/U16/U32/U64/U128`):
+  - convert both to `u128`
+  - compare numeric value
+- Otherwise, operands must have the same runtime type; cross-type compare fails.
+- Same-type compare rules:
+  - `Nil == Nil`
+  - `Bool` compares bool value
+  - `Bytes` compares raw bytes
+  - `Address` compares raw address bytes
+  - `HeapSlice` compares `(start, len)`
+  - `Compo` compares pointer identity (`ptr_eq`)
 
 ## 5.4 Ordered compare context (`LT`, `LE`, `GT`, `GE`)
 
-- Both sides use `canbe_u128`
-- Compare numeric values
-- Any normalization failure => immediate error
+- Ordered comparison is `uint`-only.
+- Both operands must already be uint types: `U8/U16/U32/U64/U128`.
+- No implicit `canbe_u128` conversion is applied for `Nil/Bool/Bytes/Address`.
+- Operands are compared as numeric uint values.
+- Any non-uint operand => immediate type error.
 
 ## 5.5 Byte-handle context
 
@@ -192,11 +200,12 @@ Note: in normal function signatures, param type `Nil` is rejected by section 6.1
 
 ## 7. Deterministic Edge Cases (Normative)
 
-- `Nil == U8(0)` is `true` (uint path with zero-padding)
-- `Nil == Bool(false)` is `false` (non-uint direct byte-view compare: `[]` vs `[0]`)
-- `Bytes([0,1]) == U8(1)` is `true`
-- `Bytes([0,1]) == Bytes([1])` is `false` when neither side is uint
-- Ordered compare with `HeapSlice`/`Compo` always fails
+- `U16(1) == U8(1)` is `true` (both uint; compare as `u128`)
+- `U32(5) != U8(4)` is `true` (both uint; compare as `u128`)
+- `Nil == Bool(false)` fails (cross-type compare is not allowed)
+- `Bytes([0,1]) == U8(1)` fails (cross-type compare is not allowed)
+- `Bytes([0,1]) == Bytes([1])` is `false` (same-type raw-bytes compare)
+- Ordered compare with non-uint values (`Nil`, `Bool`, `Bytes`, `Address`, `HeapSlice`, `Compo`) always fails
 
 ## 8. U256 Reservation Contract (Forward Compatibility)
 
@@ -210,6 +219,6 @@ This section defines mandatory constraints before enabling `U256`, to prevent co
   - update scalar domain (`Value`, `ValueTy`, serialization/parse)
   - update explicit cast family (`cast_u256`, `CU256`, `CTO U256`)
   - update implicit numeric normalization (`to_uint`, arithmetic width promotion, ordered compare)
-  - update equality uint-padding path to include `U256` as uint operand
+  - update equality uint numeric-compare path to include `U256` as uint operand
 - While `U256` is disabled, numeric scalar normalization remains bounded by current active max width (`u128` / 16 bytes).
 - No mixed mode is allowed: enabling parser keyword without runtime normalization support is forbidden.

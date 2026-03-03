@@ -1,5 +1,6 @@
-
-
+use crate::rt::ItrErrCode::*;
+use crate::rt::*;
+use crate::value::*;
 
 #[derive(Debug, Default)]
 pub struct Stack {
@@ -39,11 +40,15 @@ impl Stack {
     }
 
     pub fn print_stack(&self) -> String {
-        let mut prts = vec![];
-        for d in &self.datas {
-            prts.push(format!("{}", d));
+        let mut text = String::from("[");
+        for (i, d) in self.datas.iter().enumerate() {
+            if i > 0 {
+                text.push(',');
+            }
+            text.push_str(&d.to_string());
         }
-        format!("[{}]", prts.join(","))
+        text.push(']');
+        text
     }
         
 }
@@ -52,6 +57,34 @@ impl Stack {
 
 /* * max size u16 = 65536 */
 impl Stack {
+
+    #[inline(always)]
+    fn pop_empty() -> ItrErr {
+        ItrErr::new(StackError, "pop empty stack")
+    }
+
+    #[inline(always)]
+    fn split_tail(&mut self, n: usize) -> Option<Vec<Value>> {
+        let m = self.datas.len();
+        if n > m {
+            return None;
+        }
+        Some(self.datas.split_off(m - n))
+    }
+
+    #[inline(always)]
+    fn get_mut_at(&mut self, idx: usize) -> VmrtRes<&mut Value> {
+        self.datas
+            .get_mut(idx)
+            .ok_or_else(|| ItrErr::code(OutOfStack))
+    }
+
+    #[inline(always)]
+    fn get_at(&self, idx: usize) -> VmrtRes<&Value> {
+        self.datas
+            .get(idx)
+            .ok_or_else(|| ItrErr::code(OutOfStack))
+    }
 
     pub fn alloc(&mut self, num: u8) -> VmrtRes<u8> {
         let osz = self.datas.len();
@@ -65,11 +98,9 @@ impl Stack {
 
     #[inline(always)]
     pub fn peek<'a>(&'a mut self) -> VmrtRes<&'a mut Value> {
-        let n = self.datas.len();
-        if n <= 0 {
-            return itr_err_fmt!(StackError, "Read empty stack")
-        }
-        Ok(unsafe { self.datas.get_unchecked_mut(n - 1) })
+        self.datas
+            .last_mut()
+            .ok_or_else(|| ItrErr::new(StackError, "Read empty stack"))
     }
 
     pub fn compo<'a>(&'a mut self) -> VmrtRes<&'a mut CompoItem> {
@@ -82,27 +113,17 @@ impl Stack {
 
     #[inline(always)]
     pub fn edit<'a>(&'a mut self, idx: u8) -> VmrtRes<&'a mut Value> {
-        // let opt = mark > 5; // 0b00000111; (mark & 0b00011111)
-        let idx = idx as usize;
-        let n = self.datas.len();
-        if idx >= n {
-            return itr_err_code!(OutOfStack)
-        }
-        Ok(unsafe { self.datas.get_unchecked_mut(idx) })
+        self.get_mut_at(idx as usize)
     }
 
     pub fn taken(&mut self, n: usize) -> VmrtRes<Vec<Value>> {
-        let m = self.datas.len();
-        if n > m {
-            return Err(ItrErr::new(StackError, "Pop empty stack"))
-        }
-        let x = m - n;
-        Ok(self.datas.split_off(x))
+        self.split_tail(n)
+            .ok_or_else(Self::pop_empty)
     }
 
     #[inline(always)]
     pub fn pop(&mut self) -> VmrtRes<Value> {
-        self.datas.pop().ok_or_else(||ItrErr::new(StackError, "Pop empty stack"))
+        self.datas.pop().ok_or_else(Self::pop_empty)
     }
 
     #[inline(always)]
@@ -111,13 +132,8 @@ impl Stack {
         if n == 0 {
             return Ok(vec![])
         }
-        let cl = self.datas.len();
-        if n > cl {
-            return itr_err_fmt!(StackError, "pop empty stack")
-        }
-        let spx = cl - n;
-        let res = self.datas.split_off(spx);
-        Ok(res)
+        self.split_tail(n)
+            .ok_or_else(Self::pop_empty)
     }
 
     #[inline(always)]
@@ -128,7 +144,7 @@ impl Stack {
         }
         let cl = self.datas.len();
         if x > cl {
-            return itr_err_fmt!(StackError, "pop empty stack")
+            return Err(Self::pop_empty());
         }
         self.datas.truncate(cl - x);
         Ok(())
@@ -171,13 +187,11 @@ impl Stack {
         if x < 2 {
             return itr_err_fmt!(StackError, "inst reverse param cannot less than 2")
         }
-        let mut list = VecDeque::with_capacity(x);
-        for _ in 0..x {
-            list.push_front(self.pop()?);
+        let l = self.datas.len();
+        if x > l {
+            return itr_err_fmt!(StackError, "pop empty stack")
         }
-        while let Some(a) = list.pop_back() {
-            self.push(a)?;
-        }
+        self.datas[l - x..l].reverse();
         Ok(())
     }
 
@@ -195,11 +209,16 @@ impl Stack {
         if n < 3 {
             return itr_err_fmt!(StackError, "inst join param cannot less than 3")
         }
-        let mut value = Value::empty_bytes();
-        for _ in 0..n {
-            value = Value::concat(&self.pop()?, &value, cap)?;
+        if n > self.datas.len() {
+            return itr_err_fmt!(StackError, "pop empty stack")
         }
-        self.push(value.valid(cap)?)
+        let items = self.popn(n as u8)?;
+        let total: usize = items.iter().map(Value::val_size).sum();
+        let mut data = Vec::with_capacity(total);
+        for v in items {
+            data.extend_from_slice(&v.canbe_bytes_ec(BytesHandle)?);
+        }
+        self.push(Value::bytes(data).valid(cap)?)
     }
 
     #[inline(always)]
@@ -213,20 +232,13 @@ impl Stack {
 
     #[inline(always)]
     pub fn save(&mut self, idx: u16, it: Value) -> VmrtErr {
-        let idx = idx as usize;
-        if idx >= self.datas.len() {
-            return itr_err_code!(OutOfStack)
-        }
-        self.datas[idx] = it;
+        *self.get_mut_at(idx as usize)? = it;
         Ok(())
     }
 
     #[inline(always)]
     pub fn load(&self, idx: usize) -> VmrtRes<Value> {
-        if idx >= self.datas.len() {
-            return itr_err_code!(OutOfStack)
-        }
-        Ok(self.datas[idx].clone())
+        Ok(self.get_at(idx)?.clone())
     }
     
     #[inline(always)]
@@ -237,11 +249,12 @@ impl Stack {
     #[inline(always)]
     pub fn lastn(&self, n: u16) -> VmrtRes<Value> {
         let n = n as usize;
-        let l = self.datas.len();
-        if n >= l {
-            return itr_err_fmt!(StackError, "Read stack overflow")
-        }
-        Ok(self.datas[l-n-1].clone())
+        let idx = self
+            .datas
+            .len()
+            .checked_sub(n + 1)
+            .ok_or_else(|| ItrErr::new(StackError, "Read stack overflow"))?;
+        Ok(self.get_at(idx)?.clone())
     }
 
     #[inline(always)]

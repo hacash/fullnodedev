@@ -37,7 +37,7 @@ keyword_define! {
     LineCms   : "//"
     BlkCmsL   : "/*"
     BlkCmsR   : "*/"
-    Progma    : "pragma"
+    Pragma    : "pragma"
     Use       : "use"
     Lib       : "lib"
     Let       : "let"

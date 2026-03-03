@@ -23,3 +23,11 @@ macro_rules! enum_try_from_u8_by_variant {
         }
     };
 }
+
+
+pub fn ascii_show_string(s: &[u8]) -> Option<String> {
+    maybe!(s.iter().any(|&a|a!=10&&(a<32||a>126)),
+        None,
+        Some(String::from_utf8(s.to_vec()).unwrap())
+    )
+}

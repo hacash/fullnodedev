@@ -425,27 +425,22 @@ impl Syntax {
             return errf!("cannot assign to immutable symbol '{}'", s);
         }
         self.source_map.mark_slot_mutated(i);
+        let (lxop, arith) = match op {
+            Keyword(AsgAdd) => (LxOp::Add, ADD),
+            Keyword(AsgSub) => (LxOp::Sub, SUB),
+            Keyword(AsgMul) => (LxOp::Mul, MUL),
+            Keyword(AsgDiv) => (LxOp::Div, DIV),
+            _ => unreachable!(),
+        };
         if i < 64 {
-            let mark = i | match op {
-                Keyword(AsgAdd) => 0b00000000,
-                Keyword(AsgSub) => 0b01000000,
-                Keyword(AsgMul) => 0b10000000,
-                Keyword(AsgDiv) => 0b11000000,
-                _ => unreachable!(),
-            };
+            let mark = encode_local_operand_mark(lxop, i).map_err(Error::from)?;
             return Ok(push_single_p1(XOP, mark, v));
         }
         // $0 = $0 + 1
         let getv = push_local_get(i, s!(""));
         let opsv = Box::new(IRNodeDouble {
             hrtv: true,
-            inst: match op {
-                Keyword(AsgAdd) => ADD,
-                Keyword(AsgSub) => SUB,
-                Keyword(AsgMul) => MUL,
-                Keyword(AsgDiv) => DIV,
-                _ => unreachable!(),
-            },
+            inst: arith,
             subx: getv,
             suby: v,
         });
@@ -529,6 +524,7 @@ impl Syntax {
                     let nk = next!();
                     let hrtv = true;
                     let target_ty = match nk {
+                        Keyword(Bool) => Some(ValueTy::Bool),
                         Keyword(U8) => Some(ValueTy::U8),
                         Keyword(U16) => Some(ValueTy::U16),
                         Keyword(U32) => Some(ValueTy::U32),
@@ -550,6 +546,10 @@ impl Syntax {
                     }
                     if !skip_cast {
                         let v: Box<dyn IRNode> = match nk {
+                            Keyword(Bool) => {
+                                let para = ValueTy::Bool as u8;
+                                push_single_p1_hr(hrtv, CTO, para, left)
+                            }
                             Keyword(U8) => cuto!(CU8),
                             Keyword(U16) => cuto!(CU16),
                             Keyword(U32) => cuto!(CU32),
@@ -601,6 +601,19 @@ impl Syntax {
                         Keyword(Bytes) => push_single_p1_hr(hrtv, TIS, ValueTy::Bytes as u8, subx),
                         Keyword(Address) => {
                             push_single_p1_hr(hrtv, TIS, ValueTy::Address as u8, subx)
+                        }
+                        Identifier(name) => {
+                            let Ok(ty) = ValueTy::from_name(&name) else {
+                                return e
+                            };
+                            match ty {
+                                ValueTy::Nil => Box::new(IRNodeSingle {
+                                    hrtv,
+                                    subx,
+                                    inst: TNIL,
+                                }),
+                                _ => push_single_p1_hr(hrtv, TIS, ty as u8, subx),
+                            }
                         }
                         _ => return e,
                     };

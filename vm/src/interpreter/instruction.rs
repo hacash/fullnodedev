@@ -94,25 +94,6 @@ fn check_failed_tip(op: &str, x: &Value, y: &Value) -> String {
 
 
 
-fn eq_bytes_view(v: &Value) -> VmrtRes<Vec<u8>> {
-    match v {
-        Nil => Ok(vec![]),
-        _ => v.canbe_bytes_ec(Arithmetic),
-    }
-}
-
-fn eq_with_left_zero_padding(l: &[u8], r: &[u8]) -> bool {
-    if l.len() == r.len() {
-        return l == r
-    }
-    if l.len() > r.len() {
-        let d = l.len() - r.len();
-        return l[..d].iter().all(|b| *b == 0) && &l[d..] == r
-    }
-    let d = r.len() - l.len();
-    r[..d].iter().all(|b| *b == 0) && l == &r[d..]
-}
-
 fn lgc_and(x: &Value, y: &Value) -> VmrtRes<Value> {
     let lx = x.canbe_bool()?;
     let ry = y.canbe_bool()?;
@@ -132,12 +113,27 @@ fn lgc_not(x: &Value) -> VmrtRes<Value> {
 }
 
 fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
-    let bx = eq_bytes_view(x)?;
-    let by = eq_bytes_view(y)?;
-    if x.is_uint() || y.is_uint() {
-        return Ok(eq_with_left_zero_padding(&bx, &by))
+    if x.is_uint() && y.is_uint() {
+        return Ok(x.checked_u128()? == y.checked_u128()?)
     }
-    Ok(bx == by)
+    if x.ty() != y.ty() {
+        return itr_err_fmt!(Arithmetic,
+            "cannot compare different types {:?} and {:?}", x, y)
+    }
+    match (x, y) {
+        (Nil, Nil) => Ok(true),
+        (Bool(l), Bool(r)) => Ok(l == r),
+        (Bytes(l), Bytes(r)) => Ok(l == r),
+        (Address(l), Address(r)) => Ok(l == r),
+        (HeapSlice(l), HeapSlice(r)) => Ok(l == r),
+        (Compo(l), Compo(r)) => Ok(l.ptr_eq(r)),
+        (U8(l), U8(r)) => Ok(l == r),
+        (U16(l), U16(r)) => Ok(l == r),
+        (U32(l), U32(r)) => Ok(l == r),
+        (U64(l), U64(r)) => Ok(l == r),
+        (U128(l), U128(r)) => Ok(l == r),
+        _ => itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", x, y),
+    }
 }
 
 fn lgc_equal(x: &Value, y: &Value) -> VmrtRes<Value> {
@@ -152,8 +148,12 @@ fn lgc_ord_cmp<F>(x: &Value, y: &Value, f: F) -> VmrtRes<Value>
 where
     F: FnOnce(u128, u128) -> bool
 {
-    let lx = x.canbe_u128()?;
-    let ry = y.canbe_u128()?;
+    if !x.is_uint() || !y.is_uint() {
+        return itr_err_fmt!(Arithmetic,
+            "ordered compare only supports uint operands, got {:?} and {:?}", x, y)
+    }
+    let lx = x.checked_u128()?;
+    let ry = y.checked_u128()?;
     Ok(Value::bool(f(lx, ry)))
 }
 
@@ -294,22 +294,20 @@ fn min_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
     Ok(maybe!(a < b, x.clone(), y.clone()))
 }
 
-#[allow(unused)]
 fn unary_inc(x: &mut Value, n: u8) -> VmrtErr {
     if !x.is_uint() {
         let v = x.to_uint()?;
         *x = v;
     }
-    x.inc(n)
+    x.inc(n).map_err(|ItrErr(_, msg)| ItrErr::new(Arithmetic, &msg))
 }
 
-#[allow(unused)]
 fn unary_dec(x: &mut Value, n: u8) -> VmrtErr {
     if !x.is_uint() {
         let v = x.to_uint()?;
         *x = v;
     }
-    x.dec(n)
+    x.dec(n).map_err(|ItrErr(_, msg)| ItrErr::new(Arithmetic, &msg))
 }
 
 #[cfg(test)]
@@ -347,55 +345,64 @@ mod shift_u64_tests {
     }
 
     #[test]
-    fn eq_neq_numeric_and_bytes_numeric_are_normalized() {
+    fn eq_neq_uint_operands_use_numeric_compare() {
         assert_eq!(
-            lgc_equal(&Value::Bytes(vec![0, 1]), &Value::U8(1)).unwrap(),
+            lgc_equal(&Value::U8(1), &Value::U16(1)).unwrap(),
             Value::Bool(true)
         );
         assert_eq!(
-            lgc_not_equal(&Value::Bytes(vec![0, 1]), &Value::U8(1)).unwrap(),
+            lgc_not_equal(&Value::U32(5), &Value::U8(4)).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            lgc_not_equal(&Value::U128(0), &Value::U8(0)).unwrap(),
             Value::Bool(false)
-        );
-        assert_eq!(
-            lgc_equal(&Value::Bytes(vec![]), &Value::U8(0)).unwrap(),
-            Value::Bool(true)
         );
     }
 
     #[test]
-    fn eq_uint_path_uses_left_zero_padding_bytes_compare() {
-        assert_eq!(
-            lgc_equal(&Value::U16(1), &Value::Bytes(vec![1])).unwrap(),
-            Value::Bool(true)
-        );
+    fn eq_neq_reject_different_non_uint_types() {
+        let adr = field::Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        assert!(lgc_equal(&Value::U16(1), &Value::Bytes(vec![1])).is_err());
+        assert!(lgc_equal(&Value::U8(1), &Value::Bool(true)).is_err());
+        assert!(lgc_equal(&Value::Nil, &Value::Bool(false)).is_err());
+        assert!(lgc_not_equal(&Value::Address(adr), &Value::Bytes(vec![])).is_err());
+    }
+
+    #[test]
+    fn eq_non_uint_same_type_compare_by_type_rules() {
         assert_eq!(
             lgc_equal(&Value::Bytes(vec![0, 1]), &Value::Bytes(vec![1])).unwrap(),
             Value::Bool(false)
         );
         assert_eq!(
-            lgc_equal(&Value::U8(1), &Value::Bool(true)).unwrap(),
+            lgc_equal(&Value::Bytes(vec![1]), &Value::Bytes(vec![1])).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            lgc_equal(&Value::Bool(true), &Value::Bool(true)).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            lgc_equal(&Value::Nil, &Value::Nil).unwrap(),
             Value::Bool(true)
         );
     }
 
     #[test]
-    fn ordered_compare_casts_non_uint_to_uint_then_compare() {
+    fn ordered_compare_requires_uint_operands() {
         assert_eq!(
-            lgc_less(&Value::Bytes(vec![1]), &Value::U16(2)).unwrap(),
+            lgc_less(&Value::U8(1), &Value::U16(2)).unwrap(),
             Value::Bool(true)
         );
         assert_eq!(
-            lgc_greater_equal(&Value::Bytes(vec![1]), &Value::U16(1)).unwrap(),
+            lgc_greater_equal(&Value::U32(2), &Value::U8(2)).unwrap(),
             Value::Bool(true)
         );
-        assert_eq!(
-            lgc_less(&Value::Bool(false), &Value::U8(1)).unwrap(),
-            Value::Bool(true)
-        );
-        assert_eq!(
-            lgc_greater_equal(&Value::Nil, &Value::U8(0)).unwrap(),
-            Value::Bool(true)
-        );
+        assert!(lgc_less(&Value::Bytes(vec![1]), &Value::U16(2)).is_err());
+        assert!(lgc_greater_equal(&Value::Bool(false), &Value::U8(1)).is_err());
+        assert!(lgc_less_equal(&Value::Nil, &Value::U8(0)).is_err());
+        assert!(lgc_greater(&Value::Bytes(vec![2]), &Value::Bytes(vec![1])).is_err());
     }
 
     #[test]
@@ -413,18 +420,39 @@ mod shift_u64_tests {
     }
 
     #[test]
-    fn heapslice_is_rejected_by_compare_numeric_and_unary_ops() {
+    fn heapslice_eq_uses_src_len_and_other_ops_still_reject() {
         let mut heap = test_heap();
         heap.write(0, Value::Bytes(vec![1, 2, 3])).unwrap();
         let hs = Value::HeapSlice((0, 2));
 
         assert!(normalize_numeric_pair(&hs, &Value::U8(1)).is_err());
+        assert_eq!(lgc_equal(&hs, &Value::HeapSlice((0, 2))).unwrap(), Value::Bool(true));
+        assert_eq!(lgc_equal(&hs, &Value::HeapSlice((0, 3))).unwrap(), Value::Bool(false));
         assert!(lgc_equal(&hs, &Value::Bytes(vec![1, 2])).is_err());
+        assert!(lgc_not_equal(&hs, &Value::Bytes(vec![1, 2])).is_err());
         assert!(lgc_less(&hs, &Value::U8(1)).is_err());
 
         let mut incv = hs.clone();
         let mut decv = hs.clone();
         assert!(unary_inc(&mut incv, 1).is_err());
         assert!(unary_dec(&mut decv, 1).is_err());
+    }
+
+    #[test]
+    fn compo_eq_uses_pointer_identity() {
+        let c = CompoItem::new_list();
+        let same = c.clone();
+        let copied = c.copy();
+
+        assert_eq!(
+            lgc_equal(&Value::Compo(c.clone()), &Value::Compo(same)).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            lgc_equal(&Value::Compo(c), &Value::Compo(copied.clone())).unwrap(),
+            Value::Bool(false)
+        );
+        assert!(lgc_equal(&Value::Compo(copied.clone()), &Value::Nil).is_err());
+        assert!(lgc_not_equal(&Value::Compo(copied), &Value::Nil).is_err());
     }
 }

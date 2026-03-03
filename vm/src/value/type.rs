@@ -119,6 +119,19 @@ impl ValueTy {
 
 }
 
+pub fn parse_value_ty_param(raw: u8) -> VmrtRes<ValueTy> {
+    ValueTy::build(raw).map_ire(ItrErrCode::InstParamsErr)
+}
+
+pub fn parse_cto_target_ty_param(raw: u8) -> VmrtRes<ValueTy> {
+    use ValueTy::*;
+    let ty = parse_value_ty_param(raw)?;
+    match ty {
+        Bool | U8 | U16 | U32 | U64 | U128 | Bytes | Address => Ok(ty),
+        _ => Err(ItrErr::code(ItrErrCode::InstParamsErr)),
+    }
+}
+
 #[cfg(test)]
 mod type_tests {
     use super::*;
@@ -135,5 +148,27 @@ mod type_tests {
         assert_eq!(ValueTy::U64.uint_bits(), Some(64));
         assert!(!ValueTy::Bytes.is_uint());
         assert_eq!(ValueTy::Bytes.uint_bits(), None);
+    }
+
+    #[test]
+    fn parse_cto_target_type_param_enforces_cast_set() {
+        let cast_set = [
+            ValueTy::Bool,
+            ValueTy::U8,
+            ValueTy::U16,
+            ValueTy::U32,
+            ValueTy::U64,
+            ValueTy::U128,
+            ValueTy::Bytes,
+            ValueTy::Address,
+        ];
+        for ty in cast_set {
+            assert_eq!(parse_cto_target_ty_param(ty as u8).unwrap(), ty);
+        }
+
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Compo] {
+            let res = parse_cto_target_ty_param(ty as u8);
+            assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
+        }
     }
 }

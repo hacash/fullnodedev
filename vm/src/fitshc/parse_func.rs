@@ -124,9 +124,11 @@ pub fn parse_func_sig(
     if let Some(Keyword(KwTy::Arrow)) = state.current() {
         state.advance();
 
-        // ( type )
+        // Optional parenthesized return type, but if '(' appears then ')' is required.
+        let mut wrapped = false;
         if let Some(Partition('(')) = state.current() {
             state.advance();
+            wrapped = true;
         }
 
         if state.idx >= state.max {
@@ -139,8 +141,12 @@ pub fn parse_func_sig(
             None => return errf!("unknown return type"),
         };
 
-        if let Some(Partition(')')) = state.current() {
-            state.advance();
+        if wrapped {
+            if let Some(Partition(')')) = state.current() {
+                state.advance();
+            } else {
+                return errf!("expected ')' after return type");
+            }
         }
     }
 

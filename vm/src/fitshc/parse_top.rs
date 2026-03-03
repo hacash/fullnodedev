@@ -11,23 +11,27 @@ use sys::*;
 use sys::{Ret, errf};
 
 pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
-    // optional pragma
+    // optional pragma: `use pragma 0.1.0` or `pragma 0.1.0`
+    let mut saw_use = false;
     if let Some(Keyword(KwTy::Use)) = state.current() {
+        saw_use = true;
         state.advance();
-        if let Some(Identifier(p)) = state.current() {
-            if p == "pragma" {
-                state.advance();
-                // consume version tokens like 0.1.0 or v0.1.0
-                loop {
-                    match state.current() {
-                        Some(Integer(_)) | Some(Identifier(_)) | Some(Keyword(KwTy::Dot)) => {
-                            state.advance()
-                        }
-                        _ => break,
-                    }
+    }
+    let is_pragma = matches!(state.current(), Some(Keyword(KwTy::Pragma)))
+        || matches!(state.current(), Some(Identifier(p)) if p == "pragma");
+    if is_pragma {
+        state.advance();
+        // consume version tokens like 0.1.0 or v0.1.0
+        loop {
+            match state.current() {
+                Some(Integer(_)) | Some(Identifier(_)) | Some(Keyword(KwTy::Dot)) => {
+                    state.advance()
                 }
+                _ => break,
             }
         }
+    } else if saw_use {
+        return errf!("expected pragma after 'use'");
     }
 
     // contract Name {
@@ -240,9 +244,8 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             state.contract = state.contract.clone().func(func);
             state.source_maps.push((name, smap));
         }
-        _ => {
-            state.advance();
-        }
+        Some(token) => return errf!("unexpected token in contract body: {:?}", token),
+        None => return errf!("unexpected EOF while parsing contract body"),
     }
     Ok(())
 }

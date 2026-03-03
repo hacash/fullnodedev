@@ -2,7 +2,7 @@ use super::*;
 
 use sys::*;
 
-include!("util.rs");
+include!("xop.rs");
 include!("extact.rs");
 include!("sys.rs");
 include!("bytecode.rs");

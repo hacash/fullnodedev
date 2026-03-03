@@ -6,7 +6,7 @@ mod bounds_tests {
     use crate::machine::VmHost;
     use crate::rt::{ExecMode, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
-    use crate::value::{CompoItem, Value};
+    use crate::value::{CompoItem, Value, ValueTy, RESERVED_U256_TYPE_ID};
     use field::Address;
     use crate::ContractAddress;
     use sys::Ret;
@@ -162,6 +162,491 @@ mod bounds_tests {
         );
 
         assert!(matches!(res, Err(ItrErr(ItrErrCode::CodeOverflow, _))));
+    }
+
+    #[test]
+    fn execute_code_rejects_reserved_type_id_for_tis_and_cto() {
+        use crate::rt::Bytecode;
+
+        for inst in [Bytecode::TIS, Bytecode::CTO] {
+            let codes = vec![Bytecode::P0 as u8, inst as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
+
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+
+            let cadr = ContractAddress::default();
+
+            let res = execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            );
+
+            assert!(
+                matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))),
+                "instruction {:?} should fail with InstParamsErr",
+                inst
+            );
+        }
+    }
+
+    #[test]
+    fn execute_code_rejects_unknown_type_id_for_tis_and_cto() {
+        use crate::rt::Bytecode;
+
+        for raw in [12u8, 13u8] {
+            for inst in [Bytecode::TIS, Bytecode::CTO] {
+                let codes = vec![Bytecode::P0 as u8, inst as u8, raw, Bytecode::END as u8];
+
+                let mut pc: usize = 0;
+                let mut gas: i64 = 1000;
+                let mut host = DummyHost::default();
+
+                let mut operands = Stack::new(256);
+                let mut locals = Stack::new(256);
+                let mut heap = Heap::new(64);
+                let mut globals = GKVMap::new(20);
+                let mut memorys = CtcKVMap::new(12);
+
+                let cadr = ContractAddress::default();
+
+                let res = execute_code(
+                    &mut pc,
+                    &codes,
+                    ExecMode::Main,
+                    false,
+                    0,
+                    &mut gas,
+                    &GasTable::new(1),
+                    &GasExtra::new(1),
+                    &SpaceCap::new(1),
+                    &mut operands,
+                    &mut locals,
+                    &mut heap,
+                    &mut globals,
+                    &mut memorys,
+                    &mut host,
+                    &cadr,
+                    &cadr,
+                );
+
+                assert!(
+                    matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))),
+                    "instruction {:?} with type id {} should fail with InstParamsErr",
+                    inst,
+                    raw
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn execute_code_rejects_cto_targets_outside_cast_set() {
+        use crate::rt::Bytecode;
+
+        let non_castable_targets = [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Compo];
+        for ty in non_castable_targets {
+            let codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
+
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+
+            let cadr = ContractAddress::default();
+
+            let res = execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            );
+
+            assert!(
+                matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))),
+                "CTO with target {:?} should fail with InstParamsErr",
+                ty
+            );
+        }
+    }
+
+    #[test]
+    fn execute_code_tis_accepts_declared_non_cast_types() {
+        use crate::rt::Bytecode;
+
+        let run = |stack_v: Value, ty: ValueTy| -> VmrtRes<Value> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            let codes = vec![Bytecode::TIS as u8, ty as u8, Bytecode::END as u8];
+
+            operands.push(stack_v)?;
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )?;
+            operands.pop()
+        };
+
+        assert_eq!(run(Value::Nil, ValueTy::Nil).unwrap(), Value::Bool(true));
+        assert_eq!(run(Value::U8(0), ValueTy::Nil).unwrap(), Value::Bool(false));
+        assert_eq!(run(Value::HeapSlice((0, 0)), ValueTy::HeapSlice).unwrap(), Value::Bool(true));
+        assert_eq!(run(Value::U8(1), ValueTy::HeapSlice).unwrap(), Value::Bool(false));
+        assert_eq!(run(Value::Compo(CompoItem::new_list()), ValueTy::Compo).unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn execute_code_cto_accepts_cast_set_targets() {
+        use crate::rt::Bytecode;
+
+        let run = |stack_v: Value, ty: ValueTy| -> VmrtRes<Value> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            let codes = vec![Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
+
+            operands.push(stack_v)?;
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )?;
+            operands.pop()
+        };
+
+        let addr = Address::default();
+        assert_eq!(run(Value::Nil, ValueTy::Bool).unwrap(), Value::Bool(false));
+        assert_eq!(run(Value::Bool(true), ValueTy::U16).unwrap(), Value::U16(1));
+        assert_eq!(run(Value::U16(0x0102), ValueTy::Bytes).unwrap(), Value::Bytes(vec![0x01, 0x02]));
+        assert_eq!(run(Value::Bytes(addr.to_vec()), ValueTy::Address).unwrap(), Value::Address(addr));
+    }
+
+    #[test]
+    fn execute_code_tis_and_cto_diverge_on_non_cast_targets() {
+        use crate::rt::Bytecode;
+
+        let run = |inst: Bytecode, stack_v: Value, ty: ValueTy| -> VmrtRes<Value> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            let codes = vec![inst as u8, ty as u8, Bytecode::END as u8];
+
+            operands.push(stack_v)?;
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )?;
+            operands.pop()
+        };
+
+        assert_eq!(run(Bytecode::TIS, Value::Nil, ValueTy::Nil).unwrap(), Value::Bool(true));
+        assert!(matches!(
+            run(Bytecode::CTO, Value::Nil, ValueTy::Nil),
+            Err(ItrErr(ItrErrCode::InstParamsErr, _))
+        ));
+
+        assert_eq!(
+            run(Bytecode::TIS, Value::HeapSlice((0, 0)), ValueTy::HeapSlice).unwrap(),
+            Value::Bool(true)
+        );
+        assert!(matches!(
+            run(Bytecode::CTO, Value::HeapSlice((0, 0)), ValueTy::HeapSlice),
+            Err(ItrErr(ItrErrCode::InstParamsErr, _))
+        ));
+
+        let list = CompoItem::new_list();
+        assert_eq!(
+            run(Bytecode::TIS, Value::Compo(list.clone()), ValueTy::Compo).unwrap(),
+            Value::Bool(true)
+        );
+        assert!(matches!(
+            run(Bytecode::CTO, Value::Compo(list), ValueTy::Compo),
+            Err(ItrErr(ItrErrCode::InstParamsErr, _))
+        ));
+    }
+
+    #[test]
+    fn execute_code_cto_valid_target_with_invalid_operand_fails_castfail() {
+        use crate::rt::Bytecode;
+
+        let run = |stack_v: Value, ty: ValueTy| -> VmrtRes<Value> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            let codes = vec![Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
+
+            operands.push(stack_v)?;
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )?;
+            operands.pop()
+        };
+
+        assert!(matches!(
+            run(Value::U8(1), ValueTy::Address),
+            Err(ItrErr(ItrErrCode::CastFail, _))
+        ));
+        assert!(matches!(
+            run(Value::HeapSlice((0, 0)), ValueTy::Bool),
+            Err(ItrErr(ItrErrCode::CastFail, _))
+        ));
+        assert!(matches!(
+            run(Value::Bytes(vec![1, 2, 3]), ValueTy::U16),
+            Err(ItrErr(ItrErrCode::CastFail, _))
+        ));
+    }
+
+    #[test]
+    fn xlg_ordering_marks_execute_with_display_semantics() {
+        use crate::rt::Bytecode;
+
+        let run = |mark: u8, stack_v: Value, local_v: Value| -> (Value, Value) {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            let codes = vec![Bytecode::XLG as u8, mark, Bytecode::END as u8];
+
+            let idx = (mark & 0b0001_1111) as u16;
+            locals.alloc((idx + 1) as u8).unwrap();
+            for i in 0..=idx {
+                locals.save(i, Value::U8(0)).unwrap();
+            }
+            locals.save(idx, local_v).unwrap();
+            operands.push(stack_v).unwrap();
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )
+            .unwrap();
+
+            let out = operands.pop().unwrap();
+            let local_after = locals.load(idx as usize).unwrap();
+            (out, local_after)
+        };
+
+        let (v40, l40) = run((4 << 5) | 0, Value::U8(3), Value::U8(2)); // 2 > 3
+        assert_eq!(v40, Value::Bool(false));
+        assert_eq!(l40, Value::U8(2));
+        let (v41, l41) = run((4 << 5) | 0, Value::U8(1), Value::U8(2)); // 2 > 1
+        assert_eq!(v41, Value::Bool(true));
+        assert_eq!(l41, Value::U8(2));
+        let (v50, l50) = run((5 << 5) | 0, Value::U8(2), Value::U8(2)); // 2 >= 2
+        assert_eq!(v50, Value::Bool(true));
+        assert_eq!(l50, Value::U8(2));
+        let (v61, l61) = run((6 << 5) | 1, Value::U8(1), Value::U8(2)); // 2 < 1
+        assert_eq!(v61, Value::Bool(false));
+        assert_eq!(l61, Value::U8(2));
+        let (v60, l60) = run((6 << 5) | 0, Value::U8(3), Value::U8(2)); // 2 < 3
+        assert_eq!(v60, Value::Bool(true));
+        assert_eq!(l60, Value::U8(2));
+        let (v70, l70) = run((7 << 5) | 0, Value::U8(2), Value::U8(2)); // 2 <= 2
+        assert_eq!(v70, Value::Bool(true));
+        assert_eq!(l70, Value::U8(2));
+    }
+
+    #[test]
+    fn xop_marks_execute_with_assignment_semantics() {
+        use crate::rt::Bytecode;
+
+        let run = |mark: u8, local_init: Value, rhs: Value| -> Value {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut globals = GKVMap::new(20);
+            let mut memorys = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            let codes = vec![Bytecode::XOP as u8, mark, Bytecode::END as u8];
+
+            let idx = (mark & 0b0011_1111) as u16;
+            locals.alloc((idx + 1) as u8).unwrap();
+            for i in 0..=idx {
+                locals.save(i, Value::U8(0)).unwrap();
+            }
+            locals.save(idx, local_init).unwrap();
+            operands.push(rhs).unwrap();
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecMode::Main,
+                false,
+                0,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &mut globals,
+                &mut memorys,
+                &mut host,
+                &cadr,
+                &cadr,
+            )
+            .unwrap();
+
+            locals.load(idx as usize).unwrap()
+        };
+
+        assert_eq!(run((0 << 6) | 0, Value::U8(2), Value::U8(3)), Value::U8(5));  // +=
+        assert_eq!(run((1 << 6) | 1, Value::U8(9), Value::U8(4)), Value::U8(5));  // -= (idx=1)
+        assert_eq!(run((2 << 6) | 0, Value::U8(3), Value::U8(4)), Value::U8(12)); // *=
+        assert_eq!(run((3 << 6) | 0, Value::U8(12), Value::U8(3)), Value::U8(4)); // /=
     }
 
     #[test]
@@ -471,7 +956,7 @@ mod bounds_tests {
                 DummyHost::default(),
                 |ops, _locals, _heap, _globals, memorys, cadr| {
                     let key = Value::Bytes(vec![1u8]);
-                    memorys.entry(cadr).unwrap().put(key.clone(), v).unwrap();
+                    memorys.entry_mut(cadr).unwrap().put(key.clone(), v).unwrap();
                     ops.push(key).unwrap();
                 },
             )
@@ -574,7 +1059,7 @@ mod bounds_tests {
                 DummyHost::default(),
                 |ops, _locals, _heap, _globals, memorys, cadr| {
                     memorys
-                        .entry(cadr)
+                        .entry_mut(cadr)
                         .unwrap()
                         .put(key.clone(), Value::U8(1))
                         .unwrap();
@@ -1041,7 +1526,7 @@ mod bounds_tests {
                 |ops, _locals, _heap, _globals, memorys, cadr| {
                     if preload {
                         memorys
-                            .entry(cadr)
+                            .entry_mut(cadr)
                             .unwrap()
                             .put(key.clone(), Value::U8(1))
                             .unwrap();

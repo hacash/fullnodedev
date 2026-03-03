@@ -1297,6 +1297,50 @@ fn format_ircode_preserves_mismatched_cast() {
 }
 
 #[test]
+fn format_ircode_preserves_mismatched_cast_to_bool() {
+    let script = r##"
+        print 1 as bool
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(formatted.contains("1 as bool"));
+}
+
+#[test]
+fn format_ircode_preserves_mismatched_cast_to_address() {
+    let script = r##"
+        print 1 as address
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(formatted.contains("1 as address"));
+}
+
+#[test]
+fn format_ircode_preserves_cto_u8_opcode_identity() {
+    let script = r##"
+        print cast_to(2, 1)
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(formatted.contains("cast_to(2"));
+    let reparsed = lang_to_ircode(&formatted).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn format_ircode_preserves_cto_bytes_opcode_identity() {
+    let script = r##"
+        print cast_to(10, 1)
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(formatted.contains("cast_to(10"));
+    let reparsed = lang_to_ircode(&formatted).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
 fn list_keyword_roundtrip() {
     let script = r##"
         print [1, 2, 3]

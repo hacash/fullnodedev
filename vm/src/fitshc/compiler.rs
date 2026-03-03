@@ -20,6 +20,12 @@ pub fn compile(
     let mut state = ParseState::new(tokens);
 
     parse_top_level(&mut state)?;
+    if state.idx != state.max {
+        return errf!(
+            "unexpected token after contract end: {:?}",
+            state.current().cloned()
+        );
+    }
 
     Ok((
         state.contract,

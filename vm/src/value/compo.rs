@@ -365,15 +365,15 @@ impl CompoItem {
         get_compo_inner_by!(self, Map, get_compo_inner_mut)
     }
 
-    pub fn check_list_param_cast(&mut self, types: &[ValueTy]) -> VmrtErr {
-        let list = self.list_mut()?;
+    pub fn check_list_param_type(&self, types: &[ValueTy]) -> VmrtErr {
+        let list = self.list_ref()?;
         let tn = types.len();
         let vn = list.len();
         if tn != vn {
             return itr_err_fmt!(CallArgvTypeFail, "param length error need {} but got {}", tn, vn)
         }
         for i in 0..vn {
-            list[i].checked_param_cast(types[i])?;
+            list[i].checked_param_type(types[i])?;
         }
         Ok(())
     }
@@ -395,6 +395,10 @@ impl CompoItem {
         Self {
             compo: Rc::new(UnsafeCell::new(data)),
         }
+    }
+
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.compo, &other.compo)
     }
 
     pub fn merge(&mut self, cap: &SpaceCap, compo: CompoItem) -> VmrtErr {

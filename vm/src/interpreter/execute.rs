@@ -379,11 +379,17 @@ pub fn execute_code(
             CU64  => ops.peek()?.cast_u64()?,
             CU128 => ops.peek()?.cast_u128()?, /* CU256 => ops.peek()?.cast_u256()?, */
             CBUF  => ops.peek()?.cast_buf()?,
-            CTO   => ops.peek()?.cast_to(pu8!())?,
+            CTO   => {
+                let ty = parse_cto_target_ty_param(pu8!())?;
+                ops.peek()?.cast_to(ty as u8)?;
+            }
             TNIL  => *ops.peek()? = Bool(pty!() == ValueTy::Nil),
             TLIST => *ops.peek()? = Bool(check_compo_type!(is_list)),
             TMAP  => *ops.peek()? = Bool(check_compo_type!(is_map)),
-            TIS   => *ops.peek()? = Bool(ptyn!() == pu8!()),
+            TIS   => {
+                let ty = parse_value_ty_param(pu8!())?;
+                *ops.peek()? = Bool(pty!() == ty);
+            }
             TID   => *ops.peek()? =   U8(ptyn!()),
             // stack & buffer
             DUP    => {
@@ -714,7 +720,7 @@ pub fn execute_code(
                 let v = ops.pop()?.valid(cap)?;
                 let vlen = v.val_size();
                 let k = ops.pop()?;
-                let mem = memorys.entry(context_addr)?;
+                let mem = memorys.entry_mut(context_addr)?;
                 let is_new = !mem.contains_key(&k)?;
                 mem.put(k, v)?;
                 gas += gst.stack_write(vlen);
@@ -724,7 +730,7 @@ pub fn execute_code(
             }
             MGET => {
                 nsr!();
-                let v = { let k = ops.peek()?; memorys.entry(context_addr)?.get(k)? }.valid(cap)?;
+                let v = { let k = ops.peek()?; memorys.get(context_addr, k)? }.valid(cap)?;
                 gas += gst.stack_copy(v.val_size());
                 *ops.peek()? = v;
             }
@@ -758,8 +764,8 @@ pub fn execute_code(
             POW  => binop_arithmetic(ops, pow_checked)?,
             MAX  => binop_arithmetic(ops, max_checked)?,
             MIN  => binop_arithmetic(ops, min_checked)?,
-            INC  => ops.peek()?.inc(pu8!())?,
-            DEC  => ops.peek()?.dec(pu8!())?,
+            INC  => unary_inc(ops.peek()?, pu8!())?,
+            DEC  => unary_dec(ops.peek()?, pu8!())?,
             // workflow control
             JMPL  =>        jump!(codes, *pc, 2),
             JMPS  =>     ostjump!(codes, *pc, 1),

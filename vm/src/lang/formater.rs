@@ -827,7 +827,11 @@ impl<'a> Formater<'a> {
         if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
             use Bytecode::*;
             if single.inst == CTO && single.para == ValueTy::Address as u8 {
-                return self.literal_from_node(&*single.subx);
+                if let Some(literal) = self.literal_from_node(&*single.subx) {
+                    if literal.ty == Some(ValueTy::Address) {
+                        return Some(literal);
+                    }
+                }
             }
         }
         None
@@ -976,6 +980,33 @@ impl<'a> Formater<'a> {
                 match self.resolve_type_check_name(node.para) {
                     Some(name) => format!("{} is {}", substr, name),
                     None => format!("type_id({}) == {}", substr, node.para),
+                }
+            }
+            CTO => {
+                let substr = self.print_inline(&*node.subx);
+                let operand = maybe!(
+                    node.subx.level() > 0,
+                    {
+                        let t = substr.trim();
+                        maybe!(
+                            t.starts_with('(') && t.ends_with(')'),
+                            substr.clone(),
+                            format!("({})", substr)
+                        )
+                    },
+                    substr.clone()
+                );
+                match ValueTy::build(node.para) {
+                    Ok(ty @ (ValueTy::Bool | ValueTy::Address)) => format!("{} as {}", operand, ty.name()),
+                    Ok(
+                        ValueTy::U8
+                        | ValueTy::U16
+                        | ValueTy::U32
+                        | ValueTy::U64
+                        | ValueTy::U128
+                        | ValueTy::Bytes,
+                    ) => format!("{}({}, {})", meta.intro, node.para, substr),
+                    _ => format!("{}({}, {})", meta.intro, node.para, substr),
                 }
             }
             PUT => {

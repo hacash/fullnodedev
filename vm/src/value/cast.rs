@@ -183,16 +183,25 @@ impl Value {
         if ty == mty {
             return Ok(())
         }
-        let allowed = match (ty, mty) {
-            (U8 | U16 | U32 | U64 | U128, U8 | U16 | U32 | U64 | U128) => true,
-            (Address, Bytes) => true,
-            (Bytes, Address) => true,
-            _ => false,
-        };
-        if !allowed {
-            return itr_err_fmt!(ec, "need {:?} but got {:?}", ty, mty)
+        match self.cast_to_ty(ty) {
+            Ok(()) => Ok(()),
+            Err(ItrErr(_, msg)) if msg.is_empty() => {
+                itr_err_fmt!(ec, "need {:?} but got {:?}", ty, mty)
+            }
+            Err(ItrErr(_, msg)) => Err(ItrErr::new(ec, &msg)),
         }
-        self.cast_to_ty(ty)
+    }
+
+    pub fn checked_param_type(&self, ty: ValueTy) -> VmrtErr {
+        use ValueTy::*;
+        if ty == Nil {
+            return Ok(())
+        }
+        let mty = self.ty();
+        if ty == mty {
+            return Ok(())
+        }
+        itr_err_fmt!(CallArgvTypeFail, "need {:?} but got {:?}", ty, mty)
     }
     
 
@@ -225,6 +234,33 @@ mod cast_tests {
         let mut v = Value::Bytes(vec![1, 2, 3]);
         v.checked_param_cast(ValueTy::Nil).unwrap();
         assert_eq!(v, Value::Bytes(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn checked_param_cast_allows_bool_target() {
+        let mut v = Value::U8(0);
+        v.checked_param_cast(ValueTy::Bool).unwrap();
+        assert_eq!(v, Value::Bool(false));
+    }
+
+    #[test]
+    fn checked_param_cast_invalid_target_uses_call_argv_type_fail() {
+        let mut v = Value::U8(1);
+        let err = v.checked_param_cast(ValueTy::Compo).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+    }
+
+    #[test]
+    fn checked_param_type_requires_exact_match_without_cast() {
+        let v = Value::U32(1);
+        assert!(v.checked_param_type(ValueTy::U32).is_ok());
+        assert!(v.checked_param_type(ValueTy::U16).is_err());
+    }
+
+    #[test]
+    fn checked_param_type_nil_is_wildcard() {
+        let v = Value::Bytes(vec![1, 2, 3]);
+        assert!(v.checked_param_type(ValueTy::Nil).is_ok());
     }
 
     #[test]

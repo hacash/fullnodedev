@@ -29,35 +29,32 @@ fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr
 
 
 fn local_operand(mark: u8, locals: &mut Stack, mut value: Value) -> VmrtErr {
-    let opt = mark >> 6; // 0b00000011
-    let idx = mark & 0b00111111; // max=64
+    let (opt, idx) = decode_local_operand_mark(mark);
     let basev = locals.edit(idx)?;
     match opt {
-        0 => locop_arithmetic(basev, &mut value, add_checked), // +=
-        1 => locop_arithmetic(basev, &mut value, sub_checked), // -=
-        2 => locop_arithmetic(basev, &mut value, mul_checked), // *=
-        3 => locop_arithmetic(basev, &mut value, div_checked), // /=
-        _ => unreachable!(), // return itr_err_fmt!(InstParamsErr, "local operand {} not find", a)
+        LxOp::Add => locop_arithmetic(basev, &mut value, add_checked),
+        LxOp::Sub => locop_arithmetic(basev, &mut value, sub_checked),
+        LxOp::Mul => locop_arithmetic(basev, &mut value, mul_checked),
+        LxOp::Div => locop_arithmetic(basev, &mut value, div_checked),
     }?;
     Ok(())
 }
 
 
 fn local_logic(mark: u8, locals: &mut Stack, value: &mut Value) -> VmrtErr {
-    let opt = mark >> 5; // 0b00000111
-    let idx = mark & 0b00011111; // max=32
+    let (opt, idx) = decode_local_logic_mark(mark);
     let basev = locals.edit(idx)?;
-    match opt {
-        0 => locop_btw(value, basev, lgc_and),
-        1 => locop_btw(value, basev, lgc_or),
-        2 => locop_btw(value, basev, lgc_equal),
-        3 => locop_btw(value, basev, lgc_not_equal),
-        4 => locop_btw(value, basev, lgc_less),
-        5 => locop_btw(value, basev, lgc_less_equal),
-        6 => locop_btw(value, basev, lgc_greater),
-        7 => locop_btw(value, basev, lgc_greater_equal),
-        _ => unreachable!(), // return itr_err_fmt!(InstParamsErr, "local operand {} not find", a)
+    let out = match opt {
+        LxLg::And => lgc_and(basev, value),
+        LxLg::Or => lgc_or(basev, value),
+        LxLg::Eq => lgc_equal(basev, value),
+        LxLg::Ne => lgc_not_equal(basev, value),
+        LxLg::Gt => lgc_greater(basev, value),
+        LxLg::Ge => lgc_greater_equal(basev, value),
+        LxLg::Lt => lgc_less(basev, value),
+        LxLg::Le => lgc_less_equal(basev, value),
     }?;
+    *value = out;
     Ok(())
 }
 

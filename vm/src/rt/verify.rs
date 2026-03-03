@@ -1,5 +1,6 @@
 
 use crate::native::{NativeFunc, NativeEnv};
+use crate::value::{parse_cto_target_ty_param, parse_value_ty_param};
 
 /*
     Verify bytecode validity and return the instruction table.
@@ -130,6 +131,12 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
                     return itr_err_fmt!(NativeEnvError, "native env idx {} not found", idx)
                 }
             }
+            CTO => {
+                let _ = parse_cto_target_ty_param(pu8!())?;
+            }
+            TIS => {
+                let _ = parse_value_ty_param(pu8!())?;
+            }
             // jump record
             JMPL  | BRL  => adddest!(pu16!() as isize),
             JMPS  | BRS  => adddest!(i as isize + pi8!() as isize + 1),
@@ -172,4 +179,88 @@ fn verify_jump_dests(instable: &[u8], jumpdests: &[isize]) -> VmrtErr {
     }
     // finish
     Ok(())
+}
+
+#[cfg(test)]
+mod verify_type_param_tests {
+    use super::*;
+
+    #[test]
+    fn verify_rejects_unknown_type_id_for_tis_and_cto() {
+        let unknown_ids = [12u8, 13u8];
+        for raw in unknown_ids {
+            let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, raw, Bytecode::END as u8];
+            let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, raw, Bytecode::END as u8];
+            let r1 = verify_bytecodes(&tis_codes);
+            let r2 = verify_bytecodes(&cto_codes);
+            assert!(matches!(r1, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
+            assert!(matches!(r2, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
+        }
+    }
+
+    #[test]
+    fn verify_rejects_reserved_type_id_for_tis_and_cto() {
+        let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
+        let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
+        let r1 = verify_bytecodes(&tis_codes);
+        let r2 = verify_bytecodes(&cto_codes);
+        assert!(matches!(r1, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
+        assert!(matches!(r2, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
+    }
+
+    #[test]
+    fn verify_accepts_active_type_id_for_tis_and_cto() {
+        let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, ValueTy::U8 as u8, Bytecode::END as u8];
+        let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ValueTy::U8 as u8, Bytecode::END as u8];
+        assert!(verify_bytecodes(&tis_codes).is_ok());
+        assert!(verify_bytecodes(&cto_codes).is_ok());
+    }
+
+    #[test]
+    fn verify_accepts_declared_type_ids_for_tis() {
+        let types = [
+            ValueTy::Nil,
+            ValueTy::Bool,
+            ValueTy::U8,
+            ValueTy::U16,
+            ValueTy::U32,
+            ValueTy::U64,
+            ValueTy::U128,
+            ValueTy::Bytes,
+            ValueTy::Address,
+            ValueTy::HeapSlice,
+            ValueTy::Compo,
+        ];
+        for ty in types {
+            let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, ty as u8, Bytecode::END as u8];
+            assert!(verify_bytecodes(&tis_codes).is_ok(), "TIS should accept declared type id {:?}", ty);
+        }
+    }
+
+    #[test]
+    fn verify_accepts_cto_targets_in_cast_set() {
+        let cast_set = [
+            ValueTy::Bool,
+            ValueTy::U8,
+            ValueTy::U16,
+            ValueTy::U32,
+            ValueTy::U64,
+            ValueTy::U128,
+            ValueTy::Bytes,
+            ValueTy::Address,
+        ];
+        for ty in cast_set {
+            let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
+            assert!(verify_bytecodes(&cto_codes).is_ok(), "CTO should accept cast target {:?}", ty);
+        }
+    }
+
+    #[test]
+    fn verify_rejects_cto_targets_outside_cast_set() {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Compo] {
+            let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
+            let res = verify_bytecodes(&cto_codes);
+            assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
+        }
+    }
 }

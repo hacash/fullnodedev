@@ -16,3 +16,9 @@
 
 5. `BUG 5 | L | vm/src/interpreter/execute.rs:256-258`
    `CALLCODE` 上下文仅禁止 `EXTACTION`，放行 `EXTENV` 与 `EXTVIEW` 属于既定外部交互分层策略。
+
+6. `BUG 1（本轮审计） | H | vm/src/interpreter/execute.rs:18-45`
+   `itrbuf/itrparam` 在 release 关闭逐指令边界检查并使用 `unsafe` 读取，属于性能取舍；执行入口要求字节码先通过 `rt::verify_bytecodes` 的结构和参数边界校验。
+
+7. `BUG 2（本轮审计） | H | vm/src/interpreter/execute.rs:88-116, 241-247`
+   `jump/ostjump` 与取指路径在执行期不重复做完整上界判断，属于性能取舍；跳转目标合法性依赖前置 `verify_jump_dests` 一次性校验，所有字节码均需先完成该跳转边界检查。
