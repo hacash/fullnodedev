@@ -29,7 +29,8 @@ impl MachineManage {
         mbox
     }
 
-    pub fn reclaim(&self, r: Resoure) {
+    pub fn reclaim(&self, mut r: Resoure) {
+        r.reclaim();
         let lk = self.lock.lock().unwrap();
         let res = unsafe{ &mut *self.resoures.get() };
         res.push(r);

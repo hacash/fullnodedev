@@ -40,9 +40,16 @@ macro_rules! ast_try_item {
         let __raw: BRet<(u32, Vec<u8>)> = $exec;
         let __out = match __raw {
             Ok((child_gas, ret)) => {
-                $ctx.gas_consume(child_gas)?;
-                __snap.commit($ctx);
-                Ok(ret)
+                if let Err(gas_err) = $ctx.gas_consume(child_gas) {
+                    if let Err(re) = __snap.rollback($ctx) {
+                        return errf!("ast item recover failed: {}; original error: {}",
+                            re, gas_err);
+                    }
+                    Err(gas_err.into())
+                } else {
+                    __snap.commit($ctx);
+                    Ok(ret)
+                }
             }
             Err(e) => {
                 if let Err(re) = __snap.rollback($ctx) {
@@ -110,5 +117,100 @@ impl AstLevelGuard<'_> {
 impl Drop for AstLevelGuard<'_> {
     fn drop(&mut self) {
         self.ctx.level_set(self.old_level);
+    }
+}
+
+#[cfg(all(test, feature = "ast"))]
+mod tests {
+    use super::*;
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    #[derive(Default, Clone)]
+    struct TestForkState {
+        parent: std::sync::Weak<Box<dyn State>>,
+        mem: MemMap,
+    }
+
+    impl State for TestForkState {
+        fn fork_sub(&self, parent: std::sync::Weak<Box<dyn State>>) -> Box<dyn State> {
+            Box::new(Self {
+                parent,
+                mem: MemMap::default(),
+            })
+        }
+
+        fn merge_sub(&mut self, sta: Box<dyn State>) {
+            self.mem.extend(sta.as_mem().clone());
+        }
+
+        fn detach(&mut self) {
+            self.parent = std::sync::Weak::<Box<dyn State>>::new();
+        }
+
+        fn clone_state(&self) -> Box<dyn State> {
+            Box::new(self.clone())
+        }
+
+        fn as_mem(&self) -> &MemMap {
+            &self.mem
+        }
+
+        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+            if let Some(v) = self.mem.get(&k) {
+                return v.clone();
+            }
+            if let Some(parent) = self.parent.upgrade() {
+                return parent.get(k);
+            }
+            None
+        }
+
+        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+            self.mem.insert(k, Some(v));
+        }
+
+        fn del(&mut self, k: Vec<u8>) {
+            self.mem.insert(k, None);
+        }
+    }
+
+    fn run_try_item_gas_fail(ctx: &mut dyn Context) -> Ret<BRet<Vec<u8>>> {
+        Ok(ast_try_item!(ctx, Ok((1u32, vec![1u8]))))
+    }
+
+    #[test]
+    fn test_ast_try_item_gas_fail_must_rollback_item_snapshot() {
+        let tx = TransactionType2::new_by(
+            field::ADDRESS_ONEX.clone(),
+            Amount::unit238(1000),
+            1730000000,
+        );
+        let mut env = Env::default();
+        env.chain.fast_sync = true;
+        env.tx = crate::transaction::create_tx_info(&tx);
+        let mut ctx = ContextInst::new(
+            env,
+            Box::new(TestForkState::default()),
+            Box::new(EmptyLogs {}),
+            &tx,
+        );
+        {
+            let main = field::ADDRESS_ONEX.clone();
+            let mut state = crate::state::CoreState::wrap(ctx.state());
+            let mut bls = state.balance(&main).unwrap_or_default();
+            bls.hacash = Amount::unit238(1_000_000_000);
+            state.balance_set(&main, &bls);
+        }
+        let key = b"parent-key".to_vec();
+        let val = b"parent-val".to_vec();
+        ctx.state().set(key.clone(), val.clone());
+        ctx.gas_init_tx(40, 1).unwrap();
+        let out = run_try_item_gas_fail(&mut ctx).unwrap();
+        let err = out.unwrap_err();
+        assert!(err.is_interrupt(), "{}", err);
+        assert!(err.contains("gas has run out"), "{}", err);
+        assert_eq!(ctx.state().get(key), Some(val));
     }
 }

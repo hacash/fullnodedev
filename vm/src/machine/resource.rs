@@ -34,12 +34,15 @@ impl Resoure {
             ..Default::default()
         }
     }
-
-    pub fn reset(&mut self, height: u64) {
+    pub fn reclaim(&mut self) {
         self.global_vals.clear();
         self.memory_vals.clear();
         self.contracts.clear();
-        if height < self.next_upgrade {
+    }
+
+    pub fn reset(&mut self, height: u64) {
+        // Rebuild config when height rolls back below current cfg_height, or crosses next upgrade.
+        if height >= self.cfg_height && height < self.next_upgrade {
             return; // same protocol version, skip config rebuild
         }
         // crossed an upgrade boundary — rebuild config
@@ -108,5 +111,13 @@ mod resource_tests {
         let mut gas = 1000i64;
         r.settle_new_contract_load_gas(&mut gas, 129).unwrap();
         assert_eq!(gas, 1000 - base - 2);
+    }
+
+    #[test]
+    fn reset_rebuilds_config_when_height_rolls_back() {
+        let mut r = Resoure::create(200);
+        assert_eq!(r.cfg_height, 200);
+        r.reset(100);
+        assert_eq!(r.cfg_height, 100);
     }
 }

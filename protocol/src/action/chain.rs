@@ -43,7 +43,7 @@ action_define!{ HeightScope, 0x0412,
             h => h,
         };
         if left > right {
-            return erruf!("left height {} cannot big than rigth height {}", left, right)
+            return errf!("left height {} cannot big than rigth height {}", left, right)
         }
         if pdhei < left || pdhei > right {
             return erruf!("transction must submit in height between {} and {}", left, right)

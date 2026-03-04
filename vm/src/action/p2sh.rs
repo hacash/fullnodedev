@@ -40,7 +40,7 @@ pub struct ScriptmhCalc {
 
 /* pay to script hash */
 action_define!{ P2SHScriptProve, 46, 
-    ActLv::Ast, // level
+    ActLv::Top, // level
     false, [],
     {
         // calc hash: script + calibs
@@ -94,7 +94,7 @@ impl P2SHScriptProve {
     ///
     /// Notes for tooling authors:
     /// - `codeconf` is hashed as one raw byte.
-    /// - `lockbox` is hashed as its field serialization bytes (i.e. `BytesW2::to_vec()`),
+    /// - lockbox is hashed as raw data bytes (BytesW2::to_vec(), without length prefix)
     ///   not as a custom encoding.
     /// - Each sibling `hash` is hashed as `hash.serialize()` (type `field::Hash`).
     pub fn calc_scriptmh_from_lockbox(adrlibs: &ContractAddressW1, codeconf: CodeConf, lockbox: &BytesW2, merkels: &MerkelStuffs) -> Ret<ScriptmhCalc> {
@@ -136,6 +136,11 @@ impl P2SHScriptProve {
         }
         if ! libs.iter().all(|a|a.is_contract()) {
             return errf!("contract libs error")
+        }
+        for i in 1..libs.len() {
+            if libs[..i].iter().any(|a| a == &libs[i]) {
+                return errf!("p2sh libs duplicate address '{}'", libs[i].to_readable())
+            }
         }
         Ok(())
     }
@@ -209,5 +214,21 @@ mod p2sh_test {
         let c0 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_path).unwrap();
         let c1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::IRNode), &lockbox, &empty_path).unwrap();
         assert_ne!(c0.address, c1.address);
+    }
+
+    #[test]
+    fn verify_unlock_inputs_rejects_duplicate_libs() {
+        let lib = ContractAddress::from_unchecked(Address::create_contract([7u8; 20]));
+        let libs = ContractAddressW1::from_list(vec![lib.clone(), lib]).unwrap();
+        let lockbox = dummy_lockbox(13);
+        let witness = BytesW2::from(vec![]).unwrap();
+        let err = P2SHScriptProve::verify_unlock_inputs(
+            1,
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox,
+            &witness,
+        ).unwrap_err();
+        assert!(err.contains("duplicate"), "{err}");
     }
 }
