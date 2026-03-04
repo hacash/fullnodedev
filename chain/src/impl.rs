@@ -15,7 +15,8 @@ impl Engine for ChainEngine {
         // Update runtime caches only after the block is fully accepted and rolled.
         // Also only track canonical(head) progression to avoid pollution by side-chain/invalid blocks.
         if became_head {
-            let head = tree.head.block.as_read();
+            let head = tree.head().block();
+            let head = head.as_read();
             if self.cnf.recent_blocks {
                 record_recent(self, head);
             }
@@ -37,8 +38,11 @@ impl Engine for ChainEngine {
     }
 
     fn synchronize(&self, datas: Vec<u8>) -> Rerr {
+        let _isrtlock = inserting_lock(self, ISRT_STAT_SYNCING,
+            "the blockchain is syncing and need wait"
+        )?;
         let _lk = self.syncing.lock().unwrap();
-        synchronize(self, datas.into(), BlkOrigin::Sync)
+        do_synchronize(self, datas.into(), BlkOrigin::Sync)
     }
 
     fn exit(&self) { 
@@ -54,13 +58,13 @@ impl EngineRead for ChainEngine {
     fn config(&self) -> &EngineConf { &self.cnf }
 
     fn latest_block(&self) -> Arc<dyn Block> {
-        self.tree.read().unwrap().head.block.clone()
+        self.tree.read().unwrap().head().block()
     }
     
     fn store(&self) -> Arc<dyn Store> { self.store.clone() }
     
     fn state(&self) -> Arc<Box<dyn State>> {
-        self.tree.read().unwrap().head.state.clone()
+        self.tree.read().unwrap().head().state()
     }
 
     fn minter(&self) -> &dyn Minter { self.minter.as_ref() }
@@ -69,7 +73,8 @@ impl EngineRead for ChainEngine {
     
     fn fork_sub_state(&self) -> Box<dyn State> {
          let tree = self.tree.read().unwrap();
-         tree.head.state.fork_sub(Arc::downgrade(&tree.head.state))
+         let state = tree.head().state();
+         state.fork_sub(Arc::downgrade(&state))
     }
 
     fn recent_blocks(&self) -> Vec<Arc<RecentBlockInfo>> { 
@@ -91,7 +96,7 @@ impl EngineRead for ChainEngine {
         if al == 0 {
             return self.cnf.lowest_fee_purity
         }
-        let ttn: u64 = avgfs.iter().sum();
-        ttn / avgfs.len() as u64
+        let ttn: u128 = avgfs.iter().map(|v| *v as u128).sum();
+        (ttn / avgfs.len() as u128) as u64
     }
 }

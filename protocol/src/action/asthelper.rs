@@ -35,12 +35,18 @@ impl AstNodeTxn {
 /// On success: charge child's return-gas (size gas) via ctx, then merge.
 /// On error: recover snapshot.
 macro_rules! ast_try_item {
-    ($ctx:expr, $exec:expr) => {{
+    ($ctx:expr, $exec:expr, $child_burn90:expr) => {{
+        let __child_burn90 = $child_burn90;
         let __snap = CtxSnapshot::begin_ast_item($ctx)?;
         let __raw: BRet<(u32, Vec<u8>)> = $exec;
         let __out = match __raw {
             Ok((child_gas, ret)) => {
-                if let Err(gas_err) = $ctx.gas_consume(child_gas) {
+                let charge_gas = crate::context::apply_burn90_multiplier(
+                    $ctx.tx().burn_90(),
+                    __child_burn90,
+                    child_gas,
+                );
+                if let Err(gas_err) = $ctx.gas_consume(charge_gas) {
                     if let Err(re) = __snap.rollback($ctx) {
                         return errf!("ast item recover failed: {}; original error: {}",
                             re, gas_err);
@@ -59,6 +65,9 @@ macro_rules! ast_try_item {
             }
         };
         __out
+    }};
+    ($ctx:expr, $exec:expr) => {{
+        ast_try_item!($ctx, $exec, false)
     }};
 }
 

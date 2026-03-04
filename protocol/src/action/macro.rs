@@ -108,8 +108,8 @@ macro_rules! action_define {
                     ).into_bret()?;
                 }
                 // act size is base gas use
-                // NOTE: burn_90 gas multiplier is handled centrally in ctx_action_call(),
-                // not here, to keep the logic in one place.
+                // NOTE: burn_90 gas multiplier is applied at gas-charge sites
+                // (ctx_action_call / ast_try_item), not in action.execute().
                 #[allow(unused_mut)]
                 let mut $pgas: u32 = $pself.size() as u32;
                 // execute action body

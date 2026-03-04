@@ -1,5 +1,15 @@
 
 const TX_GAS_BUDGET_CAP: i64 = 8192;
+const BURN90_GAS_MULTIPLIER: u32 = 10;
+
+#[inline(always)]
+pub(crate) fn apply_burn90_multiplier(tx_burn90: bool, action_burn90: bool, gas: u32) -> u32 {
+    if tx_burn90 || action_burn90 {
+        gas.saturating_mul(BURN90_GAS_MULTIPLIER)
+    } else {
+        gas
+    }
+}
 
 /// - `table[i] = floor(138 * 1.07^i)`, `i in 0..=255`.
 /// - `table[255] = 4,292,817,207` (fits in `u32`).

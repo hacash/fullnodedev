@@ -1,7 +1,14 @@
 
 
 
-pub struct InsertResult {    
+#[derive(Copy, Clone, PartialEq)]
+enum HeadChangeKind {
+    None,
+    Extend,
+    Reorg,
+}
+
+struct InsertResult {
     /*
     Keep the previous root alive while roll_by is pending.
     
@@ -16,42 +23,44 @@ pub struct InsertResult {
     By sending the old root through the same channel as the InsertResult, we keep it
     alive exactly until roll_by consumes and commits the new root.
     */
-    old_root_hold: Option<Arc<Chunk>>,
-    pub old_root_height: u64,
-    pub root_change: Option<Arc<Chunk>>,
-    pub head_change: Option<Arc<Chunk>>,
-    pub hash: Hash,
-    pub block: BlkPkg,
+    old_root_hold: Option<ChunkRef>,
+    old_root_height: u64,
+    root_change: Option<ChunkRef>,
+    head_change: Option<ChunkRef>,
+    head_change_kind: HeadChangeKind,
+    hash: Hash,
+    block: BlkPkg,
 }
 
-pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<InsertResult> {
+fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<InsertResult> {
     let orgi = blk.orgi;
     let fast_sync = (eng.cnf.fast_sync && orgi == BlkOrigin::Sync) || orgi == BlkOrigin::Rebuild;
 
     let height = blk.hein;
     let hash = blk.hash.clone();
 
-    let old_root_height = tree.root.height;
-    if height <= old_root_height || height > tree.head.height + 1 {
-        return errf!("insert height must between [{}, {}] but got {}", old_root_height + 1, tree.head.height + 1, height);
+    let old_root_height = tree.root_height();
+    if height <= old_root_height || height > tree.head_height() + 1 {
+        return errf!("insert height must between [{}, {}] but got {}", old_root_height + 1, tree.head_height() + 1, height);
     }
 
     let prev_hash = blk.objc.prevhash();
     let parent = tree.quick_find(prev_hash).ok_or(format!("not find prev block <{}, {}>", height - 1, prev_hash))?;
-    if parent.height + 1 != height {
+    if parent.height() + 1 != height {
         return errf!("not find prev block <{}, {}>", height - 1, prev_hash);
     }
 
     if !fast_sync {
-        if parent.childs.read().unwrap().iter().any(|c| c.hash == hash) {
-            return errf!("repetitive block <{}, {}>", height, hash);
+        if tree.has_child_hash(&parent, &hash) {
+            return errf!("repetitive block");
         }
-        let parent_blk = parent.block.as_read();
+        let parent_block = parent.block();
+        let parent_blk = parent_block.as_read();
         eng.minter.blk_verify(blk.objc.as_read(), parent_blk, eng.store.as_ref())?;
         block_verify(&eng.cnf, blk.objc.as_read(), blk.data().len(), parent_blk)?;
     }
 
-    let prev_state = parent.state.clone();
+    let prev_state = parent.state();
     let sub_state = prev_state.fork_sub(Arc::downgrade(&prev_state));
 
     let chain_info = ChainInfo {
@@ -69,21 +78,31 @@ pub fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<I
     }
 
     // Snapshot current root. If root advances, we must keep this Arc alive until roll_by.
-    let prev_root = tree.root.clone();
+    let prev_root = tree.root();
+    let prev_head = tree.head();
+    let extend_old_head = parent.ptr_eq(&prev_head);
 
-    let item = Arc::new(Chunk::new(blk.objc.clone(), Arc::new(new_state), new_logs.into(), Some(&parent)));
-    let (root_change, head_change) = tree.insert(&parent, item);
+    let (root_change, head_change) = tree.insert_child(
+        &parent,
+        blk.objc.clone(),
+        Arc::new(new_state),
+        new_logs.into(),
+        fast_sync,
+    )?;
+    let head_change_kind = match &head_change {
+        None => HeadChangeKind::None,
+        Some(_) => maybe!(extend_old_head, HeadChangeKind::Extend, HeadChangeKind::Reorg),
+    };
 
     // Only carry old root when root actually advances.
     let old_root_hold = maybe!(root_change.is_some(), Some(prev_root), None);
-    Ok(InsertResult { old_root_hold, old_root_height, root_change, head_change, hash, block: blk })
+    Ok(InsertResult { old_root_hold, old_root_height, root_change, head_change, head_change_kind, hash, block: blk })
 }
 
 
-pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
-    let InsertResult { old_root_hold, old_root_height, root_change, head_change, hash, block } = rid;
+fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
+    let InsertResult { old_root_hold, old_root_height, root_change, head_change, head_change_kind, hash, block } = rid;
     let mut batch = MemKV::new();
-    let is_sync     = block.orgi == BlkOrigin::Sync;
     let not_rebuild = block.orgi != BlkOrigin::Rebuild;
     if not_rebuild { // put block datas
         batch.put(hash.to_vec(), block.copy_data());
@@ -92,11 +111,11 @@ pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     if let Some(new_root) = &root_change {
         // Commit state/logs only after store batch is durable.
         // This avoids: state advanced but CSK/block data not persisted (crash between insert_by and roll_by).
-        new_root.state.write_to_disk();
-        if is_open_vmlog(eng, new_root.logs.height()) {
-            new_root.logs.write_to_disk();
+        new_root.state().write_to_disk();
+        if is_open_vmlog(eng, new_root.logs().height()) {
+            new_root.logs().write_to_disk();
         }
-        eng.scaner.roll(new_root.block.clone(), new_root.state.clone(), eng.disk.clone());
+        eng.scaner.roll(new_root.block(), new_root.state(), eng.disk.clone());
         // Keep the old root alive until after state/logs are committed.
         // See InsertResult::old_root_hold comment for the rationale.
         let _old_root_hold = old_root_hold;
@@ -104,27 +123,21 @@ pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     // if change head
     if let Some(new_head) = &head_change {
         let real_root_hei: u64 = match &root_change {
-            Some(rt) => rt.height,
+            Some(rt) => rt.height(),
             _ => old_root_height,
         };
         if not_rebuild {
             batch.put(BlockStore::CSK.to_vec(), ChainStatus{
                 root_height: BlockHeight::from(real_root_hei),
-                last_height: BlockHeight::from(new_head.height),
+                last_height: BlockHeight::from(new_head.height()),
             }.serialize());
-            let mut skchk = new_head.clone();
-            let mut skhei = BlockHeight::from(skchk.height);
-            if is_sync {
-                batch.put(skhei.to_vec(), skchk.hash.to_vec());
-            } else {
-                for _ in 0..eng.cnf.unstable_block + 1 {
-                    batch.put(skhei.to_vec(), skchk.hash.to_vec());
-                    skchk = match skchk.parent.upgrade() {
-                        Some(h) => h,
-                        _ => break,
-                    };
-                    skhei -= 1;
+            if head_change_kind == HeadChangeKind::Reorg {
+                for (hei, hx) in Roller::collect_back_hashes(new_head, eng.cnf.unstable_block + 1) {
+                    batch.put(hei.to_vec(), hx.to_vec());
                 }
+            } else {
+                let skhei = BlockHeight::from(new_head.height());
+                batch.put(skhei.to_vec(), new_head.hash().to_vec());
             }
         }
     }
@@ -135,7 +148,7 @@ pub fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     Ok(())
 }
 
-pub fn record_recent(eng: &ChainEngine, block: &dyn BlockRead) {
+fn record_recent(eng: &ChainEngine, block: &dyn BlockRead) {
     let chei = block.height().uint() as i128;
     let deln = (eng.cnf.unstable_block * 2) as i128; // retain unstable * 2
     let deln = chei - deln;
@@ -144,18 +157,18 @@ pub fn record_recent(eng: &ChainEngine, block: &dyn BlockRead) {
     rcts.push_front(Arc::new(create_recent_block_info(block)));
 }
 
-pub fn record_avgfee(eng: &ChainEngine, block: &dyn BlockRead) {
+fn record_avgfee(eng: &ChainEngine, block: &dyn BlockRead) {
     let mut rfees = eng.avgfees.lock().unwrap();
     let mut avgf = eng.cnf.lowest_fee_purity;
     let txs = block.transactions();
     let txnum = txs.len();
     if txnum >= 30 {
         let nmspx = txnum / 3;
-        let mut allpry = 0u64;
+        let mut allpry = 0u128;
         for i in nmspx .. nmspx * 2 {
-            allpry += txs[i].fee_purity();
+            allpry += txs[i].fee_purity() as u128;
         }
-        avgf = allpry / nmspx as u64;
+        avgf = (allpry / nmspx as u128) as u64;
     }
     rfees.push_front(avgf);
     if rfees.len() > 8 {

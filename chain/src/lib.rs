@@ -16,11 +16,12 @@ use protocol::state::*;
 use protocol::transaction::*;
 use sys::*;
 
+mod forktree;
+use forktree::{ChunkRef, Roller};
+
 include! {"count.rs"}
 include! {"state.rs"}
 include! {"verify.rs"}
-include! {"chunk.rs"}
-include! {"tree.rs"}
 include! {"init.rs"}
 include! {"check.rs"}
 include! {"insert.rs"}

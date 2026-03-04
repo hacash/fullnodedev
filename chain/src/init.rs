@@ -1,7 +1,5 @@
 
 pub fn initialize(engine: &ChainEngine, state_db: Arc<dyn DiskDB>, no_sta_dir: bool) {
-      
-    let _lk = engine.syncing.lock().unwrap();
 
     if no_sta_dir {
         let mut init_state = StateInst::build(state_db.clone(), None);
@@ -42,7 +40,7 @@ fn load_root_block(minter: &dyn Minter, store: &dyn Store) -> Arc<dyn Block> {
 fn rebuild_unstable_blocks(engine: &ChainEngine) {
     // let finish_height = engine.store.status().last_height.uint();
     let mut roller = engine.tree.write().unwrap();
-    let mut next_height = roller.root.height + 1;
+    let mut next_height = roller.root_height() + 1;
     // rebuild unstable blocks
     print!("[Engine] Data: {}, rebuild ({})", engine.cnf.data_dir, next_height);
     loop {
@@ -69,9 +67,9 @@ fn rebuild_all_blocks(engine: &ChainEngine) {
     let finish_height = engine.store.status().last_height.uint();
     {   // updata root to height 0
         let mut temp = engine.tree.write().unwrap();
-        let set_chunk = Arc::new((*temp).root.clone().update_to(engine.minter.genesis_block()));
-        (*temp).root = set_chunk.clone();
-        (*temp).head = set_chunk;
+        // This path runs before any children are attached to root.
+        let set_chunk = temp.root().clone_with_replaced_block(engine.minter.genesis_block());
+        temp.reset_root_head(set_chunk);
     }
     println!("[Database] scan all {} blocks to upgrade state db version, plase waiting...", finish_height);
     const STUFFCAP: usize = 20*1000*1000; // 20 mb

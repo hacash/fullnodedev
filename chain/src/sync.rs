@@ -4,10 +4,14 @@ fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr 
     let _isrtlock = inserting_lock(this, ISRT_STAT_SYNCING,
         "the blockchain is syncing and need wait"
     )?;
+    do_synchronize(this, datas, ori)
+}
+
+fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr {
     let mut temp = this.tree.write().unwrap();
     let tree = temp.deref_mut();
-    let hei_min = tree.root.height + 1;
-    let hei_max = tree.head.height + 1;
+    let hei_min = tree.root_height() + 1;
+    let hei_max = tree.head_height() + 1;
     let Ok(blkhei) = BlockHeadOnlyHeight::build(datas.as_ref()) else {
         return sync_warning("block data format error".to_string())
     };
@@ -25,7 +29,7 @@ fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr 
     let (blkch, blkcv) = std::sync::mpsc::sync_channel(chsize);
     let (ridch, ridcv) = std::sync::mpsc::sync_channel(chsize);
 
-    let mut need_blk_hei = tree.head.height + 1;
+    let mut need_blk_hei = hei_start;
     // let mut blockdts = datas.as_mut_slice();
     let sizecap = datas.as_ref().len();
     let mut seek = 0;
