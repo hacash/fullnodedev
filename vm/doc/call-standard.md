@@ -39,7 +39,7 @@ Out of scope:
 2. `code_owner`: current code owner address (resolution base for `self/super` semantics).
 3. `FnSign`: 4-byte function signature.
 4. `Entry mode`: top-level execution mode (`Main`, `P2sh`, `Abst`).
-5. `Internal mode`: in-call execution mode (`Outer`, `Inner`, `View`, `Pure`).
+5. `Internal mode`: in-call execution mode (`External`, `Inner`, `View`, `Pure`).
 6. `CALLSUPER`: internal parent-scope call opcode.
 
 ## 4. Quick Reference: Bytecodes and Stack Contracts
@@ -48,7 +48,7 @@ Out of scope:
 
 | Instruction | Byte | Operand bytes | Logical stack contract | Frame behavior |
 |---|---:|---:|---|---|
-| `CALL` | `0x11` | `libidx(1) + fnsign(4)` | consume 1 call-argument value, produce 1 return value | create new frame (`Outer`) |
+| `CALL` | `0x11` | `libidx(1) + fnsign(4)` | consume 1 call-argument value, produce 1 return value | create new frame (`External`) |
 | `CALLTHIS` | `0x12` | `fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`Inner`) |
 | `CALLSELF` | `0x13` | `fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`Inner`) |
 | `CALLSUPER` | `0x14` | `fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`Inner`) |
@@ -77,7 +77,7 @@ Notes:
 
 | Instruction | Target form | Lookup behavior | New frame | Callee mode | `state_addr` transition | `code_owner` transition |
 |---|---|---|---|---|---|---|
-| `CALL` | `libidx + fnsign` | resolve library address first, then search target + inherits (DFS, first match wins) | Yes | `Outer` | switch to library target contract | switch to resolved function owner (target or inherited parent) |
+| `CALL` | `libidx + fnsign` | resolve library address first, then search target + inherits (DFS, first match wins) | Yes | `External` | switch to library target contract | switch to resolved function owner (target or inherited parent) |
 | `CALLTHIS` | `fnsign` | search from `state_addr` via inherits | Yes | `Inner` | unchanged | resolved owner (default `state_addr`) |
 | `CALLSELF` | `fnsign` | search from `code_owner` via inherits | Yes | `Inner` | unchanged | resolved owner (default previous `code_owner`) |
 | `CALLSUPER` | `fnsign` | start from direct parents of `code_owner`, then DFS inherits | Yes | `Inner` | unchanged | resolved parent owner |
@@ -93,7 +93,7 @@ Resolution model:
 
 1. Resolve library target by index.
 2. Resolve function by `FnSign` from target contract using inheritance search (target first, then DFS over inherits list).
-3. Require `public` visibility for external (`Outer`) calls.
+3. Require `external` visibility for `CALL` (`External`) calls.
 
 Context transition:
 
@@ -199,7 +199,7 @@ Allowed call instructions by current mode:
 | `Abst` | `CALLTHIS`, `CALLSELF`, `CALLSUPER`, `CALLVIEW`, `CALLPURE`, `CALLCODE` |
 | `View` | `CALLVIEW`, `CALLPURE` |
 | `Pure` | `CALLPURE` |
-| `Outer` / `Inner` | unrestricted by mode table (still subject to other runtime checks) |
+| `External` / `Inner` | unrestricted by mode table (still subject to other runtime checks) |
 
 Global restriction:
 
@@ -215,7 +215,7 @@ Global restriction:
 
 Visibility marker semantics:
 
-1. `public` is an **outer-call visibility marker** for `CALL` (`Outer`) path.
+1. `external` is an **external-call visibility marker** for `CALL` (`External`) path.
 2. It does not model a universal "all external forms" permission boundary by itself.
 3. If naming causes confusion, implementations may introduce clearer aliases in future versions.
 
@@ -354,7 +354,7 @@ Recommended invariants for CI/regression:
    `CALL(libidx)` => target + inherits;
    `CALLVIEW/CALLPURE/CALLCODE(libidx)` => target local table only;
    `CALLTHIS/CALLSELF/CALLSUPER` => `state_addr`/`code_owner` inheritance rules.
-3. External visibility (`public`) is enforced for outer `CALL` paths.
+3. External visibility (`external`) is enforced for `CALL` (`External`) paths.
 4. CALLCODE never accepts parameterized targets.
 5. No nested call is possible in callcode execution state.
 6. `EXTACTION` is unavailable outside main-call semantics.
@@ -372,7 +372,7 @@ Recommended invariants for CI/regression:
 4. CALLCODE behavior tests (in-place dispatch, no nested call, return contract inheritance).
 5. Native/extension input-output contract tests (typed decode, stack placement).
 6. Extension policy tests (`EXTACTION` main-only, pure-mode bans).
-7. Visibility and not-found tests for outer calls.
+7. Visibility and not-found tests for external calls.
 8. Error propagation tests across nested call graphs.
 
 ---

@@ -60,9 +60,9 @@ mod action_coverage {
         VMState::wrap(state).contract_set_sync_edition(addr, sto);
     }
 
-    fn make_public_contract(func_name: &str, body: &str) -> ContractSto {
+    fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
         Contract::new()
-            .func(Func::new(func_name).unwrap().public().fitsh(body).unwrap())
+            .func(Func::new(func_name).unwrap().external().fitsh(body).unwrap())
             .into_sto()
     }
 
@@ -311,7 +311,7 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let caddr = contract_addr(&main, 5001);
-        let sto = make_public_contract("add1", r#"
+        let sto = make_external_contract("add1", r#"
             param { n }
             assert n == 5
             return 0
@@ -360,7 +360,7 @@ mod action_coverage {
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
-        let sto = make_public_contract("f", "return 0");
+        let sto = make_external_contract("f", "return 0");
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         // Verify contract exists in state
@@ -376,7 +376,7 @@ mod action_coverage {
         let tx = make_tx(3, main, vec![], 17);
         let mut state = StateMem::default();
         let caddr = contract_addr(&main, 1);
-        let sto = make_public_contract("f", "return 0");
+        let sto = make_external_contract("f", "return 0");
         insert_contract(&mut state, &caddr, &sto);
 
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
@@ -397,7 +397,7 @@ mod action_coverage {
 
         let sto = Contract::new()
             .inh(caddr.to_addr())
-            .func(Func::new("f").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("inherit itself"), "{err}");
@@ -414,7 +414,7 @@ mod action_coverage {
 
         let sto = Contract::new()
             .lib(caddr.to_addr())
-            .func(Func::new("f").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("link itself as library"), "{err}");
@@ -428,7 +428,7 @@ mod action_coverage {
         let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
-        let mut sto = make_public_contract("f", "return 0");
+        let mut sto = make_external_contract("f", "return 0");
         sto.metas.revision = Uint2::from(1u16);
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("revision must be 0"), "{err}");
@@ -445,7 +445,7 @@ mod action_coverage {
 
         let sto = Contract::new()
             .inh(missing.to_addr())
-            .func(Func::new("f").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("not exist"), "{err}");
@@ -469,7 +469,7 @@ mod action_coverage {
                     .bytecode(build_codes!(CU8 RET))
                     .unwrap(),
             )
-            .func(Func::new("f").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         execute_deploy(&mut ctx, 100, sto).unwrap();
 
@@ -490,7 +490,7 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(1u32);
         act.protocol_cost = Amount::zero();
-        act.contract = make_public_contract("f", "return 0");
+        act.contract = make_external_contract("f", "return 0");
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
     }
@@ -506,7 +506,7 @@ mod action_coverage {
 
         let sto = Contract::new()
             .lib(missing_lib.to_addr())
-            .func(Func::new("f").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("library") && err.contains("not exist"), "{err}");
@@ -522,11 +522,11 @@ mod action_coverage {
         let b = contract_addr(&main, 3);
         let sto_a = Contract::new()
             .inh(b.to_addr())
-            .func(Func::new("fa").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("fa").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         let sto_b = Contract::new()
             .inh(a.to_addr())
-            .func(Func::new("fb").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("fb").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         insert_contract(&mut state, &a, &sto_a);
         insert_contract(&mut state, &b, &sto_b);
@@ -535,7 +535,7 @@ mod action_coverage {
 
         let root = Contract::new()
             .inh(a.to_addr())
-            .func(Func::new("f").unwrap().public().fitsh("return 0").unwrap())
+            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, root).unwrap_err();
         assert!(
@@ -551,7 +551,7 @@ mod action_coverage {
         let lib_addr = contract_addr(&main, 88);
         let tx = make_tx(3, main, vec![], 17);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &lib_addr, &make_public_contract("target", "return 0"));
+        insert_contract(&mut state, &lib_addr, &make_external_contract("target", "return 0"));
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
@@ -559,7 +559,7 @@ mod action_coverage {
         let codes = single_call_codes(1, target_sig); // overflow: only libidx 0 exists
         let sto = Contract::new()
             .lib(lib_addr.to_addr())
-            .func(Func::new("f").unwrap().public().bytecode(codes).unwrap())
+            .func(Func::new("f").unwrap().external().bytecode(codes).unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("libidx overflow"), "{err}");
@@ -572,14 +572,14 @@ mod action_coverage {
         let lib_addr = contract_addr(&main, 89);
         let tx = make_tx(3, main, vec![], 17);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &lib_addr, &make_public_contract("have", "return 0"));
+        insert_contract(&mut state, &lib_addr, &make_external_contract("have", "return 0"));
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
         let miss_sig = calc_func_sign("missing");
         let sto = Contract::new()
             .lib(lib_addr.to_addr())
-            .func(Func::new("f").unwrap().public().bytecode(single_call_codes(0, miss_sig)).unwrap())
+            .func(Func::new("f").unwrap().external().bytecode(single_call_codes(0, miss_sig)).unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("function") && err.contains("not found"), "{err}");
@@ -592,14 +592,14 @@ mod action_coverage {
         let parent_addr = contract_addr(&main, 66);
         let tx = make_tx(3, main, vec![], 17);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &parent_addr, &make_public_contract("have", "return 0"));
+        insert_contract(&mut state, &parent_addr, &make_external_contract("have", "return 0"));
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
         let miss_sig = calc_func_sign("missing");
         let sto = Contract::new()
             .inh(parent_addr.to_addr())
-            .func(Func::new("f").unwrap().public().bytecode(callsuper_codes(miss_sig)).unwrap())
+            .func(Func::new("f").unwrap().external().bytecode(callsuper_codes(miss_sig)).unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("super function") && err.contains("not found"), "{err}");
@@ -619,7 +619,7 @@ mod action_coverage {
         act.protocol_cost = Amount::coin(10000, 244);
         let over = SpaceCap::new(1).max_value_size + 1;
         act.construct_argv = BytesW2::from(vec![0xAB; over]).unwrap();
-        act.contract = make_public_contract("f", "return 0");
+        act.contract = make_external_contract("f", "return 0");
 
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("construct argv size overflow"), "{err}");
@@ -639,7 +639,7 @@ mod action_coverage {
         act.protocol_cost = Amount::coin(10000, 244);
         let cap = SpaceCap::new(1).max_value_size;
         act.construct_argv = BytesW2::from(vec![0xCD; cap]).unwrap();
-        act.contract = make_public_contract("f", "return 0");
+        act.contract = make_external_contract("f", "return 0");
         act.execute(&mut ctx).unwrap();
 
         let caddr = contract_addr(&main, 78);
@@ -671,7 +671,7 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let caddr = contract_addr(&main, 1);
-        let sto = make_public_contract("f", "return 0");
+        let sto = make_external_contract("f", "return 0");
         let mut state = StateMem::default();
         insert_contract(&mut state, &caddr, &sto);
 
@@ -702,7 +702,7 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let caddr = contract_addr(&main, 1);
-        let sto = make_public_contract("f", "return 0");
+        let sto = make_external_contract("f", "return 0");
         let mut state = StateMem::default();
         insert_contract(&mut state, &caddr, &sto);
 
@@ -730,7 +730,7 @@ mod action_coverage {
         let caddr = contract_addr(&main, 1);
         let missing_lib = contract_addr(&main, 9999);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &caddr, &make_public_contract("f", "return 0"));
+        insert_contract(&mut state, &caddr, &make_external_contract("f", "return 0"));
 
         let tx = make_tx(3, main, vec![], 17);
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
@@ -753,13 +753,13 @@ mod action_coverage {
         let parent = contract_addr(&main, 2);
         let mut state = StateMem::default();
         // root has no inherit; parent inherits root
-        insert_contract(&mut state, &root, &make_public_contract("rootf", "return 0"));
+        insert_contract(&mut state, &root, &make_external_contract("rootf", "return 0"));
         insert_contract(
             &mut state,
             &parent,
             &Contract::new()
                 .inh(root.to_addr())
-                .func(Func::new("pf").unwrap().public().fitsh("return 0").unwrap())
+                .func(Func::new("pf").unwrap().external().fitsh("return 0").unwrap())
                 .into_sto(),
         );
 
@@ -785,7 +785,7 @@ mod action_coverage {
         let main = main_addr();
         let caddr = contract_addr(&main, 1);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &caddr, &make_public_contract("f", "return 0"));
+        insert_contract(&mut state, &caddr, &make_external_contract("f", "return 0"));
 
         let tx = make_tx(3, main, vec![], 17);
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
@@ -793,7 +793,7 @@ mod action_coverage {
 
         let sig = calc_func_sign("target");
         let edit = Contract::new()
-            .func(Func::new("g").unwrap().public().bytecode(single_call_codes(0, sig)).unwrap())
+            .func(Func::new("g").unwrap().external().bytecode(single_call_codes(0, sig)).unwrap())
             .into_edit(1);
 
         let mut act = ContractUpdate::new();
@@ -1564,7 +1564,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         fund_main_addr(&mut ctx);
 
         // Deploy a contract
-        let sto = make_public_contract("greet", "return 0");
+        let sto = make_external_contract("greet", "return 0");
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         // Verify it exists
@@ -1589,7 +1589,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
-        let sto = make_public_contract("f", "return 0");
+        let sto = make_external_contract("f", "return 0");
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         let caddr = contract_addr(&main, 1);
@@ -1625,7 +1625,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         fund_main_addr(&mut ctx);
 
         for nonce in 1..=5u32 {
-            let sto = make_public_contract("f", "return 0");
+            let sto = make_external_contract("f", "return 0");
             execute_deploy(&mut ctx, nonce, sto).unwrap();
             let caddr = contract_addr(&main, nonce);
             assert!(VMState::wrap(StateOperat::state(&mut ctx)).contract(&caddr).is_some(),
@@ -1641,7 +1641,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
-        let sto = make_public_contract("f", "return 0");
+        let sto = make_external_contract("f", "return 0");
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(1u32);
         // Create a negative amount: 0 - 1 mei

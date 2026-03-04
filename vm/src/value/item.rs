@@ -100,9 +100,57 @@ impl Value {
         }
     }
 
+    pub fn match_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Bytes(buf) => Some(buf.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub fn match_bytes_mut(&mut self) -> Option<&mut Vec<u8>> {
+        match self {
+            Bytes(buf) => Some(buf),
+            _ => None,
+        }
+    }
+
+    pub fn match_compo(&self) -> Option<&CompoItem> {
+        match self {
+            Compo(compo) => Some(compo),
+            _ => None,
+        }
+    }
+
+    pub fn match_compo_mut(&mut self) -> Option<&mut CompoItem> {
+        match self {
+            Compo(compo) => Some(compo),
+            _ => None,
+        }
+    }
+
+    pub fn into_compo(self) -> Option<CompoItem> {
+        match self {
+            Compo(compo) => Some(compo),
+            _ => None,
+        }
+    }
 
     pub fn compo_ref(&self) -> VmrtRes<&CompoItem> {
-        let Value::Compo(compo) = self else {
+        let Some(compo) = self.match_compo() else {
+            return itr_err_code!(CompoOpNotMatch)
+        };
+        Ok(compo)
+    }
+
+    pub fn compo(&mut self) -> VmrtRes<&mut CompoItem> {
+        let Some(compo) = self.match_compo_mut() else {
+            return itr_err_code!(CompoOpNotMatch)
+        };
+        Ok(compo)
+    }
+
+    pub fn take_compo(self) -> VmrtRes<CompoItem> {
+        let Some(compo) = self.into_compo() else {
             return itr_err_code!(CompoOpNotMatch)
         };
         Ok(compo)
@@ -128,19 +176,6 @@ impl Value {
         }
     }
 
-    pub fn compo(&mut self) -> VmrtRes<&mut CompoItem> {
-        let Value::Compo(compo) = self else {
-            return itr_err_code!(CompoOpNotMatch)
-        };
-        Ok(compo)
-    }
-
-    pub fn compo_get(self) -> VmrtRes<CompoItem> {
-        let Value::Compo(compo) = self else {
-            return itr_err_code!(CompoOpNotMatch)
-        };
-        Ok(compo)
-    }
 
     pub fn ty_num(&self) -> u8 {
         self.ty() as u8
@@ -257,5 +292,19 @@ mod tests {
         map.insert(vec![1u8; 4], Value::Bytes(vec![5u8; 3]));
         let mapv = Value::Compo(CompoItem::map(map).unwrap());
         assert_eq!(mapv.val_size(), (2 + 2) + (4 + 3));
+    }
+
+    #[test]
+    fn match_bytes_and_compo_helpers_work() {
+        let mut bytes = Value::Bytes(vec![1, 2, 3]);
+        assert_eq!(bytes.match_bytes(), Some(&[1, 2, 3][..]));
+        bytes.match_bytes_mut().unwrap().push(4);
+        assert_eq!(bytes.match_bytes(), Some(&[1, 2, 3, 4][..]));
+        assert!(bytes.match_compo().is_none());
+
+        let mut compo = Value::Compo(CompoItem::new_list());
+        assert!(compo.match_compo().is_some());
+        assert!(compo.match_compo_mut().is_some());
+        assert!(compo.match_bytes().is_none());
     }
 }

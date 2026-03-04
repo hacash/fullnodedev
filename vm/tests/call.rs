@@ -20,7 +20,7 @@ mod call {
     fn inh1() {
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-            .func(Func::new("f1").unwrap().public().fitsh("return 1").unwrap())
+            .func(Func::new("f1").unwrap().external().fitsh("return 1").unwrap())
             .testnet_deploy_print_by_nonce("8:244", 0);
 
         // iW82ndGx4Qu9k3LE4iBaM9pUXUzGUmfPh
@@ -62,7 +62,7 @@ mod call {
             .func(
                 Func::new("f4")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         "
             lib C = 0
@@ -117,7 +117,7 @@ mod call {
         let contract = Contract::new().func(
             Func::new("recursion")
                 .unwrap()
-                .public()
+                .external()
                 .fitsh(recursion_fn)
                 .unwrap(),
         );

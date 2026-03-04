@@ -22,7 +22,7 @@ combi_struct!{ ContractAbstCall,
 combi_struct!{ ContractUserFunc, 
 	sign: Fixed4
 	mark: Fixed3
-	fncnf: Fixed1 // function flags, e.g. public
+	fncnf: Fixed1 // function flags, e.g. external
 	pmdf: FuncArgvTypes // params type define
     code_stuff: CodeStuff
 }
@@ -106,7 +106,7 @@ impl ContractUserFunc {
 		if self.mark.not_zero() {
 			return e
 		}
-		let known = FnConf::Public as u8;
+		let known = FnConf::External as u8;
 		if self.fncnf[0] & !known != 0 {
 			return e
 		}

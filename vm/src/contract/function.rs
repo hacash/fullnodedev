@@ -83,8 +83,8 @@ impl Func {
 
     define_func_codes!{}
 
-    pub fn public(mut self) -> Self {
-        self.func.fncnf[0] |= FnConf::Public as u8;
+    pub fn external(mut self) -> Self {
+        self.func.fncnf[0] |= FnConf::External as u8;
         self
     }
 

@@ -352,14 +352,14 @@ pub fn execute_code(
             PU16  => ops.push(U16(pu16!()))?,
             PBUF  => {
                 let v = pbuf!().valid(cap)?;
-                if let Value::Bytes(b) = &v {
+                if let Some(b) = v.match_bytes() {
                     gas += gst.stack_copy(b.len());
                 }
                 ops.push(v)?;
             }
             PBUFL => {
                 let v = pbufl!().valid(cap)?; // buf long
-                if let Value::Bytes(b) = &v {
+                if let Some(b) = v.match_bytes() {
                     gas += gst.stack_copy(b.len());
                 }
                 ops.push(v)?;
@@ -502,8 +502,8 @@ pub fn execute_code(
             CLEAR    => { ops.compo()?.clear() }
             MERGE    => {
                 let a = ops.pop()?;
-                let (src_len, src_bsz) = match &a {
-                    Value::Compo(c) => {
+                let (src_len, src_bsz) = match a.match_compo() {
+                    Some(c) => {
                         let len = c.len();
                         let bsz = match c.list_ref() {
                             Ok(l) => l.iter().map(Value::val_size).sum(),
@@ -515,9 +515,9 @@ pub fn execute_code(
                         };
                         (len, bsz)
                     }
-                    _ => (0, 0),
+                    None => (0, 0),
                 };
-                ops.compo()?.merge(cap, a.compo_get()?)?;
+                ops.compo()?.merge(cap, a.take_compo()?)?;
                 gas += gst.compo_items_copy(src_len);
                 gas += gst.compo_bytes(src_bsz);
             }
@@ -799,12 +799,12 @@ pub fn execute_code(
                     },
                     CALLPURE  => exit = funcptr!(codes, *pc, Pure),
                     CALLVIEW  => exit = funcptr!(codes, *pc, View),
-                    CALL      => exit = funcptr!(codes, *pc, Outer),
+                    CALL      => exit = funcptr!(codes, *pc, External),
                     CALLTHIS  => exit = callinner!(CallTarget::This),
                     CALLSELF  => exit = callinner!(CallTarget::Self_),
                     CALLSUPER => exit = callinner!(CallTarget::Super),
-                    /* CALLDYN =>    exit = Call(Funcptr{ // Outer
-                        mode: Outer,
+                    /* CALLDYN =>    exit = Call(Funcptr{ // External
+                        mode: External,
                         target: CallTarget::Addr(ops.pop()?.checked_contract_address()?),
                         fnsign: ops.pop()?.checked_fnsign()?,
                     }), */

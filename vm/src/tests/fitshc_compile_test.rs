@@ -22,7 +22,7 @@ mod fitshc_compile_tests {
         let src = r#"
             contract demo {
                 return 1
-                function public f() -> u8 { return 1 }
+                function external f() -> u8 { return 1 }
             }
         "#;
         expect_compile_err(src, "unexpected token in contract body");
@@ -33,7 +33,7 @@ mod fitshc_compile_tests {
         let src = r#"
             use pragma 0.1.0
             contract demo {
-                function public f() -> u8 { return 1 }
+                function external f() -> u8 { return 1 }
             }
         "#;
         assert!(fitshc_compile(src).is_ok(), "fitshc compile should succeed");
@@ -43,9 +43,9 @@ mod fitshc_compile_tests {
     fn rejects_trailing_tokens_after_contract_end() {
         let src = r#"
             contract demo {
-                function public f() -> u8 { return 1 }
+                function external f() -> u8 { return 1 }
             }
-            function public g() -> u8 { return 2 }
+            function external g() -> u8 { return 2 }
         "#;
         expect_compile_err(src, "unexpected token after contract end");
     }
@@ -54,7 +54,7 @@ mod fitshc_compile_tests {
     fn rejects_unclosed_parenthesized_return_type() {
         let src = r#"
             contract demo {
-                function public f() -> (u8 { return 1 }
+                function external f() -> (u8 { return 1 }
             }
         "#;
         expect_compile_err(src, "expected ')' after return type");

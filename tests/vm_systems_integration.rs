@@ -30,9 +30,9 @@ fn insert_contract(state: &mut dyn State, addr: &ContractAddress, sto: &Contract
     vm_state.contract_set_sync_edition(addr, sto);
 }
 
-fn make_public_contract(func_name: &str, body: &str) -> ContractSto {
+fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
     Contract::new()
-        .func(Func::new(func_name).unwrap().public().fitsh(body).unwrap())
+        .func(Func::new(func_name).unwrap().external().fitsh(body).unwrap())
         .into_sto()
 }
 
@@ -229,7 +229,7 @@ fn deploy_rejects_missing_library_contract() {
 
     let sto = Contract::new()
         .lib(missing.to_addr())
-        .func(Func::new("run").unwrap().public().fitsh("return 0").unwrap())
+        .func(Func::new("run").unwrap().external().fitsh("return 0").unwrap())
         .into_sto();
 
     let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
@@ -249,11 +249,11 @@ fn deploy_rejects_nested_parent_inherits_before_runtime() {
 
     let sto_a = Contract::new()
         .inh(b.to_addr())
-        .func(Func::new("fa").unwrap().public().fitsh("return 0").unwrap())
+        .func(Func::new("fa").unwrap().external().fitsh("return 0").unwrap())
         .into_sto();
     let sto_b = Contract::new()
         .inh(a.to_addr())
-        .func(Func::new("fb").unwrap().public().fitsh("return 0").unwrap())
+        .func(Func::new("fb").unwrap().external().fitsh("return 0").unwrap())
         .into_sto();
     insert_contract(&mut state, &a, &sto_a);
     insert_contract(&mut state, &b, &sto_b);
@@ -262,7 +262,7 @@ fn deploy_rejects_nested_parent_inherits_before_runtime() {
     ctx.env.chain.fast_sync = true;
     let sto = Contract::new()
         .inh(a.to_addr())
-        .func(Func::new("run").unwrap().public().fitsh("return 0").unwrap())
+        .func(Func::new("run").unwrap().external().fitsh("return 0").unwrap())
         .into_sto();
 
     let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
@@ -282,7 +282,7 @@ fn deploy_rejects_missing_library_function_at_precheck() {
     let mut state = StateMem::default();
 
     let lib_sto = Contract::new()
-        .func(Func::new("g").unwrap().public().fitsh("return 0").unwrap())
+        .func(Func::new("g").unwrap().external().fitsh("return 0").unwrap())
         .into_sto();
     insert_contract(&mut state, &lib, &lib_sto);
 
@@ -293,7 +293,7 @@ fn deploy_rejects_missing_library_function_at_precheck() {
         .func(
             Func::new("run")
                 .unwrap()
-                .public()
+                .external()
                 .fitsh(
                     r##"
                     lib C = 0
@@ -337,7 +337,7 @@ fn loader_enforces_max_loaded_contracts() {
     let sig = calc_func_sign("f");
     let mut state = StateMem::default();
     let mut addrs = Vec::new();
-    let sto = make_public_contract("f", "return 0");
+    let sto = make_external_contract("f", "return 0");
     for i in 0..21u32 {
         let caddr = contract_addr(&main, 1000 + i);
         addrs.push(caddr.to_addr());
@@ -375,7 +375,7 @@ fn global_contract_cache_hits_on_second_machine_call() {
 
     let main = main_addr();
     let caddr = contract_addr(&main, 2001);
-    let sto = make_public_contract("f", "return 0");
+    let sto = make_external_contract("f", "return 0");
     let sig = calc_func_sign("f");
     let codes = single_call_codes(0, sig);
 
@@ -445,7 +445,7 @@ fn sandbox_call_executes_and_reports_missing_function() {
 
     let main = main_addr();
     let caddr = contract_addr(&main, 3001);
-    let sto = make_public_contract(
+    let sto = make_external_contract(
         "add1",
         r##"
         param { n }

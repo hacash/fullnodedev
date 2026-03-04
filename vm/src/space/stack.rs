@@ -105,7 +105,7 @@ impl Stack {
 
     pub fn compo<'a>(&'a mut self) -> VmrtRes<&'a mut CompoItem> {
         let pk = self.peek()?;
-        let Value::Compo(compo) = pk else {
+        let Some(compo) = pk.match_compo_mut() else {
             return itr_err_code!(CompoOpNotMatch)
         };
         Ok(compo)

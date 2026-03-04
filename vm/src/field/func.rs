@@ -79,7 +79,7 @@ impl FuncArgvTypes {
         let Some(oty) = self.output_type().map_ire(CallArgvTypeFail)? else {
             return Ok(())
         };
-        if let Err(e) = v.checked_param_cast(oty) {
+        if let Err(e) = v.cast_param(oty) {
             return itr_err_fmt!(CallArgvTypeFail, "check output failed: {:?}", e);
         }
         // pass

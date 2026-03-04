@@ -353,7 +353,7 @@ fn vm_itr_err_code_unwind_mapping_is_strict() {
         CallInPure,
         CallOtherInP2sh,
         CallNoReturn,
-        CallNotPublic,
+        CallNotExternal,
         CallArgvTypeFail,
         CastFail,
         CastParamFail,

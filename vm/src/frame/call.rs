@@ -74,7 +74,7 @@ impl CallFrame {
                     )?;
                     let fnobj_arc = plan.fnobj().clone();
                     let fnobj = fnobj_arc.as_ref();
-                    let fn_is_public = fnobj.check_conf(FnConf::Public);
+                    let fn_is_external = fnobj.check_conf(FnConf::External);
 
                     // CALLCODE: in-place execution
                     if fnptr.is_callcode {
@@ -107,15 +107,15 @@ impl CallFrame {
                         continue;
                     }
 
-                    // Check public access for outer calls
-                    if let Outer = fnptr.mode {
-                        if !fn_is_public {
+                    // Check visibility for External-mode calls
+                    if let External = fnptr.mode {
+                        if !fn_is_external {
                             let vis = plan.visibility_addr();
                             let owner = plan.code_owner();
                             let impl_in = maybe!(vis == owner, s!(""), 
                                 format!(" (impl in {})", owner.to_readable()));
                             return itr_err_fmt!(
-                                CallNotPublic,
+                                CallNotExternal,
                                 "contract {}{} func sign {}",
                                 vis.to_readable(),
                                 impl_in,
@@ -141,7 +141,7 @@ impl CallFrame {
                             code_owner,
                             ..
                         } => {
-                            debug_assert!(matches!(fnptr.mode, Outer));
+                            debug_assert!(matches!(fnptr.mode, External));
                             curr!().state_addr = state_addr;
                             curr!().code_owner = code_owner;
                         }

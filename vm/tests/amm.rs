@@ -338,7 +338,7 @@ mod amm {
             .func(
                 Func::new("prepare")
                     .unwrap()
-                    .public()
+                    .external()
                     .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
                     .bytecode(prepare_codes)
                     .unwrap(),
@@ -353,7 +353,7 @@ mod amm {
             .func(
                 Func::new("withdraw")
                     .unwrap()
-                    .public()
+                    .external()
                     .types(None, vec![VT::Address, VT::U128])
                     .bytecode(withdraw_codes)
                     .unwrap(),
@@ -361,7 +361,7 @@ mod amm {
             .func(
                 Func::new("buy")
                     .unwrap()
-                    .public()
+                    .external()
                     .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
                     .bytecode(buy_codes)
                     .unwrap(),
@@ -369,7 +369,7 @@ mod amm {
             .func(
                 Func::new("sell")
                     .unwrap()
-                    .public()
+                    .external()
                     .types(Some(VT::U64), vec![VT::U64, VT::U64, VT::U64])
                     .bytecode(sell_codes)
                     .unwrap(),
@@ -377,7 +377,7 @@ mod amm {
             .func(
                 Func::new("total")
                     .unwrap()
-                    .public()
+                    .external()
                     .types(None, vec![])
                     .bytecode(total_codes)
                     .unwrap(),
@@ -385,7 +385,7 @@ mod amm {
             .func(
                 Func::new("shares")
                     .unwrap()
-                    .public()
+                    .external()
                     .types(Some(VT::U128), vec![VT::Address])
                     .bytecode(shares_codes)
                     .unwrap(),

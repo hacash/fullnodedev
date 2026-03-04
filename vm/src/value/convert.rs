@@ -91,6 +91,7 @@ impl Value {
     }
 
     pub fn checked_u128(&self) -> VmrtRes<u128> {
+        // Strict extractor for typed params: only uint variants are accepted.
         self.checked_uint_cast("u128")
     }
 
@@ -129,6 +130,7 @@ impl Value {
     }
 
     pub fn canbe_u128(&self) -> VmrtRes<u128> {
+        // Relaxed converter for explicit casts: bool/nil/bytes/address are also accepted.
         match self {
             U8(n) => Ok(*n as u128),
             U16(n) => Ok(*n as u128),
@@ -197,7 +199,7 @@ impl Value {
         match self {
             U32(u) => Ok(u.to_be_bytes()),
             Bytes(b) => checked_func_sign(&b),
-            _ => itr_err_fmt!(ContractAddrErr, "cannot cast {:?} to fn sign", self)
+            _ => itr_err_fmt!(CastParamFail, "cannot cast {:?} to fn sign", self)
         }
     }
 

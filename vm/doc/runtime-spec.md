@@ -36,7 +36,7 @@ The system uses a "strict pre-execution validation + contract-based runtime" mod
 
 ### 3.2 Permission Model is Mode-Driven
 
-Call modes (`Main/P2sh/Abst/Outer/Inner/View/Pure`) are the core of permission control. Cross-contract calls, state read/write permissions, and extension-call permissions are all mode-governed.
+Call modes (`Main/P2sh/Abst/External/Inner/View/Pure`) are the core of permission control. Cross-contract calls, state read/write permissions, and extension-call permissions are all mode-governed.
 
 ### 3.3 Context Address and Code Owner are Decoupled
 
@@ -179,7 +179,7 @@ CALLCODE is an implementation-level delegation mechanism, not a normal function 
 
 ## 7.4 Visibility Constraint
 
-External `CALL` (Outer) must enforce public visibility. The `public` marker is an outer-call visibility flag, not a universal cross-mode permission model by itself.
+`CALL` (External) must enforce external visibility. The `external` marker is an external-call visibility flag, not a universal cross-mode permission model by itself.
 
 ## 8. Permission and Extension Capability Specification
 

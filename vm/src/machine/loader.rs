@@ -336,7 +336,7 @@ impl Resoure {
                     Some(ads) => self.resolve_lib_addr_by_list(ads, lib)?,
                     _ => self.resolve_lib_addr_from_source(&mut vmsta, gas, req.code_owner, lib)?,
                 };
-                if req.fptr.mode == Outer && !req.fptr.is_callcode {
+                if req.fptr.mode == External && !req.fptr.is_callcode {
                     let hit = Self::require_resolved(self.resolve_userfn(
                         &mut vmsta,
                         gas,

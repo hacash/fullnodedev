@@ -7,7 +7,7 @@
         inherit
         abstract
         function
-        public
+        external
         ircode
         bytecode
         const (top-level constants)
@@ -92,10 +92,10 @@ contract TestToken {
     /*
         The source code of the contract function body calls the existing vm/src/lang/syntax.rs to compile
         Automatically parse the parameter list and return value, and place them into each FuncArgvTypes object of the contract
-        Automatically add the public modifier and automatically perform a hash sign calculation on the function name transfer_to
+        Automatically add the external modifier and automatically perform a hash sign calculation on the function name transfer_to
         return errcode, type u32
     */
-    function public transfer_to(addr: address, amt: u64) -> u32 {
+    function external transfer_to(addr: address, amt: u64) -> u32 {
         // The lib statement is now uniformly defined through the contract.
         // lib TokenHelper = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
         return this.do_transfer(addr, addr, amt)
@@ -108,7 +108,7 @@ contract TestToken {
         including: this/self/super calls, explicit call* instructions, complex expressions,
         list/map literals, indexing, nested blocks, casts, and type checks.
     */
-    function public ircode coverage_entry(
+    function external ircode coverage_entry(
         a0: u8,
         a1: u16,
         a2: u32,
@@ -292,12 +292,12 @@ contract TestToken {
         CALLCODE is special in bytecode verification: it must be followed by END unless
         it is the final instruction. Keep it as a tail call in a dedicated function.
     */
-    function public ircode coverage_tail_callcode() -> u32 {
+    function external ircode coverage_tail_callcode() -> u32 {
         callcode 0::0xabcdef01
         end
     }
 
-    function public ircode coverage_tail_callcode_libid() -> u32 {
+    function external ircode coverage_tail_callcode_libid() -> u32 {
         // cover: lib statement + callcode lib-index by identifier
         lib TmpLib = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
         callcode TmpLib::0xabcdef01
@@ -306,7 +306,7 @@ contract TestToken {
 
 
     /*
-        Private (non-public) internal functions of a contract
+        Private (non-external) internal functions of a contract
     */
     function do_transfer(addr_from: address, addr_to: address, amount: u64) -> u32 {
         
@@ -345,7 +345,7 @@ contract TestToken {
         Check the account balance
         ircode indicates that the compilation target is IRcode. The default is bytecode, so it can be omitted, but you can also include it.
     */
-    function public ircode balance_of(addr: address) -> u64 {
+    function external ircode balance_of(addr: address) -> u64 {
         // The param statement is now uniformly defined through the parameter table. 
         // param { addr }
         assert addr is address
@@ -386,7 +386,7 @@ contract TestToken {
         return 0
     }
 
-    function public ircode coverage_dispatch(addr: address, amt: u64) -> u32 {
+    function external ircode coverage_dispatch(addr: address, amt: u64) -> u32 {
         // call local helpers
         var a = this.helper0()
         var b = this.helper1(amt)

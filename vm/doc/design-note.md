@@ -100,20 +100,20 @@ Call Privileges:
     CallCode is NOT an ExecMode: it inherits the upper-level ExecMode privileges, and execution enters an "in_callcode" state where any CALL* instruction is forbidden.
     Ext actions are still gated by (mode, depth) rules.
 
-    - Main          (State Write) => Outer,        View, Pure, Code
+    - Main          (State Write) => External,        View, Pure, Code
     - Abst          (State Write) =>        Inner, View, Pure, Code
     - P2sh          (State Write) =>               View, Pure, Code
     - View          (State Read ) =>               View, Pure
     - Pure          (           ) =>                    Pure
     - Code          (- inherit -) =>                               -
-    - Outer | Inner (State Write) => Outer, Inner, View, Pure, Code (All types)
+    - External | Inner (State Write) => External, Inner, View, Pure, Code (All types)
 
 
 Call Context Change:
 
-    - state_addr (storage/log context) changes only on Outer
+    - state_addr (storage/log context) changes only on External
         - code_owner (code owner for self/super resolution) follows resolved owner:
-            Outer => resolved function owner on target contract graph (target or parent)
+            External => resolved function owner on target contract graph (target or parent)
             Inner => resolved child/parent
             View/Pure => library target
             CallCode => library target (in-place)
@@ -121,7 +121,7 @@ Call Context Change:
 
 libidx Resolution Split:
 
-    - CALL (Outer): target library + inheritance search (DFS)
+    - CALL (External): target library + inheritance search (DFS)
     - CALLVIEW/CALLPURE/CALLCODE: target library local table only (no inheritance search)
 
 

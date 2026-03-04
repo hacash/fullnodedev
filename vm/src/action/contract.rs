@@ -204,7 +204,7 @@ fn check_inherits_direct_parents_flat(
 
 #[derive(Clone, Copy)]
 struct UserfnMeta {
-    is_public: bool,
+    is_external: bool,
     param_count: usize,
 }
 
@@ -214,9 +214,9 @@ fn contract_userfn_meta(contract: &ContractSto, sign: &FnSign) -> Option<UserfnM
         .as_list()
         .iter()
         .find(|f| f.sign.to_array() == *sign)?;
-    let pub_mark = FnConf::Public as u8;
+    let ext_mark = FnConf::External as u8;
     Some(UserfnMeta {
-        is_public: f.fncnf[0] & pub_mark == pub_mark,
+        is_external: f.fncnf[0] & ext_mark == ext_mark,
         param_count: f.pmdf.param_count(),
     })
 }
@@ -327,9 +327,9 @@ fn check_static_call_targets(
                             hex::encode(sign)
                         )
                     };
-                    if !meta.is_public {
+                    if !meta.is_external {
                         return errf!(
-                            "{}: call target {} function 0x{} resolved in {} is not public",
+                            "{}: call target {} function 0x{} resolved in {} is not external",
                             func_tag,
                             tar.to_readable(),
                             hex::encode(sign),

@@ -34,7 +34,7 @@ mod main {
         // println!("{}", ircode_to_lang(&lang_to_ircode(&recursion_fn).unwrap()).unwrap());
 
         let contract = Contract::new()
-            .func(Func::new("f1").unwrap().public().fitsh(_fn1).unwrap())
+            .func(Func::new("f1").unwrap().external().fitsh(_fn1).unwrap())
             .func(Func::new("f2").unwrap().fitsh(_fn2).unwrap());
         // println!("\n\n{}\n\n", contract.serialize().to_hex());
         contract.testnet_deploy_print("8:244");

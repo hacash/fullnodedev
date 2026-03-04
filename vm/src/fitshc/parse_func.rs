@@ -9,19 +9,19 @@ use sys::*;
 use sys::{Ret, errf};
 
 pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, SourceMap, String)> {
-    // function public/private/ircode Name(...) -> Ret { ... }
+    // function external/private/ircode Name(...) -> Ret { ... }
     if consume_kw {
         state.advance(); // function
     }
 
-    let mut is_public = false;
+    let mut is_external = false;
     let mut is_ircode = false;
 
     // Modifiers
     while let Some(tk) = state.current() {
         match tk {
-            Keyword(KwTy::Public) => {
-                is_public = true;
+            Keyword(KwTy::External) => {
+                is_external = true;
                 state.advance();
             }
             Keyword(KwTy::Private) => {
@@ -47,8 +47,8 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
 
     // Setup Func
     let mut func = Func::new(&name)?;
-    if is_public {
-        func = func.public();
+    if is_external {
+        func = func.external();
     }
 
     let arg_types: Vec<ValueTy> = args.iter().map(|(_, t)| *t).collect();

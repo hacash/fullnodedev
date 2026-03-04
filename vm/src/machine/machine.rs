@@ -479,7 +479,7 @@ mod machine_test {
             .func(
                 Func::new("run")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
                         let v = super.f()
@@ -540,7 +540,7 @@ mod machine_test {
     }
 
     #[test]
-    fn call_outer_view_pure_use_inherits_but_callcode_keeps_local_lookup() {
+    fn call_external_view_pure_use_inherits_but_callcode_keeps_local_lookup() {
         let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(11));
         let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(12));
@@ -550,7 +550,7 @@ mod machine_test {
             .func(
                 Func::new("probe")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh("return 201")
                     .unwrap(),
             )
@@ -561,7 +561,7 @@ mod machine_test {
             .func(
                 Func::new("noop")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh("return 0")
                     .unwrap(),
             )
@@ -601,15 +601,15 @@ mod machine_test {
             machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
         };
 
-        // CALL (Outer): should resolve inherited `probe` on parent.
-        let outer_script = r##"
+        // CALL (External): should resolve inherited `probe` on parent.
+        let external_script = r##"
             lib C = 0
             let v = C.probe()
             assert v == 201
             return 0
         "##;
         assert!(
-            run_main(outer_script).is_ok(),
+            run_main(external_script).is_ok(),
             "CALL should resolve through inherits"
         );
 
@@ -646,7 +646,7 @@ mod machine_test {
     }
 
     #[test]
-    fn call_outer_requires_public_visibility() {
+    fn call_external_requires_external_visibility() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 21);
 
@@ -664,7 +664,7 @@ mod machine_test {
             return C.hidden()
         "##;
         let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
-        assert_err_contains(res, "CallNotPublic");
+        assert_err_contains(res, "CallNotExternal");
     }
 
     #[test]
@@ -836,14 +836,14 @@ mod machine_test {
             .func(
                 Func::new("bad_view")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh("return this.nope()")
                     .unwrap(),
             )
             .func(
                 Func::new("bad_pure")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh("return this.nope()")
                     .unwrap(),
             )
@@ -972,7 +972,7 @@ mod machine_test {
             .func(
                 Func::new("run")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
                         assert super.f() == 10
@@ -1014,7 +1014,7 @@ mod machine_test {
             .func(
                 Func::new("run")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
                         let _ = super.f()

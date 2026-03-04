@@ -172,7 +172,7 @@ impl Value {
     }
 
 
-    pub fn checked_param_cast(&mut self, ty: ValueTy) -> VmrtErr {
+    pub fn cast_param(&mut self, ty: ValueTy) -> VmrtErr {
         use ValueTy::*;
         let ec = CallArgvTypeFail;
         // Nil in param type means wildcard: skip type check and keep runtime value unchanged.
@@ -216,37 +216,37 @@ mod cast_tests {
     use super::*;
 
     #[test]
-    fn checked_param_cast_allows_narrowing_uint() {
+    fn cast_param_allows_narrowing_uint() {
         let mut v = Value::U32(1);
-        v.checked_param_cast(ValueTy::U16).unwrap();
+        v.cast_param(ValueTy::U16).unwrap();
         assert_eq!(v, Value::U16(1));
     }
 
     #[test]
-    fn checked_param_cast_allows_widening_uint() {
+    fn cast_param_allows_widening_uint() {
         let mut v = Value::U16(7);
-        v.checked_param_cast(ValueTy::U64).unwrap();
+        v.cast_param(ValueTy::U64).unwrap();
         assert_eq!(v, Value::U64(7));
     }
 
     #[test]
-    fn checked_param_cast_nil_is_wildcard() {
+    fn cast_param_nil_is_wildcard() {
         let mut v = Value::Bytes(vec![1, 2, 3]);
-        v.checked_param_cast(ValueTy::Nil).unwrap();
+        v.cast_param(ValueTy::Nil).unwrap();
         assert_eq!(v, Value::Bytes(vec![1, 2, 3]));
     }
 
     #[test]
-    fn checked_param_cast_allows_bool_target() {
+    fn cast_param_allows_bool_target() {
         let mut v = Value::U8(0);
-        v.checked_param_cast(ValueTy::Bool).unwrap();
+        v.cast_param(ValueTy::Bool).unwrap();
         assert_eq!(v, Value::Bool(false));
     }
 
     #[test]
-    fn checked_param_cast_invalid_target_uses_call_argv_type_fail() {
+    fn cast_param_invalid_target_uses_call_argv_type_fail() {
         let mut v = Value::U8(1);
-        let err = v.checked_param_cast(ValueTy::Compo).unwrap_err();
+        let err = v.cast_param(ValueTy::Compo).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 

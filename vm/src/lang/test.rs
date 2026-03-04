@@ -348,6 +348,40 @@ mod token_t {
     }
 
     #[test]
+    fn test_as_cast_overflow_check_for_uint_literals() {
+        use super::lang_to_irnode;
+
+        let result = lang_to_irnode("300 as u8");
+        assert!(result.is_err(), "300 as u8 should overflow u8");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("overflows u8"),
+            "Error should mention u8 overflow: {}",
+            err_msg
+        );
+
+        let result = lang_to_irnode("70000 as u16");
+        assert!(result.is_err(), "70000 as u16 should overflow u16");
+
+        let result = lang_to_irnode("70000 as u32");
+        assert!(result.is_ok(), "70000 as u32 should be valid");
+    }
+
+    #[test]
+    fn test_as_cast_address_literal_compile_time_check() {
+        use super::lang_to_irnode;
+
+        let result = lang_to_irnode("0xABCD as address");
+        assert!(
+            result.is_err(),
+            "invalid bytes literal cast to address should fail at compile time"
+        );
+
+        let result = lang_to_irnode("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS as address");
+        assert!(result.is_ok(), "address literal as address should be valid");
+    }
+
+    #[test]
     fn test_number_with_suffix_allows_underscore() {
         use super::lang_to_irnode;
 

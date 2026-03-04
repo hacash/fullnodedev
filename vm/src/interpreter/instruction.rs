@@ -420,6 +420,19 @@ mod shift_u64_tests {
     }
 
     #[test]
+    fn max_min_mixed_uint_widths_return_normalized_type() {
+        let mut lhs_max = Value::U8(255);
+        let mut rhs_max = Value::U128(254);
+        locop_arithmetic(&mut lhs_max, &mut rhs_max, max_checked).unwrap();
+        assert_eq!(lhs_max, Value::U128(255));
+
+        let mut lhs_min = Value::U16(1);
+        let mut rhs_min = Value::U64(2);
+        locop_arithmetic(&mut lhs_min, &mut rhs_min, min_checked).unwrap();
+        assert_eq!(lhs_min, Value::U64(1));
+    }
+
+    #[test]
     fn heapslice_eq_uses_src_len_and_other_ops_still_reject() {
         let mut heap = test_heap();
         heap.write(0, Value::Bytes(vec![1, 2, 3])).unwrap();

@@ -22,14 +22,14 @@ mod deploy {
             .func(
                 Func::new("f1")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 1 ")
                     .unwrap(),
             )
             .func(
                 Func::new("f2")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 2 ")
                     .unwrap(),
             );
@@ -44,7 +44,7 @@ mod deploy {
             .func(
                 Func::new("f4")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 4 ")
                     .unwrap(),
             );
@@ -72,14 +72,14 @@ mod deploy {
             .func(
                 Func::new("f1")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 1 ")
                     .unwrap(),
             )
             .func(
                 Func::new("f2")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 2 ")
                     .unwrap(),
             );
@@ -89,14 +89,14 @@ mod deploy {
             .func(
                 Func::new("f2")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 2 ")
                     .unwrap(),
             )
             .func(
                 Func::new("f3")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 3 ")
                     .unwrap(),
             );
@@ -111,7 +111,7 @@ mod deploy {
             .func(
                 Func::new("f4")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 4 ")
                     .unwrap(),
             );
@@ -120,7 +120,7 @@ mod deploy {
         let contract = Contract::new().func(
             Func::new("f5")
                 .unwrap()
-                .public()
+                .external()
                 .fitsh(" return 5 ")
                 .unwrap(),
         );
@@ -129,7 +129,7 @@ mod deploy {
         let contract = Contract::new().func(
             Func::new("f4")
                 .unwrap()
-                .public()
+                .external()
                 .fitsh(" return 41 ")
                 .unwrap(),
         );
@@ -144,7 +144,7 @@ mod deploy {
             .func(
                 Func::new("f6")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(" return 6 ")
                     .unwrap(),
             );
@@ -153,7 +153,7 @@ mod deploy {
         let contract = Contract::new().func(
             Func::new("f4")
                 .unwrap()
-                .public()
+                .external()
                 .fitsh(" return 42 ")
                 .unwrap(),
         );

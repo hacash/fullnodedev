@@ -21,7 +21,7 @@ mod hrc20 {
             .func(
                 Func::new("render")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
             param{ num }

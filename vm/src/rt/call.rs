@@ -125,7 +125,7 @@ pub enum FnKey {
 #[repr(u8)]
 #[derive(Debug, Copy, Clone)]
 pub enum FnConf {
-    Public = 0b10000000,
+    External = 0b10000000,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -324,14 +324,14 @@ impl CallTarget {
     }
 }
 
-/* Entry mode: Main, P2sh, Abst Call  mode: Outer, Inner, View, Pure */
+/* Entry mode: Main, P2sh, Abst Call  mode: External, Inner, View, Pure */
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ExecMode {
     #[default] Main, // tx main call
     P2sh, // p2sh script verify
     Abst, // contract abstract call
-    Outer, 
+    External, 
     Inner,
     View,  // read-only (can read state, cannot write)
     Pure,  // no-state (cannot read or write state)
@@ -341,7 +341,7 @@ enum_try_from_u8_by_variant!(
     ExecMode,
     ItrErrCode::CallInvalid,
     "exec mode {} not find",
-    [Main, P2sh, Abst, Outer, Inner, View, Pure]
+    [Main, P2sh, Abst, External, Inner, View, Pure]
 );
 
 

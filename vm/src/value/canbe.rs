@@ -81,7 +81,7 @@ impl Value {
     }
 
     pub fn canbe_func_retv(&self) -> VmrtErr {
-        Self::check_func_boundary_no_heapslice(self, CallArgvTypeFail)
+        Self::check_func_boundary_no_heapslice(self, CastBeFnRetvFail)
     }
 
 
@@ -105,5 +105,12 @@ mod canbe_tests {
         assert!(hs.canbe_bytes_ec(CastBeBytesFail).is_err());
         assert!(hs.canbe_func_argv().is_err());
         assert!(hs.canbe_func_retv().is_err());
+    }
+
+    #[test]
+    fn heapslice_func_retv_uses_retv_error_code() {
+        let hs = Value::HeapSlice((0, 1));
+        let err = hs.canbe_func_retv().unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeFnRetvFail);
     }
 }

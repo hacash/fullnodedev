@@ -44,7 +44,7 @@ mod other {
         // height > 12
         let mut usrfun1 = ContractUserFunc::new();
         usrfun1.sign = Fixed4::from(calc_func_sign("testadd"));
-        usrfun1.fncnf = Fixed1::from([FnConf::Public as u8]);
+        usrfun1.fncnf = Fixed1::from([FnConf::External as u8]);
         usrfun1.code_stuff.conf = Uint1::from(CodeConf::from_type(CodeType::Bytecode).raw());
         usrfun1.code_stuff.data = BytesW2::from(build_codes!(
             CU16 DUP ADD RET

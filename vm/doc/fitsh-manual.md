@@ -96,7 +96,7 @@ contract ContractName {
         return 1
     }
 
-    function public transfer_to(addr: address, amt: u64) -> u32 {
+    function external transfer_to(addr: address, amt: u64) -> u32 {
         return this.do_transfer(addr, addr, amt)
     }
 }
@@ -114,17 +114,17 @@ contract ContractName {
 ### 3.3 Function Declaration
 
 ```fitsh
-function [public|private] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
+function [external|private] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
 ```
 
-- `public`: Marks function as callable by `CALL` (`Outer`) path
-- `private`: Not marked `public` (default visibility marker)
+- `external`: Marks function as callable by `CALL` (`External`) path
+- `private`: Not marked `external` (default visibility marker)
 - `ircode`: Compile to IR (default for contract functions)
 - `bytecode`: Compile to raw bytecode
 
 Visibility note:
-- `public/private` here are runtime visibility markers for call resolution, not source-level access modifiers with universal guarantees across all call modes.
-- If naming is confusing in practice, a future revision may introduce clearer keywords (for example, an `outer`-style marker).
+- `external/private` here are runtime visibility markers for call resolution, not source-level access modifiers with universal guarantees across all call modes.
+- If naming is confusing in practice, a future revision may introduce clearer aliases.
 
 ---
 
@@ -672,7 +672,7 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 
 | Call | Syntax | Callee mode | Lookup root | Inheritance search | Frame behavior | State read | State write |
 |------|--------|-------------|-------------|--------------------|----------------|------------|-------------|
-| `call` | `lib.func(...)` | Outer | library target | Yes (target + inherits) | New frame | Yes | Yes |
+| `call` | `lib.func(...)` | External | library target | Yes (target + inherits) | New frame | Yes | Yes |
 | `callview` | `lib:func(...)` | View | library target | No (local table only) | New frame | Yes | No |
 | `callpure` | `lib::func(...)` | Pure | library target | No (local table only) | New frame | No | No |
 | `callcode` | `callcode lib::sig` | Inherits caller | library target | No (local table only) | In-place (no new frame) | Inherits | Inherits |
@@ -702,21 +702,21 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 |------|----------------|------------|
 | **Main** (tx main entry) | CALL, CALLVIEW, CALLPURE, CALLCODE | CALLTHIS, CALLSELF, CALLSUPER |
 | **P2sh** (script verify) | CALLVIEW, CALLPURE, CALLCODE | CALL, CALLTHIS, CALLSELF, CALLSUPER |
-| **Abst** (payment hooks) | CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE | CALL (Outer) |
-| **Outer** (nested contract) | All | — |
+| **Abst** (payment hooks) | CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE | CALL (External) |
+| **External** (nested contract) | All | — |
 | **Inner** (this/self/super) | All | — |
 | **View** (read-only) | CALLVIEW, CALLPURE | CALL, CALLTHIS, CALLSELF, CALLSUPER |
 | **Pure** (no state) | CALLPURE only | All others |
 | **in_callcode** (inside CALLCODE) | None | All (nested calls forbidden) |
 
-**Abst** disallows CALL (Outer) to prevent reentrancy from payment hooks into external contracts.
+**Abst** disallows CALL (External) to prevent reentrancy from payment hooks into external contracts.
 
 | ExecMode/Entry | CALL | CALLVIEW | CALLPURE | CALLCODE | CALLTHIS | CALLSELF | CALLSUPER |
 |---|---|---|---|---|---|---|---|
 | Main | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | P2sh | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Abst | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Outer/Inner | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| External/Inner | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | View | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Pure | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Callcode | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -728,7 +728,7 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 | Mode | Storage read | Storage write | Global/Memory read | Global/Memory write | Log |
 |------|--------------|---------------|-------------------|---------------------|
 | Main, P2sh, Abst | Yes | Yes | Yes | Yes | Yes |
-| Outer, Inner | Yes | Yes | Yes | Yes | Yes |
+| External, Inner | Yes | Yes | Yes | Yes | Yes |
 | View | Yes | No | Yes | No | No |
 | Pure | No | No | No | No | No |
 
@@ -739,13 +739,13 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 | **Main** (depth==0, not in_callcode) | ✅ Yes | ✅ Yes | ✅ Yes | Full access |
 | **Main** (depth>0 or in_callcode) | ❌ No | ✅ Yes | ✅ Yes | EXTACTION blocked in nested calls / callcode |
 | **P2sh, Abst** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
-| **Outer, Inner** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
+| **External, Inner** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
 | **View** | ❌ No | ✅ Yes | ✅ Yes | Read-only environment access |
 | **Pure** | ❌ No | ❌ No | ❌ No | No external state access |
 
 **Native Functions (NTFUNC / NTENV)**:
 
-| Opcode | Native Call | Args | Pure Mode | View Mode | Main/Outer/Inner | Function |
+| Opcode | Native Call | Args | Pure Mode | View Mode | Main/External/Inner | Function |
 |--------|-------------|------|-----------|-----------|------------------|----------|
 | NTENV | `context_address` | 0 | ❌ Forbidden (`nsr!`) | ✅ Allowed | ✅ Allowed | Read VM execution state |
 | NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ Allowed | ✅ | ✅ | Pure hash functions |
@@ -771,7 +771,7 @@ The VM enforces a permission system based on **ExecMode** (execution mode) and *
 
 #### Summary
 
-- **call** → Outer: full state access; callee must be marked `public`
+- **call** → External: full state access; callee must be marked `external`
 - **callview** → View: read-only; no storage/global/memory/log writes
 - **callpure** → Pure: no state access; only pure computation and nested CALLPURE
 - **callcode** → inherits mode; no nested calls; EXTACTION disabled
@@ -796,7 +796,7 @@ The VM maintains two key addresses during execution:
 
 ```fitsh
 contract Token {
-    function public balance_of(addr: address) -> u64 {
+    function external balance_of(addr: address) -> u64 {
         bind bk = "b_" ++ addr
         var balance = storage_load(bk)
         if balance is nil {
@@ -804,7 +804,7 @@ contract Token {
         }
         return balance
     }
-    function public transfer_to(addr: address, amt: u64) -> u32 {
+    function external transfer_to(addr: address, amt: u64) -> u32 {
         return this.do_transfer(addr, addr, amt)
     }
     function do_transfer(from: address, to: address, amt: u64) -> u32 {
@@ -831,7 +831,7 @@ contract Parent {
 contract Child {
     inherit [Parent: 0x...]
     function get_value() -> u64 { return 1 }
-    function public run() -> u32 {
+    function external run() -> u32 {
         let v = super.compute()
         assert v == 10203
         return 0
@@ -858,7 +858,7 @@ contract A { function f() -> u64 { return 10 } }
 contract B { function f() -> u64 { return 20 } }
 contract C {
     inherit [A: 0x..., B: 0x...]
-    function public run() -> u64 {
+    function external run() -> u64 {
         return self.f()
     }
 }
@@ -875,7 +875,7 @@ contract Base {
 contract Child {
     inherit [Base: 0x...]
     function helper() -> u64 { return 1 }
-    function public run() -> u64 {
+    function external run() -> u64 {
         return super.helper()
     }
 }

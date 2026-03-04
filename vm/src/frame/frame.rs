@@ -172,6 +172,6 @@ mod frame_boundary_tests {
         let frame = Frame::default();
         let mut retv = Value::HeapSlice((0, 1));
         let err = frame.check_output_type(&mut retv).unwrap_err();
-        assert!(matches!(err, ItrErr(CallArgvTypeFail, _)));
+        assert!(matches!(err, ItrErr(CastBeFnRetvFail, _)));
     }
 }

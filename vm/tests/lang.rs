@@ -1309,11 +1309,64 @@ fn format_ircode_preserves_mismatched_cast_to_bool() {
 #[test]
 fn format_ircode_preserves_mismatched_cast_to_address() {
     let script = r##"
-        print 1 as address
+        var x = 1
+        print x as address
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(formatted.contains("1 as address"));
+    assert!(formatted.contains("as address"));
+}
+
+#[test]
+fn redundant_as_bytes_is_elided_and_roundtrip_stable() {
+    let base = r##"
+        print "data"
+    "##;
+    let script = r##"
+        print "data" as bytes
+    "##;
+    let base_ir = lang_to_ircode(base).unwrap();
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    assert_eq!(ircode, base_ir);
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    let reparsed = lang_to_ircode(&formatted).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn redundant_as_address_is_elided_and_roundtrip_stable() {
+    let base = r##"
+        print emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
+    "##;
+    let script = r##"
+        print emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS as address
+    "##;
+    let base_ir = lang_to_ircode(base).unwrap();
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    assert_eq!(ircode, base_ir);
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    let reparsed = lang_to_ircode(&formatted).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn non_redundant_bytes_to_address_cast_is_preserved() {
+    let script = r##"
+        print (emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS as bytes) as address
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(formatted.contains("as address"));
+    let reparsed = lang_to_ircode(&formatted).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn invalid_bytes_literal_to_address_fails_at_compile_time() {
+    let script = r##"
+        print 0xABCD as address
+    "##;
+    assert!(lang_to_ircode(script).is_err());
 }
 
 #[test]

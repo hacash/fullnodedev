@@ -99,8 +99,8 @@ mod storage {
 
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-            .func(Func::new("total").unwrap().public().fitsh(f3).unwrap())
-            .func(Func::new("sto1").unwrap().public().fitsh(f2).unwrap())
+            .func(Func::new("total").unwrap().external().fitsh(f3).unwrap())
+            .func(Func::new("sto1").unwrap().external().fitsh(f2).unwrap())
             .testnet_deploy_print_by_nonce("12:244", 0);
     }
 }

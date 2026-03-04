@@ -70,7 +70,7 @@ keyword_define! {
     Inherit   : "inherit"
     Abstract  : "abstract"
     Function  : "function"
-    Public    : "public"
+    External  : "external"
     Private   : "private"
     Virtual   : "virtual"
     Deploy    : "deploy"

@@ -43,7 +43,7 @@ mod hrc20 {
             .func(
                 Func::new("info")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
             var ary1 = [1, 2, 3, 4]
@@ -68,7 +68,7 @@ mod hrc20 {
             .func(
                 Func::new("total_supply")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
             bind tk = "total"
@@ -85,7 +85,7 @@ mod hrc20 {
             .func(
                 Func::new("balance_of")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
             param { addr }
@@ -104,7 +104,7 @@ mod hrc20 {
             .func(
                 Func::new("transfer")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
             param { addr_to, amount }
@@ -119,7 +119,7 @@ mod hrc20 {
             .func(
                 Func::new("renewal")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
             param{ period }
@@ -141,7 +141,7 @@ mod hrc20 {
             .func(
                 Func::new("offering")
                     .unwrap()
-                    .public()
+                    .external()
                     .fitsh(
                         r##"
             var addr = tx_main_address()

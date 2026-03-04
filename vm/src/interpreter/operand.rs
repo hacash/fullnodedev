@@ -21,9 +21,9 @@ fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr
         Abst if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
         View if not_ist!(CALLVIEW, CALLPURE) => itr_err_code!(CallLocInView),
         Pure if not_ist!(CALLPURE) => itr_err_code!(CallInPure),
-        // Outer and Inner allow all call instructions.
+        // External and Inner allow all call instructions.
         // Guard-false arms for Main/P2sh/Abst/View/Pure also fall here (call is allowed).
-        Main | P2sh | Abst | Outer | Inner | View | Pure => Ok(()),
+        Main | P2sh | Abst | External | Inner | View | Pure => Ok(()),
     }
 }
 

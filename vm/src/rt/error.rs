@@ -59,7 +59,7 @@ pub enum ItrErrCode {
     CallInPure = 59,
     CallOtherInP2sh = 60,
     CallNoReturn = 61,
-    CallNotPublic = 62,
+    CallNotExternal = 62,
     CallArgvTypeFail = 63,
 
     CastFail = 71,
@@ -70,6 +70,7 @@ pub enum ItrErrCode {
     CastBeValueFail = 76,
     CastBeFnArgvFail = 77,
     CastBeCallDataFail = 78,
+    CastBeFnRetvFail = 79,
 
     CompoOpInvalid = 80,
     CompoOpOverflow = 81,
