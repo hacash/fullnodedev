@@ -356,7 +356,7 @@ mod fitsh_compile_tests {
             as_u64: "return 1 as u64",
             as_u128: "return 1 as u128",
             as_bytes: "return 1 as bytes",
-            as_address: "return 0xABCD as address",
+            as_address: "return 0x000102030405060708090A0B0C0D0E0F1011121314 as address",
             is_nil: "return nil is nil",
             is_not_nil: "return 1 is not nil",
             is_list: "return [] is list",

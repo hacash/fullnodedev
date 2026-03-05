@@ -45,20 +45,25 @@ macro_rules! memory_kvmap_define {
             }
 
             pub fn put(&mut self, k: Value, v: Value) -> VmrtErr {
+                self.put_with_stats(k, v).map(|_| ())
+            }
+
+            pub fn put_with_stats(&mut self, k: Value, v: Value) -> VmrtRes<(usize, bool)> {
                 v.canbe_value()?;
                 let key = Self::key(&k)?;
+                let key_len = key.len();
                 let full = self.datas.len() >= self.limit;
                 match self.datas.entry(key) {
                     Entry::Occupied(mut hit) => {
                         hit.insert(v);
-                        Ok(())
+                        Ok((key_len, false))
                     }
                     Entry::Vacant(slot) => {
                         if full {
                             return itr_err_code!($er2) // out of limit
                         }
                         slot.insert(v);
-                        Ok(())
+                        Ok((key_len, true))
                     }
                 }
             }

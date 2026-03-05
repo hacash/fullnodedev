@@ -103,6 +103,13 @@ impl Stack {
             .ok_or_else(|| ItrErr::new(StackError, "Read empty stack"))
     }
 
+    #[inline(always)]
+    pub fn peek_with_size<'a>(&'a mut self) -> VmrtRes<(&'a mut Value, usize)> {
+        let v = self.peek()?;
+        let sz = v.val_size();
+        Ok((v, sz))
+    }
+
     pub fn compo<'a>(&'a mut self) -> VmrtRes<&'a mut CompoItem> {
         let pk = self.peek()?;
         let Some(compo) = pk.match_compo_mut() else {
@@ -212,8 +219,23 @@ impl Stack {
         if n > self.datas.len() {
             return itr_err_fmt!(StackError, "pop empty stack")
         }
+        let total: usize = self.datas[self.datas.len() - n..]
+            .iter()
+            .map(Value::val_size)
+            .sum();
+        self.join_with_total(n as u8, total, cap)
+    }
+
+    #[inline(always)]
+    pub fn join_with_total(&mut self, n: u8, total: usize, cap: &SpaceCap) -> VmrtErr {
+        let n = n as usize;
+        if n < 3 {
+            return itr_err_fmt!(StackError, "inst join param cannot less than 3")
+        }
+        if n > self.datas.len() {
+            return itr_err_fmt!(StackError, "pop empty stack")
+        }
         let items = self.popn(n as u8)?;
-        let total: usize = items.iter().map(Value::val_size).sum();
         let mut data = Vec::with_capacity(total);
         for v in items {
             data.extend_from_slice(&v.canbe_bytes_ec(BytesHandle)?);

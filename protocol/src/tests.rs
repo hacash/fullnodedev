@@ -590,7 +590,7 @@ fn test_ast_select_min_failure_is_unwind() {
 
     let mut bad_guard = HeightScope::new();
     bad_guard.start = BlockHeight::from(10);
-    bad_guard.end = BlockHeight::from(1);
+    bad_guard.end = BlockHeight::from(20);
     let act = AstSelect::create_by(1, 1, vec![Box::new(bad_guard)]);
     let bytes = act.serialize();
 
@@ -635,12 +635,12 @@ fn test_ast_if_rethrow_preserves_unwind_kind() {
 
     let mut cond_guard = HeightScope::new();
     cond_guard.start = BlockHeight::from(20);
-    cond_guard.end = BlockHeight::from(10);
+    cond_guard.end = BlockHeight::from(30);
     let cond = AstSelect::create_by(1, 1, vec![Box::new(cond_guard)]);
 
     let mut else_guard = HeightScope::new();
     else_guard.start = BlockHeight::from(30);
-    else_guard.end = BlockHeight::from(10);
+    else_guard.end = BlockHeight::from(40);
     let br_else = AstSelect::create_by(1, 1, vec![Box::new(else_guard)]);
 
     let act = AstIf::create_by(cond, AstSelect::nop(), br_else);

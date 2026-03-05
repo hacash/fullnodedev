@@ -57,6 +57,31 @@ macro_rules! itrparamu16 {
     }
 }
 
+macro_rules! peekparam {
+    ($codes: expr, $pc: expr, $l: expr, $t: ty) => {
+        {
+            let r = $pc + $l;
+            #[cfg(debug_assertions)]
+            if r < $pc || r > $codes.len() {
+                return itr_err_code!(CodeOverflow)
+            }
+            <$t>::from_be_bytes(unsafe { read_arr::<$l>($codes, $pc) })
+        }
+    }
+}
+
+macro_rules! peekparamu8 {
+    ($codes: expr, $pc: expr) => {
+        peekparam!{$codes, $pc, 1, u8}
+    }
+}
+
+macro_rules! peekparamu16 {
+    ($codes: expr, $pc: expr) => {
+        peekparam!{$codes, $pc, 2, u16}
+    }
+}
+
 macro_rules! itrparambufex {
     ($codes: expr, $pc: expr, $l: expr, $t: ty) => {
         {
@@ -89,8 +114,8 @@ macro_rules! jump {
     ($codes: expr, $pc: expr, $l: expr) => {
         {
             let tpc = match $l {
-                1 =>  itrparamu8!($codes, $pc) as usize,
-                2 => itrparamu16!($codes, $pc) as usize,
+                1 =>  peekparamu8!($codes, $pc) as usize,
+                2 => peekparamu16!($codes, $pc) as usize,
                 _ => return itr_err_code!(CodeOverflow),
             };
             $pc = tpc; // jump to
@@ -233,9 +258,12 @@ pub fn execute_code(
     macro_rules! ops_pop_to_u16 { () => { ops.pop()?.checked_u16()? } }
     macro_rules! ops_peek_to_u16 { () => { ops.peek()?.checked_u16()? } }
     macro_rules! check_compo_type { ($m: ident) => { match ops.compo() { Ok(c) => c.$m(), _ => false, } } }
+    enum Step {
+        Continue,
+        Exit(CallExit),
+    }
 
     // start run
-    let exit;
     loop {
         // read inst
         debug_assert!(*pc < codes.len());
@@ -253,18 +281,18 @@ pub fn execute_code(
         *gas_usable -= gas_table.gas(instbyte); // 
         // println!("gas usable {} cp: {}, inst: {:?}", *gas_usable, gas_table.gas(instbyte), instruction);
 
-		    macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
-	            if in_callcode && EXTACTION == $act_kind {
-	                return itr_err_fmt!(ExtActDisabled, "extend action not allowed in callcode")
-	            }
-	            // `ensure_extend_call_allowed` already blocks EXTACTION in non-Main mode.
-	            // Keep `depth > 0` as a belt-and-suspenders runtime guard: with current
-	            // semantics Main starts at depth=0 and CALLCODE is in-place (no new frame),
-	            // so Main+depth>0 should be unreachable today, but this prevents accidental
-	            // privilege widening if future call paths ever re-enter EXTACTION from nested frames.
-	            if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
-	                return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
-	            }
+        macro_rules! extcall { ($act_kind: expr, $pass_body: expr, $have_retv: expr) => {
+            if in_callcode && EXTACTION == $act_kind {
+                return itr_err_fmt!(ExtActDisabled, "extend action not allowed in callcode")
+            }
+            // `ensure_extend_call_allowed` already blocks EXTACTION in non-Main mode.
+            // Keep `depth > 0` as a belt-and-suspenders runtime guard: with current
+            // semantics Main starts at depth=0 and CALLCODE is in-place (no new frame),
+            // so Main+depth>0 should be unreachable today, but this prevents accidental
+            // privilege widening if future call paths ever re-enter EXTACTION from nested frames.
+            if EXTACTION == $act_kind && (mode != Main || depth > 0)  {
+                return itr_err_fmt!(ExtActDisabled, "extend action just can use in main call")
+            }
             let idx = pu8!();
             ensure_extend_call_allowed(mode, $act_kind, idx)?;
             let kid = u16::from_be_bytes([instbyte, idx]);
@@ -316,8 +344,8 @@ pub fn execute_code(
                 let (r, g) = NativeFunc::call(hei, nt_idx, &argv)?;
                 let r = r.valid(cap)?;
                 gas += gst.ntfunc_bytes(r.val_size());
-                ops.push(r)?;
                 gas += g;
+                ops.push(r)?;
             } else {
                 nsr!();
                 let r = match nt_idx {
@@ -327,8 +355,8 @@ pub fn execute_code(
                 let g = NativeEnv::gas(nt_idx)?;
                 let r = r.valid(cap)?;
                 gas += gst.ntfunc_bytes(r.val_size());
-                ops.push(r)?;
                 gas += g;
+                ops.push(r)?;
             }    
         }}}
 
@@ -338,6 +366,85 @@ pub fn execute_code(
             ops.push(v)?;
         }}}
 
+        macro_rules! wlog { ($itn: expr) => {{ 
+            nsw!(); 
+            let items = ops.popn($itn)?; 
+            gas += gst.log_bytes(items.iter().map(|v| v.val_size()).sum()); 
+            host.log_push(context_addr, items)?; 
+        }}}
+
+        macro_rules! peek_op_gas { ($method:ident($($arg:expr),*)) => {{
+            let (v, outlen) = ops.peek_with_size()?;
+            gas += gst.stack_op(outlen);
+            v.$method($($arg),*)?;
+        }}}
+
+        macro_rules! push_buf_gas { ($v:expr) => {{
+            let v = $v.valid(cap)?;
+            if let Some(b) = v.match_bytes() {
+                gas += gst.stack_copy(b.len());
+            }
+            ops.push(v)?;
+        }}}
+
+        macro_rules! hwrite { ($idx:expr) => {{
+            let v = ops.pop()?;
+            gas += gst.heap_write(v.val_size());
+            heap.write($idx, v)?;
+        }}}
+
+        macro_rules! hread_push { ($v:expr) => {{
+            let v = $v;
+            gas += gst.heap_read(v.val_size());
+            ops.push(v)?;
+        }}}
+
+        macro_rules! kvput_inner { ($store:expr, $key_cost:expr) => {{
+            let v = ops.pop()?.valid(cap)?;
+            let vlen = v.val_size();
+            let k = ops.pop()?;
+            let klen = k.canbe_key()?.len();
+            let is_new = !$store.contains_key(&k)?;
+            gas += gst.stack_write(klen);
+            gas += gst.stack_write(vlen);
+            if is_new {
+                gas += $key_cost;
+            }
+            $store.put(k, v)?;
+        }}}
+
+        macro_rules! kvput { ($store:expr, $key_cost:expr) => {{
+            nsw!();
+            kvput_inner!($store, $key_cost);
+        }}}
+
+        macro_rules! kvget { ($k:ident => $lookup:expr) => {{
+            nsr!();
+            let v = { let $k = ops.peek()?; $lookup }.valid(cap)?;
+            gas += gst.stack_copy(v.val_size());
+            *ops.peek()? = v;
+        }}}
+
+        macro_rules! compo_edit_gas { () => {{
+            let len = ops.compo()?.len();
+            gas += gst.compo_items_edit(len);
+        }}}
+
+        macro_rules! compo_read_gas { () => {{
+            let len = ops.compo()?.len();
+            gas += gst.compo_items_read(len);
+        }}}
+
+        macro_rules! compo_pop_one { ($method:ident) => {{
+            let mut compo_val = ops.pop()?;
+            let len = compo_val.compo()?.len();
+            let v = compo_val.compo()?.$method()?.valid(cap)?;
+            gas += gst.compo_items_edit(len);
+            gas += gst.compo_bytes(v.val_size());
+            ops.push(v)?;
+        }}}
+
+        let step: VmrtRes<Step> = (|| {
         match instruction {
             // ext action
             EXTACTION => { extcall!(EXTACTION, true,  false); },
@@ -350,24 +457,12 @@ pub fn execute_code(
             // constant
             PU8   => ops.push(U8(pu8!()))?,
             PU16  => ops.push(U16(pu16!()))?,
-            PBUF  => {
-                let v = pbuf!().valid(cap)?;
-                if let Some(b) = v.match_bytes() {
-                    gas += gst.stack_copy(b.len());
-                }
-                ops.push(v)?;
-            }
-            PBUFL => {
-                let v = pbufl!().valid(cap)?; // buf long
-                if let Some(b) = v.match_bytes() {
-                    gas += gst.stack_copy(b.len());
-                }
-                ops.push(v)?;
-            }
-            P0     => ops.push(U8(0))?,
-            P1     => ops.push(U8(1))?,
-            P2     => ops.push(U8(2))?,
-            P3     => ops.push(U8(3))?,
+            PBUF  => push_buf_gas!(pbuf!()),
+            PBUFL => push_buf_gas!(pbufl!()),
+            P0 | 
+            P1 | 
+            P2 | 
+            P3 => ops.push(U8(instbyte - P0 as u8))?,
             PNBUF  => ops.push(Value::empty_bytes())?,
             PNIL   => ops.push(Value::Nil)?,
             PTRUE  => ops.push(Bool(true))?,
@@ -394,8 +489,8 @@ pub fn execute_code(
             // stack & buffer
             DUP    => {
                 let bsz = ops.datas.last().map(Value::val_size).unwrap_or(0);
-                ops.push(ops.last()?)?;
                 gas += gst.stack_copy(bsz);
+                ops.push(ops.last()?)?;
             }
             DUPN   => {
                 let n = pu8!();
@@ -407,8 +502,8 @@ pub fn execute_code(
                         bsz += v.val_size();
                     }
                 }
-                ops.dupn(n)?;
                 gas += gst.stack_copy(bsz);
+                ops.dupn(n)?;
             }
             POP    => { ops.pop()?; } // drop
             POPN   => { ops.popn(pu8!())?; },
@@ -425,8 +520,8 @@ pub fn execute_code(
                     l if l >= 2 => (ops.datas[l - 2].val_size(), ops.datas[l - 1].val_size()),
                     _ => (0, 0),
                 };
-                ops.cat(cap)?;
                 gas += gst.stack_op(xlen + ylen);
+                ops.cat(cap)?;
             }
             JOIN   => {
                 let n = pu8!();
@@ -439,67 +534,65 @@ pub fn execute_code(
                         ops.datas[l - n..].iter().map(|v| v.val_size()).sum()
                     }
                 };
-                ops.join(n, cap)?;
                 gas += gst.stack_op(total);
+                ops.join(n, cap)?;
             }
             BYTE   => {
-                let i = ops_pop_to_u16!();
-                ops.peek()?.cutbyte(i)?;
                 let outlen = ops.peek()?.val_size();
                 gas += gst.stack_op(outlen);
+                let i = ops_pop_to_u16!();
+                ops.peek()?.cutbyte(i)?;
             }
             CUT    => {
                 let (l, o) = (ops.pop()?, ops.pop()?);
+                let outlen = ops.peek()?.val_size();
+                gas += gst.stack_op(outlen);
                 ops.peek()?.cutout(l, o)?;
-                let outlen = ops.peek()?.val_size();
-                gas += gst.stack_op(outlen);
             }
-            LEFT   => {
-                ops.peek()?.cutleft(pu8_as_u16!())?;
-                let outlen = ops.peek()?.val_size();
-                gas += gst.stack_op(outlen);
-            }
-            RIGHT  => {
-                ops.peek()?.cutright(pu8_as_u16!())?;
-                let outlen = ops.peek()?.val_size();
-                gas += gst.stack_op(outlen);
-            }
-            LDROP  => {
-                ops.peek()?.dropleft(pu8_as_u16!())?;
-                let outlen = ops.peek()?.val_size();
-                gas += gst.stack_op(outlen);
-            }
-            RDROP  => {
-                ops.peek()?.dropright(pu8_as_u16!())?;
-                let outlen = ops.peek()?.val_size();
-                gas += gst.stack_op(outlen);
-            }
+            LEFT   => peek_op_gas!(cutleft(pu8_as_u16!())),
+            RIGHT  => peek_op_gas!(cutright(pu8_as_u16!())),
+            LDROP  => peek_op_gas!(dropleft(pu8_as_u16!())),
+            RDROP  => peek_op_gas!(dropright(pu8_as_u16!())),
             SIZE   => { *ops.peek()? = U16(ops.peek()?.can_get_size()?) }
             // compo
             NEWLIST  => ops.push(Compo(CompoItem::new_list()))?,
             NEWMAP   => ops.push(Compo(CompoItem::new_map()))?,
             PACKLIST => {
-                let l = CompoItem::pack_list(cap, ops)?;
+                let (l, len) = CompoItem::pack_list(cap, ops)?;
+                gas += gst.compo_items_edit(len);
                 ops.push(l)?;
             }
             PACKMAP  => {
-                let m = CompoItem::pack_map(cap, ops)?;
+                let (m, len) = CompoItem::pack_map(cap, ops)?;
+                gas += gst.compo_items_edit(len);
                 ops.push(m)?;
             }
             INSERT   => {
                 let v = ops.pop()?;
                 let k = ops.pop()?;
-                let len = ops.compo()?.len();
+                let ksz = {
+                    let c = ops.compo()?;
+                    maybe!(c.is_map(), k.canbe_key()?.len(), 0)
+                };
+                compo_edit_gas!();
+                gas += gst.compo_bytes(ksz);
+                gas += gst.compo_bytes(v.val_size());
                 ops.compo()?.insert(cap, k, v)?;
-                gas += gst.compo_items_edit(len);
             }
             REMOVE   => {
                 let k = ops.pop()?;
-                let len = ops.compo()?.len();
+                compo_edit_gas!();
                 ops.compo()?.remove(k)?;
-                gas += gst.compo_items_edit(len);
             }
-            CLEAR    => { ops.compo()?.clear() }
+            CLEAR    => {
+                let (len, bsz) = {
+                    let c = ops.compo()?;
+                    (c.len(), c.val_size())
+                };
+                gas += gst.compo_items_edit(len);
+                gas += gst.compo_bytes(bsz);
+                ops.compo()?.clear();
+            }
             MERGE    => {
                 let a = ops.pop()?;
                 let (src_len, src_bsz) = match a.match_compo() {
@@ -517,69 +610,43 @@ pub fn execute_code(
                     }
                     None => (0, 0),
                 };
-                ops.compo()?.merge(cap, a.take_compo()?)?;
                 gas += gst.compo_items_copy(src_len);
                 gas += gst.compo_bytes(src_bsz);
+                ops.compo()?.merge(cap, a.take_compo()?)?;
             }
             LENGTH   => { let l = ops.compo()?.length(cap)?; *ops.peek()? = l; }
             HASKEY   => {
                 let k = ops.pop()?;
-                let len = ops.compo()?.len();
                 let h = ops.compo()?.haskey(k)?;
+                compo_read_gas!();
                 *ops.peek()? = h;
-                gas += gst.compo_items_read(len);
             }
 	        ITEMGET  => {
                 let k = ops.pop()?;
-                let len = ops.compo()?.len();
                 let v = ops.compo()?.itemget(k)?.valid(cap)?;
-                gas += gst.compo_items_read(len);
+                compo_read_gas!();
                 gas += gst.compo_bytes(v.val_size());
                 *ops.peek()? = v;
             }
             KEYS     => {
-                let len = { ops.compo()?.len() };
-                let bsz = { let c = ops.compo()?; c.map_ref()?.keys().map(|k| k.len()).sum() };
-                let v = { let c = ops.compo()?; c.keys()? };
-                *ops.peek()? = v;
-                gas += gst.compo_items_edit(len);
+                let (v, len, bsz) = ops.compo()?.keys_with_stats()?;
+                gas += gst.compo_items_read(len);
                 gas += gst.compo_bytes(bsz);
+                *ops.peek()? = v;
             }
             VALUES   => {
-                let len = { ops.compo()?.len() };
-                let bsz = {
-                    let c = ops.compo()?;
-                    c.map_ref()?
-                        .values()
-                        .map(Value::val_size)
-                        .sum()
-                };
-                let v = { let c = ops.compo()?; c.values()? };
-                *ops.peek()? = v;
-                gas += gst.compo_items_edit(len);
+                let (v, len, bsz) = ops.compo()?.values_with_stats()?;
+                gas += gst.compo_items_read(len);
                 gas += gst.compo_bytes(bsz);
+                *ops.peek()? = v;
             }
-            HEAD     => {
-                let mut compo_val = ops.pop()?;
-                let len = compo_val.compo()?.len();
-                let v = compo_val.compo()?.head()?.valid(cap)?;
-                gas += gst.compo_items_read(len);
-                gas += gst.compo_bytes(v.val_size());
-                ops.push(v)?;
-            }
-            BACK     => {
-                let mut compo_val = ops.pop()?;
-                let len = compo_val.compo()?.len();
-                let v = compo_val.compo()?.back()?.valid(cap)?;
-                gas += gst.compo_items_read(len);
-                gas += gst.compo_bytes(v.val_size());
-                ops.push(v)?;
-            }
+            HEAD     => compo_pop_one!(head),
+            BACK     => compo_pop_one!(back),
             APPEND   => {
                 let v = ops.pop()?;
-                let len = ops.compo()?.len();
+                compo_edit_gas!();
+                gas += gst.compo_bytes(v.val_size());
                 ops.compo()?.append(cap, v)?;
-                gas += gst.compo_items_read(len);
             }
             CLONE    => {
                 let (len, bsz, c) = {
@@ -595,9 +662,9 @@ pub fn execute_code(
                     };
                     (len, bsz, compo.copy())
                 };
-                *ops.peek()? = Compo(c);
                 gas += gst.compo_items_copy(len);
                 gas += gst.compo_bytes(bsz);
+                *ops.peek()? = Compo(c);
             }
             UPLIST   => {
                 let i = ops.pop()?.checked_u8()?;
@@ -606,43 +673,18 @@ pub fn execute_code(
             }
             // heap
             HGROW    => gas += heap.grow(pu8!())?,
-            HWRITE   => {
-                let v = ops.pop()?;
-                let vlen = v.val_size();
-                heap.write(ops_pop_to_u16!(), v)?;
-                gas += gst.heap_write(vlen);
-            }
+            HWRITE   => hwrite!(ops_pop_to_u16!()),
             HREAD    => {
                 let n = ops.pop()?;
                 let len = n.checked_u16()? as usize;
+                gas += gst.heap_read(len);
                 let peek = ops.peek()?;
                 *peek = heap.read(peek, n)?.valid(cap)?;
-                gas += gst.heap_read(len);
             }
-            HWRITEX  => {
-                let v = ops.pop()?;
-                let vlen = v.val_size();
-                heap.write(pu8_as_u16!(), v)?;
-                gas += gst.heap_write(vlen);
-            }
-            HWRITEXL => {
-                let v = ops.pop()?;
-                let vlen = v.val_size();
-                heap.write(pu16!(), v)?;
-                gas += gst.heap_write(vlen);
-            }
-            HREADU   => {
-                let v = heap.read_u(pu8!())?;
-                let vlen = v.val_size();
-                ops.push(v)?;
-                gas += gst.heap_read(vlen);
-            }
-            HREADUL  => {
-                let v = heap.read_ul(pu16!())?;
-                let vlen = v.val_size();
-                ops.push(v)?;
-                gas += gst.heap_read(vlen);
-            }
+            HWRITEX  => hwrite!(pu8_as_u16!()),
+            HWRITEXL => hwrite!(pu16!()),
+            HREADU   => hread_push!(heap.read_u(pu8!())?),
+            HREADUL  => hread_push!(heap.read_ul(pu16!())?),
             HSLICE   => { let p = ops.pop()?; let peek = ops.peek()?; *peek = heap.slice(p, peek)?; }
             // locals & heap & global & memory
             XLG   => local_logic(pu8!(), locals, ops.peek()?)?,
@@ -656,20 +698,20 @@ pub fn execute_code(
             PUTX   => {
                 let v = ops.pop()?.valid(cap)?;
                 let vlen = v.val_size();
-                locals.save(ops_pop_to_u16!(), v)?;
                 gas += gst.stack_write(vlen);
+                locals.save(ops_pop_to_u16!(), v)?;
             }
             PUT   => {
                 let v = ops.pop()?.valid(cap)?;
                 let vlen = v.val_size();
-                locals.save(pu8_as_u16!(), v)?;
                 gas += gst.stack_write(vlen);
+                locals.save(pu8_as_u16!(), v)?;
             }
             GET   => local_get!(pu8!()),
-            GET0  => local_get!(0),
-            GET1  => local_get!(1),
-            GET2  => local_get!(2),
-            GET3  => local_get!(3),
+            GET0 |
+            GET1 |
+            GET2 |
+            GET3 => local_get!(instbyte - GET0 as u8),
             // storage
             SREST => {
                 nsr!();
@@ -680,14 +722,14 @@ pub fn execute_code(
                 nsr!();
                 let v = { let k = ops.peek()?; host.sload(hei, context_addr, k)? }.valid(cap)?;
                 let vlen = v.val_size();
-                *ops.peek()? = v;
                 gas += gst.storage_read(vlen);
+                *ops.peek()? = v;
             }
             SDEL  => {
                 nsw!();
                 let k = ops.pop()?;
-                host.sdel(context_addr, k)?;
                 gas += gst.storage_del();
+                host.sdel(context_addr, k)?;
             }
             SSAVE => {
                 nsw!();
@@ -697,48 +739,19 @@ pub fn execute_code(
             }
             SRENT => { nsw!(); let t = ops.pop()?; let k = ops.pop()?; gas += host.srent(gst, hei, context_addr, k, t)?; }
             // global & memory
-            GPUT => {
-                nsw!();
-                let v = ops.pop()?.valid(cap)?;
-                let vlen = v.val_size();
-                let k = ops.pop()?;
-                let is_new = !globals.contains_key(&k)?;
-                globals.put(k, v)?;
-                gas += gst.stack_write(vlen);
-                if is_new {
-                    gas += gst.global_key_cost;
-                }
-            }
-            GGET => {
-                nsr!();
-                let v = { let k = ops.peek()?; globals.get(k)? }.valid(cap)?;
-                gas += gst.stack_copy(v.val_size());
-                *ops.peek()? = v;
-            }
+            GPUT => kvput!(globals, gst.global_key_cost),
+            GGET => kvget!(k => globals.get(k)?),
             MPUT => {
                 nsw!();
-                let v = ops.pop()?.valid(cap)?;
-                let vlen = v.val_size();
-                let k = ops.pop()?;
                 let mem = memorys.entry_mut(context_addr)?;
-                let is_new = !mem.contains_key(&k)?;
-                mem.put(k, v)?;
-                gas += gst.stack_write(vlen);
-                if is_new {
-                    gas += gst.memory_key_cost;
-                }
-            }
-            MGET => {
-                nsr!();
-                let v = { let k = ops.peek()?; memorys.get(context_addr, k)? }.valid(cap)?;
-                gas += gst.stack_copy(v.val_size());
-                *ops.peek()? = v;
-            }
+                kvput_inner!(mem, gst.memory_key_cost);
+            },
+            MGET => kvget!(k => memorys.get(context_addr, k)?),
             // log (t1,[t2,t3,t4,]d)
-            LOG1 => { nsw!(); let items = ops.popn(2)?; gas += gst.log_bytes(items.iter().map(|v| v.val_size()).sum()); host.log_push(context_addr, items)?; }
-            LOG2 => { nsw!(); let items = ops.popn(3)?; gas += gst.log_bytes(items.iter().map(|v| v.val_size()).sum()); host.log_push(context_addr, items)?; }
-            LOG3 => { nsw!(); let items = ops.popn(4)?; gas += gst.log_bytes(items.iter().map(|v| v.val_size()).sum()); host.log_push(context_addr, items)?; }
-            LOG4 => { nsw!(); let items = ops.popn(5)?; gas += gst.log_bytes(items.iter().map(|v| v.val_size()).sum()); host.log_push(context_addr, items)?; }
+            LOG1 |
+            LOG2 |
+            LOG3 |
+            LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
             // logic
             AND  => binop_btw(ops, lgc_and)?,
             OR   => binop_btw(ops, lgc_or)?,
@@ -779,53 +792,55 @@ pub fn execute_code(
             NOP  => {}, // do nothing
             BURN => gas += pu16!() as i64,         
             // exit
-            RET => { exit = Return; break }, // func return <DATA>
-            END => { exit = Finish; break }, // func end
-            ERR => { exit = Throw;  break },  // throw <ERROR>
-            ABT => { exit = Abort;  break },  // panic
-            AST => { if !ops.pop()?.canbe_bool()? { exit = Abort;  break } }, // assert(..)
+            RET => return Ok(Step::Exit(Return)), // func return <DATA>
+            END => return Ok(Step::Exit(Finish)), // func end
+            ERR => return Ok(Step::Exit(Throw)),  // throw <ERROR>
+            ABT => return Ok(Step::Exit(Abort)),  // panic
+            AST => { if !ops.pop()?.canbe_bool()? { return Ok(Step::Exit(Abort)); } }, // assert(..)
             PRT => { debug_print_value(context_addr, current_addr, mode, depth, ops.pop()?) }
             // call CALLDYN
             CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALL => {
                 let ist = instruction;
                 check_call_mode(mode, ist, in_callcode)?;
                 // ok return
-                match ist {
+                let cexit = match ist {
                     CALLCODE => {
                         // CALLCODE inherits current mode permissions, and marks in_callcode
                         let idx = itrparamu8!(codes, *pc);
                         let sig = itrbuf!(codes, *pc, FN_SIGN_WIDTH);
-                        exit = call!(mode, sig, CallTarget::Idx(idx), true);
+                        call!(mode, sig, CallTarget::Idx(idx), true)
                     },
-                    CALLPURE  => exit = funcptr!(codes, *pc, Pure),
-                    CALLVIEW  => exit = funcptr!(codes, *pc, View),
-                    CALL      => exit = funcptr!(codes, *pc, External),
-                    CALLTHIS  => exit = callinner!(CallTarget::This),
-                    CALLSELF  => exit = callinner!(CallTarget::Self_),
-                    CALLSUPER => exit = callinner!(CallTarget::Super),
+                    CALLPURE  => funcptr!(codes, *pc, Pure),
+                    CALLVIEW  => funcptr!(codes, *pc, View),
+                    CALL      => funcptr!(codes, *pc, External),
+                    CALLTHIS  => callinner!(CallTarget::This),
+                    CALLSELF  => callinner!(CallTarget::Self_),
+                    CALLSUPER => callinner!(CallTarget::Super),
+                    _ => unreachable!(),
                     /* CALLDYN =>    exit = Call(Funcptr{ // External
                         mode: External,
                         target: CallTarget::Addr(ops.pop()?.checked_contract_address()?),
                         fnsign: ops.pop()?.checked_fnsign()?,
                     }), */
-                    _ => unreachable!()
                 };
-                break
-                // call exit
+                return Ok(Step::Exit(cexit))
             }
             // inst invalid
             _ => return itr_err_fmt!(InstInvalid, "{}", instbyte),
         }
+        Ok(Step::Continue)
+        })();
 
         // reduce gas for use
         *gas_usable -= gas; // more gas use
         check_gas!();
+        match step {
+            Ok(Step::Exit(exit)) => return Ok(exit),
+            Ok(Step::Continue) => {}
+            Err(e) => return Err(e),
+        }
         // next
     }
-
-    // exit
-    check_gas!();
-    Ok(exit)
 
 }
 

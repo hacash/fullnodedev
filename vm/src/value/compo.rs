@@ -308,15 +308,16 @@ impl CompoItem {
         })
     }
 
-    pub fn pack_list(cap: &SpaceCap, ops: &mut Stack) -> VmrtRes<Value> {
+    pub fn pack_list(cap: &SpaceCap, ops: &mut Stack) -> VmrtRes<(Value, usize)> {
         let items = take_items_from_ops!(false, cap, ops);
+        let len = items.len();
         for item in &items {
             item.canbe_value()?;
         }
-        Ok(Value::Compo(Self::list(VecDeque::from(items))?))
+        Ok((Value::Compo(Self::list(VecDeque::from(items))?), len))
     }
 
-    pub fn pack_map(cap: &SpaceCap, ops: &mut Stack) -> VmrtRes<Value> {
+    pub fn pack_map(cap: &SpaceCap, ops: &mut Stack) -> VmrtRes<(Value, usize)> {
         let mut items: Vec<_> = take_items_from_ops!(true, cap, ops).into_iter().map(|a|Some(a)).collect();
         let m = items.len();
         if m % 2 != 0 {
@@ -331,7 +332,7 @@ impl CompoItem {
             v.canbe_value()?;
             mapobj.insert(k, v);
         }
-        Ok(Value::Compo(Self::map(mapobj)?))
+        Ok((Value::Compo(Self::map(mapobj)?), sz))
     }
 
     pub fn is_list(&self) -> bool {
@@ -391,10 +392,39 @@ impl CompoItem {
     }
 
     pub fn copy(&self) -> Self {
-        let data = get_compo_inner_ref!(self).clone();
-        Self {
-            compo: Rc::new(UnsafeCell::new(data)),
-        }
+        self.copy_with_stats().0
+    }
+
+    pub fn copy_with_stats(&self) -> (Self, usize, usize) {
+        let (data, len, bsz) = match get_compo_inner_ref!(self) {
+            Compo::List(src) => {
+                let len = src.len();
+                let mut bsz = 0usize;
+                let mut list = VecDeque::with_capacity(len);
+                for v in src.iter() {
+                    bsz += v.val_size();
+                    list.push_back(v.clone());
+                }
+                (Compo::List(list), len, bsz)
+            }
+            Compo::Map(src) => {
+                let len = src.len();
+                let mut bsz = 0usize;
+                let mut map = BTreeMap::new();
+                for (k, v) in src.iter() {
+                    bsz += k.len() + v.val_size();
+                    map.insert(k.clone(), v.clone());
+                }
+                (Compo::Map(map), len, bsz)
+            }
+        };
+        (
+            Self {
+                compo: Rc::new(UnsafeCell::new(data)),
+            },
+            len,
+            bsz,
+        )
     }
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
@@ -402,26 +432,37 @@ impl CompoItem {
     }
 
     pub fn merge(&mut self, cap: &SpaceCap, compo: CompoItem) -> VmrtErr {
+        self.merge_with_stats(cap, compo).map(|_| ())
+    }
+
+    pub fn merge_with_stats(&mut self, cap: &SpaceCap, compo: CompoItem) -> VmrtRes<(usize, usize)> {
         if Rc::ptr_eq(&self.compo, &compo.compo) {
             return itr_err_code!(CompoOpInvalid)
         }
         match get_compo_inner_mut!(self) {
             Compo::List(l) => {
                 let src = compo.list_ref()?.clone();
-                let new_len = l.len() + src.len();
+                let src_len = src.len();
+                let new_len = l.len() + src_len;
                 if new_len > cap.max_compo_length {
                     return itr_err_code!(OutOfCompoLen)
                 }
+                let mut src_bsz = 0usize;
                 for v in src.iter() {
                     v.canbe_value()?;
+                    src_bsz += v.val_size();
                 }
                 l.extend(src);
+                Ok((src_len, src_bsz))
             }
             Compo::Map(m)  => {
                 let src = compo.map_ref()?.clone();
+                let src_len = src.len();
                 let mut add = 0usize;
+                let mut src_bsz = 0usize;
                 for (k, v) in src.iter() {
                     v.canbe_value()?;
+                    src_bsz += k.len() + v.val_size();
                     if !m.contains_key(k) {
                         add += 1;
                     }
@@ -430,9 +471,9 @@ impl CompoItem {
                     return itr_err_code!(OutOfCompoLen)
                 }
                 m.extend(src);
+                Ok((src_len, src_bsz))
             }
-        };
-        Ok(())
+        }
     }
 
 
@@ -504,10 +545,32 @@ impl CompoItem {
         Ok(Value::Compo(Self::list(keys)?))
     }
 
+    pub fn keys_with_stats(&self) -> VmrtRes<(Value, usize, usize)> {
+        let map = self.map_ref()?;
+        let mut bsz = 0usize;
+        let mut keys = VecDeque::with_capacity(map.len());
+        for k in map.keys() {
+            bsz += k.len();
+            keys.push_back(Value::Bytes(k.clone()));
+        }
+        Ok((Value::Compo(Self::list(keys)?), map.len(), bsz))
+    }
+
     pub fn values(&self) -> VmrtRes<Value> {
         let map = self.map_ref()?;
         let values = map.values().map(|v|v.clone()).collect();
         Ok(Value::Compo(Self::list(values)?))
+    }
+
+    pub fn values_with_stats(&self) -> VmrtRes<(Value, usize, usize)> {
+        let map = self.map_ref()?;
+        let mut bsz = 0usize;
+        let mut values = VecDeque::with_capacity(map.len());
+        for v in map.values() {
+            bsz += v.val_size();
+            values.push_back(v.clone());
+        }
+        Ok((Value::Compo(Self::list(values)?), map.len(), bsz))
     }
 
     pub fn head(&mut self) -> VmrtRes<Value> {

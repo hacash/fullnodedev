@@ -60,6 +60,18 @@ fn expect_unwind_bret<T>(ret: BRet<T>, msg: &str) -> BError {
     err
 }
 
+fn expect_interrupt_bret<T>(ret: BRet<T>, msg: &str) -> BError {
+    let err = match ret {
+        Ok(_) => panic!("expect interrupt error but got Ok"),
+        Err(err) => err,
+    };
+    assert!(err.is_interrupt(), "expect interrupt but got {err}");
+    if !msg.is_empty() {
+        assert!(err.contains(msg), "expect '{msg}' in '{err}'");
+    }
+    err
+}
+
 fn expect_interrupt_ret<T>(ret: Ret<T>, msg: &str) -> BError {
     let err = match ret.into_bret() {
         Ok(_) => panic!("expect interrupt error but got Ok"),
@@ -95,7 +107,7 @@ fn guard_action_failures_are_unwind() {
     let mut bad_range = HeightScope::new();
     bad_range.start = BlockHeight::from(20);
     bad_range.end = BlockHeight::from(10);
-    expect_unwind_bret(bad_range.execute(&mut ctx), "cannot big than");
+    expect_interrupt_bret(bad_range.execute(&mut ctx), "cannot big than");
 
     let mut out_of_range = HeightScope::new();
     out_of_range.start = BlockHeight::from(200);
@@ -485,7 +497,6 @@ fn unwind_macro_callsites_are_allowlisted() {
     let actual = scan_lines_with_patterns(&["erru!(", "erruf!(", "berru!(", "berruf!("]);
     let expected = expected_multiset(&[
         "protocol/src/action/astselect.rs:return erruf!(\"action ast select must succeed at least {} but only {}\", slt_min, ok);",
-        "protocol/src/action/chain.rs:return erruf!(\"left height {} cannot big than rigth height {}\", left, right)",
         "protocol/src/action/chain.rs:return erruf!(\"transction must submit in height between {} and {}\", left, right)",
         "protocol/src/action/chain.rs:return erruf!(\"transction must belong to chains {} but on chain {}\", cids, cid)",
         "protocol/src/action/chain.rs:return erruf!(",

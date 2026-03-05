@@ -107,6 +107,7 @@ pub struct GasExtra {
     pub memory_key_cost: i64,
     pub global_key_cost: i64,
     pub storage_key_cost: i64,
+    pub storage_del_min: i64,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
     stack_write_div: i64,
@@ -217,10 +218,11 @@ impl GasExtra {
             memory_key_cost:    20,
             global_key_cost:    32,
             storage_key_cost:   256,
+            storage_del_min:    16,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
             stack_write_div:    24,
-            stack_op_div:       16,
+            stack_op_div:       20,
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
@@ -232,7 +234,7 @@ impl GasExtra {
             extaction_div:      10,
             extenv_div:         16,
             // Compo
-            compo_byte_div:     20,
+            compo_byte_div:     40,
             compo_item_read_div: 4,
             compo_item_edit_div: 2,
             compo_item_copy_div: 1,
@@ -241,12 +243,20 @@ impl GasExtra {
 
     #[inline(always)]
     fn div_bytes(len: usize, div: i64) -> i64 {
-        maybe!(div <= 0, 0, (len as i64) / div)
+        if div <= 0 || len == 0 {
+            return 0
+        }
+        // ceil
+        1 + ((len as i64 - 1) / div)
     }
 
     #[inline(always)]
     fn div_items(n: usize, div: i64) -> i64 {
-        maybe!(div <= 0, 0, (n as i64) / div)
+        if div <= 0 || n == 0 {
+            return 0
+        }
+        // ceil
+        1 + ((n as i64 - 1) / div)
     }
 
     #[inline(always)]
@@ -316,7 +326,7 @@ impl GasExtra {
 
     #[inline(always)]
     pub fn storage_del(&self) -> i64 {
-        0
+        self.storage_del_min
     }
 
     #[inline(always)]
@@ -440,6 +450,7 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.global_key_cost, 32);
         assert_eq!(gst.load_new_contract, 32);
         assert_eq!(gst.storage_key_cost, 256);
+        assert_eq!(gst.storage_del_min, 16);
         assert_eq!(gst.storege_value_base_size, 32);
     }
 
@@ -447,46 +458,61 @@ mod gas_budget_codec_tests {
     fn dynamic_formula_divisors_match_doc() {
         let gst = GasExtra::new(1);
 
-        assert_eq!(gst.stack_copy(31), 0);
+        assert_eq!(gst.stack_copy(0), 0);
+        assert_eq!(gst.stack_copy(31), 1);
         assert_eq!(gst.stack_copy(32), 1);
         assert_eq!(gst.stack_copy(64), 2);
-        assert_eq!(gst.stack_write(23), 0);
+        assert_eq!(gst.stack_write(0), 0);
+        assert_eq!(gst.stack_write(23), 1);
         assert_eq!(gst.stack_write(24), 1);
-        assert_eq!(gst.stack_write(49), 2);
-        assert_eq!(gst.stack_op(15), 0);
-        assert_eq!(gst.stack_op(16), 1);
+        assert_eq!(gst.stack_write(49), 3);
+        assert_eq!(gst.stack_op(0), 0);
+        assert_eq!(gst.stack_op(15), 1);
+        assert_eq!(gst.stack_op(20), 1);
         assert_eq!(gst.stack_op(32), 2);
 
-        assert_eq!(gst.ntfunc_bytes(15), 0);
+        assert_eq!(gst.ntfunc_bytes(0), 0);
+        assert_eq!(gst.ntfunc_bytes(15), 1);
         assert_eq!(gst.ntfunc_bytes(16), 1);
-        assert_eq!(gst.extview_bytes(31), 1);
+        assert_eq!(gst.extview_bytes(31), 2);
         assert_eq!(gst.extview_bytes(32), 2);
-        assert_eq!(gst.extenv_bytes(15), 0);
+        assert_eq!(gst.extenv_bytes(0), 0);
+        assert_eq!(gst.extenv_bytes(15), 1);
         assert_eq!(gst.extenv_bytes(16), 1);
-        assert_eq!(gst.extaction_bytes(9), 0);
+        assert_eq!(gst.extaction_bytes(0), 0);
+        assert_eq!(gst.extaction_bytes(9), 1);
         assert_eq!(gst.extaction_bytes(10), 1);
 
-        assert_eq!(gst.heap_read(15), 0);
+        assert_eq!(gst.heap_read(0), 0);
+        assert_eq!(gst.heap_read(15), 1);
         assert_eq!(gst.heap_read(16), 1);
-        assert_eq!(gst.heap_write(11), 0);
+        assert_eq!(gst.heap_write(0), 0);
+        assert_eq!(gst.heap_write(11), 1);
         assert_eq!(gst.heap_write(12), 1);
 
-        assert_eq!(gst.compo_items_read(3), 0);
+        assert_eq!(gst.compo_items_read(0), 0);
+        assert_eq!(gst.compo_items_read(3), 1);
         assert_eq!(gst.compo_items_read(4), 1);
-        assert_eq!(gst.compo_items_edit(5), 2);
+        assert_eq!(gst.compo_items_edit(5), 3);
         assert_eq!(gst.compo_items_copy(5), 5);
-        assert_eq!(gst.compo_bytes(19), 0);
-        assert_eq!(gst.compo_bytes(20), 1);
+        assert_eq!(gst.compo_bytes(0), 0);
+        assert_eq!(gst.compo_bytes(39), 1);
+        assert_eq!(gst.compo_bytes(40), 1);
+        assert_eq!(gst.compo_bytes(41), 2);
+        assert_eq!(gst.compo_bytes(80), 2);
 
         assert_eq!(gst.log_bytes(0), 0);
         assert_eq!(gst.log_bytes(37), 37);
 
-        assert_eq!(gst.storage_read(7), 0);
+        assert_eq!(gst.storage_read(0), 0);
+        assert_eq!(gst.storage_read(7), 1);
         assert_eq!(gst.storage_read(8), 1);
-        assert_eq!(gst.storage_write(5), 0);
+        assert_eq!(gst.storage_write(0), 0);
+        assert_eq!(gst.storage_write(5), 1);
         assert_eq!(gst.storage_write(6), 1);
-        assert_eq!(gst.compile_bytes(15), 0);
+        assert_eq!(gst.compile_bytes(0), 0);
+        assert_eq!(gst.compile_bytes(15), 1);
         assert_eq!(gst.compile_bytes(16), 1);
-        assert_eq!(gst.storage_del(), 0);
+        assert_eq!(gst.storage_del(), 16);
     }
 }

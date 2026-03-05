@@ -73,7 +73,8 @@ fn unpack_list(
     for (off, item) in list.iter().enumerate() {
         let v = item.clone();
         gas += gst.stack_write(v.val_size());
-        *locals.edit((start + off) as u8)? = v;
+        let idx = u8::try_from(start + off).map_err(|_| ItrErr::code(OutOfStack))?;
+        *locals.edit(idx)? = v;
     }
     Ok(gas)
 }

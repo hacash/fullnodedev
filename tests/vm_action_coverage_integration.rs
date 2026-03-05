@@ -1345,7 +1345,7 @@ mod action_coverage {
         act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         act.argvkey = BytesW2::from(vec![]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("max ctx level"), "{err}");
+        assert!(err.contains("just can execute on TOP"), "{err}");
     }
 
     #[test]
