@@ -1,6 +1,12 @@
 
-pub fn initialize(engine: &ChainEngine, state_db: Arc<dyn DiskDB>, no_sta_dir: bool) {
+const REBUILD_ALL_MARKER_FILE: &str = ".rebuild_all_incomplete";
 
+pub fn initialize(engine: &ChainEngine, state_db: Arc<dyn DiskDB>, no_sta_dir: bool) {
+    // store
+    let store = engine.store.as_ref();
+    let status = store.status();
+    // check rebuild all
+    let is_rebuild_all = no_sta_dir && status.root_height.uint() > 0;
     if no_sta_dir {
         let mut init_state = StateInst::build(state_db.clone(), None);
         if let Err(e) = engine.minter.initialize(&mut init_state) {
@@ -8,20 +14,16 @@ pub fn initialize(engine: &ChainEngine, state_db: Arc<dyn DiskDB>, no_sta_dir: b
         }
         init_state.write_to_disk();
     }
-
-    // store
-    let store = engine.store.as_ref();
-    let status = store.status();
-    // check rebuild all
-    let is_rebuild_all = no_sta_dir && (
-        status.last_height.uint() > engine.cnf.unstable_block * 2
-    );
     // build roller
     if is_rebuild_all {
         rebuild_all_blocks(engine);
     }else{        
         dev_count_switch_print(engine.cnf.dev_count_switch, state_db.as_ref());
         rebuild_unstable_blocks(engine);
+    }
+    if no_sta_dir {
+        let marker = engine.cnf.state_data_dir.join(REBUILD_ALL_MARKER_FILE);
+        let _ = std::fs::remove_file(marker);
     }
 }
 

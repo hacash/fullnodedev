@@ -27,8 +27,10 @@ macro_rules! satoshi_operate_define {
 /**************************** */
 
 satoshi_operate_define!(sat_add, addr, sat, oldsat, {
-    // do add
-    *oldsat + *sat 
+    let Some(sum) = oldsat.uint().checked_add(sat.uint()) else {
+        return errf!("address {} satoshi add overflow: {} + {}", addr, oldsat, sat)
+    };
+    Satoshi::from(sum)
 });
 
 satoshi_operate_define!(sat_sub, addr, sat, oldsat, {  
@@ -80,6 +82,5 @@ pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Sa
     }
     erruf!("address {} satoshi is insufficient", addr)
 }
-
 
 

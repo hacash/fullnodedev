@@ -109,8 +109,8 @@ fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     }
     // if change root
     if let Some(new_root) = &root_change {
-        // Commit state/logs only after store batch is durable.
-        // This avoids: state advanced but CSK/block data not persisted (crash between insert_by and roll_by).
+        // Persist state/logs before store batch commit.
+        // If a crash happens before batch durability, restart from old store root can replay and reconcile.
         new_root.state().write_to_disk();
         if is_open_vmlog(eng, new_root.logs().height()) {
             new_root.logs().write_to_disk();
@@ -132,7 +132,11 @@ fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
                 last_height: BlockHeight::from(new_head.height()),
             }.serialize());
             if head_change_kind == HeadChangeKind::Reorg {
-                for (hei, hx) in Roller::collect_back_hashes(new_head, eng.cnf.unstable_block + 1) {
+                let reorg_depth = new_head.height()
+                    .checked_sub(real_root_hei)
+                    .and_then(|v| v.checked_add(1))
+                    .ok_or(format!("invalid reorg depth: head {} root {}", new_head.height(), real_root_hei))?;
+                for (hei, hx) in Roller::collect_back_hashes(new_head, reorg_depth) {
                     batch.put(hei.to_vec(), hx.to_vec());
                 }
             } else {

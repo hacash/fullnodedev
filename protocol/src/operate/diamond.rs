@@ -24,8 +24,10 @@ pub fn $func_name(state: &mut CoreState, $addr: &Address, $hacd: &DiamondNumber)
 /**************************** */
 
 diamond_operate_define!(hacd_add, addr, hacd, oldhacd, {
-    // do add
-    *oldhacd + *hacd
+    let Some(sum) = oldhacd.uint().checked_add(hacd.uint()) else {
+        return errf!("address {} diamond add overflow: {} + {}", addr, oldhacd, hacd)
+    };
+    DiamondNumber::from_usize(sum as usize)?
 });
 
 diamond_operate_define!(hacd_sub, addr, hacd, oldhacd, {  

@@ -42,18 +42,18 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     if left_addr == right_addr {
         return errf!("left address cannot equal with right address")
     }
+    left_amt.check_6_long().map_err(|_| "left amount bytes too long".to_string())?;
+    right_amt.check_6_long().map_err(|_| "right amount bytes too long".to_string())?;
+    if left_amt.is_negative() || right_amt.is_negative() ||
+        (left_amt.is_zero() && right_amt.is_zero()) {
+        return errf!("left or right amount is not positive or two both is empty")
+    }
     // sub balance
     if left_amt.not_zero() {
         hac_sub(ctx, left_addr,  left_amt)?;
     }
     if right_amt.not_zero() {
         hac_sub(ctx, right_addr, right_amt)?;
-    }
-    left_amt.check_6_long().map_err(|_| "left amount bytes too long".to_string())?;
-    right_amt.check_6_long().map_err(|_| "right amount bytes too long".to_string())?;
-    if left_amt.is_negative() || right_amt.is_negative() ||
-        (left_amt.is_zero() && right_amt.is_zero()) {
-        return errf!("left or right amount is not positive or two both is empty")
     }
 
     let lock_total = left_amt.add_mode_u64(right_amt)?;

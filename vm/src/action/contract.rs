@@ -105,6 +105,7 @@ action_define!{ ContractUpdate, 41,
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
         let cty = ExecMode::Abst as u8;
         let sys = maybe!(did_change, Change, Append) as u8; // Change or Append
+        // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
         let _ = setup_vm_run(
             ctx,
             cty,

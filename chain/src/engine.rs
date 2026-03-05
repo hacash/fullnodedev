@@ -32,14 +32,21 @@ impl ChainEngine {
         let blk_dir = &cnf.block_data_dir;
         let sta_dir = &cnf.state_data_dir;
         let log_dir = &cnf.blogs_data_dir;
+        let rebuild_mark = sta_dir.join(REBUILD_ALL_MARKER_FILE);
         
         std::fs::create_dir_all(blk_dir).unwrap();
         std::fs::create_dir_all(log_dir).unwrap();
+        let rebuild_all_unfinished = rebuild_mark.exists();
+        if rebuild_all_unfinished && sta_dir.exists() {
+            println!("[Engine] interrupted rebuild detected, reset state db and rebuild");
+            std::fs::remove_dir_all(sta_dir).unwrap();
+        }
         let no_sta_dir = ! sta_dir.exists();
         if no_sta_dir {
             std::fs::create_dir_all(sta_dir).unwrap();
             std::fs::remove_dir_all(log_dir).unwrap();
             std::fs::create_dir_all(log_dir).unwrap();
+            std::fs::write(&rebuild_mark, b"incomplete").unwrap();
         }
 
         let disk_db  = dbopfn(blk_dir);
@@ -78,4 +85,3 @@ impl ChainEngine {
     }
 
 }
-
