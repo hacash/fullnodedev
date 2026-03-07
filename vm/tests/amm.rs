@@ -108,7 +108,7 @@ mod amm {
             var tt_shares $4 = 0
             var tt_sat    $5 = 0
             var tt_zhu    $6 = 0
-            unpack_list(self.total(), 3)
+            unpack(self.total(), 3)
             // check
             var k_in_sat = "in_sat"
             var k_in_zhu = "in_zhu"
@@ -139,7 +139,7 @@ mod amm {
             var tt_shares $3 = 0
             var tt_sat    $4 = 0
             var tt_zhu    $5 = 0
-            unpack_list(self.total(), 3)
+            unpack(self.total(), 3)
             tt_shares += (zhu as u64)
             bind tt_k = "total_shares"
             storage_save(tt_k, tt_shares)
@@ -168,7 +168,7 @@ mod amm {
             var tt_shares $2 = 0
             var tt_sat    $3 = 0
             var tt_zhu    $4 = 0
-            unpack_list(self.total(), 2)
+            unpack(self.total(), 2)
             var lq_k = addr ++ "_shares"
             var my_shares = storage_load(lq_k)
             assert shares <= my_shares
@@ -217,7 +217,7 @@ mod amm {
             var tt_shares $3 = 0
             var tt_sat    $4 = 0
             var tt_zhu    $5 = 0
-            unpack_list(self.total(), 3)
+            unpack(self.total(), 3)
             assert tt_shares>0 && tt_sat>0 && tt_zhu>0 
             // 0.3% fee
             var zhu = ((tt_zhu as u128) * sat * 997 / (tt_sat - sat) / 1000) as u64 
@@ -242,7 +242,7 @@ mod amm {
             var tt_shares $3 = 0
             var tt_sat    $4 = 0
             var tt_zhu    $5 = 0
-            unpack_list(self.total(), 3)
+            unpack(self.total(), 3)
             assert tt_shares>0 && tt_sat>0 && tt_zhu>0 
             // 0.3% fee
             var out_zhu = ((tt_zhu as u128) * sat * 997 / (tt_sat + sat) / 1000) as u64

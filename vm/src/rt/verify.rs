@@ -187,7 +187,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_unknown_type_id_for_tis_and_cto() {
-        let unknown_ids = [12u8, 13u8];
+        let unknown_ids = [13u8];
         for raw in unknown_ids {
             let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, raw, Bytecode::END as u8];
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, raw, Bytecode::END as u8];

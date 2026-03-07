@@ -26,7 +26,7 @@ include! {"p2sh_tool.rs"}
 /* action register */
 action_register! {
 
-    ContractDeploy      
+    ContractDeploy
     ContractUpdate
     ContractMainCall
     P2SHScriptProve

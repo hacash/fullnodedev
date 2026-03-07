@@ -119,8 +119,8 @@ pub enum Bytecode {
     BACK                = 0x6e, // &       compo pick last
     APPEND              = 0x6f, // &       compo append
     CLONE               = 0x70, // a++     compo clone
-    _______________113  = 0x71,
-    UPLIST              = 0x72, // a       up pack list to local
+    PACKARGS            = 0x71, // (v...,n)+ pack function args
+    UNPACK              = 0x72, // a       unpack argv sequence to local
     _______________115  = 0x73,
     _______________116  = 0x74,
     _______________117  = 0x75,
@@ -397,7 +397,8 @@ bytecode_metadata_define!{
     BACK       : 0, 1, 1,     back
     APPEND     : 0, 2, 1,     append
     CLONE      : 0, 1, 1,     clone
-    UPLIST     : 0, 2, 0,     unpack_list
+    PACKARGS   : 0, 255, 1,   pack_args
+    UNPACK     : 0, 2, 0,     unpack
 
     XLG        : 1, 1, 1,     local_logic    
     XOP        : 1, 1, 0,     local_operand         

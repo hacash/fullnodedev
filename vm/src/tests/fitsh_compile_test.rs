@@ -567,6 +567,17 @@ mod fitsh_compile_tests {
         }
 
         #[test]
+        fn multi_call_argv_uses_packargs_not_packlist() {
+            use crate::rt::Bytecode;
+
+            let result = lang_to_bytecode("call 1::0xabcdef01(1, 2)
+end");
+            let bytes = result.expect("Failed to compile multi-argv call");
+            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+            assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
+        }
+
+        #[test]
         fn bytecode_if_else() {
             let result = lang_to_bytecode("if true { return 1 } else { return 0 }");
             assert!(result.is_ok(), "Failed: {:?}", result.err());

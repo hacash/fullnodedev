@@ -67,6 +67,50 @@ impl Compo {
         }
     }
 
+    fn to_debug_json(&self) -> String {
+        match self {
+            Self::List(a) => {
+                let sss: Vec<_> = a.iter().map(Value::to_debug_json).collect();
+                format!("[{}]", sss.join(","))
+            }
+            Self::Map(b) => match Self::map_debug_json(b) {
+                Some(s) => s,
+                None => {
+                    let mmm: Vec<_> = b
+                        .iter()
+                        .map(|(k, v)| match bytes_try_to_readable_string(k) {
+                            Some(s) => format!(
+                                r#"{{"key":{},"key_hex":"{}","value":{}}}"#,
+                                serde_json::to_string(&s).unwrap(),
+                                k.to_hex(),
+                                v.to_debug_json()
+                            ),
+                            None => format!(
+                                r#"{{"key_hex":"{}","value":{}}}"#,
+                                k.to_hex(),
+                                v.to_debug_json()
+                            ),
+                        })
+                        .collect();
+                    format!(r#"{{"$map":[{}]}}"#, mmm.join(","))
+                }
+            },
+        }
+    }
+
+    fn map_debug_json(items: &BTreeMap<Vec<u8>, Value>) -> Option<String> {
+        let mut mmm = Vec::with_capacity(items.len());
+        for (k, v) in items {
+            let key = bytes_try_to_readable_string(k)?;
+            mmm.push(format!(
+                "{}:{}",
+                serde_json::to_string(&key).unwrap(),
+                v.to_debug_json()
+            ));
+        }
+        Some(format!("{{{}}}", mmm.join(",")))
+    }
+
 
     fn len(&self) -> usize {
         match self {
@@ -281,6 +325,10 @@ impl CompoItem {
 
     pub fn to_json(&self) -> String {
         get_compo_inner_ref!(self).to_json()
+    }
+
+    pub fn to_debug_json(&self) -> String {
+        get_compo_inner_ref!(self).to_debug_json()
     }
 
 }

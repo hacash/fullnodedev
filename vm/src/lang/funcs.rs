@@ -205,7 +205,12 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
 
 
 fn pick_ir_func(id: &str) -> Option<(IrFn, Bytecode, usize, usize, usize)> {
-    IrFn::from_name(id)
+    use Bytecode::*;
+    match id {
+        "pack_args" => Some((IrFn::pack_args, PACKARGS, 0, 0, 1)),
+        "unpack" => Some((IrFn::unpack, UNPACK, 0, 2, 0)),
+        _ => IrFn::from_name(id),
+    }
 }
 
 
@@ -240,9 +245,9 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
         1 => subs.pop().unwrap(),
         2..=15 => {
             let num = push_num(argv_len as u128);
-            let pklist = push_inst(PACKLIST);
+            let pkargs = push_inst(PACKARGS);
             subs.push(num);
-            subs.push(pklist);
+            subs.push(pkargs);
             Box::new(Syntax::build_irlist(subs)?)
         },
         _ => return errf!("function argv length cannot more than 15"),

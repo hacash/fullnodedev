@@ -2,19 +2,28 @@
 
 impl Value {
 
-    fn check_func_boundary_no_heapslice(value: &Value, ec: ItrErrCode) -> VmrtErr {
+    fn check_func_boundary(value: &Value, ec: ItrErrCode, allow_args: bool) -> VmrtErr {
         match value {
             HeapSlice(..) => itr_err_code!(ec),
+            Args(args) => {
+                if !allow_args {
+                    return itr_err_code!(ec)
+                }
+                for item in args.as_slice() {
+                    Self::check_func_boundary(item, ec, false)?;
+                }
+                Ok(())
+            }
             Compo(compo) => {
                 if let Ok(list) = compo.list_ref() {
                     for v in list {
-                        Self::check_func_boundary_no_heapslice(v, ec)?;
+                        Self::check_func_boundary(v, ec, false)?;
                     }
                     return Ok(())
                 }
                 if let Ok(map) = compo.map_ref() {
                     for v in map.values() {
-                        Self::check_func_boundary_no_heapslice(v, ec)?;
+                        Self::check_func_boundary(v, ec, false)?;
                     }
                     return Ok(())
                 }
@@ -22,6 +31,10 @@ impl Value {
             }
             _ => Ok(()),
         }
+    }
+
+    fn check_func_argv_item(value: &Value, ec: ItrErrCode) -> VmrtErr {
+        Self::check_func_boundary(value, ec, false)
     }
 
     pub fn canbe_bytes_ec(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
@@ -77,11 +90,11 @@ impl Value {
     }
 
     pub fn canbe_func_argv(&self) -> VmrtErr {
-        Self::check_func_boundary_no_heapslice(self, CastBeFnArgvFail)
+        Self::check_func_boundary(self, CastBeFnArgvFail, true)
     }
 
     pub fn canbe_func_retv(&self) -> VmrtErr {
-        Self::check_func_boundary_no_heapslice(self, CastBeFnRetvFail)
+        Self::check_func_boundary(self, CastBeFnRetvFail, false)
     }
 
 
@@ -105,6 +118,10 @@ mod canbe_tests {
         assert!(hs.canbe_bytes_ec(CastBeBytesFail).is_err());
         assert!(hs.canbe_func_argv().is_err());
         assert!(hs.canbe_func_retv().is_err());
+
+        let args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_list())]).unwrap());
+        assert!(args.canbe_func_argv().is_ok());
+        assert!(args.canbe_func_retv().is_err());
     }
 
     #[test]

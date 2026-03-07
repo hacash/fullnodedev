@@ -46,7 +46,13 @@ mod inherit {
     fn deploy() {
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         let contract = Contract::new()
-            .func(Func::new("f1").unwrap().external().fitsh("return 1").unwrap())
+            .func(
+                Func::new("f1")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 1")
+                    .unwrap(),
+            )
             // .func(Func::new("f2").fitsh(" return 2 ").unwrap())
             .func(Func::new("f3").unwrap().fitsh("return 3").unwrap());
         contract.testnet_deploy_print("8:244");
@@ -78,7 +84,13 @@ mod inherit {
     fn deploy2() {
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-            .func(Func::new("f1").unwrap().external().fitsh("return 1").unwrap())
+            .func(
+                Func::new("f1")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 1")
+                    .unwrap(),
+            )
             .func(Func::new("f2").unwrap().fitsh("return 2").unwrap())
             .func(Func::new("f3").unwrap().fitsh("return 3").unwrap())
             .testnet_deploy_print("8:244");

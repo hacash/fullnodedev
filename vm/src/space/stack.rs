@@ -8,9 +8,7 @@ pub struct Stack {
     limit: usize, // max len
 }
 
-
 impl Stack {
-
     pub fn release(self) -> Vec<Value> {
         self.datas
     }
@@ -50,14 +48,10 @@ impl Stack {
         text.push(']');
         text
     }
-        
 }
-
-
 
 /* * max size u16 = 65536 */
 impl Stack {
-
     #[inline(always)]
     fn pop_empty() -> ItrErr {
         ItrErr::new(StackError, "pop empty stack")
@@ -81,16 +75,14 @@ impl Stack {
 
     #[inline(always)]
     fn get_at(&self, idx: usize) -> VmrtRes<&Value> {
-        self.datas
-            .get(idx)
-            .ok_or_else(|| ItrErr::code(OutOfStack))
+        self.datas.get(idx).ok_or_else(|| ItrErr::code(OutOfStack))
     }
 
     pub fn alloc(&mut self, num: u8) -> VmrtRes<u8> {
         let osz = self.datas.len();
         let tsz = osz + num as usize;
         if tsz > self.limit {
-            return itr_err_code!(OutOfStack)
+            return itr_err_code!(OutOfStack);
         }
         self.datas.resize(tsz, Value::nil());
         Ok(num)
@@ -113,7 +105,7 @@ impl Stack {
     pub fn compo<'a>(&'a mut self) -> VmrtRes<&'a mut CompoItem> {
         let pk = self.peek()?;
         let Some(compo) = pk.match_compo_mut() else {
-            return itr_err_code!(CompoOpNotMatch)
+            return itr_err_code!(CompoOpNotMatch);
         };
         Ok(compo)
     }
@@ -124,8 +116,7 @@ impl Stack {
     }
 
     pub fn taken(&mut self, n: usize) -> VmrtRes<Vec<Value>> {
-        self.split_tail(n)
-            .ok_or_else(Self::pop_empty)
+        self.split_tail(n).ok_or_else(Self::pop_empty)
     }
 
     #[inline(always)]
@@ -137,17 +128,16 @@ impl Stack {
     pub fn popn(&mut self, n: u8) -> VmrtRes<Vec<Value>> {
         let n = n as usize;
         if n == 0 {
-            return Ok(vec![])
+            return Ok(vec![]);
         }
-        self.split_tail(n)
-            .ok_or_else(Self::pop_empty)
+        self.split_tail(n).ok_or_else(Self::pop_empty)
     }
 
     #[inline(always)]
     pub fn __popx(&mut self, x: u8) -> VmrtErr {
         let x = x as usize;
         if x < 2 {
-            return itr_err_fmt!(StackError, "inst popn param cannot less than 2")
+            return itr_err_fmt!(StackError, "inst popn param cannot less than 2");
         }
         let cl = self.datas.len();
         if x > cl {
@@ -155,21 +145,20 @@ impl Stack {
         }
         self.datas.truncate(cl - x);
         Ok(())
-
     }
 
     #[inline(always)]
     pub fn dupn(&mut self, n: u8) -> VmrtErr {
         let n = n as usize;
         if n < 2 {
-            return itr_err_fmt!(StackError, "inst dupn param cannot less than 2")
+            return itr_err_fmt!(StackError, "inst dupn param cannot less than 2");
         }
         let m = self.datas.len();
         if n > m {
-            return itr_err_fmt!(StackError, "dupn length overflow")
+            return itr_err_fmt!(StackError, "dupn length overflow");
         }
         let s = m - n;
-        for i in s .. m {
+        for i in s..m {
             self.push(self.datas[i].clone())?;
         }
         Ok(())
@@ -180,23 +169,22 @@ impl Stack {
         let x = x as usize;
         let idx = self.datas.len() as i32 - x as i32 - 1;
         if idx < 0 {
-            return itr_err_code!(OutOfStack)
+            return itr_err_code!(OutOfStack);
         }
         let item = self.datas.remove(idx as usize);
         self.push(item)?;
         Ok(())
     }
-    
 
     #[inline(always)]
     pub fn reverse(&mut self, x: u8) -> VmrtErr {
         let x = x as usize;
         if x < 2 {
-            return itr_err_fmt!(StackError, "inst reverse param cannot less than 2")
+            return itr_err_fmt!(StackError, "inst reverse param cannot less than 2");
         }
         let l = self.datas.len();
         if x > l {
-            return itr_err_fmt!(StackError, "pop empty stack")
+            return itr_err_fmt!(StackError, "pop empty stack");
         }
         self.datas[l - x..l].reverse();
         Ok(())
@@ -214,10 +202,10 @@ impl Stack {
     pub fn join(&mut self, n: u8, cap: &SpaceCap) -> VmrtErr {
         let n = n as usize;
         if n < 3 {
-            return itr_err_fmt!(StackError, "inst join param cannot less than 3")
+            return itr_err_fmt!(StackError, "inst join param cannot less than 3");
         }
         if n > self.datas.len() {
-            return itr_err_fmt!(StackError, "pop empty stack")
+            return itr_err_fmt!(StackError, "pop empty stack");
         }
         let total: usize = self.datas[self.datas.len() - n..]
             .iter()
@@ -230,10 +218,10 @@ impl Stack {
     pub fn join_with_total(&mut self, n: u8, total: usize, cap: &SpaceCap) -> VmrtErr {
         let n = n as usize;
         if n < 3 {
-            return itr_err_fmt!(StackError, "inst join param cannot less than 3")
+            return itr_err_fmt!(StackError, "inst join param cannot less than 3");
         }
         if n > self.datas.len() {
-            return itr_err_fmt!(StackError, "pop empty stack")
+            return itr_err_fmt!(StackError, "pop empty stack");
         }
         let items = self.popn(n as u8)?;
         let mut data = Vec::with_capacity(total);
@@ -246,7 +234,7 @@ impl Stack {
     #[inline(always)]
     pub fn push(&mut self, it: Value) -> VmrtErr {
         if self.datas.len() >= self.limit {
-            return itr_err_code!(OutOfStack)
+            return itr_err_code!(OutOfStack);
         }
         self.datas.push(it);
         Ok(())
@@ -262,7 +250,7 @@ impl Stack {
     pub fn load(&self, idx: usize) -> VmrtRes<Value> {
         Ok(self.get_at(idx)?.clone())
     }
-    
+
     #[inline(always)]
     pub fn last(&self) -> VmrtRes<Value> {
         self.lastn(0)
@@ -283,7 +271,7 @@ impl Stack {
     pub fn swap(&mut self) -> VmrtErr {
         let l = self.datas.len();
         if l < 2 {
-            return itr_err_fmt!(StackError, "Read empty stack")
+            return itr_err_fmt!(StackError, "Read empty stack");
         }
         let a = l - 1;
         let b = l - 2;
@@ -300,5 +288,4 @@ impl Stack {
         self.datas.append(&mut vs);
         Ok(())
     }
-
 }

@@ -251,6 +251,40 @@ impl<'a> Formater<'a> {
         Some(pairs)
     }
 
+    fn extract_packed_call_elements(
+        &self,
+        inst: Bytecode,
+        subs: &[Box<dyn IRNode>],
+    ) -> Option<Vec<String>> {
+        use Bytecode::*;
+        if inst != IRLIST {
+            return None;
+        }
+        let num = subs.len();
+        if num < 2 {
+            return None;
+        }
+        let last = &subs[num - 1];
+        if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
+            if !matches!(leaf.inst, PACKLIST | PACKARGS) {
+                return None;
+            }
+        } else {
+            return None;
+        }
+        let count_idx = num - 2;
+        let count = num - 2;
+        let expected = self.extract_const_usize(&*subs[count_idx])?;
+        if expected != count {
+            return None;
+        }
+        let mut elems = Vec::with_capacity(count);
+        for node in &subs[..count] {
+            elems.push(self.print_inline(&**node));
+        }
+        Some(elems)
+    }
+
     fn extract_list_elements(
         &self,
         inst: Bytecode,
@@ -308,7 +342,7 @@ impl<'a> Formater<'a> {
             // argument boundaries and even change call arity.
             if self.opt.flatten_call_list && !system_call {
                 if let Some(list) = current.as_any().downcast_ref::<IRNodeArray>() {
-                    if let Some(elements) = self.extract_list_elements(list.inst, &list.subs) {
+                    if let Some(elements) = self.extract_packed_call_elements(list.inst, &list.subs) {
                         args.extend(elements);
                         return args;
                     }
@@ -467,10 +501,10 @@ impl<'a> Formater<'a> {
         // Even when `trim_root_block` / `trim_param_unpack` are disabled, we still must keep
         // decompile->recompile closed.
         // IMPORTANT: when `trim_param_unpack == false`, we must NEVER emit `param { ... }`.
-        // Instead, we keep the raw `UPLIST(ROLL0,P0)` instruction in output, and (when SourceMap
+        // Instead, we keep the raw `UNPACK(ROLL0,P0)` instruction in output, and (when SourceMap
         // provides parameter names) we emit lightweight slot-binding lines: `var <name> $<i>`.
         let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
-        // If `trim_param_unpack=true`, we may rewrite the canonical UPLIST node into `param { ... }`.
+        // If `trim_param_unpack=true`, we may rewrite the canonical UNPACK node into `param { ... }`.
         // If `trim_param_unpack=false`, we must never emit `param { ... }`.
         let (param_rewrite_idx, param_rewrite_line) =
             if is_file_level_irblock && self.opt.trim_param_unpack {

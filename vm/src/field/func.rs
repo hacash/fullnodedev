@@ -99,10 +99,14 @@ impl FuncArgvTypes {
             1 => v.checked_param_type(types[0]),
             // check list
             _ => {
-                let compo = v.compo().map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?;
-                compo
-                    .check_list_param_type(&types)
-                    .map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))
+                let items = v.clone_argv_items().map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?;
+                if items.len() != tn {
+                    return itr_err_fmt!(CallArgvTypeFail, "param length error need {} but got {}", tn, items.len())
+                }
+                for (idx, item) in items.iter().enumerate() {
+                    item.checked_param_type(types[idx])?;
+                }
+                Ok(())
             }
         }
     }
@@ -314,6 +318,17 @@ mod code_stuff_tests {
         let mut argv = Value::Compo(CompoItem::new_map());
         let err = types.check_params(&mut argv).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+    }
+
+    #[test]
+    fn check_params_multi_args_input_supports_args_and_legacy_list() {
+        let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U16]).unwrap();
+
+        let mut args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
+        types.check_params(&mut args).unwrap();
+
+        let mut list = Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1), Value::U16(2)])).unwrap());
+        types.check_params(&mut list).unwrap();
     }
 
     #[test]

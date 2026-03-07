@@ -5,17 +5,19 @@ use basis::interface::Context;
 use testkit::sim::context::make_ctx_with_state;
 use testkit::sim::state::FlatMemState;
 use testkit::sim::tx::DummyTx;
-use vm::IRNode;
 use vm::ContractAddress;
+use vm::IRNode;
 use vm::interpreter::execute_code;
 use vm::ir::{convert_ir_to_bytecode, parse_ir_block};
 use vm::lang::*;
 use vm::machine::CtxHost;
 use vm::rt::Bytecode::*;
-use vm::rt::{Bytecode, BytecodePrint, ExecMode, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes};
+use vm::rt::{
+    Bytecode, BytecodePrint, ExecMode, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes,
+};
 use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
-use vm::value::{Value, ValueTy};
 use vm::value::ValueTy::*;
+use vm::value::{Value, ValueTy};
 
 fn ensure_ir_roundtrip(bytes: &[u8]) {
     let mut idx = 0;
@@ -182,8 +184,8 @@ pub fn build_push_params(params: &str) -> sys::Ret<Vec<u8>> {
 pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Value> {
     let push_codes =
         build_push_params(params).map_err(|e| ItrErr::new(ItrErrCode::InstParamsErr, &e))?;
-    let body_codes = lang_to_bytecode(lang_script)
-        .map_err(|e| ItrErr::new(ItrErrCode::InstParamsErr, &e))?;
+    let body_codes =
+        lang_to_bytecode(lang_script).map_err(|e| ItrErr::new(ItrErrCode::InstParamsErr, &e))?;
     let mut codes = push_codes;
     codes.extend_from_slice(&body_codes);
 

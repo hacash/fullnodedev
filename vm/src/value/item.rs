@@ -12,6 +12,7 @@ pub enum Value {
     // U256(u256), ...       //           7..
     Bytes(Vec<u8>),          //           10
     Address(field::Address), //           11
+    Args(ArgsItem),          //           12
     // ...                   //           ..
     HeapSlice((u32, u32)),   //           14
     Compo(CompoItem),        //           15
@@ -42,6 +43,7 @@ impl Value {
             U128(..)      => ValueTy::U128,
             Bytes(..)     => ValueTy::Bytes,
             Address(..)   => ValueTy::Address,
+            Args(..)      => ValueTy::Args,
             HeapSlice(..) => ValueTy::HeapSlice,
             Compo(..)     => ValueTy::Compo,
         }
@@ -128,6 +130,23 @@ impl Value {
         }
     }
 
+    pub fn match_args(&self) -> Option<&ArgsItem> {
+        match self {
+            Args(args) => Some(args),
+            _ => None,
+        }
+    }
+
+    pub fn clone_argv_items(&self) -> VmrtRes<Vec<Value>> {
+        if let Some(args) = self.match_args() {
+            return Ok(args.to_vec())
+        }
+        if let Some(compo) = self.match_compo() {
+            return Ok(compo.list_ref()?.iter().cloned().collect())
+        }
+        itr_err_code!(CompoOpNotMatch)
+    }
+
     pub fn into_compo(self) -> Option<CompoItem> {
         match self {
             Compo(compo) => Some(compo),
@@ -170,6 +189,7 @@ impl Value {
             U128(n) => n.to_be_bytes().into(),
             Bytes(buf) => buf.clone(),
             Address(a) => a.serialize(),
+            Args(..) => "{args value ...}".to_owned().into_bytes(),
             HeapSlice((s, l)) => vec![s.to_be_bytes(), l.to_be_bytes()].concat(),
             // not support
             Compo(..) => "{compo value ...}".to_owned().into_bytes(),
@@ -192,13 +212,14 @@ impl Value {
             U128(..) => 16,
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
+            Args(a) => a.val_size(),
             HeapSlice((_, n)) => *n as usize,
             Compo(c) => c.val_size(),
         }
     }
 
     pub fn can_get_size(&self) -> VmrtRes<u16> {
-        if let Compo(..) | HeapSlice(..) = self {
+        if let Args(..) | Compo(..) | HeapSlice(..) = self {
             return itr_err_code!(ItemNoSize)
         }
         let n = self.val_size();
@@ -233,6 +254,7 @@ impl Value {
                 _ => "0x".to_owned() + &hex::encode(b),
             },
             Address(a) => a.to_string(),
+            Args(a) => a.to_string(),
             HeapSlice((s, l)) => format!("heap({},{})", s, l),
             Compo(a) => format!("compo({}){}", a.len(), a.to_string()),
         }
@@ -251,8 +273,30 @@ impl Value {
             U128(n) => format!("{}", n),
             Bytes(b) => format!("\"{}\"", &to_readable_or_base64(b)),
             Address(a) =>  format!("\"{}\"", a),
+            Args(a) => a.to_json(),
             HeapSlice((s, l)) => format!("[{},{}]", s, l),
             Compo(a) => a.to_json(),
+        }
+    }
+
+    pub fn to_debug_json(&self) -> String {
+        match self {
+            Nil => s!("null"),
+            Bool(true) => s!("true"),
+            Bool(false) => s!("false"),
+            U8(n) => format!("{}", n),
+            U16(n) => format!("{}", n),
+            U32(n) => format!("{}", n),
+            U64(n) => format!("{}", n),
+            U128(n) => format!("{}", n),
+            Bytes(b) => match bytes_try_to_readable_string(b) {
+                Some(s) => serde_json::to_string(&s).unwrap(),
+                None => format!(r#"{{"$bytes_hex":"{}"}}"#, b.to_hex()),
+            },
+            Address(a) => serde_json::to_string(&a.to_string()).unwrap(),
+            Args(a) => a.to_debug_json(),
+            HeapSlice((s, l)) => format!(r#"{{"$heap":[{},{}]}}"#, s, l),
+            Compo(a) => a.to_debug_json(),
         }
     }
 
@@ -301,10 +345,38 @@ mod tests {
         bytes.match_bytes_mut().unwrap().push(4);
         assert_eq!(bytes.match_bytes(), Some(&[1, 2, 3, 4][..]));
         assert!(bytes.match_compo().is_none());
+        assert!(bytes.match_args().is_none());
 
         let mut compo = Value::Compo(CompoItem::new_list());
         assert!(compo.match_compo().is_some());
         assert!(compo.match_compo_mut().is_some());
         assert!(compo.match_bytes().is_none());
+
+        let args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
+        assert!(args.match_args().is_some());
+        assert_eq!(args.clone_argv_items().unwrap(), vec![Value::U8(1), Value::U16(2)]);
+    }
+
+    #[test]
+    fn to_debug_json_escapes_readable_bytes() {
+        let v = Value::Bytes(br#"a"b\c"#.to_vec());
+        assert_eq!(v.to_debug_json(), r#""a\"b\\c""#);
+    }
+
+    #[test]
+    fn to_debug_json_keeps_readable_map_as_plain_object() {
+        let mut map = BTreeMap::new();
+        map.insert(b"kind".to_vec(), Value::Bytes(b"hnft".to_vec()));
+        map.insert(b"mint".to_vec(), Value::U8(1));
+        let v = Value::Compo(CompoItem::map(map).unwrap());
+        assert_eq!(v.to_debug_json(), r#"{"kind":"hnft","mint":1}"#);
+    }
+
+    #[test]
+    fn to_debug_json_falls_back_for_binary_map_keys() {
+        let mut map = BTreeMap::new();
+        map.insert(vec![0x00, 0xff], Value::U8(7));
+        let v = Value::Compo(CompoItem::map(map).unwrap());
+        assert_eq!(v.to_debug_json(), r#"{"$map":[{"key_hex":"00ff","value":7}]}"#);
     }
 }

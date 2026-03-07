@@ -36,7 +36,13 @@ mod library {
     fn deploy() {
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
-            .func(Func::new("f1").unwrap().external().fitsh("return 1").unwrap())
+            .func(
+                Func::new("f1")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 1")
+                    .unwrap(),
+            )
             .func(Func::new("f2").unwrap().fitsh("return 2").unwrap())
             .testnet_deploy_print("8:244");
 
@@ -61,12 +67,24 @@ mod library {
 
         // WF3hsfuqhA9a4n9Qx6Drrwv4p9P7yo5Dm
         Contract::new()
-            .func(Func::new("f4").unwrap().external().fitsh("return 4").unwrap())
+            .func(
+                Func::new("f4")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 4")
+                    .unwrap(),
+            )
             .testnet_deploy_print_by_nonce("8:244", 2);
 
         // bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
         Contract::new()
-            .func(Func::new("f5").unwrap().external().fitsh("return 5").unwrap())
+            .func(
+                Func::new("f5")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 5")
+                    .unwrap(),
+            )
             .testnet_deploy_print_by_nonce("8:244", 3);
 
         // ocgMvMA9G9Gzmon5GDkugVbhY5DULpWVz

@@ -25,7 +25,7 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
     NEWLIST, NEWMAP,
     NTFUNC
 - 12: EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER,
-    PACKLIST, PACKMAP, UPLIST, CLONE, MERGE, KEYS, VALUES
+    PACKLIST, PACKMAP, UNPACK, CLONE, MERGE, KEYS, VALUES
 - 16: EXTVIEW, GGET, CALLCODE 
 - 20: LOG1, CALLPURE
 - 24: LOG2, GPUT, CALLVIEW
@@ -113,8 +113,8 @@ For opcode that create/copy byte payload to stack values, or write value payload
   (runtime divisor: `stack_copy_div`)
 - byte/24: PUT, PUTX, MPUT, GPUT
   (runtime divisor: `stack_write_div`, independent from `stack_copy_div`)
-- byte/24: UPLIST local-slot writes, per unpacked item
-  (`unpack_list` charges `stack_write(item.val_size())` for each written local slot)
+- byte/24: UNPACK local-slot writes, per unpacked item
+  (`unpack` charges `stack_write(item.val_size())` for each written local slot)
 - byte/16: CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP (byte = output value `val_size()`)
 - fixed: REV (only reorders stack values, no real payload copy)
 

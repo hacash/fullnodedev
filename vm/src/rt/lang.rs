@@ -276,6 +276,7 @@ irfn_define! {
 
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map
+    PACKARGS   : 0, 0, 1,     pack_args
     // PACKLIST   : 0, 255, 1,   pack_list PACKMAP    : 0, 255, 1,   pack_map
     INSERT     : 0, 3, 1,     insert
     REMOVE     : 0, 2, 1,     remove
@@ -290,7 +291,7 @@ irfn_define! {
     BACK       : 0, 1, 1,     back
     APPEND     : 0, 2, 1,     append
     CLONE      : 0, 1, 1,     clone
-    UPLIST     : 0, 2, 0,     unpack_list
+    UNPACK     : 0, 2, 0,     unpack
 
     XLG        : 1, 1, 1,     local_logic
     XOP        : 1, 1, 0,     local_operand

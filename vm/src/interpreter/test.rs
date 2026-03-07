@@ -219,7 +219,7 @@ mod bounds_tests {
     fn execute_code_rejects_unknown_type_id_for_tis_and_cto() {
         use crate::rt::Bytecode;
 
-        for raw in [12u8, 13u8] {
+        for raw in [13u8] {
             for inst in [Bytecode::TIS, Bytecode::CTO] {
                 let codes = vec![Bytecode::P0 as u8, inst as u8, raw, Bytecode::END as u8];
 
@@ -269,7 +269,7 @@ mod bounds_tests {
     fn execute_code_rejects_cto_targets_outside_cast_set() {
         use crate::rt::Bytecode;
 
-        let non_castable_targets = [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Compo];
+        let non_castable_targets = [ValueTy::Nil, ValueTy::Args, ValueTy::HeapSlice, ValueTy::Compo];
         for ty in non_castable_targets {
             let codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
 
@@ -459,6 +459,16 @@ mod bounds_tests {
         );
         assert!(matches!(
             run(Bytecode::CTO, Value::HeapSlice((0, 0)), ValueTy::HeapSlice),
+            Err(ItrErr(ItrErrCode::InstParamsErr, _))
+        ));
+
+        let args = ArgsItem::new(vec![Value::U8(1)]).unwrap();
+        assert_eq!(
+            run(Bytecode::TIS, Value::Args(args.clone()), ValueTy::Args).unwrap(),
+            Value::Bool(true)
+        );
+        assert!(matches!(
+            run(Bytecode::CTO, Value::Args(args), ValueTy::Args),
             Err(ItrErr(ItrErrCode::InstParamsErr, _))
         ));
 
@@ -1691,7 +1701,7 @@ mod bounds_tests {
 
         let run = |item_len: usize| -> i64 {
             run_with_setup(
-                vec![Bytecode::UPLIST as u8, Bytecode::END as u8],
+                vec![Bytecode::UNPACK as u8, Bytecode::END as u8],
                 DummyHost::default(),
                 |ops, locals, _heap, _globals, _memorys, _cadr| {
                     locals.alloc(2).unwrap();
@@ -1741,7 +1751,7 @@ mod bounds_tests {
         operands.push(list).unwrap();
         operands.push(Value::U8(0)).unwrap();
 
-        let codes = vec![Bytecode::UPLIST as u8, Bytecode::END as u8];
+        let codes = vec![Bytecode::UNPACK as u8, Bytecode::END as u8];
         let exit = execute_code(
             &mut pc,
             &codes,
@@ -1766,6 +1776,56 @@ mod bounds_tests {
         assert!(matches!(exit, crate::rt::CallExit::Finish));
         assert_eq!(locals.load(0).unwrap(), Value::U8(1));
         assert_eq!(locals.load(1).unwrap(), Value::Bytes(vec![0u8; 1281]));
+    }
+
+    #[test]
+    fn uplist_accepts_args_wrapper() {
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+
+        let mut heap = Heap::new(64);
+        let mut globals = GKVMap::new(20);
+        let mut memorys = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        let mut locals = Stack::new(256);
+        locals.alloc(2).unwrap();
+
+        let mut operands = Stack::new(256);
+        let args = Value::Args(ArgsItem::new(vec![
+            Value::Compo(CompoItem::new_list()),
+            Value::U16(9),
+        ]).unwrap());
+        operands.push(args).unwrap();
+        operands.push(Value::U8(0)).unwrap();
+
+        let codes = vec![Bytecode::UNPACK as u8, Bytecode::END as u8];
+        let exit = execute_code(
+            &mut pc,
+            &codes,
+            ExecMode::Main,
+            false,
+            0,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &mut globals,
+            &mut memorys,
+            &mut host,
+            &cadr,
+            &cadr,
+        ).unwrap();
+
+        assert!(matches!(exit, crate::rt::CallExit::Finish));
+        assert!(matches!(locals.load(0).unwrap(), Value::Compo(_)));
+        assert_eq!(locals.load(1).unwrap(), Value::U16(9));
     }
 
     #[test]

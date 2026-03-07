@@ -23,20 +23,18 @@ pub struct Heap {
 }
 
 impl Display for Heap {
-    fn fmt(&self,f: &mut Formatter) -> Result {
-        write!(f,"0x{}", self.datas.to_hex())
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "0x{}", self.datas.to_hex())
     }
 }
 
 impl Debug for Heap {
-    fn fmt(&self,f: &mut Formatter) -> Result {
-        write!(f,"heap({}):0x{}", self.datas.len(), self.datas.to_hex())
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "heap({}):0x{}", self.datas.len(), self.datas.to_hex())
     }
 }
 
-
 impl Heap {
-
     pub const SEGLEN: usize = 256;
 
     pub fn new(limit: usize) -> Self {
@@ -50,12 +48,9 @@ impl Heap {
         self.limit = limit;
         self.datas.clear()
     }
-
 }
 
-
 impl Heap {
-
     #[inline(always)]
     fn checked_right(&self, start: usize, len: usize, tip: &'static str) -> VmrtRes<usize> {
         let right = start
@@ -95,7 +90,7 @@ impl Heap {
     fn calc_grow_gas(&self, seg: usize) -> VmrtRes<i64> {
         let oldseg = self.datas.len() / Self::SEGLEN;
         if oldseg + seg > self.limit {
-            return itr_err_code!(OutOfHeap)
+            return itr_err_code!(OutOfHeap);
         }
         // Gas is an abstraction of space usage: the first 8 segments are charged exponentially (2,4,8,16,32,64,128,256), then linear 256 per segment. Price is based on existing heap size so multiple HGROW(1) cannot bypass.
         let mut gas: u64 = 0;
@@ -115,10 +110,10 @@ impl Heap {
     pub fn grow(&mut self, seg: u8) -> VmrtRes<i64> {
         let seg = seg as usize;
         if seg < 1 {
-            return itr_err_fmt!(HeapError, "heap grow cannot empty")
+            return itr_err_fmt!(HeapError, "heap grow cannot empty");
         }
         if seg > 16 {
-            return itr_err_fmt!(HeapError, "heap grow cannot more than 16")
+            return itr_err_fmt!(HeapError, "heap grow cannot more than 16");
         }
         let gas = self.calc_grow_gas(seg)?;
         let newsz = self.datas.len() + seg * Self::SEGLEN;
@@ -147,13 +142,13 @@ impl Heap {
 
     // return Value::bytes
     pub fn read(&self, i: &Value, n: Value) -> VmrtRes<Value> {
-        let start  = i.checked_u32()? as usize;
+        let start = i.checked_u32()? as usize;
         let length = n.checked_u16()? as usize;
         self.do_read(start, length)
     }
 
     pub fn slice(&self, l: Value, s: &Value) -> VmrtRes<Value> {
-        let start  = s.checked_u32()?;
+        let start = s.checked_u32()?;
         let length = l.checked_u32()?;
         self.checked_right(start as usize, length as usize, "create slice overflow")?;
         Ok(Value::HeapSlice((start, length)))
@@ -173,12 +168,6 @@ impl Heap {
         let seg = mark & 0b0001111111111111;
         self.read_uint(uty, seg)
     }
-
-
-
-
-
-
 }
 
 #[cfg(test)]
@@ -207,5 +196,4 @@ mod heaptest {
         let err = heap.slice(len, &start).unwrap_err().to_string();
         assert!(err.contains("create slice overflow"));
     }
-
 }

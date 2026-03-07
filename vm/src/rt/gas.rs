@@ -64,7 +64,7 @@ impl GasTable {
         ]);
         gst.set(12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER,
             // O(n) compo merge (can touch many items); avoid default-2.
-            PACKLIST, PACKMAP, UPLIST, CLONE, MERGE, KEYS, VALUES
+            PACKLIST, PACKMAP, PACKARGS, UNPACK, CLONE, MERGE, KEYS, VALUES
         ]);
         gst.set(16, &[EXTVIEW, GGET, CALLCODE]);
         gst.set(20, &[LOG1, CALLPURE]);
@@ -404,7 +404,7 @@ mod gas_budget_codec_tests {
             (5, &[POW]),
             (6, &[HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
             (8, &[CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, MGET, JOIN, REV, NEWLIST, NEWMAP, NTFUNC]),
-            (12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, PACKLIST, PACKMAP, UPLIST, CLONE, MERGE, KEYS, VALUES]),
+            (12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, PACKLIST, PACKMAP, PACKARGS, UNPACK, CLONE, MERGE, KEYS, VALUES]),
             (16, &[EXTVIEW, GGET, CALLCODE]),
             (20, &[LOG1, CALLPURE]),
             (24, &[LOG2, GPUT, CALLVIEW]),

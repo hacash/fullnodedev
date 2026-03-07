@@ -36,9 +36,9 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
     ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
     let mut exenv = ExecEnv{ ctx, gas };
     let mut vmb = global_machine_manager().assign(hei);
-    let res = vmb.machine.as_mut().unwrap().main_call(&mut exenv, CodeType::Bytecode, codes.into());
+    let res = vmb.machine.as_mut().unwrap().main_call_raw(&mut exenv, CodeType::Bytecode, codes.into());
     res.map(|v|(
-        gas_limit-*gas, v.to_json()
+        gas_limit-*gas, v.to_debug_json()
     ))
 
 }
@@ -58,8 +58,8 @@ fn parse_push_params(codes: &mut Vec<u8>, pms: &str) -> Rerr {
     }).sum();
     match pms {
         0      => { push!(PNIL); } // none argv
-        1      => { /* single param: push raw value; contract uses PUT 0 ROLL0, not UPLIST */ }
-        2..255 => { push!(PU8, pms, PACKLIST); }
+        1      => { /* single param: push raw value; contract uses PUT 0 ROLL0, not UNPACK */ }
+        2..255 => { push!(PU8, pms, PACKARGS); }
         255..  => return errf!("param number is too much"),
     }
     Ok(())

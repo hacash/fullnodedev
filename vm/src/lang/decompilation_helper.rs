@@ -91,9 +91,9 @@ impl<'a> DecompilationHelper<'a> {
             return None;
         }
         let node = &arr.subs[start_idx];
-        // Canonical param-unpack IR form for stable roundtrip: UPLIST(ROLL0, P0)
+        // Canonical param-unpack IR form for stable roundtrip: UNPACK(ROLL0, P0)
         let is_param_unpack = if let Some(double) = node.as_any().downcast_ref::<IRNodeDouble>() {
-            if double.inst != UPLIST {
+            if double.inst != UNPACK {
                 false
             } else {
                 let subx_is_roll0 = double
@@ -124,7 +124,7 @@ impl<'a> DecompilationHelper<'a> {
             return Some(names);
         }
 
-        // Fallback: infer a param count without SourceMap. We must avoid binding non-param locals (which would conflict with later `var $i $i = ...`). Heuristic: - Read total alloc slots from the nearest preceding ALLOC. - Look for an early PUT to a slot >= 1 shortly after UPLIST; its slot index typically equals the first non-param local slot, so it approximates param count. - If no such early PUT exists, fall back to alloc_count (or 1).
+        // Fallback: infer a param count without SourceMap. We must avoid binding non-param locals (which would conflict with later `var $i $i = ...`). Heuristic: - Read total alloc slots from the nearest preceding ALLOC. - Look for an early PUT to a slot >= 1 shortly after UNPACK; its slot index typically equals the first non-param local slot, so it approximates param count. - If no such early PUT exists, fall back to alloc_count (or 1).
         let mut alloc_count: usize = 0;
         if start_idx > 0 {
             for i in start_idx.saturating_sub(2)..start_idx {

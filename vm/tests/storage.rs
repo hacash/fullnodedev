@@ -53,7 +53,7 @@ mod storage {
             var tt_shares $2
             var tt_sat    $3
             var tt_zhu    $4
-            unpack_list(self.total(), 2)
+            unpack(self.total(), 2)
             var lq_k = addr ++ "_shares"
             var my_shares = storage_load(lq_k)
             if  my_shares is nil {

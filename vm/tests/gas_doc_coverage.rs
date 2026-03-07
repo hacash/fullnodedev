@@ -30,7 +30,10 @@ fn doc_tracks_current_dynamic_metering_groups() {
         "EXTACTION",
         "host-returned gas (`bgasu`)",
     ] {
-        assert!(DOC.contains(key), "missing extend/native coverage key: {key}");
+        assert!(
+            DOC.contains(key),
+            "missing extend/native coverage key: {key}"
+        );
     }
 
     // storage/space/manual sections
@@ -47,6 +50,12 @@ fn doc_tracks_current_dynamic_metering_groups() {
 
 #[test]
 fn doc_does_not_use_legacy_opcode_names() {
-    assert!(!DOC.contains("NTCALL"), "legacy name NTCALL should not appear in doc");
-    assert!(!DOC.contains("EXTFUNC"), "legacy name EXTFUNC should not appear in doc");
+    assert!(
+        !DOC.contains("NTCALL"),
+        "legacy name NTCALL should not appear in doc"
+    );
+    assert!(
+        !DOC.contains("EXTFUNC"),
+        "legacy name EXTFUNC should not appear in doc"
+    );
 }

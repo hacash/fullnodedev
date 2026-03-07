@@ -126,6 +126,7 @@ fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
         (Bytes(l), Bytes(r)) => Ok(l == r),
         (Address(l), Address(r)) => Ok(l == r),
         (HeapSlice(l), HeapSlice(r)) => Ok(l == r),
+        (Args(l), Args(r)) => Ok(l == r),
         (Compo(l), Compo(r)) => Ok(l.ptr_eq(r)),
         (U8(l), U8(r)) => Ok(l == r),
         (U16(l), U16(r)) => Ok(l == r),

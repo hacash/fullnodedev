@@ -963,8 +963,8 @@ impl Syntax {
             // Single param: PUT 0 ROLL0 (ROLL0 moves top to top, PUT consumes; no POP needed)
             Ok(push_single_p1(PUT, 0, push_inst(ROLL0)))
         } else {
-            // Multi param: UPLIST(ROLL0, P0) (caller pushes list)
-            Ok(push_double(UPLIST, ROLL0, P0))
+            // Multi param: UNPACK(ROLL0, P0) (caller pushes list)
+            Ok(push_double(UNPACK, ROLL0, P0))
         }
     }
 
@@ -1651,8 +1651,8 @@ impl Syntax {
                     self.irnode.push(push_single_p1(PUT, 0, push_inst(ROLL0)));
                 }
                 _ => {
-                    // Multi param: UPLIST(ROLL0, P0) (caller pushes list)
-                    let unpack = push_double(UPLIST, ROLL0, P0);
+                    // Multi param: UNPACK(ROLL0, P0) (caller pushes list)
+                    let unpack = push_double(UNPACK, ROLL0, P0);
                     self.irnode.push(unpack);
                 }
             }

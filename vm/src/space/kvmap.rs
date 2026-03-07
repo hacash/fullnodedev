@@ -1,5 +1,5 @@
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 use field::Address;
 
@@ -7,10 +7,8 @@ use crate::rt::ItrErrCode::*;
 use crate::rt::*;
 use crate::value::Value;
 
-
 macro_rules! memory_kvmap_define {
     ($class:ident, $er1:expr, $er2:expr) => {
-                
         #[allow(dead_code)]
         #[derive(Default, Clone)]
         pub struct $class {
@@ -19,7 +17,6 @@ macro_rules! memory_kvmap_define {
         }
 
         impl $class {
-
             pub fn new(limit: usize) -> Self {
                 Self {
                     limit,
@@ -39,7 +36,7 @@ macro_rules! memory_kvmap_define {
             fn key(k: &Value) -> VmrtRes<Vec<u8>> {
                 let key = k.canbe_key()?;
                 if key.is_empty() {
-                    return itr_err_fmt!($er1, "key {} cannot empty", k)
+                    return itr_err_fmt!($er1, "key {} cannot empty", k);
                 }
                 Ok(key)
             }
@@ -60,7 +57,7 @@ macro_rules! memory_kvmap_define {
                     }
                     Entry::Vacant(slot) => {
                         if full {
-                            return itr_err_code!($er2) // out of limit
+                            return itr_err_code!($er2); // out of limit
                         }
                         slot.insert(v);
                         Ok((key_len, true))
@@ -78,30 +75,23 @@ macro_rules! memory_kvmap_define {
             pub fn contains_key(&self, k: &Value) -> VmrtRes<bool> {
                 Ok(self.datas.contains_key(&Self::key(k)?))
             }
-
         }
     };
 }
 
-
+/*  */
+memory_kvmap_define! { GKVMap, GlobalError, OutOfGlobal }
+memory_kvmap_define! { MKVMap, MemoryError, OutOfMemory }
 
 /*  */
-memory_kvmap_define!{ GKVMap, GlobalError, OutOfGlobal }
-memory_kvmap_define!{ MKVMap, MemoryError, OutOfMemory }
-
-
-/*  */
-
 
 #[derive(Default, Clone)]
 pub struct CtcKVMap {
     limit: usize,
-    datas: HashMap<Address, MKVMap>
+    datas: HashMap<Address, MKVMap>,
 }
 
-
 impl CtcKVMap {
-
     #[inline(always)]
     fn check_addr(addr: &Address) -> VmrtErr {
         addr.check_version().map_ires(
@@ -128,7 +118,10 @@ impl CtcKVMap {
 
     pub fn entry_mut(&mut self, addr: &Address) -> VmrtRes<&mut MKVMap> {
         Self::check_addr(addr)?;
-        Ok(self.datas.entry(addr.clone()).or_insert_with(||MKVMap::new(self.limit)))
+        Ok(self
+            .datas
+            .entry(addr.clone())
+            .or_insert_with(|| MKVMap::new(self.limit)))
     }
 
     pub fn get(&self, addr: &Address, key: &Value) -> VmrtRes<Value> {
@@ -138,7 +131,6 @@ impl CtcKVMap {
             None => Ok(Value::Nil),
         }
     }
-
 }
 
 #[cfg(test)]
@@ -151,7 +143,10 @@ mod kvmap_tests {
         let key = Value::Bytes(vec![1u8]);
         let mut m = CtcKVMap::new(1);
 
-        m.entry_mut(&addr).unwrap().put(key.clone(), Value::U8(7)).unwrap();
+        m.entry_mut(&addr)
+            .unwrap()
+            .put(key.clone(), Value::U8(7))
+            .unwrap();
         m.reset(0);
 
         let got = m.get(&addr, &key).unwrap();

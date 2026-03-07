@@ -14,7 +14,8 @@ pub enum ValueTy {
     // U256     = 7 ...      = 8 ...      = 9
     Bytes       = 10,
     Address     = 11,
-    // ...      = 12 ...      = 13
+    Args        = 12,
+    // ...      = 13
     HeapSlice   = 14,
     Compo       = 15
 }
@@ -26,7 +27,7 @@ impl ValueTy {
     pub fn canbe_argv(&self) -> Rerr {
         use ValueTy::*;
         match self {
-            Nil | HeapSlice | Compo => errf!("Value Type {:?} cannot be func argv", self),
+            Nil | Args | HeapSlice | Compo => errf!("Value Type {:?} cannot be func argv", self),
             _ => Ok(())
         }
     }
@@ -35,7 +36,7 @@ impl ValueTy {
     pub fn canbe_retval(&self) -> Rerr {
         use ValueTy::*;
         match self {
-            Nil | HeapSlice => errf!("Value Type {:?} cannot be func retval", self),
+            Nil | Args | HeapSlice => errf!("Value Type {:?} cannot be func retval", self),
             _ => Ok(())
         }
     }
@@ -53,6 +54,7 @@ impl ValueTy {
             /* */
             ValueTy::Bytes     => "bytes"     ,
             ValueTy::Address   => "address"   ,
+            ValueTy::Args      => "args"      ,
             /* */
             ValueTy::HeapSlice => "heapslice" ,
             ValueTy::Compo     => "compo"     ,
@@ -87,6 +89,7 @@ impl ValueTy {
             RESERVED_U256_TYPE_NAME => return errf!("value type '{}' is reserved but not enabled", RESERVED_U256_TYPE_NAME),
             "bytes"     => Bytes,
             "address"   => Address,
+            "args"      => Args,
             "heapslice" => HeapSlice,
             "compo"     => Compo,
             a => return errf!("not find value type '{}'", a)
@@ -108,6 +111,7 @@ impl ValueTy {
             /* */
             10 => Bytes     ,
             11 => Address   ,
+            12 => Args      ,
             /* */
             14 => HeapSlice ,
             15 => Compo     ,
@@ -166,7 +170,7 @@ mod type_tests {
             assert_eq!(parse_cto_target_ty_param(ty as u8).unwrap(), ty);
         }
 
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::Args, ValueTy::HeapSlice, ValueTy::Compo] {
             let res = parse_cto_target_ty_param(ty as u8);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }

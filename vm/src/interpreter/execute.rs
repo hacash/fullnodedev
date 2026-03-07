@@ -557,6 +557,11 @@ pub fn execute_code(
             // compo
             NEWLIST  => ops.push(Compo(CompoItem::new_list()))?,
             NEWMAP   => ops.push(Compo(CompoItem::new_map()))?,
+            PACKARGS => {
+                let (a, len) = ArgsItem::pack(cap, ops)?;
+                gas += gst.compo_items_edit(len);
+                ops.push(a)?;
+            }
             PACKLIST => {
                 let (l, len) = CompoItem::pack_list(cap, ops)?;
                 gas += gst.compo_items_edit(len);
@@ -666,10 +671,11 @@ pub fn execute_code(
                 gas += gst.compo_bytes(bsz);
                 *ops.peek()? = Compo(c);
             }
-            UPLIST   => {
+            UNPACK   => {
                 let i = ops.pop()?.checked_u8()?;
-                gas += unpack_list(i, locals, ops.compo()?.list_ref()?, gst)?;
-                ops.pop()?; // pop compo after unpack
+                let items = ops.peek()?.clone_argv_items()?;
+                gas += unpack_seq(i, locals, items, gst)?;
+                ops.pop()?; // pop argv wrapper after unpack
             }
             // heap
             HGROW    => gas += heap.grow(pu8!())?,

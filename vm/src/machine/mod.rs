@@ -1,8 +1,8 @@
 use basis::component::*;
 use basis::interface::*;
 use protocol::transaction::*;
-use sys::*;
 use std::cell::UnsafeCell;
+use sys::*;
 
 use super::frame::*;
 use super::rt::*;

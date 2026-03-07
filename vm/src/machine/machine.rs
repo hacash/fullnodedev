@@ -274,7 +274,7 @@ impl Machine {
         Self { r, frames: vec![] }
     }
 
-    pub fn main_call(
+    pub fn main_call_raw(
         &mut self,
         env: &mut ExecEnv,
         ctype: CodeType,
@@ -291,15 +291,25 @@ impl Machine {
             .iter()
             .map(|a| ContractAddress::from_unchecked(*a))
             .collect();
-        let rv = self.do_call(
-            env,
-            ExecMode::Main,
-            &fnobj,
-            ctx_adr,
-            None,
-            Some(lib_adr),
-            None,
-        )?;
+        Ok(self
+            .do_call(
+                env,
+                ExecMode::Main,
+                &fnobj,
+                ctx_adr,
+                None,
+                Some(lib_adr),
+                None,
+            )?)
+    }
+
+    pub fn main_call(
+        &mut self,
+        env: &mut ExecEnv,
+        ctype: CodeType,
+        codes: Arc<[u8]>,
+    ) -> Ret<Value> {
+        let rv = self.main_call_raw(env, ctype, codes)?;
         check_vm_return_value(&rv, "main call")?;
         Ok(rv)
     }
@@ -407,11 +417,12 @@ mod machine_test {
         crate::ContractAddress::calculate(base, &Uint4::from(nonce))
     }
 
-    fn run_main_script(
+    fn run_main_script_with(
         base_addr: Address,
         tx_libs: Vec<crate::ContractAddress>,
         mut ext_state: StateMem,
         main_script: &str,
+        raw: bool,
     ) -> Ret<Value> {
         let main_codes = lang_to_bytecode(main_script).unwrap();
         let mut env = Env::default();
@@ -436,7 +447,29 @@ mod machine_test {
             gas: &mut gas,
         };
         let mut machine = Machine::create(Resoure::create(1));
-        machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+        if raw {
+            machine.main_call_raw(&mut exec, CodeType::Bytecode, main_codes.into())
+        } else {
+            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+        }
+    }
+
+    fn run_main_script(
+        base_addr: Address,
+        tx_libs: Vec<crate::ContractAddress>,
+        ext_state: StateMem,
+        main_script: &str,
+    ) -> Ret<Value> {
+        run_main_script_with(base_addr, tx_libs, ext_state, main_script, false)
+    }
+
+    fn run_main_script_raw(
+        base_addr: Address,
+        tx_libs: Vec<crate::ContractAddress>,
+        ext_state: StateMem,
+        main_script: &str,
+    ) -> Ret<Value> {
+        run_main_script_with(base_addr, tx_libs, ext_state, main_script, true)
     }
 
     fn assert_err_contains(res: Ret<Value>, needle: &str) {
@@ -445,6 +478,71 @@ mod machine_test {
             err.contains(needle),
             "expected error to contain '{needle}', got '{err}'"
         );
+    }
+
+    #[test]
+    fn main_call_raw_accepts_object_return() {
+        let base_addr = test_base_addr();
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![],
+            StateMem::default(),
+            r##"
+                return map { "kind": "hnft", "mint": 1 }
+            "##,
+        )
+        .unwrap();
+        assert_eq!(rv.to_json(), r#"{"kind":"hnft","mint":1}"#);
+    }
+
+    #[test]
+    fn main_call_still_rejects_object_return() {
+        let base_addr = test_base_addr();
+        let res = run_main_script(
+            base_addr,
+            vec![],
+            StateMem::default(),
+            r##"
+                return map { "kind": "hnft" }
+            "##,
+        );
+        assert_err_contains(res, "main call return error");
+    }
+
+    #[test]
+    fn sandbox_call_displays_object_return() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 31);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("probe")
+                    .unwrap()
+                    .external()
+                    .fitsh(r##"return map { "kind": "hnft", "mint": 1 }"##)
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+
+        let (_gas, rv) = sandbox_call(&mut ctx, contract, "probe".to_owned(), "").unwrap();
+        assert_eq!(rv, r#"{"kind":"hnft","mint":1}"#);
     }
 
     #[test]

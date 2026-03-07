@@ -280,7 +280,7 @@ param { owner amount fee }
 ```
 
 - Must appear at the top of the function body
-- Canonical IR: `UPLIST(ROLL0, P0)`
+- Canonical IR: `UNPACK(ROLL0, P0)`
 
 ### 6.2 `callcode lib_idx::func_sig`
 
@@ -439,7 +439,7 @@ let first_arg = $0     // read slot 0 into a new binding
 |----------|---------|
 | Overwrite param | `$0 = "new owner"` |
 | Low-level slot access | `$N` for tight control |
-| Interop with `unpack_list` | `unpack_list(self.total(), 2)` then `$2`, `$3` |
+| Interop with `unpack` | `unpack(self.total(), 2)` then `$2`, `$3` |
 | Debug / inspection | Inspect slots by index |
 
 #### CAUTION

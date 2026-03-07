@@ -1,0 +1,334 @@
+# AST Action Specification
+
+## 1. Purpose
+
+AST actions add deterministic control-flow to the fixed transaction action format.
+
+- `AstSelect` provides ordered trial-and-select execution.
+- `AstIf` provides condition + branch execution on top of `AstSelect`.
+- AST composes existing actions; it does not add a separate scripting state machine.
+- Transaction-level metadata remains static from serialized transaction bytes, even when runtime execution only takes one branch.
+
+This document describes the current business semantics of AST execution, including rollback, warmup behavior, gas charging, signature collection, and VM/P2SH interaction.
+
+## 2. Availability and Placement
+
+- AST is available only when the `ast` feature is enabled.
+- A transaction that contains any AST-level action must be `type3` or above.
+- `AstSelect`, `AstIf`, and `ContractMainCall` are AST-level actions.
+- AST-level actions are valid at top-level transaction execution and inside AST nesting.
+- AST-level actions are not valid inside VM call contexts, because VM call levels are above the AST level range.
+- AST nesting depth is limited to `6`.
+- `P2SHScriptProve` is top-level only and cannot be introduced from AST or VM runtime calls.
+
+## 3. Node Types
+
+### 3.1 `AstSelect`
+
+`AstSelect(exe_min, exe_max, actions)` tries child actions from left to right.
+
+- Execution stops when either the child list is exhausted or `exe_max` successful children have been committed.
+- The node succeeds only if total successful children is at least `exe_min`.
+- The node returns the return bytes of the last successful child.
+- If there is no successful child and the node still succeeds, it returns empty bytes.
+- `exe_min == 0` is valid by design.
+- Empty and no-op forms such as `0/0` are valid success paths.
+
+### 3.2 `AstIf`
+
+`AstIf(cond, br_if, br_else)` uses an `AstSelect` as its condition node.
+
+- `cond` success means condition is true.
+- `cond` unwind means condition is false.
+- `cond` return bytes are ignored.
+- On true, `br_if` is executed.
+- On false, `br_else` is executed.
+- The node returns the selected branch return bytes.
+
+## 4. Error Model
+
+AST uses two execution outcomes for child actions.
+
+- `Unwind`: recoverable branch failure.
+- `Interrupt`: unrecoverable failure.
+
+The meaning depends on the current AST node.
+
+### 4.1 Inside `AstSelect`
+
+- Child `Unwind` means: rollback that child attempt and continue with the next child.
+- Child `Interrupt` means: abort the current `AstSelect`.
+- If final success count is below `exe_min`, the whole `AstSelect` returns `Unwind`.
+
+### 4.2 Inside `AstIf`
+
+- Condition `Unwind` means: condition is false.
+- Condition `Interrupt` means: abort the whole `AstIf`.
+- Selected branch `Unwind` or `Interrupt` means: fail the whole `AstIf`.
+
+AST preserves the original failure kind when it rethrows node failure.
+
+## 5. Execution and Rollback Model
+
+AST uses two snapshot layers.
+
+### 5.1 Whole-node snapshot
+
+Each `AstSelect` and `AstIf` starts with a node-level snapshot.
+
+Node rollback makes the AST node atomic from the caller view.
+
+- `AstSelect`: if the node finally fails, all previously successful child effects inside that node are rolled back.
+- `AstIf`: if the selected branch fails, both condition side effects and branch side effects are rolled back together.
+
+### 5.2 Per-item snapshot
+
+Each attempted child action inside AST runs under its own item snapshot.
+
+- Child success commits the item snapshot into the parent node state.
+- Child failure rolls back only that child attempt.
+- The parent node then decides whether to continue, choose another branch, or fail.
+
+### 5.3 What rollback restores
+
+AST rollback restores the transaction runtime state that is meant to be branch-local.
+
+- forked protocol state
+- log length
+- protocol volatile context state
+- VM volatile business state
+
+In current implementation this means rollback restores state, log truncation point, `tex_ledger`, protocol volatile AST context, and VM globals/memory.
+
+### 5.4 What rollback does not restore
+
+Rollback is intentionally non-refunding and non-cooling.
+
+- gas already consumed is not refunded
+- VM gas remaining is not restored
+- VM contract warmup/cache state is not restored
+
+This makes gas and warmup accounting monotonic for the full transaction, even when AST branches are rolled back.
+
+## 6. Gas Model
+
+### 6.1 Gas channels
+
+AST execution can charge gas through three channels.
+
+1. Fixed AST item try cost: `40` gas per attempted child.
+2. Child returned gas: the child action's returned `u32` gas value, charged only on success.
+3. Child runtime gas: any direct `ctx.gas_consume(...)` done during child execution, including VM runtime and hook-side runtime gas.
+
+### 6.2 Control-flow node gas
+
+`AstSelect` and `AstIf` always return gas `0`.
+
+This is intentional: the control-flow node itself does not contribute returned gas. Only its child attempts charge gas.
+
+### 6.3 Successful vs failed item attempt
+
+- A successful item attempt charges: `40 + child runtime gas + child returned gas`.
+- A failed item attempt charges: `40 + any runtime gas already consumed before failure`.
+
+Rollback never refunds either part.
+
+### 6.4 Top-level transaction loop vs AST
+
+All actions return `(gas, ret_bytes)`, but the top-level transaction action loop intentionally ignores returned gas.
+
+Returned gas is only consumed by composition paths such as:
+
+- AST child execution
+- VM `EXTACTION` runtime calls
+
+As a result, wrapping an action inside AST changes how its returned gas participates in charging. This is part of the AST composition model.
+
+### 6.5 Transaction gas budget
+
+- Gas budget is initialized only when a `type3+` transaction has non-zero `gas_max`.
+- Gas budget is decoded from the transaction gas byte and capped by the chain cap.
+- Current transaction gas cap is `8192`.
+- Max gas charge is pre-collected before execution and unused gas is refunded after transaction settlement.
+
+AST item attempts always consume the fixed try cost, so any AST path that actually attempts children requires initialized transaction gas.
+
+The only AST paths that can succeed without child gas usage are true no-op paths that never attempt a child, such as an empty `0/0` select.
+
+### 6.6 `burn_90` × AST / VM / P2SH charging matrix
+
+The following combinations are intentional and should be understood as different charging channels, not as inconsistent execution.
+
+- `AstSelect` / `AstIf` child attempt in a `burn_90` transaction: the fixed AST try cost `40` is charged as shared context gas without an extra `burn_90` multiplier, while successful child returned gas is charged through the AST returned-gas path and therefore uses the `burn_90` multiplier rule.
+- `AstSelect` / `AstIf` child = `ContractMainCall` in a `burn_90` transaction: total charge is `40` try cost + VM shared runtime gas/min-call gas + multiplied child returned gas for the `ContractMainCall` action body size.
+- top-level `ContractMainCall` in a `burn_90` transaction: the top-level transaction loop still ignores returned gas, so only VM shared runtime gas is charged at execution time; `burn_90` still affects transaction fee classification and gas purity pricing at settlement.
+- `ContractMainCall` -> VM `EXTACTION` -> `burn_90` transfer action in a non-`burn_90` transaction: the runtime-created child action applies its own returned-gas `burn_90` multiplier, but transaction-level fee classification does not change because the serialized transaction did not statically contain a `burn_90` action.
+- `ContractMainCall` -> VM `EXTACTION` inside an already `burn_90` transaction: `burn_90` multiplier is an OR rule, not a stacked rule; the same returned-gas item is multiplied once, not twice.
+- transfer hooks that enter P2SH or contract abstract calls consume shared VM/runtime gas directly; they are not recharged again through an AST returned-gas path unless they themselves create a nested AST child action that succeeds.
+- P2SH and abstract hook execution may be rolled back by AST item rollback at the state/log/volatile layer, but any runtime gas spent in those hook calls remains consumed.
+
+## 7. `burn_90` Semantics
+
+### 7.1 Static transaction classification
+
+Transaction `burn_90` is determined statically from the serialized top-level action list.
+
+- If any serialized action reports `burn_90() == true`, the whole transaction is a `burn_90` transaction.
+- AST nodes therefore aggregate `burn_90()` from their serialized descendants.
+- This aggregation is static and does not depend on which branch is actually taken at runtime.
+
+This is intentional because transaction fee classification must be decidable from transaction bytes before execution finishes.
+
+### 7.2 Effect on fee settlement
+
+When a transaction is statically classified as `burn_90`:
+
+- `tx.fee_got()` is reduced by the protocol burn rule
+- miner fee receipt changes accordingly
+- gas purity pricing uses that transaction-level fee view
+
+These are transaction-level properties, not branch-local runtime properties.
+
+### 7.3 Effect on AST and runtime action charging
+
+At AST and runtime `EXTACTION` charge sites, child returned gas is multiplied when either of these is true:
+
+- the transaction is statically `burn_90`
+- the current child action itself is `burn_90`
+
+The current multiplier is `10x`.
+
+This multiplier is applied at child returned-gas charge sites, not inside `action.execute()`.
+
+### 7.4 VM boundary
+
+`ContractMainCall` itself reports `burn_90 == false`.
+
+If its bytecode later performs runtime `EXTACTION`, the called runtime action still applies its own returned-gas multiplier rules, but transaction-level `burn_90` classification remains the static property of the serialized transaction action tree.
+
+Dynamic runtime calls do not rewrite transaction fee classification after the transaction has been formed.
+
+## 8. Signature Semantics
+
+### 8.1 Static transaction signatures
+
+Transaction signature precheck is static.
+
+- `tx.req_sign()` is collected from the serialized action tree.
+- `AstSelect` collects all descendant action signature requirements.
+- `AstIf` collects `cond`, `br_if`, and `br_else` signature requirements together.
+- Non-privkey addresses are filtered out from transaction signature verification.
+
+This means transaction signature requirements are based on serialized AST structure, not on the branch actually taken at runtime.
+
+This is intentional because transaction signature validity must be deterministic from transaction bytes.
+
+### 8.2 Runtime-created actions
+
+Runtime-created `EXTACTION` payloads are not part of `tx.actions()`.
+
+Because of that, their signature requirements are enforced at runtime by `ctx_action_call(...)`.
+
+- runtime action bytes are parsed into an action object
+- runtime `req_sign()` is checked at the call site
+- duplicate addresses are deduplicated per call
+
+If a runtime-created action is itself an AST node, its nested AST signature collection still follows the same static-within-that-payload rule.
+
+## 9. VM Interaction
+
+### 9.1 `ContractMainCall`
+
+`ContractMainCall` runs VM code in `ExecMode::Main`.
+
+- VM is initialized once per transaction and reused for nested VM calls.
+- The context level is switched to main-call level during VM execution and restored after return.
+- VM code is allowed to use `EXTACTION`, `EXTENV`, and `EXTVIEW` under the VM runtime rules.
+
+### 9.2 AST rollback and VM rollback
+
+AST snapshot/rollback only restores VM volatile business state.
+
+- restored: VM globals and VM memory
+- not restored: shared gas counter and warmed contract cache
+
+This means a failed AST branch can still leave warmed contracts available for later branches in the same transaction.
+
+That warmup persistence is intentional because contract warmup/load accounting is tied to already-paid transaction execution cost.
+
+### 9.3 Runtime EXTACTION boundary
+
+Runtime `EXTACTION` is only allowed in `ExecMode::Main`.
+
+It is not available in:
+
+- P2SH execution mode
+- pure/view-like restricted modes
+- contract abstract call paths that are not main mode
+
+This is an important boundary when designing AST + VM combinations.
+
+### 9.4 Non-bug patterns around `burn_90` and VM
+
+The following outcomes are intentional protocol semantics and should not be treated as bugs by reviewers.
+
+- unreachable AST branches and later `AstSelect` children still contribute to static `burn_90` and static `req_sign` aggregation because those properties are defined from serialized transaction structure, not from the eventual runtime path.
+- AST rollback restores branch-local state but does not refund gas and does not cool VM warmup/cache state, so failed VM/P2SH branches can still make later branches cheaper to load.
+- top-level action execution and nested AST / VM `EXTACTION` execution intentionally differ in returned-gas handling because the top-level transaction loop discards returned gas while composition layers consume it.
+- dynamic runtime VM behavior cannot retroactively rewrite transaction fee classification, miner fee split, or transaction pre-signature requirements after transaction bytes have been signed and broadcast.
+
+## 10. P2SH and Action Hook Interaction
+
+Transfer actions may trigger VM hooks after their state change.
+
+- HAC, SAT, HACD, and Asset transfer actions run post-action hooks
+- hooks may invoke P2SH code or contract abstract code, depending on `from` and `to`
+
+This produces the following semantics inside AST.
+
+- The transfer action body and its hook execution are part of the same AST item attempt.
+- If the hook fails, the AST item rollback reverts both the transfer side effects and hook side effects.
+- Any runtime gas spent by the hook remains consumed.
+
+### 10.1 P2SH proof lifetime
+
+- `P2SHScriptProve` stores a P2SH proof in transaction runtime context.
+- A scriptmh address can only be proved once per transaction runtime.
+- P2SH proof is a top-level preparation action; it is not an AST child action.
+
+In practice, a transaction that wants AST-controlled transfer branches from a scriptmh address must prepare the required `P2SHScriptProve` earlier in the same top-level transaction flow.
+A proof prepared before entering an AST node remains available after later AST branch rollback because it belongs to the pre-snapshot transaction runtime context.
+
+### 10.2 Hook mode boundary
+
+P2SH hooks run in `ExecMode::P2sh` and contract hooks run in abstract-call mode.
+
+These hook paths are not equivalent to `ContractMainCall` main-mode execution:
+
+- they can consume runtime gas
+- they can mutate branch-local state that AST may later roll back
+- they cannot use main-mode-only runtime `EXTACTION`
+
+## 11. Design Rules for Authors
+
+When authoring AST transactions, the following rules are part of the protocol semantics.
+
+- `AstSelect` is an ordered trial list, not a parallel chooser.
+- `exe_max` stops later children from executing, but later serialized children still contribute to static transaction metadata such as `burn_90` and `req_sign`.
+- `AstIf.cond` is success-driven, not value-driven; branch choice depends on success vs unwind, not on returned bytes.
+- `AstSelect` success is provisional until the whole node succeeds; failing `exe_min` rolls back earlier successful children in that node.
+- AST rollback is state rollback only; it is not gas refund and not warmup refund.
+- Moving an action under AST or invoking it through runtime `EXTACTION` changes how returned gas is consumed; this is expected composition behavior.
+- P2SH proof actions must remain top-level, so AST cannot lazily create a new proof inside a branch.
+- VM main calls and hook-triggered VM calls are different execution modes and should not be treated as interchangeable.
+
+## 12. Summary
+
+AST in this protocol is a deterministic transaction-composition layer with the following core properties.
+
+- Runtime path selection is reversible for state, logs, and VM volatile business memory.
+- Gas and VM warmup are monotonic across the full transaction.
+- Transaction-level fee classification and signature requirements are static from serialized transaction bytes.
+- VM main calls, P2SH hooks, and abstract hooks each keep their own execution-mode boundaries inside AST.
+
+These rules define the intended AST business semantics and must be used as the standard reference when reasoning about AST behavior.

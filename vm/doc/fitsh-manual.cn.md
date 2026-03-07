@@ -280,7 +280,7 @@ param { owner amount fee }
 ```
 
 - 必须出现在函数体开头
-- 规范 IR：`UPLIST(ROLL0, P0)`
+- 规范 IR：`UNPACK(ROLL0, P0)`
 
 ### 6.2 `callcode lib_idx::func_sig`
 
@@ -439,7 +439,7 @@ let first_arg = $0     // 将槽位 0 读取到新绑定
 |------|------|
 | 覆盖参数 | `$0 = "new owner"` |
 | 底层槽位访问 | 用 `$N` 精细控制 |
-| 与 `unpack_list` 配合 | 先 `unpack_list(...)`，再使用 `$2`、`$3` 等 |
+| 与 `unpack` 配合 | 先 `unpack(...)`，再使用 `$2`、`$3` 等 |
 | 调试 / 检查 | 按索引查看槽位内容 |
 
 #### 注意
