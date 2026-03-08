@@ -140,26 +140,6 @@ impl Resoure {
         }))
     }
 
-    fn resolve_parent_addr(
-        &mut self,
-        vmsta: &mut VMState,
-        gas: &mut i64,
-        owner: &ContractAddress,
-        idx: u8,
-    ) -> VmrtRes<ContractAddress> {
-        let csto = self.resolve_contract(vmsta, gas, owner)?;
-        let parents = csto.sto.inherit.as_list();
-        let pidx = idx as usize;
-        if pidx >= parents.len() {
-            return itr_err_fmt!(
-                CallLibIdxOverflow,
-                "parent idx overflow {} >= {}",
-                pidx,
-                parents.len()
-            );
-        }
-        Ok(parents[pidx].clone())
-    }
 
     pub fn resolve_abstfn(
         &mut self,
@@ -197,21 +177,22 @@ impl Resoure {
     }
 
     fn resolve_lookup_anchor(&mut self, req: &CallPlanReq<'_>) -> VmrtRes<ContractAddress> {
-        match req.call.lookup.base {
-            LookupBase::State => req
+        let target = req.call.target();
+        if target.anchor_from_state() {
+            return req
                 .bindings
                 .state_addr
                 .clone()
-                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid)),
-            LookupBase::Code => req
+                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid));
+        }
+        if target.anchor_from_code() {
+            return req
                 .bindings
                 .code_owner
                 .clone()
-                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid)),
-            LookupBase::Lib(idx) => {
-                self.resolve_lib_addr_by_list(req.bindings.lib_table.as_ref(), idx)
-            }
+                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid));
         }
+        self.resolve_lib_addr_by_list(req.bindings.lib_table.as_ref(), target.lib_index().unwrap())
     }
 
     fn resolve_lookup_candidates(
@@ -219,28 +200,28 @@ impl Resoure {
         vmsta: &mut VMState,
         gas: &mut i64,
         anchor: &ContractAddress,
-        lookup: LookupSpec,
+        call: &CallSpec,
     ) -> VmrtRes<Vec<ContractAddress>> {
-        Ok(match lookup.walk {
-            LookupWalk::Exact => vec![anchor.clone()],
-            LookupWalk::Parents => self
+        let target = call.target();
+        if target.searches_exact() {
+            return Ok(vec![anchor.clone()]);
+        }
+        if target.searches_parents() {
+            return Ok(self
                 .resolve_contract(vmsta, gas, anchor)?
                 .sto
                 .inherit
                 .as_list()
                 .iter()
                 .cloned()
-                .collect(),
-            LookupWalk::Chain => {
-                let csto = self.resolve_contract(vmsta, gas, anchor)?;
-                let parents = csto.sto.inherit.as_list();
-                let mut out = Vec::with_capacity(1 + parents.len());
-                out.push(anchor.clone());
-                out.extend(parents.iter().cloned());
-                out
-            }
-            LookupWalk::Parent(idx) => vec![self.resolve_parent_addr(vmsta, gas, anchor, idx)?],
-        })
+                .collect());
+        }
+        let csto = self.resolve_contract(vmsta, gas, anchor)?;
+        let parents = csto.sto.inherit.as_list();
+        let mut out = Vec::with_capacity(1 + parents.len());
+        out.push(anchor.clone());
+        out.extend(parents.iter().cloned());
+        Ok(out)
     }
 
     fn resolve_user_call_fn(
@@ -250,10 +231,10 @@ impl Resoure {
         req: &CallPlanReq<'_>,
     ) -> VmrtRes<(ContractAddress, ResolvedFn)> {
         let anchor = self.resolve_lookup_anchor(req)?;
-        let entries = self.resolve_lookup_candidates(vmsta, gas, &anchor, req.call.lookup)?;
+        let entries = self.resolve_lookup_candidates(vmsta, gas, &anchor, req.call)?;
         let mut found = None;
         for owner in entries {
-            if let Some(hit) = self.resolve_user_on_owner(vmsta, gas, &owner, req.call.selector)? {
+            if let Some(hit) = self.resolve_user_on_owner(vmsta, gas, &owner, req.call.selector())? {
                 found = Some(hit);
                 break;
             }
@@ -282,16 +263,18 @@ impl Resoure {
                 "contract {}{} func sign {}",
                 vis.to_readable(),
                 impl_in,
-                hex::encode(req.call.selector)
+                hex::encode(req.call.selector())
             );
         }
-        let next_context_addr = match req.call.boundary {
-            Boundary::Internal => req.bindings.context_addr.clone(),
-            Boundary::External => anchor.clone(),
+        let next_context_addr = if req.call.switches_context() {
+            anchor.clone()
+        } else {
+            req.bindings.context_addr.clone()
         };
-        let next_state_addr = match req.call.boundary {
-            Boundary::Internal => req.bindings.state_addr.clone(),
-            Boundary::External => Some(anchor),
+        let next_state_addr = if req.call.switches_context() {
+            Some(anchor)
+        } else {
+            req.bindings.state_addr.clone()
         };
         Ok(ResolvedCallPlan {
             next_bindings: FrameBindings::new(

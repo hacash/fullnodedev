@@ -42,43 +42,12 @@ pub struct Frame {
     pub bindings: FrameBindings,
     pub call_argv: Value,
     pub types: Option<FuncArgvTypes>,
-    pub ret_check: RetCheck,
     pub codes: ByteView,
     pub oprnds: Stack,
     pub locals: Stack,
     pub heap: Heap,
 }
 
-#[derive(Debug, Clone, Default)]
-pub enum RetCheck {
-    #[default]
-    Callee,
-    Caller(Option<FuncArgvTypes>),
-}
-
-impl RetCheck {
-    pub fn bind_for_reuse(&self, current_types: &Option<FuncArgvTypes>, bind: ReturnBind) -> Self {
-        match bind {
-            ReturnBind::Callee => Self::Callee,
-            ReturnBind::Caller => match self {
-                Self::Callee => Self::Caller(current_types.clone()),
-                Self::Caller(types) => Self::Caller(types.clone()),
-            },
-        }
-    }
-
-    pub fn check(&self, current_types: &Option<FuncArgvTypes>, v: &mut Value) -> VmrtErr {
-        v.canbe_func_retv()?;
-        match self {
-            Self::Callee => match current_types {
-                Some(ty) => ty.check_output(v),
-                None => Ok(()),
-            },
-            Self::Caller(Some(caller_types)) => caller_types.check_output(v),
-            Self::Caller(None) => Ok(()),
-        }
-    }
-}
 
 impl Frame {
     pub fn reclaim(self, r: &mut Resoure) {
@@ -120,15 +89,15 @@ impl Frame {
     }
 
     pub fn check_output_type(&self, v: &mut Value) -> VmrtErr {
-        RetCheck::Callee.check(&self.types, v)
+        v.canbe_func_retv()?;
+        match &self.types {
+            Some(ty) => ty.check_output(v),
+            None => Ok(()),
+        }
     }
 
     pub fn check_return_value(&self, v: &mut Value) -> VmrtErr {
-        self.ret_check.check(&self.types, v)
-    }
-
-    pub fn bind_reuse_return(&self, bind: ReturnBind) -> RetCheck {
-        self.ret_check.bind_for_reuse(&self.types, bind)
+        self.check_output_type(v)
     }
 
     fn clear_runtime_state(&mut self) {
@@ -146,7 +115,6 @@ impl Frame {
         param: Option<Value>,
     ) -> VmrtErr {
         self.clear_runtime_state();
-        self.ret_check = RetCheck::Callee;
         let have_param = param.is_some();
         let mut argv = param.unwrap_or(Value::Nil);
         if have_param {
@@ -165,28 +133,17 @@ impl Frame {
         Ok(())
     }
 
-    pub fn prepare_reuse_call(
+    pub fn prepare_splice(
         &mut self,
         exec: ExecCtx,
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
-        ret_check: RetCheck,
     ) -> VmrtErr {
-        let mut argv = self.call_argv.clone();
-        argv.canbe_func_argv()?;
-        if let Some(vtys) = &fnobj.agvty {
-            vtys.check_params(&mut argv)?;
-        }
-        self.clear_runtime_state();
         self.bindings = bindings;
-        self.call_argv = argv.clone();
-        self.oprnds.push(argv)?;
-        self.types = fnobj.agvty.clone();
         self.pc = 0;
         self.exec = exec;
         self.codes = fnobj.exec_bytecodes(height)?;
-        self.ret_check = ret_check;
         Ok(())
     }
 
@@ -226,7 +183,7 @@ mod frame_boundary_tests {
 }
 
 #[cfg(test)]
-mod tail_reuse_prepare_tests {
+mod splice_prepare_tests {
     use super::*;
     use field::{Address, Uint4};
 
@@ -245,86 +202,26 @@ mod tail_reuse_prepare_tests {
     }
 
     #[test]
-    fn prepare_tail_reuse_rebinds_types_and_ret_policy() {
+    fn prepare_splice_preserves_runtime_state_and_signature() {
         let mut res = Resoure::create(1);
         let mut frame = Frame::new(&mut res);
         frame.call_argv = Value::U8(1);
-        frame.types =
-            Some(FuncArgvTypes::from_types(Some(ValueTy::U8), vec![ValueTy::U8]).unwrap());
-        frame.ret_check = RetCheck::Caller(None);
+        frame.types = Some(FuncArgvTypes::from_types(Some(ValueTy::U8), vec![ValueTy::U8]).unwrap());
         frame.locals.push(Value::U8(9)).unwrap();
-        let callee_types =
-            FuncArgvTypes::from_types(Some(ValueTy::Bool), vec![ValueTy::U8]).unwrap();
-        let fnobj = FnObj::plain(
-            CodeType::Bytecode,
-            vec![Bytecode::END as u8],
-            0,
-            Some(callee_types),
-        );
+        frame.oprnds.push(Value::U8(7)).unwrap();
+        let fnobj = FnObj::plain(CodeType::Bytecode, vec![Bytecode::END as u8], 0, None);
         let owner = mk_contract_addr(41);
         let bindings = mk_bindings(owner.clone());
-        frame
-            .prepare_reuse_call(
-                ExecCtx::view(),
-                bindings.clone(),
-                &fnobj,
-                1,
-                RetCheck::Callee,
-            )
-            .unwrap();
-        assert!(matches!(frame.ret_check, RetCheck::Callee));
-        assert_eq!(
-            frame.types.as_ref().unwrap().output_type().unwrap(),
-            Some(ValueTy::Bool)
-        );
-        let mut retv = Value::Bool(true);
-        frame.check_output_type(&mut retv).unwrap();
+        frame.prepare_splice(ExecCtx::view(), bindings.clone(), &fnobj, 1).unwrap();
         assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);
         assert_eq!(frame.exec, ExecCtx::view());
         assert_eq!(frame.pc, 0);
-        assert_eq!(frame.locals.len(), 0);
+        assert_eq!(frame.locals.len(), 1);
         assert_eq!(frame.oprnds.len(), 1);
-        assert_eq!(*frame.oprnds.peek().unwrap(), Value::U8(1));
+        assert_eq!(*frame.oprnds.peek().unwrap(), Value::U8(7));
+        assert_eq!(frame.call_argv, Value::U8(1));
+        assert_eq!(frame.types.as_ref().unwrap().output_type().unwrap(), Some(ValueTy::U8));
         assert_eq!(frame.bindings, bindings);
     }
-
-    #[test]
-    fn prepare_tail_reuse_clears_previous_signature_when_callee_has_none() {
-        let mut res = Resoure::create(1);
-        let mut frame = Frame::new(&mut res);
-        frame.call_argv = Value::Nil;
-        frame.types = Some(FuncArgvTypes::from_types(Some(ValueTy::U8), vec![]).unwrap());
-        frame.ret_check = RetCheck::Caller(None);
-        let fnobj = FnObj::plain(CodeType::Bytecode, vec![Bytecode::END as u8], 0, None);
-        frame
-            .prepare_reuse_call(
-                ExecCtx::main(),
-                mk_bindings(mk_contract_addr(42)),
-                &fnobj,
-                1,
-                RetCheck::Callee,
-            )
-            .unwrap();
-        assert!(matches!(frame.ret_check, RetCheck::Callee));
-        assert!(frame.types.is_none());
-        let mut retv = Value::Bytes(vec![]);
-        frame.check_output_type(&mut retv).unwrap();
-    }
-
-    #[test]
-    fn bind_reuse_return_preserves_outer_caller_contract() {
-        let mut res = Resoure::create(1);
-        let mut frame = Frame::new(&mut res);
-        let outer_types = FuncArgvTypes::from_types(Some(ValueTy::U8), vec![]).unwrap();
-        let middle_types = FuncArgvTypes::from_types(Some(ValueTy::Bool), vec![]).unwrap();
-        frame.types = Some(middle_types);
-        frame.ret_check = RetCheck::Caller(Some(outer_types.clone()));
-        let rebound = frame.bind_reuse_return(ReturnBind::Caller);
-        match rebound {
-            RetCheck::Caller(Some(types)) => {
-                assert_eq!(types.output_type().unwrap(), outer_types.output_type().unwrap());
-            }
-            other => panic!("unexpected ret_check: {other:?}"),
-        }
-    }
 }
+

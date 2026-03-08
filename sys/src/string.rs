@@ -1,6 +1,7 @@
 
 #[macro_export]
 macro_rules! s {
+    ("") => { String::new() };
     ($v:expr) => { ($v).to_string() };
 }
 
@@ -67,4 +68,18 @@ pub fn left_readable_string(bts: &[u8]) -> String {
         ss.push(*a);
     }
     String::from_utf8(ss).ok().unwrap().trim_end().to_string()
+}
+
+#[cfg(test)]
+mod string_macro_tests {
+    #[test]
+    fn s_macro_empty_literal_is_empty_string() {
+        let s = s!("");
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn s_macro_nonempty_literal_keeps_content() {
+        assert_eq!(s!("abc"), "abc");
+    }
 }

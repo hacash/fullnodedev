@@ -56,13 +56,12 @@ keyword_define! {
     Throw     : "throw"
     Assert    : "assert"
     Print     : "print"
+    Call      : "call"
+    TailCall  : "tailcall"
     CallExt   : "callext"
-    CallThis  : "callthis"
-    CallSelf  : "callself"
-    CallSuper : "callsuper"
     CallView  : "callview"
     CallPure  : "callpure"
-    CallCode  : "callcode"
+    UseCode  : "usecode"
     ByteCode  : "bytecode"
     IrCode    : "ircode"
     Contract  : "contract"
@@ -72,6 +71,7 @@ keyword_define! {
     Function  : "function"
     External  : "external"
     Inner     : "inner"
+    Edit      : "edit"
     View      : "view"
     Pure      : "pure"
     Virtual   : "virtual"
@@ -79,11 +79,8 @@ keyword_define! {
     Param     : "param"
     This      : "this"
     Self_     : "self"
+    Upper     : "upper"
     Super     : "super"
-    State     : "state"
-    Code      : "code"
-    Parent    : "parent"
-    LibRoot   : "libroot"
     And       : "and"
     Or        : "or"
     Not       : "not"
@@ -234,7 +231,7 @@ irfn_define! {
     ACTION  : 1, 1, 0,     action  // no return value
     // ACTVIEW    : 1, 1, 1,     actview ACTENV     : 1, 0, 1,     actenv NTFUNC     : 1, 1, 1,     native_func NTENV      : 1, 0, 1,     native_env
 
-    // CALLTHIS/CALLSELF/CALLSUPER/CALLVIEW/CALLPURE/CALLCODE/CALLEXT are exposed shortcut call opcodes.
+    // CALL plus CALLVIEW/CALLPURE/USECODE/CALLEXT are exposed call opcodes.
 
     PU8        : 1, 0, 1,     push_u8
     PU16       : 2, 0, 1,     push_u16

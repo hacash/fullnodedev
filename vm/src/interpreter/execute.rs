@@ -11,19 +11,6 @@ unsafe fn read_arr<const N: usize>(codes: &[u8], pc: usize) -> [u8; N] {
     out
 }
 
-macro_rules! itrbuf {
-    ($codes: expr, $pc: expr, $l: expr) => {{
-        let r = $pc + $l;
-        #[cfg(debug_assertions)]
-        if r < $pc || r > $codes.len() {
-            return itr_err_code!(CodeOverflow);
-        }
-        let v: [u8; $l] = unsafe { read_arr::<$l>($codes, $pc) };
-        $pc = r;
-        v
-    }};
-}
-
 macro_rules! itrparam {
     ($codes: expr, $pc: expr, $l: expr, $t: ty) => {{
         let r = $pc + $l;
@@ -201,9 +188,6 @@ pub fn execute_code(
     macro_rules! pu16 { () => { itrparamu16!(codes, *pc) }; }
     macro_rules! pbuf { () => { itrparambuf!(codes, *pc) }; }
     macro_rules! pbufl { () => { itrparambufl!(codes, *pc) }; }
-    macro_rules! pcutbuf { ($w: expr) => { itrbuf!(codes, *pc, $w) }; }
-    macro_rules! pshortcut_call { (lib, $ctor:ident) => {{ UserCall::$ctor(pu8!(), pcutbuf!(FN_SIGN_WIDTH)) }}; (sig, $ctor:ident) => {{ UserCall::$ctor(pcutbuf!(FN_SIGN_WIDTH)) }}; }
-    macro_rules! _pctrtaddr { () => { ContractAddress::parse(&pcutbuf!(CONTRACT_ADDRESS_WIDTH)).map_err(|e| ItrErr(ContractAddrErr, e))? }; }
     macro_rules! ops_pop_to_u16 { () => { ops.pop()?.checked_u16()? }; }
     macro_rules! ops_peek_to_u16 { () => { ops.peek()?.checked_u16()? }; }
     macro_rules! check_compo_type { ($m: ident) => { match ops.compo() { Ok(c) => c.$m(), _ => false, } }; }
@@ -796,22 +780,16 @@ pub fn execute_code(
                     return Ok(Step::Exit(Abort));
                 } // assert(..)
                 PRT => debug_print_value(context_addr, current_addr, exec, ops.pop()?),
-                // call CALLDYN
-                CALLEXT | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLVIEW | CALLPURE | CALLCODE => {
-                    let call = match instruction {
-                        CALLCODE     => decode_callcode_body(&pcutbuf!(CALLCODE_BODY_WIDTH))?,
-                        CALLPURE     => pshortcut_call!(lib, callpure),
-                        CALLVIEW     => pshortcut_call!(lib, callview),
-                        CALLEXT      => pshortcut_call!(lib, callext),
-                        CALLTHIS     => pshortcut_call!(sig, callthis),
-                        CALLSELF     => pshortcut_call!(sig, callself),
-                        CALLSUPER    => pshortcut_call!(sig, callsuper),
-                        CALLSELFVIEW => pshortcut_call!(sig, callselfview),
-                        CALLSELFPURE => pshortcut_call!(sig, callselfpure),
-                        _ => unreachable!(),
-                    };
-                    let spec = call.to_spec();
-                    check_call_mode(exec, &spec)?;
+                // call
+                USECODE | CALL | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLEXT | CALLVIEW | CALLPURE => {
+                    let plen = instruction.metadata().param as usize;
+                    let end = *pc + plen;
+                    if end > codes.len() {
+                        return itr_err_code!(CodeOverflow);
+                    }
+                    let call = decode_user_call_site(instruction, &codes[*pc..end])?;
+                    *pc = end;
+                    check_call_mode(exec, &call)?;
                     return Ok(Step::Exit(Call(call)));
                 }
                 // inst invalid

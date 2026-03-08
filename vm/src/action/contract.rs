@@ -237,15 +237,7 @@ fn scan_call_sites(codes: &[u8], mut check: impl FnMut(Bytecode, &[u8]) -> Rerr)
         }
         let params = &codes[i..i + pms];
         match inst {
-            Bytecode::CALLEXT
-            | Bytecode::CALLTHIS
-            | Bytecode::CALLSELF
-            | Bytecode::CALLSUPER
-            | Bytecode::CALLSELFVIEW
-            | Bytecode::CALLSELFPURE
-            | Bytecode::CALLVIEW
-            | Bytecode::CALLPURE
-            | Bytecode::CALLCODE => {
+            _ if is_user_call_inst(inst) => {
                 check(inst, params)?;
             }
             Bytecode::PBUF => {
@@ -285,64 +277,47 @@ fn resolve_lookup_anchor_for_check(
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
     func_tag: &str,
-    lookup: LookupSpec,
+    call: &CallSpec,
 ) -> Ret<ContractAddress> {
-    match lookup.base {
-        LookupBase::State | LookupBase::Code => Ok(root_addr.clone()),
-        LookupBase::Lib(idx) => {
-            let libs = root_contract.library.as_list();
-            let lidx = idx as usize;
-            if lidx >= libs.len() {
-                return errf!("{}: libidx overflow {} >= {}", func_tag, lidx, libs.len());
-            }
-            let addr = libs[lidx].clone();
-            let _ = load_contract_for_check(vmsta, root_addr, root_contract, &addr, "lookup")?;
-            Ok(addr)
-        }
+    let target = call.target();
+    if target.anchor_from_state() || target.anchor_from_code() {
+        return Ok(root_addr.clone());
     }
+    let libs = root_contract.library.as_list();
+    let lidx = target.lib_index().unwrap() as usize;
+    if lidx >= libs.len() {
+        return errf!("{}: libidx overflow {} >= {}", func_tag, lidx, libs.len());
+    }
+    let addr = libs[lidx].clone();
+    let _ = load_contract_for_check(vmsta, root_addr, root_contract, &addr, "lookup")?;
+    Ok(addr)
 }
 
 fn resolve_lookup_entries_for_check(
     vmsta: &mut VMState,
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
-    func_tag: &str,
     anchor: &ContractAddress,
-    lookup: LookupSpec,
+    call: &CallSpec,
 ) -> Ret<Vec<ContractAddress>> {
-    Ok(match lookup.walk {
-        LookupWalk::Exact => vec![anchor.clone()],
-        LookupWalk::Parents => {
-            load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?
-                .inherit
-                .as_list()
-                .iter()
-                .cloned()
-                .collect()
-        }
-        LookupWalk::Chain => {
-            let sto = load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?;
-            let parents = sto.inherit.as_list();
-            let mut out = Vec::with_capacity(1 + parents.len());
-            out.push(anchor.clone());
-            out.extend(parents.iter().cloned());
-            out
-        }
-        LookupWalk::Parent(idx) => {
-            let sto = load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?;
-            let parents = sto.inherit.as_list();
-            let pidx = idx as usize;
-            if pidx >= parents.len() {
-                return errf!(
-                    "{}: parent idx overflow {} >= {}",
-                    func_tag,
-                    pidx,
-                    parents.len()
-                );
-            }
-            vec![parents[pidx].clone()]
-        }
-    })
+    let target = call.target();
+    if target.searches_exact() {
+        return Ok(vec![anchor.clone()]);
+    }
+    if target.searches_parents() {
+        return Ok(load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?
+            .inherit
+            .as_list()
+            .iter()
+            .cloned()
+            .collect());
+    }
+    let sto = load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?;
+    let parents = sto.inherit.as_list();
+    let mut out = Vec::with_capacity(1 + parents.len());
+    out.push(anchor.clone());
+    out.extend(parents.iter().cloned());
+    Ok(out)
 }
 
 fn resolve_userfn_meta_by_lookup_for_check(
@@ -350,18 +325,17 @@ fn resolve_userfn_meta_by_lookup_for_check(
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
     func_tag: &str,
-    lookup: LookupSpec,
+    call: &CallSpec,
     sign: &FnSign,
 ) -> Ret<Option<(ContractAddress, UserfnMeta)>> {
     let anchor =
-        resolve_lookup_anchor_for_check(vmsta, root_addr, root_contract, func_tag, lookup)?;
+        resolve_lookup_anchor_for_check(vmsta, root_addr, root_contract, func_tag, call)?;
     let entries = resolve_lookup_entries_for_check(
         vmsta,
         root_addr,
         root_contract,
-        func_tag,
         &anchor,
-        lookup,
+        call,
     )?;
     for owner in entries {
         if let Some(hit) =
@@ -380,15 +354,14 @@ fn check_static_call_targets(
     height: u64,
 ) -> Rerr {
     let check_one = |func_tag: String, codes: &[u8], vmsta: &mut VMState| -> Rerr {
-        let check_call = |call: UserCall, vmsta: &mut VMState| -> Rerr {
-            let sign = call.selector;
-            let spec = call.to_spec();
+        let check_call = |call: CallSpec, vmsta: &mut VMState| -> Rerr {
+            let sign = call.selector();
             let found = resolve_userfn_meta_by_lookup_for_check(
                 vmsta,
                 root_addr,
                 root_contract,
                 &func_tag,
-                spec.lookup,
+                &call,
                 &sign,
             )?;
             let Some((owner, meta)) = found else {
@@ -398,7 +371,7 @@ fn check_static_call_targets(
                     hex::encode(sign)
                 );
             };
-            if spec.requires_external_visibility() && !meta.is_external {
+            if call.requires_external_visibility() && !meta.is_external {
                 return errf!(
                     "{}: target function 0x{} resolved in {} is not external",
                     func_tag,
@@ -409,46 +382,10 @@ fn check_static_call_targets(
             Ok(())
         };
         scan_call_sites(codes, |inst, params| {
-            let mut sign = [0u8; FN_SIGN_WIDTH];
-            match inst {
-                Bytecode::CALLEXT => {
-                    sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
-                    check_call(UserCall::callext(params[0], sign), vmsta)
-                }
-                Bytecode::CALLVIEW => {
-                    sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
-                    check_call(UserCall::callview(params[0], sign), vmsta)
-                }
-                Bytecode::CALLPURE => {
-                    sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
-                    check_call(UserCall::callpure(params[0], sign), vmsta)
-                }
-                Bytecode::CALLCODE => check_call(
-                    decode_callcode_body(params).map_err(|e| e.to_string())?,
-                    vmsta,
-                ),
-                Bytecode::CALLTHIS => {
-                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    check_call(UserCall::callthis(sign), vmsta)
-                }
-                Bytecode::CALLSELF => {
-                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    check_call(UserCall::callself(sign), vmsta)
-                }
-                Bytecode::CALLSUPER => {
-                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    check_call(UserCall::callsuper(sign), vmsta)
-                }
-                Bytecode::CALLSELFVIEW => {
-                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    check_call(UserCall::callselfview(sign), vmsta)
-                }
-                Bytecode::CALLSELFPURE => {
-                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    check_call(UserCall::callselfpure(sign), vmsta)
-                }
-                _ => Ok(()),
-            }
+            check_call(
+                decode_user_call_site(inst, params).map_err(|e| e.to_string())?,
+                vmsta,
+            )
         })
     };
 

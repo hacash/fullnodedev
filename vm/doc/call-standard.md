@@ -1,381 +1,470 @@
-# Call Standard
+# VM Contract Call Standard
 
-Version: Current runtime baseline  
-Audience: VM/runtime engineers, reviewers, and test authors  
-Style: Design specification and reference manual (not implementation walkthrough)
+Version: current implementation
+Audience: VM/runtime engineers, contract developers, test authors, auditors
+Document role: protocol standard + test acceptance baseline + developer manual
 
 ## 1. Purpose
 
-This document standardizes the semantics of VM "call-like" instructions and runtime extension/native call entries:
+This standard defines the implemented semantics of the VM contract call system, including:
 
-1. `CALL`, `CALLTHIS`, `CALLSELF`, `CALLSUPER`, `CALLVIEW`, `CALLPURE`, `CALLCODE`
-2. `NTENV`, `NTFUNC`, `EXTENV`, `EXTACTION`, `EXTVIEW`
+1. call model
+2. opcode set and encoding rules
+3. target resolution rules
+4. permission control system
+5. frame and context transition rules
+6. `USECODE` splice semantics
+7. upper-layer contract usage rules
+8. test acceptance items
 
-It defines:
+This standard does not define gas pricing formulas.
 
-1. Bytecode-level contracts
-2. Mode/permission constraints
-3. Parameter and return conventions
-4. Frame and stack behavior
-5. Runtime invariants for testing and auditing
+## 2. Core Model
 
-## 2. Scope and Non-Scope
+The VM uses two call forms:
 
-In scope:
+1. `Invoke`: standard function call
+2. `Splice`: in-place library code splice
 
-1. Invocation semantics and capability boundaries
-2. Call graph and frame transitions
-3. Call data contracts and return contracts
+Reference model:
 
-Out of scope:
+```rust
+pub enum CallSpec {
+    Invoke {
+        target: CallTarget,
+        effect: EffectMode,
+        selector: FnSign,
+    },
+    Splice {
+        lib: u8,
+        selector: FnSign,
+    },
+}
 
-1. Full opcode interpretation internals
-2. Gas number tuning and pricing formulas
-3. Source-language compilation syntax
+pub enum CallTarget {
+    This,
+    Self_,
+    Upper,
+    Super,
+    Call(u8),
+    Use(u8),
+}
+```
 
-## 3. Terminology
+Definitions:
 
-1. `state_addr`: execution context address (state/log scope owner).
-2. `code_owner`: current code owner address (resolution base for `self/super` semantics).
-3. `FnSign`: 4-byte function signature.
-4. `Entry mode`: top-level execution mode (`Main`, `P2sh`, `Abst`).
-5. `Internal mode`: in-call execution mode (`External`, `Inner`, `View`, `Pure`).
-6. `CALLSUPER`: internal parent-scope call opcode.
+1. `Invoke` always creates a new frame.
+2. `Splice` does not create a new frame and reuses the current frame.
+3. `This` resolves from the current `state_addr`.
+4. `Self_`, `Upper`, and `Super` resolve from the current `code_owner`.
+5. `Call(u8)` means library call with context switch.
+6. `Use(u8)` means library lookup without context switch.
+7. `USECODE` is the only public opcode form of `Splice`.
 
-## 4. Quick Reference: Bytecodes and Stack Contracts
+## 3. Opcode Set
 
-## 4.1 Contract call instructions
+Current user contract call opcodes:
 
-| Instruction | Byte | Operand bytes | Logical stack contract | Frame behavior |
-|---|---:|---:|---|---|
-| `CALL` | `0x11` | `libidx(1) + fnsign(4)` | consume 1 call-argument value, produce 1 return value | create new frame (`External`) |
-| `CALLTHIS` | `0x12` | `fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`Inner`) |
-| `CALLSELF` | `0x13` | `fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`Inner`) |
-| `CALLSUPER` | `0x14` | `fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`Inner`) |
-| `CALLVIEW` | `0x15` | `libidx(1) + fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`View`) |
-| `CALLPURE` | `0x16` | `libidx(1) + fnsign(4)` | consume 1 argument, produce 1 return | create new frame (`Pure`) |
-| `CALLCODE` | `0x17` | `libidx(1) + fnsign(4)` | no user argument contract; implementation delegation | **no new frame**, in-place code delegation |
-
-## 4.2 Native and extension call instructions
-
-| Instruction | Byte | Operand bytes | Logical stack contract | Return placement |
-|---|---:|---:|---|---|
-| `NTFUNC` | `0x09` | `id(1)` | consume 1 call-data value | push 1 native result |
-| `NTENV` | `0x08` | `id(1)` | consume 0 | push 1 environment value |
-| `EXTACTION` | `0x00` | `id(1)` | consume 1 call-data value | no stack return value |
-| `EXTENV` | `0x07` | `id(1)` | consume 0 | push 1 typed result |
-| `EXTVIEW` | `0x06` | `id(1)` | consume/replace top call-data value | replace top with 1 typed result |
+| Opcode | Byte | Meaning |
+|---|---:|---|
+| `USECODE` | `0x0e` | in-place library code splice |
+| `CALL` | `0x0f` | generic invoke |
+| `CALLTHIS` | `0x10` | `this` edit call |
+| `CALLSELF` | `0x11` | `self` edit call |
+| `CALLSUPER` | `0x12` | `super` edit call |
+| `CALLSELFVIEW` | `0x13` | `self` view call |
+| `CALLSELFPURE` | `0x14` | `self` pure call |
+| `CALLEXT` | `0x18` | external library edit call |
+| `CALLVIEW` | `0x19` | library view call |
+| `CALLPURE` | `0x1a` | library pure call |
 
 Notes:
 
-1. "Consume 1 call-data value" means the value must be convertible to extension/native call data bytes.
-2. `EXTACTION` may return bytes at transport level, but VM stack contract keeps no return item.
+1. There is no `TAILCALL` opcode in the current implementation.
+2. `0x15`, `0x16`, and `0x17` are currently reserved.
+3. Reserved slots are not executable call instructions.
 
-## 5. Call Target and Resolution Semantics
+## 4. `CALL` Encoding Standard
 
-## 5.0 One-to-one Runtime Mapping (7 call instructions)
+### 4.1 Width
 
-| Instruction | Target form | Lookup behavior | New frame | Callee mode | `state_addr` transition | `code_owner` transition |
-|---|---|---|---|---|---|---|
-| `CALL` | `libidx + fnsign` | resolve library address first, then search target + inherits (DFS, first match wins) | Yes | `External` | switch to library target contract | switch to resolved function owner (target or inherited parent) |
-| `CALLTHIS` | `fnsign` | search from `state_addr` via inherits | Yes | `Inner` | unchanged | resolved owner (default `state_addr`) |
-| `CALLSELF` | `fnsign` | search from `code_owner` via inherits | Yes | `Inner` | unchanged | resolved owner (default previous `code_owner`) |
-| `CALLSUPER` | `fnsign` | start from direct parents of `code_owner`, then DFS inherits | Yes | `Inner` | unchanged | resolved parent owner |
-| `CALLVIEW` | `libidx + fnsign` | resolve library address, then local user-function table only | Yes | `View` | unchanged | set to library target contract |
-| `CALLPURE` | `libidx + fnsign` | resolve library address, then local user-function table only | Yes | `Pure` | unchanged | set to library target contract |
-| `CALLCODE` | `libidx + fnsign` | resolve library address, then local user-function table only | No (in-place) | inherit caller mode | unchanged | switch current frame to library target contract |
+`CALL` uses a fixed 6-byte body:
 
-## 5.1 `CALL`
-
-Design intent: external contract call by library index.
-
-Resolution model:
-
-1. Resolve library target by index.
-2. Resolve function by `FnSign` from target contract using inheritance search (target first, then DFS over inherits list).
-3. Require `external` visibility for `CALL` (`External`) calls.
-
-Context transition:
-
-1. `state_addr` switches to target contract.
-2. `code_owner` switches to resolved owner (target itself or inherited parent owner).
-
-## 5.2 `CALLTHIS`
-
-Design intent: internal call against the current execution context contract.
-
-Resolution model:
-
-1. Start from `state_addr`.
-2. Resolve through inheritance chain.
-
-Context transition:
-
-1. `state_addr` remains unchanged.
-2. `code_owner` is set to resolved owner (or default `state_addr`).
-
-## 5.3 `CALLSELF`
-
-Design intent: internal call against current code owner contract.
-
-Resolution model:
-
-1. Start from `code_owner`.
-2. Resolve through inheritance chain.
-
-Context transition:
-
-1. `state_addr` remains unchanged.
-2. `code_owner` is set to resolved owner (or default previous `code_owner`).
-
-Static-check scope note:
-
-1. Deploy-time static verification for `CALLSELF` validates code declared in the current contract package.
-2. Runtime dispatch still resolves from dynamic `code_owner`.
-
-## 5.4 `CALLSUPER`
-
-Design intent: parent-scope call.
-
-Resolution model:
-
-1. Start from direct parents of `code_owner` (skip self).
-2. Resolve through parent inheritance chain.
-
-Context transition:
-
-1. `state_addr` remains unchanged.
-2. `code_owner` becomes resolved parent owner.
-
-## 5.5 `CALLVIEW`
-
-Design intent: read-only contract call.
-
-Semantics:
-
-1. Uses library-index style addressing like `CALL`.
-2. Enters callee with `View` mode.
-3. State write operations are forbidden in this mode.
-4. Target resolution uses `libidx` local-table rule (no inheritance search).
-5. `state_addr` stays in caller context; `code_owner` switches to library target.
-
-## 5.6 `CALLPURE`
-
-Design intent: pure/no-state contract call.
-
-Semantics:
-
-1. Uses library-index style addressing like `CALL`.
-2. Enters callee with `Pure` mode.
-3. State reads and writes are both forbidden.
-4. Target resolution uses `libidx` local-table rule (no inheritance search).
-5. `state_addr` stays in caller context; `code_owner` switches to library target.
-
-## 5.7 `CALLCODE`
-
-Design intent: implementation-level delegation without frame expansion.
-
-Core constraints:
-
-1. Target function must have zero parameters.
-2. Delegation runs in-place (same frame), not as a normal sub-call.
-3. While in callcode state, further call instructions are forbidden.
-4. Return value contract is checked against original caller signature.
-5. `libidx` target lookup uses local user-function table only (no inheritance search).
-6. `state_addr` remains unchanged; delegated code runs with `code_owner` set to library target.
-
-Structural rule:
-
-1. Bytecode verification enforces `CALLCODE` to be terminal or immediately followed by `END`.
-
-## 6. Mode Permission Matrix for Call Instructions
-
-Allowed call instructions by current mode:
-
-| Current mode | Allowed call instructions |
+| Byte | Content |
 |---|---|
-| `Main` | `CALL`, `CALLVIEW`, `CALLPURE`, `CALLCODE` |
-| `P2sh` | `CALLVIEW`, `CALLPURE`, `CALLCODE` |
-| `Abst` | `CALLTHIS`, `CALLSELF`, `CALLSUPER`, `CALLVIEW`, `CALLPURE`, `CALLCODE` |
-| `View` | `CALLVIEW`, `CALLPURE` |
-| `Pure` | `CALLPURE` |
-| `External` / `Inner` | unrestricted by mode table (still subject to other runtime checks) |
+| `body[0]` | flags |
+| `body[1]` | target argument |
+| `body[2..6]` | 4-byte function selector |
 
-Global restriction:
+### 4.2 Flags Layout
 
-1. If currently executing delegated callcode body, no call instruction is allowed.
+`flags` is defined as:
 
-## 7. Parameter and Return Conventions
+1. `bits[0..2]`: target kind
+2. `bits[3..4]`: effect mode
+3. `bits[5..7]`: reserved, must be `0`
 
-## 7.1 Function signature and addressing
+### 4.3 Target Encoding
 
-1. `FnSign` is fixed-width 4 bytes.
-2. Library-index calls carry `libidx + fnsign`.
-3. `this/self/super` calls carry only `fnsign`.
+| Value | Target | `body[1]` rule |
+|---:|---|---|
+| `0` | `This` | must be `0` |
+| `1` | `Self_` | must be `0` |
+| `2` | `Upper` | must be `0` |
+| `3` | `Super` | must be `0` |
+| `4` | `Call(body[1])` | library index |
+| `5` | `Use(body[1])` | library index |
+| `6` | invalid | invalid |
+| `7` | invalid | invalid |
 
-Visibility marker semantics:
+### 4.4 Effect Encoding
 
-1. `external` is an **external-call visibility marker** for `CALL` (`External`) path.
-2. It does not model a universal "all external forms" permission boundary by itself.
-3. If naming causes confusion, implementations may introduce clearer aliases in future versions.
+| Value | Effect |
+|---|---|
+| `00` | `Edit` |
+| `01` | `View` |
+| `10` | `Pure` |
+| `11` | invalid |
 
-## 7.2 Call argument convention
+### 4.5 Valid Combinations
 
-For non-CALLCODE contract calls:
+`CALL` has:
 
-1. Caller provides one argument value at stack top.
-2. Callee type contract validates and may cast this argument against function parameter definition.
+- `6` valid targets
+- `3` valid effects
+- `18` valid target/effect combinations
 
-For CALLCODE:
+### 4.6 Mandatory Decode Rejection
 
-1. No user argument is passed.
-2. Delegation ABI is fixed for implementation dispatch, not business-level parameter passing.
+The decoder must reject:
 
-## 7.3 Return convention
+1. non-zero reserved bits
+2. target values `6` or `7`
+3. effect value `11`
+4. `This/Self_/Upper/Super` with `body[1] != 0`
+5. body length not equal to `6`
 
-1. Callee return is type-checked against function output contract.
-2. For regular calls, return value is propagated back to caller stack.
-3. For CALLCODE, return contract is validated against original caller expectation.
+## 5. `USECODE` Encoding Standard
 
-Top-level success contract:
+### 5.1 Width
 
-1. `nil` or `0` means success for main/p2sh/abstract top-level results.
+`USECODE` uses a fixed 5-byte body:
 
-## 8. Frame and Stack Usage Semantics
+| Byte | Content |
+|---|---|
+| `body[0]` | `libidx` |
+| `body[1..5]` | 4-byte function selector |
 
-## 8.1 Regular calls (`CALL*` except `CALLCODE`)
+### 5.2 Semantics
 
-1. Dispatcher creates a new frame.
-2. Caller argument is transferred into callee frame input.
-3. Callee executes under its designated mode.
-4. On return, value is bubbled back to parent frame.
-5. Tail return collapse may skip intermediate frame materialization on unwind.
+1. `USECODE` does not consume a function-argument value.
+2. `USECODE` does not allocate a new frame.
+3. `USECODE` executes target library code in the current frame.
+4. `USECODE` resolves only against the exact library root.
 
-## 8.2 Delegated call (`CALLCODE`)
+## 6. Target Resolution Rules
 
-1. Dispatcher does not create a frame.
-2. Current frame switches code body and call mode marker.
-3. Code owner may switch to delegated target owner.
-4. After completion, output validation uses caller contract.
+Resolution has two stages:
 
-## 8.3 Resource accounting perspective
+1. choose the anchor address
+2. choose the candidate owner set searched for the selector
 
-1. Frame creation and contract loading are runtime-observable costs.
-2. Delegated call reduces frame churn but does not relax permission constraints.
+### 6.1 Anchor Selection
 
-## 9. Native Call Semantics (`NTFUNC`, `NTENV`)
+| Target | Anchor source |
+|---|---|
+| `This` | current `state_addr` |
+| `Self_` | current `code_owner` |
+| `Upper` | current `code_owner` |
+| `Super` | current `code_owner` |
+| `Call(lib)` | current `lib_table[lib]` |
+| `Use(lib)` | current `lib_table[lib]` |
+| `USECODE lib` | current `lib_table[lib]` |
 
-## 9.1 `NTFUNC`
+### 6.2 Candidate Search Set
 
-Design intent: pure deterministic native compute.
+| Target / form | Search set |
+|---|---|
+| `This` | anchor + direct parents |
+| `Self_` | anchor only |
+| `Upper` | anchor + direct parents |
+| `Super` | direct parents only |
+| `Call(lib)` | anchor + direct parents |
+| `Use(lib)` | anchor only |
+| `USECODE lib` | anchor only |
 
-Contract:
+Constraints:
 
-1. Input: one call-data value.
-2. Output: one value returned to stack.
-3. Allowed in pure mode.
+1. The current implementation searches only the anchor and its direct parents.
+2. The current implementation does not recursively search grandparents or deeper ancestors.
+3. Direct parent order follows the contract `inherit` list order.
 
-## 9.2 `NTENV`
+## 7. Visibility Rules
 
-Design intent: read VM/environment context.
+Only the following class requires external visibility:
 
-Contract:
+- `Invoke { target: Call(_), effect: Edit, .. }`
 
-1. Input: none.
-2. Output: one environment value to stack.
-3. Forbidden in `Pure` mode.
+Therefore:
 
-## 10. Extension Call Semantics (`EXTENV`, `EXTACTION`, `EXTVIEW`)
+1. `CALLEXT` requires `external`
+2. generic `CALL` requires `external` only when encoded as `Call(lib) + Edit`
+3. `CALLVIEW` does not require `external`
+4. `CALLPURE` does not require `external`
+5. `CALLTHIS/CALLSELF/CALLSUPER/CALLSELFVIEW/CALLSELFPURE` do not require `external`
+6. `USECODE` does not require `external`
 
-## 10.1 Shared constraints
+## 8. Context Transition Rules
 
-All extension calls must pass:
+Each frame carries:
 
-1. Extension ID allowlist validation.
-2. Mode-based permission validation.
-3. Typed result decoding (when applicable).
+1. `context_addr`
+2. `state_addr`
+3. `code_owner`
+4. `lib_table`
 
-## 10.2 `EXTENV`
+### 8.1 Context-Switching Calls
 
-Design intent: environment query through extension channel.
+Only `Call(lib)` switches context.
 
-Contract:
+Transition:
 
-1. Input: none.
-2. Output: one typed value pushed to stack.
-3. Forbidden in `Pure` mode.
+1. `context_addr := anchor`
+2. `state_addr := Some(anchor)`
+3. `code_owner := resolved owner`
+4. `lib_table := resolved owner contract.library`
 
-## 10.3 `EXTVIEW`
+Applies to:
 
-Design intent: read-only query with caller-provided input body.
+1. `CALLEXT`
+2. `CALLVIEW`
+3. `CALLPURE`
+4. generic `CALL` with target `Call(lib)`
 
-Contract:
+### 8.2 Non-Context-Switching Calls
 
-1. Input: top stack call-data body.
-2. Output: typed result replacing top stack item.
-3. Forbidden in `Pure` mode.
+The following do not switch `context_addr/state_addr`:
 
-## 10.4 `EXTACTION`
+1. `This`
+2. `Self_`
+3. `Upper`
+4. `Super`
+5. `Use(lib)`
+6. `USECODE`
 
-Design intent: state-mutating extension action dispatch.
+They still update:
 
-Contract:
+1. `code_owner := resolved owner`
+2. `lib_table := resolved owner contract.library`
 
-1. Input: top stack call-data body.
-2. Output: no stack return value.
-3. Allowed only under main-call semantics.
-4. Forbidden in delegated callcode context.
+## 9. Permission Control System
 
-Security note:
+Permissions are determined by two dimensions:
 
-1. Extension action execution path performs runtime required-signature checks for private-key addresses.
+1. `entry`: `Main / P2sh / Abst`
+2. `effect`: `Edit / View / Pure`
 
-## 11. Error and Failure Semantics
+### 9.1 Effect Propagation
 
-Failure classes:
+| Current effect | Next `Invoke(Edit)` | Next `Invoke(View)` | Next `Invoke(Pure)` | `USECODE` |
+|---|---|---|---|---|
+| `Edit` | allowed | allowed | allowed | inherits `Edit` |
+| `View` | rejected | allowed | allowed | inherits `View` |
+| `Pure` | rejected | rejected | allowed | inherits `Pure` |
 
-1. Invalid call target (not found, visibility violation, index overflow).
-2. Mode violation (forbidden instruction under current mode).
-3. Type contract violation (input/output mismatch).
-4. Extension/native ID violation (allowlist miss).
-5. Runtime policy violation (e.g., callcode restrictions).
+Rules:
 
-Propagation model:
+1. `Invoke` uses explicit effect.
+2. `USECODE` inherits current effect.
+3. `Pure` cannot escalate to `View/Edit`.
+4. `View` cannot escalate to `Edit`.
 
-1. Call failure aborts current path and bubbles as VM/runtime error.
-2. Branch frameworks decide merge vs recover at higher level.
+### 9.2 Entry-Level Restrictions
 
-## 12. Runtime Invariants for Testing
+The interpreter enforces:
 
-Recommended invariants for CI/regression:
+1. outer `Main` forbids internal `Edit` calls
+2. outer `P2sh` forbids any `Invoke(Edit)`
+3. `Abst` forbids external edit library calls, i.e. `Call(lib) + Edit`
 
-1. Mode matrix enforcement is stable.
-2. Call resolution is stable:
-   `CALL(libidx)` => target + inherits;
-   `CALLVIEW/CALLPURE/CALLCODE(libidx)` => target local table only;
-   `CALLTHIS/CALLSELF/CALLSUPER` => `state_addr`/`code_owner` inheritance rules.
-3. External visibility (`external`) is enforced for `CALL` (`External`) paths.
-4. CALLCODE never accepts parameterized targets.
-5. No nested call is possible in callcode execution state.
-6. `EXTACTION` is unavailable outside main-call semantics.
-7. `NTENV` and `EXTENV/EXTVIEW` are unavailable in pure mode.
-8. Return contracts are always checked before value propagation.
+Notes:
 
-## 13. Suggested Conformance Test Set
+1. edit calls on `this/self/upper/super` are internal edit calls
+2. `CALLEXT` is an external edit library call
+3. `USECODE` is not `Invoke`; it only inherits current entry/effect context
 
-1. Positive matrix tests for all call instructions under allowed modes.
-2. Negative matrix tests for all forbidden mode combinations.
-3. Target resolution tests cover split semantics:
-   `CALL(libidx)` with inheritance search;
-   `CALLVIEW/CALLPURE/CALLCODE(libidx)` local-only search;
-   `this/self/super` inheritance search.
-4. CALLCODE behavior tests (in-place dispatch, no nested call, return contract inheritance).
-5. Native/extension input-output contract tests (typed decode, stack placement).
-6. Extension policy tests (`EXTACTION` main-only, pure-mode bans).
-7. Visibility and not-found tests for external calls.
-8. Error propagation tests across nested call graphs.
+### 9.3 Action Permissions
 
----
+Action permission is independent from selector resolution but depends on current `entry/effect/call_depth`:
 
-This standard defines behavioral contracts for invocation semantics.  
-Implementation may evolve internally, but externally observable behavior should remain compliant with this document unless versioned explicitly.
+1. `ACTION` is allowed only in `Main + Edit + outer entry`
+2. `ACTENV` and `ACTVIEW` are forbidden in `Pure`
+3. `USECODE` cannot re-enable top-level `ACTION` because it is not outer entry
+
+### 9.4 State Write Permissions
+
+Write-like operations are forbidden in:
+
+1. `View`
+2. `Pure`
+
+Therefore:
+
+1. `CALLVIEW` and `CALLPURE` target code cannot write state
+2. `USECODE` also cannot write state if it inherits `View/Pure`
+
+## 10. Frame Standard
+
+### 10.1 `Invoke`
+
+Execution steps:
+
+1. validate the current top operand as function argv
+2. resolve the target function
+3. pop the argv value
+4. allocate a new frame
+5. clear operand stack, local stack, and heap in the callee frame
+6. re-check argv against callee signature
+7. execute callee code
+
+Result:
+
+1. isolated parameters
+2. isolated locals
+3. isolated heap
+4. return value checked against callee return contract
+
+### 10.2 `USECODE`
+
+Execution steps:
+
+1. do not pop an argv value
+2. do not allocate a new frame
+3. replace only `bindings`, `pc`, `exec`, and `codes`
+4. keep `operands`, `locals`, `heap`, `call_argv`, and `types`
+
+Result:
+
+1. library code shares the current runtime frame state
+2. library code directly observes current locals/stack/heap
+3. return validation continues to use the caller frame's current return contract
+4. logical `call_depth` is still increased
+
+## 11. Parameters and Return Values
+
+### 11.1 `Invoke`
+
+`Invoke` must consume one argv value from the operand stack.
+
+Compiler convention:
+
+1. single argument: raw value
+2. multiple arguments: packed argv container
+3. zero arguments: `nil`
+
+### 11.2 `USECODE`
+
+`USECODE` does not rebuild a new parameter context.
+
+Therefore:
+
+1. `USECODE` does not pop argv
+2. `USECODE` does not rebuild locals
+3. normal callee `param { ... }` prologue still executes if present
+4. that prologue operates on the inherited current operand-stack state
+
+Upper-layer development requirement:
+
+1. a `USECODE` target should be designed specifically for splice execution
+2. an arbitrary normal business function should not be reused as a `USECODE` target without an explicit frame-layout contract
+3. any required locals/stack layout must be treated as part of the library interface
+
+## 12. Source-Language Manual
+
+### 12.1 Inheritance-Line Shortcuts
+
+| Source form | Runtime meaning |
+|---|---|
+| `this.f(args)` | `Invoke(This, Edit, f)` |
+| `self.f(args)` | `Invoke(Self_, Edit, f)` |
+| `super.f(args)` | `Invoke(Super, Edit, f)` |
+| `self:f(args)` | `Invoke(Self_, View, f)` |
+| `self::f(args)` | `Invoke(Self_, Pure, f)` |
+
+### 12.2 Library-Line Shortcuts
+
+| Source form | Runtime meaning |
+|---|---|
+| `C.f(args)` | `Invoke(Call(C), Edit, f)` |
+| `C:f(args)` | `Invoke(Call(C), View, f)` |
+| `C::f(args)` | `Invoke(Call(C), Pure, f)` |
+| `usecode C.f` | `Splice(lib(C), f)` |
+
+### 12.3 Generic `call`
+
+Generic `call` may explicitly specify:
+
+1. effect: `edit / view / pure`
+2. target: `this / self / upper / super / lib(idx) / use(idx) / bound library name`
+
+Examples:
+
+- `call edit upper.f(args)`
+- `call pure use(1).f(args)`
+- `call view lib(0).f(args)`
+
+## 13. Upper-Layer Contract Guidance
+
+### 13.1 When to Use `CALLEXT/CALLVIEW/CALLPURE`
+
+Use them when:
+
+1. calling through the library public interface
+2. isolation of locals/stack/heap is required
+3. parameter and return contracts should follow normal function-call rules
+4. current frame internals should remain encapsulated
+
+### 13.2 When to Use `USECODE`
+
+Use it when:
+
+1. template-like code injection is intended
+2. the current function tail should transfer directly into library logic
+3. caller and library share an explicit locals/stack/heap agreement
+4. new-frame allocation and parameter movement should be avoided
+
+### 13.3 Disallowed Assumptions
+
+1. do not assume `USECODE` returns to the remaining source code after the splice point
+2. do not assume recursive inheritance search beyond direct parents
+3. do not assume `CALLVIEW/CALLPURE` require `external`
+4. do not treat arbitrary normal functions as safe `USECODE` splice targets
+
+## 14. Test Acceptance Checklist
+
+The following must be treated as acceptance items:
+
+1. `CALL` rejects non-zero reserved bits, invalid target tags, invalid effect bits, and invalid arg usage
+2. `CALLEXT` enforces external visibility
+3. `CALLVIEW/CALLPURE` resolve the library root and its direct parents
+4. `USECODE` resolves only the library root
+5. `This` uses state-chain semantics, `Self_` exact code-root semantics, `Upper` code-chain semantics, `Super` direct-parent semantics
+6. `Call(lib)` switches `context_addr/state_addr`
+7. `Use(lib)` and `USECODE` do not switch `context_addr/state_addr`
+8. `USECODE` reuses current `operands / locals / heap / call_argv / types`
+9. `USECODE` inherits current effect
+10. `USECODE` cannot re-enable top-level `ACTION`
+11. `Main/P2sh/Abst` restrictions must match the runtime gates
+12. current search scope must stay limited to anchor plus direct parents only
+
+## 15. Summary
+
+| Form | Search set | Context switch | New frame | Effect source |
+|---|---|---:|---:|---|
+| `Invoke(This, *)` | state root + direct parents | no | yes | explicit |
+| `Invoke(Self_, *)` | code root only | no | yes | explicit |
+| `Invoke(Upper, *)` | code root + direct parents | no | yes | explicit |
+| `Invoke(Super, *)` | direct parents only | no | yes | explicit |
+| `Invoke(Call(lib), *)` | library root + direct parents | yes | yes | explicit |
+| `Invoke(Use(lib), *)` | library root only | no | yes | explicit |
+| `USECODE` | library root only | no | no | inherited |

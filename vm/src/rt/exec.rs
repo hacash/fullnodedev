@@ -1,11 +1,3 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CallMode {
-    External,
-    Inner,
-    View,
-    Pure,
-}
-
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EntryKind {
@@ -51,7 +43,7 @@ pub enum CallExit {
     Throw,
     Finish,
     Return,
-    Call(UserCall),
+    Call(CallSpec),
 }
 
 impl EntryKind {
@@ -60,16 +52,6 @@ impl EntryKind {
             Self::Main => ExecCtx::main(),
             Self::P2sh => ExecCtx::p2sh(),
             Self::Abst => ExecCtx::abst(),
-        }
-    }
-}
-
-impl CallMode {
-    pub const fn to_effect(self) -> EffectMode {
-        match self {
-            Self::External | Self::Inner => EffectMode::Edit,
-            Self::View => EffectMode::View,
-            Self::Pure => EffectMode::Pure,
         }
     }
 }

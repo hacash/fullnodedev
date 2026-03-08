@@ -40,7 +40,7 @@ fn parse_const_value(value_str: &str) -> Ret<Box<dyn IRNode>> {
         });
     }
     if value_str.starts_with("bytes:0x") {
-        let hex_str = &value_str[10..]; // skip "bytes:0x"
+        let hex_str = &value_str["bytes:0x".len()..];
         let bytes = hex::decode(hex_str)
             .map_err(|_| format!("invalid hex bytes constant: {}", value_str))?;
         return push_bytes(&bytes);
@@ -61,6 +61,18 @@ fn parse_const_value(value_str: &str) -> Ret<Box<dyn IRNode>> {
         return Ok(push_num(num));
     }
     Err(format!("unrecognized constant format: {}", value_str).into())
+}
+
+#[cfg(test)]
+mod compile_body_tests {
+    use super::*;
+
+    #[test]
+    fn parse_const_bytes_keeps_first_byte() {
+        let parsed = parse_const_value("bytes:0x575459").unwrap();
+        let expected = push_bytes(&vec![0x57, 0x54, 0x59]).unwrap();
+        assert_eq!(parsed.serialize(), expected.serialize());
+    }
 }
 
 /// Compile function/abstract body tokens to IR or bytecode

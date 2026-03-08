@@ -339,7 +339,7 @@ mod fitsh_compile_tests {
             log_five: "log(1, 2, 3, 4, 5)",
             log_bracket: "log[1, 2, 3]",
             log_brace: "log{1, 2, 3}",
-            callcode_simple: "callcode lib(0).0xabcdef01",
+            usecode_simple: "usecode lib(0).0xabcdef01",
         );
     }
 
@@ -478,15 +478,35 @@ mod fitsh_compile_tests {
             callext_keyword: "return callext 1::0x01020304(1)",
             callview_keyword: "return callview 1::0x01020304(1)",
             callpure_keyword: "return callpure 1::0x01020304(1)",
-            callthis_keyword: "return callthis 0::0x01020304(1)",
-            callself_keyword: "return callself 0::0x01020304(1)",
-            callsuper_keyword: "return callsuper 0::0x01020304(1)",
-            callcode_keyword: "callcode 0::0xabcdef01",
+            call_edit_keyword: "return call edit self.0x01020304(1)",
+            call_view_upper_keyword: "return call view upper.0x01020304(1)",
+            call_pure_use_keyword: "return call pure use(1).0x01020304(1)",
+            usecode_keyword: "usecode 0::0xabcdef01",
         );
 
         assert_compile_err!(
-            legacy_call_keyword: "return call external code.0xabcdef01()",
-            legacy_tailcall_keyword: "tailcall code.0xabcdef01",
+            removed_callthis_keyword: "return callthis 0::0x01020304(1)",
+            removed_callself_keyword: "return callself 0::0x01020304(1)",
+            removed_callsuper_keyword: "return callsuper 0::0x01020304(1)",
+            removed_tailcall_keyword: "tailcall code.0xabcdef01",
+        );
+
+        assert_compile_err_contains!(
+            dead_code_after_return: "return 1
+let x = 2", "unreachable code after terminal statement",
+            dead_code_after_usecode: "lib C = 0
+usecode C.probe
+let x = 2", "unreachable code after terminal statement",
+            dead_code_after_if_both_terminate: "lib C = 0
+if true { usecode C.a } else { return 1 }
+let x = 2", "unreachable code after terminal statement"
+        );
+
+        assert_compile_ok!(
+            code_after_if_partial_terminate: "lib C = 0
+if true { usecode C.a }
+let x = 2
+return x"
         );
     }
 

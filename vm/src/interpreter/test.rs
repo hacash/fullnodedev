@@ -2289,10 +2289,20 @@ mod bounds_tests {
 
     #[test]
     fn shortcut_call_gas_matches_opcode_tiers() {
-        use crate::rt::{calc_func_sign, encode_callcode_body, ExecCtx, UserCall};
+        use crate::rt::{calc_func_sign, encode_call_body, encode_usecode_body, CallSpec, CallTarget, EffectMode, ExecCtx};
 
         let sign = calc_func_sign("jump");
         let cases = [
+            (
+                {
+                    let mut codes = vec![Bytecode::CALL as u8];
+                    codes.extend_from_slice(
+                        &encode_call_body(CallSpec::invoke(CallTarget::Call(1), EffectMode::Edit, sign)).unwrap(),
+                    );
+                    codes
+                },
+                32,
+            ),
             (
                 vec![Bytecode::CALLTHIS as u8, sign[0], sign[1], sign[2], sign[3]],
                 12,
@@ -2333,9 +2343,9 @@ mod bounds_tests {
             ),
             (
                 {
-                    let mut codes = vec![Bytecode::CALLCODE as u8];
+                    let mut codes = vec![Bytecode::USECODE as u8];
                     codes.extend_from_slice(
-                        &encode_callcode_body(UserCall::callcode(1, sign)).unwrap(),
+                        &encode_usecode_body(CallSpec::usecode(1, sign)).unwrap(),
                     );
                     codes
                 },

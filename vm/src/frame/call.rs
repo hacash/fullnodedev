@@ -42,12 +42,12 @@ impl CallFrame {
         loop {
             let exit = curr!().execute(r, env)?;
             match exit {
-                Call(call) => {
-                    let spec = call.to_spec();
+                Call(spec) => {
                     let next_exec = curr_ref!()
                         .exec
                         .enter_call(spec.next_effect(curr_ref!().exec.effect), &r.space_cap)?;
-                    if !spec.reuses_current_frame() {
+                    let invokes = matches!(spec, CallSpec::Invoke { .. });
+                    if invokes {
                         curr!().oprnds.peek()?.canbe_func_argv()?;
                     }
                     let curr_bindings = curr_ref!().bindings.clone();
@@ -60,17 +60,12 @@ impl CallFrame {
                         },
                     )?;
 
-                    if spec.reuses_current_frame() {
-                        let Some(ret_bind) = spec.return_bind() else {
-                            return itr_err_code!(CallInvalid);
-                        };
-                        let ret_check = curr_ref!().bind_reuse_return(ret_bind);
-                        curr!().prepare_reuse_call(
+                    if !invokes {
+                        curr!().prepare_splice(
                             next_exec,
                             plan.next_bindings,
                             plan.fnobj.as_ref(),
                             height,
-                            ret_check,
                         )?;
                         continue;
                     }

@@ -699,7 +699,7 @@ mod machine_test {
     }
 
     #[test]
-    fn call_external_view_pure_use_inherits_but_callcode_keeps_local_lookup() {
+    fn call_external_view_pure_use_inherits_but_usecode_keeps_local_lookup() {
         let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(11));
         let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(12));
@@ -772,7 +772,7 @@ mod machine_test {
             "CALLEXT should resolve through inherit chain"
         );
 
-        // CALLVIEW/CALLPURE should also resolve the inherit chain; CALLCODE stays local-only.
+        // CALLVIEW/CALLPURE should also resolve the inherit chain; USECODE stays local-only.
         let view_script = r##"
             lib C = 0
             assert C:probe() == 201
@@ -793,13 +793,13 @@ mod machine_test {
             "CALLPURE should resolve through inherit chain"
         );
 
-        let callcode_script = r##"
+        let usecode_script = r##"
             lib C = 0
-            callcode C.probe
+            usecode C.probe
         "##;
         assert!(
-            run_main(callcode_script).is_err(),
-            "CALLCODE should not resolve inherit chain"
+            run_main(usecode_script).is_err(),
+            "USECODE should not resolve inherit chain"
         );
     }
 
@@ -1105,7 +1105,7 @@ mod machine_test {
 
 
     #[test]
-    fn callcode_cannot_reenable_action_from_nested_frame() {
+    fn usecode_cannot_reenable_action_from_nested_frame() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 221);
         let target_sto = Contract::new()
@@ -1129,14 +1129,14 @@ mod machine_test {
 
         let script = r##"
             lib C = 0
-            callcode C.bad_act
+            usecode C.bad_act
         "##;
         let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
         assert_err_contains(res, "ActDisabled");
     }
 
     #[test]
-    fn callcode_reuses_current_argv_and_allows_nested_calls() {
+    fn usecode_reuses_current_argv_and_allows_nested_calls() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 23);
         let target_sto = Contract::new()
@@ -1164,7 +1164,7 @@ return x")
                     .fitsh(
                         r##"
                         lib C = 0
-                        callcode C.need_arg
+                        usecode C.need_arg
                         "##,
                     )
                     .unwrap(),
@@ -1176,7 +1176,7 @@ return x")
                     .fitsh(
                         r##"
                         lib C = 0
-                        callcode C.nested
+                        usecode C.nested
                         "##,
                     )
                     .unwrap(),
@@ -1205,14 +1205,14 @@ return x")
             ext_state.clone(),
             arg_script,
         );
-        assert!(arg_res.is_ok(), "callcode should forward current argv: {arg_res:?}");
+        assert!(arg_res.is_ok(), "usecode should forward current argv: {arg_res:?}");
 
         let nested_res = run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
-        assert!(nested_res.is_ok(), "callcode should allow nested calls: {nested_res:?}");
+        assert!(nested_res.is_ok(), "usecode should allow nested calls: {nested_res:?}");
     }
 
     #[test]
-    fn callcode_without_caller_ret_contract_ignores_callee_ret_contract() {
+    fn usecode_without_caller_ret_contract_ignores_callee_ret_contract() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 33);
         let target_sto = Contract::new()
@@ -1232,15 +1232,15 @@ return x")
 
         let script = r##"
             lib C = 0
-            callcode C.ret_mismatch
+            usecode C.ret_mismatch
         "##;
         let rv = run_main_script(base_addr, vec![contract_target], ext_state, script)
-            .expect("callcode should follow caller(no contract) return policy");
+            .expect("usecode should follow caller(no contract) return policy");
         assert_eq!(rv, Value::U8(0));
     }
 
     #[test]
-    fn nested_callcode_preserves_outer_caller_return_contract() {
+    fn nested_usecode_preserves_outer_caller_return_contract() {
         let base_addr = test_base_addr();
         let contract_outer = test_contract(&base_addr, 34);
         let contract_middle = test_contract(&base_addr, 35);
@@ -1264,7 +1264,7 @@ return x")
                     .fitsh(
                         r##"
                         lib L = 0
-                        callcode L.leaf
+                        usecode L.leaf
                         "##,
                     )
                     .unwrap(),
@@ -1280,7 +1280,7 @@ return x")
                     .fitsh(
                         r##"
                         lib M = 0
-                        callcode M.middle
+                        usecode M.middle
                         "##,
                     )
                     .unwrap(),
@@ -1303,7 +1303,7 @@ return x")
         let res = run_main_script(base_addr, vec![contract_outer], ext_state, script);
         assert!(
             res.is_ok(),
-            "nested callcode must keep outer caller return contract: {res:?}"
+            "nested usecode must keep outer caller return contract: {res:?}"
         );
     }
 
@@ -1346,7 +1346,7 @@ return x")
                     .fitsh(
                         r##"
                         lib M = 0
-                        callcode M.middle
+                        usecode M.middle
                         "##,
                     )
                     .unwrap(),
@@ -1461,7 +1461,7 @@ return x")
     }
 
     #[test]
-    fn callview_callpure_and_callcode_local_lookup_positive_paths() {
+    fn callview_callpure_and_usecode_local_lookup_positive_paths() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 27);
         let target_sto = Contract::new()
@@ -1493,13 +1493,13 @@ return x")
             assert C:view_ok() == 7
             assert C::pure_ok() == 8
             assert C.self_ok() == 0
-            callcode C.code_ok
+            usecode C.code_ok
             end
         "##;
         let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
         assert!(
             res.is_ok(),
-            "local lookup should succeed for view/pure/callcode/self shortcuts"
+            "local lookup should succeed for view/pure/usecode/self shortcuts"
         );
     }
 
@@ -1588,7 +1588,7 @@ return x")
 
 
     #[test]
-    fn callcode_rebinds_callee_libs_for_nested_calls() {
+    fn usecode_rebinds_callee_libs_for_nested_calls() {
         let base_addr = test_base_addr();
         let contract_entry = test_contract(&base_addr, 81);
         let contract_entry_lib = test_contract(&base_addr, 82);
@@ -1654,7 +1654,7 @@ return x")
                     .fitsh(
                         r##"
                         lib Dep = 1
-                        callcode Dep.code_ok
+                        usecode Dep.code_ok
                         "##,
                     )
                     .unwrap(),
@@ -1670,18 +1670,18 @@ return x")
         }
 
         let tx_libs = vec![contract_entry.clone(), contract_entry_lib.clone()];
-        let run_callcode = |func: &str| -> Ret<Value> {
+        let run_usecode = |func: &str| -> Ret<Value> {
             let script = format!(
                 r##"
                 lib C = 0
-                callcode C.{func}
+                usecode C.{func}
                 "##,
             );
             run_main_script(base_addr.clone(), tx_libs.clone(), ext_state.clone(), &script)
         };
         for func in ["jump_ext", "jump_view", "jump_pure", "jump_code"] {
-            let res = run_callcode(func);
-            assert!(res.is_ok(), "callcode should rebind callee libs for {func}: {res:?}");
+            let res = run_usecode(func);
+            assert!(res.is_ok(), "usecode should rebind callee libs for {func}: {res:?}");
         }
     }
 

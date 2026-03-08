@@ -46,9 +46,7 @@ fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRe
 /// Failure (CodeNotWithEnd) is a fitsh code compile error and propagates to the compiler
 /// via compile_body -> parse_function -> parse_top_level -> fitshc::compile.
 fn ensure_terminal_instruction(inst: Bytecode) -> VmrtErr {
-    if let RET | END | ERR | ABT |
-        CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLEXT
-    = inst {
+    if matches!(inst, RET | END | ERR | ABT) || is_user_call_inst(inst) {
         return Ok(())
     };
     // error
@@ -137,9 +135,12 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
             TIS => {
                 let _ = parse_value_ty_param(pu8!())?;
             }
-            CALLCODE => {
-                let body = &codes[i..i + CALLCODE_BODY_WIDTH];
-                let _ = decode_callcode_body(body)?;
+            _ if is_user_call_inst(inst) => {
+                let r = i + meta.param as usize;
+                if r > cdlen {
+                    return itr_err_code!(InstParamsErr);
+                }
+                let _ = decode_user_call_site(inst, &codes[i..r])?;
             }
             // jump record
             JMPL  | BRL  => adddest!(pu16!() as isize),
@@ -148,16 +149,8 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
             _ => {}
         };
         i += meta.param as usize;
-        if i > cdlen {            
+        if i > cdlen {
             return itr_err_code!(InstParamsErr)
-        }        
-        if inst == CALLCODE {
-            if i < cdlen {
-                let nxt: Bytecode = std_mem_transmute!(codes[i]);
-                if nxt != END {
-                    return itr_err_fmt!(InstParamsErr, "CALLCODE must follow END")
-                }
-            }
         }
         // next
     }
@@ -274,14 +267,26 @@ mod call_verify_tests {
     use super::*;
 
     #[test]
-    fn verify_rejects_removed_call_slot() {
-        let err = verify_bytecodes(&[0x0c]).unwrap_err();
-        assert_eq!(err.0, ItrErrCode::InstInvalid);
+    fn verify_accepts_generic_call_slot() {
+        let body = encode_call_body(CallSpec::invoke(
+            CallTarget::Upper,
+            EffectMode::Edit,
+            [0x01, 0x02, 0x03, 0x04],
+        ))
+        .unwrap();
+        let mut codes = vec![Bytecode::CALL as u8];
+        codes.extend_from_slice(&body);
+        codes.push(Bytecode::END as u8);
+        verify_bytecodes(&codes).unwrap();
     }
 
     #[test]
-    fn verify_rejects_removed_tailcall_slot() {
-        let err = verify_bytecodes(&[0x0d]).unwrap_err();
-        assert_eq!(err.0, ItrErrCode::InstInvalid);
+    fn verify_accepts_usecode_without_linear_end_guard() {
+        let body = encode_usecode_body(CallSpec::usecode(1, [0x01, 0x02, 0x03, 0x04])).unwrap();
+        let mut codes = vec![Bytecode::USECODE as u8];
+        codes.extend_from_slice(&body);
+        codes.push(Bytecode::P0 as u8);
+        codes.push(Bytecode::END as u8);
+        verify_bytecodes(&codes).unwrap();
     }
 }

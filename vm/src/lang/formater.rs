@@ -114,6 +114,25 @@ impl<'a> Formater<'a> {
             .unwrap_or_else(|| format!("lib({})", idx))
     }
 
+    fn format_call_effect(&self, effect: EffectMode) -> &'static str {
+        match effect {
+            EffectMode::Edit => "edit",
+            EffectMode::View => "view",
+            EffectMode::Pure => "pure",
+        }
+    }
+
+    fn format_call_target_ref(&self, target: CallTarget) -> String {
+        match target {
+            CallTarget::This => "this".to_string(),
+            CallTarget::Self_ => "self".to_string(),
+            CallTarget::Upper => "upper".to_string(),
+            CallTarget::Super => "super".to_string(),
+            CallTarget::Call(idx) => self.format_lib_chain_ref(idx),
+            CallTarget::Use(idx) => format!("use({})", idx),
+        }
+    }
+
 
 
     fn format_special_call_target(
@@ -619,6 +638,26 @@ impl<'a> Formater<'a> {
     fn format_call_instruction(&self, node: &dyn IRNode, code: Bytecode) -> Option<String> {
         use Bytecode::*;
         let pss = node.as_any().downcast_ref::<IRNodeParamsSingle>()?;
+        if code == CALL {
+            let call = decode_call_body(&pss.para).ok()?;
+            let CallSpec::Invoke {
+                target,
+                effect,
+                selector,
+            } = call else {
+                return None;
+            };
+            let pre = self.line_prefix();
+            let args = self.build_call_args(&*pss.subx, false);
+            let body = format!(
+                "call {} {}.{}({})",
+                self.format_call_effect(effect),
+                self.format_call_target_ref(target),
+                self.format_func_sig(&selector),
+                args
+            );
+            return Some(format!("{}{}", pre, body));
+        }
         if !matches!(
             code,
             CALLEXT | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLPURE
@@ -1242,17 +1281,14 @@ impl<'a> Formater<'a> {
             PBUF | PBUFL => {
                 buf.push_str(&self.format_data_bytes(node));
             }
-            CALLCODE => {
-                match decode_callcode_body(&node.para) {
-                    Ok(call) => match call.target {
-                        CallTarget::CurrentLibRoot(idx) => buf.push_str(&format!(
-                            "callcode {}.{}",
-                            self.format_lib_chain_ref(idx),
-                            self.format_func_sig(&call.selector)
-                        )),
-                        _ => buf.push_str(&format!("callcode 0x{}", hex::encode(&node.para))),
-                    },
-                    Err(_) => buf.push_str(&format!("callcode 0x{}", hex::encode(&node.para))),
+            USECODE => {
+                match decode_usecode_body(&node.para) {
+                    Ok(CallSpec::Splice { lib, selector }) => buf.push_str(&format!(
+                        "usecode {}.{}",
+                        self.format_lib_chain_ref(lib),
+                        self.format_func_sig(&selector)
+                    )),
+                    _ => buf.push_str(&format!("usecode 0x{}", hex::encode(&node.para))),
                 }
             }
             _ => {

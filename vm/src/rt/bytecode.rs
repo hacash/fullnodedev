@@ -6,7 +6,7 @@
 #[derive(Default, PartialEq, Debug, Clone, Copy)]
 pub enum Bytecode {
     #[default]
-    ACTION           = 0x00, // *@  call action
+    ACTION              = 0x00, // *@  call action
     ________________1   = 0x01,
     ________________2   = 0x02,
     ________________3   = 0x03,
@@ -20,19 +20,19 @@ pub enum Bytecode {
     ________________11  = 0x0b,
     ________________12  = 0x0c,
     ________________13  = 0x0d,
-    ________________14  = 0x0e,
-    CALLEXT             = 0x0f, // *,****@ 
-    CALLTHIS            = 0x10, //   ****@ 
-    CALLSELF            = 0x11, //   ****@ 
-    CALLSUPER           = 0x12, //   ****@ 
-    CALLSELFVIEW        = 0x13, //   ****@ 
-    CALLSELFPURE        = 0x14, //   ****@ 
-    CALLVIEW            = 0x15, // *,****@ 
-    CALLPURE            = 0x16, // *,****@ 
-    CALLCODE            = 0x17, // *,****  
-    ________________24  = 0x18,
-    ________________25  = 0x19,
-    ________________26  = 0x1a,
+    USECODE             = 0x0e, // *,****
+    CALL                = 0x0f, // **,****@
+    CALLTHIS            = 0x10, //   ****@
+    CALLSELF            = 0x11, //   ****@
+    CALLSUPER           = 0x12, //   ****@
+    CALLSELFVIEW        = 0x13, //   ****@
+    CALLSELFPURE        = 0x14, //   ****@
+    ________________21  = 0x15,
+    ________________22  = 0x16,
+    ________________23  = 0x17,
+    CALLEXT             = 0x18, // *,****@
+    CALLVIEW            = 0x19, // *,****@
+    CALLPURE            = 0x1a, // *,****@
     ________________27  = 0x1b,
     ________________28  = 0x1c,
     ________________29  = 0x1d,
@@ -326,16 +326,16 @@ bytecode_metadata_define!{
     NTFUNC     : 1, 1, 1,     native_func
     NTENV      : 1, 0, 1,     native_env
 
-    // CALLDYN    :   0, 3, 1,   call_dynamic
-    CALLEXT    : 1+4, 1, 1,   callext
+    USECODE    : 1+4, 0, 0,   use_code
+    CALL       :   6, 1, 1,   call
     CALLTHIS   :   4, 1, 1,   callthis
     CALLSELF   :   4, 1, 1,   callself
     CALLSUPER  :   4, 1, 1,   callsuper
     CALLSELFVIEW : 4, 1, 1,   callselfview
     CALLSELFPURE : 4, 1, 1,   callselfpure
+    CALLEXT    : 1+4, 1, 1,   callext
     CALLVIEW   : 1+4, 1, 1,   call_view
     CALLPURE   : 1+4, 1, 1,   call_pure
-    CALLCODE   : 1+4, 0, 0,   call_code
 
     PU8        : 1, 0, 1,     push_u8
     PU16       : 2, 0, 1,     push_u16

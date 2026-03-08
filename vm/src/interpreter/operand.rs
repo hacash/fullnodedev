@@ -2,14 +2,16 @@ fn check_call_mode(exec: ExecCtx, call: &CallSpec) -> VmrtErr {
     if call.requires_external_visibility() && exec.entry == EntryKind::Abst {
         return itr_err_code!(CallInAbst);
     }
-    match (exec.is_outer_entry(), exec.entry, call.boundary, call.exec) {
-        (true, EntryKind::Main, Boundary::Internal, CallExec::Enter(EffectMode::Edit)) => {
-            return itr_err_code!(CallOtherInMain)
+    if let CallSpec::Invoke { target, effect, .. } = *call {
+        match (exec.is_outer_entry(), exec.entry, target.switches_context(), effect) {
+            (true, EntryKind::Main, false, EffectMode::Edit) => {
+                return itr_err_code!(CallOtherInMain)
+            }
+            (true, EntryKind::P2sh, _, EffectMode::Edit) => {
+                return itr_err_code!(CallOtherInP2sh)
+            }
+            _ => {}
         }
-        (true, EntryKind::P2sh, _, CallExec::Enter(EffectMode::Edit)) => {
-            return itr_err_code!(CallOtherInP2sh)
-        }
-        _ => {}
     }
     let next = call.next_effect(exec.effect);
     match (exec.effect, next) {
