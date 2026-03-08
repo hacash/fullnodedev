@@ -17,7 +17,7 @@ use vm::contract::{Contract, Func};
 use vm::frame::ExecEnv;
 use vm::lang::lang_to_bytecode;
 use vm::machine::{self, ContractCacheConfig, Machine, Resoure};
-use vm::rt::{Bytecode, CodeType, ExecMode, FnSign, calc_func_sign};
+use vm::rt::{Bytecode, CodeType, EntryKind, FnSign, calc_func_sign};
 use vm::value::Value;
 use vm::{ContractAddress, ContractSto, VMState, VmLog};
 
@@ -32,7 +32,13 @@ fn insert_contract(state: &mut dyn State, addr: &ContractAddress, sto: &Contract
 
 fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
     Contract::new()
-        .func(Func::new(func_name).unwrap().external().fitsh(body).unwrap())
+        .func(
+            Func::new(func_name)
+                .unwrap()
+                .external()
+                .fitsh(body)
+                .unwrap(),
+        )
         .into_sto()
 }
 
@@ -40,21 +46,22 @@ fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
     let mut gas = 1_000_000i64;
     let height = ctx.env().block.height;
     let mut machine = Machine::create(Resoure::create(height));
-    let mut exenv = ExecEnv {
-        ctx,
-        gas: &mut gas,
-    };
+    let mut exenv = ExecEnv { ctx, gas: &mut gas };
     machine.main_call(&mut exenv, CodeType::Bytecode, codes.into())
 }
 
 fn single_call_codes(lib_idx: u8, sig: FnSign) -> Vec<u8> {
-    let mut codes = vec![Bytecode::PNIL as u8, Bytecode::CALL as u8, lib_idx];
+    let mut codes = vec![Bytecode::PNIL as u8, Bytecode::CALLEXT as u8, lib_idx];
     codes.extend_from_slice(&sig);
     codes.push(Bytecode::END as u8);
     codes
 }
 
-fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> BRet<(u32, Vec<u8>)> {
+fn execute_deploy(
+    ctx: &mut dyn Context,
+    nonce: u32,
+    contract: ContractSto,
+) -> BRet<(u32, Vec<u8>)> {
     let mut act = ContractDeploy::new();
     act.nonce = Uint4::from(nonce);
     act.protocol_cost = Amount::zero();
@@ -79,7 +86,7 @@ fn setup_vm_run_rejects_low_tx_type() {
 
     let err = machine::setup_vm_run(
         &mut ctx,
-        ExecMode::Main as u8,
+        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
         Value::Nil,
@@ -105,7 +112,7 @@ fn setup_vm_run_requires_registered_assigner() {
 
     let err = machine::setup_vm_run(
         &mut ctx,
-        ExecMode::Main as u8,
+        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
         Value::Nil,
@@ -131,7 +138,7 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
 
     let err = machine::setup_vm_run(
         &mut ctx,
-        ExecMode::Main as u8,
+        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
         Value::Nil,
@@ -162,7 +169,7 @@ fn setup_vm_run_executes_after_assigner_registered() {
 
     let (gas_used, rv) = machine::setup_vm_run(
         &mut ctx,
-        ExecMode::Main as u8,
+        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
         Value::Nil,
@@ -229,7 +236,13 @@ fn deploy_rejects_missing_library_contract() {
 
     let sto = Contract::new()
         .lib(missing.to_addr())
-        .func(Func::new("run").unwrap().external().fitsh("return 0").unwrap())
+        .func(
+            Func::new("run")
+                .unwrap()
+                .external()
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .into_sto();
 
     let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
@@ -249,11 +262,23 @@ fn deploy_rejects_nested_parent_inherits_before_runtime() {
 
     let sto_a = Contract::new()
         .inh(b.to_addr())
-        .func(Func::new("fa").unwrap().external().fitsh("return 0").unwrap())
+        .func(
+            Func::new("fa")
+                .unwrap()
+                .external()
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .into_sto();
     let sto_b = Contract::new()
         .inh(a.to_addr())
-        .func(Func::new("fb").unwrap().external().fitsh("return 0").unwrap())
+        .func(
+            Func::new("fb")
+                .unwrap()
+                .external()
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .into_sto();
     insert_contract(&mut state, &a, &sto_a);
     insert_contract(&mut state, &b, &sto_b);
@@ -262,12 +287,18 @@ fn deploy_rejects_nested_parent_inherits_before_runtime() {
     ctx.env.chain.fast_sync = true;
     let sto = Contract::new()
         .inh(a.to_addr())
-        .func(Func::new("run").unwrap().external().fitsh("return 0").unwrap())
+        .func(
+            Func::new("run")
+                .unwrap()
+                .external()
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .into_sto();
 
     let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
     assert!(
-        err.contains("inherits parent") && err.contains("cannot have parent inherits"),
+        err.contains("inherit parent") && err.contains("cannot have parent inherit"),
         "{err}"
     );
 }
@@ -282,7 +313,13 @@ fn deploy_rejects_missing_library_function_at_precheck() {
     let mut state = StateMem::default();
 
     let lib_sto = Contract::new()
-        .func(Func::new("g").unwrap().external().fitsh("return 0").unwrap())
+        .func(
+            Func::new("g")
+                .unwrap()
+                .external()
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .into_sto();
     insert_contract(&mut state, &lib, &lib_sto);
 
@@ -350,7 +387,7 @@ fn loader_enforces_max_loaded_contracts() {
     let mut codes = Vec::new();
     for idx in 0..21u8 {
         codes.push(Bytecode::PNIL as u8);
-        codes.push(Bytecode::CALL as u8);
+        codes.push(Bytecode::CALLEXT as u8);
         codes.push(idx);
         codes.extend_from_slice(&sig);
     }
@@ -361,7 +398,7 @@ fn loader_enforces_max_loaded_contracts() {
 }
 
 #[test]
-fn global_contract_cache_hits_on_second_machine_call() {
+fn globals_contract_cache_hits_on_second_machine_call() {
     let _guard = test_guard();
 
     vm::configure_contract_cache(ContractCacheConfig {
@@ -459,7 +496,8 @@ fn sandbox_call_executes_and_reports_missing_function() {
     let tx = make_tx(3, main, vec![], 17);
     let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
 
-    let (gas, ret_json) = machine::sandbox_call(&mut ctx, caddr, "add1".to_owned(), "5:u8").unwrap();
+    let (gas, ret_json) =
+        machine::sandbox_call(&mut ctx, caddr, "add1".to_owned(), "5:u8").unwrap();
     let ret: serde_json::Value = serde_json::from_str(&ret_json).unwrap();
     assert!(gas > 0);
     assert_eq!(ret.as_u64(), Some(0));

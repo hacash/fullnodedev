@@ -59,32 +59,34 @@ fn bind_slot_and_cache_print() {
 #[test]
 fn callview_callthis_print() {
     let script = r##"
-        callview 2::abcdef01()
-        callthis 0::11223344()
-        callpure 3::deadbeef()
+        lib(2):0xabcdef01()
+        this.0x00ab4130()
+        self:0x00ab4131()
+        self::0x00ab4132()
+        lib(3)::0xdeadbeef()
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
-    assert!(printed.contains("callview 2::0xabcdef01("));
-    assert!(printed.contains("callthis 0::0x00ab4130("));
-    assert!(printed.contains("callpure 3::0xdeadbeef("));
+    assert!(printed.contains("lib(2):0xabcdef01("));
+    assert!(printed.contains("this.0x00ab4130("));
+    assert!(printed.contains("self:0x00ab4131("));
+    assert!(printed.contains("self::0x00ab4132("));
+    assert!(printed.contains("lib(3)::0xdeadbeef("));
 }
 
 #[test]
 fn callthis_callself_callsuper_print_and_roundtrip() {
-    // 11223344 (decimal) == 0x00ab4130
     let script = r##"
-        callthis 0::11223344(1)
-        callself 0::11223344(2)
-        callsuper 0::11223344(3)
+        this.0x00ab4130(1)
+        self.0x00ab4130(2)
+        super.0x00ab4130(3)
     "##;
     let (ircd, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = format_ircode_to_lang(&ircd, Some(&smap)).unwrap();
-    assert!(printed.contains("callthis 0::0x00ab4130("));
-    assert!(printed.contains("callself 0::0x00ab4130("));
-    assert!(printed.contains("callsuper 0::0x00ab4130("));
+    assert!(printed.contains("this.0x00ab4130("));
+    assert!(printed.contains("self.0x00ab4130("));
+    assert!(printed.contains("super.0x00ab4130("));
 
-    // Also ensure the dot-call sugar is emitted when function names exist.
     let sugar = r##"
         this.foo(1)
         self.foo(2)
@@ -92,19 +94,41 @@ fn callthis_callself_callsuper_print_and_roundtrip() {
     "##;
     let (ircd2, smap2) = lang_to_ircode_with_sourcemap(sugar).unwrap();
     let printed2 = format_ircode_to_lang(&ircd2, Some(&smap2)).unwrap();
-    assert!(printed2.contains("/*callthis*/ this.foo("));
-    assert!(printed2.contains("/*callself*/ self.foo("));
-    assert!(printed2.contains("/*callsuper*/ super.foo("));
+    assert!(printed2.contains("this.foo("));
+    assert!(printed2.contains("self.foo("));
+    assert!(printed2.contains("super.foo("));
 }
 
 #[test]
-fn call_keyword_print() {
+fn self_view_and_self_pure_short_syntax_print_when_names_exist() {
     let script = r##"
-        call 1::abcdef01()
+        return self:view_ok() + self::pure_ok()
+    "##;
+    let (ircd, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = format_ircode_to_lang(&ircd, Some(&smap)).unwrap();
+    assert!(printed.contains("self:view_ok("));
+    assert!(printed.contains("self::pure_ok("));
+}
+
+#[test]
+fn callcode_short_syntax_print_when_names_exist() {
+    let script = r##"
+        lib C = 0
+        callcode C.probe
+    "##;
+    let (ircd, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = format_ircode_to_lang(&ircd, Some(&smap)).unwrap();
+    assert!(printed.contains("callcode C.probe"));
+}
+
+#[test]
+fn callext_keyword_print() {
+    let script = r##"
+        lib(1).0xabcdef01()
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
-    assert!(printed.contains("call 1::0xabcdef01("));
+    assert!(printed.contains("lib(1).0xabcdef01("));
 }
 
 #[test]
@@ -119,7 +143,7 @@ fn decompile_system_calls_preserve_default_empty_arg_unless_opted_in() {
     let plain = PrintOption::new("  ", 0);
     let printed_plain = Formater::new(&plain).print(&block);
     assert!(printed_plain.contains("context_address(\"\")"));
-    // EXTENV(block_height) has metadata.input == 0; compiler emits no argv placeholder.
+    // ACTENV(block_height) has metadata.input == 0; compiler emits no argv placeholder.
     assert!(printed_plain.contains("block_height()"));
 
     let mut pretty = PrintOption::new("  ", 0);
@@ -132,18 +156,49 @@ fn decompile_system_calls_preserve_default_empty_arg_unless_opted_in() {
 #[test]
 fn decompile_contract_calls_hide_default_nil_only_when_opted_in() {
     let script = r##"
-        call 1::abcdef01()
+        lib(1).0xabcdef01()
     "##;
     let block = lang_to_irnode(script).unwrap();
 
     let plain = PrintOption::new("  ", 0);
     let printed_plain = Formater::new(&plain).print(&block);
-    assert!(printed_plain.contains("call 1::0xabcdef01(nil)"));
+    assert!(printed_plain.contains("lib(1).0xabcdef01(nil)"));
 
     let mut pretty = PrintOption::new("  ", 0);
     pretty.hide_default_call_argv = true;
     let printed_pretty = Formater::new(&pretty).print(&block);
-    assert!(printed_pretty.contains("call 1::0xabcdef01()"));
+    assert!(printed_pretty.contains("lib(1).0xabcdef01()"));
+}
+
+#[test]
+fn args_constructor_roundtrips_in_value_context() {
+    let script = r##"
+        return args(7, map { "kind": "hnft" })
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(printed.contains("args(7, map"));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn args_to_list_roundtrips_as_function_call() {
+    let script = r##"
+        return args_to_list(args(1, 2))
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(printed.contains("args_to_list(args(1, 2))"));
+    assert!(!printed.contains(" as list"));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn pack_args_surface_syntax_is_rejected() {
+    let err = lang_to_ircode("return pack_args(1, 2)").unwrap_err();
+    assert!(err.contains("pack_args"), "unexpected error: {err}");
 }
 
 #[test]
@@ -737,12 +792,12 @@ fn nested_expression_contexts_emit_expr_opcodes() {
     let script = r##"
         print {
             if true {
-                bind inner = if false {
+                bind local_inner = if false {
                     { if false { 10 } else { 11 } }
                 } else {
                     { { 12 } }
                 }
-                inner
+                local_inner
             } else {
                 {
                     bind deep = { if true { { 13 } } else { { 14 } } }
@@ -810,7 +865,7 @@ fn print_options_on_off_preserve_ircode_bytes() {
     let script = r##"
         param { amt }
         print amt as u8
-        call 1::abcdef01()
+        lib(1).0xabcdef01()
         print context_address("")
         print [1, 2]
         if true { print 3 } else { print 4 }
@@ -859,7 +914,7 @@ fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
     let script = r##"
         param { amt }
         print amt as u8
-        call 1::abcdef01()
+        lib(1).0xabcdef01()
         print context_address("")
         print [1, 2]
         if true { print 3 } else { print 4 }
@@ -945,14 +1000,14 @@ fn var_rhs_block_expression_emits_expr_opcodes() {
     let script = r##"
         var holder = {
             if true {
-                bind inner = if false {
+                bind local_inner = if false {
                     {
                         if true { 1 } else { 2 }
                     }
                 } else {
                     { 3 }
                 }
-                inner
+                local_inner
             } else {
                 { 4 }
             }
@@ -1001,13 +1056,19 @@ fn fitsh_ir_roundtrip_suite() {
                     builder
                 }
                 if sum > 0 {
-                    callview 1::abcdef01(sum)
+                    lib(1):0xabcdef01(sum)
                 } else {
-                    callpure 1::deadbeef(sum, 0)
+                    lib(1)::0xdeadbeef(sum, 0)
                 }
-                callthis 0::11223344(sum)
+                this.0x00ab4130(sum)
             "##,
-            &["while", "callview", "callpure", "callthis", "if"],
+            &[
+                "while",
+                "lib(1):0xabcdef01",
+                "lib(1)::0xdeadbeef",
+                "this.0x00ab4130",
+                "if",
+            ],
         ),
         (
             r##"
@@ -1026,8 +1087,8 @@ fn fitsh_ir_roundtrip_suite() {
             r##"
                 var x $0 = 42
                 bind aux = {
-                    bind inner = x
-                    inner + 1
+                    bind local_inner = x
+                    local_inner + 1
                 }
                 var y = aux
                 bind result = {
@@ -1445,7 +1506,7 @@ fn call_short_syntax_uses_comment_short_form() {
     opt.trim_param_unpack = true;
     opt.call_short_syntax = true;
     let printed = Formater::new(&opt).print(&block);
-    assert!(printed.contains("/*call*/ HacSwap.sell("));
+    assert!(printed.contains("HacSwap.sell("));
     assert!(printed.contains("print"));
 }
 
@@ -1513,4 +1574,135 @@ fn decompile_local_vars_use_slot_names() {
     // panic!("{}", printed);
     assert!(printed.contains("print bar"));
     assert!(printed.contains("let foo"));
+}
+
+#[test]
+fn explicit_shortcut_call_keywords_normalize_to_current_surface() {
+    let script = r##"
+        callext 1::0xabcdef01()
+        callview 2::0x01020304(1)
+        callpure 3::0x0a0b0c0d(nil)
+        callthis 0::0x11223344(2)
+        callself 0::0x22334455(3)
+        callsuper 0::0x33445566(4)
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(printed.contains("lib(1).0xabcdef01("));
+    assert!(printed.contains("lib(2):0x01020304("));
+    assert!(printed.contains("lib(3)::0x0a0b0c0d("));
+    assert!(printed.contains("this.0x11223344("));
+    assert!(printed.contains("self.0x22334455("));
+    assert!(printed.contains("super.0x33445566("));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn legacy_call_keyword_is_not_supported() {
+    assert!(lang_to_ircode("call external code.0xabcdef01()").is_err());
+}
+
+#[test]
+fn legacy_tailcall_keyword_is_not_supported() {
+    assert!(lang_to_ircode("tailcall code.0xabcdef01").is_err());
+}
+
+#[test]
+fn each_call_opcode_roundtrips_and_emits_expected_bytecode() {
+    let cases = [
+        (
+            "lib(1).0x01020304(1)",
+            Bytecode::CALLEXT,
+            "lib(1).0x01020304(",
+        ),
+        ("this.0x11223344(2)", Bytecode::CALLTHIS, "this.0x11223344("),
+        ("self.0x22334455(3)", Bytecode::CALLSELF, "self.0x22334455("),
+        (
+            "super.0x33445566(4)",
+            Bytecode::CALLSUPER,
+            "super.0x33445566(",
+        ),
+        (
+            "self:0x44556677(5)",
+            Bytecode::CALLSELFVIEW,
+            "self:0x44556677(",
+        ),
+        (
+            "self::0x55667788(6)",
+            Bytecode::CALLSELFPURE,
+            "self::0x55667788(",
+        ),
+        (
+            "lib(1):0x66778899(7)",
+            Bytecode::CALLVIEW,
+            "lib(1):0x66778899(",
+        ),
+        (
+            "lib(1)::0x778899aa(8)",
+            Bytecode::CALLPURE,
+            "lib(1)::0x778899aa(",
+        ),
+        (
+            "callcode lib(1).0x8899aabb",
+            Bytecode::CALLCODE,
+            "callcode lib(1).0x8899aabb",
+        ),
+        (
+            "callext 1::0x99aabbcc(9)",
+            Bytecode::CALLEXT,
+            "lib(1).0x99aabbcc(",
+        ),
+        (
+            "callthis 0::0xaabbccdd(10)",
+            Bytecode::CALLTHIS,
+            "this.0xaabbccdd(",
+        ),
+    ];
+
+    for (script, opcode, needle) in cases {
+        let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+        let bytecodes = convert_ir_to_bytecode(&ircode).unwrap();
+        assert!(
+            bytecodes.contains(&(opcode as u8)),
+            "missing opcode {:?} in {:?}",
+            opcode,
+            bytecodes
+        );
+        let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+        assert!(
+            printed.contains(needle),
+            "missing '{}' in decompiled text:
+{}",
+            needle,
+            printed
+        );
+        let reparsed = lang_to_ircode(&printed).unwrap();
+        assert_eq!(
+            ircode, reparsed,
+            "roundtrip mismatch for script:
+{}",
+            script
+        );
+    }
+}
+
+#[test]
+fn legacy_call_external_lib_shorthand_is_not_supported() {
+    assert!(lang_to_ircode("call 1::0x01020304(10, 20)").is_err());
+}
+
+#[test]
+fn fitshc_sharedframe_modifier_is_rejected() {
+    let source = r##"
+        contract Demo {
+            function external sharedframe jump() {
+                return nil
+            }
+        }
+    "##;
+    match vm::fitshc::compile(source) {
+        Ok(_) => panic!("sharedframe keyword should be rejected"),
+        Err(_) => {}
+    }
 }

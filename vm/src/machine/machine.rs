@@ -1,24 +1,24 @@
 /// Per-tx VM call state. Gas ledger is stored in Context; VM only keeps
-/// re-entry depth guard and call-limit state.
+/// re-entry level guard and call-limit state.
 #[derive(Clone)]
 pub struct VmCallState {
     initialized: bool,  // whether init_once() has been called
-    reentry_depth: u32, // current EXTACTION re-entry depth (0 = not in call)
+    reentry_level: u32, // current ACTION re-entry level (0 = not in call)
     max_reentry: u32,   // hard cap from SpaceCap
 }
 
-struct VmCallDepthGuard<'a> {
+struct VmReentryGuard<'a> {
     call_state: &'a mut VmCallState,
 }
 
-impl<'a> VmCallDepthGuard<'a> {
+impl<'a> VmReentryGuard<'a> {
     fn enter(call_state: &'a mut VmCallState) -> Ret<Self> {
         call_state.enter()?;
         Ok(Self { call_state })
     }
 }
 
-impl Drop for VmCallDepthGuard<'_> {
+impl Drop for VmReentryGuard<'_> {
     fn drop(&mut self) {
         self.call_state.leave();
     }
@@ -28,7 +28,7 @@ impl Default for VmCallState {
     fn default() -> Self {
         Self {
             initialized: false,
-            reentry_depth: 0,
+            reentry_level: 0,
             max_reentry: 4,
         }
     }
@@ -40,32 +40,32 @@ impl VmCallState {
         if self.initialized {
             return Ok(());
         }
-        self.max_reentry = cap.max_reentry_depth;
+        self.max_reentry = cap.reentry_level;
         self.initialized = true;
         Ok(())
     }
 
-    /// Enter a call layer. Increments depth, enforces re-entry limit.
+    /// Enter a call layer. Increments level, enforces re-entry limit.
     fn enter(&mut self) -> Rerr {
-        let next_depth = self
-            .reentry_depth
+        let next_level = self
+            .reentry_level
             .checked_add(1)
-            .ok_or_else(|| "re-entry depth overflow".to_owned())?;
-        if next_depth > self.max_reentry + 1 {
-            // depth 1 = outermost call, depth 2 = first re-entry, etc.
+            .ok_or_else(|| "re-entry level overflow".to_owned())?;
+        if next_level > self.max_reentry + 1 {
+            // level 1 = outermost call, level 2 = first re-entry, etc.
             return errf!(
-                "re-entry depth {} exceeded limit {}",
-                next_depth - 1,
+                "re-entry level {} exceeded limit {}",
+                next_level - 1,
                 self.max_reentry
             );
         }
-        self.reentry_depth = next_depth;
+        self.reentry_level = next_level;
         Ok(())
     }
 
-    /// Leave a call layer. Decrements depth.
+    /// Leave a call layer. Decrements level.
     fn leave(&mut self) {
-        self.reentry_depth = self.reentry_depth.saturating_sub(1);
+        self.reentry_level = self.reentry_level.saturating_sub(1);
     }
 }
 
@@ -99,24 +99,24 @@ impl VM for MachineBox {
     fn snapshot_volatile(&self) -> Box<dyn Any> {
         let m = self.machine.as_ref().unwrap();
         // Snapshot excludes gas and gas-charged warmup/cache accounting so AST recover rolls back state/log/memory only while keeping gas/warmup monotonic.
-        Box::new((m.r.global_vals.clone(), m.r.memory_vals.clone()))
+        Box::new((m.r.global_map.clone(), m.r.memory_map.clone()))
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
         let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap)>() else {
             return;
         };
-        let (globals, memorys) = *snap;
+        let (global_map, memory_map) = *snap;
         let m = self.machine.as_mut().unwrap();
-        m.r.global_vals = globals;
-        m.r.memory_vals = memorys;
+        m.r.global_map = global_map;
+        m.r.memory_map = memory_map;
         // Do not restore `r.contracts` because tx-local warmup/cache accounting tied to already-paid gas must stay monotonic across AST recover.
     }
 
     fn restore_but_keep_warmup(&mut self) {
         let m = self.machine.as_mut().unwrap();
-        m.r.global_vals.clear();
-        m.r.memory_vals.clear();
+        m.r.global_map.clear();
+        m.r.memory_map.clear();
         // keep warmup/cache channel (`contracts`) and gas accounting monotonic.
     }
 
@@ -131,10 +131,10 @@ impl VM for MachineBox {
     }
 
     fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
-        use ExecMode::*;
+        use EntryKind::*;
         let VMCall {
             ctx,
-            mode,
+            entry,
             kind,
             payload,
             param,
@@ -145,16 +145,15 @@ impl VM for MachineBox {
             self.call_state.init_once(&r.space_cap)?;
         }
         // (2) enter call layer (depth check). Guard guarantees leave() on all exits.
-        let _guard = VmCallDepthGuard::enter(&mut self.call_state)?;
+        let _guard = VmReentryGuard::enter(&mut self.call_state)?;
         // min gas cost per call type
-        let cty = ExecMode::try_from_u8(mode).map_err(BError::from)?;
+        let entry_kind = EntryKind::try_from_u8(entry).map_err(BError::from)?;
         let min_cost = {
             let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
-            match cty {
+            match entry_kind {
                 Main => gsext.main_call_min,
                 P2sh => gsext.p2sh_call_min,
                 Abst => gsext.abst_call_min,
-                _ => never!(),
             }
         };
         // (3) execute VM call with shared gas counter
@@ -171,7 +170,7 @@ impl VM for MachineBox {
                 "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
                 gas_before,
                 min_cost,
-                cty
+                entry_kind
             );
         }
         let machine = self.machine.as_mut().unwrap();
@@ -186,7 +185,7 @@ impl VM for MachineBox {
                 gas: &mut *gasptr,
             }
         };
-        let result = match cty {
+        let result = match entry_kind {
             Main => {
                 let codeconf = CodeConf::parse(kind)?;
                 machine.main_call(exenv, codeconf.code_type(), payload)
@@ -222,7 +221,6 @@ impl VM for MachineBox {
                 };
                 machine.abst_call(exenv, kid, cadr, *param)
             }
-            _ => unreachable!(),
         };
         // (4) compute gas cost, enforce minimum, leave call layer
         let gas_after = ctx.gas_remaining();
@@ -283,7 +281,7 @@ impl Machine {
         // Caller must pre-validate code bytes. Production entry actions run convert_and_check before setup_vm_run.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
-        let lib_adr = env
+        let lib_adr: Vec<ContractAddress> = env
             .ctx
             .env()
             .tx
@@ -294,11 +292,9 @@ impl Machine {
         Ok(self
             .do_call(
                 env,
-                ExecMode::Main,
+                ExecCtx::main(),
                 &fnobj,
-                ctx_adr,
-                None,
-                Some(lib_adr),
+                FrameBindings::root(ctx_adr, lib_adr.into()),
                 None,
             )?)
     }
@@ -321,6 +317,9 @@ impl Machine {
         contract_addr: ContractAddress,
         param: Value,
     ) -> Ret<Value> {
+        let exec = ExecCtx::abst();
+        exec.ensure_call_depth(&self.r.space_cap)?;
+        param.canbe_func_argv()?;
         let adr = contract_addr.to_readable();
         let Some(hit) =
             self.r
@@ -331,11 +330,14 @@ impl Machine {
         // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
         let rv = self.do_call(
             env,
-            ExecMode::Abst,
+            exec,
             hit.fnobj.as_ref(),
-            contract_addr,
-            Some(hit.owner),
-            None,
+            FrameBindings::contract(
+                contract_addr.clone(),
+                contract_addr,
+                hit.owner,
+                hit.lib_table,
+            ),
             Some(param),
         )?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
@@ -356,11 +358,9 @@ impl Machine {
         let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
         let rv = self.do_call(
             env,
-            ExecMode::P2sh,
+            ExecCtx::p2sh(),
             &fnobj,
-            ctx_adr,
-            None,
-            Some(libs),
+            FrameBindings::root(ctx_adr, libs.into()),
             Some(param),
         )?;
         check_vm_return_value(&rv, "p2sh call")?;
@@ -370,25 +370,21 @@ impl Machine {
     fn do_call(
         &mut self,
         env: &mut ExecEnv,
-        mode: ExecMode,
+        exec: ExecCtx,
         code: &FnObj,
-        entry_addr: ContractAddress,
-        code_owner: Option<ContractAddress>,
-        libs: Option<Vec<ContractAddress>>,
+        bindings: FrameBindings,
         param: Option<Value>,
     ) -> VmrtRes<Value> {
-        self.frames.push(CallFrame::new()); // for reclaim
+        self.frames.push(CallFrame::new());
         let res = self.frames.last_mut().unwrap().start_call(
             &mut self.r,
             env,
-            mode,
+            exec,
             code,
-            entry_addr,
-            code_owner,
-            libs,
+            bindings,
             param,
         );
-        self.frames.pop().unwrap().reclaim(&mut self.r); // do reclaim
+        self.frames.pop().unwrap().reclaim(&mut self.r);
         res
     }
 }
@@ -504,6 +500,21 @@ mod machine_test {
             StateMem::default(),
             r##"
                 return map { "kind": "hnft" }
+            "##,
+        );
+        assert_err_contains(res, "main call return error");
+    }
+
+
+    #[test]
+    fn main_call_still_rejects_args_return() {
+        let base_addr = test_base_addr();
+        let res = run_main_script(
+            base_addr,
+            vec![],
+            StateMem::default(),
+            r##"
+                return args(7, 8)
             "##,
         );
         assert_err_contains(res, "main call return error");
@@ -638,6 +649,56 @@ mod machine_test {
     }
 
     #[test]
+    fn internal_contract_call_accepts_args_return_value() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 88);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("build")
+                    .unwrap()
+                    .types(Some(VT::Args), vec![])
+                    .fitsh(r##"return args(7, map { "kind": "hnft" })"##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("consume")
+                    .unwrap()
+                    .types(Some(VT::U8), vec![VT::U8, VT::Compo])
+                    .fitsh(r##"
+                        param { num doc }
+                        assert doc is map
+                        return num
+                    "##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("relay")
+                    .unwrap()
+                    .external()
+                    .types(Some(VT::U8), vec![])
+                    .fitsh(r##"return this.consume(this.build())"##)
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.relay()
+            "##,
+        )
+        .unwrap();
+        assert_eq!(rv, Value::U8(7));
+    }
+
+    #[test]
     fn call_external_view_pure_use_inherits_but_callcode_keeps_local_lookup() {
         let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(11));
@@ -699,7 +760,7 @@ mod machine_test {
             machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
         };
 
-        // CALL (External): should resolve inherited `probe` on parent.
+        // CALLEXT (External): should resolve inherited `probe` on parent.
         let external_script = r##"
             lib C = 0
             let v = C.probe()
@@ -708,10 +769,10 @@ mod machine_test {
         "##;
         assert!(
             run_main(external_script).is_ok(),
-            "CALL should resolve through inherits"
+            "CALLEXT should resolve through inherit chain"
         );
 
-        // CALLVIEW/CALLPURE should also resolve inherits; CALLCODE stays local-only.
+        // CALLVIEW/CALLPURE should also resolve the inherit chain; CALLCODE stays local-only.
         let view_script = r##"
             lib C = 0
             assert C:probe() == 201
@@ -719,7 +780,7 @@ mod machine_test {
         "##;
         assert!(
             run_main(view_script).is_ok(),
-            "CALLVIEW should resolve through inherits"
+            "CALLVIEW should resolve through inherit chain"
         );
 
         let pure_script = r##"
@@ -729,17 +790,16 @@ mod machine_test {
         "##;
         assert!(
             run_main(pure_script).is_ok(),
-            "CALLPURE should resolve through inherits"
+            "CALLPURE should resolve through inherit chain"
         );
 
         let callcode_script = r##"
             lib C = 0
-            callcode C::probe
-            end
+            callcode C.probe
         "##;
         assert!(
             run_main(callcode_script).is_err(),
-            "CALLCODE should not resolve inherits"
+            "CALLCODE should not resolve inherit chain"
         );
     }
 
@@ -926,6 +986,76 @@ mod machine_test {
         );
     }
 
+
+    #[test]
+    fn abst_external_call_fails_before_loading_lib_target() {
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 33);
+        let contract_target = test_contract(&base_addr, 34);
+
+        let target_sto = Contract::new()
+            .func(
+                Func::new("probe")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 7")
+                    .unwrap(),
+            )
+            .into_sto();
+        let entry_sto = Contract::new()
+            .lib(contract_target.to_addr())
+            .syst(
+                Abst::new(AbstCall::Construct)
+                    .fitsh(
+                        r##"
+                        lib T = 0
+                        return T.probe()
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas,
+        };
+        let mut machine = Machine::create(Resoure::create(1));
+
+        let err = machine
+            .abst_call(
+                &mut exec,
+                AbstCall::Construct,
+                contract_entry.clone(),
+                Value::Bytes(vec![]),
+            )
+            .expect_err("abst external call must be rejected before target load");
+        assert!(err.contains("CallInAbst"), "unexpected error: {err}");
+        assert!(machine.r.contracts.contains_key(&contract_entry));
+        assert!(!machine.r.contracts.contains_key(&contract_target));
+    }
+
     #[test]
     fn callview_and_callpure_enforce_mode_call_whitelist() {
         let base_addr = test_base_addr();
@@ -973,22 +1103,21 @@ mod machine_test {
         assert_err_contains(pure_res, "CallInPure");
     }
 
+
     #[test]
-    fn callcode_rejects_parametrized_target_and_nested_calls() {
+    fn callcode_cannot_reenable_action_from_nested_frame() {
         let base_addr = test_base_addr();
-        let contract_target = test_contract(&base_addr, 23);
+        let contract_target = test_contract(&base_addr, 221);
         let target_sto = Contract::new()
             .func(
-                Func::new("need_arg")
+                Func::new("bad_act")
                     .unwrap()
-                    .types(None, vec![VT::U64])
-                    .fitsh("return 0")
-                    .unwrap(),
-            )
-            .func(
-                Func::new("nested")
-                    .unwrap()
-                    .fitsh("return this.nope()")
+                    .fitsh(
+                        r##"
+                        transfer_hac_to(1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9, 1)
+                        return 0
+                        "##,
+                    )
                     .unwrap(),
             )
             .into_sto();
@@ -998,28 +1127,88 @@ mod machine_test {
             vmsta.contract_set_sync_edition(&contract_target, &target_sto);
         }
 
-        let need_arg_script = r##"
+        let script = r##"
             lib C = 0
-            callcode C::need_arg
-            end
+            callcode C.bad_act
+        "##;
+        let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
+        assert_err_contains(res, "ActDisabled");
+    }
+
+    #[test]
+    fn callcode_reuses_current_argv_and_allows_nested_calls() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 23);
+        let target_sto = Contract::new()
+            .lib(contract_target.to_addr())
+            .func(
+                Func::new("need_arg")
+                    .unwrap()
+                    .types(Some(VT::U8), vec![VT::U8])
+                    .fitsh("param { x }
+return x")
+                    .unwrap(),
+            )
+            .func(Func::new("leaf").unwrap().fitsh("return 7").unwrap())
+            .func(
+                Func::new("nested")
+                    .unwrap()
+                    .fitsh("return this.leaf()")
+                    .unwrap(),
+            )
+            .func(
+                Func::new("jump_need_arg")
+                    .unwrap()
+                    .external()
+                    .types(Some(VT::U8), vec![VT::U8])
+                    .fitsh(
+                        r##"
+                        lib C = 0
+                        callcode C.need_arg
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("jump_nested")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib C = 0
+                        callcode C.nested
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+
+        let arg_script = r##"
+            lib C = 0
+            assert C.jump_need_arg(9) == 9
+            return 0
         "##;
         let nested_script = r##"
             lib C = 0
-            callcode C::nested
-            end
+            assert C.jump_nested() == 7
+            return 0
         "##;
 
         let arg_res = run_main_script(
             base_addr.clone(),
             vec![contract_target.clone()],
             ext_state.clone(),
-            need_arg_script,
+            arg_script,
         );
-        assert_err_contains(arg_res, "CallArgvTypeFail");
+        assert!(arg_res.is_ok(), "callcode should forward current argv: {arg_res:?}");
 
-        let nested_res =
-            run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
-        assert_err_contains(nested_res, "CallInCallcode");
+        let nested_res = run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
+        assert!(nested_res.is_ok(), "callcode should allow nested calls: {nested_res:?}");
     }
 
     #[test]
@@ -1043,12 +1232,145 @@ mod machine_test {
 
         let script = r##"
             lib C = 0
-            callcode C::ret_mismatch
-            end
+            callcode C.ret_mismatch
         "##;
         let rv = run_main_script(base_addr, vec![contract_target], ext_state, script)
             .expect("callcode should follow caller(no contract) return policy");
         assert_eq!(rv, Value::U8(0));
+    }
+
+    #[test]
+    fn nested_callcode_preserves_outer_caller_return_contract() {
+        let base_addr = test_base_addr();
+        let contract_outer = test_contract(&base_addr, 34);
+        let contract_middle = test_contract(&base_addr, 35);
+        let contract_leaf = test_contract(&base_addr, 36);
+
+        let leaf_sto = Contract::new()
+            .func(
+                Func::new("leaf")
+                    .unwrap()
+                    .types(Some(VT::U8), vec![])
+                    .fitsh("return 7")
+                    .unwrap(),
+            )
+            .into_sto();
+        let middle_sto = Contract::new()
+            .lib(contract_leaf.to_addr())
+            .func(
+                Func::new("middle")
+                    .unwrap()
+                    .types(Some(VT::Bool), vec![])
+                    .fitsh(
+                        r##"
+                        lib L = 0
+                        callcode L.leaf
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let outer_sto = Contract::new()
+            .lib(contract_middle.to_addr())
+            .func(
+                Func::new("outer")
+                    .unwrap()
+                    .external()
+                    .types(Some(VT::U8), vec![])
+                    .fitsh(
+                        r##"
+                        lib M = 0
+                        callcode M.middle
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_leaf, &leaf_sto);
+            vmsta.contract_set_sync_edition(&contract_middle, &middle_sto);
+            vmsta.contract_set_sync_edition(&contract_outer, &outer_sto);
+        }
+
+        let script = r##"
+            lib O = 0
+            assert O.outer() == 7
+            return 0
+        "##;
+        let res = run_main_script(base_addr, vec![contract_outer], ext_state, script);
+        assert!(
+            res.is_ok(),
+            "nested callcode must keep outer caller return contract: {res:?}"
+        );
+    }
+
+    #[test]
+    fn tail_call_unwind_uses_frozen_caller_return_contract() {
+        let base_addr = test_base_addr();
+        let contract_outer = test_contract(&base_addr, 37);
+        let contract_middle = test_contract(&base_addr, 38);
+        let contract_leaf = test_contract(&base_addr, 39);
+
+        let leaf_sto = Contract::new()
+            .func(
+                Func::new("leaf")
+                    .unwrap()
+                    .external()
+                    .types(Some(VT::U8), vec![])
+                    .fitsh("return 7")
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut middle_codes = vec![crate::rt::Bytecode::CALLEXT as u8, 0];
+        middle_codes.extend_from_slice(&crate::rt::calc_func_sign("leaf"));
+        let middle_sto = Contract::new()
+            .lib(contract_leaf.to_addr())
+            .func(
+                Func::new("middle")
+                    .unwrap()
+                    .types(Some(VT::Bool), vec![])
+                    .bytecode(middle_codes)
+                    .unwrap(),
+            )
+            .into_sto();
+        let outer_sto = Contract::new()
+            .lib(contract_middle.to_addr())
+            .func(
+                Func::new("outer")
+                    .unwrap()
+                    .external()
+                    .types(Some(VT::U8), vec![])
+                    .fitsh(
+                        r##"
+                        lib M = 0
+                        callcode M.middle
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_leaf, &leaf_sto);
+            vmsta.contract_set_sync_edition(&contract_middle, &middle_sto);
+            vmsta.contract_set_sync_edition(&contract_outer, &outer_sto);
+        }
+
+        let script = r##"
+            lib O = 0
+            assert O.outer() == 7
+            return 0
+        "##;
+        let res = run_main_script(base_addr, vec![contract_outer], ext_state, script);
+        assert!(
+            res.is_ok(),
+            "tail unwind must keep frozen caller return contract: {res:?}"
+        );
     }
 
     #[test]
@@ -1095,7 +1417,7 @@ mod machine_test {
         let res = run_main_script(base_addr, vec![contract_child], ext_state, script);
         assert!(
             res.is_ok(),
-            "super should choose first direct parent in inherits order"
+            "super should choose first direct parent in inherit order"
         );
     }
 
@@ -1146,6 +1468,19 @@ mod machine_test {
             .func(Func::new("view_ok").unwrap().fitsh("return 7").unwrap())
             .func(Func::new("pure_ok").unwrap().fitsh("return 8").unwrap())
             .func(Func::new("code_ok").unwrap().fitsh("return 0").unwrap())
+            .func(
+                Func::new("self_ok")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        assert self:view_ok() == 7
+                        assert self::pure_ok() == 8
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
             .into_sto();
         let mut ext_state = StateMem::default();
         {
@@ -1157,14 +1492,395 @@ mod machine_test {
             lib C = 0
             assert C:view_ok() == 7
             assert C::pure_ok() == 8
-            callcode C::code_ok
+            assert C.self_ok() == 0
+            callcode C.code_ok
             end
         "##;
         let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
         assert!(
             res.is_ok(),
-            "local lookup should succeed for view/pure/callcode"
+            "local lookup should succeed for view/pure/callcode/self shortcuts"
         );
+    }
+
+    #[test]
+    fn newframe_calls_rebind_current_libctx_for_callee_lib_calls() {
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 71);
+        let contract_entry_lib = test_contract(&base_addr, 72);
+        let contract_code_lib = test_contract(&base_addr, 73);
+
+        let entry_lib_sto = Contract::new()
+            .func(Func::new("id").unwrap().external().fitsh("return 20").unwrap())
+            .func(Func::new("view_id").unwrap().fitsh("return 21").unwrap())
+            .func(Func::new("pure_id").unwrap().fitsh("return 22").unwrap())
+            .into_sto();
+        let code_lib_sto = Contract::new()
+            .func(Func::new("id").unwrap().external().fitsh("return 30").unwrap())
+            .func(Func::new("view_id").unwrap().fitsh("return 31").unwrap())
+            .func(Func::new("pure_id").unwrap().fitsh("return 32").unwrap())
+            .into_sto();
+        let entry_sto = Contract::new()
+            .lib(contract_entry_lib.to_addr())
+            .lib(contract_code_lib.to_addr())
+            .func(
+                Func::new("ext_probe")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Dep = 1
+                        assert Dep.id() == 30
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("view_probe")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Dep = 1
+                        assert Dep:view_id() == 31
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("pure_probe")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Dep = 1
+                        assert Dep::pure_id() == 32
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_entry_lib, &entry_lib_sto);
+            vmsta.contract_set_sync_edition(&contract_code_lib, &code_lib_sto);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            assert C.ext_probe() == 0
+            assert C:view_probe() == 0
+            assert C::pure_probe() == 0
+            return 0
+        "##;
+        let res = run_main_script(base_addr, vec![contract_entry, contract_entry_lib], ext_state, script);
+        assert!(
+            res.is_ok(),
+            "new-frame calls should resolve callee lib lookups on code_owner: {res:?}"
+        );
+    }
+
+
+    #[test]
+    fn callcode_rebinds_callee_libs_for_nested_calls() {
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 81);
+        let contract_entry_lib = test_contract(&base_addr, 82);
+        let contract_code_lib = test_contract(&base_addr, 83);
+
+        let entry_lib_sto = Contract::new()
+            .func(Func::new("id").unwrap().external().fitsh("return 20").unwrap())
+            .func(Func::new("view_id").unwrap().fitsh("return 21").unwrap())
+            .func(Func::new("pure_id").unwrap().fitsh("return 22").unwrap())
+            .into_sto();
+        let code_lib_sto = Contract::new()
+            .func(Func::new("id").unwrap().external().fitsh("return 30").unwrap())
+            .func(Func::new("view_id").unwrap().fitsh("return 31").unwrap())
+            .func(Func::new("pure_id").unwrap().fitsh("return 32").unwrap())
+            .func(Func::new("code_ok").unwrap().fitsh("return 0").unwrap())
+            .into_sto();
+        let entry_sto = Contract::new()
+            .lib(contract_entry_lib.to_addr())
+            .lib(contract_code_lib.to_addr())
+            .func(
+                Func::new("jump_ext")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Dep = 1
+                        assert Dep.id() == 30
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("jump_view")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Dep = 1
+                        assert Dep:view_id() == 31
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("jump_pure")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Dep = 1
+                        assert Dep::pure_id() == 32
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("jump_code")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Dep = 1
+                        callcode Dep.code_ok
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_entry_lib, &entry_lib_sto);
+            vmsta.contract_set_sync_edition(&contract_code_lib, &code_lib_sto);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+        }
+
+        let tx_libs = vec![contract_entry.clone(), contract_entry_lib.clone()];
+        let run_callcode = |func: &str| -> Ret<Value> {
+            let script = format!(
+                r##"
+                lib C = 0
+                callcode C.{func}
+                "##,
+            );
+            run_main_script(base_addr.clone(), tx_libs.clone(), ext_state.clone(), &script)
+        };
+        for func in ["jump_ext", "jump_view", "jump_pure", "jump_code"] {
+            let res = run_callcode(func);
+            assert!(res.is_ok(), "callcode should rebind callee libs for {func}: {res:?}");
+        }
+    }
+
+    #[test]
+    fn call_depth_overflow_fails_before_loading_target_contract() {
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 84);
+        let contract_target = test_contract(&base_addr, 85);
+
+        let target_sto = Contract::new()
+            .func(
+                Func::new("probe")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 7")
+                    .unwrap(),
+            )
+            .into_sto();
+        let entry_sto = Contract::new()
+            .lib(contract_target.to_addr())
+            .func(
+                Func::new("deep")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib T = 0
+                        return T.probe()
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+
+        let main_codes = lang_to_bytecode(
+            r##"
+            lib E = 0
+            return E.deep()
+            "##,
+        )
+        .unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+        env.tx.addrs = vec![contract_entry.clone().into_addr()];
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .addrs(env.tx.addrs.clone())
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas,
+        };
+        let mut machine = Machine::create(Resoure::create(1));
+        machine.r.space_cap.call_depth = 1;
+
+        let err = machine
+            .main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+            .expect_err("nested call must exceed call_depth limit");
+        assert!(err.contains("OutOfCallDepth"), "unexpected error: {err}");
+        assert!(machine.r.contracts.contains_key(&contract_entry));
+        assert!(!machine.r.contracts.contains_key(&contract_target));
+    }
+
+
+    #[test]
+    fn user_call_missing_argv_fails_before_loading_target_contract() {
+        use crate::rt::Bytecode;
+
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 86);
+        let contract_target = test_contract(&base_addr, 87);
+
+        let target_sto = Contract::new()
+            .func(
+                Func::new("probe")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 7")
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut entry_codes = vec![Bytecode::POP as u8, Bytecode::CALLEXT as u8, 0];
+        entry_codes.extend_from_slice(&crate::rt::calc_func_sign("probe"));
+        let entry_sto = Contract::new()
+            .lib(contract_target.to_addr())
+            .func(
+                Func::new("deep")
+                    .unwrap()
+                    .external()
+                    .bytecode(entry_codes)
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+
+        let main_codes = lang_to_bytecode(
+            r##"
+            lib E = 0
+            return E.deep()
+            "##,
+        )
+        .unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+        env.tx.addrs = vec![contract_entry.clone().into_addr()];
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .addrs(env.tx.addrs.clone())
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas,
+        };
+        let mut machine = Machine::create(Resoure::create(1));
+
+        let err = machine
+            .main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+            .expect_err("nested call without argv must fail locally");
+        assert!(err.contains("Read empty stack"), "unexpected error: {err}");
+        assert!(machine.r.contracts.contains_key(&contract_entry));
+        assert!(!machine.r.contracts.contains_key(&contract_target));
+    }
+
+    #[test]
+    fn abst_call_invalid_param_fails_before_loading_target_contract() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 88);
+
+        let target_sto = Contract::new()
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas,
+        };
+        let mut machine = Machine::create(Resoure::create(1));
+
+        let err = machine
+            .abst_call(
+                &mut exec,
+                AbstCall::Construct,
+                contract_target.clone(),
+                Value::HeapSlice((0, 1)),
+            )
+            .expect_err("invalid abst argv must fail locally");
+        assert!(err.contains("CastBeFnArgvFail"), "unexpected error: {err}");
+        assert!(!machine.r.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1197,7 +1913,7 @@ mod machine_test {
 
         vm.call(VMCall::new(
             &mut ctx,
-            ExecMode::Main as u8,
+            EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             codes.clone().into(),
             Box::new(Value::Nil),
@@ -1242,7 +1958,7 @@ mod machine_test {
         let codes = vec![Bytecode::END as u8];
         vm.call(VMCall::new(
             &mut ctx,
-            ExecMode::Main as u8,
+            EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             codes.clone().into(),
             Box::new(Value::Nil),
@@ -1313,7 +2029,7 @@ mod machine_test {
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             vm.call(VMCall::new(
                 &mut ctx,
-                ExecMode::Main as u8,
+                EntryKind::Main as u8,
                 CodeType::Bytecode as u8,
                 codes.clone().into(),
                 Box::new(Value::Nil),
@@ -1325,7 +2041,7 @@ mod machine_test {
     }
 
     #[test]
-    fn reentry_depth_restores_after_early_return() {
+    fn reentry_level_restores_after_early_return() {
         use crate::rt::Bytecode;
 
         let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
@@ -1351,22 +2067,22 @@ mod machine_test {
         // Invalid code type causes early return inside Main branch before previous manual leave() point.
         let early = vm.call(VMCall::new(
             &mut ctx,
-            ExecMode::Main as u8,
+            EntryKind::Main as u8,
             255,
             Arc::from(vec![]),
             Box::new(Value::Nil),
         ));
         assert!(early.is_err(), "invalid code type must fail");
         assert_eq!(
-            vm.call_state.reentry_depth, 0,
-            "depth must be restored after early return"
+            vm.call_state.reentry_level, 0,
+            "re-entry level must be restored after early return"
         );
 
         // Next normal call should still behave as an outermost call.
         let codes = vec![Bytecode::END as u8];
         let ok = vm.call(VMCall::new(
             &mut ctx,
-            ExecMode::Main as u8,
+            EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             codes.into(),
             Box::new(Value::Nil),
@@ -1376,8 +2092,8 @@ mod machine_test {
             "subsequent call must not be poisoned by previous early return"
         );
         assert_eq!(
-            vm.call_state.reentry_depth, 0,
-            "depth must remain balanced after successful call"
+            vm.call_state.reentry_level, 0,
+            "re-entry level must remain balanced after successful call"
         );
     }
 
@@ -1415,7 +2131,7 @@ mod machine_test {
         let bal_before = read_hac_balance(&mut ctx, &main);
         let call = vm.call(VMCall::new(
             &mut ctx,
-            ExecMode::Main as u8,
+            EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             fail_codes.into(),
             Box::new(Value::Nil),
@@ -1465,7 +2181,7 @@ mod machine_test {
             if run_failed_first {
                 let failed = vm.call(VMCall::new(
                     &mut ctx,
-                    ExecMode::Main as u8,
+                    EntryKind::Main as u8,
                     CodeType::Bytecode as u8,
                     fail_codes.clone().into(),
                     Box::new(Value::Nil),
@@ -1475,7 +2191,7 @@ mod machine_test {
 
             let ok = vm.call(VMCall::new(
                 &mut ctx,
-                ExecMode::Main as u8,
+                EntryKind::Main as u8,
                 CodeType::Bytecode as u8,
                 ok_codes.clone().into(),
                 Box::new(Value::Nil),

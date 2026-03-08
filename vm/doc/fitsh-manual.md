@@ -56,7 +56,7 @@ Fitsh compiles to IR bytecode. This IR can be **decompiled back to Fitsh source*
 |--------|--------|
 | `trim_param_unpack` | Emit `param { $0 $1 ... }` when param names inferred |
 | `hide_default_call_argv` | Omit `nil` or `""` placeholder when no args |
-| `call_short_syntax` | Prefer `lib.func(...)` over `call idx::0x...(args)` when SourceMap available |
+| `call_short_syntax` | Prefer `lib.func(...)` over `callext idx::0x...(args)` when SourceMap available |
 | `flatten_array_list` | Emit `[a, b, c]` instead of `list { a b c }` |
 | `flatten_syscall_cat` | Flatten nested `++` in system call args |
 | `recover_literals` | Recover and emit numeric/bytes literals |
@@ -65,7 +65,7 @@ Fitsh compiles to IR bytecode. This IR can be **decompiled back to Fitsh source*
 
 - **Parameters**: `param { owner amount fee }` or `param { $0 $1 $2 }` when names unavailable
 - **Calls**: `this.foo(...)`, `self.foo(...)`, `super.foo(...)` for internal; `Token.balance_of(addr)` for lib when SourceMap present
-- **Raw calls**: `call 1::0xabcdef01(10, 20)` when lib/func name unknown
+- **Raw calls**: `callext 1::0xabcdef01(10, 20)` when lib/func name unknown
 
 ---
 
@@ -114,16 +114,15 @@ contract ContractName {
 ### 3.3 Function Declaration
 
 ```fitsh
-function [external|private] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
+function [external] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
 ```
 
 - `external`: Marks function as callable by `CALL` (`External`) path
-- `private`: Not marked `external` (default visibility marker)
 - `ircode`: Compile to IR (default for contract functions)
 - `bytecode`: Compile to raw bytecode
 
 Visibility note:
-- `external/private` here are runtime visibility markers for call resolution, not source-level access modifiers with universal guarantees across all call modes.
+- `external` is the runtime visibility marker used by external call resolution.
 - If naming is confusing in practice, a future revision may introduce clearer aliases.
 
 ---
@@ -666,58 +665,62 @@ Library resolution note:
 
 ### 11.2 Call Permission and State Access Control
 
-The VM enforces a permission system based on **ExecMode** (execution mode) and **in_callcode**. Each call type transitions to a specific mode and constrains what the callee can do.
+The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)** plus **in_callcode**.
+
+- `ExecDomain` describes the current dispatch policy source: `TopMain`, `TopP2sh`, `TopAbst`, or `Contract`.
+- `FrameMode` describes current state-access strength: `External`, `Inner`, `View`, or `Pure`.
+- Fixed call instructions (`CALL`, `CALLVIEW`, `CALLPURE`, `CALLTHIS`, `CALLSELF`, `CALLSUPER`) switch to `ExecDomain::Contract` and set a fixed `FrameMode`.
+- `CALLCODE` inherits the caller's full `ExecCtx` and runs in-place with `in_callcode = true`.
 
 #### 7 Call Instructions: Dispatch Matrix (runtime-exact)
 
-| Call | Syntax | Callee mode | Lookup root | Inheritance search | Frame behavior | State read | State write |
-|------|--------|-------------|-------------|--------------------|----------------|------------|-------------|
-| `call` | `lib.func(...)` | External | library target | Yes (target + inherits) | New frame | Yes | Yes |
-| `callview` | `lib:func(...)` | View | library target | No (local table only) | New frame | Yes | No |
-| `callpure` | `lib::func(...)` | Pure | library target | No (local table only) | New frame | No | No |
-| `callcode` | `callcode lib::sig` | Inherits caller | library target | No (local table only) | In-place (no new frame) | Inherits | Inherits |
-| `callthis` | `this.func(...)` | Inner | `state_addr` | Yes | New frame | Yes | Yes |
-| `callself` | `self.func(...)` | Inner | `code_owner` | Yes | New frame | Yes | Yes |
-| `callsuper` | `super.func(...)` | Inner | direct parents of `code_owner` | Yes (parent DFS) | New frame | Yes | Yes |
+| Call | Syntax | Callee `ExecCtx` | Lookup root | Inheritance search | Frame behavior | State read | State write |
+|------|--------|------------------|-------------|--------------------|----------------|------------|-------------|
+| `call` | `lib.func(...)` | `Contract + External` | library target | Yes (target + inherits) | New frame | Yes | Yes |
+| `callview` | `lib:func(...)` | `Contract + View` | library target | Yes (target + inherits) | New frame | Yes | No |
+| `callpure` | `lib::func(...)` | `Contract + Pure` | library target | Yes (target + inherits) | New frame | No | No |
+| `callcode` | `callcode lib::sig` | inherits caller `ExecCtx` | library target | No (local table only) | In-place (no new frame) | Inherits | Inherits |
+| `callthis` | `this.func(...)` | `Contract + Inner` | `state_addr` | Yes | New frame | Yes | Yes |
+| `callself` | `self.func(...)` | `Contract + Inner` | `code_owner` | Yes | New frame | Yes | Yes |
+| `callsuper` | `super.func(...)` | `Contract + Inner` | direct parents of `code_owner` | No extra DFS beyond direct-parent entry set | New frame | Yes | Yes |
 
 #### Address Transition Rules (`state_addr` / `code_owner`)
 
 | Call | `state_addr` | `code_owner` |
 |------|--------------|--------------|
 | `call` | switch to library target | switch to resolved function owner (target or inherited parent) |
-| `callview` | unchanged | switch to library target |
-| `callpure` | unchanged | switch to library target |
+| `callview` | unchanged | switch to resolved function owner (target or inherited parent) |
+| `callpure` | unchanged | switch to resolved function owner (target or inherited parent) |
 | `callcode` | unchanged | switch current frame to library target |
-| `callthis` | unchanged | resolved owner from `state_addr` chain (default `state_addr`) |
-| `callself` | unchanged | resolved owner from `code_owner` chain (default previous `code_owner`) |
-| `callsuper` | unchanged | resolved owner from direct-parent chain |
+| `callthis` | unchanged | resolved owner from `state_addr` chain |
+| `callself` | unchanged | resolved owner from `code_owner` chain |
+| `callsuper` | unchanged | resolved owner from direct-parent entry set |
 
-**State** = Storage, Global, Memory, Log. 
+**State** = Storage, Global, Memory, Log.
 
-**Important**: `callcode` runs in the **current frame** and **fully inherits the caller's ExecMode** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the callcode body are governed by the inherited mode's permissions. Additionally, `callcode` sets `in_callcode = true`, which forbids any further nested calls (CallInCallcode error).
+**Important**: `callcode` runs in the **current frame** and **fully inherits the caller's ExecCtx** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the callcode body are governed by the inherited domain/frame permissions. Additionally, `callcode` sets `in_callcode = true`, which forbids any further nested calls (CallInCallcode error).
 
-#### Allowed Calls per Entry/Execution Mode
+#### Orthogonal Permission Matrix
 
-| Mode | Allowed calls | Disallowed |
-|------|----------------|------------|
-| **Main** (tx main entry) | CALL, CALLVIEW, CALLPURE, CALLCODE | CALLTHIS, CALLSELF, CALLSUPER |
-| **P2sh** (script verify) | CALLVIEW, CALLPURE, CALLCODE | CALL, CALLTHIS, CALLSELF, CALLSUPER |
-| **Abst** (payment hooks) | CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE | CALL (External) |
-| **External** (nested contract) | All | — |
-| **Inner** (this/self/super) | All | — |
-| **View** (read-only) | CALLVIEW, CALLPURE | CALL, CALLTHIS, CALLSELF, CALLSUPER |
-| **Pure** (no state) | CALLPURE only | All others |
-| **in_callcode** (inside CALLCODE) | None | All (nested calls forbidden) |
+Domain restrictions:
 
-**Abst** disallows CALL (External) to prevent reentrancy from payment hooks into external contracts.
+| `ExecDomain` | Allowed calls |
+|---|---|
+| `TopMain` | `CALL`, `CALLVIEW`, `CALLPURE`, `CALLCODE` |
+| `TopP2sh` | `CALLVIEW`, `CALLPURE`, `CALLCODE` |
+| `TopAbst` | `CALLTHIS`, `CALLSELF`, `CALLSUPER`, `CALLVIEW`, `CALLPURE`, `CALLCODE` |
+| `Contract` | no extra domain restriction |
 
-| ExecMode/Entry | CALL | CALLVIEW | CALLPURE | CALLCODE | CALLTHIS | CALLSELF | CALLSUPER |
-|---|---|---|---|---|---|---|---|
-| Main | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| P2sh | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Abst | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| External/Inner | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| View | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+Frame restrictions:
+
+| `FrameMode` | Allowed calls | State read | State write |
+|---|---|---|---|
+| `External` | unrestricted by frame mode | Yes | Yes |
+| `Inner` | unrestricted by frame mode | Yes | Yes |
+| `View` | `CALLVIEW`, `CALLPURE` | Yes | No |
+| `Pure` | `CALLPURE` only | No | No |
+
+`in_callcode` still forbids all nested calls. `TopAbst` disallows `CALL` (External) to prevent reentrancy from payment hooks into external contracts.
 | Pure | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Callcode | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 

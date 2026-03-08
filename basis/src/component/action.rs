@@ -9,7 +9,7 @@ pub const ACTION_CTX_LEVEL_AST_MAX: usize = ACTION_CTX_LEVEL_CALL_BASE - 1;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ActExecFrom {
     TxLoop,
-    ExtActionCall,
+    ActionCall,
 }
 
 

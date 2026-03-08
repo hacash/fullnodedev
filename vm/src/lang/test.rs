@@ -279,29 +279,16 @@ mod token_t {
         }
     }
 
-    // ==================== Bug 3: callcode requires end ====================
-
     #[test]
-    fn test_callcode_requires_end() {
+    fn test_callcode_without_source_end_is_valid() {
         use super::lang_to_irnode;
 
-        // Valid callcode syntax (with end)
-        let valid_script = r#"
-            callcode 0::0xabcdef01
-            end
+        let script = r#"
+            lib C = 0
+            callcode C.probe
         "#;
-        let result = lang_to_irnode(valid_script);
-        assert!(
-            result.is_ok(),
-            "callcode with end should compile successfully"
-        );
-
-        // Invalid callcode syntax (without end)
-        let invalid_script = r#"
-            callcode 0::0xabcdef01
-        "#;
-        let result = lang_to_irnode(invalid_script);
-        assert!(result.is_err(), "callcode without end should fail");
+        let result = lang_to_irnode(script);
+        assert!(result.is_ok(), "callcode without source-level end must be valid");
     }
 
     // ==================== Number Type Suffix Tests ====================

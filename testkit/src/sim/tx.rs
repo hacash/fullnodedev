@@ -123,7 +123,7 @@ impl TransactionRead for StubTx {
 
     fn fee_extend(&self) -> Ret<u8> {
         if self.ty < 3 {
-            return Ok(0)
+            return Ok(0);
         }
         Ok(self.gas_max)
     }

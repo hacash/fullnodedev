@@ -1,7 +1,7 @@
 
 pub struct VMCall<'a> {
     pub ctx: &'a mut dyn Context,
-    pub mode: u8,
+    pub entry: u8,
     pub kind: u8,
     pub payload: Arc<[u8]>,
     pub param: Box<dyn Any>,
@@ -10,14 +10,14 @@ pub struct VMCall<'a> {
 impl<'a> VMCall<'a> {
     pub fn new(
         ctx: &'a mut dyn Context,
-        mode: u8,
+        entry: u8,
         kind: u8,
         payload: Arc<[u8]>,
         param: Box<dyn Any>,
     ) -> Self {
         Self {
             ctx,
-            mode,
+            entry,
             kind,
             payload,
             param,

@@ -114,19 +114,19 @@ fn main() {
         }
     }
 
-    // Access using trait or method if available, but ContractAddrsssW1 seems to not expose lists.
+    // Access using trait or method if available, but ContractAddrListW1 seems to not expose lists.
     // However, it implements combi_list, which provides `list()` method usually or `lists` field.
     // `combi_list` macro defined in basis/macros? or field/macros?
-    // Let's assume list() method exists based on earlier usage in contract.rs: `self.inherits.length()`.
+    // Let's assume list() method exists based on earlier usage in contract.rs: `self.inherit.length()`.
     // Wait, earlier code `self.abstcalls.list()` works.
     let inherit_addrs: Vec<String> = sto
-        .inherits
+        .inherit
         .as_list()
         .iter()
         .map(|a| a.to_readable())
         .collect();
     let lib_addrs: Vec<String> = sto
-        .librarys
+        .library
         .as_list()
         .iter()
         .map(|a| a.to_readable())
@@ -167,10 +167,9 @@ fn main() {
     let call_construct = d_call_construct.unwrap_or_else(|| Bool::new(false));
 
     let argv = d_argv.unwrap_or_default();
-    let protocol_cost =
-        d_fee.unwrap_or_else(|| {
-            estimate_protocol_cost_auto(&txfee, nonce, call_construct, argv.clone(), &sto)
-        });
+    let protocol_cost = d_fee.unwrap_or_else(|| {
+        estimate_protocol_cost_auto(&txfee, nonce, call_construct, argv.clone(), &sto)
+    });
 
     let mut action = ContractDeploy::default();
     action.protocol_cost = protocol_cost;

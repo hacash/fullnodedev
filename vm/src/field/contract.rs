@@ -28,9 +28,9 @@ combi_struct!{ ContractUserFunc,
 }
 
 // Contract address list
-combi_list!(ContractAddrsssW1, Uint1, ContractAddress);
+combi_list!(ContractAddrListW1, Uint1, ContractAddress);
 
-impl ContractAddrsssW1 {
+impl ContractAddrListW1 {
 	pub fn check_repeat(&self, src: &Self) -> bool {
 		self.lists.iter().any(|a|src.lists.contains(a))
 	}
@@ -42,12 +42,12 @@ combi_list!(ContractUserFuncList, Uint2, ContractUserFunc);
 
 
 // Replace At
-combi_struct!{ LibReplaceAt,
+combi_struct!{ ContractAddrReplaceAt,
 	idx: Uint1
 	addr: ContractAddress
 }
 
-combi_list!(LibReplaceAtList, Uint1, LibReplaceAt);
+combi_list!(ContractAddrReplaceAtList, Uint1, ContractAddrReplaceAt);
 
 combi_struct!{ ContractEdition,
 	revision: Uint2
@@ -61,10 +61,10 @@ impl Copy for ContractEdition {}
 // Contract Edit
 combi_struct!{ ContractEdit,
 	expect_revision: Uint2
-	inherits_add:  ContractAddrsssW1
-	inherits_replace_at: LibReplaceAtList
-	librarys_add:  ContractAddrsssW1
-	librarys_replace_at: LibReplaceAtList
+	inherit_add:  ContractAddrListW1
+	inherit_replace_at: ContractAddrReplaceAtList
+	library_add:  ContractAddrListW1
+	library_replace_at: ContractAddrReplaceAtList
 	abstcalls: ContractAbstCallList
 	userfuncs: ContractUserFuncList
 }
@@ -161,8 +161,8 @@ impl ContractUserFuncList {
 // Contract
 combi_struct!{ ContractSto, 
 	metas: ContractMeta
-	inherits:  ContractAddrsssW1
-    librarys:  ContractAddrsssW1
+	inherit:  ContractAddrListW1
+    library:  ContractAddrListW1
 	abstcalls: ContractAbstCallList
 	userfuncs: ContractUserFuncList
     morextend: Uint8
@@ -194,10 +194,10 @@ impl ContractSto {
 			return itr_err_fmt!(ContractError, "contract revision expect {} but need {}", edit.expect_revision.uint(), next_rev);
 		}
 
-		let edit_empty = edit.inherits_add.length() == 0
-			&& edit.inherits_replace_at.length() == 0
-			&& edit.librarys_add.length() == 0
-			&& edit.librarys_replace_at.length() == 0
+		let edit_empty = edit.inherit_add.length() == 0
+			&& edit.inherit_replace_at.length() == 0
+			&& edit.library_add.length() == 0
+			&& edit.library_replace_at.length() == 0
 			&& edit.abstcalls.length() == 0
 			&& edit.userfuncs.length() == 0;
 		if edit_empty {
@@ -207,73 +207,73 @@ impl ContractSto {
 		let mut did_append = false;
 		let mut did_change = false;
 
-		let inh_len = self.inherits.length();
-		let lib_len = self.librarys.length();
+		let inh_len = self.inherit.length();
+		let lib_len = self.library.length();
 
-		if edit.inherits_replace_at.length() > 0 {
+		if edit.inherit_replace_at.length() > 0 {
 			did_change = true;
 			let mut idxs = HashSet::new();
-			for r in edit.inherits_replace_at.as_list() {
+			for r in edit.inherit_replace_at.as_list() {
 				r.addr.check().map_ire(ContractAddrErr)?;
 				let idx = r.idx.uint() as usize;
 				if !idxs.insert(r.idx.uint()) {
-					return itr_err_fmt!(InheritsError, "inherits replace index duplicated")
+					return itr_err_fmt!(InheritError, "inherit replace index duplicated")
 				}
 				if idx >= inh_len {
-					return itr_err_fmt!(InheritsError, "inherits replace index overflow")
+					return itr_err_fmt!(InheritError, "inherit replace index overflow")
 				}
-				self.inherits.replace(idx, r.addr.clone()).map_ire(InheritsError)?;
+				self.inherit.replace(idx, r.addr.clone()).map_ire(InheritError)?;
 			}
 		}
-		if edit.librarys_replace_at.length() > 0 {
+		if edit.library_replace_at.length() > 0 {
 			did_change = true;
 			let mut idxs = HashSet::new();
-			for r in edit.librarys_replace_at.as_list() {
+			for r in edit.library_replace_at.as_list() {
 				r.addr.check().map_ire(ContractAddrErr)?;
 				let idx = r.idx.uint() as usize;
 				if !idxs.insert(r.idx.uint()) {
-					return itr_err_fmt!(LibrarysError, "librarys replace index duplicated")
+					return itr_err_fmt!(LibraryError, "library replace index duplicated")
 				}
 				if idx >= lib_len {
-					return itr_err_fmt!(LibrarysError, "librarys replace index overflow")
+					return itr_err_fmt!(LibraryError, "library replace index overflow")
 				}
-				self.librarys.replace(idx, r.addr.clone()).map_ire(LibrarysError)?;
+				self.library.replace(idx, r.addr.clone()).map_ire(LibraryError)?;
 			}
 		}
 
-		if self.inherits.length() + edit.inherits_add.length() > cap.inherits_parent {
-			return itr_err_fmt!(InheritsError, "inherits number overflow")
+		if self.inherit.length() + edit.inherit_add.length() > cap.inherit {
+			return itr_err_fmt!(InheritError, "inherit number overflow")
 		}
-		if self.librarys.length() + edit.librarys_add.length() > cap.librarys_link {
-			return itr_err_fmt!(LibrarysError, "librarys link number overflow")
+		if self.library.length() + edit.library_add.length() > cap.library {
+			return itr_err_fmt!(LibraryError, "library link number overflow")
 		}
 
-		if edit.inherits_add.length() > 0 {
-			for a in edit.inherits_add.as_list() {
+		if edit.inherit_add.length() > 0 {
+			for a in edit.inherit_add.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 			}
-			self.inherits.append(edit.inherits_add.lists.clone()).unwrap();
+			self.inherit.append(edit.inherit_add.lists.clone()).unwrap();
 			did_append = true;
 		}
-		if edit.librarys_add.length() > 0 {
-			for a in edit.librarys_add.as_list() {
+		if edit.library_add.length() > 0 {
+			for a in edit.library_add.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 			}
-			self.librarys.append(edit.librarys_add.lists.clone()).unwrap();
+			self.library.append(edit.library_add.lists.clone()).unwrap();
 			did_append = true;
 		}
 
 		// check repeat after edit
 		let mut inhset: HashSet<ContractAddress> = HashSet::new();
-		for a in self.inherits.as_list() {
+		for a in self.inherit.as_list() {
 			if !inhset.insert(a.clone()) {
-				return itr_err_fmt!(InheritsError, "inherits cannot repeat")
+				return itr_err_fmt!(InheritError, "inherit cannot repeat")
 			}
 		}
 		let mut libset: HashSet<ContractAddress> = HashSet::new();
-		for a in self.librarys.as_list() {
+		for a in self.library.as_list() {
 			if !libset.insert(a.clone()) {
-				return itr_err_fmt!(LibrarysError, "librarys cannot repeat")
+				return itr_err_fmt!(LibraryError, "library cannot repeat")
 			}
 		}
 
@@ -317,8 +317,8 @@ impl ContractSto {
 			}
 		}
 
-		if self.size() > cap.max_contract_size {
-			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.max_contract_size)
+		if self.size() > cap.contract_size {
+			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
 		}
 
 		self.metas.revision = Uint2::from(next_rev);
@@ -340,28 +340,28 @@ impl ContractSto {
 		use ItrErrCode::*;
 		src.check(hei)?;
 		let cap = SpaceCap::new(hei);
-		if self.inherits.length() + src.inherits.length() > cap.inherits_parent {
-			return itr_err_fmt!(InheritsError, "inherits number overflow")
+		if self.inherit.length() + src.inherit.length() > cap.inherit {
+			return itr_err_fmt!(InheritError, "inherit number overflow")
 		}
-		if self.librarys.length() + src.librarys.length() > cap.librarys_link {
-			return itr_err_fmt!(LibrarysError, "librarys link number overflow")
+		if self.library.length() + src.library.length() > cap.library {
+			return itr_err_fmt!(LibraryError, "library link number overflow")
 		}
 		// inhs and libs check repeat
-		if self.inherits.check_repeat(&src.inherits) {
-			return itr_err_fmt!(InheritsError, "inherits cannot repeat")
+		if self.inherit.check_repeat(&src.inherit) {
+			return itr_err_fmt!(InheritError, "inherit cannot repeat")
 		}
-		if self.librarys.check_repeat(&src.librarys) {
-			return itr_err_fmt!(LibrarysError, "librarys cannot repeat")
+		if self.library.check_repeat(&src.library) {
+			return itr_err_fmt!(LibraryError, "library cannot repeat")
 		}
-		// append inherits and librarys
-		self.inherits.append(src.inherits.lists.clone()).unwrap();
-		self.librarys.append(src.librarys.lists.clone()).unwrap();
+		// append inherit and library
+		self.inherit.append(src.inherit.lists.clone()).unwrap();
+		self.library.append(src.library.lists.clone()).unwrap();
 		// merge abstcall & usrfun 
 		let edit1 = self.abstcalls.check_merge(&src.abstcalls)?;
 		let edit2 = self.userfuncs.check_merge(&src.userfuncs)?;
 		// check size
-		if self.size() > cap.max_contract_size {
-			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.max_contract_size)
+		if self.size() > cap.contract_size {
+			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
 		}
 		// ok
 		Ok(edit1 || edit2)
@@ -377,33 +377,33 @@ impl ContractSto {
 			return e
 		}
 		// check size
-		if self.size() > cap.max_contract_size {
-			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.max_contract_size)
+		if self.size() > cap.contract_size {
+			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
 		}
 		if 0 != *self.morextend {
 			return itr_err_fmt!(ContractError, "extend data format error")
 		}
-		// inherits_parent and librarys
-		if self.inherits.length() > cap.inherits_parent {
-			return itr_err_fmt!(InheritsError, "inherits number overflow")
+		// inherit and library
+		if self.inherit.length() > cap.inherit {
+			return itr_err_fmt!(InheritError, "inherit number overflow")
 		}
-		if self.librarys.length() > cap.librarys_link {
-			return itr_err_fmt!(LibrarysError, "librarys link number overflow")
+		if self.library.length() > cap.library {
+			return itr_err_fmt!(LibraryError, "library link number overflow")
 		}
-		// inherits/librarys address version & no-duplicate check
+		// inherit/library address version & no-duplicate check
 		{
 			let mut inhset: HashSet<ContractAddress> = HashSet::new();
-			for a in self.inherits.as_list() {
+			for a in self.inherit.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 				if !inhset.insert(a.clone()) {
-					return itr_err_fmt!(InheritsError, "inherits cannot repeat")
+					return itr_err_fmt!(InheritError, "inherit cannot repeat")
 				}
 			}
 			let mut libset: HashSet<ContractAddress> = HashSet::new();
-			for a in self.librarys.as_list() {
+			for a in self.library.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 				if !libset.insert(a.clone()) {
-					return itr_err_fmt!(LibrarysError, "librarys cannot repeat")
+					return itr_err_fmt!(LibraryError, "library cannot repeat")
 				}
 			}
 		}

@@ -188,7 +188,10 @@ fn check_bidding_step(
 
 ///////////////////////////////////////////////
 
-fn pick_first_and_my_bid_tx(tx_pool: &dyn TxPool, my_addr: &Address) -> (Option<TxPkg>, Option<TxPkg>) {
+fn pick_first_and_my_bid_tx(
+    tx_pool: &dyn TxPool,
+    my_addr: &Address,
+) -> (Option<TxPkg>, Option<TxPkg>) {
     let mut first: Option<TxPkg> = None;
     let mut mine: Option<TxPkg> = None;
     let mut pick_dmint = |a: &TxPkg| {

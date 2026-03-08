@@ -1,53 +1,49 @@
 
 #[derive(Debug, Clone, Default)]
 pub struct SpaceCap {
-    pub load_contract: usize, // 20
-    pub call_depth: usize,    // 32
+    pub loaded_contract: usize, // 20
+    pub call_depth: usize, // 32
 
-    pub max_value_size: usize, // 1280
-    pub max_compo_length: usize,
+    pub value_size: usize, // 1280
+    pub compo_length: usize,
 
-    pub total_stack: usize, // 16*16 = 256
-    pub total_local: usize, // 16*16 = 256
+    pub stack_slot: usize, // 16*16 = 256
+    pub local_slot: usize, // 16*16 = 256
 
-    pub max_heap_seg: usize, // 64: 256 * 64 = 16kb
+    pub heap_segment: usize, // 64: 256 * 64 = 16kb
 
-    pub max_global: usize, // 20
-    pub max_memory: usize, // 16
+    pub global: usize, // 20
+    pub memory: usize, // 16
 
-    pub max_contract_size: usize, // 65535 * 2
-    pub one_function_size: usize, // 65535 / 4
-    pub inherits_parent: usize, // 8
-    pub librarys_link:   usize, // 100
-    pub max_reentry_depth: u32,  // 1, EXTACTION re-entry depth limit
+    pub contract_size: usize, // 65535 * 2
+    pub function_size: usize, // 65535 / 4
+    pub inherit: usize, // 8
+    pub library: usize, // 100
+    pub reentry_level: u32, // 1, ACTION re-entry level limit
 
     // pub max_ctl_func: usize, // 200 cache pub max_ctl_libx: usize, // 100 cache pub max_ctl_body: usize, // 50  cache
-
 }
 
 impl SpaceCap {
-
     pub fn new(_hei: u64) -> SpaceCap {
         const U16M: usize = u16::MAX as usize; // 65535
 
         SpaceCap {
-            load_contract:       20,
-            call_depth:          32,
-            max_value_size:    1280, // = 32 * 40, diamond name list max bytes: 200*6 = 1200 
-            max_compo_length:   128,
-            total_stack:        256,
-            total_local:        256,
-            max_heap_seg:        64,
-            max_global:          20,
-            max_memory:          16,
-            max_contract_size: U16M * 2, // 65535*2
-            one_function_size: U16M / 4, // 65535/4
-            inherits_parent:      8,
-            librarys_link:      100,
-            max_reentry_depth:    1, // allow 1 re-entry (2 call layers total)
+            loaded_contract: 20,
+            call_depth: 32,
+            value_size: 1280, // = 32 * 40, diamond name list max bytes: 200*6 = 1200
+            compo_length: 128,
+            stack_slot: 256,
+            local_slot: 256,
+            heap_segment: 64,
+            global: 20,
+            memory: 16,
+            contract_size: U16M * 2, // 65535*2
+            function_size: U16M / 4, // 65535/4
+            inherit: 8,
+            library: 100,
+            reentry_level: 1, // allow 1 re-entry (2 call layers total)
             // max_ctl_func:   200, max_ctl_libx:   100, max_ctl_body:   50,
         }
     }
 }
-
-

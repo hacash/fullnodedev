@@ -9,7 +9,7 @@ use sys::*;
 use sys::{Ret, errf};
 
 pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, SourceMap, String)> {
-    // function external/private/ircode Name(...) -> Ret { ... }
+    // function external/ircode Name(...) -> Ret { ... }
     if consume_kw {
         state.advance(); // function
     }
@@ -22,9 +22,6 @@ pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, So
         match tk {
             Keyword(KwTy::External) => {
                 is_external = true;
-                state.advance();
-            }
-            Keyword(KwTy::Private) => {
                 state.advance();
             }
             Keyword(KwTy::Virtual) => {
@@ -181,6 +178,7 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
             "address" => Some(ValueTy::Address),
             "bytes" => Some(ValueTy::Bytes),
             "bool" => Some(ValueTy::Bool),
+            "args" => Some(ValueTy::Args),
             "list" | "map" => Some(ValueTy::Compo),
             _ => None,
         }

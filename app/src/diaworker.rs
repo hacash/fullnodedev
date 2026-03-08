@@ -137,7 +137,9 @@ fn deal_diamond_mining_results(
             push_diamond_mining_success(cnf, success.clone());
         }
         recv_count += 1;
-        if recv_count >= vene as usize * 4 { break; } // prevent infinite loop
+        if recv_count >= vene as usize * 4 {
+            break;
+        } // prevent infinite loop
     }
     if recv_count == 0 {
         return;
@@ -420,10 +422,7 @@ fn push_diamond_mining_success(cnf: &DiaWorkConf, success: DiamondMint) {
     let urlapi_success = format!("http://{}/submit/diamondminer/success", &cnf.rpcaddr);
     let actionbody = success.serialize();
     // println!("\n\ncurl {}?hexbody=true -X POST -d '{}'", &urlapi_success, &actionbody.to_hex());
-    let res = HTTP_CLIENT
-        .post(&urlapi_success)
-        .body(actionbody)
-        .send();
+    let res = HTTP_CLIENT.post(&urlapi_success).body(actionbody).send();
     let Ok(repv) = res else {
         return; // err
     };

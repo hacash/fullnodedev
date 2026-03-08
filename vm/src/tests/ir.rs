@@ -13,9 +13,9 @@ fn test_irnds() -> Vec<u8> {
             PUT 0 ADD P1 GET 0 
         PUT 0
             CALLTHIS 0 0 0 0 GET 
-                EXTACTION 1 GET 0
+                ACTION 1 GET 0
         PUT 1
-            EXTACTION 1 GET 0
+            ACTION 1 GET 0
         IRIF EQ P1 GET 0
             PUT 1 P0
             IRBLOCK 0 2

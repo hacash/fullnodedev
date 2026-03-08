@@ -59,4 +59,39 @@ mod fitshc_compile_tests {
         "#;
         expect_compile_err(src, "expected ')' after return type");
     }
+
+    #[test]
+    fn accepts_compo_param_and_return_types() {
+        let src = r#"
+            contract demo {
+                function helper(doc: map) -> map {
+                    return doc
+                }
+                function external run() -> map {
+                    return this.helper(map { "a": 1 })
+                }
+            }
+        "#;
+        assert!(fitshc_compile(src).is_ok(), "fitshc compile should succeed");
+    }
+
+
+    #[test]
+    fn accepts_args_return_type_and_constructor() {
+        let src = r#"
+            contract demo {
+                function build() -> args {
+                    return args(7, map { "kind": "hnft" })
+                }
+                function consume(num: u8, doc: map) -> u8 {
+                    assert doc is map
+                    return num
+                }
+                function external run() -> u8 {
+                    return this.consume(this.build())
+                }
+            }
+        "#;
+        assert!(fitshc_compile(src).is_ok(), "fitshc compile should succeed");
+    }
 }

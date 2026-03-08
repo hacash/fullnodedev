@@ -12,16 +12,16 @@ pub fn convert_and_check(cap: &SpaceCap, ctype: CodeType, codes: &[u8], height: 
         Bytecode => codes
     };
     // check size
-    if bytecodes.len() > cap.one_function_size {
+    if bytecodes.len() > cap.function_size {
         return itr_err_code!(CodeTooLong)
     }
     // verify inst
-    verify_bytecodes_with_limits(bytecodes, cap.max_value_size)
+    verify_bytecodes_with_limits(bytecodes, cap.value_size)
 }
 
 
 pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
-    verify_bytecodes_with_limits(codes, SpaceCap::new(1).max_value_size)
+    verify_bytecodes_with_limits(codes, SpaceCap::new(1).value_size)
 }
 
 fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<Vec<u8>> {
@@ -42,12 +42,12 @@ fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRe
 }
 
 
-/// Ensure the last instruction is a terminal one (RET/END/ERR/ABT or call).
+/// Ensure the last instruction is a terminal one (RET/END/ERR/ABT or exposed call opcode).
 /// Failure (CodeNotWithEnd) is a fitsh code compile error and propagates to the compiler
 /// via compile_body -> parse_function -> parse_top_level -> fitshc::compile.
 fn ensure_terminal_instruction(inst: Bytecode) -> VmrtErr {
     if let RET | END | ERR | ABT |
-        CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALL // CALLDYN
+        CALLCODE | CALLPURE | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLEXT
     = inst {
         return Ok(())
     };
@@ -118,7 +118,7 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
                 i += l
             }
             // ext/native
-            EXTACTION | EXTENV | EXTVIEW => ensure_extend_call_id(inst, pu8!())?,
+            ACTION | ACTENV | ACTVIEW => ensure_act_id(inst, pu8!())?,
             NTFUNC => {
                 let idx = pu8!();
                 if !NativeFunc::has_idx(idx) {
@@ -137,6 +137,10 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
             TIS => {
                 let _ = parse_value_ty_param(pu8!())?;
             }
+            CALLCODE => {
+                let body = &codes[i..i + CALLCODE_BODY_WIDTH];
+                let _ = decode_callcode_body(body)?;
+            }
             // jump record
             JMPL  | BRL  => adddest!(pu16!() as isize),
             JMPS  | BRS  => adddest!(i as isize + pi8!() as isize + 1),
@@ -147,8 +151,7 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
         if i > cdlen {            
             return itr_err_code!(InstParamsErr)
         }        
-        // CALLCODE must be immediately followed by END unless it is the final instruction.
-        if let CALLCODE = inst {
+        if inst == CALLCODE {
             if i < cdlen {
                 let nxt: Bytecode = std_mem_transmute!(codes[i]);
                 if nxt != END {
@@ -187,7 +190,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_unknown_type_id_for_tis_and_cto() {
-        let unknown_ids = [13u8];
+        let unknown_ids = [12u8];
         for raw in unknown_ids {
             let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, raw, Bytecode::END as u8];
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, raw, Bytecode::END as u8];
@@ -229,6 +232,7 @@ mod verify_type_param_tests {
             ValueTy::Bytes,
             ValueTy::Address,
             ValueTy::HeapSlice,
+            ValueTy::Args,
             ValueTy::Compo,
         ];
         for ty in types {
@@ -257,10 +261,27 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_cto_targets_outside_cast_set() {
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Args, ValueTy::Compo] {
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
             let res = verify_bytecodes(&cto_codes);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }
+    }
+}
+
+#[cfg(test)]
+mod call_verify_tests {
+    use super::*;
+
+    #[test]
+    fn verify_rejects_removed_call_slot() {
+        let err = verify_bytecodes(&[0x0c]).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstInvalid);
+    }
+
+    #[test]
+    fn verify_rejects_removed_tailcall_slot() {
+        let err = verify_bytecodes(&[0x0d]).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstInvalid);
     }
 }

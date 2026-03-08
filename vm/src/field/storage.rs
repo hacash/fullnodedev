@@ -315,7 +315,7 @@ mod storage_param_tests {
         let mut sta = StateMem::default();
         let mut st = crate::VMState::wrap(&mut sta);
 
-        let max = SpaceCap::new(1).max_value_size;
+        let max = SpaceCap::new(1).value_size;
         let oversized = Value::Bytes(vec![0u8; max + 1]);
         let err = st
             .ssave(&gst, 1, &cadr, Value::Bytes(vec![2u8]), oversized)
@@ -495,7 +495,7 @@ impl VMState<'_> {
     fn ssave(&mut self, gst: &GasExtra, curhei: u64, cadr: &ContractAddress, k: Value, v: Value) -> VmrtRes<i64> {
         v.canbe_value()?; // check can store
         let val_len = v.can_get_size()? as usize;
-        let max_val = SpaceCap::new(curhei).max_value_size;
+        let max_val = SpaceCap::new(curhei).value_size;
         if val_len > max_val {
             return itr_err_fmt!(
                 StorageValSizeErr,

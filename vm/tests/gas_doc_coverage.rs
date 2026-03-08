@@ -21,18 +21,19 @@ fn doc_tracks_current_dynamic_metering_groups() {
         assert!(DOC.contains(key), "missing stack-copy coverage key: {key}");
     }
 
-    // extend/native related
-    for key in [
-        "NTFUNC",
-        "NTENV",
-        "EXTVIEW",
-        "EXTENV",
-        "EXTACTION",
-        "host-returned gas (`bgasu`)",
+    // action/native related; docs may still use pre-rename opcode names until docs are updated.
+    for keys in [
+        &["NTFUNC"][..],
+        &["NTENV"][..],
+        &["ACTVIEW", "EXTVIEW"][..],
+        &["ACTENV", "EXTENV"][..],
+        &["ACTION", "EXTACTION"][..],
+        &["host-returned gas (`bgasu`)"][..],
     ] {
         assert!(
-            DOC.contains(key),
-            "missing extend/native coverage key: {key}"
+            keys.iter().any(|key| DOC.contains(key)),
+            "missing action/native coverage key: {:?}",
+            keys
         );
     }
 

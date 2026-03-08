@@ -62,15 +62,15 @@ impl GasTable {
             NEWLIST, NEWMAP,
             NTFUNC
         ]);
-        gst.set(12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER,
+        gst.set(12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE,
             // O(n) compo merge (can touch many items); avoid default-2.
-            PACKLIST, PACKMAP, PACKARGS, UNPACK, CLONE, MERGE, KEYS, VALUES
+            PACKLIST, PACKMAP, PACKARGS, ARGS2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES
         ]);
-        gst.set(16, &[EXTVIEW, GGET, CALLCODE]);
+        gst.set(16, &[ACTVIEW, GGET, CALLCODE]);
         gst.set(20, &[LOG1, CALLPURE]);
         gst.set(24, &[LOG2, GPUT, CALLVIEW]);
-        gst.set(28, &[LOG3, SDEL, EXTACTION]);
-        gst.set(32, &[LOG4, SLOAD, SREST, CALL]); // CALLDYN
+        gst.set(28, &[LOG3, SDEL, ACTION]);
+        gst.set(32, &[LOG4, SLOAD, SREST, CALLEXT]); // external call
         gst.set(64, &[SSAVE, SRENT]);
         gst
     }
@@ -123,9 +123,9 @@ pub struct GasExtra {
     compo_item_edit_div: i64,
     compo_item_copy_div: i64,
     ntfunc_div: i64,
-    extview_div: i64,
-    extaction_div: i64,
-    extenv_div: i64,
+    actview_div: i64,
+    action_div: i64,
+    actenv_div: i64,
 }
 
 /// Gas budget lookup table for tx `gas_max` byte.
@@ -230,9 +230,9 @@ impl GasExtra {
             storage_write_div:   6,
             compile_div:        16,
             ntfunc_div:         16,
-            extview_div:        16,
-            extaction_div:      10,
-            extenv_div:         16,
+            actview_div:        16,
+            action_div:      10,
+            actenv_div:         16,
             // Compo
             compo_byte_div:     40,
             compo_item_read_div: 4,
@@ -280,18 +280,18 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    pub fn extview_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.extview_div)
+    pub fn actview_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.actview_div)
     }
 
     #[inline(always)]
-    pub fn extaction_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.extaction_div)
+    pub fn action_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.action_div)
     }
 
     #[inline(always)]
-    pub fn extenv_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.extenv_div)
+    pub fn actenv_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.actenv_div)
     }
 
     #[inline(always)]
@@ -404,12 +404,12 @@ mod gas_budget_codec_tests {
             (5, &[POW]),
             (6, &[HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
             (8, &[CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, MGET, JOIN, REV, NEWLIST, NEWMAP, NTFUNC]),
-            (12, &[EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, PACKLIST, PACKMAP, PACKARGS, UNPACK, CLONE, MERGE, KEYS, VALUES]),
-            (16, &[EXTVIEW, GGET, CALLCODE]),
+            (12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE, PACKLIST, PACKMAP, PACKARGS, ARGS2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
+            (16, &[ACTVIEW, GGET, CALLCODE]),
             (20, &[LOG1, CALLPURE]),
             (24, &[LOG2, GPUT, CALLVIEW]),
-            (28, &[LOG3, SDEL, EXTACTION]),
-            (32, &[LOG4, SLOAD, SREST, CALL]),
+            (28, &[LOG3, SDEL, ACTION]),
+            (32, &[LOG4, SLOAD, SREST, CALLEXT]),
             (64, &[SSAVE, SRENT]),
         ];
         for (gas, items) in groups {
@@ -474,14 +474,14 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.ntfunc_bytes(0), 0);
         assert_eq!(gst.ntfunc_bytes(15), 1);
         assert_eq!(gst.ntfunc_bytes(16), 1);
-        assert_eq!(gst.extview_bytes(31), 2);
-        assert_eq!(gst.extview_bytes(32), 2);
-        assert_eq!(gst.extenv_bytes(0), 0);
-        assert_eq!(gst.extenv_bytes(15), 1);
-        assert_eq!(gst.extenv_bytes(16), 1);
-        assert_eq!(gst.extaction_bytes(0), 0);
-        assert_eq!(gst.extaction_bytes(9), 1);
-        assert_eq!(gst.extaction_bytes(10), 1);
+        assert_eq!(gst.actview_bytes(31), 2);
+        assert_eq!(gst.actview_bytes(32), 2);
+        assert_eq!(gst.actenv_bytes(0), 0);
+        assert_eq!(gst.actenv_bytes(15), 1);
+        assert_eq!(gst.actenv_bytes(16), 1);
+        assert_eq!(gst.action_bytes(0), 0);
+        assert_eq!(gst.action_bytes(9), 1);
+        assert_eq!(gst.action_bytes(10), 1);
 
         assert_eq!(gst.heap_read(0), 0);
         assert_eq!(gst.heap_read(15), 1);

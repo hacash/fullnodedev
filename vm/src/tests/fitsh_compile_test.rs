@@ -267,7 +267,7 @@ mod fitsh_compile_tests {
             throw_expr: "throw \"error: \" ++ \"message\"",
             abort_simple: "abort",
             end_simple: "end",
-            block_expr: "var result = { var inner = 10\n inner + 1 }\nreturn result",
+            block_expr: "var result = { var local_inner = 10\n local_inner + 1 }\nreturn result",
             block_nested: "return { { { 1 + 2 } } }",
         );
 
@@ -339,7 +339,7 @@ mod fitsh_compile_tests {
             log_five: "log(1, 2, 3, 4, 5)",
             log_bracket: "log[1, 2, 3]",
             log_brace: "log{1, 2, 3}",
-            callcode_simple: "callcode 0::0xabcdef01\nend",
+            callcode_simple: "callcode lib(0).0xabcdef01",
         );
     }
 
@@ -464,6 +464,29 @@ mod fitsh_compile_tests {
             call_this: "return this.func(1)",
             call_self: "return self.func(1)",
             call_super: "return super.func(1)",
+            call_self_view: "return self:view_ok()",
+            call_self_pure: "return self::pure_ok()",
+            callself_short: "return self.func(1)",
+            callselfview_short: "return self:view_ok()",
+            callselfpure_short: "return self::pure_ok()",
+            callext_short: "lib C = 1
+        return C.func(1)",
+            callview_short: "lib C = 1
+        return C:func(1)",
+            callpure_short: "lib C = 1
+        return C::func(1)",
+            callext_keyword: "return callext 1::0x01020304(1)",
+            callview_keyword: "return callview 1::0x01020304(1)",
+            callpure_keyword: "return callpure 1::0x01020304(1)",
+            callthis_keyword: "return callthis 0::0x01020304(1)",
+            callself_keyword: "return callself 0::0x01020304(1)",
+            callsuper_keyword: "return callsuper 0::0x01020304(1)",
+            callcode_keyword: "callcode 0::0xabcdef01",
+        );
+
+        assert_compile_err!(
+            legacy_call_keyword: "return call external code.0xabcdef01()",
+            legacy_tailcall_keyword: "tailcall code.0xabcdef01",
         );
     }
 
@@ -570,11 +593,57 @@ mod fitsh_compile_tests {
         fn multi_call_argv_uses_packargs_not_packlist() {
             use crate::rt::Bytecode;
 
-            let result = lang_to_bytecode("call 1::0xabcdef01(1, 2)
-end");
+            let result = lang_to_bytecode(
+                "lib C = 1
+return C.0xabcdef01(1, 2)",
+            );
             let bytes = result.expect("Failed to compile multi-argv call");
             assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
             assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
+        }
+
+        #[test]
+        fn explicit_args_constructor_uses_packargs_even_for_single_item() {
+            use crate::rt::Bytecode;
+
+            let bytes =
+                lang_to_bytecode("return args(1)").expect("Failed to compile args constructor");
+            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+            assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
+        }
+
+        #[test]
+        fn args_to_list_uses_dedicated_opcode() {
+            use crate::rt::Bytecode;
+
+            let bytes = lang_to_bytecode("return args_to_list(args(1, 2))")
+                .expect("Failed to compile args_to_list");
+            assert!(bytes.contains(&(Bytecode::ARGS2LIST as u8)));
+            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+        }
+
+        #[test]
+        fn args_index_expression_uses_itemget_on_packargs() {
+            use crate::rt::Bytecode;
+
+            let bytes = lang_to_bytecode("return args(1, 2)[0]")
+                .expect("Failed to compile args itemget expression");
+            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+            assert!(bytes.contains(&(Bytecode::ITEMGET as u8)));
+            assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
+            assert!(!bytes.contains(&(Bytecode::ARGS2LIST as u8)));
+        }
+
+        #[test]
+        fn length_accepts_args_expression_without_args2list() {
+            use crate::rt::Bytecode;
+
+            let bytes = lang_to_bytecode("return length(args(1, 2))")
+                .expect("Failed to compile length(args(...))");
+            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+            assert!(bytes.contains(&(Bytecode::LENGTH as u8)));
+            assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
+            assert!(!bytes.contains(&(Bytecode::ARGS2LIST as u8)));
         }
 
         #[test]
@@ -604,7 +673,7 @@ end");
 
         fn execute_and_get_value(script: &str) -> u64 {
             use crate::machine::CtxHost;
-            use crate::rt::{ExecMode, GasExtra, GasTable, SpaceCap};
+            use crate::rt::{ExecCtx, GasExtra, GasTable, SpaceCap};
             use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
             use crate::value::Value;
             use basis::component::Env;
@@ -690,21 +759,19 @@ end");
             crate::interpreter::execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut ops,
+                &mut Stack::new(256),
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut ops,
-                &mut Stack::new(256),
-                &mut heap,
                 &mut GKVMap::new(20),
                 &mut CtcKVMap::new(12),
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .expect("Execution failed");
 

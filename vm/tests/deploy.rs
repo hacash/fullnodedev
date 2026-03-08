@@ -216,7 +216,7 @@ mod deploy {
 
         let permit_hac = convert_ir_to_bytecode(&build_codes!(
             RET CHOOSE
-                GT CU64 EXTENV 1 PU8 10
+                GT CU64 ACTENV 1 PU8 10
                 PU8 99
                 PU8 0
         ))

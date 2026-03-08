@@ -6,12 +6,12 @@ fn ctx_action_call(this: &mut ContextInst, k: u16, b: Vec<u8>) -> BRet<(u32, Vec
     let (action, used) = action::action_create(&body).into_bret()?;
     if used != body.len() {
         return berrf!(
-            "extend action parse length mismatch: used {} but total {}",
+            "action parse length mismatch: used {} but total {}",
             used,
             body.len()
         )
     }
-    // EXTACTION payload actions are runtime-created and not part of tx.actions.
+    // ACTION payload actions are runtime-created and not part of tx.actions.
     // Keep runtime req_sign checks here; tx.main signature is already verified in tx.execute().
     let mut seen = HashSet::new();
     for ptr in action.req_sign() {
@@ -23,9 +23,9 @@ fn ctx_action_call(this: &mut ContextInst, k: u16, b: Vec<u8>) -> BRet<(u32, Vec
             this.check_sign(&adr).into_bret()?;
         }
     }
-    // Explicit call origin for level checks: this path is runtime EXTACTION.
+    // Explicit call origin for level checks: this path is runtime ACTION.
     let old_from = this.action_exec_from();
-    this.action_exec_from_set(ActExecFrom::ExtActionCall);
+    this.action_exec_from_set(ActExecFrom::ActionCall);
     let exec_res = action.execute(this);
     this.action_exec_from_set(old_from);
     let (gas, res) = exec_res?;

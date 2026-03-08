@@ -1,77 +1,22 @@
 /* contract loader */
 
-#[derive(Debug, Clone, Copy)]
-pub enum FnSelector {
-    Abst(AbstCall),
-    User(FnSign),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum LookupScope {
-    RootOnly,
-    RootThenDirectParents,
-    DirectParentsOnly,
-}
-
 #[derive(Debug, Clone)]
 pub struct ResolvedFn {
     pub owner: ContractAddress,
     pub fnobj: Arc<FnObj>,
+    pub lib_table: Arc<[ContractAddress]>,
 }
 
 #[derive(Debug, Clone)]
-pub enum DispatchPlan {
-    KeepState {
-        code_owner: ContractAddress,
-        fnobj: Arc<FnObj>,
-    },
-    SwitchState {
-        state_addr: ContractAddress,
-        code_owner: ContractAddress,
-        fnobj: Arc<FnObj>,
-    },
-}
-
-impl DispatchPlan {
-    pub fn fnobj(&self) -> &Arc<FnObj> {
-        match self {
-            Self::KeepState { fnobj, .. } | Self::SwitchState { fnobj, .. } => fnobj,
-        }
-    }
-
-    pub fn code_owner(&self) -> &ContractAddress {
-        match self {
-            Self::KeepState { code_owner, .. } | Self::SwitchState { code_owner, .. } => {
-                code_owner
-            }
-        }
-    }
-
-    pub fn visibility_addr(&self) -> &ContractAddress {
-        match self {
-            Self::SwitchState { state_addr, .. } => state_addr,
-            Self::KeepState { code_owner, .. } => code_owner,
-        }
-    }
-
-    pub fn into_parts(self) -> (Option<ContractAddress>, ContractAddress, Arc<FnObj>) {
-        match self {
-            Self::KeepState { code_owner, fnobj } => (None, code_owner, fnobj),
-            Self::SwitchState {
-                state_addr,
-                code_owner,
-                fnobj,
-            } => (Some(state_addr), code_owner, fnobj),
-        }
-    }
+pub struct ResolvedCallPlan {
+    pub next_bindings: FrameBindings,
+    pub fnobj: Arc<FnObj>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CallPlanReq<'a> {
-    pub fptr: Funcptr,
-    pub state_addr: &'a ContractAddress,
-    pub code_owner: &'a ContractAddress,
-    pub tx_libs: &'a Option<Vec<ContractAddress>>,
+    pub call: &'a CallSpec,
+    pub bindings: &'a FrameBindings,
 }
 
 impl Resoure {
@@ -123,29 +68,30 @@ impl Resoure {
                 addr.to_readable()
             );
         };
-
         if let Some(c) = self.contracts.get(addr) {
             if c.edition == state_ed {
                 return Ok(c.clone());
             }
             self.contracts.remove(addr);
         }
-
-        if self.contracts.len() >= self.space_cap.load_contract {
+        if self.contracts.len() >= self.space_cap.loaded_contract {
             return itr_err_code!(OutOfLoadContract);
         }
-
         let cbytes = state_ed.raw_size.uint() as usize;
-        if let Some(obj) = global_machine_manager().contract_cache().get(addr, &state_ed) {
+        if let Some(obj) = global_machine_manager()
+            .contract_cache()
+            .get(addr, &state_ed)
+        {
             self.settle_new_contract_load_gas(gas, cbytes)?;
             self.contracts.insert(addr.clone(), obj.clone());
             return Ok(obj);
         }
-
         let cobj = self.load_contract_from_state(vmsta, addr, &state_ed)?;
         self.settle_new_contract_load_gas(gas, cbytes)?;
         self.contracts.insert(addr.clone(), cobj.clone());
-        global_machine_manager().contract_cache().insert(addr, cobj.clone());
+        global_machine_manager()
+            .contract_cache()
+            .insert(addr, cobj.clone());
         Ok(cobj)
     }
 
@@ -158,85 +104,61 @@ impl Resoure {
         self.resolve_contract(vmsta, gas, addr)
     }
 
-    #[inline(always)]
-    fn fn_lookup(csto: &ContractObj, selector: FnSelector) -> Option<Arc<FnObj>> {
-        match selector {
-            FnSelector::Abst(s) => csto.abstfns.get(&s).cloned(),
-            FnSelector::User(u) => csto.userfns.get(&u).cloned(),
-        }
-    }
-
-    fn resolve_on_owner(
+    fn resolve_user_on_owner(
         &mut self,
         vmsta: &mut VMState,
         gas: &mut i64,
         owner: &ContractAddress,
-        selector: FnSelector,
+        selector: FnSign,
     ) -> VmrtRes<Option<ResolvedFn>> {
         let csto = self.resolve_contract(vmsta, gas, owner)?;
-        let Some(fnobj) = Self::fn_lookup(&csto, selector) else {
+        let Some(fnobj) = csto.userfns.get(&selector).cloned() else {
             return Ok(None);
         };
         Ok(Some(ResolvedFn {
             owner: owner.clone(),
             fnobj,
+            lib_table: csto.sto.library.as_list().to_vec().into(),
         }))
     }
 
-    fn resolve_in_direct_parents(
-        &mut self,
-        vmsta: &mut VMState,
-        gas: &mut i64,
-        parents: &[ContractAddress],
-        selector: FnSelector,
-    ) -> VmrtRes<Option<ResolvedFn>> {
-        for p in parents {
-            if let Some(found) = self.resolve_on_owner(vmsta, gas, p, selector)? {
-                return Ok(Some(found));
-            }
-        }
-        Ok(None)
-    }
-
-    pub fn resolve_fn(
+    fn resolve_abst_on_owner(
         &mut self,
         vmsta: &mut VMState,
         gas: &mut i64,
         owner: &ContractAddress,
-        selector: FnSelector,
-        scope: LookupScope,
+        selector: AbstCall,
     ) -> VmrtRes<Option<ResolvedFn>> {
-        use LookupScope::*;
         let csto = self.resolve_contract(vmsta, gas, owner)?;
-        match scope {
-            RootOnly => Ok(Self::fn_lookup(&csto, selector).map(|fnobj| ResolvedFn {
-                owner: owner.clone(),
-                fnobj,
-            })),
-            RootThenDirectParents => {
-                if let Some(fnobj) = Self::fn_lookup(&csto, selector) {
-                    return Ok(Some(ResolvedFn {
-                        owner: owner.clone(),
-                        fnobj,
-                    }));
-                }
-                self.resolve_in_direct_parents(vmsta, gas, csto.sto.inherits.as_list(), selector)
-            }
-            DirectParentsOnly => {
-                self.resolve_in_direct_parents(vmsta, gas, csto.sto.inherits.as_list(), selector)
-            }
-        }
+        let Some(fnobj) = csto.abstfns.get(&selector).cloned() else {
+            return Ok(None);
+        };
+        Ok(Some(ResolvedFn {
+            owner: owner.clone(),
+            fnobj,
+            lib_table: csto.sto.library.as_list().to_vec().into(),
+        }))
     }
 
-    fn resolve_userfn(
+    fn resolve_parent_addr(
         &mut self,
         vmsta: &mut VMState,
         gas: &mut i64,
         owner: &ContractAddress,
-        scope: LookupScope,
-        fnsg: FnSign,
-    ) -> VmrtRes<Option<ResolvedFn>> {
-        self.resolve_fn(vmsta, gas, owner, FnSelector::User(fnsg), scope)
+        idx: u8,
+    ) -> VmrtRes<ContractAddress> {
+        let csto = self.resolve_contract(vmsta, gas, owner)?;
+        let parents = csto.sto.inherit.as_list();
+        let pidx = idx as usize;
+        if pidx >= parents.len() {
+            return itr_err_fmt!(
+                CallLibIdxOverflow,
+                "parent idx overflow {} >= {}",
+                pidx,
+                parents.len()
+            );
+        }
+        Ok(parents[pidx].clone())
     }
 
     pub fn resolve_abstfn(
@@ -247,13 +169,16 @@ impl Resoure {
         scty: AbstCall,
     ) -> VmrtRes<Option<ResolvedFn>> {
         let mut vmsta = VMState::wrap(ctx.state());
-        self.resolve_fn(
-            &mut vmsta,
-            gas,
-            addr,
-            FnSelector::Abst(scty),
-            LookupScope::RootThenDirectParents,
-        )
+        if let Some(found) = self.resolve_abst_on_owner(&mut vmsta, gas, addr, scty)? {
+            return Ok(Some(found));
+        }
+        let csto = self.resolve_contract(&mut vmsta, gas, addr)?;
+        for parent in csto.sto.inherit.as_list() {
+            if let Some(found) = self.resolve_abst_on_owner(&mut vmsta, gas, parent, scty)? {
+                return Ok(Some(found));
+            }
+        }
+        Ok(None)
     }
 
     fn resolve_lib_addr_by_list(
@@ -271,103 +196,112 @@ impl Resoure {
         Ok(taradr.clone())
     }
 
-    fn resolve_lib_addr_from_source(
+    fn resolve_lookup_anchor(&mut self, req: &CallPlanReq<'_>) -> VmrtRes<ContractAddress> {
+        match req.call.lookup.base {
+            LookupBase::State => req
+                .bindings
+                .state_addr
+                .clone()
+                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid)),
+            LookupBase::Code => req
+                .bindings
+                .code_owner
+                .clone()
+                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid)),
+            LookupBase::Lib(idx) => {
+                self.resolve_lib_addr_by_list(req.bindings.lib_table.as_ref(), idx)
+            }
+        }
+    }
+
+    fn resolve_lookup_candidates(
         &mut self,
         vmsta: &mut VMState,
         gas: &mut i64,
-        source: &ContractAddress,
-        lib: u8,
-    ) -> VmrtRes<ContractAddress> {
-        let csto = self.load_contract(vmsta, gas, source)?;
-        self.resolve_lib_addr_by_list(csto.sto.librarys.as_list(), lib)
+        anchor: &ContractAddress,
+        lookup: LookupSpec,
+    ) -> VmrtRes<Vec<ContractAddress>> {
+        Ok(match lookup.walk {
+            LookupWalk::Exact => vec![anchor.clone()],
+            LookupWalk::Parents => self
+                .resolve_contract(vmsta, gas, anchor)?
+                .sto
+                .inherit
+                .as_list()
+                .iter()
+                .cloned()
+                .collect(),
+            LookupWalk::Chain => {
+                let csto = self.resolve_contract(vmsta, gas, anchor)?;
+                let parents = csto.sto.inherit.as_list();
+                let mut out = Vec::with_capacity(1 + parents.len());
+                out.push(anchor.clone());
+                out.extend(parents.iter().cloned());
+                out
+            }
+            LookupWalk::Parent(idx) => vec![self.resolve_parent_addr(vmsta, gas, anchor, idx)?],
+        })
     }
 
-    pub fn plan_call(
+    fn resolve_user_call_fn(
+        &mut self,
+        vmsta: &mut VMState,
+        gas: &mut i64,
+        req: &CallPlanReq<'_>,
+    ) -> VmrtRes<(ContractAddress, ResolvedFn)> {
+        let anchor = self.resolve_lookup_anchor(req)?;
+        let entries = self.resolve_lookup_candidates(vmsta, gas, &anchor, req.call.lookup)?;
+        let mut found = None;
+        for owner in entries {
+            if let Some(hit) = self.resolve_user_on_owner(vmsta, gas, &owner, req.call.selector)? {
+                found = Some(hit);
+                break;
+            }
+        }
+        Ok((anchor, Self::require_resolved(found)?))
+    }
+
+    pub fn plan_user_call(
         &mut self,
         ctx: &mut dyn Context,
         gas: &mut i64,
         req: CallPlanReq<'_>,
-    ) -> VmrtRes<DispatchPlan> {
+    ) -> VmrtRes<ResolvedCallPlan> {
         let mut vmsta = VMState::wrap(ctx.state());
-        use CallTarget::*;
-        use ExecMode::*;
-        match req.fptr.target {
-            This => {
-                let hit = Self::require_resolved(self.resolve_userfn(
-                    &mut vmsta,
-                    gas,
-                    req.state_addr,
-                    LookupScope::RootThenDirectParents,
-                    req.fptr.fnsign,
-                )?)?;
-                Ok(DispatchPlan::KeepState {
-                    code_owner: hit.owner,
-                    fnobj: hit.fnobj,
-                })
-            }
-            Self_ => {
-                let hit = Self::require_resolved(self.resolve_userfn(
-                    &mut vmsta,
-                    gas,
-                    req.code_owner,
-                    LookupScope::RootThenDirectParents,
-                    req.fptr.fnsign,
-                )?)?;
-                Ok(DispatchPlan::KeepState {
-                    code_owner: hit.owner,
-                    fnobj: hit.fnobj,
-                })
-            }
-            Super => {
-                let hit = Self::require_resolved(self.resolve_userfn(
-                    &mut vmsta,
-                    gas,
-                    req.code_owner,
-                    LookupScope::DirectParentsOnly,
-                    req.fptr.fnsign,
-                )?)?;
-                Ok(DispatchPlan::KeepState {
-                    code_owner: hit.owner,
-                    fnobj: hit.fnobj,
-                })
-            }
-            Idx(lib) => {
-                let target_state = match req.tx_libs {
-                    Some(ads) => self.resolve_lib_addr_by_list(ads, lib)?,
-                    _ => self.resolve_lib_addr_from_source(&mut vmsta, gas, req.code_owner, lib)?,
-                };
-                if req.fptr.mode == External && !req.fptr.is_callcode {
-                    let hit = Self::require_resolved(self.resolve_userfn(
-                        &mut vmsta,
-                        gas,
-                        &target_state,
-                        LookupScope::RootThenDirectParents,
-                        req.fptr.fnsign,
-                    )?)?;
-                    return Ok(DispatchPlan::SwitchState {
-                        state_addr: target_state,
-                        code_owner: hit.owner,
-                        fnobj: hit.fnobj,
-                    });
-                }
-                let scope = if req.fptr.is_callcode {
-                    LookupScope::RootOnly
-                } else {
-                    LookupScope::RootThenDirectParents
-                };
-                let hit = Self::require_resolved(self.resolve_userfn(
-                    &mut vmsta,
-                    gas,
-                    &target_state,
-                    scope,
-                    req.fptr.fnsign,
-                )?)?;
-                Ok(DispatchPlan::KeepState {
-                    code_owner: hit.owner,
-                    fnobj: hit.fnobj,
-                })
-            }
+        let (anchor, hit) = self.resolve_user_call_fn(&mut vmsta, gas, &req)?;
+        if req.call.requires_external_visibility() && !hit.fnobj.check_conf(FnConf::External) {
+            let vis = &anchor;
+            let owner = &hit.owner;
+            let impl_in = maybe!(
+                vis == owner,
+                s!(""),
+                format!(" (impl in {})", owner.to_readable())
+            );
+            return itr_err_fmt!(
+                CallNotExternal,
+                "contract {}{} func sign {}",
+                vis.to_readable(),
+                impl_in,
+                hex::encode(req.call.selector)
+            );
         }
+        let next_context_addr = match req.call.boundary {
+            Boundary::Internal => req.bindings.context_addr.clone(),
+            Boundary::External => anchor.clone(),
+        };
+        let next_state_addr = match req.call.boundary {
+            Boundary::Internal => req.bindings.state_addr.clone(),
+            Boundary::External => Some(anchor),
+        };
+        Ok(ResolvedCallPlan {
+            next_bindings: FrameBindings::new(
+                next_context_addr,
+                next_state_addr,
+                Some(hit.owner),
+                hit.lib_table,
+            ),
+            fnobj: hit.fnobj,
+        })
     }
 }
 
@@ -417,14 +351,18 @@ mod loader_tests {
         let mut gas_budget = 10_000i64;
 
         {
-            let _ = res.load_contract(&mut vmsta, &mut gas_budget, &caddr).unwrap();
+            let _ = res
+                .load_contract(&mut vmsta, &mut gas_budget, &caddr)
+                .unwrap();
         }
         assert!(res.contracts.contains_key(&caddr));
         assert_eq!(gas_budget, 10_000 - one_cold_fee);
 
         let gas_after_first = gas_budget;
         {
-            let _ = res.load_contract(&mut vmsta, &mut gas_budget, &caddr).unwrap();
+            let _ = res
+                .load_contract(&mut vmsta, &mut gas_budget, &caddr)
+                .unwrap();
         }
         assert_eq!(gas_budget, gas_after_first);
     }

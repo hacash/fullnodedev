@@ -56,7 +56,7 @@ Fitsh 编译为 IR 字节码。该 IR 可通过 `format_ircode_to_lang` 或 `irc
 |------|------|
 | `trim_param_unpack` | 推断参数名时输出 `param { $0 $1 ... }` |
 | `hide_default_call_argv` | 无参数时省略 `nil` 或 `""` 占位符 |
-| `call_short_syntax` | 有 SourceMap 时优先 `lib.func(...)` 而非 `call idx::0x...(args)` |
+| `call_short_syntax` | 有 SourceMap 时优先 `lib.func(...)` 而非 `callext idx::0x...(args)` |
 | `flatten_array_list` | 输出 `[a, b, c]` 而非 `list { a b c }` |
 | `flatten_syscall_cat` | 展开系统调用参数中的嵌套 `++` |
 | `recover_literals` | 恢复并输出数字/字节字面量 |
@@ -65,7 +65,7 @@ Fitsh 编译为 IR 字节码。该 IR 可通过 `format_ircode_to_lang` 或 `irc
 
 - **参数**：`param { owner amount fee }` 或名称不可用时 `param { $0 $1 $2 }`
 - **调用**：内部调用 `this.foo(...)`、`self.foo(...)`、`super.foo(...)`；有 SourceMap 时库调用 `Token.balance_of(addr)`
-- **原始调用**：库/函数名未知时 `call 1::0xabcdef01(10, 20)`
+- **原始调用**：库/函数名未知时 `callext 1::0xabcdef01(10, 20)`
 
 ---
 
@@ -114,16 +114,15 @@ contract ContractName {
 ### 3.3 函数声明
 
 ```fitsh
-function [external|private] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
+function [external] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_type { body }
 ```
 
 - `external`：标记该函数可被 `CALL`（`External`）路径调用
-- `private`：未标记为 `external`（默认可见性标记）
 - `ircode`：编译为 IR（合约函数默认）
 - `bytecode`：编译为原始字节码
 
 可见性说明：
-- 这里的 `external/private` 是运行时调用解析使用的可见性标记，不等同于“所有调用模式统一生效”的源码级访问修饰符。
+- `external` 是外部调用解析使用的运行时可见性标记。
 - 若命名在实践中容易误导，可在后续版本引入更清晰的别名。
 
 ---
@@ -666,58 +665,62 @@ storage_save(bk, balance + 100)
 
 ### 11.2 调用权限与状态访问控制
 
-VM 基于 **ExecMode**（执行模式）和 **in_callcode** 实施权限控制。每种调用类型会切换到特定模式，并限制被调用方可执行的操作。
+VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**，再叠加 **in_callcode**。
+
+- `ExecDomain` 描述当前调用策略来源：`TopMain`、`TopP2sh`、`TopAbst`、`Contract`。
+- `FrameMode` 描述当前状态访问强度：`External`、`Inner`、`View`、`Pure`。
+- 固定模式调用（`CALL`、`CALLVIEW`、`CALLPURE`、`CALLTHIS`、`CALLSELF`、`CALLSUPER`）会切到 `ExecDomain::Contract`，并设置固定 `FrameMode`。
+- `CALLCODE` 会完整继承调用方的 `ExecCtx`，并以 `in_callcode = true` 原地执行。
 
 #### 7 个 Call 指令分发表（与运行时实现一致）
 
-| 调用 | 语法 | 被调用模式 | 查找起点 | 是否查继承链 | 帧行为 | 状态读取 | 状态写入 |
-|------|------|------------|----------|--------------|--------|----------|----------|
-| `call` | `lib.func(...)` | External | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 允许 | 允许 |
-| `callview` | `lib:func(...)` | View | 库目标合约 | 否（仅本地表） | 新建帧 | 允许 | 禁止 |
-| `callpure` | `lib::func(...)` | Pure | 库目标合约 | 否（仅本地表） | 新建帧 | 禁止 | 禁止 |
-| `callcode` | `callcode lib::sig` | 继承调用方 | 库目标合约 | 否（仅本地表） | 原地执行（不建帧） | 继承 | 继承 |
-| `callthis` | `this.func(...)` | Inner | `state_addr` | 是 | 新建帧 | 允许 | 允许 |
-| `callself` | `self.func(...)` | Inner | `code_owner` | 是 | 新建帧 | 允许 | 允许 |
-| `callsuper` | `super.func(...)` | Inner | `code_owner` 的直接父级 | 是（父级 DFS） | 新建帧 | 允许 | 允许 |
+| 调用 | 语法 | 被调用 `ExecCtx` | 查找起点 | 是否查继承链 | 帧行为 | 状态读取 | 状态写入 |
+|------|------|------------------|----------|--------------|--------|----------|----------|
+| `call` | `lib.func(...)` | `Contract + External` | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 允许 | 允许 |
+| `callview` | `lib:func(...)` | `Contract + View` | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 允许 | 禁止 |
+| `callpure` | `lib::func(...)` | `Contract + Pure` | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 禁止 | 禁止 |
+| `callcode` | `callcode lib::sig` | 继承调用方 `ExecCtx` | 库目标合约 | 否（仅本地表） | 原地执行（不建帧） | 继承 | 继承 |
+| `callthis` | `this.func(...)` | `Contract + Inner` | `state_addr` | 是 | 新建帧 | 允许 | 允许 |
+| `callself` | `self.func(...)` | `Contract + Inner` | `code_owner` | 是 | 新建帧 | 允许 | 允许 |
+| `callsuper` | `super.func(...)` | `Contract + Inner` | `code_owner` 的直接父级 | 入口集只取直接父级，不再额外 DFS | 新建帧 | 允许 | 允许 |
 
 #### 地址迁移规则（`state_addr` / `code_owner`）
 
 | 调用 | `state_addr` | `code_owner` |
 |------|--------------|--------------|
 | `call` | 切换为库目标合约 | 切换为实际命中函数的所有者（目标本身或继承父级） |
-| `callview` | 不变 | 切换为库目标合约 |
-| `callpure` | 不变 | 切换为库目标合约 |
+| `callview` | 不变 | 切换为实际命中函数的所有者（目标本身或继承父级） |
+| `callpure` | 不变 | 切换为实际命中函数的所有者（目标本身或继承父级） |
 | `callcode` | 不变 | 当前帧切换为库目标合约 |
-| `callthis` | 不变 | 从 `state_addr` 链命中的所有者（默认 `state_addr`） |
-| `callself` | 不变 | 从 `code_owner` 链命中的所有者（默认之前 `code_owner`） |
-| `callsuper` | 不变 | 从直接父级链命中的所有者 |
+| `callthis` | 不变 | 从 `state_addr` 链命中的所有者 |
+| `callself` | 不变 | 从 `code_owner` 链命中的所有者 |
+| `callsuper` | 不变 | 从直接父级入口集命中的所有者 |
 
 **状态** = 存储、全局、内存、日志。
 
-**重要说明**：`callcode` 在**当前帧**中执行并**完全继承调用方的 ExecMode** —— 它**没有独立的状态访问控制逻辑**。callcode 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）均受继承模式的权限限制。此外，`callcode` 设置 `in_callcode = true`，禁止任何后续嵌套调用（CallInCallcode 错误）。
+**重要说明**：`callcode` 在**当前帧**中执行并**完整继承调用方的 ExecCtx** —— 它**没有独立的状态访问控制逻辑**。callcode 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）都受继承下来的 domain/frame 权限限制。此外，`callcode` 会设置 `in_callcode = true`，禁止任何后续嵌套调用（CallInCallcode 错误）。
 
-#### 各入口/执行模式下的允许调用
+#### 正交权限矩阵
 
-| 模式 | 允许的调用 | 禁止的调用 |
-|------|------------|------------|
-| **Main**（交易主入口） | CALL、CALLVIEW、CALLPURE、CALLCODE | CALLTHIS、CALLSELF、CALLSUPER |
-| **P2sh**（脚本验证） | CALLVIEW、CALLPURE、CALLCODE | CALL、CALLTHIS、CALLSELF、CALLSUPER |
-| **Abst**（支付钩子） | CALLTHIS、CALLSELF、CALLSUPER、CALLVIEW、CALLPURE、CALLCODE | CALL（External） |
-| **External**（嵌套合约） | 全部 | — |
-| **Inner**（this/self/super） | 全部 | — |
-| **View**（只读） | CALLVIEW、CALLPURE | CALL、CALLTHIS、CALLSELF、CALLSUPER |
-| **Pure**（无状态） | 仅 CALLPURE | 其余全部 |
-| **in_callcode**（在 CALLCODE 内） | 无 | 全部（禁止嵌套调用） |
+Domain 轴限制：
 
-**Abst** 禁止 CALL（External），防止支付钩子通过外部合约重入。
+| `ExecDomain` | 允许的调用 |
+|---|---|
+| `TopMain` | `CALL`、`CALLVIEW`、`CALLPURE`、`CALLCODE` |
+| `TopP2sh` | `CALLVIEW`、`CALLPURE`、`CALLCODE` |
+| `TopAbst` | `CALLTHIS`、`CALLSELF`、`CALLSUPER`、`CALLVIEW`、`CALLPURE`、`CALLCODE` |
+| `Contract` | 无额外 domain 限制 |
 
-| 模式/入口 | CALL | CALLVIEW | CALLPURE | CALLCODE | CALLTHIS | CALLSELF | CALLSUPER |
-|---|---|---|---|---|---|---|---|
-| Main | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| P2sh | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Abst | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| External/Inner | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| View | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+Frame 轴限制：
+
+| `FrameMode` | 允许的调用 | 状态读取 | 状态写入 |
+|---|---|---|---|
+| `External` | 不受 frame 轴额外限制 | 允许 | 允许 |
+| `Inner` | 不受 frame 轴额外限制 | 允许 | 允许 |
+| `View` | `CALLVIEW`、`CALLPURE` | 允许 | 禁止 |
+| `Pure` | 仅 `CALLPURE` | 禁止 | 禁止 |
+
+`in_callcode` 仍然禁止所有嵌套调用。`TopAbst` 禁止 `CALL`（External），用于防止支付钩子经由外部合约重入。
 | Pure | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Callcode | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 

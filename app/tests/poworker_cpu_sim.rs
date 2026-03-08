@@ -44,7 +44,10 @@ fn poworker_cpu_mining_submit_success_with_sim_miner_api() {
     stop.store(true, Ordering::Relaxed);
     thread::sleep(Duration::from_millis(80));
 
-    assert!(ok, "poworker did not submit mining success to simulated miner api");
+    assert!(
+        ok,
+        "poworker did not submit mining success to simulated miner api"
+    );
 
     let last_submit = sim.last_submit();
     assert_eq!(last_submit.get("height"), Some(&"1".to_string()));

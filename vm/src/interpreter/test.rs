@@ -1,22 +1,20 @@
-
-
 #[cfg(test)]
 mod bounds_tests {
     use super::*;
     use crate::machine::VmHost;
-    use crate::rt::{ExecMode, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
+    use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
     use crate::value::{CompoItem, Value, ValueTy, RESERVED_U256_TYPE_ID};
-    use field::Address;
     use crate::ContractAddress;
+    use field::Address;
     use sys::Ret;
 
     #[derive(Default)]
     struct DummyHost {
-        ext_res: Vec<u8>,
-        ext_gas: u32,
-        ext_err: Option<String>,
-        ext_body: Vec<u8>,
+        act_res: Vec<u8>,
+        act_gas: u32,
+        act_err: Option<String>,
+        act_body: Vec<u8>,
         srest_res: Option<Value>,
         sload_res: Option<Value>,
         log_calls: usize,
@@ -27,12 +25,12 @@ mod bounds_tests {
             1
         }
 
-        fn ext_action_call(&mut self, _kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
-            if let Some(e) = &self.ext_err {
-                return Err(e.clone())
+        fn action_call(&mut self, _kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+            if let Some(e) = &self.act_err {
+                return Err(e.clone());
             }
-            self.ext_body = body;
-            Ok((self.ext_gas, self.ext_res.clone()))
+            self.act_body = body;
+            Ok((self.act_gas, self.act_res.clone()))
         }
 
         fn log_push(&mut self, _cadr: &ContractAddress, _items: Vec<Value>) -> VmrtErr {
@@ -81,6 +79,38 @@ mod bounds_tests {
         }
     }
 
+    fn run_call_opcode_gas(exec: ExecCtx, codes: Vec<u8>) -> i64 {
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+        let exit = execute_code(
+            &mut pc,
+            &codes,
+            exec,
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap();
+        assert!(matches!(exit, crate::rt::CallExit::Call(_)));
+        1000 - gas
+    }
+
     fn run_with_setup<F>(codes: Vec<u8>, host: DummyHost, setup: F) -> i64
     where
         F: FnOnce(&mut Stack, &mut Stack, &mut Heap, &mut GKVMap, &mut CtcKVMap, &ContractAddress),
@@ -92,36 +122,34 @@ mod bounds_tests {
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
         let cadr = ContractAddress::default();
         setup(
             &mut operands,
             &mut locals,
             &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &cadr,
         );
 
         execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &GasTable::new(1),
             &GasExtra::new(1),
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         )
         .unwrap();
         1000 - gas
@@ -140,29 +168,27 @@ mod bounds_tests {
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
 
         let cadr = ContractAddress::default();
 
         let res = execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &GasTable::new(1),
             &GasExtra::new(1),
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         );
 
         assert!(matches!(res, Err(ItrErr(ItrErrCode::CodeOverflow, _))));
@@ -173,7 +199,12 @@ mod bounds_tests {
         use crate::rt::Bytecode;
 
         for inst in [Bytecode::TIS, Bytecode::CTO] {
-            let codes = vec![Bytecode::P0 as u8, inst as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
+            let codes = vec![
+                Bytecode::P0 as u8,
+                inst as u8,
+                RESERVED_U256_TYPE_ID,
+                Bytecode::END as u8,
+            ];
 
             let mut pc: usize = 0;
             let mut gas: i64 = 1000;
@@ -182,29 +213,27 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
 
             let res = execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             );
 
             assert!(
@@ -219,7 +248,7 @@ mod bounds_tests {
     fn execute_code_rejects_unknown_type_id_for_tis_and_cto() {
         use crate::rt::Bytecode;
 
-        for raw in [13u8] {
+        for raw in [12u8] {
             for inst in [Bytecode::TIS, Bytecode::CTO] {
                 let codes = vec![Bytecode::P0 as u8, inst as u8, raw, Bytecode::END as u8];
 
@@ -230,29 +259,27 @@ mod bounds_tests {
                 let mut operands = Stack::new(256);
                 let mut locals = Stack::new(256);
                 let mut heap = Heap::new(64);
-                let mut globals = GKVMap::new(20);
-                let mut memorys = CtcKVMap::new(12);
+                let mut global_map = GKVMap::new(20);
+                let mut memory_map = CtcKVMap::new(12);
 
                 let cadr = ContractAddress::default();
 
                 let res = execute_code(
                     &mut pc,
                     &codes,
-                    ExecMode::Main,
-                    false,
-                    0,
+                    ExecCtx::main(),
+                    &mut operands,
+                    &mut locals,
+                    &mut heap,
+                    &cadr,
+                    &cadr,
                     &mut gas,
                     &GasTable::new(1),
                     &GasExtra::new(1),
                     &SpaceCap::new(1),
-                    &mut operands,
-                    &mut locals,
-                    &mut heap,
-                    &mut globals,
-                    &mut memorys,
+                    &mut global_map,
+                    &mut memory_map,
                     &mut host,
-                    &cadr,
-                    &cadr,
                 );
 
                 assert!(
@@ -269,9 +296,19 @@ mod bounds_tests {
     fn execute_code_rejects_cto_targets_outside_cast_set() {
         use crate::rt::Bytecode;
 
-        let non_castable_targets = [ValueTy::Nil, ValueTy::Args, ValueTy::HeapSlice, ValueTy::Compo];
+        let non_castable_targets = [
+            ValueTy::Nil,
+            ValueTy::HeapSlice,
+            ValueTy::Args,
+            ValueTy::Compo,
+        ];
         for ty in non_castable_targets {
-            let codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
+            let codes = vec![
+                Bytecode::P0 as u8,
+                Bytecode::CTO as u8,
+                ty as u8,
+                Bytecode::END as u8,
+            ];
 
             let mut pc: usize = 0;
             let mut gas: i64 = 1000;
@@ -280,29 +317,27 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
 
             let res = execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             );
 
             assert!(
@@ -325,8 +360,8 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
             let cadr = ContractAddress::default();
             let codes = vec![Bytecode::TIS as u8, ty as u8, Bytecode::END as u8];
 
@@ -334,30 +369,37 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )?;
             operands.pop()
         };
 
         assert_eq!(run(Value::Nil, ValueTy::Nil).unwrap(), Value::Bool(true));
         assert_eq!(run(Value::U8(0), ValueTy::Nil).unwrap(), Value::Bool(false));
-        assert_eq!(run(Value::HeapSlice((0, 0)), ValueTy::HeapSlice).unwrap(), Value::Bool(true));
-        assert_eq!(run(Value::U8(1), ValueTy::HeapSlice).unwrap(), Value::Bool(false));
-        assert_eq!(run(Value::Compo(CompoItem::new_list()), ValueTy::Compo).unwrap(), Value::Bool(true));
+        assert_eq!(
+            run(Value::HeapSlice((0, 0)), ValueTy::HeapSlice).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            run(Value::U8(1), ValueTy::HeapSlice).unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            run(Value::Compo(CompoItem::new_list()), ValueTy::Compo).unwrap(),
+            Value::Bool(true)
+        );
     }
 
     #[test]
@@ -372,8 +414,8 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
             let cadr = ContractAddress::default();
             let codes = vec![Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
 
@@ -381,21 +423,19 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )?;
             operands.pop()
         };
@@ -403,8 +443,14 @@ mod bounds_tests {
         let addr = Address::default();
         assert_eq!(run(Value::Nil, ValueTy::Bool).unwrap(), Value::Bool(false));
         assert_eq!(run(Value::Bool(true), ValueTy::U16).unwrap(), Value::U16(1));
-        assert_eq!(run(Value::U16(0x0102), ValueTy::Bytes).unwrap(), Value::Bytes(vec![0x01, 0x02]));
-        assert_eq!(run(Value::Bytes(addr.to_vec()), ValueTy::Address).unwrap(), Value::Address(addr));
+        assert_eq!(
+            run(Value::U16(0x0102), ValueTy::Bytes).unwrap(),
+            Value::Bytes(vec![0x01, 0x02])
+        );
+        assert_eq!(
+            run(Value::Bytes(addr.to_vec()), ValueTy::Address).unwrap(),
+            Value::Address(addr)
+        );
     }
 
     #[test]
@@ -419,8 +465,8 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
             let cadr = ContractAddress::default();
             let codes = vec![inst as u8, ty as u8, Bytecode::END as u8];
 
@@ -428,26 +474,27 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )?;
             operands.pop()
         };
 
-        assert_eq!(run(Bytecode::TIS, Value::Nil, ValueTy::Nil).unwrap(), Value::Bool(true));
+        assert_eq!(
+            run(Bytecode::TIS, Value::Nil, ValueTy::Nil).unwrap(),
+            Value::Bool(true)
+        );
         assert!(matches!(
             run(Bytecode::CTO, Value::Nil, ValueTy::Nil),
             Err(ItrErr(ItrErrCode::InstParamsErr, _))
@@ -495,8 +542,8 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
             let cadr = ContractAddress::default();
             let codes = vec![Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
 
@@ -504,21 +551,19 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )?;
             operands.pop()
         };
@@ -549,8 +594,8 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
             let cadr = ContractAddress::default();
             let codes = vec![Bytecode::XLG as u8, mark, Bytecode::END as u8];
 
@@ -565,21 +610,19 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
 
@@ -620,8 +663,8 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
             let cadr = ContractAddress::default();
             let codes = vec![Bytecode::XOP as u8, mark, Bytecode::END as u8];
 
@@ -636,31 +679,30 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
 
             locals.load(idx as usize).unwrap()
         };
 
-        assert_eq!(run((0 << 6) | 0, Value::U8(2), Value::U8(3)), Value::U8(5));  // +=
-        assert_eq!(run((1 << 6) | 1, Value::U8(9), Value::U8(4)), Value::U8(5));  // -= (idx=1)
+        assert_eq!(run((0 << 6) | 0, Value::U8(2), Value::U8(3)), Value::U8(5)); // +=
+        assert_eq!(run((1 << 6) | 1, Value::U8(9), Value::U8(4)), Value::U8(5)); // -= (idx=1)
         assert_eq!(run((2 << 6) | 0, Value::U8(3), Value::U8(4)), Value::U8(12)); // *=
-        assert_eq!(run((3 << 6) | 0, Value::U8(12), Value::U8(3)), Value::U8(4)); // /=
+        assert_eq!(run((3 << 6) | 0, Value::U8(12), Value::U8(3)), Value::U8(4));
+        // /=
     }
 
     #[test]
@@ -677,30 +719,33 @@ mod bounds_tests {
             let mut heap = Heap::new(64);
             heap.grow(1).unwrap();
             heap.write(0, Value::Bytes(vec![0u8; 16])).unwrap();
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
-            let codes = vec![Bytecode::HREADUL as u8, mark_hi, mark_lo, Bytecode::END as u8];
+            let codes = vec![
+                Bytecode::HREADUL as u8,
+                mark_hi,
+                mark_lo,
+                Bytecode::END as u8,
+            ];
 
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
             1000 - gas
@@ -711,45 +756,49 @@ mod bounds_tests {
         // mark=0x8000 -> u128 at segment 0, len=16
         let gas_u128 = run(0x80, 0x00);
 
-        assert_eq!(gas_u128, gas_u8, "HREADUL u8 and u128 are both in the first ceil bucket (<=16 bytes)");
+        assert_eq!(
+            gas_u128, gas_u8,
+            "HREADUL u8 and u128 are both in the first ceil bucket (<=16 bytes)"
+        );
     }
 
     #[test]
-    fn extenv_return_value_is_metered() {
+    fn actenv_return_value_is_metered() {
         use crate::rt::Bytecode;
 
         let run = |idx: u8, ret: Vec<u8>| -> i64 {
             let mut pc: usize = 0;
             let mut gas: i64 = 1000;
-            let mut host = DummyHost { ext_res: ret, ..Default::default() };
+            let mut host = DummyHost {
+                act_res: ret,
+                ..Default::default()
+            };
 
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
-            let codes = vec![Bytecode::EXTENV as u8, idx, Bytecode::END as u8];
+            let codes = vec![Bytecode::ACTENV as u8, idx, Bytecode::END as u8];
 
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
             1000 - gas
@@ -760,7 +809,11 @@ mod bounds_tests {
         // idx=2 -> EnvMainAddr (Address, 21 bytes), 21/16 = 1 extra
         let gas_addr = run(2, Address::default().to_vec());
 
-        assert_eq!(gas_addr, gas_u64 + 1, "EXTENV should meter return value bytes");
+        assert_eq!(
+            gas_addr,
+            gas_u64 + 1,
+            "ACTENV should meter return value bytes"
+        );
     }
 
     #[test]
@@ -770,14 +823,17 @@ mod bounds_tests {
         let run = |retv: Value| -> i64 {
             let mut pc: usize = 0;
             let mut gas: i64 = 1000;
-            let mut host = DummyHost { srest_res: Some(retv), ..Default::default() };
+            let mut host = DummyHost {
+                srest_res: Some(retv),
+                ..Default::default()
+            };
 
             let mut operands = Stack::new(256);
             operands.push(Value::U8(1)).unwrap();
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
             let codes = vec![Bytecode::SREST as u8, Bytecode::END as u8];
@@ -785,21 +841,19 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
             1000 - gas
@@ -807,7 +861,10 @@ mod bounds_tests {
 
         let gas_u8 = run(Value::U8(7));
         let gas_addr = run(Value::Address(Address::default()));
-        assert_eq!(gas_addr, gas_u8, "SREST should be fixed gas without return-size dynamic billing");
+        assert_eq!(
+            gas_addr, gas_u8,
+            "SREST should be fixed gas without return-size dynamic billing"
+        );
 
         let gst = GasTable::new(1);
         let expect = gst.gas(Bytecode::SREST as u8) + gst.gas(Bytecode::END as u8);
@@ -826,8 +883,8 @@ mod bounds_tests {
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
 
         let cadr = ContractAddress::default();
         let idx = NativeEnv::idx_context_address;
@@ -838,21 +895,19 @@ mod bounds_tests {
         execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &gas_table,
             &gas_extra,
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         )
         .unwrap();
 
@@ -864,7 +919,7 @@ mod bounds_tests {
     }
 
     #[test]
-    fn get0_stack_copy_uses_val_size() {
+    fn get0_stack_copy_uses_dup_size() {
         use crate::rt::Bytecode;
 
         let run = |v: Value| -> i64 {
@@ -878,8 +933,8 @@ mod bounds_tests {
             locals.save(0, v).unwrap();
 
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
             let codes = vec![Bytecode::GET0 as u8, Bytecode::END as u8];
@@ -887,21 +942,19 @@ mod bounds_tests {
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
             1000 - gas
@@ -910,6 +963,51 @@ mod bounds_tests {
         let gas_32 = run(Value::Bytes(vec![0u8; 32]));
         let gas_33 = run(Value::Bytes(vec![0u8; 33]));
         assert_eq!(gas_33, gas_32 + 1);
+    }
+
+    #[test]
+    fn get0_stack_copy_uses_dup_size_for_heapslice() {
+        use crate::rt::Bytecode;
+
+        let run = |len: u32| -> i64 {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            locals.alloc(1).unwrap();
+            locals.save(0, Value::HeapSlice((7, len))).unwrap();
+
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+
+            let cadr = ContractAddress::default();
+            let codes = vec![Bytecode::GET0 as u8, Bytecode::END as u8];
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap();
+            1000 - gas
+        };
+
+        assert_eq!(run(1), run(4096));
     }
 
     #[test]
@@ -923,12 +1021,13 @@ mod bounds_tests {
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
 
         let mut map = CompoItem::new_map();
         let cap = SpaceCap::new(1);
-        map.insert(&cap, Value::U8(1), Value::Address(Address::default())).unwrap();
+        map.insert(&cap, Value::U8(1), Value::Address(Address::default()))
+            .unwrap();
         operands.push(Value::Compo(map)).unwrap();
         operands.push(Value::U8(1)).unwrap();
 
@@ -938,21 +1037,19 @@ mod bounds_tests {
         execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &GasTable::new(1),
             &GasExtra::new(1),
             &cap,
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         )
         .unwrap();
 
@@ -966,16 +1063,80 @@ mod bounds_tests {
     }
 
     #[test]
-    fn mget_stack_copy_uses_val_size() {
+    fn args_support_list_read_opcodes() {
+        use crate::rt::Bytecode;
+
+        let run = |codes: Vec<u8>, seed: Value, extra: Option<Value>| -> VmrtRes<Value> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            operands.push(seed).unwrap();
+            if let Some(v) = extra {
+                operands.push(v).unwrap();
+            }
+            let _ = execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )?;
+            operands.pop()
+        };
+
+        let args = || {
+            Value::Args(
+                ArgsItem::new(vec![Value::Compo(CompoItem::new_map()), Value::U16(9)]).unwrap(),
+            )
+        };
+
+        assert_eq!(run(vec![Bytecode::LENGTH as u8, Bytecode::END as u8], args(), None).unwrap(), Value::U32(2));
+        assert_eq!(run(vec![Bytecode::HASKEY as u8, Bytecode::END as u8], args(), Some(Value::U8(1))).unwrap(), Value::Bool(true));
+        assert!(matches!(
+            run(vec![Bytecode::ITEMGET as u8, Bytecode::END as u8], args(), Some(Value::U8(0))).unwrap(),
+            Value::Compo(_)
+        ));
+        assert!(matches!(
+            run(vec![Bytecode::HEAD as u8, Bytecode::END as u8], args(), None),
+            Err(ItrErr(ItrErrCode::CompoOpNotMatch, _))
+        ));
+        assert!(matches!(
+            run(vec![Bytecode::BACK as u8, Bytecode::END as u8], args(), None),
+            Err(ItrErr(ItrErrCode::CompoOpNotMatch, _))
+        ));
+    }
+
+    #[test]
+    fn mget_stack_copy_uses_dup_size() {
         use crate::rt::Bytecode;
 
         let run = |v: Value| -> i64 {
             run_with_setup(
                 vec![Bytecode::MGET as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, memorys, cadr| {
+                |ops, _locals, _heap, _global_map, memory_map, cadr| {
                     let key = Value::Bytes(vec![1u8]);
-                    memorys.entry_mut(cadr).unwrap().put(key.clone(), v).unwrap();
+                    memory_map
+                        .entry_mut(cadr)
+                        .unwrap()
+                        .put(key.clone(), v)
+                        .unwrap();
                     ops.push(key).unwrap();
                 },
             )
@@ -985,16 +1146,15 @@ mod bounds_tests {
         let gas_33 = run(Value::Bytes(vec![0u8; 33]));
         assert_eq!(gas_33, gas_32 + 1);
     }
-
     #[test]
-    fn dup_stack_copy_uses_val_size() {
+    fn dup_stack_copy_uses_dup_size() {
         use crate::rt::Bytecode;
 
         let run = |v: Value| -> i64 {
             run_with_setup(
                 vec![Bytecode::DUP as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(v).unwrap();
                 },
             )
@@ -1006,16 +1166,56 @@ mod bounds_tests {
     }
 
     #[test]
-    fn gget_stack_copy_uses_val_size() {
+    fn dup_stack_copy_uses_dup_size_for_args_handle() {
+        use crate::rt::Bytecode;
+
+        let run = |len: usize| -> i64 {
+            run_with_setup(
+                vec![Bytecode::DUP as u8, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                    let args =
+                        crate::value::ArgsItem::new(vec![Value::Bytes(vec![0u8; len])]).unwrap();
+                    ops.push(Value::Args(args)).unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run(1), run(256));
+    }
+
+    #[test]
+    fn dupn_stack_copy_uses_dup_size_for_ref_handles() {
+        use crate::rt::Bytecode;
+
+        let run = |len: usize| -> i64 {
+            run_with_setup(
+                vec![Bytecode::DUPN as u8, 5, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                    for _ in 0..5 {
+                        let args = crate::value::ArgsItem::new(vec![Value::Bytes(vec![0u8; len])])
+                            .unwrap();
+                        ops.push(Value::Args(args)).unwrap();
+                    }
+                },
+            )
+        };
+
+        assert_eq!(run(1), run(256));
+    }
+
+    #[test]
+    fn gget_stack_copy_uses_dup_size() {
         use crate::rt::Bytecode;
 
         let run = |v: Value| -> i64 {
             run_with_setup(
                 vec![Bytecode::GGET as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, globals, _memorys, _cadr| {
+                |ops, _locals, _heap, global_map, _memory_map, _cadr| {
                     let key = Value::Bytes(vec![2u8]);
-                    globals.put(key.clone(), v).unwrap();
+                    global_map.put(key.clone(), v).unwrap();
                     ops.push(key).unwrap();
                 },
             )
@@ -1027,6 +1227,28 @@ mod bounds_tests {
     }
 
     #[test]
+    fn getx_stack_copy_uses_dup_size_for_heapslice() {
+        use crate::rt::Bytecode;
+
+        let run = |len: u32| -> i64 {
+            run_with_setup(
+                vec![
+                    Bytecode::P0 as u8,
+                    Bytecode::GETX as u8,
+                    Bytecode::END as u8,
+                ],
+                DummyHost::default(),
+                |_ops, locals, _heap, _global_map, _memory_map, _cadr| {
+                    locals.alloc(1).unwrap();
+                    locals.save(0, Value::HeapSlice((9, len))).unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run(1), run(4096));
+    }
+
+    #[test]
     fn put_space_write_uses_val_size() {
         use crate::rt::Bytecode;
 
@@ -1034,7 +1256,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::PUT as u8, 0, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, locals, _heap, _globals, _memorys, _cadr| {
+                |ops, locals, _heap, _global_map, _memory_map, _cadr| {
                     locals.alloc(1).unwrap();
                     ops.push(v).unwrap();
                 },
@@ -1054,7 +1276,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::PUTX as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, locals, _heap, _globals, _memorys, _cadr| {
+                |ops, locals, _heap, _global_map, _memory_map, _cadr| {
                     locals.alloc(1).unwrap();
                     ops.push(Value::U16(0)).unwrap();
                     ops.push(v).unwrap();
@@ -1076,8 +1298,8 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::MPUT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, memorys, cadr| {
-                    memorys
+                |ops, _locals, _heap, _global_map, memory_map, cadr| {
+                    memory_map
                         .entry_mut(cadr)
                         .unwrap()
                         .put(key.clone(), Value::U8(1))
@@ -1102,8 +1324,8 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::GPUT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, globals, _memorys, _cadr| {
-                    globals.put(key.clone(), Value::U8(1)).unwrap();
+                |ops, _locals, _heap, global_map, _memory_map, _cadr| {
+                    global_map.put(key.clone(), Value::U8(1)).unwrap();
                     ops.push(key.clone()).unwrap();
                     ops.push(v).unwrap();
                 },
@@ -1124,9 +1346,10 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::CLEAR as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     let list = Value::Compo(
-                        CompoItem::list(VecDeque::from(vec![Value::Bytes(vec![0u8; blen])])).unwrap(),
+                        CompoItem::list(VecDeque::from(vec![Value::Bytes(vec![0u8; blen])]))
+                            .unwrap(),
                     );
                     ops.push(list).unwrap();
                 },
@@ -1144,7 +1367,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::INSERT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(Value::Compo(CompoItem::new_map())).unwrap();
                     ops.push(Value::Bytes(vec![1u8; klen])).unwrap();
                     ops.push(Value::U8(7)).unwrap();
@@ -1163,9 +1386,9 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::GPUT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, globals, _memorys, _cadr| {
+                |ops, _locals, _heap, global_map, _memory_map, _cadr| {
                     let key = Value::Bytes(vec![0x55u8; klen]);
-                    globals.put(key.clone(), Value::U8(1)).unwrap();
+                    global_map.put(key.clone(), Value::U8(1)).unwrap();
                     ops.push(key).unwrap();
                     ops.push(Value::U8(9)).unwrap();
                 },
@@ -1183,9 +1406,9 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::MPUT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, memorys, cadr| {
+                |ops, _locals, _heap, _global_map, memory_map, cadr| {
                     let key = Value::Bytes(vec![0x66u8; klen]);
-                    memorys
+                    memory_map
                         .entry_mut(cadr)
                         .unwrap()
                         .put(key.clone(), Value::U8(1))
@@ -1207,7 +1430,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::REV as u8, 2, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(v1).unwrap();
                     ops.push(v2).unwrap();
                 },
@@ -1227,7 +1450,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::CAT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(Value::Bytes(vec![1u8; l1])).unwrap();
                     ops.push(Value::Bytes(vec![2u8; l2])).unwrap();
                 },
@@ -1245,7 +1468,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::LEFT as u8, take, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(Value::Bytes(vec![9u8; 64])).unwrap();
                 },
             )
@@ -1255,18 +1478,18 @@ mod bounds_tests {
     }
 
     #[test]
-    fn extview_meters_input_and_return_bytes() {
+    fn actview_meters_input_and_return_bytes() {
         use crate::rt::Bytecode;
 
         // view idx=2 -> returns Bytes; input body comes from stack top bytes.
         let run = |input_len: usize, ret_len: usize| -> i64 {
             run_with_setup(
-                vec![Bytecode::EXTVIEW as u8, 2, Bytecode::END as u8],
+                vec![Bytecode::ACTVIEW as u8, 2, Bytecode::END as u8],
                 DummyHost {
-                    ext_res: vec![0u8; ret_len],
+                    act_res: vec![0u8; ret_len],
                     ..Default::default()
                 },
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(Value::Bytes(vec![9u8; input_len])).unwrap();
                 },
             )
@@ -1277,15 +1500,15 @@ mod bounds_tests {
     }
 
     #[test]
-    fn extaction_meters_input_body_bytes() {
+    fn action_meters_input_body_bytes() {
         use crate::rt::Bytecode;
 
         // action idx=1 is valid in allowlist.
         let run = |input_len: usize| -> i64 {
             run_with_setup(
-                vec![Bytecode::EXTACTION as u8, 1, Bytecode::END as u8],
+                vec![Bytecode::ACTION as u8, 1, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(Value::Bytes(vec![7u8; input_len])).unwrap();
                 },
             )
@@ -1296,23 +1519,23 @@ mod bounds_tests {
     }
 
     #[test]
-    fn extaction_host_error_still_charges_input_dynamic_gas() {
+    fn action_host_error_still_charges_input_dynamic_gas() {
         use crate::rt::Bytecode;
         use sys::UNWIND_PREFIX;
 
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
-        let mut host = DummyHost{
-            ext_err: Some(format!("{}mock ext recoverable fail", UNWIND_PREFIX)),
+        let mut host = DummyHost {
+            act_err: Some(format!("{}mock action recoverable fail", UNWIND_PREFIX)),
             ..Default::default()
         };
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
         let cadr = ContractAddress::default();
-        let codes = vec![Bytecode::EXTACTION as u8, 1, Bytecode::END as u8];
+        let codes = vec![Bytecode::ACTION as u8, 1, Bytecode::END as u8];
         operands.push(Value::Bytes(vec![7u8; 21])).unwrap();
         let gas_table = GasTable::new(1);
         let gas_extra = GasExtra::new(1);
@@ -1320,70 +1543,66 @@ mod bounds_tests {
         let res = execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &gas_table,
             &gas_extra,
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         );
 
-        assert!(matches!(res, Err(ItrErr(ItrErrCode::ExtActCallError, _))));
+        assert!(matches!(res, Err(ItrErr(ItrErrCode::ActCallError, _))));
         let used = 1000 - gas;
-        let expected = gas_table.gas(Bytecode::EXTACTION as u8) + gas_extra.extaction_bytes(21);
+        let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.action_bytes(21);
         assert_eq!(used, expected);
     }
 
     #[test]
-    fn extaction_host_error_out_of_gas_has_higher_priority() {
+    fn action_host_error_out_of_gas_has_higher_priority() {
         use crate::rt::Bytecode;
         use sys::UNWIND_PREFIX;
 
         let mut pc: usize = 0;
-        let mut host = DummyHost{
-            ext_err: Some(format!("{}mock ext recoverable fail", UNWIND_PREFIX)),
+        let mut host = DummyHost {
+            act_err: Some(format!("{}mock action recoverable fail", UNWIND_PREFIX)),
             ..Default::default()
         };
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
         let cadr = ContractAddress::default();
-        let codes = vec![Bytecode::EXTACTION as u8, 1, Bytecode::END as u8];
+        let codes = vec![Bytecode::ACTION as u8, 1, Bytecode::END as u8];
         operands.push(Value::Bytes(vec![7u8; 21])).unwrap();
         let gas_table = GasTable::new(1);
         let gas_extra = GasExtra::new(1);
-        let expected = gas_table.gas(Bytecode::EXTACTION as u8) + gas_extra.extaction_bytes(21);
+        let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.action_bytes(21);
         let mut gas = expected - 1;
 
         let res = execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &gas_table,
             &gas_extra,
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         );
 
         assert!(matches!(res, Err(ItrErr(ItrErrCode::OutOfGas, _))));
@@ -1406,31 +1625,29 @@ mod bounds_tests {
             let mut heap = Heap::new(64);
             heap.grow(1).unwrap();
             heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
-            let codes = vec![Bytecode::EXTACTION as u8, 1, Bytecode::END as u8];
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let codes = vec![Bytecode::ACTION as u8, 1, Bytecode::END as u8];
 
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
-            assert_eq!(host.ext_body, vec![8, 7]);
+            assert_eq!(host.act_body, vec![8, 7]);
         }
 
         {
@@ -1443,28 +1660,30 @@ mod bounds_tests {
             let mut heap = Heap::new(64);
             heap.grow(1).unwrap();
             heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
-            let codes = vec![Bytecode::NTFUNC as u8, NativeFunc::idx_sha2, Bytecode::END as u8];
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let codes = vec![
+                Bytecode::NTFUNC as u8,
+                NativeFunc::idx_sha2,
+                Bytecode::END as u8,
+            ];
 
             execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             )
             .unwrap();
             assert_eq!(
@@ -1482,7 +1701,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::HREAD as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, heap, _globals, _memorys, _cadr| {
+                |ops, _locals, heap, _global_map, _memory_map, _cadr| {
                     heap.grow(1).unwrap();
                     ops.push(Value::U16(0)).unwrap(); // start
                     ops.push(Value::U16(len)).unwrap(); // len
@@ -1501,7 +1720,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::HWRITE as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, heap, _globals, _memorys, _cadr| {
+                |ops, _locals, heap, _global_map, _memory_map, _cadr| {
                     heap.grow(1).unwrap();
                     ops.push(Value::U16(0)).unwrap(); // start
                     ops.push(v).unwrap(); // value
@@ -1523,7 +1742,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::LOG2 as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     // LOG2 pops 3 values: topic1, topic2, data.
                     ops.push(Value::U8(1)).unwrap();
                     ops.push(Value::U8(2)).unwrap();
@@ -1548,7 +1767,7 @@ mod bounds_tests {
                     sload_res: Some(retv),
                     ..Default::default()
                 },
-                |ops, _locals, _heap, _globals, _memorys, _cadr| {
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     ops.push(Value::U8(1)).unwrap(); // key placeholder
                 },
             )
@@ -1566,12 +1785,34 @@ mod bounds_tests {
 
         struct SdelOkHost;
         impl VmHost for SdelOkHost {
-            fn height(&mut self) -> u64 { 1 }
-            fn ext_action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> { unreachable!() }
-            fn log_push(&mut self, _cadr: &ContractAddress, _items: Vec<Value>) -> VmrtErr { unreachable!() }
-            fn srest(&mut self, _hei: u64, _cadr: &ContractAddress, _key: &Value) -> VmrtRes<Value> { unreachable!() }
-            fn sload(&mut self, _hei: u64, _cadr: &ContractAddress, _key: &Value) -> VmrtRes<Value> { unreachable!() }
-            fn sdel(&mut self, _cadr: &ContractAddress, _key: Value) -> VmrtErr { Ok(()) }
+            fn height(&mut self) -> u64 {
+                1
+            }
+            fn action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+                unreachable!()
+            }
+            fn log_push(&mut self, _cadr: &ContractAddress, _items: Vec<Value>) -> VmrtErr {
+                unreachable!()
+            }
+            fn srest(
+                &mut self,
+                _hei: u64,
+                _cadr: &ContractAddress,
+                _key: &Value,
+            ) -> VmrtRes<Value> {
+                unreachable!()
+            }
+            fn sload(
+                &mut self,
+                _hei: u64,
+                _cadr: &ContractAddress,
+                _key: &Value,
+            ) -> VmrtRes<Value> {
+                unreachable!()
+            }
+            fn sdel(&mut self, _cadr: &ContractAddress, _key: Value) -> VmrtErr {
+                Ok(())
+            }
             fn ssave(
                 &mut self,
                 _gst: &GasExtra,
@@ -1579,7 +1820,9 @@ mod bounds_tests {
                 _cadr: &ContractAddress,
                 _key: Value,
                 _val: Value,
-            ) -> VmrtRes<i64> { unreachable!() }
+            ) -> VmrtRes<i64> {
+                unreachable!()
+            }
             fn srent(
                 &mut self,
                 _gst: &GasExtra,
@@ -1587,7 +1830,9 @@ mod bounds_tests {
                 _cadr: &ContractAddress,
                 _key: Value,
                 _period: Value,
-            ) -> VmrtRes<i64> { unreachable!() }
+            ) -> VmrtRes<i64> {
+                unreachable!()
+            }
         }
 
         let mut pc: usize = 0;
@@ -1600,29 +1845,27 @@ mod bounds_tests {
         operands.push(Value::Bytes(vec![1u8])).unwrap();
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
         let cadr = ContractAddress::default();
         let codes = vec![Bytecode::SDEL as u8, Bytecode::END as u8];
 
         execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &gas_table,
             &gas_extra,
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         )
         .unwrap();
 
@@ -1647,34 +1890,42 @@ mod bounds_tests {
         let gas_keys_40 = run_with_setup(
             vec![Bytecode::KEYS as u8, Bytecode::END as u8],
             DummyHost::default(),
-            |ops, _locals, _heap, _globals, _memorys, _cadr| {
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                 ops.push(map_with_key_len(40)).unwrap();
             },
         );
         let gas_keys_41 = run_with_setup(
             vec![Bytecode::KEYS as u8, Bytecode::END as u8],
             DummyHost::default(),
-            |ops, _locals, _heap, _globals, _memorys, _cadr| {
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                 ops.push(map_with_key_len(41)).unwrap();
             },
         );
-        assert_eq!(gas_keys_41, gas_keys_40 + 1, "KEYS byte/40 should include key bytes");
+        assert_eq!(
+            gas_keys_41,
+            gas_keys_40 + 1,
+            "KEYS byte/40 should include key bytes"
+        );
 
         let gas_clone_39 = run_with_setup(
             vec![Bytecode::CLONE as u8, Bytecode::END as u8],
             DummyHost::default(),
-            |ops, _locals, _heap, _globals, _memorys, _cadr| {
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                 ops.push(map_with_key_len(39)).unwrap(); // 39(key)+1(val)=40
             },
         );
         let gas_clone_40 = run_with_setup(
             vec![Bytecode::CLONE as u8, Bytecode::END as u8],
             DummyHost::default(),
-            |ops, _locals, _heap, _globals, _memorys, _cadr| {
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                 ops.push(map_with_key_len(40)).unwrap(); // 40+1=41
             },
         );
-        assert_eq!(gas_clone_40, gas_clone_39 + 1, "CLONE byte/40 should include key bytes");
+        assert_eq!(
+            gas_clone_40,
+            gas_clone_39 + 1,
+            "CLONE byte/40 should include key bytes"
+        );
     }
 
     #[test]
@@ -1685,7 +1936,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::ALLOC as u8, n, Bytecode::END as u8],
                 DummyHost::default(),
-                |_ops, _locals, _heap, _globals, _memorys, _cadr| {},
+                |_ops, _locals, _heap, _global_map, _memory_map, _cadr| {},
             )
         };
 
@@ -1703,7 +1954,7 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::UNPACK as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, locals, _heap, _globals, _memorys, _cadr| {
+                |ops, locals, _heap, _global_map, _memory_map, _cadr| {
                     locals.alloc(2).unwrap();
                     let list = Value::Compo(
                         CompoItem::list(VecDeque::from(vec![
@@ -1731,8 +1982,8 @@ mod bounds_tests {
         let mut host = DummyHost::default();
 
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
         let cadr = ContractAddress::default();
 
         let mut locals = Stack::new(256);
@@ -1755,21 +2006,19 @@ mod bounds_tests {
         let exit = execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &GasTable::new(1),
             &GasExtra::new(1),
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
         )
         .unwrap();
 
@@ -1787,18 +2036,17 @@ mod bounds_tests {
         let mut host = DummyHost::default();
 
         let mut heap = Heap::new(64);
-        let mut globals = GKVMap::new(20);
-        let mut memorys = CtcKVMap::new(12);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
         let cadr = ContractAddress::default();
 
         let mut locals = Stack::new(256);
         locals.alloc(2).unwrap();
 
         let mut operands = Stack::new(256);
-        let args = Value::Args(ArgsItem::new(vec![
-            Value::Compo(CompoItem::new_list()),
-            Value::U16(9),
-        ]).unwrap());
+        let args = Value::Args(
+            ArgsItem::new(vec![Value::Compo(CompoItem::new_list()), Value::U16(9)]).unwrap(),
+        );
         operands.push(args).unwrap();
         operands.push(Value::U8(0)).unwrap();
 
@@ -1806,26 +2054,146 @@ mod bounds_tests {
         let exit = execute_code(
             &mut pc,
             &codes,
-            ExecMode::Main,
-            false,
-            0,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
             &mut gas,
             &GasTable::new(1),
             &GasExtra::new(1),
             &SpaceCap::new(1),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &mut globals,
-            &mut memorys,
+            &mut global_map,
+            &mut memory_map,
             &mut host,
-            &cadr,
-            &cadr,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(matches!(exit, crate::rt::CallExit::Finish));
         assert!(matches!(locals.load(0).unwrap(), Value::Compo(_)));
         assert_eq!(locals.load(1).unwrap(), Value::U16(9));
+    }
+
+    #[test]
+    fn args2list_converts_plain_args_and_charges_copy_gas() {
+        use crate::rt::Bytecode;
+
+        let run = |tail_len: usize| -> i64 {
+            run_with_setup(
+                vec![Bytecode::ARGS2LIST as u8, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                    ops.push(Value::Args(
+                        ArgsItem::new(vec![Value::U8(7), Value::Bytes(vec![0u8; tail_len])])
+                            .unwrap(),
+                    ))
+                    .unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run(40), run(39) + 1);
+    }
+
+    #[test]
+    fn args2list_rejects_non_args_and_nested_compo_items() {
+        use crate::rt::Bytecode;
+
+        let run = |value: Value| -> VmrtRes<Value> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            operands.push(value).unwrap();
+            let codes = vec![Bytecode::ARGS2LIST as u8, Bytecode::END as u8];
+            let _ = execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )?;
+            operands.pop()
+        };
+
+        assert!(matches!(
+            run(Value::U8(1)),
+            Err(ItrErr(ItrErrCode::CastFail, _))
+        ));
+        assert!(matches!(
+            run(Value::Args(
+                ArgsItem::new(vec![Value::Compo(CompoItem::new_map())]).unwrap()
+            )),
+            Err(ItrErr(ItrErrCode::CastFail, _))
+        ));
+        let out = run(Value::Args(
+            ArgsItem::new(vec![Value::U8(1), Value::Bytes(vec![2])]).unwrap(),
+        ))
+        .unwrap();
+        assert!(matches!(out, Value::Compo(_)));
+    }
+
+    #[test]
+    fn dup_on_args_shares_storage_like_compo_clone() {
+        use crate::rt::Bytecode;
+
+        let seed = ArgsItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let value = Value::Args(seed.clone());
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+        operands.push(value).unwrap();
+        let codes = vec![Bytecode::DUP as u8, Bytecode::END as u8];
+        let exit = execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap();
+        assert!(matches!(exit, crate::rt::CallExit::Finish));
+        let Value::Args(top) = operands.pop().unwrap() else {
+            panic!("must be args")
+        };
+        let Value::Args(bottom) = operands.pop().unwrap() else {
+            panic!("must be args")
+        };
+        assert_eq!(seed.shared_count(), 3);
+        assert_eq!(top.shared_count(), 3);
+        assert_eq!(bottom.shared_count(), 3);
     }
 
     #[test]
@@ -1837,9 +2205,9 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::MPUT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, _globals, memorys, cadr| {
+                |ops, _locals, _heap, _global_map, memory_map, cadr| {
                     if preload {
-                        memorys
+                        memory_map
                             .entry_mut(cadr)
                             .unwrap()
                             .put(key.clone(), Value::U8(1))
@@ -1863,9 +2231,9 @@ mod bounds_tests {
             run_with_setup(
                 vec![Bytecode::GPUT as u8, Bytecode::END as u8],
                 DummyHost::default(),
-                |ops, _locals, _heap, globals, _memorys, _cadr| {
+                |ops, _locals, _heap, global_map, _memory_map, _cadr| {
                     if preload {
-                        globals.put(key.clone(), Value::U8(1)).unwrap();
+                        global_map.put(key.clone(), Value::U8(1)).unwrap();
                     }
                     ops.push(key.clone()).unwrap();
                     ops.push(Value::U8(9)).unwrap();
@@ -1888,8 +2256,8 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut globals = GKVMap::new(20);
-            let mut memorys = CtcKVMap::new(12);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
             let codes = vec![
@@ -1901,23 +2269,115 @@ mod bounds_tests {
             let res = execute_code(
                 &mut pc,
                 &codes,
-                ExecMode::Main,
-                false,
-                0,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
                 &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &mut globals,
-                &mut memorys,
+                &mut global_map,
+                &mut memory_map,
                 &mut host,
-                &cadr,
-                &cadr,
             );
             assert!(matches!(res, Err(ItrErr(ItrErrCode::CompoOpInvalid, _))));
+        }
+    }
+
+    #[test]
+    fn shortcut_call_gas_matches_opcode_tiers() {
+        use crate::rt::{calc_func_sign, encode_callcode_body, ExecCtx, UserCall};
+
+        let sign = calc_func_sign("jump");
+        let cases = [
+            (
+                vec![Bytecode::CALLTHIS as u8, sign[0], sign[1], sign[2], sign[3]],
+                12,
+            ),
+            (
+                vec![Bytecode::CALLSELF as u8, sign[0], sign[1], sign[2], sign[3]],
+                12,
+            ),
+            (
+                vec![
+                    Bytecode::CALLSUPER as u8,
+                    sign[0],
+                    sign[1],
+                    sign[2],
+                    sign[3],
+                ],
+                12,
+            ),
+            (
+                vec![
+                    Bytecode::CALLSELFVIEW as u8,
+                    sign[0],
+                    sign[1],
+                    sign[2],
+                    sign[3],
+                ],
+                12,
+            ),
+            (
+                vec![
+                    Bytecode::CALLSELFPURE as u8,
+                    sign[0],
+                    sign[1],
+                    sign[2],
+                    sign[3],
+                ],
+                12,
+            ),
+            (
+                {
+                    let mut codes = vec![Bytecode::CALLCODE as u8];
+                    codes.extend_from_slice(
+                        &encode_callcode_body(UserCall::callcode(1, sign)).unwrap(),
+                    );
+                    codes
+                },
+                16,
+            ),
+            (
+                vec![
+                    Bytecode::CALLPURE as u8,
+                    1,
+                    sign[0],
+                    sign[1],
+                    sign[2],
+                    sign[3],
+                ],
+                20,
+            ),
+            (
+                vec![
+                    Bytecode::CALLVIEW as u8,
+                    1,
+                    sign[0],
+                    sign[1],
+                    sign[2],
+                    sign[3],
+                ],
+                24,
+            ),
+            (
+                vec![
+                    Bytecode::CALLEXT as u8,
+                    1,
+                    sign[0],
+                    sign[1],
+                    sign[2],
+                    sign[3],
+                ],
+                32,
+            ),
+        ];
+
+        for (codes, expected) in cases {
+            assert_eq!(run_call_opcode_gas(ExecCtx::external(), codes), expected);
         }
     }
 }

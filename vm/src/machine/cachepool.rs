@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
 pub struct ContractCacheConfig {
-    /// Max cached bytes for global contract cache pool.
+    /// Max cached bytes for contract cache pool.
     /// `0` disables the cache entirely.
     pub max_bytes: usize,
     /// Target ratio of protected segment bytes (0..=100).
@@ -360,7 +360,7 @@ impl ContractCacheInner {
 /// Global contract cache pool (cross-transaction, cross-block).
 ///
 /// Heat + decay semantics (ticks are pool accesses, not wall time):
-/// - Each access increases global `tick` by 1.
+/// - Each access increments cache `tick` by 1.
 /// - On entry access, its heat is first decayed by half-lives:
 ///     heat = heat >> ((tick - last_tick) / heat_half_life)
 ///   then boosted:

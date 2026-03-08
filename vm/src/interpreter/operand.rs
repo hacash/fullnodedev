@@ -1,32 +1,24 @@
-
-
-fn check_call_mode(mode: ExecMode, inst: Bytecode, in_callcode: bool) -> VmrtErr {
-    use ExecMode::*;
-    use Bytecode::*;
-    if in_callcode {
-        // In CALLCODE execution, no further call instructions are allowed.
-        return itr_err_code!(CallInCallcode)
+fn check_call_mode(exec: ExecCtx, call: &CallSpec) -> VmrtErr {
+    if call.requires_external_visibility() && exec.entry == EntryKind::Abst {
+        return itr_err_code!(CallInAbst);
     }
-    macro_rules! not_ist {
-        ( $( $ist: expr ),+ ) => {
-            ![$( $ist ),+].contains(&inst)
+    match (exec.is_outer_entry(), exec.entry, call.boundary, call.exec) {
+        (true, EntryKind::Main, Boundary::Internal, CallExec::Enter(EffectMode::Edit)) => {
+            return itr_err_code!(CallOtherInMain)
         }
+        (true, EntryKind::P2sh, _, CallExec::Enter(EffectMode::Edit)) => {
+            return itr_err_code!(CallOtherInP2sh)
+        }
+        _ => {}
     }
-    match mode {
-        Main if not_ist!(CALL, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallOtherInMain),
-        P2sh if not_ist!(CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallOtherInP2sh),
-        // Abst intentionally allows this/self/super: root frame keeps state_addr as the
-        // concrete contract address passed by VM entry, while code_owner may come from
-        // inherited abstract function dispatch.
-        Abst if not_ist!(CALLTHIS, CALLSELF, CALLSUPER, CALLVIEW, CALLPURE, CALLCODE) => itr_err_code!(CallInAbst),
-        View if not_ist!(CALLVIEW, CALLPURE) => itr_err_code!(CallLocInView),
-        Pure if not_ist!(CALLPURE) => itr_err_code!(CallInPure),
-        // External and Inner allow all call instructions.
-        // Guard-false arms for Main/P2sh/Abst/View/Pure also fall here (call is allowed).
-        Main | P2sh | Abst | External | Inner | View | Pure => Ok(()),
+    let next = call.next_effect(exec.effect);
+    match (exec.effect, next) {
+        (EffectMode::Pure, EffectMode::Pure) => Ok(()),
+        (EffectMode::Pure, _) => itr_err_code!(CallInPure),
+        (EffectMode::View, EffectMode::Edit) => itr_err_code!(CallLocInView),
+        (EffectMode::Edit, _) | (EffectMode::View, EffectMode::View | EffectMode::Pure) => Ok(()),
     }
 }
-
 
 fn local_operand(mark: u8, locals: &mut Stack, mut value: Value) -> VmrtErr {
     let (opt, idx) = decode_local_operand_mark(mark);
@@ -39,7 +31,6 @@ fn local_operand(mark: u8, locals: &mut Stack, mut value: Value) -> VmrtErr {
     }?;
     Ok(())
 }
-
 
 fn local_logic(mark: u8, locals: &mut Stack, value: &mut Value) -> VmrtErr {
     let (opt, idx) = decode_local_logic_mark(mark);
@@ -58,16 +49,10 @@ fn local_logic(mark: u8, locals: &mut Stack, value: &mut Value) -> VmrtErr {
     Ok(())
 }
 
-
-fn unpack_seq(
-    i: u8,
-    locals: &mut Stack,
-    items: Vec<Value>,
-    gst: &GasExtra,
-) -> VmrtRes<i64> {
+fn unpack_seq(i: u8, locals: &mut Stack, items: Vec<Value>, gst: &GasExtra) -> VmrtRes<i64> {
     let start = i as usize;
     if locals.len() < start + items.len() {
-        return itr_err_code!(OutOfStack)
+        return itr_err_code!(OutOfStack);
     }
     let mut gas = 0i64;
     for (off, v) in items.into_iter().enumerate() {

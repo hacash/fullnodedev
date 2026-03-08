@@ -202,7 +202,7 @@ contract TestToken {
 
         // --- nested blocks as expressions (IRBLOCKR) ---
         var blk = {
-            var inner = {
+            var local_inner = {
                 if a0 > 0 {
                     print "inner-if"
                     10
@@ -210,7 +210,7 @@ contract TestToken {
                     20
                 }
             }
-            inner + 1
+            local_inner + 1
         }
         print blk
 
@@ -244,7 +244,7 @@ contract TestToken {
 
         // --- explicit call instructions (hash/sign forms) ---
         // Use explicit 0x function signatures to avoid tokenizer ambiguity.
-        var c1 = call 1::0x01020304(10, 20)
+        var c1 = callext 1::0x01020304(10, 20)
         var c2 = callthis 0::0x11223344(30, 40)
         var c3 = callself 0::0x55667788(50)
         var c4 = callsuper 0::0x99aabbcc(60)
@@ -306,7 +306,7 @@ contract TestToken {
 
 
     /*
-        Private (non-external) internal functions of a contract
+        Internal (non-external) functions of a contract
     */
     function do_transfer(addr_from: address, addr_to: address, amount: u64) -> u32 {
         
@@ -365,7 +365,7 @@ contract TestToken {
         return 0
     }
 
-    function private helper_private() -> u32 {
+    function helper_private() -> u32 {
         return 0
     }
 

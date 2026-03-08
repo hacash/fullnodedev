@@ -1,4 +1,3 @@
-
 fn cannot_cast_err(v: &Value, ty: &str) -> ItrErr {
     ItrErr::new(CastFail, &format!("cannot cast {:?} to {}", v, ty))
 }
@@ -17,27 +16,34 @@ fn cast_uint_name(bits: u16) -> &'static str {
 
 fn ensure_active_uint_bits(bits: u16) -> VmrtErr {
     if bits == RESERVED_U256_BITS {
-        return itr_err_fmt!(CastFail, "U256 is reserved but not enabled")
+        return itr_err_fmt!(CastFail, "U256 is reserved but not enabled");
     }
     if ACTIVE_UINT_BITS.contains(&bits) {
-        return Ok(())
+        return Ok(());
     }
     itr_err_code!(CastFail)
 }
 
 fn bytes_width_err(buf: &[u8], bits: u16) -> ItrErr {
-    ItrErr::new(CastFail, &format!("cannot cast {:?} to {}", Value::Bytes(buf.to_vec()), cast_uint_name(bits)))
+    ItrErr::new(
+        CastFail,
+        &format!(
+            "cannot cast {:?} to {}",
+            Value::Bytes(buf.to_vec()),
+            cast_uint_name(bits)
+        ),
+    )
 }
 
 fn bytes_to_fixed_width<const N: usize>(buf: &[u8], bits: u16) -> VmrtRes<[u8; N]> {
     if buf.len() <= N {
         let mut out = [0u8; N];
         out[N - buf.len()..].copy_from_slice(buf);
-        return Ok(out)
+        return Ok(out);
     }
     let cut = buf.len() - N;
     if buf[..cut].iter().any(|b| *b != 0) {
-        return Err(bytes_width_err(buf, bits))
+        return Err(bytes_width_err(buf, bits));
     }
     let mut out = [0u8; N];
     out.copy_from_slice(&buf[cut..]);
@@ -62,8 +68,12 @@ fn arith_uint_bits(v: &Value) -> Option<u16> {
 
 pub fn cast_arithmetic(x: &mut Value, y: &mut Value) -> VmrtErr {
     let (Some(lb), Some(rb)) = (arith_uint_bits(x), arith_uint_bits(y)) else {
-        return itr_err_fmt!(CastFail,
-            "cannot do arithmetic cast between type {:?} and {:?}", x, y)
+        return itr_err_fmt!(
+            CastFail,
+            "cannot do arithmetic cast between type {:?} and {:?}",
+            x,
+            y
+        );
     };
     let tb = lb.max(rb);
     if lb < tb {
@@ -75,9 +85,7 @@ pub fn cast_arithmetic(x: &mut Value, y: &mut Value) -> VmrtErr {
     Ok(())
 }
 
-
 impl Value {
-
     pub fn cast_bool(&mut self) -> VmrtErr {
         *self = self.to_bool()?;
         Ok(())
@@ -95,7 +103,7 @@ impl Value {
         let name = cast_uint_name(bits);
         if let Bytes(buf) = self {
             *self = bytes_to_uint_width(buf, bits)?;
-            return Ok(())
+            return Ok(());
         }
         let v = self.canbe_u128().map_err(|_| cannot_cast_err(self, name))?;
         *self = match bits {
@@ -131,7 +139,7 @@ impl Value {
 
     pub fn cast_buf(&mut self) -> VmrtErr {
         if matches!(self, Bytes(..)) {
-            return Ok(())
+            return Ok(());
         }
         *self = Bytes(self.canbe_bytes_ec(CastFail)?);
         Ok(())
@@ -139,28 +147,26 @@ impl Value {
 
     pub fn cast_addr(&mut self) -> VmrtErr {
         if matches!(self, Address(..)) {
-            return Ok(())
+            return Ok(());
         }
         let Bytes(buf) = self else {
-            return itr_err_fmt!(CastFail, "cannot cast {:?} to address", self)
+            return itr_err_fmt!(CastFail, "cannot cast {:?} to address", self);
         };
         let adr = field::Address::from_bytes(buf).map_ire(CastFail)?;
         *self = Address(adr);
         Ok(())
     }
 
-
-
     fn cast_to_ty(&mut self, ty: ValueTy) -> VmrtErr {
         use ValueTy::*;
         match ty {
-            Bool    => self.cast_bool(),
-            U8      => self.cast_u8(),
-            U16     => self.cast_u16(),
-            U32     => self.cast_u32(),
-            U64     => self.cast_u64(),
-            U128    => self.cast_u128(),
-            Bytes   => self.cast_buf(),
+            Bool => self.cast_bool(),
+            U8 => self.cast_u8(),
+            U16 => self.cast_u16(),
+            U32 => self.cast_u32(),
+            U64 => self.cast_u64(),
+            U128 => self.cast_u128(),
+            Bytes => self.cast_buf(),
             Address => self.cast_addr(),
             _ => itr_err_code!(CastFail),
         }
@@ -171,44 +177,34 @@ impl Value {
         self.cast_to_ty(ty)
     }
 
+    fn fn_boundary_type_fail(expect: ValueTy, actual: ValueTy) -> ItrErr {
+        ItrErr::new(
+            CallArgvTypeFail,
+            &format!("need {:?} but got {:?}", expect, actual),
+        )
+    }
 
     pub fn cast_param(&mut self, ty: ValueTy) -> VmrtErr {
-        use ValueTy::*;
-        let ec = CallArgvTypeFail;
-        // Nil in param type means wildcard: skip type check and keep runtime value unchanged.
-        if ty == Nil {
-            return Ok(())
+        let actual = self.ty();
+        if ty == actual {
+            return Ok(());
         }
-        let mty = self.ty();
-        if ty == mty {
-            return Ok(())
+        if ty.is_uint() && actual.is_uint() {
+            return self.cast_to_ty(ty).map_err(|ItrErr(_, msg)| {
+                if msg.is_empty() {
+                    Self::fn_boundary_type_fail(ty, actual)
+                } else {
+                    ItrErr::new(CallArgvTypeFail, &msg)
+                }
+            });
         }
-        match self.cast_to_ty(ty) {
-            Ok(()) => Ok(()),
-            Err(ItrErr(_, msg)) if msg.is_empty() => {
-                itr_err_fmt!(ec, "need {:?} but got {:?}", ty, mty)
-            }
-            Err(ItrErr(_, msg)) => Err(ItrErr::new(ec, &msg)),
-        }
+        Err(Self::fn_boundary_type_fail(ty, actual))
     }
 
     pub fn checked_param_type(&self, ty: ValueTy) -> VmrtErr {
-        use ValueTy::*;
-        if ty == Nil {
-            return Ok(())
-        }
-        let mty = self.ty();
-        if ty == mty {
-            return Ok(())
-        }
-        itr_err_fmt!(CallArgvTypeFail, "need {:?} but got {:?}", ty, mty)
+        let mut tmp = self.clone();
+        tmp.cast_param(ty)
     }
-    
-
-
-
-
-
 }
 
 #[cfg(test)]
@@ -230,17 +226,11 @@ mod cast_tests {
     }
 
     #[test]
-    fn cast_param_nil_is_wildcard() {
-        let mut v = Value::Bytes(vec![1, 2, 3]);
-        v.cast_param(ValueTy::Nil).unwrap();
-        assert_eq!(v, Value::Bytes(vec![1, 2, 3]));
-    }
-
-    #[test]
-    fn cast_param_allows_bool_target() {
+    fn cast_param_rejects_cross_family_casts() {
         let mut v = Value::U8(0);
-        v.cast_param(ValueTy::Bool).unwrap();
-        assert_eq!(v, Value::Bool(false));
+        let err = v.cast_param(ValueTy::Bool).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+        assert_eq!(v, Value::U8(0));
     }
 
     #[test]
@@ -251,16 +241,15 @@ mod cast_tests {
     }
 
     #[test]
-    fn checked_param_type_requires_exact_match_without_cast() {
-        let v = Value::U32(1);
-        assert!(v.checked_param_type(ValueTy::U32).is_ok());
-        assert!(v.checked_param_type(ValueTy::U16).is_err());
-    }
+    fn checked_param_type_uses_uint_boundary_rules() {
+        let ok = Value::U32(1);
+        assert!(ok.checked_param_type(ValueTy::U16).is_ok());
 
-    #[test]
-    fn checked_param_type_nil_is_wildcard() {
-        let v = Value::Bytes(vec![1, 2, 3]);
-        assert!(v.checked_param_type(ValueTy::Nil).is_ok());
+        let overflow = Value::U32(70000);
+        assert!(overflow.checked_param_type(ValueTy::U16).is_err());
+
+        let bytes = Value::Bytes(vec![1]);
+        assert!(bytes.checked_param_type(ValueTy::U8).is_err());
     }
 
     #[test]

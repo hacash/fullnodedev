@@ -48,6 +48,10 @@ impl Heap {
         self.limit = limit;
         self.datas.clear()
     }
+
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
 }
 
 impl Heap {

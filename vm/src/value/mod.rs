@@ -11,6 +11,8 @@ use super::rt::*;
 use super::space::*;
 use super::*;
 
+pub const REF_DUP_SIZE: usize = 8;
+
 include!("util.rs");
 include!("convert.rs");
 include!("compo.rs");

@@ -84,18 +84,6 @@ impl<'a> Formater<'a> {
             .unwrap_or_else(|| format!("${}", slot))
     }
 
-    fn resolve_lib_func(&self, idx: u8, sig: &[u8]) -> Option<(String, String)> {
-        if sig.len() < 4 {
-            return None;
-        }
-        let map = self.opt.map?;
-        let libinfo = map.lib(idx)?;
-        let mut key = [0u8; 4];
-        key.copy_from_slice(&sig[0..4]);
-        let func = map.func(&key)?;
-        Some((libinfo.name.clone(), func.clone()))
-    }
-
     fn resolve_func_name(&self, sig: &[u8]) -> Option<String> {
         if sig.len() != 4 {
             return None;
@@ -106,45 +94,63 @@ impl<'a> Formater<'a> {
         map.func(&key).cloned()
     }
 
-    fn short_call_target(
+    fn resolve_lib_name(&self, idx: u8) -> Option<String> {
+        let map = self.opt.map?;
+        Some(map.lib(idx)?.name.clone())
+    }
+
+    fn format_func_sig(&self, sig: &[u8]) -> String {
+        if let Some(func) = self.resolve_func_name(sig) {
+            let calc = calc_func_sign(&func);
+            if sig == &calc[..] {
+                return func;
+            }
+        }
+        format!("0x{}", hex::encode(sig))
+    }
+
+    fn format_lib_chain_ref(&self, idx: u8) -> String {
+        self.resolve_lib_name(idx)
+            .unwrap_or_else(|| format!("lib({})", idx))
+    }
+
+
+
+    fn format_special_call_target(
         &self,
         code: Bytecode,
         pss: &IRNodeParamsSingle,
         args: &str,
     ) -> Option<String> {
         use Bytecode::*;
-        match code {
-            CALLTHIS | CALLSELF | CALLSUPER => self.resolve_func_name(&pss.para).and_then(|func| {
-                let sig = calc_func_sign(&func);
-                if pss.para.as_slice() != &sig[..] {
+        let sig = match code {
+            CALLEXT | CALLVIEW | CALLPURE => {
+                if pss.para.len() < 5 {
                     return None;
                 }
-                Some(match code {
-                    CALLTHIS => format!("this.{}({})", func, args),
-                    CALLSELF => format!("self.{}({})", func, args),
-                    CALLSUPER => format!("super.{}({})", func, args),
-                    _ => return None,
-                })
-            }),
-            CALL | CALLVIEW | CALLPURE => {
-                let (lib, func) = self.resolve_lib_func(pss.para[0], &pss.para[1..])?;
-                let sig = calc_func_sign(&func);
-                if pss.para.len() != 1 + sig.len() {
-                    return None;
-                }
-                if &pss.para[1..] != &sig[..] {
-                    return None;
-                }
-                Some(match code {
-                    CALL => format!("{}.{}({})", lib, func, args),
-                    CALLVIEW => format!("{}:{}({})", lib, func, args),
-                    CALLPURE => format!("{}::{}({})", lib, func, args),
-                    _ => return None,
-                })
+                self.format_func_sig(&pss.para[1..])
             }
-            _ => None,
-        }
+            CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {
+                if pss.para.len() != 4 {
+                    return None;
+                }
+                self.format_func_sig(&pss.para)
+            }
+            _ => return None,
+        };
+        Some(match code {
+            CALLTHIS => format!("this.{}({})", sig, args),
+            CALLSELF => format!("self.{}({})", sig, args),
+            CALLSUPER => format!("super.{}({})", sig, args),
+            CALLSELFVIEW => format!("self:{}({})", sig, args),
+            CALLSELFPURE => format!("self::{}({})", sig, args),
+            CALLEXT => format!("{}.{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
+            CALLVIEW => format!("{}:{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
+            CALLPURE => format!("{}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
+            _ => return None,
+        })
     }
+
 
     fn literals(&self, s: String) -> String {
         s.replace("\\", "\\\\")
@@ -267,6 +273,40 @@ impl<'a> Formater<'a> {
         let last = &subs[num - 1];
         if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
             if !matches!(leaf.inst, PACKLIST | PACKARGS) {
+                return None;
+            }
+        } else {
+            return None;
+        }
+        let count_idx = num - 2;
+        let count = num - 2;
+        let expected = self.extract_const_usize(&*subs[count_idx])?;
+        if expected != count {
+            return None;
+        }
+        let mut elems = Vec::with_capacity(count);
+        for node in &subs[..count] {
+            elems.push(self.print_inline(&**node));
+        }
+        Some(elems)
+    }
+
+    fn extract_args_elements(
+        &self,
+        inst: Bytecode,
+        subs: &[Box<dyn IRNode>],
+    ) -> Option<Vec<String>> {
+        use Bytecode::*;
+        if inst != IRLIST {
+            return None;
+        }
+        let num = subs.len();
+        if num < 3 {
+            return None;
+        }
+        let last = &subs[num - 1];
+        if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
+            if leaf.inst != PACKARGS {
                 return None;
             }
         } else {
@@ -424,6 +464,9 @@ impl<'a> Formater<'a> {
                     }
                 ));
             }
+            if let Some(elements) = self.extract_args_elements(arr.inst, &arr.subs) {
+                return Some(format!("{}args({})", prefix, elements.join(", ")));
+            }
             if let Some(pairs) = self.extract_map_elements(arr.inst, &arr.subs) {
                 let mut buf = format!("{}map {{", prefix);
                 if !pairs.is_empty() {
@@ -578,52 +621,14 @@ impl<'a> Formater<'a> {
         let pss = node.as_any().downcast_ref::<IRNodeParamsSingle>()?;
         if !matches!(
             code,
-            CALL | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLPURE
+            CALLEXT | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLPURE
         ) {
             return None;
         }
         let pre = self.line_prefix();
         let args = self.build_call_args(&*pss.subx, false);
-        let meta = pss.inst.metadata();
-
-        let default_body = match code {
-            // IMPORTANT: keep `0x` prefix so the tokenizer parses it as bytes (0x....),
-            // not as a decimal integer. Otherwise the recompiled 4-byte signature differs.
-            CALL => format!(
-                "call {}::0x{}({})",
-                pss.para[0],
-                ::hex::encode(&pss.para[1..]),
-                args
-            ),
-            CALLTHIS => format!("callthis 0::0x{}({})", ::hex::encode(&pss.para), args),
-            CALLSELF => format!("callself 0::0x{}({})", ::hex::encode(&pss.para), args),
-            CALLSUPER => format!("callsuper 0::0x{}({})", ::hex::encode(&pss.para), args),
-            CALLVIEW => format!(
-                "callview {}::0x{}({})",
-                pss.para[0],
-                ::hex::encode(&pss.para[1..]),
-                args
-            ),
-            CALLPURE => format!(
-                "callpure {}::0x{}({})",
-                pss.para[0],
-                ::hex::encode(&pss.para[1..]),
-                args
-            ),
-            _ => format!("{}({})", meta.intro, args),
-        };
-
-        let short_body = maybe!(
-            self.opt.call_short_syntax,
-            self.short_call_target(code, pss, &args),
-            None
-        );
-
-        if let Some(short) = short_body {
-            return Some(format!("{} /*{}*/ {}", pre, meta.intro, short));
-        }
-
-        Some(format!("{}{}", pre, default_body))
+        let body = self.format_special_call_target(code, pss, &args)?;
+        Some(format!("{}{}", pre, body))
     }
 
     fn format_opty_double(&self, code: Bytecode, node: &dyn IRNode) -> Option<String> {
@@ -1074,9 +1079,9 @@ impl<'a> Formater<'a> {
             }
             XOP => self.format_local_param(node, local_operand_param_parse),
             XLG => self.format_local_param(node, local_logic_param_parse),
-            EXTENV => self.format_extend_call(node, &CALL_EXTEND_ENV_DEFS),
-            EXTVIEW => self.format_extend_call(node, &CALL_EXTEND_VIEW_DEFS),
-            EXTACTION => self.format_extend_call(node, &CALL_EXTEND_ACTION_DEFS),
+            ACTENV => self.format_action_call(node, &ACTION_ENV_DEFS),
+            ACTVIEW => self.format_action_call(node, &ACTION_VIEW_DEFS),
+            ACTION => self.format_action_call(node, &ACTION_DEFS),
             NTFUNC => {
                 let argv = self.build_call_args(&*node.subx, true);
                 let Ok(ntfn) = NativeFunc::try_from_u8(node.para) else {
@@ -1113,15 +1118,15 @@ impl<'a> Formater<'a> {
         )
     }
 
-    fn format_extend_call(
+    fn format_action_call(
         &self,
         node: &IRNodeParam1Single,
         defs: &[(u8, &'static str, ValueTy, usize)],
     ) -> String {
         let id = node.para;
-        let Some(f) = search_ext_by_id(id, defs) else {
+        let Some(f) = search_act_by_id(id, defs) else {
             return format!(
-                "/* unknown external call id: {} */ __unknown_ext_{}_()",
+                "/* unknown action call id: {} */ __unknown_action_{}_()",
                 id, id
             );
         };
@@ -1176,9 +1181,9 @@ impl<'a> Formater<'a> {
         match node.inst {
             PU8 => buf.push_str(&format!("{}", node.para)),
             GET => buf.push_str(&self.slot_name_display(node.para)),
-            EXTENV => {
-                let ary = CALL_EXTEND_ENV_DEFS;
-                let f = search_ext_name_by_id(node.para, &ary);
+            ACTENV => {
+                let ary = ACTION_ENV_DEFS;
+                let f = search_act_name_by_id(node.para, &ary);
                 buf.push_str(&format!("{}()", f));
             }
             NTENV => {
@@ -1238,13 +1243,17 @@ impl<'a> Formater<'a> {
                 buf.push_str(&self.format_data_bytes(node));
             }
             CALLCODE => {
-                let i = node.para[0];
-                let f = ::hex::encode(&node.para[1..]);
-                // IMPORTANT: keep `0x` prefix so tokenizer parses it as bytes (0x....),
-                // not as a decimal integer/identifier.
-                buf.push_str(&format!("callcode {}::0x{}", i, f));
-                // Source syntax requires a trailing `end` token for callcode statements.
-                buf.push_str(&format!("\n{}end", self.line_prefix()));
+                match decode_callcode_body(&node.para) {
+                    Ok(call) => match call.target {
+                        CallTarget::CurrentLibRoot(idx) => buf.push_str(&format!(
+                            "callcode {}.{}",
+                            self.format_lib_chain_ref(idx),
+                            self.format_func_sig(&call.selector)
+                        )),
+                        _ => buf.push_str(&format!("callcode 0x{}", hex::encode(&node.para))),
+                    },
+                    Err(_) => buf.push_str(&format!("callcode 0x{}", hex::encode(&node.para))),
+                }
             }
             _ => {
                 buf.push_str(&format!("{}(0x{})", meta.intro, parastr));

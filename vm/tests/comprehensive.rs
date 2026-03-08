@@ -87,16 +87,16 @@ let succ = Token.transfer(target_addr, 100) // Lib call (dot)
 let bal = Token:balance_of(target_addr) // Lib call (colon)
 let info = Token::info() // Lib static call (double colon)
 let res = self.internal_func(1, 2) // Inner call
-call 1::0x01020304(10, 20) // Direct call (index + hash)
-callthis 0::0x11223344(30, 40) // Direct inner call
-callpure 2::0x55667788(50) // Direct pure call
+lib(1).0x01020304(10, 20) // Direct external call (index + hash)
+this.0x11223344(30, 40) // Direct inner call
+lib(2)::0x55667788(50) // Direct pure call
 
 // 10. Special Instructions
 memory_put(0, "data") // Memory put
 let mem_val = memory_get(0) // Memory get
 assert fee > 0 // Assert
 bytecode { POP DUP SWAP } // Raw bytecode
-transfer_hac_to(target_addr, 500) // EXTACTION with multiple args (concat)
+transfer_hac_to(target_addr, 500) // ACTION with multiple args (concat)
 Token.transfer(target_addr, 100)  // Contract call (PACKLIST)
 Token:balance_of(target_addr)     // Contract call (Single arg no PACKLIST)
 

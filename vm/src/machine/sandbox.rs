@@ -24,7 +24,7 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
 
     // call contract
     let fnsg = calc_func_sign(&funcname);
-    codes.push(CALL as u8);
+    codes.push(CALLEXT as u8);
     codes.push(1); // lib idx
     codes.append(&mut fnsg.to_vec());
     codes.push(RET as u8); // return the value

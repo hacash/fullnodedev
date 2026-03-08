@@ -91,14 +91,14 @@ Call Kind:
     - SuperCall           <fnsig>(argv)
     - ViewCall    <libidx, fnsig>(argv)
     - PureCall    <libidx, fnsig>(argv)
-    - CallCode     <libidx, fnsig>         // no user argv; run delegated code in-place, inherit current ExecMode privileges, and forbid any nested call
+    - CallCode     <libidx, fnsig>         // no user argv; run delegated code in-place, inherit current ExecCtx(domain + frame) privileges, and forbid any nested call
 
 
 Call Privileges:
 
     State is Global Value, Memory Value, Storage Data, Log Data.
-    CallCode is NOT an ExecMode: it inherits the upper-level ExecMode privileges, and execution enters an "in_callcode" state where any CALL* instruction is forbidden.
-    Ext actions are still gated by (mode, depth) rules.
+    CallCode is NOT a FrameMode: it inherits the upper-level ExecCtx(domain + frame) privileges, and execution enters an "in_callcode" state where any CALL* instruction is forbidden.
+    Ext actions are still gated by (domain, frame, depth) rules.
 
     - Main          (State Write) => External,        View, Pure, Code
     - Abst          (State Write) =>        Inner, View, Pure, Code

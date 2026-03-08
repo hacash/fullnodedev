@@ -268,7 +268,7 @@ fn vm_non_numeric_return_is_unwind_with_stable_detail() {
 }
 
 #[test]
-fn vm_throw_abort_and_ext_action_pass_through_policy() {
+fn vm_throw_abort_and_action_pass_through_policy() {
     let _guard = test_guard();
 
     let throw_abort: BError = ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
@@ -280,30 +280,27 @@ fn vm_throw_abort_and_ext_action_pass_through_policy() {
         "{throw_abort_wire}"
     );
 
-    let ext_prefixed: BError = ItrErr(
-        ItrErrCode::ExtActCallError,
-        format!("{UNWIND_PREFIX}biz fail"),
-    )
-    .into();
-    assert!(ext_prefixed.is_unwind(), "{ext_prefixed}");
-    assert!(ext_prefixed.contains("ExtActCallError"), "{ext_prefixed}");
-
-    let ext_prefixed_wire: Error = ItrErr(
-        ItrErrCode::ExtActCallError,
-        format!("{UNWIND_PREFIX}biz fail"),
-    )
-    .into();
+    let action_prefixed: BError =
+        ItrErr(ItrErrCode::ActCallError, format!("{UNWIND_PREFIX}biz fail")).into();
+    assert!(action_prefixed.is_unwind(), "{action_prefixed}");
     assert!(
-        ext_prefixed_wire.starts_with(UNWIND_PREFIX),
-        "{ext_prefixed_wire}"
+        action_prefixed.contains("ActCallError"),
+        "{action_prefixed}"
     );
 
-    let ext_plain: BError = ItrErr(ItrErrCode::ExtActCallError, "plain fail".to_owned()).into();
-    assert!(ext_plain.is_interrupt(), "{ext_plain}");
-    let ext_plain_wire: Error = ItrErr(ItrErrCode::ExtActCallError, "plain fail".to_owned()).into();
+    let action_prefixed_wire: Error =
+        ItrErr(ItrErrCode::ActCallError, format!("{UNWIND_PREFIX}biz fail")).into();
     assert!(
-        !ext_plain_wire.starts_with(UNWIND_PREFIX),
-        "{ext_plain_wire}"
+        action_prefixed_wire.starts_with(UNWIND_PREFIX),
+        "{action_prefixed_wire}"
+    );
+
+    let action_plain: BError = ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
+    assert!(action_plain.is_interrupt(), "{action_plain}");
+    let action_plain_wire: Error = ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
+    assert!(
+        !action_plain_wire.starts_with(UNWIND_PREFIX),
+        "{action_plain_wire}"
     );
 }
 
@@ -318,8 +315,8 @@ fn vm_itr_err_code_unwind_mapping_is_strict() {
         NotFindContract,
         AbstTypeError,
         CodeTypeError,
-        InheritsError,
-        LibrarysError,
+        InheritError,
+        LibraryError,
         ComplieError,
         ContractAddrErr,
         ContractUpgradeErr,
@@ -333,7 +330,7 @@ fn vm_itr_err_code_unwind_mapping_is_strict() {
         IRNodeOverDepth,
         InstInvalid,
         InstDisabled,
-        ExtActDisabled,
+        ActDisabled,
         InstNeverTouch,
         InstParamsErr,
         OutOfGas,
@@ -385,7 +382,7 @@ fn vm_itr_err_code_unwind_mapping_is_strict() {
         BytesHandle,
         NativeFuncError,
         NativeEnvError,
-        ExtActCallError,
+        ActCallError,
         ItemNoSize,
         StorageKeyInvalid,
         StorageKeyNotFind,
@@ -464,7 +461,11 @@ fn expected_multiset(entries: &[&str]) -> BTreeMap<String, usize> {
     out
 }
 
-fn expect_multiset_eq(label: &str, actual: &BTreeMap<String, usize>, expected: BTreeMap<String, usize>) {
+fn expect_multiset_eq(
+    label: &str,
+    actual: &BTreeMap<String, usize>,
+    expected: BTreeMap<String, usize>,
+) {
     let mut missing = vec![];
     let mut extra = vec![];
     for (k, need) in &expected {

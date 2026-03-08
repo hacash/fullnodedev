@@ -210,6 +210,146 @@ impl Syntax {
         }
     }
 
+    fn parse_named_func_sig_token(token: &Token) -> Ret<[u8; 4]> {
+        match token {
+            Identifier(func) => Self::parse_fn_sig_str(func).or_else(|_| Ok(calc_func_sign(func))),
+            _ => Self::parse_fn_sig_token(token),
+        }
+    }
+
+    fn parse_call_selector_token(&mut self, token: &Token) -> Ret<[u8; 4]> {
+        let sig = Self::parse_named_func_sig_token(token)?;
+        if let Identifier(func) = token {
+            if Self::parse_fn_sig_str(func).is_err() {
+                self.source_map.register_func(sig, func.clone())?;
+            }
+        }
+        Ok(sig)
+    }
+
+    fn parse_fixed_body_token<const N: usize>(token: &Token, label: &str) -> Ret<[u8; N]> {
+        match token {
+            Bytes(bytes) if bytes.len() == N => bytes.as_slice().try_into().map_err(|_| format!("{} expects fixed width", label)),
+            Identifier(hex) => {
+                let raw = hex.strip_prefix("0x").unwrap_or(hex.as_str());
+                if raw.len() != N * 2 {
+                    return errf!("{} expects {} hex digits", label, N * 2)
+                }
+                let bytes = hex::decode(raw).map_err(|_| format!("{} decode error", label))?;
+                bytes.as_slice().try_into().map_err(|_| format!("{} expects fixed width", label).into())
+            }
+            Bytes(..) => errf!("{} expects {} bytes", label, N),
+            _ => errf!("{} must be {}-byte literal", label, N),
+        }
+    }
+
+
+
+    fn parse_callcode_body_token(token: &Token) -> Ret<[u8; CALLCODE_BODY_WIDTH]> {
+        Self::parse_fixed_body_token(token, "callcode body")
+    }
+
+
+    fn expect_partition(&mut self, ch: char, err_msg: &'static str) -> Ret<()> {
+        let token = self.next()?;
+        let Partition(got) = token else {
+            return errf!("{}", err_msg)
+        };
+        if got != ch {
+            return errf!("{}", err_msg)
+        }
+        Ok(())
+    }
+
+    fn expect_keyword_token(&mut self, kw: KwTy, err_msg: &'static str) -> Ret<()> {
+        let token = self.next()?;
+        let Keyword(got) = token else {
+            return errf!("{}", err_msg)
+        };
+        if got != kw {
+            return errf!("{}", err_msg)
+        }
+        Ok(())
+    }
+
+
+
+    fn parse_lib_ctor_index(&mut self, err_msg: &'static str) -> Ret<u8> {
+        self.expect_partition('(', err_msg)?;
+        let token = self.next()?;
+        let idx = Self::parse_lib_index_token(&token)?;
+        self.expect_partition(')', err_msg)?;
+        Ok(idx)
+    }
+
+
+
+
+    fn parse_callcode_target_selector(&mut self, head: Token, err_msg: &'static str) -> Ret<(u8, [u8; 4])> {
+        let idx = match head {
+            Identifier(id) => self.link_lib(&id)?,
+            Integer(..) => Self::parse_lib_index_token(&head)?,
+            Keyword(KwTy::Lib) => self.parse_lib_ctor_index(err_msg)?,
+            _ => return errf!("{}", err_msg),
+        };
+        let sep = self.next()?;
+        let Keyword(sep) = sep else {
+            return errf!("{}", err_msg)
+        };
+        if !matches!(sep, KwTy::Dot | KwTy::DColon) {
+            return errf!("{}", err_msg)
+        }
+        let selector = self.next()?;
+        Ok((idx, self.parse_call_selector_token(&selector)?))
+    }
+
+    fn parse_shortcut_lib_selector(&mut self, head: Token, err_msg: &'static str) -> Ret<(u8, [u8; 4])> {
+        let idx = match head {
+            Identifier(id) => self.link_lib(&id)?,
+            Integer(..) => Self::parse_lib_index_token(&head)?,
+            Keyword(KwTy::Lib) => self.parse_lib_ctor_index(err_msg)?,
+            _ => return errf!("{}", err_msg),
+        };
+        self.expect_keyword_token(KwTy::DColon, err_msg)?;
+        let selector = self.next()?;
+        Ok((idx, self.parse_call_selector_token(&selector)?))
+    }
+
+    fn parse_shortcut_self_selector(&mut self, head: Token, err_msg: &'static str) -> Ret<[u8; 4]> {
+        match head {
+            Integer(0) => {}
+            _ => return errf!("{}", err_msg),
+        }
+        self.expect_keyword_token(KwTy::DColon, err_msg)?;
+        let selector = self.next()?;
+        self.parse_call_selector_token(&selector)
+    }
+
+
+
+
+    fn parse_lib_receiver_call(&mut self, err_msg: &'static str) -> Ret<Box<dyn IRNode>> {
+        use Bytecode::*;
+        let idx = self.parse_lib_ctor_index(err_msg)?;
+        let token = self.next()?;
+        let inst = match token {
+            Keyword(KwTy::Dot) => CALLEXT,
+            Keyword(KwTy::Colon) => CALLVIEW,
+            Keyword(KwTy::DColon) => CALLPURE,
+            _ => return errf!("{}", err_msg),
+        };
+        let selector = self.next()?;
+        let sig = self.parse_call_selector_token(&selector)?;
+        let argv = self.deal_func_argv()?;
+        let para: Vec<u8> = iter::once(idx).chain(sig).collect();
+        Ok(Box::new(IRNodeParamsSingle {
+            hrtv: true,
+            inst,
+            para,
+            subx: argv,
+        }))
+    }
+
     fn parse_slot_str(id: &str) -> Option<u8> {
         if start_with_char(id, '$') {
             if let Ok(idx) = id.trim_start_matches('$').parse::<u8>() {
@@ -1008,10 +1148,9 @@ impl Syntax {
                 return self.item_func_call(id);
             } else if let Keyword(Dot) = nxt {
                 nxt = next!();
-                let Identifier(func) = nxt else { return e1 };
+                let selector = nxt.clone();
+                let fnsg = self.parse_call_selector_token(&selector)?;
                 self.idx += 1;
-                let fnsg = calc_func_sign(&func);
-                self.source_map.register_func(fnsg, func.clone())?;
                 let fnpm = self.deal_func_argv()?;
                 if id == "this" || id == "self" || id == "super" {
                     let inst = match id.as_str() {
@@ -1020,7 +1159,7 @@ impl Syntax {
                         "super" => CALLSUPER,
                         _ => unreachable!(),
                     };
-                    let para: Vec<u8> = fnsg.to_vec(); // fnsig
+                    let para: Vec<u8> = fnsg.to_vec();
                     return Ok(Box::new(IRNodeParamsSingle {
                         hrtv: true,
                         inst,
@@ -1028,23 +1167,33 @@ impl Syntax {
                         subx: fnpm,
                     }));
                 }
-                // CALL
                 let libi = self.link_lib(&id)?;
                 let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
                 return Ok(Box::new(IRNodeParamsSingle {
                     hrtv: true,
-                    inst: CALL,
+                    inst: CALLEXT,
                     para,
                     subx: fnpm,
                 }));
             } else if Keyword(Colon) == *nxt || Keyword(DColon) == *nxt {
                 let is_static = Keyword(DColon) == *nxt;
                 nxt = next!();
-                let Identifier(func) = nxt else { return e1 };
+                let selector = nxt.clone();
+                let fnsg = self.parse_call_selector_token(&selector)?;
                 self.idx += 1;
-                let fnsg = calc_func_sign(&func);
-                self.source_map.register_func(fnsg, func.clone())?;
                 let fnpm = self.deal_func_argv()?;
+                if id == "self" {
+                    let inst = maybe!(is_static, CALLSELFPURE, CALLSELFVIEW);
+                    return Ok(Box::new(IRNodeParamsSingle {
+                        hrtv: true,
+                        inst,
+                        para: fnsg.to_vec(),
+                        subx: fnpm,
+                    }));
+                }
+                if id == "this" || id == "super" {
+                    return e1;
+                }
                 let inst = maybe!(is_static, CALLPURE, CALLVIEW);
                 let libi = self.link_lib(&id)?;
                 let para: Vec<u8> = iter::once(libi).chain(fnsg).collect();
@@ -1280,93 +1429,77 @@ impl Syntax {
             }
             /* Keyword(Use) => { // use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS let e = errf!("use statement format error"); nxt = next!(); let Identifier(id) = nxt else { return e }; nxt = next!(); let Keyword(KwTy::Assign) = nxt else { return e }; nxt = next!(); let Token::Bytes(addr) = nxt else { return e }; self.bind_uses(id.clone(), addr.clone())?; push_empty() } */
             Keyword(Lib) => {
-                // lib AnySwap = 1 : emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
-                let e = errf!("lib statement format error");
-                nxt = next!();
-                let Identifier(id) = nxt else { return e };
-                nxt = next!();
-                let Keyword(KwTy::Assign) = nxt else { return e };
-                nxt = next!();
-                let Integer(idx) = nxt else { return e };
-                let mut adr = None;
-                if self.idx < max && matches!(self.tokens[self.idx], Keyword(Colon)) {
-                    self.idx += 1; // consume ':'
+                if self.idx < max && matches!(self.tokens[self.idx], Partition('(')) {
+                    self.parse_lib_receiver_call("lib(index) call format error")?
+                } else {
+                    let e = errf!("lib statement format error");
                     nxt = next!();
-                    let Token::Address(a) = nxt else { return e };
-                    adr = Some(*a as field::Address);
+                    let Identifier(id) = nxt else { return e };
+                    nxt = next!();
+                    let Keyword(KwTy::Assign) = nxt else { return e };
+                    nxt = next!();
+                    let Integer(idx) = nxt else { return e };
+                    let mut adr = None;
+                    if self.idx < max && matches!(self.tokens[self.idx], Keyword(Colon)) {
+                        self.idx += 1;
+                        nxt = next!();
+                        let Token::Address(a) = nxt else { return e };
+                        adr = Some(*a as field::Address);
+                    }
+                    if *idx > u8::MAX as u128 {
+                        return errf!("lib statement link index overflow");
+                    }
+                    self.bind_lib(id.clone(), *idx as u8, adr)?;
+                    push_empty()
                 }
-                if *idx > u8::MAX as u128 {
-                    return errf!("lib statement link index overflow");
-                }
-                self.bind_lib(id.clone(), *idx as u8, adr)?;
-                push_empty()
             }
             Keyword(Param) => self.item_param()?,
             Keyword(CallCode) => {
-                let e = errf!("callcode statement format error");
-                let idx_token = next!();
-                let lib_idx = match idx_token {
-                    Identifier(id) => self.link_lib(id)?,
-                    _ => Self::parse_lib_index_token(idx_token)?,
+                let first = self.next()?;
+                let para = if let Ok(body) = Self::parse_callcode_body_token(&first) {
+                    body.to_vec()
+                } else {
+                    let (idx, fnsign) = self.parse_callcode_target_selector(first, "callcode target format error")?;
+                    encode_callcode_body(UserCall::callcode(idx, fnsign))
+                        .map_err(|x| x.to_string())?
+                        .to_vec()
                 };
-                nxt = next!();
-                let Keyword(DColon) = nxt else { return e };
-                nxt = next!();
-                let fnsg = match nxt {
-                    Identifier(func) => match Self::parse_fn_sig_str(&func) {
-                        Ok(sig) => sig,
-                        Err(_) => calc_func_sign(&func),
-                    },
-                    _ => Self::parse_fn_sig_token(nxt)?,
-                };
-                // callcode 必须后跟 end
-                nxt = next!();
-                let Keyword(KwTy::End) = nxt else {
-                    return errf!("callcode must be followed by 'end'");
-                };
-                let para: Vec<u8> = iter::once(lib_idx).chain(fnsg).collect();
                 Box::new(IRNodeParams {
                     hrtv: false,
                     inst: CALLCODE,
                     para,
                 })
             }
-            Keyword(Call) => {
-                let e = errf!("call format error");
-                let idx_token = next!();
-                let lib_idx = match idx_token {
-                    Identifier(id) => self.link_lib(id)?,
-                    _ => Self::parse_lib_index_token(idx_token)?,
+            Keyword(CallExt) => {
+                let first = self.next()?;
+                let para = if let Ok(body) = Self::parse_fixed_body_token::<5>(&first, "callext body") {
+                    body.to_vec()
+                } else {
+                    let (idx, fnsign) = self.parse_shortcut_lib_selector(first, "callext target format error")?;
+                    let mut para = Vec::with_capacity(1 + FN_SIGN_WIDTH);
+                    para.push(idx);
+                    para.extend_from_slice(&fnsign);
+                    para
                 };
-                nxt = next!();
-                let Keyword(DColon) = nxt else { return e };
-                nxt = next!();
-                let sig = Self::parse_fn_sig_token(nxt)?;
-                let mut para = Vec::with_capacity(1 + sig.len());
-                para.push(lib_idx);
-                para.extend(sig);
                 let argv = self.deal_func_argv()?;
                 Box::new(IRNodeParamsSingle {
                     hrtv: true,
-                    inst: CALL,
+                    inst: CALLEXT,
                     para,
                     subx: argv,
                 })
             }
             Keyword(CallView) => {
-                let e = errf!("callview format error");
-                let idx_token = next!();
-                let lib_idx = match idx_token {
-                    Identifier(id) => self.link_lib(id)?,
-                    _ => Self::parse_lib_index_token(idx_token)?,
+                let first = self.next()?;
+                let para = if let Ok(body) = Self::parse_fixed_body_token::<5>(&first, "callview body") {
+                    body.to_vec()
+                } else {
+                    let (idx, fnsign) = self.parse_shortcut_lib_selector(first, "callview target format error")?;
+                    let mut para = Vec::with_capacity(1 + FN_SIGN_WIDTH);
+                    para.push(idx);
+                    para.extend_from_slice(&fnsign);
+                    para
                 };
-                nxt = next!();
-                let Keyword(DColon) = nxt else { return e };
-                nxt = next!();
-                let sig = Self::parse_fn_sig_token(nxt)?;
-                let mut para = Vec::with_capacity(1 + sig.len());
-                para.push(lib_idx);
-                para.extend(sig);
                 let argv = self.deal_func_argv()?;
                 Box::new(IRNodeParamsSingle {
                     hrtv: true,
@@ -1376,19 +1509,16 @@ impl Syntax {
                 })
             }
             Keyword(CallPure) => {
-                let e = errf!("callpure format error");
-                let idx_token = next!();
-                let lib_idx = match idx_token {
-                    Identifier(id) => self.link_lib(id)?,
-                    _ => Self::parse_lib_index_token(idx_token)?,
+                let first = self.next()?;
+                let para = if let Ok(body) = Self::parse_fixed_body_token::<5>(&first, "callpure body") {
+                    body.to_vec()
+                } else {
+                    let (idx, fnsign) = self.parse_shortcut_lib_selector(first, "callpure target format error")?;
+                    let mut para = Vec::with_capacity(1 + FN_SIGN_WIDTH);
+                    para.push(idx);
+                    para.extend_from_slice(&fnsign);
+                    para
                 };
-                nxt = next!();
-                let Keyword(DColon) = nxt else { return e };
-                nxt = next!();
-                let sig = Self::parse_fn_sig_token(nxt)?;
-                let mut para = Vec::with_capacity(1 + sig.len());
-                para.push(lib_idx);
-                para.extend(sig);
                 let argv = self.deal_func_argv()?;
                 Box::new(IRNodeParamsSingle {
                     hrtv: true,
@@ -1397,27 +1527,48 @@ impl Syntax {
                     subx: argv,
                 })
             }
-            Keyword(CallThis) | Keyword(CallSelf) | Keyword(CallSuper) => {
-                let (inst, e) = match nxt {
-                    Keyword(CallThis) => (CALLTHIS, errf!("callthis format error")),
-                    Keyword(CallSelf) => (CALLSELF, errf!("callself format error")),
-                    Keyword(CallSuper) => (CALLSUPER, errf!("callsuper format error")),
-                    _ => unreachable!(),
+            Keyword(CallThis) => {
+                let first = self.next()?;
+                let para = if let Ok(body) = Self::parse_fixed_body_token::<4>(&first, "callthis body") {
+                    body.to_vec()
+                } else {
+                    self.parse_shortcut_self_selector(first, "callthis target format error")?.to_vec()
                 };
-                let idx_token = next!();
-                let lib_idx = Self::parse_lib_index_token(idx_token)?;
-                if lib_idx != 0 {
-                    return e;
-                }
-                nxt = next!();
-                let Keyword(DColon) = nxt else { return e };
-                nxt = next!();
-                let sig = Self::parse_fn_sig_token(nxt)?;
                 let argv = self.deal_func_argv()?;
                 Box::new(IRNodeParamsSingle {
                     hrtv: true,
-                    inst,
-                    para: sig.to_vec(),
+                    inst: CALLTHIS,
+                    para,
+                    subx: argv,
+                })
+            }
+            Keyword(CallSelf) => {
+                let first = self.next()?;
+                let para = if let Ok(body) = Self::parse_fixed_body_token::<4>(&first, "callself body") {
+                    body.to_vec()
+                } else {
+                    self.parse_shortcut_self_selector(first, "callself target format error")?.to_vec()
+                };
+                let argv = self.deal_func_argv()?;
+                Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst: CALLSELF,
+                    para,
+                    subx: argv,
+                })
+            }
+            Keyword(CallSuper) => {
+                let first = self.next()?;
+                let para = if let Ok(body) = Self::parse_fixed_body_token::<4>(&first, "callsuper body") {
+                    body.to_vec()
+                } else {
+                    self.parse_shortcut_self_selector(first, "callsuper target format error")?.to_vec()
+                };
+                let argv = self.deal_func_argv()?;
+                Box::new(IRNodeParamsSingle {
+                    hrtv: true,
+                    inst: CALLSUPER,
+                    para,
                     subx: argv,
                 })
             }

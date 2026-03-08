@@ -13,7 +13,7 @@ use vm::lang::*;
 use vm::machine::CtxHost;
 use vm::rt::Bytecode::*;
 use vm::rt::{
-    Bytecode, BytecodePrint, ExecMode, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes,
+    Bytecode, BytecodePrint, ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes,
 };
 use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
 use vm::value::ValueTy::*;
@@ -206,21 +206,19 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
     execute_code(
         &mut pc,
         &codes,
-        ExecMode::Main,
-        false,
-        0,
+        ExecCtx::main(),
+        &mut ops,
+        &mut Stack::new(256),
+        &mut heap,
+        &cadr,
+        &cadr,
         &mut gas,
         &GasTable::new(1),
         &GasExtra::new(1),
         &SpaceCap::new(1),
-        &mut ops,
-        &mut Stack::new(256),
-        &mut heap,
         &mut GKVMap::new(20),
         &mut CtcKVMap::new(12),
         &mut host,
-        &cadr,
-        &cadr,
     )?;
 
     let released = ops.release();

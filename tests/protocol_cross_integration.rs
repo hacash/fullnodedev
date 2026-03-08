@@ -54,7 +54,7 @@ fn ast_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
 static AST_TEST_GLOBAL_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
 
 #[cfg(feature = "ast")]
-fn ast_test_global_guard() -> std::sync::MutexGuard<'static, ()> {
+fn ast_test_globals_guard() -> std::sync::MutexGuard<'static, ()> {
     AST_TEST_GLOBAL_LOCK
         .get_or_init(|| std::sync::Mutex::new(()))
         .lock()
@@ -952,11 +952,7 @@ fn test_ast_tree_depth_limit_6_rejects_7th_level() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = lvl1.execute(&mut ctx).unwrap_err();
-    assert!(
-        err.contains("ast tree depth 7 exceeded max 6"),
-        "{}",
-        err
-    );
+    assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
     assert_eq!(ast_state_get_u8(&mut ctx, 105), None);
 }
 
@@ -1217,10 +1213,11 @@ fn test_tex_asset_serial_must_exist_and_cache() {
     ok1.execute(&mut ctx, &addr).unwrap();
     let ok2 = CellCondAssetEq::new(AssetAmt::from(9, 0).unwrap());
     ok2.execute(&mut ctx, &addr).unwrap();
-    assert!(ctx
-        .tex_ledger()
-        .asset_checked
-        .contains(&Fold64::from(9).unwrap()));
+    assert!(
+        ctx.tex_ledger()
+            .asset_checked
+            .contains(&Fold64::from(9).unwrap())
+    );
     assert_eq!(ctx.tex_ledger().asset_checked.len(), 1);
 }
 
@@ -1997,7 +1994,7 @@ fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
     assert_eq!(ast_state_get_u8(&mut ctx, 252), Some(3));
     assert_eq!(ast_state_get_u8(&mut ctx, 250), None); // inner_if cond rolled back
     assert_eq!(ctx.tex_ledger().zhu, 5); // 2 + 3, not 1
-                                         // logs: child1 pushed 1, inner_if's cond pushed 1 but rolled back, child3 pushed 1 = 2
+    // logs: child1 pushed 1, inner_if's cond pushed 1 but rolled back, child3 pushed 1 = 2
     assert_eq!(unsafe { &*logs_ptr }.len(), 2);
 }
 
@@ -2366,7 +2363,7 @@ impl ActExec for AstTestVMCall {
         //
         // We use a trick: snapshot gives us the current value, we compute new value,
         // then restore to new value. This simulates what real VM execution does
-        // (modifying global_vals in place).
+        // (modifying global_map in place).
         let snap = ctx.vm().snapshot_volatile();
         if let Ok(cur) = snap.downcast::<i64>() {
             let new_val = *cur + *self.increment as i64;
@@ -3248,7 +3245,7 @@ fn test_ast_bug_control_min_zero_success_child_charged() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3311,7 +3308,7 @@ fn test_ast_vm_recover_repeat_init_returns_error() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_true_to_false_returns_error() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3336,7 +3333,7 @@ fn test_ast_vm_recover_true_to_false_returns_error() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3402,7 +3399,7 @@ fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_success_commits_unwinds() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3460,7 +3457,7 @@ fn test_ast_vm_delay_init_deep_nested_success_commits_unwinds() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_true_to_false_returns_error_and_no_leak() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3496,7 +3493,7 @@ fn test_ast_vm_delay_init_deep_nested_true_to_false_returns_error_and_no_leak() 
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_kept() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3570,7 +3567,7 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_depth6_unwind_and_interrupt_channels() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3651,7 +3648,7 @@ fn test_ast_vm_delay_init_depth6_unwind_and_interrupt_channels() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3714,7 +3711,7 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_layered_with_mid_vm_failure_unwind_and_warmup_monotonic() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -3785,7 +3782,7 @@ fn test_ast_layered_with_mid_vm_failure_unwind_and_warmup_monotonic() {
 #[cfg(feature = "ast")]
 #[test]
 fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balance() {
-    let _guard = ast_test_global_guard();
+    let _guard = ast_test_globals_guard();
     let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -4489,7 +4486,7 @@ fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 40);
 }
 
-// ---- Test 26: ctx_action_call (EXTACTION) nested inside AstSelect ----
+// ---- Test 26: ctx_action_call (ACTION) nested inside AstSelect ----
 // Tests that actions created via ctx_action_call within AST branches
 // have their state changes properly rolled back on failure.
 #[cfg(feature = "ast")]
@@ -4548,7 +4545,7 @@ impl FromJSON for AstTestExtCall {
 #[cfg(feature = "ast")]
 impl ActExec for AstTestExtCall {
     fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
-        // Simulate what EXTACTION does: modify state through ctx_action_call path.
+        // Simulate what ACTION does: modify state through ctx_action_call path.
         // We directly set state here since ctx_action_call ultimately calls action.execute(ctx).
         ctx.state().set(vec![*self.key], vec![*self.val]);
         // Also modify tex to test cross-channel consistency
@@ -4580,7 +4577,7 @@ impl AstTestExtCall {
     }
 }
 
-// ---- Test 26: EXTACTION-like state changes rolled back in failed AstSelect child ----
+// ---- Test 26: ACTION-like state changes rolled back in failed AstSelect child ----
 #[cfg(feature = "ast")]
 #[test]
 fn test_ast_extcall_state_rolled_back_on_select_child_failure() {
@@ -5061,7 +5058,11 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = astif.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("action ast select max cannot less than min"), "{}", err);
+    assert!(
+        err.contains("action ast select max cannot less than min"),
+        "{}",
+        err
+    );
 
     assert_eq!(ast_state_get_u8(&mut ctx, 246), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 247), None);
@@ -5390,7 +5391,11 @@ fn test_ast_select_nested_invalid_select_isolated() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = outer.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("action ast select max cannot less than min"), "{}", err);
+    assert!(
+        err.contains("action ast select max cannot less than min"),
+        "{}",
+        err
+    );
     assert_eq!(ast_state_get_u8(&mut ctx, 217), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 218), None);
 }

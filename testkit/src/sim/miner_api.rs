@@ -80,10 +80,7 @@ impl MinerApiSim {
         listener
             .set_nonblocking(true)
             .expect("set nonblocking listener");
-        let rpcaddr = listener
-            .local_addr()
-            .expect("read local addr")
-            .to_string();
+        let rpcaddr = listener.local_addr().expect("read local addr").to_string();
 
         let state = MinerApiState {
             pending: Arc::new(Mutex::new(pending)),
@@ -230,9 +227,7 @@ async fn handle_success(
     }
 
     let mut cbtx = pending.coinbase_tx.clone();
-    cbtx.set_nonce(Hash::from(
-        coinbase_nonce_bytes.clone().try_into().unwrap(),
-    ));
+    cbtx.set_nonce(Hash::from(coinbase_nonce_bytes.clone().try_into().unwrap()));
 
     let cbhx = cbtx.hash();
     let mkrl = calculate_mrkl_coinbase_update(cbhx, &pending.mkrl_modify_list);

@@ -93,7 +93,7 @@ impl Action for TestExtEnvReadOnly {
     }
 }
 
-fn ext_env_try_create(kind: u16, buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usize)>> {
+fn action_env_try_create(kind: u16, buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usize)>> {
     if kind != TestExtEnvReadOnly::KIND {
         return Ok(None);
     }
@@ -101,7 +101,7 @@ fn ext_env_try_create(kind: u16, buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usi
     Ok(Some((Box::new(act), sk)))
 }
 
-fn ext_env_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>> {
+fn action_env_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>> {
     if kind != TestExtEnvReadOnly::KIND {
         return Ok(None);
     }
@@ -110,9 +110,9 @@ fn ext_env_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>
     Ok(Some(Box::new(act)))
 }
 
-fn init_ext_env_test_registry() {
+fn init_action_env_test_registry() {
     INIT_EXT_ENV.call_once(|| {
-        crate::setup::action_register(ext_env_try_create, ext_env_try_json_decode);
+        crate::setup::action_register(action_env_try_create, action_env_try_json_decode);
     });
 }
 
@@ -392,9 +392,9 @@ fn test_tx_req_sign_must_be_privakey_address() {
 }
 
 #[test]
-fn test_ctx_action_call_extenv_does_not_require_tx_main_signature() {
+fn test_ctx_action_call_actenv_does_not_require_tx_main_signature() {
     init_test_registry();
-    init_ext_env_test_registry();
+    init_action_env_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;

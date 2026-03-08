@@ -82,9 +82,9 @@ impl BytecodePrint for Vec<u8> {
                     }else if let JMPSL | BRSL | BRSLN = inst {
                         let s = pu16!(i) as i16;
                         pms.push(format!(" -#{}- ", i as isize + s as isize + 2));
-                    }else if let EXTENV = inst {
-                        let ary = CALL_EXTEND_ENV_DEFS;
-                        let f = search_ext_name_by_id(self[i], &ary);
+                    }else if let ACTENV = inst {
+                        let ary = ACTION_ENV_DEFS;
+                        let f = search_act_name_by_id(self[i], &ary);
                         pms.push(format!(" {}() ", f));
                     }else if let XOP = inst {
                         let (opt, idx) = local_operand_param_parse(self[i]);
@@ -92,11 +92,11 @@ impl BytecodePrint for Vec<u8> {
                     }else if let XLG = inst {
                         let (opt, idx) = local_logic_param_parse(self[i]);
                         pms.push(format!("{}, {}", opt, idx));
-                    }else if let EXTVIEW = inst {
-                        let ary = CALL_EXTEND_VIEW_DEFS;
-                        let f = search_ext_name_by_id(self[i], &ary);
+                    }else if let ACTVIEW = inst {
+                        let ary = ACTION_VIEW_DEFS;
+                        let f = search_act_name_by_id(self[i], &ary);
                         pms.push(format!(" {}(..) ", f));
-                    }else if let CALL = inst {
+                    }else if let CALLEXT = inst {
                         let lib = self[i];
                         let func = hex::encode(&self[i+1..i+1+4]);
                         pms.push(format!(" {}.<{}> ", lib, func));

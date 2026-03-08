@@ -131,8 +131,8 @@ impl P2SHScriptProve {
 
     fn verify_adrlibs(cap: &SpaceCap, adrlibs: &ContractAddressW1) -> Ret<()> {
         let libs = adrlibs.as_list();
-        if libs.len() > cap.librarys_link {
-            return errf!("p2sh libs overflow ({}>{})", libs.len(), cap.librarys_link)
+        if libs.len() > cap.library {
+            return errf!("p2sh libs overflow ({}>{})", libs.len(), cap.library)
         }
         if ! libs.iter().all(|a|a.is_contract()) {
             return errf!("contract libs error")
@@ -154,7 +154,7 @@ impl P2SHScriptProve {
     }
 
     fn verify_witness_bytes(cap: &SpaceCap, witness: &[u8]) -> Ret<()> {
-        if witness.len() > cap.max_value_size {
+        if witness.len() > cap.value_size {
             return errf!("p2sh witness bytes too long")
         }
         Ok(())

@@ -39,6 +39,14 @@ impl Syntax {
     }
 
     pub fn item_func_call(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
+        if id == "args" {
+            let argvs = self.parse_paren_argv_items()?;
+            for arg in &argvs {
+                arg.checkretval()?;
+            }
+            return pack_explicit_args(argvs)
+        }
+
         // ir func
         if let Some((_, inst, pms, args, rs)) = pick_ir_func(&id) {
             let argvs = self.parse_paren_argv_items()?;
@@ -90,8 +98,8 @@ impl Syntax {
             return Ok(push_single_p1_hr(true, Bytecode::NTENV, idx, push_empty()));
         }
 
-        // extend action
-        if let Some((hrtv, inst, para, args_len)) = pick_ext_func(&id) {
+        // action
+        if let Some((hrtv, inst, para, args_len)) = pick_action_func(&id) {
             let (num, argvres) = self.must_get_func_argv(ArgvMode::Concat)?;
             let allow_empty_placeholder = args_len == 0
                 && num == 1
@@ -100,7 +108,7 @@ impl Syntax {
                     .downcast_ref::<IRNodeLeaf>()
                     .is_some_and(|leaf| leaf.inst == Bytecode::PNBUF);
             if num != args_len && !allow_empty_placeholder {
-                 return errf!("extend function/action '{}' argv length must {} but got {}", 
+                 return errf!("action function '{}' argv length must {} but got {}", 
                     id, args_len, num
                 )
             }
@@ -207,7 +215,7 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
 fn pick_ir_func(id: &str) -> Option<(IrFn, Bytecode, usize, usize, usize)> {
     use Bytecode::*;
     match id {
-        "pack_args" => Some((IrFn::pack_args, PACKARGS, 0, 0, 1)),
+        "pack_args" => None,
         "unpack" => Some((IrFn::unpack, UNPACK, 0, 2, 0)),
         _ => IrFn::from_name(id),
     }
@@ -238,7 +246,6 @@ fn concat_func_argvs(mut list: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
 
 fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     use Bytecode::*;
-    // list.reverse();
     let argv_len = subs.len();
     Ok(match argv_len {
         0 => push_nil(),
@@ -261,20 +268,36 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     */
 }
 
+fn pack_explicit_args(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+    use Bytecode::*;
+    let argv_len = subs.len();
+    if argv_len == 0 {
+        return errf!("args() cannot be empty")
+    }
+    if argv_len > 15 {
+        return errf!("args length cannot more than 15")
+    }
+    let num = push_num(argv_len as u128);
+    let pkargs = push_inst(PACKARGS);
+    subs.push(num);
+    subs.push(pkargs);
+    Ok(Box::new(Syntax::build_irlist(subs)?))
+}
+
 
 
 /*
     return (hav_revt, code, para, args_len)
 */
-fn pick_ext_func(id: &str) -> Option<(bool, Bytecode, u8, usize)> {
-    if let Some(x) = CALL_EXTEND_ENV_DEFS.iter().find(|f|f.1==id) {
-        return Some((true, Bytecode::EXTENV,  x.0, x.3))
+fn pick_action_func(id: &str) -> Option<(bool, Bytecode, u8, usize)> {
+    if let Some(x) = ACTION_ENV_DEFS.iter().find(|f|f.1==id) {
+        return Some((true, Bytecode::ACTENV,  x.0, x.3))
     }
-    if let Some(x) = CALL_EXTEND_VIEW_DEFS.iter().find(|f|f.1==id) {
-        return Some((true, Bytecode::EXTVIEW, x.0, x.3))
+    if let Some(x) = ACTION_VIEW_DEFS.iter().find(|f|f.1==id) {
+        return Some((true, Bytecode::ACTVIEW, x.0, x.3))
     }
-    if let Some(x) = CALL_EXTEND_ACTION_DEFS.iter().find(|f|f.1==id) {
-        return Some((false, Bytecode::EXTACTION, x.0, x.3))
+    if let Some(x) = ACTION_DEFS.iter().find(|f|f.1==id) {
+        return Some((false, Bytecode::ACTION, x.0, x.3))
     }
     None
 }

@@ -66,7 +66,7 @@ impl FullnodeRuntime {
             self.hnoder.exit();
         }
         exiter.wait();
-        
+
         let mut panic_count = 0;
         for handle in tasks {
             if handle.join().is_err() {
@@ -194,7 +194,10 @@ impl FullnodeBuilder {
 
     pub fn hnoder<F>(&mut self, f: F) -> &mut Self
     where
-        F: Fn(&IniObj, Arc<dyn TxPool>, Arc<dyn Engine>) -> Ret<Box<dyn HNoder>> + Send + Sync + 'static,
+        F: Fn(&IniObj, Arc<dyn TxPool>, Arc<dyn Engine>) -> Ret<Box<dyn HNoder>>
+            + Send
+            + Sync
+            + 'static,
     {
         self.hnoder = Some(Arc::new(f));
         self
@@ -217,7 +220,6 @@ impl FullnodeBuilder {
     }
 
     pub fn build(mut self) -> Ret<FullnodeRuntime> {
-
         if self.install_ctrlc {
             let exiter = self.exiter.clone();
             ctrlc::set_handler(move || {
@@ -225,7 +227,7 @@ impl FullnodeBuilder {
             })
             .map_err(|e| format!("failed to install ctrlc handler: {}", e))?;
         }
-        
+
         let errn = |name| format!("fullnode builder missing {}", name);
 
         let diskdb = self.diskdb.take().ok_or(errn("diskdb"))?;
@@ -240,11 +242,19 @@ impl FullnodeBuilder {
 
         let errb = |name, e| format!("build {} failed: {}", name, e);
         let scaner: Arc<dyn Scaner> = scaner.into();
-        let txpool: Arc<dyn TxPool> = txpool(self.engcnf.as_ref()).map_err(|e| errb("txpool", e))?.into();
+        let txpool: Arc<dyn TxPool> = txpool(self.engcnf.as_ref())
+            .map_err(|e| errb("txpool", e))?
+            .into();
         let minter: Arc<dyn Minter> = minter(&self.cnfini).map_err(|e| errb("minter", e))?.into();
-        let engine: Arc<dyn Engine> = engine(diskdb, self.engcnf.clone(), minter, scaner.clone()).map_err(|e| errb("engine", e))?.into();
-        let hnoder: Arc<dyn HNoder> = hnoder(&self.cnfini, txpool, engine).map_err(|e| errb("hnoder", e))?.into();
-        let server: Arc<dyn Server> = server(&self.cnfini, hnoder.clone()).map_err(|e| errb("server", e))?.into();
+        let engine: Arc<dyn Engine> = engine(diskdb, self.engcnf.clone(), minter, scaner.clone())
+            .map_err(|e| errb("engine", e))?
+            .into();
+        let hnoder: Arc<dyn HNoder> = hnoder(&self.cnfini, txpool, engine)
+            .map_err(|e| errb("hnoder", e))?
+            .into();
+        let server: Arc<dyn Server> = server(&self.cnfini, hnoder.clone())
+            .map_err(|e| errb("server", e))?
+            .into();
 
         Ok(FullnodeRuntime {
             exiter: self.exiter,

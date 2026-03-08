@@ -75,7 +75,7 @@ impl Value {
         }
     }
 
-    pub fn canbe_ext_call_data(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
+    pub fn canbe_call_data(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
         let ec = CastBeCallDataFail;
         match self {
             Nil => Ok(vec![]),
@@ -94,7 +94,7 @@ impl Value {
     }
 
     pub fn canbe_func_retv(&self) -> VmrtErr {
-        Self::check_func_boundary(self, CastBeFnRetvFail, false)
+        Self::check_func_boundary(self, CastBeFnRetvFail, true)
     }
 
 
@@ -114,14 +114,15 @@ mod canbe_tests {
         heap.write(0, Value::Bytes(vec![1, 2, 3, 4])).unwrap();
         let hs = Value::HeapSlice((1, 2));
 
-        assert_eq!(hs.canbe_ext_call_data(&heap).unwrap(), vec![2, 3]);
+        assert_eq!(hs.canbe_call_data(&heap).unwrap(), vec![2, 3]);
         assert!(hs.canbe_bytes_ec(CastBeBytesFail).is_err());
         assert!(hs.canbe_func_argv().is_err());
         assert!(hs.canbe_func_retv().is_err());
 
         let args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_list())]).unwrap());
         assert!(args.canbe_func_argv().is_ok());
-        assert!(args.canbe_func_retv().is_err());
+        assert!(args.canbe_func_retv().is_ok());
+
     }
 
     #[test]

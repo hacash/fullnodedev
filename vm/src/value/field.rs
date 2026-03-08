@@ -97,8 +97,8 @@ impl Serialize for Value {
         match self {
             // Runtime-only variants are intentionally excluded from field serialization.
             // Parse also rejects them, so serialize must keep the same type boundary.
-            HeapSlice(..) | Compo(..) | Args(..) => {
-                panic!("Value::serialize does not support HeapSlice/Compo/Args")
+            HeapSlice(..) | Args(..) | Compo(..) => {
+                panic!("Value::serialize does not support HeapSlice/Args/Compo")
             }
             Bytes(buf) => {
                 let mut out = Vec::with_capacity(1 + 2 + buf.len());

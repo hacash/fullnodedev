@@ -6,8 +6,8 @@ pub enum ItrErrCode {
     NotFindContract = 2,
     AbstTypeError = 3,
     CodeTypeError = 4,
-    InheritsError = 5,
-    LibrarysError = 6,
+    InheritError = 5,
+    LibraryError = 6,
     ComplieError = 7,
     ContractAddrErr = 8,
     ContractUpgradeErr = 9,
@@ -24,7 +24,7 @@ pub enum ItrErrCode {
 
     InstInvalid = 21,    //
     InstDisabled = 22,   //
-    ExtActDisabled = 23, //
+    ActDisabled = 23, //
     InstNeverTouch = 24, //
     InstParamsErr = 25,  //
 
@@ -83,7 +83,7 @@ pub enum ItrErrCode {
     BytesHandle = 91,
     NativeFuncError = 92,
     NativeEnvError = 93,
-    ExtActCallError = 94,
+    ActCallError = 94,
     ItemNoSize = 95,
 
     StorageKeyInvalid = 101,
@@ -114,7 +114,7 @@ impl From<ItrErr> for Error {
         use ItrErrCode::*;
         let ItrErr(code, msg) = e;
         let text = format!("{:?}({}): {}", code, code as u8, msg);
-        if code == ExtActCallError {
+        if code == ActCallError {
             if let Some(m) = msg.strip_prefix(UNWIND_PREFIX) {
                 return format!("{}{:?}({}): {}", UNWIND_PREFIX, code, code as u8, m);
             }
@@ -134,7 +134,7 @@ impl From<ItrErr> for BError {
         use ItrErrCode::*;
         let ItrErr(code, msg) = e;
         let text = format!("{:?}({}): {}", code, code as u8, msg);
-        if code == ExtActCallError {
+        if code == ActCallError {
             if let Some(m) = msg.strip_prefix(UNWIND_PREFIX) {
                 return BError::unwind(format!("{:?}({}): {}", code, code as u8, m));
             }

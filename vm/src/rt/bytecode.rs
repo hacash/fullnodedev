@@ -6,14 +6,14 @@
 #[derive(Default, PartialEq, Debug, Clone, Copy)]
 pub enum Bytecode {
     #[default]
-    EXTACTION           = 0x00, // *@  call extend action
+    ACTION           = 0x00, // *@  call action
     ________________1   = 0x01,
     ________________2   = 0x02,
     ________________3   = 0x03,
     ________________4   = 0x04,
     ________________5   = 0x05,
-    EXTVIEW             = 0x06, // *@  call extend view (read-only query)
-    EXTENV              = 0x07, // *+  call extend env
+    ACTVIEW             = 0x06, // *@  call action view (read-only query)
+    ACTENV              = 0x07, // *+  call action env
     NTENV               = 0x08, // *+  native env (VM state read)
     NTFUNC              = 0x09, // *@  native pure function
     ________________10  = 0x0a,
@@ -21,12 +21,12 @@ pub enum Bytecode {
     ________________12  = 0x0c,
     ________________13  = 0x0d,
     ________________14  = 0x0e,
-    ________________15  = 0x0f,
-    ________________16  = 0x10,
-    CALL                = 0x11, // *,****@ 
-    CALLTHIS            = 0x12, //   ****@ 
-    CALLSELF            = 0x13, //   ****@ 
-    CALLSUPER           = 0x14, //   ****@ 
+    CALLEXT             = 0x0f, // *,****@ 
+    CALLTHIS            = 0x10, //   ****@ 
+    CALLSELF            = 0x11, //   ****@ 
+    CALLSUPER           = 0x12, //   ****@ 
+    CALLSELFVIEW        = 0x13, //   ****@ 
+    CALLSELFPURE        = 0x14, //   ****@ 
     CALLVIEW            = 0x15, // *,****@ 
     CALLPURE            = 0x16, // *,****@ 
     CALLCODE            = 0x17, // *,****  
@@ -119,9 +119,9 @@ pub enum Bytecode {
     BACK                = 0x6e, // &       compo pick last
     APPEND              = 0x6f, // &       compo append
     CLONE               = 0x70, // a++     compo clone
-    PACKARGS            = 0x71, // (v...,n)+ pack function args
-    UNPACK              = 0x72, // a       unpack argv sequence to local
-    _______________115  = 0x73,
+    UNPACK              = 0x71, // a       unpack argv sequence to local
+    PACKARGS            = 0x72, // (v...,n)+ pack function args
+    ARGS2LIST           = 0x73, // &       args to list
     _______________116  = 0x74,
     _______________117  = 0x75,
     _______________118  = 0x76,
@@ -320,17 +320,19 @@ impl Bytecode {
 
 /* params, stack input, stack output */
 bytecode_metadata_define!{
-    EXTACTION  : 1, 1, 0,     ext_action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
-    EXTVIEW    : 1, 1, 1,     ext_view
-    EXTENV     : 1, 0, 1,     ext_env
+    ACTION  : 1, 1, 0,     action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
+    ACTVIEW    : 1, 1, 1,     actview
+    ACTENV     : 1, 0, 1,     actenv
     NTFUNC     : 1, 1, 1,     native_func
     NTENV      : 1, 0, 1,     native_env
 
     // CALLDYN    :   0, 3, 1,   call_dynamic
-    CALL       : 1+4, 1, 1,   call
+    CALLEXT    : 1+4, 1, 1,   callext
     CALLTHIS   :   4, 1, 1,   callthis
     CALLSELF   :   4, 1, 1,   callself
     CALLSUPER  :   4, 1, 1,   callsuper
+    CALLSELFVIEW : 4, 1, 1,   callselfview
+    CALLSELFPURE : 4, 1, 1,   callselfpure
     CALLVIEW   : 1+4, 1, 1,   call_view
     CALLPURE   : 1+4, 1, 1,   call_pure
     CALLCODE   : 1+4, 0, 0,   call_code
@@ -398,6 +400,7 @@ bytecode_metadata_define!{
     APPEND     : 0, 2, 1,     append
     CLONE      : 0, 1, 1,     clone
     PACKARGS   : 0, 255, 1,   pack_args
+    ARGS2LIST  : 0, 1, 1,     args_to_list
     UNPACK     : 0, 2, 0,     unpack
 
     XLG        : 1, 1, 1,     local_logic    

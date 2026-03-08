@@ -30,14 +30,17 @@ mod action_coverage {
     use vm::machine::{self, Machine, Resoure};
     use vm::rt::{AbstCall, Bytecode, Bytecode::*, CodeConf, CodeType, SpaceCap, calc_func_sign};
     use vm::value::Value;
-    use vm::{ContractAddress, ContractAddressW1, ContractAddrsssW1, ContractSto, VMState};
+    use vm::{ContractAddress, ContractAddressW1, ContractAddrListW1, ContractSto, VMState};
 
     // ─── Test infrastructure ───
 
     fn init_action_registry() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            protocol::setup::action_register(protocol::action::try_create, protocol::action::try_json_decode);
+            protocol::setup::action_register(
+                protocol::action::try_create,
+                protocol::action::try_json_decode,
+            );
             protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
         });
     }
@@ -46,7 +49,12 @@ mod action_coverage {
         ContractAddress::calculate(main, &Uint4::from(nonce))
     }
 
-    fn make_ctx<'a>(height: u64, tx: &'a TestTx, state: Box<dyn State>, logs: Box<dyn Logs>) -> protocol::context::ContextInst<'a> {
+    fn make_ctx<'a>(
+        height: u64,
+        tx: &'a TestTx,
+        state: Box<dyn State>,
+        logs: Box<dyn Logs>,
+    ) -> protocol::context::ContextInst<'a> {
         make_ctx_from_tx(height, tx, state, logs)
     }
 
@@ -62,7 +70,13 @@ mod action_coverage {
 
     fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
         Contract::new()
-            .func(Func::new(func_name).unwrap().external().fitsh(body).unwrap())
+            .func(
+                Func::new(func_name)
+                    .unwrap()
+                    .external()
+                    .fitsh(body)
+                    .unwrap(),
+            )
             .into_sto()
     }
 
@@ -84,7 +98,7 @@ mod action_coverage {
     }
 
     fn single_call_codes(lib_idx: u8, sig: [u8; 4]) -> Vec<u8> {
-        let mut codes = vec![Bytecode::PNIL as u8, Bytecode::CALL as u8, lib_idx];
+        let mut codes = vec![Bytecode::PNIL as u8, Bytecode::CALLEXT as u8, lib_idx];
         codes.extend_from_slice(&sig);
         codes.push(Bytecode::END as u8);
         codes
@@ -97,7 +111,11 @@ mod action_coverage {
         codes
     }
 
-    fn execute_deploy(ctx: &mut dyn Context, nonce: u32, contract: ContractSto) -> BRet<(u32, Vec<u8>)> {
+    fn execute_deploy(
+        ctx: &mut dyn Context,
+        nonce: u32,
+        contract: ContractSto,
+    ) -> BRet<(u32, Vec<u8>)> {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         // Provide generous protocol fee to cover any contract size
@@ -120,7 +138,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = TxMessage::new();
@@ -145,7 +168,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let act = TxMessage::new(); // empty data
@@ -161,7 +189,12 @@ mod action_coverage {
         tx.push_action(Box::new(TxMessage::new())).unwrap();
         tx.push_action(Box::new(TxMessage::new())).unwrap();
 
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         // Duplicate TxMessage actions are currently allowed; keep regression explicit.
         let (_, rv) = TxMessage::new().execute(&mut ctx).unwrap();
         assert!(rv.is_empty());
@@ -176,7 +209,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = TxBlob::new();
@@ -201,7 +239,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let large_data = vec![0xAB; 1024];
@@ -217,7 +260,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxBlob::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
         let err = TxBlob::new().execute(&mut ctx).unwrap_err();
@@ -233,11 +281,19 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let codes = lang_to_bytecode("return 0").unwrap();
         let rv = execute_main_bytecode(&mut ctx, codes).unwrap();
-        assert!(!rv.canbe_bool().unwrap(), "return 0 should yield falsy value");
+        assert!(
+            !rv.canbe_bool().unwrap(),
+            "return 0 should yield falsy value"
+        );
     }
 
     #[test]
@@ -245,7 +301,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let codes = lang_to_bytecode("return 1").unwrap();
         let err = execute_main_bytecode(&mut ctx, codes).unwrap_err();
@@ -257,7 +318,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = ContractMainCall::new();
@@ -275,7 +341,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = ContractMainCall::new();
@@ -311,11 +382,14 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let caddr = contract_addr(&main, 5001);
-        let sto = make_external_contract("add1", r#"
+        let sto = make_external_contract(
+            "add1",
+            r#"
             param { n }
             assert n == 5
             return 0
-        "#);
+        "#,
+        );
         let mut state = StateMem::default();
         insert_contract(&mut state, &caddr, &sto);
 
@@ -324,10 +398,7 @@ mod action_coverage {
 
         let sig = calc_func_sign("add1");
         // push param 5 as u8, then call lib 0 function
-        let mut codes = vec![
-            Bytecode::PU8 as u8, 5,
-            Bytecode::CALL as u8, 0,
-        ];
+        let mut codes = vec![Bytecode::PU8 as u8, 5, Bytecode::CALLEXT as u8, 0];
         codes.extend_from_slice(&sig);
         codes.push(Bytecode::END as u8);
         execute_main_bytecode(&mut ctx, codes).unwrap();
@@ -339,7 +410,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
         let act = ContractMainCall::from_bytecode(lang_to_bytecode("return 0").unwrap()).unwrap();
@@ -356,7 +432,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
@@ -392,12 +473,23 @@ mod action_coverage {
         let main = main_addr();
         let caddr = contract_addr(&main, 1);
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let sto = Contract::new()
             .inh(caddr.to_addr())
-            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("inherit itself"), "{err}");
@@ -409,12 +501,23 @@ mod action_coverage {
         let main = main_addr();
         let caddr = contract_addr(&main, 1);
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let sto = Contract::new()
             .lib(caddr.to_addr())
-            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("link itself as library"), "{err}");
@@ -425,7 +528,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut sto = make_external_contract("f", "return 0");
@@ -440,12 +548,23 @@ mod action_coverage {
         let main = main_addr();
         let missing = contract_addr(&main, 9999);
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let sto = Contract::new()
             .inh(missing.to_addr())
-            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(err.contains("not exist"), "{err}");
@@ -457,7 +576,12 @@ mod action_coverage {
         set_vm_assigner(Some(machine::vm_assign));
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
         let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(17).unwrap();
@@ -469,12 +593,22 @@ mod action_coverage {
                     .bytecode(build_codes!(CU8 RET))
                     .unwrap(),
             )
-            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         execute_deploy(&mut ctx, 100, sto).unwrap();
 
         let caddr = contract_addr(&main, 100);
-        assert!(VMState::wrap(StateOperat::state(&mut ctx)).contract(&caddr).is_some());
+        assert!(
+            VMState::wrap(StateOperat::state(&mut ctx))
+                .contract(&caddr)
+                .is_some()
+        );
         set_vm_assigner(None);
     }
 
@@ -485,7 +619,12 @@ mod action_coverage {
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
         tx.push_action(Box::new(TxBlob::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(1u32);
@@ -501,15 +640,29 @@ mod action_coverage {
         let main = main_addr();
         let missing_lib = contract_addr(&main, 9009);
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let sto = Contract::new()
             .lib(missing_lib.to_addr())
-            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
-        assert!(err.contains("library") && err.contains("not exist"), "{err}");
+        assert!(
+            err.contains("library") && err.contains("not exist"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -522,11 +675,23 @@ mod action_coverage {
         let b = contract_addr(&main, 3);
         let sto_a = Contract::new()
             .inh(b.to_addr())
-            .func(Func::new("fa").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("fa")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         let sto_b = Contract::new()
             .inh(a.to_addr())
-            .func(Func::new("fb").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("fb")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         insert_contract(&mut state, &a, &sto_a);
         insert_contract(&mut state, &b, &sto_b);
@@ -535,11 +700,17 @@ mod action_coverage {
 
         let root = Contract::new()
             .inh(a.to_addr())
-            .func(Func::new("f").unwrap().external().fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, root).unwrap_err();
         assert!(
-            err.contains("inherits parent") && err.contains("cannot have parent inherits"),
+            err.contains("inherit parent") && err.contains("cannot have parent inherit"),
             "{err}"
         );
     }
@@ -551,7 +722,11 @@ mod action_coverage {
         let lib_addr = contract_addr(&main, 88);
         let tx = make_tx(3, main, vec![], 17);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &lib_addr, &make_external_contract("target", "return 0"));
+        insert_contract(
+            &mut state,
+            &lib_addr,
+            &make_external_contract("target", "return 0"),
+        );
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
@@ -572,17 +747,30 @@ mod action_coverage {
         let lib_addr = contract_addr(&main, 89);
         let tx = make_tx(3, main, vec![], 17);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &lib_addr, &make_external_contract("have", "return 0"));
+        insert_contract(
+            &mut state,
+            &lib_addr,
+            &make_external_contract("have", "return 0"),
+        );
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
         let miss_sig = calc_func_sign("missing");
         let sto = Contract::new()
             .lib(lib_addr.to_addr())
-            .func(Func::new("f").unwrap().external().bytecode(single_call_codes(0, miss_sig)).unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .bytecode(single_call_codes(0, miss_sig))
+                    .unwrap(),
+            )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
-        assert!(err.contains("function") && err.contains("not found"), "{err}");
+        assert!(
+            err.contains("function") && err.contains("not found"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -592,17 +780,30 @@ mod action_coverage {
         let parent_addr = contract_addr(&main, 66);
         let tx = make_tx(3, main, vec![], 17);
         let mut state = StateMem::default();
-        insert_contract(&mut state, &parent_addr, &make_external_contract("have", "return 0"));
+        insert_contract(
+            &mut state,
+            &parent_addr,
+            &make_external_contract("have", "return 0"),
+        );
         let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
         ctx.env.chain.fast_sync = true;
 
         let miss_sig = calc_func_sign("missing");
         let sto = Contract::new()
             .inh(parent_addr.to_addr())
-            .func(Func::new("f").unwrap().external().bytecode(callsuper_codes(miss_sig)).unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .bytecode(callsuper_codes(miss_sig))
+                    .unwrap(),
+            )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
-        assert!(err.contains("super function") && err.contains("not found"), "{err}");
+        assert!(
+            err.contains("call target function") && err.contains("not found"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -610,14 +811,19 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(77u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        let over = SpaceCap::new(1).max_value_size + 1;
+        let over = SpaceCap::new(1).value_size + 1;
         act.construct_argv = BytesW2::from(vec![0xAB; over]).unwrap();
         act.contract = make_external_contract("f", "return 0");
 
@@ -630,20 +836,29 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(78u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        let cap = SpaceCap::new(1).max_value_size;
+        let cap = SpaceCap::new(1).value_size;
         act.construct_argv = BytesW2::from(vec![0xCD; cap]).unwrap();
         act.contract = make_external_contract("f", "return 0");
         act.execute(&mut ctx).unwrap();
 
         let caddr = contract_addr(&main, 78);
-        assert!(VMState::wrap(StateOperat::state(&mut ctx)).contract(&caddr).is_some());
+        assert!(
+            VMState::wrap(StateOperat::state(&mut ctx))
+                .contract(&caddr)
+                .is_some()
+        );
     }
 
     // ═══════════════════════════════════════════════════
@@ -655,7 +870,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let caddr = contract_addr(&main, 1);
@@ -714,9 +934,7 @@ mod action_coverage {
         act.address = caddr.to_addr();
         act.protocol_cost = Amount::zero();
         // Add self as inherit via edit
-        act.edit.inherits_add = ContractAddrsssW1::from_list(
-            vec![caddr.clone()]
-        ).unwrap();
+        act.edit.inherit_add = ContractAddrListW1::from_list(vec![caddr.clone()]).unwrap();
         // Revision 0 -> next is 1
         act.edit.expect_revision = Uint2::from(1u16);
         let err = act.execute(&mut ctx).unwrap_err();
@@ -740,9 +958,12 @@ mod action_coverage {
         act.address = caddr.to_addr();
         act.protocol_cost = Amount::zero();
         act.edit.expect_revision = Uint2::from(1u16);
-        act.edit.librarys_add = ContractAddrsssW1::from_list(vec![missing_lib]).unwrap();
+        act.edit.library_add = ContractAddrListW1::from_list(vec![missing_lib]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("library") && err.contains("not exist"), "{err}");
+        assert!(
+            err.contains("library") && err.contains("not exist"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -752,14 +973,24 @@ mod action_coverage {
         let root = contract_addr(&main, 1);
         let parent = contract_addr(&main, 2);
         let mut state = StateMem::default();
-        // root has no inherit; parent inherits root
-        insert_contract(&mut state, &root, &make_external_contract("rootf", "return 0"));
+        // root has no inherit; parent has root in inherit
+        insert_contract(
+            &mut state,
+            &root,
+            &make_external_contract("rootf", "return 0"),
+        );
         insert_contract(
             &mut state,
             &parent,
             &Contract::new()
                 .inh(root.to_addr())
-                .func(Func::new("pf").unwrap().external().fitsh("return 0").unwrap())
+                .func(
+                    Func::new("pf")
+                        .unwrap()
+                        .external()
+                        .fitsh("return 0")
+                        .unwrap(),
+                )
                 .into_sto(),
         );
 
@@ -771,10 +1002,10 @@ mod action_coverage {
         act.address = root.to_addr();
         act.protocol_cost = Amount::zero();
         act.edit.expect_revision = Uint2::from(1u16);
-        act.edit.inherits_add = ContractAddrsssW1::from_list(vec![parent]).unwrap();
+        act.edit.inherit_add = ContractAddrListW1::from_list(vec![parent]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
-            err.contains("inherits parent") && err.contains("cannot have parent inherits"),
+            err.contains("inherit parent") && err.contains("cannot have parent inherit"),
             "{err}"
         );
     }
@@ -793,7 +1024,13 @@ mod action_coverage {
 
         let sig = calc_func_sign("target");
         let edit = Contract::new()
-            .func(Func::new("g").unwrap().external().bytecode(single_call_codes(0, sig)).unwrap())
+            .func(
+                Func::new("g")
+                    .unwrap()
+                    .external()
+                    .bytecode(single_call_codes(0, sig))
+                    .unwrap(),
+            )
             .into_edit(1);
 
         let mut act = ContractUpdate::new();
@@ -813,13 +1050,22 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(100, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            100,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let act = EnvMainAddr::new();
         let (gas, res) = act.execute(&mut ctx).unwrap();
         assert!(gas > 0);
-        assert_eq!(res, main.to_vec(), "EnvMainAddr should return main address bytes");
+        assert_eq!(
+            res,
+            main.to_vec(),
+            "EnvMainAddr should return main address bytes"
+        );
     }
 
     #[test]
@@ -827,7 +1073,12 @@ mod action_coverage {
         let _guard = test_guard();
         let addr = alt_addr();
         let tx = make_tx(3, addr, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let act = EnvMainAddr::new();
@@ -841,7 +1092,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         // keep level as TOP and fast_sync=false
         let err = EnvMainAddr::new().execute(&mut ctx).unwrap_err();
         assert!(err.contains("VM call context"), "{err}");
@@ -853,7 +1109,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
         let (_, res) = EnvMainAddr::new().execute(&mut ctx).unwrap();
@@ -867,7 +1128,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let err = ctx.action_call(EnvMainAddr::KIND, vec![]).unwrap_err();
         assert!(err.contains("VM call context"), "{err}");
@@ -880,7 +1146,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
         let (_, res) = ctx.action_call(EnvMainAddr::KIND, vec![]).unwrap();
@@ -893,7 +1164,12 @@ mod action_coverage {
         init_action_registry();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let body = ContractDeploy::new().serialize()[2..].to_vec();
         let err = ctx.action_call(ContractDeploy::KIND, body).unwrap_err();
@@ -910,14 +1186,23 @@ mod action_coverage {
         let main = main_addr();
         let coinbase = alt_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         ctx.env.block.coinbase = coinbase;
 
         let act = EnvCoinbaseAddr::new();
         let (gas, res) = act.execute(&mut ctx).unwrap();
         assert!(gas > 0);
-        assert_eq!(res, coinbase.to_vec(), "EnvCoinbaseAddr should return coinbase address");
+        assert_eq!(
+            res,
+            coinbase.to_vec(),
+            "EnvCoinbaseAddr should return coinbase address"
+        );
     }
 
     #[test]
@@ -925,7 +1210,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let act = EnvCoinbaseAddr::new();
@@ -942,7 +1232,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(12345, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            12345,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let act = EnvHeight::new();
@@ -956,7 +1251,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(0, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            0,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let act = EnvHeight::new();
@@ -970,7 +1270,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(55, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            55,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.level_set(ACTION_CTX_LEVEL_CALL_CONTRACT);
 
         let (_, res) = EnvHeight::new().execute(&mut ctx).unwrap();
@@ -978,14 +1283,19 @@ mod action_coverage {
     }
 
     #[test]
-    fn extenv_actions_work_in_vm_call_context() {
+    fn actenv_actions_work_in_vm_call_context() {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
         let coinbase = alt_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(777, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            777,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.block.coinbase = coinbase;
 
         let script = format!(
@@ -1002,7 +1312,7 @@ mod action_coverage {
             coinbase = coinbase.to_readable(),
         );
         let codes = lang_to_bytecode(&script).unwrap();
-        assert!(codes.contains(&(Bytecode::EXTENV as u8)));
+        assert!(codes.contains(&(Bytecode::ACTENV as u8)));
 
         let rv = execute_main_bytecode_as_call_ctx(&mut ctx, codes).unwrap();
         assert!(!rv.canbe_bool().unwrap());
@@ -1018,7 +1328,12 @@ mod action_coverage {
         let main = main_addr();
         let target = alt_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = ViewCheckSign::new();
@@ -1036,7 +1351,12 @@ mod action_coverage {
         let main = Address::from(*main_acc.address());
         let mut tx = make_tx3(main, 17);
         tx.fill_sign(&main_acc).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = ViewCheckSign::new();
@@ -1061,7 +1381,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let mut act = ViewCheckSign::new();
         act.addr = main;
@@ -1076,7 +1401,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let mut act = ViewCheckSign::new();
         act.addr = main;
@@ -1092,7 +1422,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
         let mut act = ViewCheckSign::new();
@@ -1103,13 +1438,18 @@ mod action_coverage {
     }
 
     #[test]
-    fn extview_actions_work_in_vm_call_context() {
+    fn actview_actions_work_in_vm_call_context() {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
 
         let script = format!(
             r#"
@@ -1122,7 +1462,7 @@ mod action_coverage {
             main = main.to_readable(),
         );
         let codes = lang_to_bytecode(&script).unwrap();
-        assert!(codes.contains(&(Bytecode::EXTVIEW as u8)));
+        assert!(codes.contains(&(Bytecode::ACTVIEW as u8)));
 
         let rv = execute_main_bytecode_as_call_ctx(&mut ctx, codes).unwrap();
         assert!(!rv.canbe_bool().unwrap());
@@ -1138,7 +1478,12 @@ mod action_coverage {
         let main = main_addr();
         let target = alt_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = ViewBalance::new();
@@ -1146,12 +1491,18 @@ mod action_coverage {
         let (gas, res) = act.execute(&mut ctx).unwrap();
         assert!(gas > 0);
         // Result: 4 bytes diamond + 8 bytes satoshi + Amount bytes for hacash
-        assert!(res.len() >= 12, "balance result should be at least 12 bytes, got {}", res.len());
+        assert!(
+            res.len() >= 12,
+            "balance result should be at least 12 bytes, got {}",
+            res.len()
+        );
         // Diamond count should be 0
         let diamond_count = u32::from_be_bytes([res[0], res[1], res[2], res[3]]);
         assert_eq!(diamond_count, 0);
         // Satoshi should be 0
-        let satoshi = u64::from_be_bytes([res[4], res[5], res[6], res[7], res[8], res[9], res[10], res[11]]);
+        let satoshi = u64::from_be_bytes([
+            res[4], res[5], res[6], res[7], res[8], res[9], res[10], res[11],
+        ]);
         assert_eq!(satoshi, 0);
     }
 
@@ -1161,7 +1512,12 @@ mod action_coverage {
         let main = main_addr();
         let target = alt_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         protocol::operate::hac_add(&mut ctx, &target, &Amount::mei(100)).unwrap();
         ctx.env.chain.fast_sync = true;
 
@@ -1172,11 +1528,16 @@ mod action_coverage {
         let diamond_count = u32::from_be_bytes([res[0], res[1], res[2], res[3]]);
         assert_eq!(diamond_count, 0);
         // Satoshi = 0
-        let satoshi = u64::from_be_bytes([res[4], res[5], res[6], res[7], res[8], res[9], res[10], res[11]]);
+        let satoshi = u64::from_be_bytes([
+            res[4], res[5], res[6], res[7], res[8], res[9], res[10], res[11],
+        ]);
         assert_eq!(satoshi, 0);
         // HAC amount should be non-zero (100 mei)
         let hac_bytes = &res[12..];
-        assert!(!hac_bytes.iter().all(|&b| b == 0), "HAC balance should be non-zero");
+        assert!(
+            !hac_bytes.iter().all(|&b| b == 0),
+            "HAC balance should be non-zero"
+        );
     }
 
     #[test]
@@ -1198,7 +1559,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = ViewDiamondInscNum::new();
@@ -1222,7 +1588,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let diamond = DiamondName::from_readable(b"ABCDEF").unwrap();
@@ -1231,7 +1602,8 @@ mod action_coverage {
         dia.inscripts = Inscripts::from_list(vec![
             BytesW1::from_str("insc-1").unwrap(),
             BytesW1::from_str("insc-2").unwrap(),
-        ]).unwrap();
+        ])
+        .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
         let mut act = ViewDiamondInscNum::new();
@@ -1249,7 +1621,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = ViewDiamondInscGet::new();
@@ -1264,7 +1641,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let diamond = DiamondName::from_readable(b"FEDCBA").unwrap();
@@ -1273,7 +1655,8 @@ mod action_coverage {
         dia.inscripts = Inscripts::from_list(vec![
             BytesW1::from_str("first").unwrap(),
             BytesW1::from_str("second").unwrap(),
-        ]).unwrap();
+        ])
+        .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
         let mut act = ViewDiamondInscGet::new();
@@ -1288,7 +1671,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let diamond = DiamondName::from_readable(b"AABBCC").unwrap();
@@ -1313,7 +1701,12 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let mut act = P2SHScriptProve::new();
@@ -1338,7 +1731,12 @@ mod action_coverage {
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
 
         let mut act = P2SHScriptProve::new();
@@ -1365,11 +1763,20 @@ mod action_coverage {
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let empty_merkels = MerkelStuffs::from_list(vec![]).unwrap();
 
-        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_merkels).unwrap();
+        let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox,
+            &empty_merkels,
+        )
+        .unwrap();
         // Single leaf: sha3_path should have exactly 1 entry (the leaf hash = root hash)
         assert_eq!(calc.sha3_path.len(), 1);
         // Address should be a valid scriptmh address
-        assert!(calc.address.is_scriptmh(), "address should be scriptmh type");
+        assert!(
+            calc.address.is_scriptmh(),
+            "address should be scriptmh type"
+        );
     }
 
     #[test]
@@ -1378,9 +1785,24 @@ mod action_coverage {
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 99, Bytecode::END as u8]).unwrap();
         let empty_merkels = MerkelStuffs::from_list(vec![]).unwrap();
 
-        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_merkels).unwrap();
-        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &empty_merkels).unwrap();
-        assert_eq!(calc1.address, calc2.address, "same inputs should produce same address");
+        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox,
+            &empty_merkels,
+        )
+        .unwrap();
+        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox,
+            &empty_merkels,
+        )
+        .unwrap();
+        assert_eq!(
+            calc1.address, calc2.address,
+            "same inputs should produce same address"
+        );
         assert_eq!(calc1.payload20, calc2.payload20);
     }
 
@@ -1392,9 +1814,24 @@ mod action_coverage {
         let lockbox1 = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let lockbox2 = BytesW2::from(vec![Bytecode::PU8 as u8, 2, Bytecode::END as u8]).unwrap();
 
-        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox1, &empty_merkels).unwrap();
-        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox2, &empty_merkels).unwrap();
-        assert_ne!(calc1.address, calc2.address, "different lockbox should produce different address");
+        let calc1 = P2SHScriptProve::calc_scriptmh_from_lockbox(
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox1,
+            &empty_merkels,
+        )
+        .unwrap();
+        let calc2 = P2SHScriptProve::calc_scriptmh_from_lockbox(
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox2,
+            &empty_merkels,
+        )
+        .unwrap();
+        assert_ne!(
+            calc1.address, calc2.address,
+            "different lockbox should produce different address"
+        );
     }
 
     #[test]
@@ -1408,7 +1845,13 @@ mod action_coverage {
         };
         let merkels = MerkelStuffs::from_list(vec![bad_step]).unwrap();
 
-        let err = P2SHScriptProve::calc_scriptmh_from_lockbox(&libs, CodeConf::from_type(CodeType::Bytecode), &lockbox, &merkels).unwrap_err();
+        let err = P2SHScriptProve::calc_scriptmh_from_lockbox(
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox,
+            &merkels,
+        )
+        .unwrap_err();
         assert!(err.contains("posi") && err.contains("invalid"), "{err}");
     }
 
@@ -1418,12 +1861,15 @@ mod action_coverage {
 
     #[test]
     fn p2sh_tool_single_leaf_tree() {
-let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 42, Bytecode::END as u8]).unwrap();
 
-        let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
-        ]).unwrap();
+        let tree = P2shTool::build_canonical_tree(vec![P2shLeafSpec {
+            adrlibs: libs,
+            codeconf: CodeConf::from_type(CodeType::Bytecode),
+            lockbox,
+        }])
+        .unwrap();
 
         assert_eq!(tree.leaves().len(), 1);
         assert!(tree.address().is_scriptmh());
@@ -1435,14 +1881,23 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
 
     #[test]
     fn p2sh_tool_two_leaf_tree_proofs_match() {
-let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lb1 = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         let lb2 = BytesW2::from(vec![Bytecode::PU8 as u8, 2, Bytecode::END as u8]).unwrap();
 
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb1 },
-            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb2 },
-        ]).unwrap();
+            P2shLeafSpec {
+                adrlibs: libs.clone(),
+                codeconf: CodeConf::from_type(CodeType::Bytecode),
+                lockbox: lb1,
+            },
+            P2shLeafSpec {
+                adrlibs: libs.clone(),
+                codeconf: CodeConf::from_type(CodeType::Bytecode),
+                lockbox: lb2,
+            },
+        ])
+        .unwrap();
 
         assert_eq!(tree.leaves().len(), 2);
 
@@ -1451,25 +1906,44 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
             let proof = tree.proof_for_index(idx).unwrap();
             let spec = &tree.leaves()[idx].spec;
             let calc = P2SHScriptProve::calc_scriptmh_from_lockbox(
-                &spec.adrlibs, spec.codeconf, &spec.lockbox, &proof,
-            ).unwrap();
-            assert_eq!(calc.address, tree.address(), "proof for leaf {idx} should derive tree address");
+                &spec.adrlibs,
+                spec.codeconf,
+                &spec.lockbox,
+                &proof,
+            )
+            .unwrap();
+            assert_eq!(
+                calc.address,
+                tree.address(),
+                "proof for leaf {idx} should derive tree address"
+            );
         }
     }
 
     #[test]
     fn p2sh_tool_build_unlock_script_prove() {
-let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lb1 = BytesW2::from(vec![Bytecode::PU8 as u8, 10, Bytecode::END as u8]).unwrap();
         let lb2 = BytesW2::from(vec![Bytecode::PU8 as u8, 20, Bytecode::END as u8]).unwrap();
 
         let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb1 },
-            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb2 },
-        ]).unwrap();
+            P2shLeafSpec {
+                adrlibs: libs.clone(),
+                codeconf: CodeConf::from_type(CodeType::Bytecode),
+                lockbox: lb1,
+            },
+            P2shLeafSpec {
+                adrlibs: libs.clone(),
+                codeconf: CodeConf::from_type(CodeType::Bytecode),
+                lockbox: lb2,
+            },
+        ])
+        .unwrap();
 
         let witness = BytesW2::from(vec![0xAA, 0xBB]).unwrap();
-        let (addr, act, _calc) = tree.build_unlock_script_prove_unchecked(0, witness).unwrap();
+        let (addr, act, _calc) = tree
+            .build_unlock_script_prove_unchecked(0, witness)
+            .unwrap();
         assert_eq!(addr, tree.address());
         assert!(addr.is_scriptmh());
         // The action should have correct lockbox from leaf 0
@@ -1478,19 +1952,28 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
 
     #[test]
     fn p2sh_tool_rejects_empty_specs() {
-let err = P2shTool::build_canonical_tree(vec![]).unwrap_err();
+        let err = P2shTool::build_canonical_tree(vec![]).unwrap_err();
         assert!(err.contains("empty"), "{err}");
     }
 
     #[test]
     fn p2sh_tool_rejects_duplicate_leaves() {
-let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lb = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
 
         let err = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb.clone() },
-            P2shLeafSpec { adrlibs: libs.clone(), codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: lb },
-        ]).unwrap_err();
+            P2shLeafSpec {
+                adrlibs: libs.clone(),
+                codeconf: CodeConf::from_type(CodeType::Bytecode),
+                lockbox: lb.clone(),
+            },
+            P2shLeafSpec {
+                adrlibs: libs.clone(),
+                codeconf: CodeConf::from_type(CodeType::Bytecode),
+                lockbox: lb,
+            },
+        ])
+        .unwrap_err();
         assert!(err.contains("duplicate"), "{err}");
     }
 
@@ -1498,12 +1981,17 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
     fn p2sh_tool_build_unlock_script_prove_checked_success() {
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 7, Bytecode::END as u8]).unwrap();
-        let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
-        ]).unwrap();
+        let tree = P2shTool::build_canonical_tree(vec![P2shLeafSpec {
+            adrlibs: libs,
+            codeconf: CodeConf::from_type(CodeType::Bytecode),
+            lockbox,
+        }])
+        .unwrap();
         let witness = BytesW2::from(vec![0x11, 0x22, 0x33]).unwrap();
 
-        let (addr, act, calc) = tree.build_unlock_script_prove_checked(1, 0, witness).unwrap();
+        let (addr, act, calc) = tree
+            .build_unlock_script_prove_checked(1, 0, witness)
+            .unwrap();
         assert_eq!(addr, tree.address());
         assert_eq!(calc.address, tree.address());
         assert_eq!(act.merkels.length(), 0);
@@ -1514,26 +2002,39 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
         // 0x01 is an invalid bytecode in current ISA metadata table
         let invalid_lockbox = BytesW2::from(vec![0x01]).unwrap();
-        let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox: invalid_lockbox },
-        ]).unwrap();
+        let tree = P2shTool::build_canonical_tree(vec![P2shLeafSpec {
+            adrlibs: libs,
+            codeconf: CodeConf::from_type(CodeType::Bytecode),
+            lockbox: invalid_lockbox,
+        }])
+        .unwrap();
         let witness = BytesW2::from(vec![]).unwrap();
 
-        let err = tree.build_unlock_script_prove_checked(1, 0, witness).unwrap_err();
-        assert!(err.contains("InstInvalid") || err.contains("invalid bytecode"), "{err}");
+        let err = tree
+            .build_unlock_script_prove_checked(1, 0, witness)
+            .unwrap_err();
+        assert!(
+            err.contains("InstInvalid") || err.contains("invalid bytecode"),
+            "{err}"
+        );
     }
 
     #[test]
     fn p2sh_tool_checked_rejects_oversized_witness() {
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
-        let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
-        ]).unwrap();
-        let over = SpaceCap::new(1).max_value_size + 1;
+        let tree = P2shTool::build_canonical_tree(vec![P2shLeafSpec {
+            adrlibs: libs,
+            codeconf: CodeConf::from_type(CodeType::Bytecode),
+            lockbox,
+        }])
+        .unwrap();
+        let over = SpaceCap::new(1).value_size + 1;
         let witness = BytesW2::from(vec![0u8; over]).unwrap();
 
-        let err = tree.build_unlock_script_prove_checked(1, 0, witness).unwrap_err();
+        let err = tree
+            .build_unlock_script_prove_checked(1, 0, witness)
+            .unwrap_err();
         assert!(err.contains("witness bytes too long"), "{err}");
     }
 
@@ -1541,13 +2042,21 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
     fn p2sh_tool_checked_rejects_index_overflow() {
         let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
-        let tree = P2shTool::build_canonical_tree(vec![
-            P2shLeafSpec { adrlibs: libs, codeconf: CodeConf::from_type(CodeType::Bytecode), lockbox },
-        ]).unwrap();
+        let tree = P2shTool::build_canonical_tree(vec![P2shLeafSpec {
+            adrlibs: libs,
+            codeconf: CodeConf::from_type(CodeType::Bytecode),
+            lockbox,
+        }])
+        .unwrap();
         let witness = BytesW2::from(vec![]).unwrap();
 
-        let err = tree.build_unlock_script_prove_checked(1, 2, witness).unwrap_err();
-        assert!(err.contains("leaf index") && err.contains("overflow"), "{err}");
+        let err = tree
+            .build_unlock_script_prove_checked(1, 2, witness)
+            .unwrap_err();
+        assert!(
+            err.contains("leaf index") && err.contains("overflow"),
+            "{err}"
+        );
     }
 
     // ═══════════════════════════════════════════════════
@@ -1559,7 +2068,12 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
@@ -1569,12 +2083,15 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
 
         // Verify it exists
         let caddr = contract_addr(&main, 1);
-        assert!(VMState::wrap(StateOperat::state(&mut ctx)).contract(&caddr).is_some());
+        assert!(
+            VMState::wrap(StateOperat::state(&mut ctx))
+                .contract(&caddr)
+                .is_some()
+        );
 
         // Call it via sandbox
-        let (gas, ret_json) = machine::sandbox_call(
-            &mut ctx, caddr, "greet".to_owned(), "",
-        ).unwrap();
+        let (gas, ret_json) =
+            machine::sandbox_call(&mut ctx, caddr, "greet".to_owned(), "").unwrap();
         assert!(gas > 0);
         let ret: serde_json::Value = serde_json::from_str(&ret_json).unwrap();
         assert_eq!(ret.as_u64(), Some(0));
@@ -1585,7 +2102,12 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
@@ -1593,9 +2115,7 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         let caddr = contract_addr(&main, 1);
-        let err = machine::sandbox_call(
-            &mut ctx, caddr, "nonexistent".to_owned(), "",
-        ).unwrap_err();
+        let err = machine::sandbox_call(&mut ctx, caddr, "nonexistent".to_owned(), "").unwrap_err();
         assert!(err.contains("CallNotExist"), "{err}");
     }
 
@@ -1606,12 +2126,21 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
 
         for height in [0u64, 1, 100, 999999, u64::MAX / 2] {
             let tx = make_tx(3, main, vec![], 17);
-            let mut ctx = make_ctx(height, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+            let mut ctx = make_ctx(
+                height,
+                &tx,
+                Box::new(StateMem::default()),
+                Box::new(MemLogs::default()),
+            );
             ctx.env.chain.fast_sync = true;
 
             let act = EnvHeight::new();
             let (_, res) = act.execute(&mut ctx).unwrap();
-            assert_eq!(res, height.to_be_bytes().to_vec(), "height mismatch at {height}");
+            assert_eq!(
+                res,
+                height.to_be_bytes().to_vec(),
+                "height mismatch at {height}"
+            );
         }
     }
 
@@ -1620,7 +2149,12 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
 
@@ -1628,8 +2162,12 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
             let sto = make_external_contract("f", "return 0");
             execute_deploy(&mut ctx, nonce, sto).unwrap();
             let caddr = contract_addr(&main, nonce);
-            assert!(VMState::wrap(StateOperat::state(&mut ctx)).contract(&caddr).is_some(),
-                "contract with nonce {nonce} should exist");
+            assert!(
+                VMState::wrap(StateOperat::state(&mut ctx))
+                    .contract(&caddr)
+                    .is_some(),
+                "contract with nonce {nonce} should exist"
+            );
         }
     }
 
@@ -1638,14 +2176,21 @@ let libs = ContractAddressW1::from_list(vec![]).unwrap();
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(1, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let sto = make_external_contract("f", "return 0");
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(1u32);
         // Create a negative amount: 0 - 1 mei
-        let neg_amt = Amount::zero().sub(&Amount::mei(1), field::AmtMode::BIGINT).unwrap();
+        let neg_amt = Amount::zero()
+            .sub(&Amount::mei(1), field::AmtMode::BIGINT)
+            .unwrap();
         assert!(neg_amt.is_negative());
         act.protocol_cost = neg_amt;
         act.contract = sto;

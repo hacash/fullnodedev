@@ -32,7 +32,7 @@ pub fn global_machine_manager() -> &'static MachineManage {
     MACHINE_MANAGER_INSTANCE.get_or_init(|| MachineManage::new())
 }
 
-/// Configure the global contract cache pool.
+/// Configure the contract cache pool.
 /// Default is disabled (`max_bytes = 0`).
 pub fn configure_contract_cache(config: machine::ContractCacheConfig) {
     global_machine_manager().contract_cache().configure(config);

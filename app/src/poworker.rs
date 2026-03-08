@@ -125,7 +125,6 @@ pub fn poworker_with_conf(cnf: PoWorkConf) {
 }
 
 pub fn poworker_with_stop(cnf: PoWorkConf, stop_flag: Option<Arc<AtomicBool>>) {
-
     // test start
     // cnfobj.supervene = 1;
     // cnfobj.noncemax = u32::MAX / 200;
@@ -178,10 +177,7 @@ pub fn poworker_with_stop(cnf: PoWorkConf, stop_flag: Option<Arc<AtomicBool>>) {
 }
 
 fn should_stop(stop_flag: &Option<Arc<AtomicBool>>) -> bool {
-    stop_flag
-        .as_ref()
-        .map(|f| f.load(Relaxed))
-        .unwrap_or(false)
+    stop_flag.as_ref().map(|f| f.load(Relaxed)).unwrap_or(false)
 }
 
 fn build_miner_backends(cnf: &PoWorkConf) -> Vec<MinerBackend> {
@@ -192,7 +188,10 @@ fn build_miner_backends(cnf: &PoWorkConf) -> Vec<MinerBackend> {
         {
             let opencl_resources = initialize_opencl(cnf);
             if !opencl_resources.is_empty() {
-                println!("\n[Start] Create GPU block miner worker #{}.", opencl_resources.len());
+                println!(
+                    "\n[Start] Create GPU block miner worker #{}.",
+                    opencl_resources.len()
+                );
                 for resource in opencl_resources {
                     backends.push(MinerBackend::Opencl(Arc::new(resource)));
                 }
@@ -201,13 +200,18 @@ fn build_miner_backends(cnf: &PoWorkConf) -> Vec<MinerBackend> {
 
         #[cfg(not(feature = "ocl"))]
         {
-            println!("\n[Warn] use_opencl=true but app built without `ocl` feature, fallback to CPU miner.");
+            println!(
+                "\n[Warn] use_opencl=true but app built without `ocl` feature, fallback to CPU miner."
+            );
         }
     }
 
     if backends.is_empty() {
         let thrnum = cnf.supervene.max(1) as usize;
-        println!("\n[Start] Create #{} CPU block miner worker thread.", thrnum);
+        println!(
+            "\n[Start] Create #{} CPU block miner worker thread.",
+            thrnum
+        );
         for _ in 0..thrnum {
             backends.push(MinerBackend::Cpu);
         }
@@ -384,7 +388,9 @@ fn deal_block_mining_results(
             most = res.clone();
         }
         recv_count += 1;
-        if recv_count >= vene as usize * 4 { break; } // prevent infinite loop
+        if recv_count >= vene as usize * 4 {
+            break;
+        } // prevent infinite loop
     }
     if recv_count == 0 {
         return;
@@ -492,7 +498,10 @@ fn pull_pending_block_stuff(cnf: &PoWorkConf) {
         delay_return!(30);
     };
     let Ok(jsdata) = repv.text() else {
-        println!("Error: cannot read block data body at {}\n", &urlapi_pending);
+        println!(
+            "Error: cannot read block data body at {}\n",
+            &urlapi_pending
+        );
         delay_return!(10);
     };
     let Ok(res) = serde_json::from_str::<JV>(&jsdata) else {

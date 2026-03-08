@@ -12,8 +12,8 @@ pub struct Resoure {
     pub gas_table: GasTable,
     pub gas_extra: GasExtra,
     pub space_cap: SpaceCap,
-    pub global_vals: GKVMap,
-    pub memory_vals: CtcKVMap,
+    pub global_map: GKVMap,
+    pub memory_map: CtcKVMap,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
     // stack heap
     pub stack_pool: Vec<Stack>,
@@ -26,8 +26,8 @@ impl Resoure {
         Self {
             cfg_height: height,
             next_upgrade: Self::next_upgrade_after(height),
-            global_vals: GKVMap::new(cap.max_global),
-            memory_vals: CtcKVMap::new(cap.max_memory),
+            global_map: GKVMap::new(cap.global),
+            memory_map: CtcKVMap::new(cap.memory),
             space_cap: cap,
             gas_extra: GasExtra::new(height),
             gas_table: GasTable::new(height),
@@ -35,8 +35,8 @@ impl Resoure {
         }
     }
     pub fn reclaim(&mut self) {
-        self.global_vals.clear();
-        self.memory_vals.clear();
+        self.global_map.clear();
+        self.memory_map.clear();
         self.contracts.clear();
     }
 
@@ -54,8 +54,8 @@ impl Resoure {
         self.cfg_height = height;
         self.next_upgrade = Self::next_upgrade_after(height);
         // rebuild
-        self.global_vals.reset(cap.max_global);
-        self.memory_vals.reset(cap.max_memory);
+        self.global_map.reset(cap.global);
+        self.memory_map.reset(cap.memory);
         self.space_cap = cap;
         self.gas_extra = GasExtra::new(height);
         self.gas_table = GasTable::new(height);

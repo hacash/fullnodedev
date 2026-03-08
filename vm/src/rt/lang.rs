@@ -56,7 +56,7 @@ keyword_define! {
     Throw     : "throw"
     Assert    : "assert"
     Print     : "print"
-    Call      : "call"
+    CallExt   : "callext"
     CallThis  : "callthis"
     CallSelf  : "callself"
     CallSuper : "callsuper"
@@ -71,13 +71,19 @@ keyword_define! {
     Abstract  : "abstract"
     Function  : "function"
     External  : "external"
-    Private   : "private"
+    Inner     : "inner"
+    View      : "view"
+    Pure      : "pure"
     Virtual   : "virtual"
     Deploy    : "deploy"
     Param     : "param"
     This      : "this"
     Self_     : "self"
     Super     : "super"
+    State     : "state"
+    Code      : "code"
+    Parent    : "parent"
+    LibRoot   : "libroot"
     And       : "and"
     Or        : "or"
     Not       : "not"
@@ -225,10 +231,10 @@ impl IrFn {
 
 irfn_define! {
 
-    EXTACTION  : 1, 1, 0,     ext_action  // no return value
-    // EXTVIEW    : 1, 1, 1,     ext_view EXTENV     : 1, 0, 1,     ext_env NTFUNC     : 1, 1, 1,     native_func NTENV      : 1, 0, 1,     native_env
+    ACTION  : 1, 1, 0,     action  // no return value
+    // ACTVIEW    : 1, 1, 1,     actview ACTENV     : 1, 0, 1,     actenv NTFUNC     : 1, 1, 1,     native_func NTENV      : 1, 0, 1,     native_env
 
-    // CALLDYN    :   0, 3, 1,   call_dynamic CALL       : 1+4, 1, 1,   call CALLTHIS   :   4, 1, 1,   call_this CALLSELF   :   4, 1, 1,   call_self CALLSUPER  :   4, 1, 1,   call_super CALLVIEW   : 1+4, 1, 1,   call_view CALLPURE   : 1+4, 1, 1,   call_pure CALLCODE   : 1+4, 0, 0,   call_code
+    // CALLTHIS/CALLSELF/CALLSUPER/CALLVIEW/CALLPURE/CALLCODE/CALLEXT are exposed shortcut call opcodes.
 
     PU8        : 1, 0, 1,     push_u8
     PU16       : 2, 0, 1,     push_u16
@@ -277,6 +283,7 @@ irfn_define! {
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map
     PACKARGS   : 0, 0, 1,     pack_args
+    ARGS2LIST  : 0, 1, 1,     args_to_list
     // PACKLIST   : 0, 255, 1,   pack_list PACKMAP    : 0, 255, 1,   pack_map
     INSERT     : 0, 3, 1,     insert
     REMOVE     : 0, 2, 1,     remove

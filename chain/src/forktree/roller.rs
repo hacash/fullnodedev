@@ -9,15 +9,18 @@ pub(crate) struct Roller {
 }
 
 impl Roller {
-
     pub(crate) fn new(
         root_blk: Arc<dyn Block>,
         root_sta: Arc<Box<dyn State>>,
         root_log: Arc<dyn Logs>,
-        level: u64
+        level: u64,
     ) -> Self {
         let root = ChunkRef::new(root_blk, root_sta, root_log, None);
-        Self { level, head: root.clone(), root }
+        Self {
+            level,
+            head: root.clone(),
+            root,
+        }
     }
 
     pub(crate) fn root(&self) -> ChunkRef {
@@ -43,7 +46,7 @@ impl Roller {
 
     pub(crate) fn quick_find(&self, hash: &Hash) -> Option<ChunkRef> {
         if self.head.hash() == hash {
-            return Some(self.head.clone())
+            return Some(self.head.clone());
         }
         let mut stack = vec![self.root.clone()];
         while let Some(node) = stack.pop() {
@@ -67,7 +70,7 @@ impl Roller {
         block: Arc<dyn Block>,
         state: Arc<Box<dyn State>>,
         logs: Arc<dyn Logs>,
-        fast_sync: bool
+        fast_sync: bool,
     ) -> Ret<(Option<ChunkRef>, Option<ChunkRef>)> {
         let child = ChunkRef::new(block, state, logs, Some(parent));
         self.insert(parent, child, fast_sync)
@@ -79,16 +82,19 @@ impl Roller {
         let mut skhei = BlockHeight::from(seek.height());
         for _ in 0..max_num {
             vec.push((skhei.clone(), seek.hash().clone()));
-            let Some(parent) = seek.parent() else {
-                break
-            };
+            let Some(parent) = seek.parent() else { break };
             seek = parent;
             skhei -= 1;
         }
         vec
     }
 
-    fn insert(&mut self, parent: &ChunkRef, child: ChunkRef, fast_sync: bool) -> Ret<(Option<ChunkRef>, Option<ChunkRef>)> {
+    fn insert(
+        &mut self,
+        parent: &ChunkRef,
+        child: ChunkRef,
+        fast_sync: bool,
+    ) -> Ret<(Option<ChunkRef>, Option<ChunkRef>)> {
         parent.append(&child, fast_sync)?;
         let mut head_change: Option<ChunkRef> = None;
         let mut root_change: Option<ChunkRef> = None;
@@ -98,7 +104,7 @@ impl Roller {
             if self.head.height() > self.root.height() + self.level {
                 let new_root_height = self.root.height() + 1;
                 let Some(new_root) = Self::trace_parent(self.head.clone(), new_root_height) else {
-                    return errf!("cannot trace root height {}", new_root_height)
+                    return errf!("cannot trace root height {}", new_root_height);
                 };
                 self.root = new_root.clone();
                 root_change = Some(new_root);
@@ -109,16 +115,15 @@ impl Roller {
 
     fn trace_parent(mut seek: ChunkRef, parent_hei: u64) -> Option<ChunkRef> {
         if parent_hei > seek.height() {
-            return None
+            return None;
         }
         while seek.height() != parent_hei {
             if let Some(sk) = seek.parent() {
                 seek = sk;
             } else {
-                return None
+                return None;
             }
         }
         Some(seek)
     }
-
 }

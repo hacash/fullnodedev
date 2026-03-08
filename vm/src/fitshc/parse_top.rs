@@ -160,8 +160,8 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
         }
         Some(Keyword(KwTy::Inherit)) => {
             state.advance();
-            let inherits = parse_addr_list(state)?;
-            for (_name, addr) in inherits {
+            let inherit_list = parse_addr_list(state)?;
+            for (_name, addr) in inherit_list {
                 state.contract = state.contract.clone().inh(addr);
             }
         }

@@ -20,7 +20,7 @@ action_define!{ ContractMainCall, 45,
         convert_and_check(&cap, codeconf.code_type(), &self.codes, hei)?;
         let _ = setup_vm_run(
             ctx,
-            ExecMode::Main as u8,
+            EntryKind::Main as u8,
             codeconf.raw(),
             self.codes.as_vec().clone().into(),
             Value::Nil,

@@ -6,7 +6,6 @@ use super::value::*;
 use super::*;
 
 use super::rt::ItrErrCode::*;
-use super::rt::ToHex;
 
 include! {"env.rs"}
 include! {"frame.rs"}

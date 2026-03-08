@@ -1,8 +1,5 @@
-
-
 // pub const CONTRACT_STORE_FEE_MUL: u64 = 50;
 pub const CONTRACT_STORE_PERM_PERIODS: u64 = 10_000;
-
 
 macro_rules! vmsto {
     ($ctx: expr) => {
@@ -10,16 +7,14 @@ macro_rules! vmsto {
     };
 }
 
-
-
-action_define!{ ContractDeploy, 40, 
+action_define! { ContractDeploy, 40,
     ActLv::TopOnlyWithGuard,
     false, [],
-    {   
+    {
         protocol_cost: Amount
-        nonce: Uint4 
+        nonce: Uint4
         construct_call: Bool
-        construct_argv: BytesW2 // checked by SpaceCap::max_value_size at runtime
+        construct_argv: BytesW2 // checked by SpaceCap::value_size at runtime
         _marks_:   Fixed4 // zero
         contract: ContractSto
     },
@@ -49,12 +44,12 @@ action_define!{ ContractDeploy, 40,
         // save the contract
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
         let cargv = self.construct_argv.to_vec();
-        if cargv.len() > SpaceCap::new(hei).max_value_size {
+        if cargv.len() > SpaceCap::new(hei).value_size {
             return errf!("construct argv size overflow")
         }
         // call construct only when explicitly enabled by action flag
         if self.construct_call.check() {
-            let cty = ExecMode::Abst as u8;
+            let cty = EntryKind::Abst as u8;
             let _ = setup_vm_run(
                 ctx,
                 cty,
@@ -68,15 +63,10 @@ action_define!{ ContractDeploy, 40,
     })
 }
 
-
-
-
-
-
-action_define!{ ContractUpdate, 41, 
+action_define! { ContractUpdate, 41,
     ActLv::TopOnlyWithGuard, // level
     false, [], // burn 90% fee
-    {   
+    {
         protocol_cost: Amount
         address: Address // contract address
         _marks_: Fixed2 // zero
@@ -95,7 +85,7 @@ action_define!{ ContractUpdate, 41,
             return errf!("contract {} not exist", (*caddr).to_readable())
         };
         // apply edit (in memory)
-		let mut new_contract = contract.clone();
+        let mut new_contract = contract.clone();
         let (_did_append, did_change) = new_contract.apply_edit(&self.edit, hei)?;
         precheck_contract_store(&caddr, &new_contract, ctx)?;
         // spend protocol fee only when storage grows
@@ -103,7 +93,7 @@ action_define!{ ContractUpdate, 41,
         let new_size = new_contract.size();
         let delta_bytes = new_size.saturating_sub(old_size);
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
-        let cty = ExecMode::Abst as u8;
+        let cty = EntryKind::Abst as u8;
         let sys = maybe!(did_change, Change, Append) as u8; // Change or Append
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
         let _ = setup_vm_run(
@@ -117,28 +107,40 @@ action_define!{ ContractUpdate, 41,
         vmsto!(ctx).contract_set_sync_edition(&caddr, &new_contract);
         let caddr_real = caddr.to_addr();
         ctx.vm().invalidate_contract_cache(&caddr_real);
-        Ok(vec![]) 
+        Ok(vec![])
     })
 }
 
-
-
-
 /**************************************/
 
-
-
 fn check_contract_self_reference(root_addr: &ContractAddress, root_contract: &ContractSto) -> Rerr {
-    if root_contract.inherits.as_list().iter().any(|a| a == root_addr) {
-        return errf!("contract cannot inherit itself {}", root_addr.to_readable())
+    if root_contract
+        .inherit
+        .as_list()
+        .iter()
+        .any(|a| a == root_addr)
+    {
+        return errf!("contract cannot inherit itself {}", root_addr.to_readable());
     }
-    if root_contract.librarys.as_list().iter().any(|a| a == root_addr) {
-        return errf!("contract cannot link itself as library {}", root_addr.to_readable())
+    if root_contract
+        .library
+        .as_list()
+        .iter()
+        .any(|a| a == root_addr)
+    {
+        return errf!(
+            "contract cannot link itself as library {}",
+            root_addr.to_readable()
+        );
     }
     Ok(())
 }
 
-fn precheck_contract_links_and_calls(ctx: &mut dyn Context, root_addr: &ContractAddress, root_contract: &ContractSto) -> Rerr {
+fn precheck_contract_links_and_calls(
+    ctx: &mut dyn Context,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+) -> Rerr {
     let height = ctx.env().block.height;
     let mut vmsta = VMState::wrap(ctx.state());
     check_link_contracts_exist(&mut vmsta, root_addr, root_contract)?;
@@ -164,7 +166,7 @@ fn load_contract_for_check(
     role: &str,
 ) -> Ret<ContractSto> {
     if addr == root_addr {
-        return Ok(root_contract.clone())
+        return Ok(root_contract.clone());
     }
     match vmsta.contract(addr) {
         Some(c) => Ok(c),
@@ -177,11 +179,11 @@ fn check_link_contracts_exist(
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
 ) -> Rerr {
-    for a in root_contract.librarys.as_list() {
+    for a in root_contract.library.as_list() {
         let _ = load_contract_for_check(vmsta, root_addr, root_contract, a, "library")?;
     }
-    for a in root_contract.inherits.as_list() {
-        let _ = load_contract_for_check(vmsta, root_addr, root_contract, a, "inherits")?;
+    for a in root_contract.inherit.as_list() {
+        let _ = load_contract_for_check(vmsta, root_addr, root_contract, a, "inherit")?;
     }
     Ok(())
 }
@@ -191,13 +193,13 @@ fn check_inherits_direct_parents_flat(
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
 ) -> Rerr {
-    for p in root_contract.inherits.as_list() {
-        let sto = load_contract_for_check(vmsta, root_addr, root_contract, p, "inherits")?;
-        if sto.inherits.length() > 0 {
+    for p in root_contract.inherit.as_list() {
+        let sto = load_contract_for_check(vmsta, root_addr, root_contract, p, "inherit")?;
+        if sto.inherit.length() > 0 {
             return errf!(
-                "inherits parent {} cannot have parent inherits",
+                "inherit parent {} cannot have parent inherit",
                 p.to_readable()
-            )
+            );
         }
     }
     Ok(())
@@ -206,7 +208,6 @@ fn check_inherits_direct_parents_flat(
 #[derive(Clone, Copy)]
 struct UserfnMeta {
     is_external: bool,
-    param_count: usize,
 }
 
 fn contract_userfn_meta(contract: &ContractSto, sign: &FnSign) -> Option<UserfnMeta> {
@@ -218,31 +219,7 @@ fn contract_userfn_meta(contract: &ContractSto, sign: &FnSign) -> Option<UserfnM
     let ext_mark = FnConf::External as u8;
     Some(UserfnMeta {
         is_external: f.fncnf[0] & ext_mark == ext_mark,
-        param_count: f.pmdf.param_count(),
     })
-}
-
-fn resolve_userfn_meta_self_or_direct_parents(
-    vmsta: &mut VMState,
-    root_addr: &ContractAddress,
-    root_contract: &ContractSto,
-    addr: &ContractAddress,
-    sign: &FnSign,
-    include_self: bool,
-) -> Ret<Option<(ContractAddress, UserfnMeta)>> {
-    let sto = load_contract_for_check(vmsta, root_addr, root_contract, addr, "inherits")?;
-    if include_self {
-        if let Some(meta) = contract_userfn_meta(&sto, sign) {
-            return Ok(Some((addr.clone(), meta)))
-        }
-    }
-    for p in sto.inherits.as_list() {
-        let psto = load_contract_for_check(vmsta, root_addr, root_contract, p, "inherits")?;
-        if let Some(meta) = contract_userfn_meta(&psto, sign) {
-            return Ok(Some((p.clone(), meta)))
-        }
-    }
-    Ok(None)
 }
 
 fn scan_call_sites(codes: &[u8], mut check: impl FnMut(Bytecode, &[u8]) -> Rerr) -> Rerr {
@@ -251,19 +228,21 @@ fn scan_call_sites(codes: &[u8], mut check: impl FnMut(Bytecode, &[u8]) -> Rerr)
         let inst: Bytecode = std_mem_transmute!(codes[i]);
         let meta = inst.metadata();
         if !meta.valid {
-            return errf!("invalid bytecode {}", codes[i])
+            return errf!("invalid bytecode {}", codes[i]);
         }
         i += 1;
         let pms = meta.param as usize;
         if i + pms > codes.len() {
-            return errf!("instruction param overflow at {}", i - 1)
+            return errf!("instruction param overflow at {}", i - 1);
         }
         let params = &codes[i..i + pms];
         match inst {
-            Bytecode::CALL
+            Bytecode::CALLEXT
             | Bytecode::CALLTHIS
             | Bytecode::CALLSELF
             | Bytecode::CALLSUPER
+            | Bytecode::CALLSELFVIEW
+            | Bytecode::CALLSELFPURE
             | Bytecode::CALLVIEW
             | Bytecode::CALLPURE
             | Bytecode::CALLCODE => {
@@ -272,14 +251,14 @@ fn scan_call_sites(codes: &[u8], mut check: impl FnMut(Bytecode, &[u8]) -> Rerr)
             Bytecode::PBUF => {
                 let l = params[0] as usize;
                 if i + pms + l > codes.len() {
-                    return errf!("PBUF overflow at {}", i - 1)
+                    return errf!("PBUF overflow at {}", i - 1);
                 }
                 i += l;
             }
             Bytecode::PBUFL => {
                 let l = u16::from_be_bytes([params[0], params[1]]) as usize;
                 if i + pms + l > codes.len() {
-                    return errf!("PBUFL overflow at {}", i - 1)
+                    return errf!("PBUFL overflow at {}", i - 1);
                 }
                 i += l;
             }
@@ -290,6 +269,110 @@ fn scan_call_sites(codes: &[u8], mut check: impl FnMut(Bytecode, &[u8]) -> Rerr)
     Ok(())
 }
 
+fn resolve_userfn_meta_on_owner(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    owner: &ContractAddress,
+    sign: &FnSign,
+) -> Ret<Option<(ContractAddress, UserfnMeta)>> {
+    let sto = load_contract_for_check(vmsta, root_addr, root_contract, owner, "lookup")?;
+    Ok(contract_userfn_meta(&sto, sign).map(|meta| (owner.clone(), meta)))
+}
+
+fn resolve_lookup_anchor_for_check(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    func_tag: &str,
+    lookup: LookupSpec,
+) -> Ret<ContractAddress> {
+    match lookup.base {
+        LookupBase::State | LookupBase::Code => Ok(root_addr.clone()),
+        LookupBase::Lib(idx) => {
+            let libs = root_contract.library.as_list();
+            let lidx = idx as usize;
+            if lidx >= libs.len() {
+                return errf!("{}: libidx overflow {} >= {}", func_tag, lidx, libs.len());
+            }
+            let addr = libs[lidx].clone();
+            let _ = load_contract_for_check(vmsta, root_addr, root_contract, &addr, "lookup")?;
+            Ok(addr)
+        }
+    }
+}
+
+fn resolve_lookup_entries_for_check(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    func_tag: &str,
+    anchor: &ContractAddress,
+    lookup: LookupSpec,
+) -> Ret<Vec<ContractAddress>> {
+    Ok(match lookup.walk {
+        LookupWalk::Exact => vec![anchor.clone()],
+        LookupWalk::Parents => {
+            load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?
+                .inherit
+                .as_list()
+                .iter()
+                .cloned()
+                .collect()
+        }
+        LookupWalk::Chain => {
+            let sto = load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?;
+            let parents = sto.inherit.as_list();
+            let mut out = Vec::with_capacity(1 + parents.len());
+            out.push(anchor.clone());
+            out.extend(parents.iter().cloned());
+            out
+        }
+        LookupWalk::Parent(idx) => {
+            let sto = load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?;
+            let parents = sto.inherit.as_list();
+            let pidx = idx as usize;
+            if pidx >= parents.len() {
+                return errf!(
+                    "{}: parent idx overflow {} >= {}",
+                    func_tag,
+                    pidx,
+                    parents.len()
+                );
+            }
+            vec![parents[pidx].clone()]
+        }
+    })
+}
+
+fn resolve_userfn_meta_by_lookup_for_check(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    func_tag: &str,
+    lookup: LookupSpec,
+    sign: &FnSign,
+) -> Ret<Option<(ContractAddress, UserfnMeta)>> {
+    let anchor =
+        resolve_lookup_anchor_for_check(vmsta, root_addr, root_contract, func_tag, lookup)?;
+    let entries = resolve_lookup_entries_for_check(
+        vmsta,
+        root_addr,
+        root_contract,
+        func_tag,
+        &anchor,
+        lookup,
+    )?;
+    for owner in entries {
+        if let Some(hit) =
+            resolve_userfn_meta_on_owner(vmsta, root_addr, root_contract, &owner, sign)?
+        {
+            return Ok(Some(hit));
+        }
+    }
+    Ok(None)
+}
+
 fn check_static_call_targets(
     vmsta: &mut VMState,
     root_addr: &ContractAddress,
@@ -297,149 +380,72 @@ fn check_static_call_targets(
     height: u64,
 ) -> Rerr {
     let check_one = |func_tag: String, codes: &[u8], vmsta: &mut VMState| -> Rerr {
+        let check_call = |call: UserCall, vmsta: &mut VMState| -> Rerr {
+            let sign = call.selector;
+            let spec = call.to_spec();
+            let found = resolve_userfn_meta_by_lookup_for_check(
+                vmsta,
+                root_addr,
+                root_contract,
+                &func_tag,
+                spec.lookup,
+                &sign,
+            )?;
+            let Some((owner, meta)) = found else {
+                return errf!(
+                    "{}: call target function 0x{} not found",
+                    func_tag,
+                    hex::encode(sign)
+                );
+            };
+            if spec.requires_external_visibility() && !meta.is_external {
+                return errf!(
+                    "{}: target function 0x{} resolved in {} is not external",
+                    func_tag,
+                    hex::encode(sign),
+                    owner.to_readable()
+                );
+            }
+            Ok(())
+        };
         scan_call_sites(codes, |inst, params| {
             let mut sign = [0u8; FN_SIGN_WIDTH];
             match inst {
-                Bytecode::CALL => {
-                    let libs = root_contract.librarys.as_list();
-                    let libidx = params[0] as usize;
-                    if libidx >= libs.len() {
-                        return errf!(
-                            "{}: libidx overflow {} >= {}",
-                            func_tag,
-                            libidx,
-                            libs.len()
-                        )
-                    }
+                Bytecode::CALLEXT => {
                     sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
-                    let tar = &libs[libidx];
-                    let Some((owner, meta)) = resolve_userfn_meta_self_or_direct_parents(
-                        vmsta,
-                        root_addr,
-                        root_contract,
-                        tar,
-                        &sign,
-                        true,
-                    )? else {
-                        return errf!(
-                            "{}: call target {} function 0x{} not found in self/direct parents",
-                            func_tag,
-                            tar.to_readable(),
-                            hex::encode(sign)
-                        )
-                    };
-                    if !meta.is_external {
-                        return errf!(
-                            "{}: call target {} function 0x{} resolved in {} is not external",
-                            func_tag,
-                            tar.to_readable(),
-                            hex::encode(sign),
-                            owner.to_readable()
-                        );
-                    }
-                    Ok(())
+                    check_call(UserCall::callext(params[0], sign), vmsta)
                 }
-                Bytecode::CALLVIEW | Bytecode::CALLPURE => {
-                    let libs = root_contract.librarys.as_list();
-                    let libidx = params[0] as usize;
-                    if libidx >= libs.len() {
-                        return errf!(
-                            "{}: libidx overflow {} >= {}",
-                            func_tag,
-                            libidx,
-                            libs.len()
-                        )
-                    }
+                Bytecode::CALLVIEW => {
                     sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
-                    let tar = &libs[libidx];
-                    let found = resolve_userfn_meta_self_or_direct_parents(
-                        vmsta,
-                        root_addr,
-                        root_contract,
-                        tar,
-                        &sign,
-                        true,
-                    )?;
-                    if found.is_none() {
-                        return errf!(
-                            "{}: call target {} function 0x{} not found in self/direct parents",
-                            func_tag,
-                            tar.to_readable(),
-                            hex::encode(sign)
-                        )
-                    }
-                    Ok(())
+                    check_call(UserCall::callview(params[0], sign), vmsta)
                 }
-                Bytecode::CALLCODE => {
-                    let libs = root_contract.librarys.as_list();
-                    let libidx = params[0] as usize;
-                    if libidx >= libs.len() {
-                        return errf!(
-                            "{}: libidx overflow {} >= {}",
-                            func_tag,
-                            libidx,
-                            libs.len()
-                        )
-                    }
+                Bytecode::CALLPURE => {
                     sign.copy_from_slice(&params[1..1 + FN_SIGN_WIDTH]);
-                    let tar = &libs[libidx];
-                    let sto =
-                        load_contract_for_check(vmsta, root_addr, root_contract, tar, "library")?;
-                    let Some(meta) = contract_userfn_meta(&sto, &sign) else {
-                        return errf!(
-                            "{}: library {} function 0x{} not found",
-                            func_tag,
-                            tar.to_readable(),
-                            hex::encode(sign)
-                        )
-                    };
-                    if meta.param_count != 0 {
-                        return errf!(
-                            "{}: callcode target {} function 0x{} param_count {} must be 0",
-                            func_tag,
-                            tar.to_readable(),
-                            hex::encode(sign),
-                            meta.param_count
-                        );
-                    }
-                    Ok(())
+                    check_call(UserCall::callpure(params[0], sign), vmsta)
                 }
-                Bytecode::CALLTHIS | Bytecode::CALLSELF => {
-                    // Deploy-time precheck validates callsites against the contract being deployed/updated. Runtime CALLSELF resolves from dynamic code_owner, which may differ after inherited dispatch. Cross-contract inherited bodies are validated in their own deploy/update.
+                Bytecode::CALLCODE => check_call(
+                    decode_callcode_body(params).map_err(|e| e.to_string())?,
+                    vmsta,
+                ),
+                Bytecode::CALLTHIS => {
                     sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    let found = resolve_userfn_meta_self_or_direct_parents(
-                        vmsta,
-                        root_addr,
-                        root_contract,
-                        root_addr,
-                        &sign,
-                        true,
-                    )?;
-                    if found.is_none() {
-                        return errf!(
-                            "{}: {:?} function 0x{} not found",
-                            func_tag,
-                            inst,
-                            hex::encode(sign)
-                        )
-                    }
-                    Ok(())
+                    check_call(UserCall::callthis(sign), vmsta)
+                }
+                Bytecode::CALLSELF => {
+                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
+                    check_call(UserCall::callself(sign), vmsta)
                 }
                 Bytecode::CALLSUPER => {
                     sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
-                    let found = resolve_userfn_meta_self_or_direct_parents(
-                        vmsta,
-                        root_addr,
-                        root_contract,
-                        root_addr,
-                        &sign,
-                        false,
-                    )?
-                    .is_some();
-                    if !found {
-                        return errf!("{}: super function 0x{} not found", func_tag, hex::encode(sign))
-                    }
-                    Ok(())
+                    check_call(UserCall::callsuper(sign), vmsta)
+                }
+                Bytecode::CALLSELFVIEW => {
+                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
+                    check_call(UserCall::callselfview(sign), vmsta)
+                }
+                Bytecode::CALLSELFPURE => {
+                    sign.copy_from_slice(&params[..FN_SIGN_WIDTH]);
+                    check_call(UserCall::callselfpure(sign), vmsta)
                 }
                 _ => Ok(()),
             }
@@ -451,7 +457,9 @@ fn check_static_call_targets(
         let ctype = code_pkg.code_type().map_err(|e| e.to_string())?;
         let codes = match ctype {
             CodeType::Bytecode => code_pkg.data,
-            CodeType::IRNode => runtime_irs_to_bytecodes(&code_pkg.data, height).map_err(|e| e.to_string())?,
+            CodeType::IRNode => {
+                runtime_irs_to_bytecodes(&code_pkg.data, height).map_err(|e| e.to_string())?
+            }
         };
         let tag = format!("userfn 0x{}", hex::encode(f.sign.to_array()));
         check_one(tag, &codes, vmsta)?;
@@ -462,7 +470,9 @@ fn check_static_call_targets(
         let ctype = code_pkg.code_type().map_err(|e| e.to_string())?;
         let codes = match ctype {
             CodeType::Bytecode => code_pkg.data,
-            CodeType::IRNode => runtime_irs_to_bytecodes(&code_pkg.data, height).map_err(|e| e.to_string())?,
+            CodeType::IRNode => {
+                runtime_irs_to_bytecodes(&code_pkg.data, height).map_err(|e| e.to_string())?
+            }
         };
         let tag = format!("abstcall {}", f.sign[0]);
         check_one(tag, &codes, vmsta)?;
@@ -471,24 +481,28 @@ fn check_static_call_targets(
     Ok(())
 }
 
-fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, pfee: &Amount, charge_bytes: usize) -> Rerr {
+fn check_sub_contract_protocol_fee(
+    ctx: &mut dyn Context,
+    pfee: &Amount,
+    charge_bytes: usize,
+) -> Rerr {
     if pfee.is_negative() {
-		return errf!("protocol fee cannot be negative")
+        return errf!("protocol fee cannot be negative");
     }
     if charge_bytes == 0 {
-        return Ok(())
+        return Ok(());
     }
     let min_fee = calc_contract_protocol_fee_min(ctx, charge_bytes)?;
     let maddr = ctx.env().tx.main;
     // check fee
-    if pfee < &min_fee { 
+    if pfee < &min_fee {
         return errf!(
             "protocol fee must need at least {} (bytes={}, periods={}) but just got {}",
             &min_fee,
             charge_bytes,
             contract_store_perm_periods(ctx.env().block.height),
             pfee
-        )
+        );
     }
     operate::hac_sub(ctx, &maddr, pfee)?;
     Ok(())
@@ -502,7 +516,7 @@ fn contract_store_perm_periods(_hei: u64) -> u64 {
 
 fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret<Amount> {
     if charge_bytes == 0 {
-        return Ok(Amount::zero())
+        return Ok(Amount::zero());
     }
     let periods = contract_store_perm_periods(ctx.env().block.height) as u128;
     let fee_purity = ctx.tx().fee_purity() as u128; // unit-238 per tx byte
@@ -511,7 +525,7 @@ fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret
             "contract protocol fee calculate failed: periods={} fee_purity={}",
             periods,
             fee_purity
-        )
+        );
     }
     let bytes = charge_bytes as u128;
     let Some(need) = fee_purity.checked_mul(bytes) else {
@@ -519,20 +533,17 @@ fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret
             "contract protocol fee calculate failed: fee_purity * bytes overflow ({} * {})",
             fee_purity,
             bytes
-        )
+        );
     };
     let Some(need) = need.checked_mul(periods) else {
         return errf!(
             "contract protocol fee calculate failed: need * periods overflow ({} * {})",
             need,
             periods
-        )
+        );
     };
     Ok(Amount::coin_u128(need, UNIT_238))
 }
-
-
-
 
 /* ************************************* fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, ctlsz: usize, ptcfee: &Amount) -> Rerr { // let _hei = ctx.env().block.height; let e = errf!("contract protocol fee calculate failed"); let mul = CONTRACT_STORE_FEE_MUL as u128; // 30 let feep = ctx.tx().fee_purity() as u128; // per-byte, no GSCU division let Some(rlfe) = feep.checked_mul(ctlsz as u128) else { return e }; let Some(rlfe) = rlfe.checked_mul(mul) else { return e }; let tx50fee = &Amount::coin_u128(rlfe, UNIT_238).compress(2, AmtCpr::Grow)?; if tx50fee <= ctx.tx().fee() { return e } println!("{}, {}, {}, {}", ctx.tx().size(), ctlsz, ctx.tx().fee(), tx50fee); let maddr = ctx.env().tx.main; // check fee if ptcfee < tx50fee { return errf!("protocol fee must need at least {} but just got {}", tx50fee, ptcfee) } operate::hac_sub(ctx, &maddr, ptcfee)?; Ok(()) } */
 
@@ -618,11 +629,7 @@ mod contract_test {
         let child_nonce = 32;
 
         let parent = Contract::new()
-            .syst(
-                Abst::new(AbstCall::Construct)
-                    .fitsh("return 1")
-                    .unwrap(),
-            )
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 1").unwrap())
             .into_sto();
         let child = Contract::new().inh(parent_addr.to_addr()).into_sto();
 
@@ -641,19 +648,11 @@ mod contract_test {
         let child_nonce = 34;
 
         let parent = Contract::new()
-            .syst(
-                Abst::new(AbstCall::Construct)
-                    .fitsh("return 1")
-                    .unwrap(),
-            )
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 1").unwrap())
             .into_sto();
         let child = Contract::new()
             .inh(parent_addr.to_addr())
-            .syst(
-                Abst::new(AbstCall::Construct)
-                    .fitsh("return 0")
-                    .unwrap(),
-            )
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
             .into_sto();
 
         let res = run_deploy_with_preloaded(child_nonce, vec![(parent_addr, parent)], child);
@@ -661,7 +660,7 @@ mod contract_test {
     }
 
     #[test]
-    fn deploy_rejects_parent_with_nested_inherits() {
+    fn deploy_rejects_parent_with_nested_inherit() {
         let main = test_main_addr();
         let grand_addr = test_contract(&main, 35);
         let parent_addr = test_contract(&main, 36);
@@ -676,9 +675,9 @@ mod contract_test {
             vec![(grand_addr, grand), (parent_addr, parent)],
             child,
         )
-        .expect_err("deploy must reject parent with nested inherits");
+        .expect_err("deploy must reject parent with nested inherit");
         assert!(
-            err.contains("cannot have parent inherits"),
+            err.contains("cannot have parent inherit"),
             "unexpected deploy error: {err}"
         );
     }

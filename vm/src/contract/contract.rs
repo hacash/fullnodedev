@@ -22,13 +22,13 @@ impl Contract {
 
     pub fn lib(mut self, a: Address) -> Self {
         let adr = ContractAddress::from_addr(a).unwrap();
-        self.ctrt.librarys.push(adr).unwrap();
+        self.ctrt.library.push(adr).unwrap();
         self
     }
 
     pub fn inh(mut self, a: Address) -> Self {
         let adr = ContractAddress::from_addr(a).unwrap();
-        self.ctrt.inherits.push(adr).unwrap();
+        self.ctrt.inherit.push(adr).unwrap();
         self
     }
 
@@ -54,8 +54,8 @@ impl Contract {
     pub fn into_edit(self, expect_revision: u16) -> ContractEdit {
         let mut edit = ContractEdit::new();
         edit.expect_revision = Uint2::from(expect_revision);
-        edit.inherits_add = self.ctrt.inherits;
-        edit.librarys_add = self.ctrt.librarys;
+        edit.inherit_add = self.ctrt.inherit;
+        edit.library_add = self.ctrt.library;
         edit.abstcalls = self.ctrt.abstcalls;
         edit.userfuncs = self.ctrt.userfuncs;
         edit

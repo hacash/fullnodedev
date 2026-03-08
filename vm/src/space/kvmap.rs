@@ -7,7 +7,7 @@ use crate::rt::ItrErrCode::*;
 use crate::rt::*;
 use crate::value::Value;
 
-macro_rules! memory_kvmap_define {
+macro_rules! memories_kvmap_define {
     ($class:ident, $er1:expr, $er2:expr) => {
         #[allow(dead_code)]
         #[derive(Default, Clone)]
@@ -80,8 +80,8 @@ macro_rules! memory_kvmap_define {
 }
 
 /*  */
-memory_kvmap_define! { GKVMap, GlobalError, OutOfGlobal }
-memory_kvmap_define! { MKVMap, MemoryError, OutOfMemory }
+memories_kvmap_define! { GKVMap, GlobalError, OutOfGlobal }
+memories_kvmap_define! { MKVMap, MemoryError, OutOfMemory }
 
 /*  */
 
@@ -96,7 +96,7 @@ impl CtcKVMap {
     fn check_addr(addr: &Address) -> VmrtErr {
         addr.check_version().map_ires(
             MemoryError,
-            format!("memory use must in dffective address but in {}", addr),
+            format!("memory use must be in effective address but in {}", addr),
         )
     }
 

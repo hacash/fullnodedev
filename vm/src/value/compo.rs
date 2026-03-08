@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone)]
 enum Compo {
     List(VecDeque<Value>),
@@ -19,34 +18,32 @@ impl Default for Compo {
     }
 }
 
-
 macro_rules! ret_invalid_compo_op {
     () => {
         return itr_err_code!(CompoOpInvalid)
     };
 }
 
-
 macro_rules! checked_compo_op_len {
     ($i:expr, $a: expr) => {
         if $i as usize > $a.len() {
-            return itr_err_code!(CompoOpOverflow)
+            return itr_err_code!(CompoOpOverflow);
         }
     };
 }
 
 impl Compo {
-
     fn to_string(&self) -> String {
         match self {
             Self::List(a) => {
-                let sss: Vec<_> = a.iter().map(|a|a.to_string()).collect();
+                let sss: Vec<_> = a.iter().map(|a| a.to_string()).collect();
                 format!("[{}]", sss.join(","))
-            },
-            Self::Map(b)  => { 
-                let mmm: Vec<_> = b.iter().map(|(k,v)|{
-                    format!("0x{}:{}", k.to_hex(), v.to_string())
-                }).collect();
+            }
+            Self::Map(b) => {
+                let mmm: Vec<_> = b
+                    .iter()
+                    .map(|(k, v)| format!("0x{}:{}", k.to_hex(), v.to_string()))
+                    .collect();
                 format!("{{{}}}", mmm.join(","))
             }
         }
@@ -55,13 +52,14 @@ impl Compo {
     fn to_json(&self) -> String {
         match self {
             Self::List(a) => {
-                let sss: Vec<_> = a.iter().map(|a|a.to_json()).collect();
+                let sss: Vec<_> = a.iter().map(|a| a.to_json()).collect();
                 format!("[{}]", sss.join(","))
-            },
-            Self::Map(b)  => { 
-                let mmm: Vec<_> = b.iter().map(|(k,v)|{
-                    format!("\"{}\":{}", bytes_to_readable_string(&k), v.to_json())
-                }).collect();
+            }
+            Self::Map(b) => {
+                let mmm: Vec<_> = b
+                    .iter()
+                    .map(|(k, v)| format!("\"{}\":{}", bytes_to_readable_string(&k), v.to_json()))
+                    .collect();
                 format!("{{{}}}", mmm.join(","))
             }
         }
@@ -111,11 +109,10 @@ impl Compo {
         Some(format!("{{{}}}", mmm.join(",")))
     }
 
-
     fn len(&self) -> usize {
         match self {
             Self::List(a) => a.len(),
-            Self::Map(b)  => b.len(),
+            Self::Map(b) => b.len(),
         }
     }
 
@@ -154,7 +151,7 @@ impl Compo {
     pub fn clear(&mut self) {
         match self {
             Self::List(a) => a.clear(),
-            Self::Map(b)  => b.clear(),
+            Self::Map(b) => b.clear(),
         }
     }
 
@@ -162,7 +159,7 @@ impl Compo {
         v.canbe_value()?;
         match self {
             Self::List(a) => a.push_back(v),
-            _ => ret_invalid_compo_op!{},
+            _ => ret_invalid_compo_op! {},
         }
         Ok(())
     }
@@ -172,14 +169,14 @@ impl Compo {
             Self::List(a) => {
                 let i = k.checked_u32()?;
                 if i as usize >= a.len() {
-                    return itr_err_code!(CompoNoFindItem)
+                    return itr_err_code!(CompoNoFindItem);
                 }
                 a.remove(i as usize);
             }
             Self::Map(b) => {
                 let k = k.canbe_key()?;
                 if b.remove(&k).is_none() {
-                    return itr_err_code!(CompoNoFindItem)
+                    return itr_err_code!(CompoNoFindItem);
                 }
             }
         }
@@ -191,7 +188,7 @@ impl Compo {
         match self {
             Self::List(a) => {
                 let i = k.checked_u32()?;
-                checked_compo_op_len!{i, a};
+                checked_compo_op_len! {i, a};
                 a.insert(i as usize, v);
             }
             Self::Map(b) => {
@@ -204,30 +201,20 @@ impl Compo {
 
     // return Bool
     fn haskey(&self, k: Value) -> VmrtRes<Value> {
-        let hsk = match self {
-            Self::List(a) => {
-                let i = k.checked_u32()? as usize;
-                i < a.len()
-            }
+        match self {
+            Self::List(a) => ReadList::Deque(a).haskey(k),
             Self::Map(b) => {
                 let k = k.canbe_key()?;
-                b.contains_key(&k)
+                Ok(Value::Bool(b.contains_key(&k)))
             }
-        };
-        Ok(Value::Bool(hsk))
+        }
     }
 
     fn itemget(&self, k: Value) -> VmrtRes<Value> {
-        let nfer = || itr_err_code!(CompoNoFindItem);
         let v = match self {
-            Self::List(a) => {
-                let i = k.checked_u32()?;
-                match a.get(i as usize) {
-                    Some(a) => a.clone(),
-                    _ => return nfer(),  // error not find
-                }
-            }
+            Self::List(a) => return ReadList::Deque(a).itemget(k),
             Self::Map(b) => {
+                let nfer = || itr_err_code!(CompoNoFindItem);
                 let k = k.canbe_key()?;
                 match b.get(&k) {
                     Some(b) => b.clone(),
@@ -237,17 +224,9 @@ impl Compo {
         };
         Ok(v)
     }
-
-
 }
 
-
-
-
 /**********************************************************/
-
-
-
 
 #[derive(Default, Clone)]
 pub struct CompoItem {
@@ -255,14 +234,14 @@ pub struct CompoItem {
 }
 
 impl Display for CompoItem {
-    fn fmt(&self,f: &mut Formatter) -> Result {
-        write!(f,"{}", self.to_json())
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{}", self.to_json())
     }
 }
 
 impl Debug for CompoItem {
-    fn fmt(&self,f: &mut Formatter) -> Result {
-        write!(f,"{}", self.to_string())
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{}", self.to_string())
     }
 }
 
@@ -273,7 +252,6 @@ impl PartialEq for CompoItem {
 }
 
 impl Eq for CompoItem {}
-
 
 macro_rules! get_compo_inner_ref {
     ($self: ident) => {
@@ -287,38 +265,35 @@ macro_rules! get_compo_inner_mut {
     };
 }
 
-
 macro_rules! get_compo_inner_by {
     ($self: ident, $ty: ident, $inner: ident) => {{
         let r = $inner!($self);
         let Compo::$ty(obj) = r else {
-            return itr_err_code!(CompoOpNotMatch)
+            return itr_err_code!(CompoOpNotMatch);
         };
         Ok(obj)
     }};
-
 }
 
 macro_rules! take_items_from_ops {
     ($is_map: expr, $cap: expr, $ops: expr) => {{
         let n = $ops.pop()?.checked_u16()? as usize;
         if n == 0 {
-            return itr_err_code!(CompoPackError)
+            return itr_err_code!(CompoPackError);
         }
-        let mut max = $cap.max_compo_length;
+        let mut max = $cap.compo_length;
         if $is_map {
             max *= 2; // for k => v
         }
         if n > max {
-            return itr_err_code!(OutOfCompoLen)
+            return itr_err_code!(OutOfCompoLen);
         }
         let items = $ops.taken(n)?;
         items
-    }}
+    }};
 }
 
 impl CompoItem {
-
     pub fn to_string(&self) -> String {
         get_compo_inner_ref!(self).to_string()
     }
@@ -330,14 +305,9 @@ impl CompoItem {
     pub fn to_debug_json(&self) -> String {
         get_compo_inner_ref!(self).to_debug_json()
     }
-
 }
 
-
-
-
 impl CompoItem {
-
     pub fn list(l: VecDeque<Value>) -> VmrtRes<Self> {
         for item in &l {
             item.canbe_value()?;
@@ -366,14 +336,17 @@ impl CompoItem {
     }
 
     pub fn pack_map(cap: &SpaceCap, ops: &mut Stack) -> VmrtRes<(Value, usize)> {
-        let mut items: Vec<_> = take_items_from_ops!(true, cap, ops).into_iter().map(|a|Some(a)).collect();
+        let mut items: Vec<_> = take_items_from_ops!(true, cap, ops)
+            .into_iter()
+            .map(|a| Some(a))
+            .collect();
         let m = items.len();
         if m % 2 != 0 {
-            return itr_err_code!(CompoPackError) // map must k => v
+            return itr_err_code!(CompoPackError); // map must k => v
         }
         let sz = m / 2;
         let mut mapobj = BTreeMap::new();
-        for i in 0 .. sz {
+        for i in 0..sz {
             let k = items[i * 2].take().unwrap();
             let v = items[i * 2 + 1].take().unwrap();
             let k = k.canbe_key()?;
@@ -412,19 +385,6 @@ impl CompoItem {
     #[allow(unused)]
     fn map_mut(&self) -> VmrtRes<&mut BTreeMap<Vec<u8>, Value>> {
         get_compo_inner_by!(self, Map, get_compo_inner_mut)
-    }
-
-    pub fn check_list_param_type(&self, types: &[ValueTy]) -> VmrtErr {
-        let list = self.list_ref()?;
-        let tn = types.len();
-        let vn = list.len();
-        if tn != vn {
-            return itr_err_fmt!(CallArgvTypeFail, "param length error need {} but got {}", tn, vn)
-        }
-        for i in 0..vn {
-            list[i].checked_param_type(types[i])?;
-        }
-        Ok(())
     }
 
     pub fn new_list() -> Self {
@@ -483,17 +443,21 @@ impl CompoItem {
         self.merge_with_stats(cap, compo).map(|_| ())
     }
 
-    pub fn merge_with_stats(&mut self, cap: &SpaceCap, compo: CompoItem) -> VmrtRes<(usize, usize)> {
+    pub fn merge_with_stats(
+        &mut self,
+        cap: &SpaceCap,
+        compo: CompoItem,
+    ) -> VmrtRes<(usize, usize)> {
         if Rc::ptr_eq(&self.compo, &compo.compo) {
-            return itr_err_code!(CompoOpInvalid)
+            return itr_err_code!(CompoOpInvalid);
         }
         match get_compo_inner_mut!(self) {
             Compo::List(l) => {
                 let src = compo.list_ref()?.clone();
                 let src_len = src.len();
                 let new_len = l.len() + src_len;
-                if new_len > cap.max_compo_length {
-                    return itr_err_code!(OutOfCompoLen)
+                if new_len > cap.compo_length {
+                    return itr_err_code!(OutOfCompoLen);
                 }
                 let mut src_bsz = 0usize;
                 for v in src.iter() {
@@ -503,7 +467,7 @@ impl CompoItem {
                 l.extend(src);
                 Ok((src_len, src_bsz))
             }
-            Compo::Map(m)  => {
+            Compo::Map(m) => {
                 let src = compo.map_ref()?.clone();
                 let src_len = src.len();
                 let mut add = 0usize;
@@ -515,32 +479,27 @@ impl CompoItem {
                         add += 1;
                     }
                 }
-                if m.len() + add > cap.max_compo_length {
-                    return itr_err_code!(OutOfCompoLen)
+                if m.len() + add > cap.compo_length {
+                    return itr_err_code!(OutOfCompoLen);
                 }
                 m.extend(src);
                 Ok((src_len, src_bsz))
             }
         }
     }
-
-
 }
-
 
 macro_rules! checked_compo_length {
-    ($compo: expr, $cap: expr) => { {
+    ($compo: expr, $cap: expr) => {{
         let n = $compo.len();
-        if n > $cap.max_compo_length {
-            return itr_err_code!(OutOfCompoLen)
+        if n > $cap.compo_length {
+            return itr_err_code!(OutOfCompoLen);
         }
         n
-    } };
+    }};
 }
 
-
 impl CompoItem {
-
     pub fn len(&self) -> usize {
         get_compo_inner_ref!(self).len()
     }
@@ -550,8 +509,10 @@ impl CompoItem {
     }
 
     pub fn length(&self, cap: &SpaceCap) -> VmrtRes<Value> {
-        let n = checked_compo_length!{get_compo_inner_ref!(self), cap};
-        Ok(Value::U32(n as u32))
+        match get_compo_inner_ref!(self) {
+            Compo::List(a) => ReadList::Deque(a).length(cap),
+            Compo::Map(b) => length_value_by_len(cap, b.len()),
+        }
     }
 
     pub fn haskey(&self, k: Value) -> VmrtRes<Value> {
@@ -566,7 +527,7 @@ impl CompoItem {
     pub fn insert(&mut self, cap: &SpaceCap, k: Value, v: Value) -> VmrtErr {
         let compo = get_compo_inner_mut!(self);
         compo.insert(k, v)?;
-        checked_compo_length!{compo, cap};
+        checked_compo_length! {compo, cap};
         Ok(())
     }
 
@@ -578,7 +539,7 @@ impl CompoItem {
     pub fn append(&mut self, cap: &SpaceCap, v: Value) -> VmrtErr {
         let compo = get_compo_inner_mut!(self);
         compo.append(v)?;
-        checked_compo_length!{compo, cap};
+        checked_compo_length! {compo, cap};
         Ok(())
     }
 
@@ -606,7 +567,7 @@ impl CompoItem {
 
     pub fn values(&self) -> VmrtRes<Value> {
         let map = self.map_ref()?;
-        let values = map.values().map(|v|v.clone()).collect();
+        let values = map.values().map(|v| v.clone()).collect();
         Ok(Value::Compo(Self::list(values)?))
     }
 
@@ -638,7 +599,4 @@ impl CompoItem {
             _ => itr_err_code!(CompoOpOverflow),
         }
     }
-
-
-
 }

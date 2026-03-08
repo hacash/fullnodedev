@@ -1,15 +1,13 @@
 
 
 /* return gas, val */
-/// Call level from exec mode: Main/P2sh → CALL_MAIN, Abst → CALL_CONTRACT
-fn call_level_from_exec_mode(ty: u8) -> Ret<usize> {
+/// Call level from entry kind: Main/P2sh are external root calls, Abst is contract-level.
+fn call_level_from_entry_kind(entry: u8) -> Ret<usize> {
     use crate::rt::*;
-    use crate::rt::ExecMode::*;
-    let mode = ExecMode::try_from_u8(ty).map_err(|e| e.to_string())?;
-    match mode {
-        Main | P2sh => Ok(ACTION_CTX_LEVEL_CALL_MAIN),
-        Abst        => Ok(ACTION_CTX_LEVEL_CALL_CONTRACT),
-        _ => errf!("unknown exec mode {}", ty),
+    let entry = EntryKind::try_from_u8(entry).map_err(|e| e.to_string())?;
+    match entry {
+        EntryKind::Main | EntryKind::P2sh => Ok(ACTION_CTX_LEVEL_CALL_MAIN),
+        EntryKind::Abst => Ok(ACTION_CTX_LEVEL_CALL_CONTRACT),
     }
 }
 
@@ -40,7 +38,7 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
     }
 }
 
-pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u8]>, pm: Value) -> Ret<(i64, Value)> {
+pub fn setup_vm_run(ctx: &mut dyn Context, entry: u8, kind: u8, payload: std::sync::Arc<[u8]>, param: Value) -> Ret<(i64, Value)> {
     // Bytecode verification is intentionally handled by upper-layer action validators before calling setup_vm_run.
     // check tx type
     const TY3: u8 = TransactionType3::TYPE;
@@ -56,13 +54,13 @@ pub fn setup_vm_run(ctx: &mut dyn Context, ty: u8, mk: u8, cd: std::sync::Arc<[u
     }
     // Set ctx.level for this VM call and restore it after returning.
     let old_level = ctx.level();
-    ctx.level_set(call_level_from_exec_mode(ty)?);
+    ctx.level_set(call_level_from_entry_kind(entry)?);
 
-    // IMPORTANT: VM execution is re-entrant through EXTACTION -> action.execute() -> setup_vm_run(). We must keep the same VM instance visible via `ctx.vm()` during the whole tx/call chain; otherwise nested setup_vm_run() would allocate a new VM and then be silently overwritten. To avoid Rust borrow aliasing (`&mut ctx` + `&mut ctx.vm()`), we perform a *single* localized raw-pointer call here, keeping the VM in-place inside Context. Safety assumptions (consensus-critical): - Single-threaded execution. - No code path replaces `ctx.vm` while `VM::call` is running (only `setup_vm_run` does setup). - The VM implementation may re-enter `setup_vm_run` via EXTACTION, and that re-entry must observe the same VM instance to preserve gas accounting and call-stack invariants.
+    // IMPORTANT: VM execution is re-entrant through ACTION -> action.execute() -> setup_vm_run(). We must keep the same VM instance visible via `ctx.vm()` during the whole tx/call chain; otherwise nested setup_vm_run() would allocate a new VM and then be silently overwritten. To avoid Rust borrow aliasing (`&mut ctx` + `&mut ctx.vm()`), we perform a *single* localized raw-pointer call here, keeping the VM in-place inside Context. Safety assumptions (consensus-critical): - Single-threaded execution. - No code path replaces `ctx.vm` while `VM::call` is running (only `setup_vm_run` does setup). - The VM implementation may re-enter `setup_vm_run` via ACTION, and that re-entry must observe the same VM instance to preserve gas accounting and call-stack invariants.
     let ctxptr = ctx as *mut dyn Context;
     let res = unsafe {
         let vm = (*ctxptr).vm() as *mut dyn VM;
-        (*vm).call(VMCall::new(&mut *ctxptr, ty, mk, cd, Box::new(pm))).into_ret()
+        (*vm).call(VMCall::new(&mut *ctxptr, entry, kind, payload, Box::new(param))).into_ret()
     };
     ctx.level_set(old_level);
     let (cost, rv) = res?;

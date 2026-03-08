@@ -33,7 +33,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
     let mut from = ctx.env().tx.main;
     let mut to = from.clone();
     let mut argvs: VecDeque<Value>;
-    let absty = ExecMode::Abst as u8;
+    let absty = EntryKind::Abst as u8;
     let asset_param = |asset: &AssetAmt| {
         VecDeque::from([ 
             Value::U64(asset.serial.uint()), 
@@ -121,7 +121,7 @@ fn coin_asset_transfer_call(kid: u16, abstfrom: AbstCall, abstto: AbstCall, acti
             }
         }
         let param = Value::Compo(CompoItem::list(VecDeque::from(params))?);
-        let cm = ExecMode::P2sh as u8;
+        let cm = EntryKind::P2sh as u8;
         let _ = setup_vm_run(ctx, cm, codeconf, codes.into(), param)?;
         // return value checked inside p2sh_call
     }

@@ -12,9 +12,8 @@ pub enum Value {
     // U256(u256), ...       //           7..
     Bytes(Vec<u8>),          //           10
     Address(field::Address), //           11
-    Args(ArgsItem),          //           12
-    // ...                   //           ..
-    HeapSlice((u32, u32)),   //           14
+    HeapSlice((u32, u32)),   //           13
+    Args(ArgsItem),          //           14
     Compo(CompoItem),        //           15
 }
 
@@ -43,8 +42,8 @@ impl Value {
             U128(..)      => ValueTy::U128,
             Bytes(..)     => ValueTy::Bytes,
             Address(..)   => ValueTy::Address,
-            Args(..)      => ValueTy::Args,
             HeapSlice(..) => ValueTy::HeapSlice,
+            Args(..)      => ValueTy::Args,
             Compo(..)     => ValueTy::Compo,
         }
     }
@@ -137,6 +136,46 @@ impl Value {
         }
     }
 
+    pub fn container_len(&self) -> VmrtRes<usize> {
+        if let Some(args) = self.match_args() {
+            return Ok(args.len())
+        }
+        if let Some(compo) = self.match_compo() {
+            return Ok(compo.len())
+        }
+        itr_err_code!(CompoOpNotMatch)
+    }
+
+    pub fn length(&self, cap: &SpaceCap) -> VmrtRes<Value> {
+        if let Some(args) = self.match_args() {
+            return args.length(cap)
+        }
+        if let Some(compo) = self.match_compo() {
+            return compo.length(cap)
+        }
+        itr_err_code!(CompoOpNotMatch)
+    }
+
+    pub fn haskey(&self, k: Value) -> VmrtRes<Value> {
+        if let Some(args) = self.match_args() {
+            return args.haskey(k)
+        }
+        if let Some(compo) = self.match_compo() {
+            return compo.haskey(k)
+        }
+        itr_err_code!(CompoOpNotMatch)
+    }
+
+    pub fn itemget(&self, k: Value) -> VmrtRes<Value> {
+        if let Some(args) = self.match_args() {
+            return args.itemget(k)
+        }
+        if let Some(compo) = self.match_compo() {
+            return compo.itemget(k)
+        }
+        itr_err_code!(CompoOpNotMatch)
+    }
+
     pub fn clone_argv_items(&self) -> VmrtRes<Vec<Value>> {
         if let Some(args) = self.match_args() {
             return Ok(args.to_vec())
@@ -189,9 +228,10 @@ impl Value {
             U128(n) => n.to_be_bytes().into(),
             Bytes(buf) => buf.clone(),
             Address(a) => a.serialize(),
-            Args(..) => "{args value ...}".to_owned().into_bytes(),
+            // ptr
             HeapSlice((s, l)) => vec![s.to_be_bytes(), l.to_be_bytes()].concat(),
             // not support
+            Args(..) => "{args value ...}".to_owned().into_bytes(),
             Compo(..) => "{compo value ...}".to_owned().into_bytes(),
         }
     }
@@ -212,14 +252,29 @@ impl Value {
             U128(..) => 16,
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
-            Args(a) => a.val_size(),
             HeapSlice((_, n)) => *n as usize,
+            Args(a) => a.val_size(),
             Compo(c) => c.val_size(),
         }
     }
 
+    pub fn dup_size(&self) -> usize {
+        match self {
+            Nil      => 0,
+            Bool(..) => 1,
+            U8(..)   => 1,
+            U16(..)  => 2,
+            U32(..)  => 4,
+            U64(..)  => 8,
+            U128(..) => 16,
+            Bytes(b) => b.len(),
+            Address(..) => field::Address::SIZE,
+            HeapSlice(..) | Args(..) | Compo(..) => REF_DUP_SIZE,
+        }
+    }
+
     pub fn can_get_size(&self) -> VmrtRes<u16> {
-        if let Args(..) | Compo(..) | HeapSlice(..) = self {
+        if let HeapSlice(..) | Args(..) | Compo(..) = self {
             return itr_err_code!(ItemNoSize)
         }
         let n = self.val_size();
@@ -232,7 +287,7 @@ impl Value {
     pub fn valid(self, cap: &SpaceCap) -> VmrtRes<Self> {
         let cansz = self.can_get_size();
         match cansz {
-            Ok(n) if n as usize > cap.max_value_size
+            Ok(n) if n as usize > cap.value_size
                 => return itr_err_code!(OutOfValueSize),
             _ => {}
         };
@@ -254,12 +309,11 @@ impl Value {
                 _ => "0x".to_owned() + &hex::encode(b),
             },
             Address(a) => a.to_string(),
-            Args(a) => a.to_string(),
             HeapSlice((s, l)) => format!("heap({},{})", s, l),
+            Args(a) => a.to_string(),
             Compo(a) => format!("compo({}){}", a.len(), a.to_string()),
         }
     }
-
 
     pub fn to_json(&self) -> String {
         match self {
@@ -273,8 +327,8 @@ impl Value {
             U128(n) => format!("{}", n),
             Bytes(b) => format!("\"{}\"", &to_readable_or_base64(b)),
             Address(a) =>  format!("\"{}\"", a),
-            Args(a) => a.to_json(),
             HeapSlice((s, l)) => format!("[{},{}]", s, l),
+            Args(a) => a.to_json(),
             Compo(a) => a.to_json(),
         }
     }
@@ -294,8 +348,8 @@ impl Value {
                 None => format!(r#"{{"$bytes_hex":"{}"}}"#, b.to_hex()),
             },
             Address(a) => serde_json::to_string(&a.to_string()).unwrap(),
-            Args(a) => a.to_debug_json(),
             HeapSlice((s, l)) => format!(r#"{{"$heap":[{},{}]}}"#, s, l),
+            Args(a) => a.to_debug_json(),
             Compo(a) => a.to_debug_json(),
         }
     }
@@ -339,6 +393,16 @@ mod tests {
     }
 
     #[test]
+    fn dup_size_uses_handle_cost_for_ref_values() {
+        let args = Value::Args(ArgsItem::new(vec![Value::Bytes(vec![0u8; 128])]).unwrap());
+        let compo = Value::Compo(CompoItem::list(VecDeque::from([Value::Bytes(vec![0u8; 128])])).unwrap());
+        assert_eq!(args.dup_size(), REF_DUP_SIZE);
+        assert_eq!(compo.dup_size(), REF_DUP_SIZE);
+        assert_eq!(Value::HeapSlice((7, 4096)).dup_size(), REF_DUP_SIZE);
+        assert_eq!(Value::Bytes(vec![0u8; 33]).dup_size(), 33);
+    }
+
+    #[test]
     fn match_bytes_and_compo_helpers_work() {
         let mut bytes = Value::Bytes(vec![1, 2, 3]);
         assert_eq!(bytes.match_bytes(), Some(&[1, 2, 3][..]));
@@ -355,6 +419,9 @@ mod tests {
         let args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
         assert!(args.match_args().is_some());
         assert_eq!(args.clone_argv_items().unwrap(), vec![Value::U8(1), Value::U16(2)]);
+        assert_eq!(args.container_len().unwrap(), 2);
+        assert_eq!(args.haskey(Value::U8(1)).unwrap(), Value::Bool(true));
+        assert_eq!(args.itemget(Value::U8(1)).unwrap(), Value::U16(2));
     }
 
     #[test]
