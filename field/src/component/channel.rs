@@ -34,6 +34,7 @@ combi_optional!{ ChallengePeriodDataOptional,
 combi_struct!{ ClosedDistributionData, 
 	// Status = 2 or 3 
 	left_bill : Balance
+	right_bill: Balance
 }
 
 combi_optional!{ ClosedDistributionDataOptional, closed_distribution : ClosedDistributionData }
@@ -50,6 +51,7 @@ combi_struct!{ ChannelSto,
 	reuse_version                 : Uint4           // Reuse version number from 1
 
 	open_height                   : BlockHeight     // Block height when channel is opened
+	close_height                  : BlockHeight     // Block height when channel is closed
 	arbitration_lock_block        : Uint2           // Number of blocks to be locked for unilateral end channel
 	interest_attribution          : Uint1           // Interest attribution of 1% annualized: 0 Press end to assign 1 All to left 2 Give it all right
 	
@@ -63,4 +65,3 @@ combi_struct!{ ChannelSto,
     if_distribution               : ClosedDistributionDataOptional 
 
 }
-

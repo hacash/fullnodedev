@@ -38,9 +38,9 @@ macro_rules! itrparamu16 {
 
 macro_rules! peekparam {
     ($codes: expr, $pc: expr, $l: expr, $t: ty) => {{
-        let r = $pc + $l;
+        let _r = $pc + $l;
         #[cfg(debug_assertions)]
-        if r < $pc || r > $codes.len() {
+        if _r < $pc || _r > $codes.len() {
             return itr_err_code!(CodeOverflow);
         }
         <$t>::from_be_bytes(unsafe { read_arr::<$l>($codes, $pc) })

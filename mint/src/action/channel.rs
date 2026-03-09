@@ -87,6 +87,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         status: CHANNEL_STATUS_OPENING,
         reuse_version: reuse_version,
         open_height: Uint5::from(pd_hei),
+        close_height: Uint5::from(0),
         arbitration_lock_block: Uint2::from(5000), // lock period is about 17 days
         interest_attribution: CHANNEL_INTEREST_ATTRIBUTION_TYPE_DEFAULT,
         left_bill: AddrBalance {

@@ -20,6 +20,7 @@ fn channel(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     data.insert("id".to_owned(), json!(chid.to_hex()));
     data.insert("status".to_owned(), json!(status));
     data.insert("open_height".to_owned(), json!(*channel.open_height));
+    data.insert("close_height".to_owned(), json!(*channel.close_height));
     data.insert("reuse_version".to_owned(), json!(*channel.reuse_version));
     data.insert(
         "arbitration_lock".to_owned(),
@@ -69,11 +70,39 @@ fn channel(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
 
     if let Some(distribution) = channel.if_distribution.if_value() {
+        let Ok((final_left, final_right)) = calculate_interest_of_height(
+            *channel.close_height,
+            *channel.open_height,
+            channel.interest_attribution,
+            &distribution.left_bill.hacash,
+            &distribution.right_bill.hacash,
+        ) else {
+            return api_error("channel interest calculate error");
+        };
         data.insert(
             "distribution".to_owned(),
             json!({
-                "hacash": distribution.left_bill.hacash.to_unit_string(&unit),
-                "satoshi": distribution.left_bill.satoshi.uint(),
+                "left": {
+                    "hacash": distribution.left_bill.hacash.to_unit_string(&unit),
+                    "satoshi": distribution.left_bill.satoshi.uint(),
+                },
+                "right": {
+                    "hacash": distribution.right_bill.hacash.to_unit_string(&unit),
+                    "satoshi": distribution.right_bill.satoshi.uint(),
+                },
+            }),
+        );
+        data.insert(
+            "final_arrival".to_owned(),
+            json!({
+                "left": {
+                    "hacash": final_left.to_unit_string(&unit),
+                    "satoshi": distribution.left_bill.satoshi.uint(),
+                },
+                "right": {
+                    "hacash": final_right.to_unit_string(&unit),
+                    "satoshi": distribution.right_bill.satoshi.uint(),
+                },
             }),
         );
     }

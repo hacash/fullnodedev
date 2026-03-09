@@ -526,6 +526,27 @@ mod token_t {
     }
 
     #[test]
+    fn test_bool_cast_keeps_as_form_not_suffix() {
+        use super::irnode_to_lang;
+        use super::lang_to_irnode;
+
+        let script = "var x = true as u8";
+        let ir = lang_to_irnode(script).expect("Failed to compile");
+        let decompiled = irnode_to_lang(ir).expect("Failed to decompile");
+
+        assert!(
+            decompiled.contains("true as u8"),
+            "Bool cast should keep 'as u8', got: {}",
+            decompiled
+        );
+        assert!(
+            !decompiled.contains("trueu8"),
+            "Bool cast must not use numeric suffix, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
     fn test_simplify_numeric_as_suffix_option_off_uses_as_cast() {
         use super::lang_to_irnode;
         use super::Formater;
@@ -549,5 +570,102 @@ mod token_t {
             "Should NOT contain '100u64' when simplify_numeric_as_suffix=false, got: {}",
             decompiled
         );
+    }
+
+    #[test]
+    fn test_hide_default_call_argv_keeps_explicit_empty_bytes_for_ntfunc() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("return sha2(\"\")").expect("Failed to compile");
+        let mut opt = PrintOption::new("  ", 0);
+        opt.hide_default_call_argv = true;
+        let decompiled = Formater::new(&opt).print(&ir);
+        assert!(
+            decompiled.contains("sha2(\"\")"),
+            "NTFUNC explicit empty bytes arg must be preserved, got: {}",
+            decompiled
+        );
+        assert!(
+            !decompiled.contains("sha2()"),
+            "NTFUNC arg must not be hidden as zero-arg, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
+    fn test_hide_default_call_argv_applies_to_ntenv() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("return context_address()").expect("Failed to compile");
+        let mut opt = PrintOption::new("  ", 0);
+        opt.hide_default_call_argv = true;
+        let decompiled = Formater::new(&opt).print(&ir);
+        assert!(
+            decompiled.contains("context_address()"),
+            "NTENV should stay zero-arg when hide option enabled, got: {}",
+            decompiled
+        );
+        assert!(
+            !decompiled.contains("context_address(\"\")"),
+            "NTENV placeholder must be hidden, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
+    fn test_syscall_single_arg_cat_not_split() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("return sha2(\"a\" ++ \"b\")").expect("Failed to compile");
+        let mut opt = PrintOption::new("  ", 0);
+        opt.recover_literals = true;
+        opt.flatten_syscall_cat = true;
+        let decompiled = Formater::new(&opt).print(&ir);
+        assert!(
+            decompiled.contains("sha2(") && decompiled.contains("++"),
+            "single-arg syscall CAT expression must stay single arg, got: {}",
+            decompiled
+        );
+        assert!(
+            !decompiled.contains("sha2(\"a\", \"b\")"),
+            "single-arg syscall must not be split into multi args, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
+    fn test_syscall_multi_arg_cat_chain_splits_by_arity() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("return pack_asset(1, 2)").expect("Failed to compile");
+
+        let mut opt_false = PrintOption::new("  ", 0);
+        opt_false.flatten_syscall_cat = false;
+        let decompiled_false = Formater::new(&opt_false).print(&ir);
+
+        let mut opt_true = PrintOption::new("  ", 0);
+        opt_true.flatten_syscall_cat = true;
+        let decompiled_true = Formater::new(&opt_true).print(&ir);
+
+        for out in [&decompiled_false, &decompiled_true] {
+            assert!(
+                out.contains("pack_asset(") && out.contains(","),
+                "multi-arg syscall must decompile as multi args, got: {}",
+                out
+            );
+            assert!(
+                !out.contains("++"),
+                "multi-arg syscall must not stay CAT expression, got: {}",
+                out
+            );
+        }
     }
 }

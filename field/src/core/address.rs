@@ -416,4 +416,24 @@ mod address_tests {
         let _ = AddrOrPtr::from_ptr(u8::MAX - ADDR_OR_PTR_DIV_NUM + 1);
     }
 
+    #[test]
+    fn test_addr_or_list_type2_json_reject_unencodable_count() {
+        let too_many = (u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize) + 1;
+        let list = AddressW1::from_list(vec![ADDRESS_ONEX; too_many]).unwrap();
+        let json = format!(r#"{{"type":2,"value":{}}}"#, list.to_json());
+        let mut obj = AddrOrList::default();
+        let err = obj.from_json(&json).unwrap_err();
+        assert!(err.contains("overflow"), "{}", err);
+    }
+
+    #[test]
+    fn test_addr_or_list_type2_json_accept_max_encodable_count() {
+        let max_ok = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
+        let list = AddressW1::from_list(vec![ADDRESS_ONEX; max_ok]).unwrap();
+        let json = format!(r#"{{"type":2,"value":{}}}"#, list.to_json());
+        let mut obj = AddrOrList::default();
+        obj.from_json(&json).unwrap();
+        assert_eq!(obj.serialize(), AddrOrList::Val2(list).serialize());
+    }
+
 }

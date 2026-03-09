@@ -100,10 +100,17 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
             satoshi: left_sat.clone(),
             diamond: DiamondNumberAuto::new(),
             assets: AssetAmtW1::new(),
+        },
+        right_bill: Balance {
+            hacash: right_amt.clone(),
+            satoshi: right_sat.clone(),
+            diamond: DiamondNumberAuto::new(),
+            assets: AssetAmtW1::new(),
         }
     });
     let mut savechan = paychan.clone();
     savechan.status = maybe!(is_final_closed, CHANNEL_STATUS_FINAL_ARBITRATION_CLOSED, CHANNEL_STATUS_AGREEMENT_CLOSED);
+    savechan.close_height = Uint5::from(pdhei);
     savechan.if_distribution = distribution;
     // save channel and count
     {

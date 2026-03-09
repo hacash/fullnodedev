@@ -62,6 +62,7 @@ impl TransactionRead for $class {
     
     // burn_90_percent_fee
     fn burn_90(&self) -> bool {
+        // By design only serialized top-level tx actions decide tx-wide burn_90; nested VM/runtime actions do not upgrade the whole transaction.
         self.actions().iter().any(|a|a.burn_90())
     }
 
@@ -131,6 +132,7 @@ impl Transaction for $class {
 
     fn fill_sign(&mut self, acc: &Account) -> Ret<Sign> {
         let mut fhx = self.hash();
+        // Historical compatibility keeps legacy Type1 main signing on hash_with_fee even though consensus verification still uses hash().
         if acc.address() == self.main().as_bytes() {
             fhx = self.hash_with_fee();
         }

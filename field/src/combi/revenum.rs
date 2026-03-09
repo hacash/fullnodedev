@@ -195,6 +195,17 @@ macro_rules! combi_revenum_old {
                 } else if ty == 2 {
                     let mut v = <$t2>::new();
                     v.from_json(val_str)?;
+                    let raw = v.serialize();
+                    if raw.is_empty() {
+                        return errf!("invalid revenum_old type2 value: empty serialization");
+                    }
+                    if raw[0] as usize + $swtv as usize > 255 {
+                        return errf!(
+                            "invalid revenum_old type2 value: leading byte {} + switch {} overflow",
+                            raw[0],
+                            $swtv
+                        );
+                    }
                     *self = Self::Val2(v);
                 } else {
                     return errf!("invalid revenum type: {}", ty);

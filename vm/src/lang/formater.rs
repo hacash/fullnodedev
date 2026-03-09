@@ -389,11 +389,56 @@ impl<'a> Formater<'a> {
             .join(", ")
     }
 
-    fn collect_native_call_args(&self, node: &dyn IRNode, system_call: bool) -> Vec<String> {
+    fn extract_right_assoc_cat_args(&self, node: &dyn IRNode, expect: usize) -> Option<Vec<String>> {
         use Bytecode::*;
+        if expect <= 1 {
+            return None;
+        }
+        let mut parts: Vec<&dyn IRNode> = Vec::with_capacity(expect);
+        let mut current: &dyn IRNode = node;
+        loop {
+            if parts.len() > expect {
+                return None;
+            }
+            if let Some(double) = current.as_any().downcast_ref::<IRNodeDouble>() {
+                if double.inst == CAT {
+                    parts.push(&*double.subx);
+                    current = &*double.suby;
+                    continue;
+                }
+            }
+            parts.push(current);
+            break;
+        }
+        if parts.len() != expect {
+            return None;
+        }
+        Some(parts.into_iter().map(|n| self.print_inline(n)).collect())
+    }
+
+    fn collect_native_call_args(
+        &self,
+        node: &dyn IRNode,
+        system_call: bool,
+        expected_system_args: Option<usize>,
+    ) -> Vec<String> {
+        use Bytecode::*;
+        if system_call {
+            if let Some(expect) = expected_system_args {
+                if expect == 1 {
+                    return vec![self.print_inline(node)];
+                }
+                if expect > 1 {
+                    if let Some(args) = self.extract_right_assoc_cat_args(node, expect) {
+                        return args;
+                    }
+                    return vec![self.print_inline(node)];
+                }
+            }
+            return vec![self.print_inline(node)];
+        }
         let mut args = Vec::new();
         let mut current: &dyn IRNode = node;
-        let helper = DecompilationHelper::new(&self.opt);
         loop {
             // `IRLIST` is used both for "packed argv lists" and for actual list/map literals.
             // For system/native/ext calls we use concat-argv mode; the argument node can
@@ -408,7 +453,7 @@ impl<'a> Formater<'a> {
                 }
             }
             if let Some(double) = current.as_any().downcast_ref::<IRNodeDouble>() {
-                if double.inst == CAT && (!system_call || helper.should_flatten_syscall_cat()) {
+                if double.inst == CAT {
                     args.push(self.print_inline(&*double.subx));
                     current = &*double.suby;
                     continue;
@@ -420,21 +465,25 @@ impl<'a> Formater<'a> {
         args
     }
 
-    fn trim_default_call_args(&self, args: &mut Vec<String>, node: &dyn IRNode, system_call: bool) {
+    fn trim_default_call_args(&self, args: &mut Vec<String>, node: &dyn IRNode) {
         use Bytecode::*;
         if !self.opt.hide_default_call_argv {
             return;
         }
         match node.bytecode() {
             x if x == PNIL as u8 => args.clear(),
-            x if system_call && x == PNBUF as u8 => args.clear(),
             _ => {}
         }
     }
 
-    fn build_call_args(&self, node: &dyn IRNode, system_call: bool) -> String {
-        let mut args_list = self.collect_native_call_args(node, system_call);
-        self.trim_default_call_args(&mut args_list, node, system_call);
+    fn build_call_args(
+        &self,
+        node: &dyn IRNode,
+        system_call: bool,
+        expected_system_args: Option<usize>,
+    ) -> String {
+        let mut args_list = self.collect_native_call_args(node, system_call, expected_system_args);
+        self.trim_default_call_args(&mut args_list, node);
         self.format_call_args(&args_list)
     }
 
@@ -648,7 +697,7 @@ impl<'a> Formater<'a> {
                 return None;
             };
             let pre = self.line_prefix();
-            let args = self.build_call_args(&*pss.subx, false);
+            let args = self.build_call_args(&*pss.subx, false, None);
             let body = format!(
                 "call {} {}.{}({})",
                 self.format_call_effect(effect),
@@ -665,7 +714,7 @@ impl<'a> Formater<'a> {
             return None;
         }
         let pre = self.line_prefix();
-        let args = self.build_call_args(&*pss.subx, false);
+        let args = self.build_call_args(&*pss.subx, false, None);
         let body = self.format_special_call_target(code, pss, &args)?;
         Some(format!("{}{}", pre, body))
     }
@@ -717,35 +766,45 @@ impl<'a> Formater<'a> {
                     );
                     return Some(match s.inst {
                         CU8 => {
-                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix
+                                && Self::can_use_numeric_suffix(literal.as_ref())
+                            {
                                 format!("{}{}{}", pre, operand, "u8")
                             } else {
                                 format!("{}{} as u8", pre, operand)
                             }
                         }
                         CU16 => {
-                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix
+                                && Self::can_use_numeric_suffix(literal.as_ref())
+                            {
                                 format!("{}{}{}", pre, operand, "u16")
                             } else {
                                 format!("{}{} as u16", pre, operand)
                             }
                         }
                         CU32 => {
-                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix
+                                && Self::can_use_numeric_suffix(literal.as_ref())
+                            {
                                 format!("{}{}{}", pre, operand, "u32")
                             } else {
                                 format!("{}{} as u32", pre, operand)
                             }
                         }
                         CU64 => {
-                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix
+                                && Self::can_use_numeric_suffix(literal.as_ref())
+                            {
                                 format!("{}{}{}", pre, operand, "u64")
                             } else {
                                 format!("{}{} as u64", pre, operand)
                             }
                         }
                         CU128 => {
-                            if self.opt.simplify_numeric_as_suffix && literal.is_some() {
+                            if self.opt.simplify_numeric_as_suffix
+                                && Self::can_use_numeric_suffix(literal.as_ref())
+                            {
                                 format!("{}{}{}", pre, operand, "u128")
                             } else {
                                 format!("{}{} as u128", pre, operand)
@@ -851,6 +910,12 @@ impl<'a> Formater<'a> {
             CU128 => Some(ValueTy::U128),
             _ => None,
         }
+    }
+
+    fn can_use_numeric_suffix(literal: Option<&RecoveredLiteral>) -> bool {
+        literal
+            .and_then(|lit| lit.ty)
+            .is_some_and(|ty| ty.is_uint())
     }
 
     fn literal_from_node(&self, node: &dyn IRNode) -> Option<RecoveredLiteral> {
@@ -1122,7 +1187,8 @@ impl<'a> Formater<'a> {
             ACTVIEW => self.format_action_call(node, &ACTION_VIEW_DEFS),
             ACTION => self.format_action_call(node, &ACTION_DEFS),
             NTFUNC => {
-                let argv = self.build_call_args(&*node.subx, true);
+                let expect = NativeFunc::argv_len(node.para).map(|n| n as usize);
+                let argv = self.build_call_args(&*node.subx, true, expect);
                 let Ok(ntfn) = NativeFunc::try_from_u8(node.para) else {
                     return format!("__unknown_native_func_{}({})", node.para, argv);
                 };
@@ -1169,7 +1235,7 @@ impl<'a> Formater<'a> {
                 id, id
             );
         };
-        let argv = self.build_call_args(&*node.subx, true);
+        let argv = self.build_call_args(&*node.subx, true, Some(f.3));
         format!("{}({})", f.1, argv)
     }
 
@@ -1506,7 +1572,8 @@ impl<'a> Formater<'a> {
                             _ => unreachable!(),
                         };
                         return maybe!(
-                            self.opt.simplify_numeric_as_suffix,
+                            self.opt.simplify_numeric_as_suffix
+                                && Self::can_use_numeric_suffix(Some(&literal)),
                             format!("{}{}", literal.text, suffix),
                             format!("{} as {}", literal.text, suffix)
                         );

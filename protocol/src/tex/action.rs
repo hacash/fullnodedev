@@ -28,6 +28,7 @@ action_define!{ TexCellAct, 22,
 impl TexCellAct {
 
     fn get_sign_stuff(&self) -> Hash {
+        // Intentionally signs only addr+cells so the same authorized TEX bundle stays reusable across transactions by design.
         let stf = vec![self.addr.serialize(), self.cells.serialize()].concat();
         Hash::from(sha3(&stf))
     } 
