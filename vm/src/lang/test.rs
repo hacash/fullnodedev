@@ -280,28 +280,28 @@ mod token_t {
     }
 
     #[test]
-    fn test_usecode_without_source_end_is_valid() {
+    fn test_codecall_without_source_end_is_valid() {
         use super::lang_to_irnode;
 
         let script = r#"
             lib C = 0
-            usecode C.probe
+            codecall C.probe
         "#;
         let result = lang_to_irnode(script);
-        assert!(result.is_ok(), "usecode without source-level end must be valid");
+        assert!(result.is_ok(), "codecall without source-level end must be valid");
     }
 
     #[test]
-    fn test_usecode_with_redundant_source_end_is_valid() {
+    fn test_codecall_with_redundant_source_end_is_valid() {
         use super::lang_to_irnode;
 
         let script = r#"
             lib C = 0
-            usecode C.probe
+            codecall C.probe
             end
         "#;
         let result = lang_to_irnode(script);
-        assert!(result.is_ok(), "redundant source-level end after usecode must be valid");
+        assert!(result.is_ok(), "redundant source-level end after codecall must be valid");
     }
 
     fn collect_user_call_opcodes(codes: &[u8]) -> Vec<u8> {
@@ -318,16 +318,17 @@ mod token_t {
                 let op = codes[idx];
                 let is_call = matches!(
                     op,
-                    x if x == Bytecode::USECODE as u8
+                    x if x == Bytecode::CODECALL as u8
                         || x == Bytecode::CALL as u8
+                        || x == Bytecode::CALLEXT as u8
+                        || x == Bytecode::CALLEXTVIEW as u8
+                        || x == Bytecode::CALLUSEVIEW as u8
+                        || x == Bytecode::CALLUSEPURE as u8
                         || x == Bytecode::CALLTHIS as u8
                         || x == Bytecode::CALLSELF as u8
                         || x == Bytecode::CALLSUPER as u8
                         || x == Bytecode::CALLSELFVIEW as u8
                         || x == Bytecode::CALLSELFPURE as u8
-                        || x == Bytecode::CALLEXT as u8
-                        || x == Bytecode::CALLVIEW as u8
-                        || x == Bytecode::CALLPURE as u8
                 );
                 is_call.then_some(op)
             })
@@ -344,12 +345,21 @@ mod token_t {
     }
 
     #[test]
-    fn test_generic_call_keyword_uses_shortcut_opcode_for_lib_pure() {
+    fn test_generic_call_keyword_uses_shortcut_opcode_for_use_view() {
         use super::lang_to_bytecode;
         use crate::rt::Bytecode;
 
-        let codes = lang_to_bytecode("lib C = 1\nreturn call pure C.0x01020304(1)").unwrap();
-        assert_eq!(collect_user_call_opcodes(&codes), vec![Bytecode::CALLPURE as u8]);
+        let codes = lang_to_bytecode("return call view use(1).0x01020304(1)").unwrap();
+        assert_eq!(collect_user_call_opcodes(&codes), vec![Bytecode::CALLUSEVIEW as u8]);
+    }
+
+    #[test]
+    fn test_generic_call_keyword_uses_shortcut_opcode_for_use_pure() {
+        use super::lang_to_bytecode;
+        use crate::rt::Bytecode;
+
+        let codes = lang_to_bytecode("return call pure use(1).0x01020304(1)").unwrap();
+        assert_eq!(collect_user_call_opcodes(&codes), vec![Bytecode::CALLUSEPURE as u8]);
     }
 
     #[test]

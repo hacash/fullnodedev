@@ -861,7 +861,7 @@ fn test_address_bare_base58check_in_protocol() {
 
     // Verify AddrOrPtr with Address parses bare base58check
     let mut ptr = AddrOrPtr::default();
-    ptr.from_json(&format!(r#"{{"type":1,"value":"{}"}}"#, addr_str))
+    ptr.from_json(&format!(r#""{}""#, addr_str))
         .unwrap();
     assert_eq!(ptr.to_readable(), addr_str);
 }

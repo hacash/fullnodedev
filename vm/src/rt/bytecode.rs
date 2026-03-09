@@ -20,21 +20,21 @@ pub enum Bytecode {
     ________________11  = 0x0b,
     ________________12  = 0x0c,
     ________________13  = 0x0d,
-    USECODE             = 0x0e, // *,****
+    CODECALL            = 0x0e, // *,****
     CALL                = 0x0f, // **,****@
-    CALLTHIS            = 0x10, //   ****@
-    CALLSELF            = 0x11, //   ****@
-    CALLSUPER           = 0x12, //   ****@
-    CALLSELFVIEW        = 0x13, //   ****@
-    CALLSELFPURE        = 0x14, //   ****@
-    ________________21  = 0x15,
+    CALLEXT             = 0x10, // *,****@
+    CALLEXTVIEW         = 0x11, // *,****@
+    ________________18  = 0x12,
+    ________________19  = 0x13,
+    CALLUSEVIEW         = 0x14, // *,****@
+    CALLUSEPURE         = 0x15, // *,****@
     ________________22  = 0x16,
     ________________23  = 0x17,
-    CALLEXT             = 0x18, // *,****@
-    CALLVIEW            = 0x19, // *,****@
-    CALLPURE            = 0x1a, // *,****@
-    ________________27  = 0x1b,
-    ________________28  = 0x1c,
+    CALLTHIS            = 0x18, //   ****@
+    CALLSELF            = 0x19, //   ****@
+    CALLSUPER           = 0x1a, //   ****@
+    CALLSELFVIEW        = 0x1b, //   ****@
+    CALLSELFPURE        = 0x1c, //   ****@
     ________________29  = 0x1d,
     ________________30  = 0x1e,
     ________________31  = 0x1f, // *@  native call
@@ -326,16 +326,17 @@ bytecode_metadata_define!{
     NTFUNC     : 1, 1, 1,     native_func
     NTENV      : 1, 0, 1,     native_env
 
-    USECODE    : 1+4, 0, 0,   use_code
-    CALL       :   6, 1, 1,   call
-    CALLTHIS   :   4, 1, 1,   callthis
-    CALLSELF   :   4, 1, 1,   callself
-    CALLSUPER  :   4, 1, 1,   callsuper
-    CALLSELFVIEW : 4, 1, 1,   callselfview
-    CALLSELFPURE : 4, 1, 1,   callselfpure
-    CALLEXT    : 1+4, 1, 1,   callext
-    CALLVIEW   : 1+4, 1, 1,   call_view
-    CALLPURE   : 1+4, 1, 1,   call_pure
+    CODECALL     : 1+4, 0, 0,   code_call
+    CALL         :   6, 1, 1,   call
+    CALLEXT      : 1+4, 1, 1,   callext
+    CALLEXTVIEW  : 1+4, 1, 1,   callextview
+    CALLUSEVIEW  : 1+4, 1, 1,   calluseview
+    CALLUSEPURE  : 1+4, 1, 1,   callusepure
+    CALLTHIS     :   4, 1, 1,   callthis
+    CALLSELF     :   4, 1, 1,   callself
+    CALLSUPER    :   4, 1, 1,   callsuper
+    CALLSELFVIEW :   4, 1, 1,   callselfview
+    CALLSELFPURE :   4, 1, 1,   callselfpure
 
     PU8        : 1, 0, 1,     push_u8
     PU16       : 2, 0, 1,     push_u16

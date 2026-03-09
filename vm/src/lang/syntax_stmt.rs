@@ -306,13 +306,13 @@ impl Syntax {
                 let argv = self.deal_func_argv()?;
                 push_user_invoke(call, argv)?
             }
-            Keyword(UseCode) => {
+            Keyword(CodeCall) => {
                 let first = self.next()?;
-                let call = if let Ok(body) = Self::parse_usecode_body_token(&first) {
-                    decode_usecode_body(&body).map_err(|x| x.to_string())?
+                let call = if let Ok(body) = Self::parse_codecall_body_token(&first) {
+                    decode_codecall_body(&body).map_err(|x| x.to_string())?
                 } else {
-                    let (idx, fnsign) = self.parse_usecode_target_selector(first, "usecode target format error")?;
-                    CallSpec::usecode(idx, fnsign)
+                    let (idx, fnsign) = self.parse_codecall_target_selector(first, "codecall target format error")?;
+                    CallSpec::codecall(idx, fnsign)
                 };
                 push_user_splice(call)?
             }
@@ -322,17 +322,53 @@ impl Syntax {
                 "callext target format error",
                 CallSpec::callext,
             )?,
-            Keyword(CallView) => self.parse_short_lib_call_invoke(
-                CALLVIEW,
-                "callview body",
-                "callview target format error",
-                CallSpec::callview,
+            Keyword(CallExtView) => self.parse_short_lib_call_invoke(
+                CALLEXTVIEW,
+                "callextview body",
+                "callextview target format error",
+                CallSpec::callextview,
             )?,
-            Keyword(CallPure) => self.parse_short_lib_call_invoke(
-                CALLPURE,
-                "callpure body",
-                "callpure target format error",
-                CallSpec::callpure,
+            Keyword(CallUseView) => self.parse_short_lib_call_invoke(
+                CALLUSEVIEW,
+                "calluseview body",
+                "calluseview target format error",
+                CallSpec::calluseview,
+            )?,
+            Keyword(CallUsePure) => self.parse_short_lib_call_invoke(
+                CALLUSEPURE,
+                "callusepure body",
+                "callusepure target format error",
+                CallSpec::callusepure,
+            )?,
+            Keyword(CallThis) => self.parse_short_local_call_invoke(
+                CALLTHIS,
+                "callthis body",
+                "callthis target format error",
+                CallSpec::callthis,
+            )?,
+            Keyword(CallSelf) => self.parse_short_local_call_invoke(
+                CALLSELF,
+                "callself body",
+                "callself target format error",
+                CallSpec::callself,
+            )?,
+            Keyword(CallSuper) => self.parse_short_local_call_invoke(
+                CALLSUPER,
+                "callsuper body",
+                "callsuper target format error",
+                CallSpec::callsuper,
+            )?,
+            Keyword(CallSelfView) => self.parse_short_local_call_invoke(
+                CALLSELFVIEW,
+                "callselfview body",
+                "callselfview target format error",
+                CallSpec::callselfview,
+            )?,
+            Keyword(CallSelfPure) => self.parse_short_local_call_invoke(
+                CALLSELFPURE,
+                "callselfpure body",
+                "callselfpure target format error",
+                CallSpec::callselfpure,
             )?,
             Keyword(ByteCode) => {
                 let e = errf!("bytecode format error");

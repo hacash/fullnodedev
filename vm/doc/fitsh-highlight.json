@@ -71,7 +71,7 @@
       "name": "keyword.other.directive.fitsh"
     },
     "keyword.declaration": {
-      "match": "\\b(?:contract|function|library|inherit|abstract|deploy|external|param|callcode|callview|callpure|callthis|callself|callsuper|call|bytecode|ircode|bind|const|var|let|use)\\b",
+      "match": "\\b(?:contract|function|library|inherit|abstract|deploy|external|param|codecall|callext|callextview|calluseview|callusepure|callthis|callself|callsuper|callselfview|callselfpure|call|bytecode|ircode|bind|const|var|let|use)\\b",
       "name": "keyword.other.declaration.fitsh"
     },
     "keyword.control": {

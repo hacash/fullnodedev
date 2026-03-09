@@ -13,7 +13,7 @@ This standard defines the implemented semantics of the VM contract call system, 
 3. target resolution rules
 4. permission control system
 5. frame and context transition rules
-6. `USECODE` splice semantics
+6. `CODECALL` splice semantics
 7. upper-layer contract usage rules
 8. test acceptance items
 
@@ -46,7 +46,7 @@ pub enum CallTarget {
     Self_,
     Upper,
     Super,
-    Call(u8),
+    Ext(u8),
     Use(u8),
 }
 ```
@@ -57,9 +57,9 @@ Definitions:
 2. `Splice` does not create a new frame and reuses the current frame.
 3. `This` resolves from the current `state_addr`.
 4. `Self_`, `Upper`, and `Super` resolve from the current `code_owner`.
-5. `Call(u8)` means library call with context switch.
+5. `Ext(u8)` means library call with context switch.
 6. `Use(u8)` means library lookup without context switch.
-7. `USECODE` is the only public opcode form of `Splice`.
+7. `CODECALL` is the only public opcode form of `Splice`.
 
 ## 3. Opcode Set
 
@@ -67,21 +67,22 @@ Current user contract call opcodes:
 
 | Opcode | Byte | Meaning |
 |---|---:|---|
-| `USECODE` | `0x0e` | in-place library code splice |
+| `CODECALL` | `0x0e` | in-place library code splice |
 | `CALL` | `0x0f` | generic invoke |
-| `CALLTHIS` | `0x10` | `this` edit call |
-| `CALLSELF` | `0x11` | `self` edit call |
-| `CALLSUPER` | `0x12` | `super` edit call |
-| `CALLSELFVIEW` | `0x13` | `self` view call |
-| `CALLSELFPURE` | `0x14` | `self` pure call |
-| `CALLEXT` | `0x18` | external library edit call |
-| `CALLVIEW` | `0x19` | library view call |
-| `CALLPURE` | `0x1a` | library pure call |
+| `CALLEXT` | `0x10` | external library edit call |
+| `CALLEXTVIEW` | `0x11` | external library view call |
+| `CALLUSEVIEW` | `0x14` | library code-local view call |
+| `CALLUSEPURE` | `0x15` | library code-local pure call |
+| `CALLTHIS` | `0x18` | `this` edit call |
+| `CALLSELF` | `0x19` | `self` edit call |
+| `CALLSUPER` | `0x1a` | `super` edit call |
+| `CALLSELFVIEW` | `0x1b` | `self` view call |
+| `CALLSELFPURE` | `0x1c` | `self` pure call |
 
 Notes:
 
 1. There is no `TAILCALL` opcode in the current implementation.
-2. `0x15`, `0x16`, and `0x17` are currently reserved.
+2. `0x12`, `0x13`, `0x16`, and `0x17` are currently reserved.
 3. Reserved slots are not executable call instructions.
 
 ## 4. `CALL` Encoding Standard
@@ -112,7 +113,7 @@ Notes:
 | `1` | `Self_` | must be `0` |
 | `2` | `Upper` | must be `0` |
 | `3` | `Super` | must be `0` |
-| `4` | `Call(body[1])` | library index |
+| `4` | `Ext(body[1])` | library index |
 | `5` | `Use(body[1])` | library index |
 | `6` | invalid | invalid |
 | `7` | invalid | invalid |
@@ -144,11 +145,11 @@ The decoder must reject:
 4. `This/Self_/Upper/Super` with `body[1] != 0`
 5. body length not equal to `6`
 
-## 5. `USECODE` Encoding Standard
+## 5. `CODECALL` Encoding Standard
 
 ### 5.1 Width
 
-`USECODE` uses a fixed 5-byte body:
+`CODECALL` uses a fixed 5-byte body:
 
 | Byte | Content |
 |---|---|
@@ -157,10 +158,10 @@ The decoder must reject:
 
 ### 5.2 Semantics
 
-1. `USECODE` does not consume a function-argument value.
-2. `USECODE` does not allocate a new frame.
-3. `USECODE` executes target library code in the current frame.
-4. `USECODE` resolves only against the exact library root.
+1. `CODECALL` does not consume a function-argument value.
+2. `CODECALL` does not allocate a new frame.
+3. `CODECALL` executes target library code in the current frame.
+4. `CODECALL` resolves only against the exact library root.
 
 ## 6. Target Resolution Rules
 
@@ -177,9 +178,9 @@ Resolution has two stages:
 | `Self_` | current `code_owner` |
 | `Upper` | current `code_owner` |
 | `Super` | current `code_owner` |
-| `Call(lib)` | current `lib_table[lib]` |
+| `Ext(lib)` | current `lib_table[lib]` |
 | `Use(lib)` | current `lib_table[lib]` |
-| `USECODE lib` | current `lib_table[lib]` |
+| `CODECALL lib` | current `lib_table[lib]` |
 
 ### 6.2 Candidate Search Set
 
@@ -189,9 +190,9 @@ Resolution has two stages:
 | `Self_` | anchor only |
 | `Upper` | anchor + direct parents |
 | `Super` | direct parents only |
-| `Call(lib)` | anchor + direct parents |
+| `Ext(lib)` | anchor + direct parents |
 | `Use(lib)` | anchor only |
-| `USECODE lib` | anchor only |
+| `CODECALL lib` | anchor only |
 
 Constraints:
 
@@ -203,16 +204,16 @@ Constraints:
 
 Only the following class requires external visibility:
 
-- `Invoke { target: Call(_), effect: Edit, .. }`
+- `Invoke { target: Ext(_), effect: Edit, .. }`
 
 Therefore:
 
 1. `CALLEXT` requires `external`
-2. generic `CALL` requires `external` only when encoded as `Call(lib) + Edit`
-3. `CALLVIEW` does not require `external`
-4. `CALLPURE` does not require `external`
+2. generic `CALL` requires `external` only when encoded as `Ext(lib) + Edit`
+3. `CALLEXTVIEW` does not require `external`
+4. `CALLUSEVIEW/CALLUSEPURE` do not require `external`
 5. `CALLTHIS/CALLSELF/CALLSUPER/CALLSELFVIEW/CALLSELFPURE` do not require `external`
-6. `USECODE` does not require `external`
+6. `CODECALL` does not require `external`
 
 ## 8. Context Transition Rules
 
@@ -225,7 +226,7 @@ Each frame carries:
 
 ### 8.1 Context-Switching Calls
 
-Only `Call(lib)` switches context.
+Only `Ext(lib)` switches context.
 
 Transition:
 
@@ -237,9 +238,8 @@ Transition:
 Applies to:
 
 1. `CALLEXT`
-2. `CALLVIEW`
-3. `CALLPURE`
-4. generic `CALL` with target `Call(lib)`
+2. `CALLEXTVIEW`
+3. generic `CALL` with target `Ext(lib)`
 
 ### 8.2 Non-Context-Switching Calls
 
@@ -250,7 +250,7 @@ The following do not switch `context_addr/state_addr`:
 3. `Upper`
 4. `Super`
 5. `Use(lib)`
-6. `USECODE`
+6. `CODECALL`
 
 They still update:
 
@@ -266,7 +266,7 @@ Permissions are determined by two dimensions:
 
 ### 9.1 Effect Propagation
 
-| Current effect | Next `Invoke(Edit)` | Next `Invoke(View)` | Next `Invoke(Pure)` | `USECODE` |
+| Current effect | Next `Invoke(Edit)` | Next `Invoke(View)` | Next `Invoke(Pure)` | `CODECALL` |
 |---|---|---|---|---|
 | `Edit` | allowed | allowed | allowed | inherits `Edit` |
 | `View` | rejected | allowed | allowed | inherits `View` |
@@ -275,7 +275,7 @@ Permissions are determined by two dimensions:
 Rules:
 
 1. `Invoke` uses explicit effect.
-2. `USECODE` inherits current effect.
+2. `CODECALL` inherits current effect.
 3. `Pure` cannot escalate to `View/Edit`.
 4. `View` cannot escalate to `Edit`.
 
@@ -285,13 +285,13 @@ The interpreter enforces:
 
 1. outer `Main` forbids internal `Edit` calls
 2. outer `P2sh` forbids any `Invoke(Edit)`
-3. `Abst` forbids external edit library calls, i.e. `Call(lib) + Edit`
+3. `Abst` forbids external edit library calls, i.e. `Ext(lib) + Edit`
 
 Notes:
 
 1. edit calls on `this/self/upper/super` are internal edit calls
 2. `CALLEXT` is an external edit library call
-3. `USECODE` is not `Invoke`; it only inherits current entry/effect context
+3. `CODECALL` is not `Invoke`; it only inherits current entry/effect context
 
 ### 9.3 Action Permissions
 
@@ -299,7 +299,7 @@ Action permission is independent from selector resolution but depends on current
 
 1. `ACTION` is allowed only in `Main + Edit + outer entry`
 2. `ACTENV` and `ACTVIEW` are forbidden in `Pure`
-3. `USECODE` cannot re-enable top-level `ACTION` because it is not outer entry
+3. `CODECALL` cannot re-enable top-level `ACTION` because it is not outer entry
 
 ### 9.4 State Write Permissions
 
@@ -310,8 +310,8 @@ Write-like operations are forbidden in:
 
 Therefore:
 
-1. `CALLVIEW` and `CALLPURE` target code cannot write state
-2. `USECODE` also cannot write state if it inherits `View/Pure`
+1. `CALLEXTVIEW` and `CALLUSEVIEW/CALLUSEPURE` target code cannot write state
+2. `CODECALL` also cannot write state if it inherits `View/Pure`
 
 ## 10. Frame Standard
 
@@ -334,7 +334,7 @@ Result:
 3. isolated heap
 4. return value checked against callee return contract
 
-### 10.2 `USECODE`
+### 10.2 `CODECALL`
 
 Execution steps:
 
@@ -362,21 +362,21 @@ Compiler convention:
 2. multiple arguments: packed argv container
 3. zero arguments: `nil`
 
-### 11.2 `USECODE`
+### 11.2 `CODECALL`
 
-`USECODE` does not rebuild a new parameter context.
+`CODECALL` does not rebuild a new parameter context.
 
 Therefore:
 
-1. `USECODE` does not pop argv
-2. `USECODE` does not rebuild locals
+1. `CODECALL` does not pop argv
+2. `CODECALL` does not rebuild locals
 3. normal callee `param { ... }` prologue still executes if present
 4. that prologue operates on the inherited current operand-stack state
 
 Upper-layer development requirement:
 
-1. a `USECODE` target should be designed specifically for splice execution
-2. an arbitrary normal business function should not be reused as a `USECODE` target without an explicit frame-layout contract
+1. a `CODECALL` target should be designed specifically for splice execution
+2. an arbitrary normal business function should not be reused as a `CODECALL` target without an explicit frame-layout contract
 3. any required locals/stack layout must be treated as part of the library interface
 
 ## 12. Source-Language Manual
@@ -395,10 +395,10 @@ Upper-layer development requirement:
 
 | Source form | Runtime meaning |
 |---|---|
-| `C.f(args)` | `Invoke(Call(C), Edit, f)` |
-| `C:f(args)` | `Invoke(Call(C), View, f)` |
-| `C::f(args)` | `Invoke(Call(C), Pure, f)` |
-| `usecode C.f` | `Splice(lib(C), f)` |
+| `C.f(args)` | `Invoke(Ext(C), Edit, f)` |
+| `C:f(args)` | `Invoke(Ext(C), View, f)` |
+| `C::f(args)` | `Invoke(Use(C), Pure, f)` |
+| `codecall C.f` | `Splice(lib(C), f)` |
 
 ### 12.3 Generic `call`
 
@@ -415,7 +415,7 @@ Examples:
 
 ## 13. Upper-Layer Contract Guidance
 
-### 13.1 When to Use `CALLEXT/CALLVIEW/CALLPURE`
+### 13.1 When to Use `CALLEXT/CALLEXTVIEW/CALLUSEVIEW/CALLUSEPURE`
 
 Use them when:
 
@@ -424,7 +424,7 @@ Use them when:
 3. parameter and return contracts should follow normal function-call rules
 4. current frame internals should remain encapsulated
 
-### 13.2 When to Use `USECODE`
+### 13.2 When to Use `CODECALL`
 
 Use it when:
 
@@ -435,10 +435,10 @@ Use it when:
 
 ### 13.3 Disallowed Assumptions
 
-1. do not assume `USECODE` returns to the remaining source code after the splice point
+1. do not assume `CODECALL` returns to the remaining source code after the splice point
 2. do not assume recursive inheritance search beyond direct parents
-3. do not assume `CALLVIEW/CALLPURE` require `external`
-4. do not treat arbitrary normal functions as safe `USECODE` splice targets
+3. do not assume `CALLEXTVIEW/CALLUSEVIEW/CALLUSEPURE` require `external`
+4. do not treat arbitrary normal functions as safe `CODECALL` splice targets
 
 ## 14. Test Acceptance Checklist
 
@@ -446,14 +446,14 @@ The following must be treated as acceptance items:
 
 1. `CALL` rejects non-zero reserved bits, invalid target tags, invalid effect bits, and invalid arg usage
 2. `CALLEXT` enforces external visibility
-3. `CALLVIEW/CALLPURE` resolve the library root and its direct parents
-4. `USECODE` resolves only the library root
+3. `CALLEXTVIEW` resolves the library root and its direct parents; `CALLUSEVIEW/CALLUSEPURE` stay on the exact library root
+4. `CODECALL` resolves only the library root
 5. `This` uses state-chain semantics, `Self_` exact code-root semantics, `Upper` code-chain semantics, `Super` direct-parent semantics
-6. `Call(lib)` switches `context_addr/state_addr`
-7. `Use(lib)` and `USECODE` do not switch `context_addr/state_addr`
-8. `USECODE` reuses current `operands / locals / heap / call_argv / types`
-9. `USECODE` inherits current effect
-10. `USECODE` cannot re-enable top-level `ACTION`
+6. `Ext(lib)` switches `context_addr/state_addr`
+7. `Use(lib)` and `CODECALL` do not switch `context_addr/state_addr`
+8. `CODECALL` reuses current `operands / locals / heap / call_argv / types`
+9. `CODECALL` inherits current effect
+10. `CODECALL` cannot re-enable top-level `ACTION`
 11. `Main/P2sh/Abst` restrictions must match the runtime gates
 12. current search scope must stay limited to anchor plus direct parents only
 
@@ -465,6 +465,6 @@ The following must be treated as acceptance items:
 | `Invoke(Self_, *)` | code root only | no | yes | explicit |
 | `Invoke(Upper, *)` | code root + direct parents | no | yes | explicit |
 | `Invoke(Super, *)` | direct parents only | no | yes | explicit |
-| `Invoke(Call(lib), *)` | library root + direct parents | yes | yes | explicit |
+| `Invoke(Ext(lib), *)` | library root + direct parents | yes | yes | explicit |
 | `Invoke(Use(lib), *)` | library root only | no | yes | explicit |
-| `USECODE` | library root only | no | no | inherited |
+| `CODECALL` | library root only | no | no | inherited |

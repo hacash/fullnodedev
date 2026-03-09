@@ -281,9 +281,9 @@ mod call_verify_tests {
     }
 
     #[test]
-    fn verify_accepts_usecode_without_linear_end_guard() {
-        let body = encode_usecode_body(CallSpec::usecode(1, [0x01, 0x02, 0x03, 0x04])).unwrap();
-        let mut codes = vec![Bytecode::USECODE as u8];
+    fn verify_accepts_codecall_without_linear_end_guard() {
+        let body = encode_codecall_body(CallSpec::codecall(1, [0x01, 0x02, 0x03, 0x04])).unwrap();
+        let mut codes = vec![Bytecode::CODECALL as u8];
         codes.extend_from_slice(&body);
         codes.push(Bytecode::P0 as u8);
         codes.push(Bytecode::END as u8);

@@ -128,7 +128,7 @@ impl<'a> Formater<'a> {
             CallTarget::Self_ => "self".to_string(),
             CallTarget::Upper => "upper".to_string(),
             CallTarget::Super => "super".to_string(),
-            CallTarget::Call(idx) => self.format_lib_chain_ref(idx),
+            CallTarget::Ext(idx) => self.format_lib_chain_ref(idx),
             CallTarget::Use(idx) => format!("use({})", idx),
         }
     }
@@ -143,7 +143,7 @@ impl<'a> Formater<'a> {
     ) -> Option<String> {
         use Bytecode::*;
         let sig = match code {
-            CALLEXT | CALLVIEW | CALLPURE => {
+            CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE => {
                 if pss.para.len() < 5 {
                     return None;
                 }
@@ -164,8 +164,9 @@ impl<'a> Formater<'a> {
             CALLSELFVIEW => format!("self:{}({})", sig, args),
             CALLSELFPURE => format!("self::{}({})", sig, args),
             CALLEXT => format!("{}.{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLVIEW => format!("{}:{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLPURE => format!("{}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
+            CALLEXTVIEW => format!("{}:{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
+            CALLUSEVIEW => format!("calluseview {}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
+            CALLUSEPURE => format!("{}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
             _ => return None,
         })
     }
@@ -709,7 +710,7 @@ impl<'a> Formater<'a> {
         }
         if !matches!(
             code,
-            CALLEXT | CALLVIEW | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLPURE
+            CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE
         ) {
             return None;
         }
@@ -1347,14 +1348,14 @@ impl<'a> Formater<'a> {
             PBUF | PBUFL => {
                 buf.push_str(&self.format_data_bytes(node));
             }
-            USECODE => {
-                match decode_usecode_body(&node.para) {
+            CODECALL => {
+                match decode_codecall_body(&node.para) {
                     Ok(CallSpec::Splice { lib, selector }) => buf.push_str(&format!(
-                        "usecode {}.{}",
+                        "codecall {}.{}",
                         self.format_lib_chain_ref(lib),
                         self.format_func_sig(&selector)
                     )),
-                    _ => buf.push_str(&format!("usecode 0x{}", hex::encode(&node.para))),
+                    _ => buf.push_str(&format!("codecall 0x{}", hex::encode(&node.para))),
                 }
             }
             _ => {

@@ -127,7 +127,9 @@ impl VM for MachineBox {
         if let Some(m) = self.machine.as_mut() {
             m.r.contracts.remove(&caddr);
         }
-        global_machine_manager().contract_cache().remove_addr(&caddr);
+        global_machine_manager()
+            .contract_cache()
+            .remove_addr(&caddr);
     }
 
     fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
@@ -289,14 +291,13 @@ impl Machine {
             .iter()
             .map(|a| ContractAddress::from_unchecked(*a))
             .collect();
-        Ok(self
-            .do_call(
-                env,
-                ExecCtx::main(),
-                &fnobj,
-                FrameBindings::root(ctx_adr, lib_adr.into()),
-                None,
-            )?)
+        Ok(self.do_call(
+            env,
+            ExecCtx::main(),
+            &fnobj,
+            FrameBindings::root(ctx_adr, lib_adr.into()),
+            None,
+        )?)
     }
 
     pub fn main_call(
@@ -321,9 +322,9 @@ impl Machine {
         exec.ensure_call_depth(&self.r.space_cap)?;
         param.canbe_func_argv()?;
         let adr = contract_addr.to_readable();
-        let Some(hit) =
-            self.r
-                .resolve_abstfn(env.ctx, env.gas, &contract_addr, cty)?
+        let Some(hit) = self
+            .r
+            .resolve_abstfn(env.ctx, env.gas, &contract_addr, cty)?
         else {
             return errf!("abst call {:?} not find in {}", cty, adr);
         };
@@ -468,6 +469,46 @@ mod machine_test {
         run_main_script_with(base_addr, tx_libs, ext_state, main_script, true)
     }
 
+    fn run_p2sh_script(
+        p2sh_addr: Address,
+        tx_libs: Vec<crate::ContractAddress>,
+        mut ext_state: StateMem,
+        p2sh_script: &str,
+    ) -> Ret<Value> {
+        let p2sh_codes = lang_to_bytecode(p2sh_script).unwrap();
+        let main_addr = test_base_addr();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main_addr;
+        env.tx.addrs = tx_libs.iter().map(|a| a.clone().into_addr()).collect();
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(main_addr)
+            .addrs(env.tx.addrs.clone())
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(std::mem::take(&mut ext_state)), &tx);
+
+        let mut gas: i64 = 1_000_000;
+        let mut exec = crate::frame::ExecEnv {
+            ctx: &mut ctx as &mut dyn Context,
+            gas: &mut gas,
+        };
+        let mut machine = Machine::create(Resoure::create(1));
+        machine.p2sh_call(
+            &mut exec,
+            CodeType::Bytecode,
+            p2sh_addr,
+            tx_libs,
+            p2sh_codes.into(),
+            Value::Nil,
+        )
+    }
+
     fn assert_err_contains(res: Ret<Value>, needle: &str) {
         let err = res.expect_err("expected error");
         assert!(
@@ -504,7 +545,6 @@ mod machine_test {
         );
         assert_err_contains(res, "main call return error");
     }
-
 
     #[test]
     fn main_call_still_rejects_args_return() {
@@ -557,7 +597,7 @@ mod machine_test {
     }
 
     #[test]
-    fn calltargets_resolve_under_callview_and_inherits() {
+    fn calltargets_resolve_under_ext_view_and_inherits() {
         // Arrange addresses.
         let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(1));
@@ -664,11 +704,13 @@ mod machine_test {
                 Func::new("consume")
                     .unwrap()
                     .types(Some(VT::U8), vec![VT::U8, VT::Compo])
-                    .fitsh(r##"
+                    .fitsh(
+                        r##"
                         param { num doc }
                         assert doc is map
                         return num
-                    "##)
+                    "##,
+                    )
                     .unwrap(),
             )
             .func(
@@ -699,7 +741,7 @@ mod machine_test {
     }
 
     #[test]
-    fn call_external_view_pure_use_inherits_but_usecode_keeps_local_lookup() {
+    fn call_external_view_pure_use_inherits_but_codecall_keeps_local_lookup() {
         let base_addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let contract_child = crate::ContractAddress::calculate(&base_addr, &Uint4::from(11));
         let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(12));
@@ -772,7 +814,7 @@ mod machine_test {
             "CALLEXT should resolve through inherit chain"
         );
 
-        // CALLVIEW/CALLPURE should also resolve the inherit chain; USECODE stays local-only.
+        // CALLEXTVIEW and ext-pure generic calls should also resolve the inherit chain; CODECALL stays local-only.
         let view_script = r##"
             lib C = 0
             assert C:probe() == 201
@@ -780,26 +822,26 @@ mod machine_test {
         "##;
         assert!(
             run_main(view_script).is_ok(),
-            "CALLVIEW should resolve through inherit chain"
+            "CALLEXTVIEW should resolve through inherit chain"
         );
 
         let pure_script = r##"
             lib C = 0
-            assert C::probe() == 201
+            assert call pure C.probe() == 201
             return 0
         "##;
         assert!(
             run_main(pure_script).is_ok(),
-            "CALLPURE should resolve through inherit chain"
+            "generic Ext(lib)+Pure should resolve through inherit chain"
         );
 
-        let usecode_script = r##"
+        let codecall_script = r##"
             lib C = 0
-            usecode C.probe
+            codecall C.probe
         "##;
         assert!(
-            run_main(usecode_script).is_err(),
-            "USECODE should not resolve inherit chain"
+            run_main(codecall_script).is_err(),
+            "CODECALL should not resolve inherit chain"
         );
     }
 
@@ -986,7 +1028,6 @@ mod machine_test {
         );
     }
 
-
     #[test]
     fn abst_external_call_fails_before_loading_lib_target() {
         let base_addr = test_base_addr();
@@ -1057,7 +1098,7 @@ mod machine_test {
     }
 
     #[test]
-    fn callview_and_callpure_enforce_mode_call_whitelist() {
+    fn callextview_and_ext_pure_enforce_mode_call_whitelist() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 22);
         let target_sto = Contract::new()
@@ -1103,9 +1144,8 @@ mod machine_test {
         assert_err_contains(pure_res, "CallInPure");
     }
 
-
     #[test]
-    fn usecode_cannot_reenable_action_from_nested_frame() {
+    fn codecall_cannot_reenable_action_from_nested_frame() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 221);
         let target_sto = Contract::new()
@@ -1129,14 +1169,115 @@ mod machine_test {
 
         let script = r##"
             lib C = 0
-            usecode C.bad_act
+            codecall C.bad_act
         "##;
         let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
         assert_err_contains(res, "ActDisabled");
     }
 
     #[test]
-    fn usecode_reuses_current_argv_and_allows_nested_calls() {
+    fn p2sh_codecall_cannot_reenable_nested_edit_call() {
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 231);
+        let contract_target = test_contract(&base_addr, 232);
+
+        let target_sto = Contract::new()
+            .func(
+                Func::new("id")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+        let entry_sto = Contract::new()
+            .lib(contract_target.to_addr())
+            .func(
+                Func::new("jump_ext")
+                    .unwrap()
+                    .fitsh(
+                        r##"
+                        lib Dep = 0
+                        assert Dep.id() == 0
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            codecall C.jump_ext
+        "##;
+        let res = run_p2sh_script(
+            Address::create_scriptmh([23u8; 20]),
+            vec![contract_entry],
+            ext_state,
+            script,
+        );
+        assert_err_contains(res, "CallOtherInP2sh");
+    }
+
+    #[test]
+    fn p2sh_codecall_still_allows_nested_view_and_pure_calls() {
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 233);
+        let contract_target = test_contract(&base_addr, 234);
+
+        let target_sto = Contract::new()
+            .func(Func::new("view_id").unwrap().fitsh("return 7").unwrap())
+            .func(Func::new("pure_id").unwrap().fitsh("return 8").unwrap())
+            .into_sto();
+        let entry_sto = Contract::new()
+            .lib(contract_target.to_addr())
+            .func(
+                Func::new("jump_readonly")
+                    .unwrap()
+                    .fitsh(
+                        r##"
+                        lib Dep = 0
+                        assert Dep:view_id() == 7
+                        assert Dep::pure_id() == 8
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            codecall C.jump_readonly
+        "##;
+        let res = run_p2sh_script(
+            Address::create_scriptmh([24u8; 20]),
+            vec![contract_entry],
+            ext_state,
+            script,
+        );
+        assert!(
+            res.is_ok(),
+            "P2SH codecall should still allow nested view/pure calls: {res:?}"
+        );
+    }
+
+    #[test]
+    fn codecall_reuses_current_argv_and_allows_nested_calls() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 23);
         let target_sto = Contract::new()
@@ -1145,8 +1286,10 @@ mod machine_test {
                 Func::new("need_arg")
                     .unwrap()
                     .types(Some(VT::U8), vec![VT::U8])
-                    .fitsh("param { x }
-return x")
+                    .fitsh(
+                        "param { x }
+return x",
+                    )
                     .unwrap(),
             )
             .func(Func::new("leaf").unwrap().fitsh("return 7").unwrap())
@@ -1164,7 +1307,7 @@ return x")
                     .fitsh(
                         r##"
                         lib C = 0
-                        usecode C.need_arg
+                        codecall C.need_arg
                         "##,
                     )
                     .unwrap(),
@@ -1176,7 +1319,7 @@ return x")
                     .fitsh(
                         r##"
                         lib C = 0
-                        usecode C.nested
+                        codecall C.nested
                         "##,
                     )
                     .unwrap(),
@@ -1205,14 +1348,21 @@ return x")
             ext_state.clone(),
             arg_script,
         );
-        assert!(arg_res.is_ok(), "usecode should forward current argv: {arg_res:?}");
+        assert!(
+            arg_res.is_ok(),
+            "codecall should forward current argv: {arg_res:?}"
+        );
 
-        let nested_res = run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
-        assert!(nested_res.is_ok(), "usecode should allow nested calls: {nested_res:?}");
+        let nested_res =
+            run_main_script(base_addr, vec![contract_target], ext_state, nested_script);
+        assert!(
+            nested_res.is_ok(),
+            "codecall should allow nested calls: {nested_res:?}"
+        );
     }
 
     #[test]
-    fn usecode_without_caller_ret_contract_ignores_callee_ret_contract() {
+    fn codecall_without_caller_ret_contract_ignores_callee_ret_contract() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 33);
         let target_sto = Contract::new()
@@ -1232,15 +1382,15 @@ return x")
 
         let script = r##"
             lib C = 0
-            usecode C.ret_mismatch
+            codecall C.ret_mismatch
         "##;
         let rv = run_main_script(base_addr, vec![contract_target], ext_state, script)
-            .expect("usecode should follow caller(no contract) return policy");
+            .expect("codecall should follow caller(no contract) return policy");
         assert_eq!(rv, Value::U8(0));
     }
 
     #[test]
-    fn nested_usecode_preserves_outer_caller_return_contract() {
+    fn nested_codecall_preserves_outer_caller_return_contract() {
         let base_addr = test_base_addr();
         let contract_outer = test_contract(&base_addr, 34);
         let contract_middle = test_contract(&base_addr, 35);
@@ -1264,7 +1414,7 @@ return x")
                     .fitsh(
                         r##"
                         lib L = 0
-                        usecode L.leaf
+                        codecall L.leaf
                         "##,
                     )
                     .unwrap(),
@@ -1280,7 +1430,7 @@ return x")
                     .fitsh(
                         r##"
                         lib M = 0
-                        usecode M.middle
+                        codecall M.middle
                         "##,
                     )
                     .unwrap(),
@@ -1303,7 +1453,7 @@ return x")
         let res = run_main_script(base_addr, vec![contract_outer], ext_state, script);
         assert!(
             res.is_ok(),
-            "nested usecode must keep outer caller return contract: {res:?}"
+            "nested codecall must keep outer caller return contract: {res:?}"
         );
     }
 
@@ -1346,7 +1496,7 @@ return x")
                     .fitsh(
                         r##"
                         lib M = 0
-                        usecode M.middle
+                        codecall M.middle
                         "##,
                     )
                     .unwrap(),
@@ -1461,7 +1611,7 @@ return x")
     }
 
     #[test]
-    fn callview_callpure_and_usecode_local_lookup_positive_paths() {
+    fn callextview_callusepure_and_codecall_local_lookup_positive_paths() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 27);
         let target_sto = Contract::new()
@@ -1493,13 +1643,13 @@ return x")
             assert C:view_ok() == 7
             assert C::pure_ok() == 8
             assert C.self_ok() == 0
-            usecode C.code_ok
+            codecall C.code_ok
             end
         "##;
         let res = run_main_script(base_addr, vec![contract_target], ext_state, script);
         assert!(
             res.is_ok(),
-            "local lookup should succeed for view/pure/usecode/self shortcuts"
+            "local lookup should succeed for ext-view/use-pure/codecall/self shortcuts"
         );
     }
 
@@ -1511,12 +1661,24 @@ return x")
         let contract_code_lib = test_contract(&base_addr, 73);
 
         let entry_lib_sto = Contract::new()
-            .func(Func::new("id").unwrap().external().fitsh("return 20").unwrap())
+            .func(
+                Func::new("id")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 20")
+                    .unwrap(),
+            )
             .func(Func::new("view_id").unwrap().fitsh("return 21").unwrap())
             .func(Func::new("pure_id").unwrap().fitsh("return 22").unwrap())
             .into_sto();
         let code_lib_sto = Contract::new()
-            .func(Func::new("id").unwrap().external().fitsh("return 30").unwrap())
+            .func(
+                Func::new("id")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 30")
+                    .unwrap(),
+            )
             .func(Func::new("view_id").unwrap().fitsh("return 31").unwrap())
             .func(Func::new("pure_id").unwrap().fitsh("return 32").unwrap())
             .into_sto();
@@ -1579,28 +1741,44 @@ return x")
             assert C::pure_probe() == 0
             return 0
         "##;
-        let res = run_main_script(base_addr, vec![contract_entry, contract_entry_lib], ext_state, script);
+        let res = run_main_script(
+            base_addr,
+            vec![contract_entry, contract_entry_lib],
+            ext_state,
+            script,
+        );
         assert!(
             res.is_ok(),
             "new-frame calls should resolve callee lib lookups on code_owner: {res:?}"
         );
     }
 
-
     #[test]
-    fn usecode_rebinds_callee_libs_for_nested_calls() {
+    fn codecall_rebinds_callee_libs_for_nested_calls() {
         let base_addr = test_base_addr();
         let contract_entry = test_contract(&base_addr, 81);
         let contract_entry_lib = test_contract(&base_addr, 82);
         let contract_code_lib = test_contract(&base_addr, 83);
 
         let entry_lib_sto = Contract::new()
-            .func(Func::new("id").unwrap().external().fitsh("return 20").unwrap())
+            .func(
+                Func::new("id")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 20")
+                    .unwrap(),
+            )
             .func(Func::new("view_id").unwrap().fitsh("return 21").unwrap())
             .func(Func::new("pure_id").unwrap().fitsh("return 22").unwrap())
             .into_sto();
         let code_lib_sto = Contract::new()
-            .func(Func::new("id").unwrap().external().fitsh("return 30").unwrap())
+            .func(
+                Func::new("id")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 30")
+                    .unwrap(),
+            )
             .func(Func::new("view_id").unwrap().fitsh("return 31").unwrap())
             .func(Func::new("pure_id").unwrap().fitsh("return 32").unwrap())
             .func(Func::new("code_ok").unwrap().fitsh("return 0").unwrap())
@@ -1654,7 +1832,7 @@ return x")
                     .fitsh(
                         r##"
                         lib Dep = 1
-                        usecode Dep.code_ok
+                        codecall Dep.code_ok
                         "##,
                     )
                     .unwrap(),
@@ -1670,18 +1848,26 @@ return x")
         }
 
         let tx_libs = vec![contract_entry.clone(), contract_entry_lib.clone()];
-        let run_usecode = |func: &str| -> Ret<Value> {
+        let run_codecall = |func: &str| -> Ret<Value> {
             let script = format!(
                 r##"
                 lib C = 0
-                usecode C.{func}
+                codecall C.{func}
                 "##,
             );
-            run_main_script(base_addr.clone(), tx_libs.clone(), ext_state.clone(), &script)
+            run_main_script(
+                base_addr.clone(),
+                tx_libs.clone(),
+                ext_state.clone(),
+                &script,
+            )
         };
         for func in ["jump_ext", "jump_view", "jump_pure", "jump_code"] {
-            let res = run_usecode(func);
-            assert!(res.is_ok(), "usecode should rebind callee libs for {func}: {res:?}");
+            let res = run_codecall(func);
+            assert!(
+                res.is_ok(),
+                "codecall should rebind callee libs for {func}: {res:?}"
+            );
         }
     }
 
@@ -1760,7 +1946,6 @@ return x")
         assert!(machine.r.contracts.contains_key(&contract_entry));
         assert!(!machine.r.contracts.contains_key(&contract_target));
     }
-
 
     #[test]
     fn user_call_missing_argv_fails_before_loading_target_contract() {

@@ -66,9 +66,8 @@ impl GasTable {
             // O(n) compo merge (can touch many items); avoid default-2.
             PACKLIST, PACKMAP, PACKARGS, ARGS2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES
         ]);
-        gst.set(16, &[ACTVIEW, GGET, USECODE]);
-        gst.set(20, &[LOG1, CALLPURE]);
-        gst.set(24, &[LOG2, GPUT, CALLVIEW]);
+        gst.set(16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]);
+        gst.set(24, &[LOG2, GPUT, CALLEXTVIEW]);
         gst.set(28, &[LOG3, SDEL, ACTION]);
         gst.set(32, &[LOG4, SLOAD, SREST, CALLEXT, CALL]); // external-capable call
         gst.set(64, &[SSAVE, SRENT]);
@@ -405,9 +404,8 @@ mod gas_budget_codec_tests {
             (6, &[HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
             (8, &[CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, MGET, JOIN, REV, NEWLIST, NEWMAP, NTFUNC]),
             (12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE, PACKLIST, PACKMAP, PACKARGS, ARGS2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
-            (16, &[ACTVIEW, GGET, USECODE]),
-            (20, &[LOG1, CALLPURE]),
-            (24, &[LOG2, GPUT, CALLVIEW]),
+            (16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]),
+            (24, &[LOG2, GPUT, CALLEXTVIEW]),
             (28, &[LOG3, SDEL, ACTION]),
             (32, &[LOG4, SLOAD, SREST, CALLEXT, CALL]),
             (64, &[SSAVE, SRENT]),

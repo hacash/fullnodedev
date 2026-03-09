@@ -276,7 +276,7 @@ impl ParsePrefix for AddressW1 {
 /*
 *
 */
-combi_revenum_old!{ AddrOrList, Address, AddressW1, ADDR_OR_PTR_DIV_NUM }
+combi_revenum_old_no_json!{ AddrOrList, Address, AddressW1, ADDR_OR_PTR_DIV_NUM }
 
 impl AddrOrList {
 
@@ -300,11 +300,47 @@ impl AddrOrList {
 
 }
 
+impl ToJSON for AddrOrList {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        match self {
+            Self::Val1(v) => v.to_json_fmt(fmt),
+            Self::Val2(v) => v.to_json_fmt(fmt),
+        }
+    }
+}
+
+impl FromJSON for AddrOrList {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let s = json.trim();
+        if s.starts_with('"') && s.ends_with('"') {
+            let mut v = Address::new();
+            v.from_json(s)?;
+            *self = Self::Val1(v);
+            return Ok(());
+        }
+        if s.starts_with('[') && s.ends_with(']') {
+            let mut v = AddressW1::new();
+            v.from_json(s)?;
+            let max_count = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
+            if v.length() > max_count {
+                return errf!(
+                    "invalid AddrOrList JSON: list length {} overflow max {}",
+                    v.length(),
+                    max_count
+                );
+            }
+            *self = Self::Val2(v);
+            return Ok(());
+        }
+        errf!("invalid AddrOrList JSON: expect quoted address or address array")
+    }
+}
+
 
 /*
 *
 */
-combi_revenum!{ AddrOrPtr, Address, Addrptr, ADDR_OR_PTR_DIV_NUM }
+combi_revenum_no_json!{ AddrOrPtr, Address, Addrptr, ADDR_OR_PTR_DIV_NUM }
 
 impl Copy for AddrOrPtr {} 
 
@@ -362,6 +398,39 @@ impl AddrOrPtr {
 
 }
 
+impl ToJSON for AddrOrPtr {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        match self {
+            Self::Val1(v) => v.to_json_fmt(fmt),
+            Self::Val2(v) => match v.uint().checked_sub(ADDR_OR_PTR_DIV_NUM) {
+                Some(ix) => ix.to_string(),
+                None => v.uint().to_string(),
+            },
+        }
+    }
+}
+
+impl FromJSON for AddrOrPtr {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let s = json.trim();
+        if s.starts_with('"') && s.ends_with('"') {
+            let mut v = Address::new();
+            v.from_json(s)?;
+            *self = Self::Val1(v);
+            return Ok(());
+        }
+        let ix = json_expect_unquoted(s)?
+            .parse::<u16>()
+            .map_err(|e: std::num::ParseIntError| e.to_string())?;
+        let max_ix = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
+        if ix as usize > max_ix {
+            return errf!("addr ptr index {} overflow max {}", ix, max_ix);
+        }
+        *self = Self::from_ptr(ix as u8);
+        Ok(())
+    }
+}
+
 
 
 
@@ -397,10 +466,11 @@ mod address_tests {
     }
 
     #[test]
-    fn test_addr_or_ptr_type2_json_reject_low_raw_value() {
+    fn test_addr_or_ptr_json_reject_overflow_index() {
         let mut ptr = AddrOrPtr::default();
-        let err = ptr.from_json(r#"{"type":2,"value":1}"#).unwrap_err();
-        assert!(err.contains("leading byte"));
+        let too_large = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize + 1;
+        let err = ptr.from_json(&too_large.to_string()).unwrap_err();
+        assert!(err.contains("overflow"));
     }
 
     #[test]
@@ -417,23 +487,42 @@ mod address_tests {
     }
 
     #[test]
-    fn test_addr_or_list_type2_json_reject_unencodable_count() {
+    fn test_addr_or_ptr_json_roundtrip_as_index() {
+        let ptr = AddrOrPtr::from_ptr(7);
+        let json = ptr.to_json();
+        assert_eq!(json, "7");
+        let mut got = AddrOrPtr::default();
+        got.from_json(&json).unwrap();
+        assert_eq!(got.serialize(), ptr.serialize());
+    }
+
+    #[test]
+    fn test_addr_or_list_json_reject_unencodable_count() {
         let too_many = (u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize) + 1;
         let list = AddressW1::from_list(vec![ADDRESS_ONEX; too_many]).unwrap();
-        let json = format!(r#"{{"type":2,"value":{}}}"#, list.to_json());
+        let json = list.to_json();
         let mut obj = AddrOrList::default();
         let err = obj.from_json(&json).unwrap_err();
         assert!(err.contains("overflow"), "{}", err);
     }
 
     #[test]
-    fn test_addr_or_list_type2_json_accept_max_encodable_count() {
+    fn test_addr_or_list_json_accept_max_encodable_count() {
         let max_ok = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
         let list = AddressW1::from_list(vec![ADDRESS_ONEX; max_ok]).unwrap();
-        let json = format!(r#"{{"type":2,"value":{}}}"#, list.to_json());
+        let json = list.to_json();
         let mut obj = AddrOrList::default();
         obj.from_json(&json).unwrap();
         assert_eq!(obj.serialize(), AddrOrList::Val2(list).serialize());
+    }
+
+    #[test]
+    fn test_addr_or_list_json_roundtrip_single_address_string() {
+        let obj = AddrOrList::from_addr(ADDRESS_ONEX);
+        let json = obj.to_json();
+        let mut got = AddrOrList::default();
+        got.from_json(&json).unwrap();
+        assert_eq!(got.serialize(), obj.serialize());
     }
 
 }

@@ -32,8 +32,8 @@
 | 整数类型 | `u8`、`u16`、`u32`、`u64`、`u128` | `uint8`..`uint256`、`int` |
 | 字符串/字节 | `bytes`（引号字符串和十六进制） | `string`、`bytes` |
 | 参数 | `param { a b c }` 解包到槽位 | 在函数签名中声明 |
-| 状态可变性 | `callview`/`callpure` 只读 | `view`/`pure` 修饰符 |
-| 底层调用 | `callcode`（必须紧跟 `end`） | `delegatecall` |
+| 状态可变性 | `callextview`/`callusepure` 只读 | `view`/`pure` 修饰符 |
+| 底层调用 | `codecall`（必须紧跟 `end`） | `delegatecall` |
 | 支付钩子 | `abstract PayableHACD` 等 | `receive()`、`fallback()` |
 
 ---
@@ -165,8 +165,8 @@ function [external] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_
 |--------|------|
 | `call` | 调用外部合约 |
 | `callthis` / `callself` / `callsuper` | 内部调用 |
-| `callview` / `callpure` | 只读调用 |
-| `callcode` | CallCode（无返回值；必须紧跟 `end`） |
+| `callextview` / `callusepure` | 只读调用 |
+| `codecall` | CodeCall（无返回值；必须紧跟 `end`） |
 | `bytecode` | 原始字节码注入 |
 
 ### 4.5 类型与字面量关键字
@@ -281,14 +281,14 @@ param { owner amount fee }
 - 必须出现在函数体开头
 - 规范 IR：`UNPACK(ROLL0, P0)`
 
-### 6.2 `callcode lib_idx::func_sig`
+### 6.2 `codecall lib_idx::func_sig`
 
 - 无参数；尾调用
 - 必须紧跟 `end`
 - 用于底层委托
 
 ```fitsh
-callcode 0::0xabcdef01
+codecall 0::0xabcdef01
 end
 ```
 
@@ -653,33 +653,35 @@ storage_save(bk, balance + 100)
 | 语法 | 操作码 | 用途 |
 |------|--------|------|
 | `lib.func(...)` | CALL | 状态变更调用 |
-| `lib:func(...)` | CALLVIEW | 视图调用 |
-| `lib::func(...)` | CALLPURE | 纯调用 |
+| `lib:func(...)` | CALLEXTVIEW | 视图调用 |
+| `lib::func(...)` | CALLUSEPURE | 纯 code-local 调用 |
+| `calluseview 1::sig(...)` | CALLUSEVIEW | view code-local 调用 |
 | `this.func(...)` | CALLTHIS | 当前合约 |
 | `self.func(...)` | CALLSELF | 当前合约 |
 | `super.func(...)` | CALLSUPER | 继承链父级 |
 
 库解析说明：
-- `CALL`（`lib.func(...)`）先解析库地址，再对目标合约按 DFS 搜索“自身 + 继承链”。
-- `CALLVIEW/CALLPURE/CALLCODE` 仅在目标库合约的本地用户函数表中解析（不查继承链）。
+- `CALL`（`lib.func(...)`）先解析库地址，再只搜索目标合约及其直接父级。
+- `CALLEXTVIEW` 在目标合约及其直接父级上解析，`CALLUSEVIEW/CALLUSEPURE/CODECALL` 仅停留在目标库精确根上。
 
 ### 11.2 调用权限与状态访问控制
 
-VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**，再叠加 **in_callcode**。
+VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**，再叠加 **in_codecall**。
 
 - `ExecDomain` 描述当前调用策略来源：`TopMain`、`TopP2sh`、`TopAbst`、`Contract`。
 - `FrameMode` 描述当前状态访问强度：`External`、`Inner`、`View`、`Pure`。
-- 固定模式调用（`CALL`、`CALLVIEW`、`CALLPURE`、`CALLTHIS`、`CALLSELF`、`CALLSUPER`）会切到 `ExecDomain::Contract`，并设置固定 `FrameMode`。
-- `CALLCODE` 会完整继承调用方的 `ExecCtx`，并以 `in_callcode = true` 原地执行。
+- 固定模式调用（`CALL`、`CALLEXTVIEW`、`CALLUSEVIEW`、`CALLUSEPURE`、`CALLTHIS`、`CALLSELF`、`CALLSUPER`）会切到 `ExecDomain::Contract`，并设置固定 `FrameMode`。
+- `CODECALL` 会完整继承调用方的 `ExecCtx`，并以 `in_codecall = true` 原地执行。
 
-#### 7 个 Call 指令分发表（与运行时实现一致）
+#### 常用 Call 指令分发表
 
 | 调用 | 语法 | 被调用 `ExecCtx` | 查找起点 | 是否查继承链 | 帧行为 | 状态读取 | 状态写入 |
 |------|------|------------------|----------|--------------|--------|----------|----------|
-| `call` | `lib.func(...)` | `Contract + External` | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 允许 | 允许 |
-| `callview` | `lib:func(...)` | `Contract + View` | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 允许 | 禁止 |
-| `callpure` | `lib::func(...)` | `Contract + Pure` | 库目标合约 | 是（目标 + 继承 DFS） | 新建帧 | 禁止 | 禁止 |
-| `callcode` | `callcode lib::sig` | 继承调用方 `ExecCtx` | 库目标合约 | 否（仅本地表） | 原地执行（不建帧） | 继承 | 继承 |
+| `call` | `lib.func(...)` | `Contract + External` | 库目标合约 | 是（仅目标 + 直接父级） | 新建帧 | 允许 | 允许 |
+| `callextview` | `lib:func(...)` | `Contract + View` | 库目标合约 | 是（仅目标 + 直接父级） | 新建帧 | 允许 | 禁止 |
+| `calluseview` | `calluseview lib::sig(...)` | `Contract + View` | 库目标合约 | 否（仅精确根） | 新建帧 | 允许 | 禁止 |
+| `callusepure` | `lib::func(...)` | `Contract + Pure` | 库目标合约 | 否（仅精确根） | 新建帧 | 禁止 | 禁止 |
+| `codecall` | `codecall lib::sig` | 继承调用方 `ExecCtx` | 库目标合约 | 否（仅精确根） | 原地执行（不建帧） | 继承 | 继承 |
 | `callthis` | `this.func(...)` | `Contract + Inner` | `state_addr` | 是 | 新建帧 | 允许 | 允许 |
 | `callself` | `self.func(...)` | `Contract + Inner` | `code_owner` | 是 | 新建帧 | 允许 | 允许 |
 | `callsuper` | `super.func(...)` | `Contract + Inner` | `code_owner` 的直接父级 | 入口集只取直接父级，不再额外 DFS | 新建帧 | 允许 | 允许 |
@@ -688,17 +690,18 @@ VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**，
 
 | 调用 | `state_addr` | `code_owner` |
 |------|--------------|--------------|
-| `call` | 切换为库目标合约 | 切换为实际命中函数的所有者（目标本身或继承父级） |
-| `callview` | 不变 | 切换为实际命中函数的所有者（目标本身或继承父级） |
-| `callpure` | 不变 | 切换为实际命中函数的所有者（目标本身或继承父级） |
-| `callcode` | 不变 | 当前帧切换为库目标合约 |
+| `call` | 切换为库目标合约 | 切换为实际命中函数的所有者（目标本身或直接父级） |
+| `callextview` | 不变 | 切换为实际命中函数的所有者（目标本身或直接父级） |
+| `calluseview` | 不变 | 切换为精确库根上命中的函数所有者 |
+| `callusepure` | 不变 | 切换为精确库根上命中的函数所有者 |
+| `codecall` | 不变 | 当前帧切换为库目标合约 |
 | `callthis` | 不变 | 从 `state_addr` 链命中的所有者 |
 | `callself` | 不变 | 从 `code_owner` 链命中的所有者 |
 | `callsuper` | 不变 | 从直接父级入口集命中的所有者 |
 
 **状态** = 存储、全局、内存、日志。
 
-**重要说明**：`callcode` 在**当前帧**中执行并**完整继承调用方的 ExecCtx** —— 它**没有独立的状态访问控制逻辑**。callcode 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）都受继承下来的 domain/frame 权限限制。此外，`callcode` 会设置 `in_callcode = true`，禁止任何后续嵌套调用（CallInCallcode 错误）。
+**重要说明**：`codecall` 在**当前帧**中执行并**完整继承调用方的 ExecCtx** —— 它**没有独立的状态访问控制逻辑**。codecall 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）都受继承下来的 domain/frame 权限限制。此外，`codecall` 会设置 `in_codecall = true`，禁止任何后续嵌套调用（CallInCallcode 错误）。
 
 #### 正交权限矩阵
 
@@ -706,9 +709,9 @@ Domain 轴限制：
 
 | `ExecDomain` | 允许的调用 |
 |---|---|
-| `TopMain` | `CALL`、`CALLVIEW`、`CALLPURE`、`CALLCODE` |
-| `TopP2sh` | `CALLVIEW`、`CALLPURE`、`CALLCODE` |
-| `TopAbst` | `CALLTHIS`、`CALLSELF`、`CALLSUPER`、`CALLVIEW`、`CALLPURE`、`CALLCODE` |
+| `TopMain` | `CALL`、`CALLEXTVIEW`、`CALLUSEVIEW`、`CALLUSEPURE`、`CODECALL` |
+| `TopP2sh` | `CALLEXTVIEW`、`CALLUSEVIEW`、`CALLUSEPURE`、`CODECALL` |
+| `TopAbst` | `CALLTHIS`、`CALLSELF`、`CALLSUPER`、`CALLEXTVIEW`、`CALLUSEVIEW`、`CALLUSEPURE`、`CODECALL` |
 | `Contract` | 无额外 domain 限制 |
 
 Frame 轴限制：
@@ -717,12 +720,10 @@ Frame 轴限制：
 |---|---|---|---|
 | `External` | 不受 frame 轴额外限制 | 允许 | 允许 |
 | `Inner` | 不受 frame 轴额外限制 | 允许 | 允许 |
-| `View` | `CALLVIEW`、`CALLPURE` | 允许 | 禁止 |
-| `Pure` | 仅 `CALLPURE` | 禁止 | 禁止 |
+| `View` | `CALLEXTVIEW`、`CALLUSEVIEW`、`CALLUSEPURE` | 允许 | 禁止 |
+| `Pure` | 仅 `CALLUSEPURE` | 禁止 | 禁止 |
 
-`in_callcode` 仍然禁止所有嵌套调用。`TopAbst` 禁止 `CALL`（External），用于防止支付钩子经由外部合约重入。
-| Pure | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Callcode | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+`in_codecall` 仍然禁止所有嵌套调用。`TopAbst` 禁止 `CALL`（External），用于防止支付钩子经由外部合约重入。
 
 #### 各模式下的状态访问控制矩阵
 
@@ -739,8 +740,8 @@ Frame 轴限制：
 
 | 模式 | EXTACTION | EXTENV | EXTVIEW | 备注 |
 |------|-----------|--------|---------|------|
-| **Main**（depth==0，不在 in_callcode 中） | ✅ 允许 | ✅ 允许 | ✅ 允许 | 完全访问 |
-| **Main**（depth>0 或 in_callcode 中） | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 在嵌套调用/callcode 中被阻止 |
+| **Main**（depth==0，不在 in_codecall 中） | ✅ 允许 | ✅ 允许 | ✅ 允许 | 完全访问 |
+| **Main**（depth>0 或 in_codecall 中） | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 在嵌套调用/codecall 中被阻止 |
 | **P2sh、Abst** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 仅限入口层 |
 | **External、Inner** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 仅限入口层 |
 | **View** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | 只读环境访问 |
@@ -757,7 +758,7 @@ Frame 轴限制：
 | NTFUNC | `address_ptr` | 1 | ✅ 允许 | ✅ | ✅ | 纯地址指针提取 |
 
 **小结**：
-- **EXTACTION**（资产转移）：仅 `Main` 模式在 `depth == 0` 且**非** `callcode` 中
+- **EXTACTION**（资产转移）：仅 `Main` 模式在 `depth == 0` 且**非** `codecall` 中
 - **EXTENV**（`block_height`、`tx_main_address`）：在 `Pure` 中禁止，其他允许
 - **EXTVIEW**（`check_signature`、`balance`）：在 `Pure` 中禁止，其他允许 —— 只读链状态查询
 - **NTFUNC**（纯计算）：所有模式均允许，包括 `Pure`
@@ -767,31 +768,31 @@ Frame 轴限制：
 
 | 条件 | EXTACTION 是否允许 |
 |------|-------------------|
-| mode == Main 且 depth == 0 且未处于 in_callcode | 允许 |
-| mode != Main 或 depth > 0 或 in_callcode | 禁止 |
+| mode == Main 且 depth == 0 且未处于 in_codecall | 允许 |
+| mode != Main 或 depth > 0 或 in_codecall | 禁止 |
 
-`transfer_hac_to`、`transfer_sat_to` 等只能在顶层主调用中执行。在 `callcode`、抽象/支付钩子及嵌套调用中均禁用。
+`transfer_hac_to`、`transfer_sat_to` 等只能在顶层主调用中执行。在 `codecall`、抽象/支付钩子及嵌套调用中均禁用。
 
 #### 小结
 
 - **call** → External：完全状态访问；被调用方须标记为 `external`
-- **callview** → View：只读；禁止存储/全局/内存/日志写入
-- **callpure** → Pure：无状态访问；仅纯计算及嵌套 CALLPURE
-- **callcode** → 继承当前模式；禁止嵌套调用；EXTACTION 禁用
+- **callextview** → View：只读；禁止存储/全局/内存/日志写入
+- **callusepure** → Pure：无状态访问；仅纯计算及嵌套 CALLUSEPURE
+- **codecall** → 继承当前模式；禁止嵌套调用；EXTACTION 禁用
 - **callthis/callself/callsuper** → Inner：完全状态访问；仅内部调用
 
 ### 11.3 函数查找：`this`、`self` 与 `super`
 
 VM 在执行过程中维护两个关键地址：
 
-- **state_addr**：存储/日志的所有者 —— 最初被调用的合约（入口）。在嵌套 inner/view/pure/callcode 调度中保持不变。
+- **state_addr**：存储/日志的所有者 —— 最初被调用的合约（入口）。在嵌套 inner/view/pure/codecall 调度中保持不变。
 - **code_owner**：代码所有者 —— 当前正在执行其代码的合约。当解析到的调用命中其他所有者时会变化。
 
 | 调用 | 解析范围 | 查找顺序 |
 |------|----------|----------|
-| `this.func(...)` | state_addr | DFS：当前合约 → 继承链（按顺序） |
-| `self.func(...)` | code_owner | DFS：当前合约 → 继承链（按顺序） |
-| `super.func(...)` | 仅 code_owner 的父级 | DFS：跳过当前 owner，在直接继承中查找 → 其继承链 |
+| `this.func(...)` | state_addr | 当前合约 → 直接父级（按顺序） |
+| `self.func(...)` | code_owner | 当前合约 → 直接父级（按顺序） |
+| `super.func(...)` | 仅 code_owner 的父级 | 仅直接父级（跳过当前 owner） |
 
 **何时会不同？** 当 `super` 或 `self` 将执行转移到父级代码时：`code_owner` 变为父级，但 `state_addr` 仍为子级。此时 `this` 仍在子级（存储上下文）中解析，而 `self` 在父级（当前代码所有者）中解析。
 
@@ -924,7 +925,7 @@ contract Child {
 | `transfer_hacd_single_to`、`transfer_hacd_to` 等 | HACD 转账 |
 | `transfer_asset_to`、`transfer_asset_from`、`transfer_asset_from_to` | 资产转账 |
 
-**注意**：`callcode` 上下文中禁用 EXTACTION。
+**注意**：`codecall` 上下文中禁用 EXTACTION。
 
 ### 11.6 存储函数
 
@@ -1009,5 +1010,5 @@ map { "k": "v" }
 - **函数参数上限**：15（pack list）；更多时用 `list`/`map` 包装
 - **函数签名**：仅按名称 4 字节哈希；无重载
 - **`param`**：必须位于函数体开头
-- **`callcode`**：必须紧跟 `end`
+- **`codecall`**：必须紧跟 `end`
 - **`bind`**：惰性；有副作用时用 `var`

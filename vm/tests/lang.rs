@@ -57,13 +57,14 @@ fn bind_slot_and_cache_print() {
 }
 
 #[test]
-fn callview_callthis_print() {
+fn callextview_and_local_call_print() {
     let script = r##"
         lib(2):0xabcdef01()
         this.0x00ab4130()
         self:0x00ab4131()
         self::0x00ab4132()
-        lib(3)::0xdeadbeef()
+        calluseview 3::0xdeadbeef()
+        lib(4)::0xfacecafe()
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
@@ -71,7 +72,8 @@ fn callview_callthis_print() {
     assert!(printed.contains("this.0x00ab4130("));
     assert!(printed.contains("self:0x00ab4131("));
     assert!(printed.contains("self::0x00ab4132("));
-    assert!(printed.contains("lib(3)::0xdeadbeef("));
+    assert!(printed.contains("calluseview lib(3)::0xdeadbeef("));
+    assert!(printed.contains("lib(4)::0xfacecafe("));
 }
 
 #[test]
@@ -111,14 +113,14 @@ fn self_view_and_self_pure_short_syntax_print_when_names_exist() {
 }
 
 #[test]
-fn callcode_short_syntax_print_when_names_exist() {
+fn codecall_short_syntax_print_when_names_exist() {
     let script = r##"
         lib C = 0
-        callcode C.probe
+        codecall C.probe
     "##;
     let (ircd, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = format_ircode_to_lang(&ircd, Some(&smap)).unwrap();
-    assert!(printed.contains("callcode C.probe"));
+    assert!(printed.contains("codecall C.probe"));
 }
 
 #[test]
@@ -1323,7 +1325,7 @@ fn decompile_hacswap_sell_args_without_list() {
 }
 
 #[test]
-fn decompile_native_transfer_args_flatten_cat() {
+fn decompile_action_transfer_args_split_by_arity() {
     let script = r##"
         var adr = address_ptr(1)
         var val = 12345 as u64
@@ -1332,8 +1334,8 @@ fn decompile_native_transfer_args_flatten_cat() {
     "##;
     let ircode = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircode).unwrap();
-    assert!(printed.contains("transfer_sat_to($0 ++ $1)"));
-    assert!(printed.contains("transfer_hac_from($0 ++ zhu_to_hac($1))"));
+    assert!(printed.contains("transfer_sat_to($0, $1)"));
+    assert!(printed.contains("transfer_hac_from($0, zhu_to_hac($1))"));
 }
 
 #[test]
@@ -1548,7 +1550,7 @@ fn sourcemap_lib_prelude_not_injected_into_inline_blocks() {
 }
 
 #[test]
-fn decompile_end_abort_as_keywords() {
+fn decompile_abort_as_keyword_without_redundant_end() {
     let script = r##"
         print 2
         abort
@@ -1557,7 +1559,8 @@ fn decompile_end_abort_as_keywords() {
     let ircode = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircode).unwrap();
     assert!(printed.contains("abort"));
-    assert!(printed.contains("end"));
+    assert!(!printed.contains("
+end"));
     assert!(!printed.contains("abort()"));
     assert!(!printed.contains("end()"));
 }
@@ -1580,20 +1583,26 @@ fn decompile_local_vars_use_slot_names() {
 fn explicit_shortcut_call_keywords_normalize_to_current_surface() {
     let script = r##"
         callext 1::0xabcdef01()
-        callview 2::0x01020304(1)
-        callpure 3::0x0a0b0c0d(nil)
+        callextview 2::0x01020304(1)
+        calluseview 3::0x0a0b0c0d(nil)
+        callusepure 4::0x1a2b3c4d(nil)
         callthis 0::0x11223344(2)
         callself 0::0x22334455(3)
         callsuper 0::0x33445566(4)
+        callselfview 0::0x44556677(5)
+        callselfpure 0::0x55667788(6)
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
     assert!(printed.contains("lib(1).0xabcdef01("));
     assert!(printed.contains("lib(2):0x01020304("));
-    assert!(printed.contains("lib(3)::0x0a0b0c0d("));
+    assert!(printed.contains("calluseview lib(3)::0x0a0b0c0d("));
+    assert!(printed.contains("lib(4)::0x1a2b3c4d("));
     assert!(printed.contains("this.0x11223344("));
     assert!(printed.contains("self.0x22334455("));
     assert!(printed.contains("super.0x33445566("));
+    assert!(printed.contains("self:0x44556677("));
+    assert!(printed.contains("self::0x55667788("));
     let reparsed = lang_to_ircode(&printed).unwrap();
     assert_eq!(ircode, reparsed);
 }
@@ -1635,28 +1644,53 @@ fn each_call_opcode_roundtrips_and_emits_expected_bytecode() {
         ),
         (
             "lib(1):0x66778899(7)",
-            Bytecode::CALLVIEW,
+            Bytecode::CALLEXTVIEW,
             "lib(1):0x66778899(",
         ),
         (
-            "lib(1)::0x778899aa(8)",
-            Bytecode::CALLPURE,
-            "lib(1)::0x778899aa(",
+            "calluseview 1::0x778899aa(8)",
+            Bytecode::CALLUSEVIEW,
+            "calluseview lib(1)::0x778899aa(",
         ),
         (
-            "callcode lib(1).0x8899aabb",
-            Bytecode::CALLCODE,
-            "callcode lib(1).0x8899aabb",
+            "callusepure 1::0x8899aabb(9)",
+            Bytecode::CALLUSEPURE,
+            "lib(1)::0x8899aabb(",
         ),
         (
-            "callext 1::0x99aabbcc(9)",
+            "codecall lib(1).0x99aabbcc",
+            Bytecode::CODECALL,
+            "codecall lib(1).0x99aabbcc",
+        ),
+        (
+            "callext 1::0xaabbccdd(10)",
             Bytecode::CALLEXT,
-            "lib(1).0x99aabbcc(",
+            "lib(1).0xaabbccdd(",
         ),
         (
-            "callthis 0::0xaabbccdd(10)",
+            "callthis 0::0xbbccddee(11)",
             Bytecode::CALLTHIS,
-            "this.0xaabbccdd(",
+            "this.0xbbccddee(",
+        ),
+        (
+            "callself 0::0xccddeeff(12)",
+            Bytecode::CALLSELF,
+            "self.0xccddeeff(",
+        ),
+        (
+            "callsuper 0::0xddeeff00(13)",
+            Bytecode::CALLSUPER,
+            "super.0xddeeff00(",
+        ),
+        (
+            "callselfview 0::0xeeff0011(14)",
+            Bytecode::CALLSELFVIEW,
+            "self:0xeeff0011(",
+        ),
+        (
+            "callselfpure 0::0xff001122(15)",
+            Bytecode::CALLSELFPURE,
+            "self::0xff001122(",
         ),
     ];
 

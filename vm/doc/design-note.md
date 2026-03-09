@@ -35,7 +35,7 @@ Contract Verify:
     3. bytecode inst valid
     4. bytecode param check
     5. bytecode jump dest
-    6. CALLCODE must follow END op
+    6. CODECALL must follow END op
 
 
 Contract Code Store Fee:
@@ -91,13 +91,13 @@ Call Kind:
     - SuperCall           <fnsig>(argv)
     - ViewCall    <libidx, fnsig>(argv)
     - PureCall    <libidx, fnsig>(argv)
-    - CallCode     <libidx, fnsig>         // no user argv; run delegated code in-place, inherit current ExecCtx(domain + frame) privileges, and forbid any nested call
+    - CodeCall     <libidx, fnsig>         // no user argv; run delegated code in-place, inherit current ExecCtx(domain + frame) privileges, and forbid any nested call
 
 
 Call Privileges:
 
     State is Global Value, Memory Value, Storage Data, Log Data.
-    CallCode is NOT a FrameMode: it inherits the upper-level ExecCtx(domain + frame) privileges, and execution enters an "in_callcode" state where any CALL* instruction is forbidden.
+    CodeCall is NOT a FrameMode: it inherits the upper-level ExecCtx(domain + frame) privileges, and execution enters an "in_codecall" state where any CALL* instruction is forbidden.
     Ext actions are still gated by (domain, frame, depth) rules.
 
     - Main          (State Write) => External,        View, Pure, Code
@@ -116,18 +116,19 @@ Call Context Change:
             External => resolved function owner on target contract graph (target or parent)
             Inner => resolved child/parent
             View/Pure => library target
-            CallCode => library target (in-place)
+            CodeCall => library target (in-place)
 
 
 libidx Resolution Split:
 
-    - CALL (External): target library + inheritance search (DFS)
-    - CALLVIEW/CALLPURE/CALLCODE: target library local table only (no inheritance search)
+    - CALL (External): target library + direct parents only
+    - CALLEXTVIEW: target library + direct parents
+    - CALLUSEVIEW/CALLUSEPURE/CODECALL: target library exact root only
 
 
 Inheritance Resolution (CALLTHIS/CALLSELF/CALLSUPER):
 
-    - DFS search in inherits list order (current => parent => grandparent)
+    - Search scope is limited to current owner/root + direct parents in inherits order
     - First match wins; inherits list order defines conflict priority
     - Cycle in inherits list is invalid and triggers InheritsError
     - Diamond inheritance is allowed; only true cycles are rejected

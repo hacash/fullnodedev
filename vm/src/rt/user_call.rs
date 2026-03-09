@@ -1,6 +1,6 @@
 pub const CALL_BODY_WIDTH: usize = 6;
 pub const SPLICE_BODY_WIDTH: usize = 5;
-pub const USECODE_BODY_WIDTH: usize = SPLICE_BODY_WIDTH;
+pub const CODECALL_BODY_WIDTH: usize = SPLICE_BODY_WIDTH;
 
 const CALL_TARGET_MASK: u8 = 0b0000_0111;
 const CALL_EFFECT_MASK: u8 = 0b0001_1000;
@@ -15,7 +15,7 @@ pub enum CallTarget {
     Self_,
     Upper,
     Super,
-    Call(u8),
+    Ext(u8),
     Use(u8),
 }
 
@@ -43,7 +43,7 @@ impl CallTarget {
 
     pub const fn lib_index(self) -> Option<u8> {
         match self {
-            Self::Call(idx) | Self::Use(idx) => Some(idx),
+            Self::Ext(idx) | Self::Use(idx) => Some(idx),
             _ => None,
         }
     }
@@ -57,7 +57,7 @@ impl CallTarget {
     }
 
     pub const fn switches_context(self) -> bool {
-        matches!(self, Self::Call(_))
+        matches!(self, Self::Ext(_))
     }
 }
 
@@ -98,7 +98,7 @@ impl CallSpec {
         matches!(
             *self,
             Self::Invoke {
-                target: CallTarget::Call(_),
+                target: CallTarget::Ext(_),
                 effect: EffectMode::Edit,
                 ..
             }
@@ -114,15 +114,23 @@ impl CallSpec {
     }
 
     pub const fn callext(libidx: u8, selector: FnSign) -> Self {
-        Self::invoke(CallTarget::Call(libidx), EffectMode::Edit, selector)
+        Self::invoke(CallTarget::Ext(libidx), EffectMode::Edit, selector)
     }
 
-    pub const fn callview(libidx: u8, selector: FnSign) -> Self {
-        Self::invoke(CallTarget::Call(libidx), EffectMode::View, selector)
+    pub const fn callextview(libidx: u8, selector: FnSign) -> Self {
+        Self::invoke(CallTarget::Ext(libidx), EffectMode::View, selector)
     }
 
-    pub const fn callpure(libidx: u8, selector: FnSign) -> Self {
-        Self::invoke(CallTarget::Call(libidx), EffectMode::Pure, selector)
+    pub const fn callextpure(libidx: u8, selector: FnSign) -> Self {
+        Self::invoke(CallTarget::Ext(libidx), EffectMode::Pure, selector)
+    }
+
+    pub const fn calluseview(libidx: u8, selector: FnSign) -> Self {
+        Self::invoke(CallTarget::Use(libidx), EffectMode::View, selector)
+    }
+
+    pub const fn callusepure(libidx: u8, selector: FnSign) -> Self {
+        Self::invoke(CallTarget::Use(libidx), EffectMode::Pure, selector)
     }
 
     pub const fn callthis(selector: FnSign) -> Self {
@@ -149,7 +157,7 @@ impl CallSpec {
         Self::invoke(CallTarget::Self_, EffectMode::Pure, selector)
     }
 
-    pub const fn usecode(libidx: u8, selector: FnSign) -> Self {
+    pub const fn codecall(libidx: u8, selector: FnSign) -> Self {
         Self::splice(libidx, selector)
     }
 }
@@ -180,7 +188,7 @@ fn decode_call_target(tag: u8, arg: u8) -> VmrtRes<CallTarget> {
             }
             CallTarget::Super
         }
-        4 => CallTarget::Call(arg),
+        4 => CallTarget::Ext(arg),
         5 => CallTarget::Use(arg),
         _ => return itr_err_code!(CallInvalid),
     })
@@ -192,7 +200,7 @@ fn encode_call_target(target: CallTarget) -> (u8, u8) {
         CallTarget::Self_ => (1, 0),
         CallTarget::Upper => (2, 0),
         CallTarget::Super => (3, 0),
-        CallTarget::Call(idx) => (4, idx),
+        CallTarget::Ext(idx) => (4, idx),
         CallTarget::Use(idx) => (5, idx),
     }
 }
@@ -204,12 +212,12 @@ fn decode_short_call_body(s: &[u8], target: CallTarget, effect: EffectMode) -> V
     Ok(CallSpec::invoke(target, effect, checked_func_sign(s)?))
 }
 
-fn decode_short_lib_call_body(s: &[u8], effect: EffectMode) -> VmrtRes<CallSpec> {
+fn decode_short_indexed_call_body(s: &[u8], effect: EffectMode, target: fn(u8) -> CallTarget) -> VmrtRes<CallSpec> {
     if s.len() != SHORT_LIB_CALL_BODY_WIDTH {
         return itr_err!(CastParamFail, "call shortcut body size error");
     }
     Ok(CallSpec::invoke(
-        CallTarget::Call(s[0]),
+        target(s[0]),
         effect,
         checked_func_sign(&s[1..])?,
     ))
@@ -229,38 +237,40 @@ fn encode_short_lib_call_body(lib: u8, selector: FnSign) -> Vec<u8> {
 pub const fn is_user_call_inst(inst: Bytecode) -> bool {
     matches!(
         inst,
-        Bytecode::USECODE
+        Bytecode::CODECALL
             | Bytecode::CALL
+            | Bytecode::CALLEXT
+            | Bytecode::CALLEXTVIEW
+            | Bytecode::CALLUSEVIEW
+            | Bytecode::CALLUSEPURE
             | Bytecode::CALLTHIS
             | Bytecode::CALLSELF
             | Bytecode::CALLSUPER
             | Bytecode::CALLSELFVIEW
             | Bytecode::CALLSELFPURE
-            | Bytecode::CALLEXT
-            | Bytecode::CALLVIEW
-            | Bytecode::CALLPURE
     )
 }
 
 pub fn decode_user_call_site(inst: Bytecode, s: &[u8]) -> VmrtRes<CallSpec> {
     match inst {
-        Bytecode::USECODE => decode_usecode_body(s),
+        Bytecode::CODECALL => decode_codecall_body(s),
         Bytecode::CALL => decode_call_body(s),
+        Bytecode::CALLEXT => decode_short_indexed_call_body(s, EffectMode::Edit, CallTarget::Ext),
+        Bytecode::CALLEXTVIEW => decode_short_indexed_call_body(s, EffectMode::View, CallTarget::Ext),
+        Bytecode::CALLUSEVIEW => decode_short_indexed_call_body(s, EffectMode::View, CallTarget::Use),
+        Bytecode::CALLUSEPURE => decode_short_indexed_call_body(s, EffectMode::Pure, CallTarget::Use),
         Bytecode::CALLTHIS => decode_short_call_body(s, CallTarget::This, EffectMode::Edit),
         Bytecode::CALLSELF => decode_short_call_body(s, CallTarget::Self_, EffectMode::Edit),
         Bytecode::CALLSUPER => decode_short_call_body(s, CallTarget::Super, EffectMode::Edit),
         Bytecode::CALLSELFVIEW => decode_short_call_body(s, CallTarget::Self_, EffectMode::View),
         Bytecode::CALLSELFPURE => decode_short_call_body(s, CallTarget::Self_, EffectMode::Pure),
-        Bytecode::CALLEXT => decode_short_lib_call_body(s, EffectMode::Edit),
-        Bytecode::CALLVIEW => decode_short_lib_call_body(s, EffectMode::View),
-        Bytecode::CALLPURE => decode_short_lib_call_body(s, EffectMode::Pure),
         _ => itr_err_code!(CallInvalid),
     }
 }
 
 pub fn encode_user_call_site(call: CallSpec) -> VmrtRes<(Bytecode, Vec<u8>)> {
     Ok(match call {
-        CallSpec::Splice { .. } => (Bytecode::USECODE, encode_usecode_body(call)?.to_vec()),
+        CallSpec::Splice { .. } => (Bytecode::CODECALL, encode_codecall_body(call)?.to_vec()),
         CallSpec::Invoke {
             target,
             effect,
@@ -281,14 +291,17 @@ pub fn encode_user_call_site(call: CallSpec) -> VmrtRes<(Bytecode, Vec<u8>)> {
             (CallTarget::Self_, EffectMode::Pure) => {
                 (Bytecode::CALLSELFPURE, encode_short_call_body(selector))
             }
-            (CallTarget::Call(lib), EffectMode::Edit) => {
+            (CallTarget::Ext(lib), EffectMode::Edit) => {
                 (Bytecode::CALLEXT, encode_short_lib_call_body(lib, selector))
             }
-            (CallTarget::Call(lib), EffectMode::View) => {
-                (Bytecode::CALLVIEW, encode_short_lib_call_body(lib, selector))
+            (CallTarget::Ext(lib), EffectMode::View) => {
+                (Bytecode::CALLEXTVIEW, encode_short_lib_call_body(lib, selector))
             }
-            (CallTarget::Call(lib), EffectMode::Pure) => {
-                (Bytecode::CALLPURE, encode_short_lib_call_body(lib, selector))
+            (CallTarget::Use(lib), EffectMode::View) => {
+                (Bytecode::CALLUSEVIEW, encode_short_lib_call_body(lib, selector))
+            }
+            (CallTarget::Use(lib), EffectMode::Pure) => {
+                (Bytecode::CALLUSEPURE, encode_short_lib_call_body(lib, selector))
             }
             _ => (Bytecode::CALL, encode_call_body(call)?.to_vec()),
         },
@@ -375,15 +388,15 @@ pub fn encode_splice_body(call: CallSpec) -> VmrtRes<[u8; SPLICE_BODY_WIDTH]> {
     Ok(out)
 }
 
-pub fn verify_usecode(call: &CallSpec) -> VmrtErr {
+pub fn verify_codecall(call: &CallSpec) -> VmrtErr {
     verify_splice(call)
 }
 
-pub fn decode_usecode_body(s: &[u8]) -> VmrtRes<CallSpec> {
+pub fn decode_codecall_body(s: &[u8]) -> VmrtRes<CallSpec> {
     decode_splice_body(s)
 }
 
-pub fn encode_usecode_body(call: CallSpec) -> VmrtRes<[u8; USECODE_BODY_WIDTH]> {
+pub fn encode_codecall_body(call: CallSpec) -> VmrtRes<[u8; CODECALL_BODY_WIDTH]> {
     encode_splice_body(call)
 }
 
@@ -406,13 +419,13 @@ mod user_call_codec_tests {
 
     #[test]
     fn view_and_pure_lib_calls_do_not_require_external_visibility() {
-        assert!(!CallSpec::callview(7, sign()).requires_external_visibility());
-        assert!(!CallSpec::callpure(7, sign()).requires_external_visibility());
+        assert!(!CallSpec::callextview(7, sign()).requires_external_visibility());
+        assert!(!CallSpec::callextpure(7, sign()).requires_external_visibility());
     }
 
     #[test]
     fn call_roundtrip_internal_use_exact() {
-        let call = CallSpec::invoke(CallTarget::Use(3), EffectMode::View, sign());
+        let call = CallSpec::calluseview(3, sign());
         let body = encode_call_body(call).unwrap();
         assert_eq!(decode_call_body(&body).unwrap(), call);
         assert!(!call.switches_context());
@@ -441,6 +454,11 @@ mod user_call_codec_tests {
         let (inst, body) = encode_user_call_site(call).unwrap();
         assert_eq!(inst, Bytecode::CALLSELF);
         assert_eq!(decode_user_call_site(inst, &body).unwrap(), call);
+
+        let use_view = CallSpec::calluseview(9, sign());
+        let (inst, body) = encode_user_call_site(use_view).unwrap();
+        assert_eq!(inst, Bytecode::CALLUSEVIEW);
+        assert_eq!(decode_user_call_site(inst, &body).unwrap(), use_view);
     }
 
     #[test]

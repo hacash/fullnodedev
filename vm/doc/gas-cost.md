@@ -24,13 +24,12 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
     MGET, JOIN, REV, 
     NEWLIST, NEWMAP,
     NTFUNC
-- 12: EXTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER,
+- 12: ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE,
     PACKLIST, PACKMAP, UNPACK, CLONE, MERGE, KEYS, VALUES
-- 16: EXTVIEW, GGET, CALLCODE 
-- 20: LOG1, CALLPURE
-- 24: LOG2, GPUT, CALLVIEW
-- 28: LOG3, SDEL, EXTACTION
-- 32: LOG4, SLOAD, SREST, CALL
+- 16: ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE
+- 24: LOG2, GPUT, CALLEXTVIEW
+- 28: LOG3, SDEL, ACTION
+- 32: LOG4, SLOAD, SREST, CALLEXT, CALL
 - 64: SSAVE, SRENT
 
 
@@ -122,13 +121,13 @@ For opcode that create/copy byte payload to stack values, or write value payload
 
 NTFUNC/NTENV each have three components: 1-base, 2-byte-extra, 3-native fixed fee.
 The native fixed fee is defined in native function/env code and returned after the call.
-EXTACTION/EXTVIEW/EXTENV also include host-returned gas (`bgasu`) from host execution.
+ACTION/ACTVIEW/ACTENV also include host-returned gas (`bgasu`) from host execution.
 
 - byte/16: NTFUNC    (op base is 8, byte = argv/input and return `val_size()`)
 - byte/16: NTENV     (op base is 6, byte = return `val_size()`)
-- byte/16: EXTVIEW   (op base is 16, byte = input body bytes and return `val_size()`)
+- byte/16: ACTVIEW   (op base is 16, byte = input body bytes and return `val_size()`)
 - byte/16: EXTENV    (op base is 12, byte = return `val_size()`)
-- byte/10: EXTACTION (op base is 28, byte = input body bytes)
+- byte/10: ACTION (op base is 28, byte = input body bytes)
 
 #### Heap read and write
 
@@ -234,7 +233,7 @@ This section provides a 3-tier “DeFi operation” **expected resource usage** 
 
 Assumptions and notes:
 
-- These are estimation templates. Real costs depend on opcode mix, contract sizes, host-returned gas from `EXTACTION/EXTVIEW/EXTENV`, and whether `SSAVE` triggers renewals or (re)creates a storage key.
+- These are estimation templates. Real costs depend on opcode mix, contract sizes, host-returned gas from `ACTION/ACTVIEW/ACTENV`, and whether `SSAVE` triggers renewals or (re)creates a storage key.
 - The “Other compute opcodes” column is meant to count opcodes **excluding** those already accounted for as IO/heavy ops in this table (e.g. `SLOAD/SSAVE/LOG*/HGROW/HREAD/HWRITE/EXT*/NTFUNC`), to avoid double counting.
 - Contract load cost: `32 * new_loads + sum(floor(contract_bytes_i / 64))` (integer truncation per loaded contract).
 - `SSAVE` has two typical pricing cases:
@@ -243,7 +242,7 @@ Assumptions and notes:
 
 > In the table, `value_byte=8` corresponds to `U64`-like balances/reserves. If you store `Bytes(32)` (e.g. hash/commitment), replace `8` with `32` and recompute.
 
-| Scenario | Contract Loads | EXTACTION | NTFUNC | Other Compute Opcodes (rough) | Heap (rough) | Storage (rough) | Log (rough) | Estimated Total Gas (range) |
+| Scenario | Contract Loads | ACTION | NTFUNC | Other Compute Opcodes (rough) | Heap (rough) | Storage (rough) | Log (rough) | Estimated Total Gas (range) |
 |---|---|---|---|---|---|---|---|---|
 | Light DeFi op (e.g. single-pool fee settle / single-contract balance move) | 1 new load; contract ~8KB | 0 | 0 | ~300 opcodes (avg 2 gas/op → ~600) | none | `SLOAD*2` (value_byte=8) + `SSAVE*2` (existing, value_byte=8) | `LOG2*1` (total value_byte ~24) | ~1000–~1100 (example: `160(load)+600(code)+196(storage)+48(log)=1004`; if SSAVE renew triggers +80; if new key is created cost rises significantly) |
 | Typical DeFi op (e.g. AMM swap / lending borrow/repay step) | 3 new loads; each contract ~8KB | 1; body ~96B; host returned gas ~200 (example) | 3 hash calls (e.g. sha2/sha3/ripemd160; input ~32B) | ~1200 opcodes (~2400) | `HGROW 2 seg` + `HWRITE 512B` + `HREAD 512B` | `SLOAD*10` (8B) + `SSAVE*6` (existing, 8B) | `LOG3*2` (~48B each) | ~4200–~5200 (example: `480(load)+2400(code)+237(ext)+119(nt)+94(heap)+720(storage)+152(log)=4202`; depends on host gas and whether SSAVE renew/new happens) |
@@ -254,7 +253,7 @@ Suggested workflow (quick estimate):
 1. List contracts/libraries touched, estimate new contract loads and contract sizes.
 2. List counts of `SLOAD/SSAVE/SRENT` and their `value_byte` (store `U64` → 8B; common hashes → 32B).
 3. If you assemble large parameters in heap (HeapSlice feeding `NTFUNC/EXT*`), list `HGROW` segments and read/write byte sizes.
-4. Treat `EXTACTION/EXTVIEW/EXTENV` body bytes and host-returned gas as variables; start conservative, then calibrate with on-chain measurements.
+4. Treat `ACTION/ACTVIEW/ACTENV` body bytes and host-returned gas as variables; start conservative, then calibrate with on-chain measurements.
 
 ## Coverage Notes
 

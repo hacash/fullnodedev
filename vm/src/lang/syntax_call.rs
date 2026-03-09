@@ -98,8 +98,8 @@ impl Syntax {
 
 
 
-    fn parse_usecode_body_token(token: &Token) -> Ret<[u8; USECODE_BODY_WIDTH]> {
-        Self::parse_fixed_body_token(token, "usecode body")
+    fn parse_codecall_body_token(token: &Token) -> Ret<[u8; CODECALL_BODY_WIDTH]> {
+        Self::parse_fixed_body_token(token, "codecall body")
     }
 
 
@@ -150,10 +150,10 @@ impl Syntax {
             Keyword(KwTy::Self_) => CallTarget::Self_,
             Keyword(KwTy::Upper) => CallTarget::Upper,
             Keyword(KwTy::Super) => CallTarget::Super,
-            Keyword(KwTy::Lib) => CallTarget::Call(self.parse_lib_ctor_index(err_msg)?),
+            Keyword(KwTy::Lib) => CallTarget::Ext(self.parse_lib_ctor_index(err_msg)?),
             Keyword(KwTy::Use) => CallTarget::Use(self.parse_lib_ctor_index(err_msg)?),
-            Identifier(id) => CallTarget::Call(self.link_lib(&id)?),
-            Integer(..) => CallTarget::Call(Self::parse_lib_index_token(&head)?),
+            Identifier(id) => CallTarget::Ext(self.link_lib(&id)?),
+            Integer(..) => CallTarget::Ext(Self::parse_lib_index_token(&head)?),
             _ => return errf!("{}", err_msg),
         })
     }
@@ -187,7 +187,7 @@ impl Syntax {
         }
         let op: Bytecode = std_mem_transmute!(node.bytecode());
         match op {
-            RET | END | ERR | ABT | USECODE => true,
+            RET | END | ERR | ABT | CODECALL => true,
             IRBLOCK | IRBLOCKR | IRLIST => node
                 .as_any()
                 .downcast_ref::<IRNodeArray>()
@@ -207,7 +207,7 @@ impl Syntax {
 
 
 
-    fn parse_usecode_target_selector(&mut self, head: Token, err_msg: &'static str) -> Ret<(u8, [u8; 4])> {
+    fn parse_codecall_target_selector(&mut self, head: Token, err_msg: &'static str) -> Ret<(u8, [u8; 4])> {
         let idx = match head {
             Identifier(id) => self.link_lib(&id)?,
             Integer(..) => Self::parse_lib_index_token(&head)?,
@@ -242,16 +242,16 @@ impl Syntax {
 
     fn parse_lib_receiver_call(&mut self, err_msg: &'static str) -> Ret<Box<dyn IRNode>> {
         let idx = self.parse_lib_ctor_index(err_msg)?;
-        let effect = match self.next()? {
-            Keyword(KwTy::Dot) => EffectMode::Edit,
-            Keyword(KwTy::Colon) => EffectMode::View,
-            Keyword(KwTy::DColon) => EffectMode::Pure,
+        let (target, effect) = match self.next()? {
+            Keyword(KwTy::Dot) => (CallTarget::Ext(idx), EffectMode::Edit),
+            Keyword(KwTy::Colon) => (CallTarget::Ext(idx), EffectMode::View),
+            Keyword(KwTy::DColon) => (CallTarget::Use(idx), EffectMode::Pure),
             _ => return errf!("{}", err_msg),
         };
         let selector = self.next()?;
         let sig = self.parse_call_selector_token(&selector)?;
         let argv = self.deal_func_argv()?;
-        push_user_invoke(CallSpec::invoke(CallTarget::Call(idx), effect, sig), argv)
+        push_user_invoke(CallSpec::invoke(target, effect, sig), argv)
     }
 
     fn parse_short_lib_call_spec<F>(
@@ -288,6 +288,45 @@ impl Syntax {
         push_user_invoke(call, argv)
     }
 
+    fn parse_short_local_call_spec<F>(
+        &mut self,
+        first: Token,
+        inst: Bytecode,
+        body_label: &'static str,
+        err_msg: &'static str,
+        build: F,
+    ) -> Ret<CallSpec>
+    where
+        F: FnOnce(FnSign) -> CallSpec,
+    {
+        if let Ok(body) = Self::parse_fixed_body_token::<4>(&first, body_label) {
+            return decode_user_call_site(inst, &body).map_err(|x| x.to_string());
+        }
+        let idx = Self::parse_lib_index_token(&first).map_err(|_| err_msg.to_string())?;
+        if idx != 0 {
+            return errf!("{} must use 0::selector", body_label);
+        }
+        self.expect_keyword_token(KwTy::DColon, err_msg)?;
+        let selector = self.next()?;
+        Ok(build(self.parse_call_selector_token(&selector)?))
+    }
+
+    fn parse_short_local_call_invoke<F>(
+        &mut self,
+        inst: Bytecode,
+        body_label: &'static str,
+        err_msg: &'static str,
+        build: F,
+    ) -> Ret<Box<dyn IRNode>>
+    where
+        F: FnOnce(FnSign) -> CallSpec,
+    {
+        let first = self.next()?;
+        let call = self.parse_short_local_call_spec(first, inst, body_label, err_msg, build)?;
+        let argv = self.deal_func_argv()?;
+        push_user_invoke(call, argv)
+    }
+
     fn parse_identifier_receiver_call(&mut self, id: String, sep: KwTy) -> Ret<Box<dyn IRNode>> {
         let selector = self.next()?;
         let fnsign = self.parse_call_selector_token(&selector)?;
@@ -304,7 +343,11 @@ impl Syntax {
                 match id.as_str() {
                     "self" => CallSpec::invoke(CallTarget::Self_, effect, fnsign),
                     "this" | "super" => return errf!("call express after identifier format error"),
-                    _ => CallSpec::invoke(CallTarget::Call(self.link_lib(&id)?), effect, fnsign),
+                    _ => {
+                        let idx = self.link_lib(&id)?;
+                        let target = maybe!(sep == KwTy::DColon, CallTarget::Use(idx), CallTarget::Ext(idx));
+                        CallSpec::invoke(target, effect, fnsign)
+                    }
                 }
             }
             _ => never!(),

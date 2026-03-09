@@ -48,7 +48,7 @@ mod main {
             global_put("k", 123 as u32)
             var n = C.f1(3)
             print n
-            callcode C.f2
+            codecall C.f2
         "##,
         );
 

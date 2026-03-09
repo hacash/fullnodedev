@@ -781,7 +781,7 @@ pub fn execute_code(
                 } // assert(..)
                 PRT => debug_print_value(context_addr, current_addr, exec, ops.pop()?),
                 // call
-                USECODE | CALL | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE | CALLEXT | CALLVIEW | CALLPURE => {
+                CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {
                     let plen = instruction.metadata().param as usize;
                     let end = *pc + plen;
                     if end > codes.len() {

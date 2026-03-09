@@ -45,7 +45,7 @@ The system distinguishes:
 1. Execution context address (state scope)
 2. Current code owner address (`this/self/super` resolution)
 
-This keeps semantics stable under inheritance, library calls, and delegated execution (e.g., CALLCODE).
+This keeps semantics stable under inheritance, library calls, and delegated execution (e.g., CODECALL).
 
 ### 3.4 Re-entrant but Single-Instance Consistent
 
@@ -140,11 +140,12 @@ Each VM runtime instance has a maximum number of loadable contracts; exceeding i
 
 Function target resolution follows:
 
-1. `this`: resolve along context contract inheritance chain.
-2. `self`: resolve along current code owner inheritance chain.
-3. `super`: resolve starting from current code owner's parent layer.
-4. `libidx` with `CALL`: locate library first, then resolve function from target + inherits (DFS order).
-5. `libidx` with `CALLVIEW/CALLPURE/CALLCODE`: locate library first, then resolve from target local user-function table only (no inheritance search).
+1. `this`: resolve on the context contract root plus its direct parents.
+2. `self`: resolve on the current code owner root plus its direct parents.
+3. `super`: resolve only on the current code owner's direct parent layer.
+4. `libidx` with `CALL`: locate library first, then resolve function from target + direct parents only.
+5. `libidx` with `CALLEXTVIEW`: locate library first, then resolve from target + direct parents.
+6. `libidx` with `CALLUSEVIEW/CALLUSEPURE/CODECALL`: locate library first, then resolve from target local root only (no inheritance search).
 
 Resolution must enforce cycle detection and bounds safety.
 
@@ -166,16 +167,16 @@ Execution uses multi-frame dispatch:
 
 1. Root frame establishes call context.
 2. Child calls create new frames as needed.
-3. Delegated execution (CALLCODE) may switch code within current frame.
+3. Delegated execution (CODECALL) may switch code within current frame.
 4. Returns are type-checked against contracts and propagated upward.
 
-## 7.3 CALLCODE Design Constraints
+## 7.3 CODECALL Design Constraints
 
-CALLCODE is an implementation-level delegation mechanism, not a normal function call:
+CODECALL is an implementation-level delegation mechanism, not a normal function call:
 
 1. Target function parameter count must be 0.
 2. Return contract is checked against caller signature.
-3. Further call initiation is forbidden while in callcode execution state.
+3. Further call initiation is forbidden while in codecall execution state.
 
 ## 7.4 Visibility Constraint
 
@@ -250,7 +251,7 @@ The following invariants are recommended as long-term regression baselines:
 2. Context level is correctly restored before/after VM entry call.
 3. Context address and code owner address semantics are not mixed.
 4. Inheritance resolution is acyclic, library indices are verifiable, and `libidx` lookup follows split semantics:
-   `CALL` uses target + inherits search; `CALLVIEW/CALLPURE/CALLCODE` use local target table only.
+   `CALL` uses target + direct parents; `CALLEXTVIEW` uses target + direct parents; `CALLUSEVIEW/CALLUSEPURE/CODECALL` use the exact target root only.
 5. Extension capability is strictly constrained by allowlist and mode.
 6. Branch recover does not roll back consumed resources.
 7. Contract revision is monotonically increasing and update flow is auditable.
@@ -263,7 +264,7 @@ Recommended test dimensions:
 1. Wiring and initialization: with/without VM feature, with/without assigner, entry fallback initialization.
 2. Deployment and update: happy paths, invalid structures, revision conflicts, self-reference conflicts.
 3. Loading and resolution: inheritance chains, library indices, combinations of `this/self/super/libidx`.
-4. Call dispatch: normal calls, CALLCODE, tail returns, exception propagation.
+4. Call dispatch: normal calls, CODECALL, tail returns, exception propagation.
 5. Mode permissions: call and extension boundaries across Main/P2sh/Abst/View/Pure.
 6. P2SH and hooks: proof uniqueness, transfer-to-callback linkage.
 7. Rollback semantics: successful-branch merge, failed-branch recover, monotonic consumption.

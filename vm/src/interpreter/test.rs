@@ -2289,7 +2289,7 @@ mod bounds_tests {
 
     #[test]
     fn shortcut_call_gas_matches_opcode_tiers() {
-        use crate::rt::{calc_func_sign, encode_call_body, encode_usecode_body, CallSpec, CallTarget, EffectMode, ExecCtx};
+        use crate::rt::{calc_func_sign, encode_call_body, encode_codecall_body, CallSpec, CallTarget, EffectMode, ExecCtx};
 
         let sign = calc_func_sign("jump");
         let cases = [
@@ -2297,7 +2297,7 @@ mod bounds_tests {
                 {
                     let mut codes = vec![Bytecode::CALL as u8];
                     codes.extend_from_slice(
-                        &encode_call_body(CallSpec::invoke(CallTarget::Call(1), EffectMode::Edit, sign)).unwrap(),
+                        &encode_call_body(CallSpec::invoke(CallTarget::Ext(1), EffectMode::Edit, sign)).unwrap(),
                     );
                     codes
                 },
@@ -2343,9 +2343,9 @@ mod bounds_tests {
             ),
             (
                 {
-                    let mut codes = vec![Bytecode::USECODE as u8];
+                    let mut codes = vec![Bytecode::CODECALL as u8];
                     codes.extend_from_slice(
-                        &encode_usecode_body(CallSpec::usecode(1, sign)).unwrap(),
+                        &encode_codecall_body(CallSpec::codecall(1, sign)).unwrap(),
                     );
                     codes
                 },
@@ -2353,18 +2353,29 @@ mod bounds_tests {
             ),
             (
                 vec![
-                    Bytecode::CALLPURE as u8,
+                    Bytecode::CALLUSEPURE as u8,
                     1,
                     sign[0],
                     sign[1],
                     sign[2],
                     sign[3],
                 ],
-                20,
+                16,
             ),
             (
                 vec![
-                    Bytecode::CALLVIEW as u8,
+                    Bytecode::CALLUSEVIEW as u8,
+                    1,
+                    sign[0],
+                    sign[1],
+                    sign[2],
+                    sign[3],
+                ],
+                16,
+            ),
+            (
+                vec![
+                    Bytecode::CALLEXTVIEW as u8,
                     1,
                     sign[0],
                     sign[1],

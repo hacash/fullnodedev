@@ -58,10 +58,16 @@ keyword_define! {
     Print     : "print"
     Call      : "call"
     TailCall  : "tailcall"
-    CallExt   : "callext"
-    CallView  : "callview"
-    CallPure  : "callpure"
-    UseCode  : "usecode"
+    CallExt      : "callext"
+    CallExtView  : "callextview"
+    CallUseView  : "calluseview"
+    CallUsePure  : "callusepure"
+    CallThis     : "callthis"
+    CallSelf     : "callself"
+    CallSuper    : "callsuper"
+    CallSelfView : "callselfview"
+    CallSelfPure : "callselfpure"
+    CodeCall     : "codecall"
     ByteCode  : "bytecode"
     IrCode    : "ircode"
     Contract  : "contract"
@@ -231,7 +237,7 @@ irfn_define! {
     ACTION  : 1, 1, 0,     action  // no return value
     // ACTVIEW    : 1, 1, 1,     actview ACTENV     : 1, 0, 1,     actenv NTFUNC     : 1, 1, 1,     native_func NTENV      : 1, 0, 1,     native_env
 
-    // CALL plus CALLVIEW/CALLPURE/USECODE/CALLEXT are exposed call opcodes.
+    // CALL plus the fixed shortcut call opcodes are exposed user-call instructions.
 
     PU8        : 1, 0, 1,     push_u8
     PU16       : 2, 0, 1,     push_u16

@@ -45,7 +45,7 @@ action_define!{ P2SHScriptProve, 46,
     {
         // calc hash: script + calibs
         argvkey: BytesW2 // unlock witness bytes (not executed)
-        adrlibs: ContractAddressW1 // lib address list for pure and usecode call
+        adrlibs: ContractAddressW1 // lib address list for pure and codecall
         codeconf: Uint1 // low 2 bits: CodeType, high 6 bits: reserved (must be 0)
         lockbox: BytesW2 // verify bytecodes
         merkels: MerkelStuffs

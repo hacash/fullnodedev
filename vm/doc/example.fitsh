@@ -248,11 +248,11 @@ contract TestToken {
         var c2 = callthis 0::0x11223344(30, 40)
         var c3 = callself 0::0x55667788(50)
         var c4 = callsuper 0::0x99aabbcc(60)
-        var c5 = callpure 2::0xdeadbeef(70)
-        // callview coverage + signature token variants (hex, u32 decimal, 4-byte literal)
-        var cl1 = callview 1::0x01020304(1)
-        var cl2 = callview 1::305419896(2) // 0x12345678
-        var cl3 = callview 1::"ABCD"(3)
+        var c5 = callusepure 2::0xdeadbeef(70)
+        // callextview coverage + signature token variants (hex, u32 decimal, 4-byte literal)
+        var cl1 = callextview 1::0x01020304(1)
+        var cl2 = callextview 1::305419896(2) // 0x12345678
+        var cl3 = callextview 1::"ABCD"(3)
         print c1
         print c2
         print c3
@@ -289,18 +289,18 @@ contract TestToken {
     }
 
     /*
-        CALLCODE is special in bytecode verification: it must be followed by END unless
+        CODECALL is special in bytecode verification: it must be followed by END unless
         it is the final instruction. Keep it as a tail call in a dedicated function.
     */
-    function external ircode coverage_tail_callcode() -> u32 {
-        callcode 0::0xabcdef01
+    function external ircode coverage_tail_codecall() -> u32 {
+        codecall 0::0xabcdef01
         end
     }
 
-    function external ircode coverage_tail_callcode_libid() -> u32 {
-        // cover: lib statement + callcode lib-index by identifier
+    function external ircode coverage_tail_codecall_libid() -> u32 {
+        // cover: lib statement + codecall lib-index by identifier
         lib TmpLib = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
-        callcode TmpLib::0xabcdef01
+        codecall TmpLib::0xabcdef01
         end
     }
 

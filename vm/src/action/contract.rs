@@ -94,6 +94,7 @@ action_define! { ContractUpdate, 41,
         let delta_bytes = new_size.saturating_sub(old_size);
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
         let cty = EntryKind::Abst as u8;
+        // Design choice: `Change` intentionally dominates `Append`; any edit marked as changed (including abstcall edits) dispatches `Change`, and `Append` is reserved for append-only growth.
         let sys = maybe!(did_change, Change, Append) as u8; // Change or Append
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
         let _ = setup_vm_run(

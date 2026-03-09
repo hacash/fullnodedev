@@ -61,7 +61,7 @@ impl CallFrame {
                     )?;
 
                     if !invokes {
-                        // Zero-arg USECODE callees compile with a leading POP; non-zero-arg callees still need current argv forwarding.
+                        // Zero-arg CODECALL callees compile with a leading POP; non-zero-arg callees still need current argv forwarding.
                         let splice_argv = match plan.fnobj.agvty.as_ref() {
                             Some(types) if types.param_count() > 0 => curr_ref!().call_argv.clone(),
                             _ => Value::Nil,

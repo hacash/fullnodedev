@@ -32,8 +32,8 @@ A practical guide for developers with smart contract experience (e.g., Solidity)
 | Integer types | `u8`, `u16`, `u32`, `u64`, `u128` | `uint8`..`uint256`, `int` |
 | String/Bytes | `bytes` (quoted strings and hex) | `string`, `bytes` |
 | Parameters | `param { a b c }` unpacks to slots | Declared in function signature |
-| State mutability | `callview`/`callpure` for read-only | `view`/`pure` modifiers |
-| Low-level call | `callcode` (must follow with `end`) | `delegatecall` |
+| State mutability | `callextview`/`callusepure` for read-only | `view`/`pure` modifiers |
+| Low-level call | `codecall` (must follow with `end`) | `delegatecall` |
 | Payment hooks | `abstract PayableHACD` etc. | `receive()`, `fallback()` |
 
 ---
@@ -165,8 +165,8 @@ Visibility note:
 |---------|---------|
 | `call` | Call external contract |
 | `callthis` / `callself` / `callsuper` | Internal calls |
-| `callview` / `callpure` | Read-only calls |
-| `callcode` | CallCode (no return; must follow with `end`) |
+| `callextview` / `callusepure` | Read-only calls |
+| `codecall` | CodeCall (no return; must follow with `end`) |
 | `bytecode` | Raw bytecode injection |
 
 ### 4.5 Type and Literal Keywords
@@ -281,14 +281,14 @@ param { owner amount fee }
 - Must appear at the top of the function body
 - Canonical IR: `UNPACK(ROLL0, P0)`
 
-### 6.2 `callcode lib_idx::func_sig`
+### 6.2 `codecall lib_idx::func_sig`
 
 - No arguments; tail call
 - Must be followed by `end`
 - Used for low-level delegation
 
 ```fitsh
-callcode 0::0xabcdef01
+codecall 0::0xabcdef01
 end
 ```
 
@@ -653,33 +653,35 @@ Side effects (e.g. `storage_save`, `print`) in a `bind` expression only run when
 | Syntax | Opcode | Use |
 |--------|--------|-----|
 | `lib.func(...)` | CALL | State-changing call |
-| `lib:func(...)` | CALLVIEW | View call |
-| `lib::func(...)` | CALLPURE | Pure call |
+| `lib:func(...)` | CALLEXTVIEW | View call |
+| `lib::func(...)` | CALLUSEPURE | Pure code-local call |
+| `calluseview 1::sig(...)` | CALLUSEVIEW | View code-local call |
 | `this.func(...)` | CALLTHIS | Current contract |
 | `self.func(...)` | CALLSELF | Current contract |
 | `super.func(...)` | CALLSUPER | Parent in inherit chain |
 
 Library resolution note:
-- `CALL` (`lib.func(...)`) resolves the library address first, then searches target + inherits (DFS order).
-- `CALLVIEW/CALLPURE/CALLCODE` resolve against the target library contract's local user-function table only (no inheritance search).
+- `CALL` (`lib.func(...)`) resolves the library address first, then searches the target and its direct parents only.
+- `CALLEXTVIEW` resolves against target + direct parents, while `CALLUSEVIEW/CALLUSEPURE/CODECALL` stay on the exact target library root.
 
 ### 11.2 Call Permission and State Access Control
 
-The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)** plus **in_callcode**.
+The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)** plus **in_codecall**.
 
 - `ExecDomain` describes the current dispatch policy source: `TopMain`, `TopP2sh`, `TopAbst`, or `Contract`.
 - `FrameMode` describes current state-access strength: `External`, `Inner`, `View`, or `Pure`.
-- Fixed call instructions (`CALL`, `CALLVIEW`, `CALLPURE`, `CALLTHIS`, `CALLSELF`, `CALLSUPER`) switch to `ExecDomain::Contract` and set a fixed `FrameMode`.
-- `CALLCODE` inherits the caller's full `ExecCtx` and runs in-place with `in_callcode = true`.
+- Fixed call instructions (`CALL`, `CALLEXTVIEW`, `CALLUSEVIEW`, `CALLUSEPURE`, `CALLTHIS`, `CALLSELF`, `CALLSUPER`) switch to `ExecDomain::Contract` and set a fixed `FrameMode`.
+- `CODECALL` inherits the caller's full `ExecCtx` and runs in-place with `in_codecall = true`.
 
-#### 7 Call Instructions: Dispatch Matrix (runtime-exact)
+#### Selected Call Instructions: Dispatch Matrix
 
 | Call | Syntax | Callee `ExecCtx` | Lookup root | Inheritance search | Frame behavior | State read | State write |
 |------|--------|------------------|-------------|--------------------|----------------|------------|-------------|
-| `call` | `lib.func(...)` | `Contract + External` | library target | Yes (target + inherits) | New frame | Yes | Yes |
-| `callview` | `lib:func(...)` | `Contract + View` | library target | Yes (target + inherits) | New frame | Yes | No |
-| `callpure` | `lib::func(...)` | `Contract + Pure` | library target | Yes (target + inherits) | New frame | No | No |
-| `callcode` | `callcode lib::sig` | inherits caller `ExecCtx` | library target | No (local table only) | In-place (no new frame) | Inherits | Inherits |
+| `call` | `lib.func(...)` | `Contract + External` | library target | Yes (target + direct parents only) | New frame | Yes | Yes |
+| `callextview` | `lib:func(...)` | `Contract + View` | library target | Yes (target + direct parents only) | New frame | Yes | No |
+| `calluseview` | `calluseview lib::sig(...)` | `Contract + View` | library target | No (exact root only) | New frame | Yes | No |
+| `callusepure` | `lib::func(...)` | `Contract + Pure` | library target | No (exact root only) | New frame | No | No |
+| `codecall` | `codecall lib::sig` | inherits caller `ExecCtx` | library target | No (exact root only) | In-place (no new frame) | Inherits | Inherits |
 | `callthis` | `this.func(...)` | `Contract + Inner` | `state_addr` | Yes | New frame | Yes | Yes |
 | `callself` | `self.func(...)` | `Contract + Inner` | `code_owner` | Yes | New frame | Yes | Yes |
 | `callsuper` | `super.func(...)` | `Contract + Inner` | direct parents of `code_owner` | No extra DFS beyond direct-parent entry set | New frame | Yes | Yes |
@@ -688,17 +690,18 @@ The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)** pl
 
 | Call | `state_addr` | `code_owner` |
 |------|--------------|--------------|
-| `call` | switch to library target | switch to resolved function owner (target or inherited parent) |
-| `callview` | unchanged | switch to resolved function owner (target or inherited parent) |
-| `callpure` | unchanged | switch to resolved function owner (target or inherited parent) |
-| `callcode` | unchanged | switch current frame to library target |
+| `call` | switch to library target | switch to resolved function owner (target or direct parent) |
+| `callextview` | unchanged | switch to resolved function owner (target or direct parent) |
+| `calluseview` | unchanged | switch to resolved function owner on exact library root |
+| `callusepure` | unchanged | switch to resolved function owner on exact library root |
+| `codecall` | unchanged | switch current frame to library target |
 | `callthis` | unchanged | resolved owner from `state_addr` chain |
 | `callself` | unchanged | resolved owner from `code_owner` chain |
 | `callsuper` | unchanged | resolved owner from direct-parent entry set |
 
 **State** = Storage, Global, Memory, Log.
 
-**Important**: `callcode` runs in the **current frame** and **fully inherits the caller's ExecCtx** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the callcode body are governed by the inherited domain/frame permissions. Additionally, `callcode` sets `in_callcode = true`, which forbids any further nested calls (CallInCallcode error).
+**Important**: `codecall` runs in the **current frame** and **fully inherits the caller's ExecCtx** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the codecall body are governed by the inherited domain/frame permissions. Additionally, `codecall` sets `in_codecall = true`, which forbids any further nested calls (CallInCallcode error).
 
 #### Orthogonal Permission Matrix
 
@@ -706,9 +709,9 @@ Domain restrictions:
 
 | `ExecDomain` | Allowed calls |
 |---|---|
-| `TopMain` | `CALL`, `CALLVIEW`, `CALLPURE`, `CALLCODE` |
-| `TopP2sh` | `CALLVIEW`, `CALLPURE`, `CALLCODE` |
-| `TopAbst` | `CALLTHIS`, `CALLSELF`, `CALLSUPER`, `CALLVIEW`, `CALLPURE`, `CALLCODE` |
+| `TopMain` | `CALL`, `CALLEXTVIEW`, `CALLUSEVIEW`, `CALLUSEPURE`, `CODECALL` |
+| `TopP2sh` | `CALLEXTVIEW`, `CALLUSEVIEW`, `CALLUSEPURE`, `CODECALL` |
+| `TopAbst` | `CALLTHIS`, `CALLSELF`, `CALLSUPER`, `CALLEXTVIEW`, `CALLUSEVIEW`, `CALLUSEPURE`, `CODECALL` |
 | `Contract` | no extra domain restriction |
 
 Frame restrictions:
@@ -717,12 +720,10 @@ Frame restrictions:
 |---|---|---|---|
 | `External` | unrestricted by frame mode | Yes | Yes |
 | `Inner` | unrestricted by frame mode | Yes | Yes |
-| `View` | `CALLVIEW`, `CALLPURE` | Yes | No |
-| `Pure` | `CALLPURE` only | No | No |
+| `View` | `CALLEXTVIEW`, `CALLUSEVIEW`, `CALLUSEPURE` | Yes | No |
+| `Pure` | `CALLUSEPURE` only | No | No |
 
-`in_callcode` still forbids all nested calls. `TopAbst` disallows `CALL` (External) to prevent reentrancy from payment hooks into external contracts.
-| Pure | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Callcode | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+`in_codecall` still forbids all nested calls. `TopAbst` disallows `CALL` (External) to prevent reentrancy from payment hooks into external contracts.
 
 #### State Access Control Matrix by Mode
 
@@ -739,8 +740,8 @@ Frame restrictions:
 
 | Mode | EXTACTION | EXTENV | EXTVIEW | Notes |
 |------|-----------|--------|---------|-------|
-| **Main** (depth==0, not in_callcode) | ✅ Yes | ✅ Yes | ✅ Yes | Full access |
-| **Main** (depth>0 or in_callcode) | ❌ No | ✅ Yes | ✅ Yes | EXTACTION blocked in nested calls / callcode |
+| **Main** (depth==0, not in_codecall) | ✅ Yes | ✅ Yes | ✅ Yes | Full access |
+| **Main** (depth>0 or in_codecall) | ❌ No | ✅ Yes | ✅ Yes | EXTACTION blocked in nested calls / codecall |
 | **P2sh, Abst** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
 | **External, Inner** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
 | **View** | ❌ No | ✅ Yes | ✅ Yes | Read-only environment access |
@@ -757,7 +758,7 @@ Frame restrictions:
 | NTFUNC | `address_ptr` | 1 | ✅ Allowed | ✅ | ✅ | Pure address pointer extraction |
 
 **Summary**:
-- **EXTACTION** (asset transfers): Only `Main` mode at `depth == 0` and **not** in `callcode`
+- **EXTACTION** (asset transfers): Only `Main` mode at `depth == 0` and **not** in `codecall`
 - **EXTENV** (`block_height`, `tx_main_address`): Forbidden in `Pure`, allowed elsewhere
 - **EXTVIEW** (`check_signature`, `balance`): Forbidden in `Pure`, allowed elsewhere — read-only chain state queries
 - **NTFUNC** (pure computation): Always allowed in all modes including `Pure`
@@ -767,31 +768,31 @@ Frame restrictions:
 
 | Condition | EXTACTION allowed |
 |-----------|-------------------|
-| mode == Main AND depth == 0 AND not in_callcode | Yes |
-| mode != Main OR depth > 0 OR in_callcode | No |
+| mode == Main AND depth == 0 AND not in_codecall | Yes |
+| mode != Main OR depth > 0 OR in_codecall | No |
 
-`transfer_hac_to`, `transfer_sat_to`, etc. can only run at the top-level main call. They are disabled in `callcode`, in abstract/payment hooks, and in nested calls.
+`transfer_hac_to`, `transfer_sat_to`, etc. can only run at the top-level main call. They are disabled in `codecall`, in abstract/payment hooks, and in nested calls.
 
 #### Summary
 
 - **call** → External: full state access; callee must be marked `external`
-- **callview** → View: read-only; no storage/global/memory/log writes
-- **callpure** → Pure: no state access; only pure computation and nested CALLPURE
-- **callcode** → inherits mode; no nested calls; EXTACTION disabled
+- **callextview** → View: read-only; no storage/global/memory/log writes
+- **callusepure** → Pure: no state access; only pure computation and nested CALLUSEPURE
+- **codecall** → inherits mode; no nested calls; EXTACTION disabled
 - **callthis/callself/callsuper** → Inner: full state access; internal-only
 
 ### 11.3 Function Lookup: `this`, `self`, and `super`
 
 The VM maintains two key addresses during execution:
 
-- **state_addr**: The storage/log owner — the contract initially called (entry point). Stays unchanged through nested inner/view/pure/callcode dispatch.
+- **state_addr**: The storage/log owner — the contract initially called (entry point). Stays unchanged through nested inner/view/pure/codecall dispatch.
 - **code_owner**: The code owner — the contract whose code is currently executing. Changes when resolution chooses another owner.
 
 | Call | Resolves in | Search order |
 |------|-------------|---------------|
-| `this.func(...)` | state_addr | DFS: current contract → inherits (in order) |
-| `self.func(...)` | code_owner | DFS: current contract → inherits (in order) |
-| `super.func(...)` | code_owner's parents only | DFS: skip current owner, search direct inherits → their inherits |
+| `this.func(...)` | state_addr | current contract → direct parents (in order) |
+| `self.func(...)` | code_owner | current contract → direct parents (in order) |
+| `super.func(...)` | code_owner's parents only | direct parents only (skip current owner) |
 
 **When do they differ?** When `super` or `self` moves execution into a parent's code: `code_owner` becomes the parent, but `state_addr` stays the child. Then `this` still resolves in the child (storage context), while `self` resolves in the parent (current code owner).
 
@@ -924,7 +925,7 @@ contract Child {
 | `transfer_hacd_single_to`, `transfer_hacd_to`, etc. | HACD transfers |
 | `transfer_asset_to`, `transfer_asset_from`, `transfer_asset_from_to` | Asset transfers |
 
-**Note**: EXTACTION is disabled in `callcode` context.
+**Note**: EXTACTION is disabled in `codecall` context.
 
 ### 11.6 Storage Functions
 
@@ -1009,5 +1010,5 @@ Developers coming from Solidity or similar languages should note: Fitsh does not
 - **Function args limit**: 15 (pack list); wrap in `list`/`map` for more
 - **Function signature**: 4-byte hash of name only; no overloading
 - **`param`**: Must be at top of body
-- **`callcode`**: Must be followed by `end`
+- **`codecall`**: Must be followed by `end`
 - **`bind`**: Lazy; use `var` for side effects
