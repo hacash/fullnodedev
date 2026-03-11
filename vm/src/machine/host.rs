@@ -1,4 +1,3 @@
-
 /// VM host interface: the interpreter depends only on this trait.
 ///
 /// Design goals:
@@ -9,14 +8,28 @@ pub trait VmHost {
     fn action_call(&mut self, kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)>;
 
     // Logs
-    fn log_push(&mut self, cadr: &ContractAddress, items: Vec<Value>) -> VmrtErr;
+    fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr;
 
     // Storage
-    fn srest(&mut self, hei: u64, cadr: &ContractAddress, key: &Value) -> VmrtRes<Value>;
-    fn sload(&mut self, hei: u64, cadr: &ContractAddress, key: &Value) -> VmrtRes<Value>;
-    fn sdel(&mut self, cadr: &ContractAddress, key: Value) -> VmrtErr;
-    fn ssave(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, val: Value) -> VmrtRes<i64>;
-    fn srent(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, period: Value) -> VmrtRes<i64>;
+    fn srest(&mut self, hei: u64, addr: &Address, key: &Value) -> VmrtRes<Value>;
+    fn sload(&mut self, hei: u64, addr: &Address, key: &Value) -> VmrtRes<Value>;
+    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr;
+    fn ssave(
+        &mut self,
+        gst: &GasExtra,
+        hei: u64,
+        addr: &Address,
+        key: Value,
+        val: Value,
+    ) -> VmrtRes<i64>;
+    fn srent(
+        &mut self,
+        gst: &GasExtra,
+        hei: u64,
+        addr: &Address,
+        key: Value,
+        period: Value,
+    ) -> VmrtRes<i64>;
 }
 
 /// Adapter: provide `VmHost` on top of an existing `Context`.
@@ -40,35 +53,49 @@ impl VmHost for CtxHost<'_> {
         self.ctx.action_call(kid, body).into_ret()
     }
 
-    fn log_push(&mut self, cadr: &ContractAddress, items: Vec<Value>) -> VmrtErr {
-        let lgdt = crate::VmLog::new(cadr.to_addr(), items)?;
+    fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr {
+        let lgdt = crate::VmLog::new(*addr, items)?;
         let logs: &mut dyn Logs = self.ctx.logs();
         logs.push(&lgdt);
         Ok(())
     }
 
-    fn srest(&mut self, hei: u64, cadr: &ContractAddress, key: &Value) -> VmrtRes<Value> {
+    fn srest(&mut self, hei: u64, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let mut st = crate::VMState::wrap(self.ctx.state());
-        st.srest(hei, cadr, key)
+        st.srest(hei, addr, key)
     }
 
-    fn sload(&mut self, hei: u64, cadr: &ContractAddress, key: &Value) -> VmrtRes<Value> {
+    fn sload(&mut self, hei: u64, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let mut st = crate::VMState::wrap(self.ctx.state());
-        st.sload(hei, cadr, key)
+        st.sload(hei, addr, key)
     }
 
-    fn sdel(&mut self, cadr: &ContractAddress, key: Value) -> VmrtErr {
+    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
         let mut st = crate::VMState::wrap(self.ctx.state());
-        st.sdel(cadr, key)
+        st.sdel(addr, key)
     }
 
-    fn ssave(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, val: Value) -> VmrtRes<i64> {
+    fn ssave(
+        &mut self,
+        gst: &GasExtra,
+        hei: u64,
+        addr: &Address,
+        key: Value,
+        val: Value,
+    ) -> VmrtRes<i64> {
         let mut st = crate::VMState::wrap(self.ctx.state());
-        st.ssave(gst, hei, cadr, key, val)
+        st.ssave(gst, hei, addr, key, val)
     }
 
-    fn srent(&mut self, gst: &GasExtra, hei: u64, cadr: &ContractAddress, key: Value, period: Value) -> VmrtRes<i64> {
+    fn srent(
+        &mut self,
+        gst: &GasExtra,
+        hei: u64,
+        addr: &Address,
+        key: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
         let mut st = crate::VMState::wrap(self.ctx.state());
-        st.srent(gst, hei, cadr, key, period)
+        st.srent(gst, hei, addr, key, period)
     }
 }

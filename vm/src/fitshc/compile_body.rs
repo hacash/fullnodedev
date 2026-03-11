@@ -66,12 +66,27 @@ fn parse_const_value(value_str: &str) -> Ret<Box<dyn IRNode>> {
 #[cfg(test)]
 mod compile_body_tests {
     use super::*;
+    use crate::lang::Tokenizer;
 
     #[test]
     fn parse_const_bytes_keeps_first_byte() {
         let parsed = parse_const_value("bytes:0x575459").unwrap();
         let expected = push_bytes(&vec![0x57, 0x54, 0x59]).unwrap();
         assert_eq!(parsed.serialize(), expected.serialize());
+    }
+
+    #[test]
+    fn rejects_contract_lib_count_overflow() {
+        let body_tokens = Tokenizer::new(b"return 1").parse().unwrap();
+        let addr = field::Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
+        let libs: Vec<_> = (0..=u8::MAX as usize)
+            .map(|idx| (format!("L{}", idx), addr.clone()))
+            .collect();
+        let err = match compile_body(body_tokens, vec![], &libs, &[], true) {
+            Ok(_) => panic!("compile_body should fail for overflowing lib count"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("too many contract libs: max 255"));
     }
 }
 
@@ -98,11 +113,14 @@ pub fn compile_body(
 
     // Inject contract-level libs (0-based order)
     if !libs.is_empty() {
-        let lib_entries: Vec<_> = libs
-            .iter()
-            .enumerate()
-            .map(|(idx, (name, addr))| (name.clone(), idx as u8, Some(addr.clone())))
-            .collect();
+        if libs.len() > u8::MAX as usize {
+            return Err(format!("too many contract libs: max {}", u8::MAX).into());
+        }
+        let mut lib_entries = Vec::with_capacity(libs.len());
+        for (idx, (name, addr)) in libs.iter().enumerate() {
+            let idx = idx as u8;
+            lib_entries.push((name.clone(), idx, Some(addr.clone())));
+        }
         syntax = syntax.with_libs(lib_entries);
     }
 

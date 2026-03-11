@@ -282,15 +282,8 @@ impl Machine {
     ) -> Ret<Value> {
         // Caller must pre-validate code bytes. Production entry actions run convert_and_check before setup_vm_run.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
-        let ctx_adr = ContractAddress::from_unchecked(env.ctx.tx().main());
-        let lib_adr: Vec<ContractAddress> = env
-            .ctx
-            .env()
-            .tx
-            .addrs
-            .iter()
-            .map(|a| ContractAddress::from_unchecked(*a))
-            .collect();
+        let ctx_adr = env.ctx.tx().main();
+        let lib_adr = env.ctx.env().tx.addrs.clone();
         Ok(self.do_call(
             env,
             ExecCtx::main(),
@@ -333,12 +326,7 @@ impl Machine {
             env,
             exec,
             hit.fnobj.as_ref(),
-            FrameBindings::contract(
-                contract_addr.clone(),
-                contract_addr,
-                hit.owner,
-                hit.lib_table,
-            ),
+            FrameBindings::contract(contract_addr, hit.owner, hit.lib_table),
             Some(param),
         )?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
@@ -356,12 +344,18 @@ impl Machine {
     ) -> Ret<Value> {
         // Caller must pre-validate lock script bytes. Production P2SH flow verifies inputs before VM call.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
-        let ctx_adr = ContractAddress::from_unchecked(p2sh_addr);
+        let ctx_adr = p2sh_addr;
         let rv = self.do_call(
             env,
             ExecCtx::p2sh(),
             &fnobj,
-            FrameBindings::root(ctx_adr, libs.into()),
+            FrameBindings::root(
+                ctx_adr,
+                libs.into_iter()
+                    .map(|addr| addr.into_addr())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
             Some(param),
         )?;
         check_vm_return_value(&rv, "p2sh call")?;

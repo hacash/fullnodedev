@@ -33,26 +33,26 @@ mod bounds_tests {
             Ok((self.act_gas, self.act_res.clone()))
         }
 
-        fn log_push(&mut self, _cadr: &ContractAddress, _items: Vec<Value>) -> VmrtErr {
+        fn log_push(&mut self, _cadr: &Address, _items: Vec<Value>) -> VmrtErr {
             self.log_calls += 1;
             Ok(())
         }
 
-        fn srest(&mut self, _hei: u64, _cadr: &ContractAddress, _key: &Value) -> VmrtRes<Value> {
+        fn srest(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.srest_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
             }
         }
 
-        fn sload(&mut self, _hei: u64, _cadr: &ContractAddress, _key: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.sload_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
             }
         }
 
-        fn sdel(&mut self, _cadr: &ContractAddress, _key: Value) -> VmrtErr {
+        fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtErr {
             itr_err_code!(ItrErrCode::StorageError)
         }
 
@@ -60,7 +60,7 @@ mod bounds_tests {
             &mut self,
             _gst: &GasExtra,
             _hei: u64,
-            _cadr: &ContractAddress,
+            _cadr: &Address,
             _key: Value,
             _val: Value,
         ) -> VmrtRes<i64> {
@@ -71,7 +71,7 @@ mod bounds_tests {
             &mut self,
             _gst: &GasExtra,
             _hei: u64,
-            _cadr: &ContractAddress,
+            _cadr: &Address,
             _key: Value,
             _period: Value,
         ) -> VmrtRes<i64> {
@@ -1106,18 +1106,47 @@ mod bounds_tests {
             )
         };
 
-        assert_eq!(run(vec![Bytecode::LENGTH as u8, Bytecode::END as u8], args(), None).unwrap(), Value::U32(2));
-        assert_eq!(run(vec![Bytecode::HASKEY as u8, Bytecode::END as u8], args(), Some(Value::U8(1))).unwrap(), Value::Bool(true));
+        assert_eq!(
+            run(
+                vec![Bytecode::LENGTH as u8, Bytecode::END as u8],
+                args(),
+                None
+            )
+            .unwrap(),
+            Value::U32(2)
+        );
+        assert_eq!(
+            run(
+                vec![Bytecode::HASKEY as u8, Bytecode::END as u8],
+                args(),
+                Some(Value::U8(1))
+            )
+            .unwrap(),
+            Value::Bool(true)
+        );
         assert!(matches!(
-            run(vec![Bytecode::ITEMGET as u8, Bytecode::END as u8], args(), Some(Value::U8(0))).unwrap(),
+            run(
+                vec![Bytecode::ITEMGET as u8, Bytecode::END as u8],
+                args(),
+                Some(Value::U8(0))
+            )
+            .unwrap(),
             Value::Compo(_)
         ));
         assert!(matches!(
-            run(vec![Bytecode::HEAD as u8, Bytecode::END as u8], args(), None),
+            run(
+                vec![Bytecode::HEAD as u8, Bytecode::END as u8],
+                args(),
+                None
+            ),
             Err(ItrErr(ItrErrCode::CompoOpNotMatch, _))
         ));
         assert!(matches!(
-            run(vec![Bytecode::BACK as u8, Bytecode::END as u8], args(), None),
+            run(
+                vec![Bytecode::BACK as u8, Bytecode::END as u8],
+                args(),
+                None
+            ),
             Err(ItrErr(ItrErrCode::CompoOpNotMatch, _))
         ));
     }
@@ -1791,33 +1820,23 @@ mod bounds_tests {
             fn action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
                 unreachable!()
             }
-            fn log_push(&mut self, _cadr: &ContractAddress, _items: Vec<Value>) -> VmrtErr {
+            fn log_push(&mut self, _cadr: &Address, _items: Vec<Value>) -> VmrtErr {
                 unreachable!()
             }
-            fn srest(
-                &mut self,
-                _hei: u64,
-                _cadr: &ContractAddress,
-                _key: &Value,
-            ) -> VmrtRes<Value> {
+            fn srest(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
                 unreachable!()
             }
-            fn sload(
-                &mut self,
-                _hei: u64,
-                _cadr: &ContractAddress,
-                _key: &Value,
-            ) -> VmrtRes<Value> {
+            fn sload(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
                 unreachable!()
             }
-            fn sdel(&mut self, _cadr: &ContractAddress, _key: Value) -> VmrtErr {
+            fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtErr {
                 Ok(())
             }
             fn ssave(
                 &mut self,
                 _gst: &GasExtra,
                 _hei: u64,
-                _cadr: &ContractAddress,
+                _cadr: &Address,
                 _key: Value,
                 _val: Value,
             ) -> VmrtRes<i64> {
@@ -1827,7 +1846,7 @@ mod bounds_tests {
                 &mut self,
                 _gst: &GasExtra,
                 _hei: u64,
-                _cadr: &ContractAddress,
+                _cadr: &Address,
                 _key: Value,
                 _period: Value,
             ) -> VmrtRes<i64> {
@@ -2289,16 +2308,20 @@ mod bounds_tests {
 
     #[test]
     fn shortcut_call_gas_matches_opcode_tiers() {
-        use crate::rt::{calc_func_sign, encode_call_body, encode_codecall_body, CallSpec, CallTarget, EffectMode, ExecCtx};
+        use crate::rt::{
+            calc_func_sign, encode_call_body, encode_codecall_body, CallTarget, EffectMode, ExecCtx,
+        };
 
         let sign = calc_func_sign("jump");
         let cases = [
             (
                 {
                     let mut codes = vec![Bytecode::CALL as u8];
-                    codes.extend_from_slice(
-                        &encode_call_body(CallSpec::invoke(CallTarget::Ext(1), EffectMode::Edit, sign)).unwrap(),
-                    );
+                    codes.extend_from_slice(&encode_call_body(
+                        CallTarget::Ext(1),
+                        EffectMode::Edit,
+                        sign,
+                    ));
                     codes
                 },
                 32,
@@ -2344,9 +2367,7 @@ mod bounds_tests {
             (
                 {
                     let mut codes = vec![Bytecode::CODECALL as u8];
-                    codes.extend_from_slice(
-                        &encode_codecall_body(CallSpec::codecall(1, sign)).unwrap(),
-                    );
+                    codes.extend_from_slice(&encode_codecall_body(1, sign));
                     codes
                 },
                 16,

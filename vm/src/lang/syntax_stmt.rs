@@ -37,6 +37,7 @@ impl Syntax {
             return errf!("param must need at least one");
         }
         self.emit.source_map.register_param_names(param_names)?;
+        self.emit.source_map.register_param_prelude_count(params)?;
         Self::build_param_prelude(params as usize, false)
     }
 

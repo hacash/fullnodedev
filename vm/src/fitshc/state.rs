@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::parse_deploy::DeployInfo;
 use crate::Token::*;
 use crate::contract::Contract;
@@ -18,6 +20,10 @@ pub struct ParseState {
     pub source_maps: Vec<(String, SourceMap)>,
     /// Top-level constants: name -> value (parsed as string for simplicity)
     pub consts: Vec<(String, String)>,
+    pub userfunc_signs: HashSet<[u8; 4]>,
+    pub abst_signs: HashSet<u8>,
+    pub library_addrs: HashSet<Address>,
+    pub inherit_addrs: HashSet<Address>,
 }
 
 impl ParseState {
@@ -33,6 +39,10 @@ impl ParseState {
             deploy: None,
             source_maps: Vec::new(),
             consts: Vec::new(),
+            userfunc_signs: HashSet::new(),
+            abst_signs: HashSet::new(),
+            library_addrs: HashSet::new(),
+            inherit_addrs: HashSet::new(),
         }
     }
 

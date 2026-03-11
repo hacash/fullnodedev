@@ -59,12 +59,7 @@ fn mk_1p(hrtv: bool, inst: Bytecode, para: u8, subx: Box<dyn IRNode>) -> Box<dyn
     })
 }
 
-fn mk_ps1(
-    hrtv: bool,
-    inst: Bytecode,
-    para: Vec<u8>,
-    subx: Box<dyn IRNode>,
-) -> Box<dyn IRNode> {
+fn mk_ps1(hrtv: bool, inst: Bytecode, para: Vec<u8>, subx: Box<dyn IRNode>) -> Box<dyn IRNode> {
     Box::new(IRNodeParamsSingle {
         hrtv,
         inst,
@@ -165,12 +160,7 @@ pub fn push_num(n: u128) -> Box<dyn IRNode> {
 pub fn push_addr(a: field::Address) -> Box<dyn IRNode> {
     use Bytecode::*;
     let para = vec![vec![field::Address::SIZE as u8], a.serialize()].concat();
-    push_single_p1_hr(
-        true,
-        CTO,
-        ValueTy::Address as u8,
-        mk_ps(true, PBUF, para),
-    )
+    push_single_p1_hr(true, CTO, ValueTy::Address as u8, mk_ps(true, PBUF, para))
 }
 
 pub fn push_bytes(b: &Vec<u8>) -> Ret<Box<dyn IRNode>> {
@@ -196,7 +186,7 @@ pub fn push_user_invoke(call: CallSpec, subx: Box<dyn IRNode>) -> Ret<Box<dyn IR
     if !matches!(call, CallSpec::Invoke { .. }) {
         return errf!("invoke call spec required");
     }
-    let (inst, para) = encode_user_call_site(call).map_err(|e| e.to_string())?;
+    let (inst, para) = encode_user_call_site(call);
     Ok(mk_ps1(true, inst, para, subx))
 }
 
@@ -204,7 +194,7 @@ pub fn push_user_splice(call: CallSpec) -> Ret<Box<dyn IRNode>> {
     if !matches!(call, CallSpec::Splice { .. }) {
         return errf!("splice call spec required");
     }
-    let (inst, para) = encode_user_call_site(call).map_err(|e| e.to_string())?;
+    let (inst, para) = encode_user_call_site(call);
     Ok(mk_ps(false, inst, para))
 }
 

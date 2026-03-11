@@ -12,11 +12,11 @@ fn check_call_mode(exec: ExecCtx, call: &CallSpec) -> VmrtErr {
     {
         return itr_err_code!(CallOtherInP2sh);
     }
-    if let CallSpec::Invoke { target, effect, .. } = *call {
+    if let CallSpec::Invoke { effect, .. } = *call {
         match (
             exec.is_outer_entry(),
             exec.entry,
-            target.switches_context(),
+            call.switches_context(),
             effect,
         ) {
             (true, EntryKind::Main, false, EffectMode::Edit) => {
@@ -25,7 +25,7 @@ fn check_call_mode(exec: ExecCtx, call: &CallSpec) -> VmrtErr {
             _ => {}
         }
     }
-    let next = call.next_effect(exec.effect);
+    let next = call.callee_effect(exec.effect);
     match (exec.effect, next) {
         (EffectMode::Pure, EffectMode::Pure) => Ok(()),
         (EffectMode::Pure, _) => itr_err_code!(CallInPure),

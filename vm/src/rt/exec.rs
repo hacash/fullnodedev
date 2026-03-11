@@ -22,14 +22,6 @@ pub enum EffectMode {
     Pure,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct FrameBindings {
-    pub context_addr: ContractAddress,
-    pub state_addr: Option<ContractAddress>,
-    pub code_owner: Option<ContractAddress>,
-    pub lib_table: Arc<[ContractAddress]>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ExecCtx {
     pub entry: EntryKind,
@@ -56,36 +48,54 @@ impl EntryKind {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FrameBindings {
+    pub code_owner: Option<ContractAddress>,
+    pub state_this: Option<ContractAddress>,
+    pub context_addr: Address,
+    pub lib_table: Arc<[Address]>,
+}
+
 impl FrameBindings {
-    pub fn new(
-        context_addr: ContractAddress,
-        state_addr: Option<ContractAddress>,
-        code_owner: Option<ContractAddress>,
-        lib_table: Arc<[ContractAddress]>,
-    ) -> Self {
+    pub fn root(context_addr: Address, lib_table: Arc<[Address]>) -> Self {
         Self {
+            code_owner: None,
+            state_this: None,
             context_addr,
-            state_addr,
-            code_owner,
             lib_table,
         }
     }
 
-    pub fn root(context_addr: ContractAddress, lib_table: Arc<[ContractAddress]>) -> Self {
-        Self::new(context_addr, None, None, lib_table)
-    }
-
     pub fn contract(
-        context_addr: ContractAddress,
-        state_addr: ContractAddress,
+        state_this: ContractAddress,
         code_owner: ContractAddress,
-        lib_table: Arc<[ContractAddress]>,
+        lib_table: Arc<[Address]>,
     ) -> Self {
-        Self::new(context_addr, Some(state_addr), Some(code_owner), lib_table)
+        Self {
+            context_addr: state_this.to_addr(),
+            state_this: Some(state_this),
+            code_owner: Some(code_owner),
+            lib_table,
+        }
     }
 
-    pub fn current_addr(&self) -> &ContractAddress {
-        self.code_owner.as_ref().unwrap_or(&self.context_addr)
+    pub fn next_after_call(
+        &self,
+        switch_context: bool,
+        anchor: ContractAddress,
+        code_owner: ContractAddress,
+        lib_table: Arc<[Address]>,
+    ) -> Self {
+        if switch_context {
+            Self::contract(anchor, code_owner, lib_table)
+        } else {
+            Self {
+                code_owner: Some(code_owner),
+                state_this: self.state_this.clone(),
+                context_addr: self.context_addr,
+                lib_table,
+            }
+        }
     }
 }
 
@@ -115,10 +125,6 @@ impl ExecCtx {
     }
 
     pub const fn external() -> Self {
-        Self::contract(EntryKind::Main, EffectMode::Edit)
-    }
-
-    pub const fn inner() -> Self {
         Self::contract(EntryKind::Main, EffectMode::Edit)
     }
 

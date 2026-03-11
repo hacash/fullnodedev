@@ -99,6 +99,10 @@ pub fn parse_func_sig(
             // :
             if let Some(Keyword(KwTy::Colon)) = state.current() {
                 state.advance();
+            } else if let Some(Partition(':')) = state.current() {
+                state.advance();
+            } else {
+                return errf!("expected ':' after arg name");
             }
 
             // type

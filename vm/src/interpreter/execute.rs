@@ -144,7 +144,7 @@ macro_rules! ostbranch {
 * Callers must only execute bytecode already accepted by rt/verify.
 */
 
-pub fn execute_code(
+pub fn execute_code<'a>(
     // frame local
     pc: &mut usize,
     codes: &[u8],
@@ -152,8 +152,8 @@ pub fn execute_code(
     operands: &mut Stack,
     locals: &mut Stack,
     heap: &mut Heap,
-    context_addr: &ContractAddress,
-    current_addr: &ContractAddress,
+    context_addr: &'a crate::Address,
+    code_owner: impl Into<Option<&'a ContractAddress>>,
     // shared runtime
     gas_usable: &mut i64,
     gas_table: &GasTable,
@@ -163,7 +163,6 @@ pub fn execute_code(
     memory_map: &mut CtcKVMap,
     host: &mut dyn VmHost,
 ) -> VmrtRes<CallExit> {
-
     use Bytecode::*;
     use CallExit::*;
     use ItrErrCode::*;
@@ -173,25 +172,87 @@ pub fn execute_code(
     let ops = operands;
     let gst = gas_extra;
     let hei: u64 = host.height();
+    let code_owner = code_owner.into();
 
     // check code length
     // let codelen = codes.len();
     // let tail = codelen;
 
-    macro_rules! check_gas { () => { if *gas_usable < 0 { return itr_err_code!(OutOfGas); } }; }
-    macro_rules! nsr { () => { if exec.effect == EffectMode::Pure { return itr_err_code!(InstDisabled); } }; } // not read in pure mode
-    macro_rules! nsw { () => { if matches!(exec.effect, EffectMode::Pure | EffectMode::View) { return itr_err_code!(InstDisabled); } }; } // not write in view/pure mode
-    macro_rules! pu8 { () => { itrparamu8!(codes, *pc) }; }
-    macro_rules! pty { () => { ops.peek()?.ty() }; }
-    macro_rules! ptyn { () => { ops.peek()?.ty_num() }; }
-    macro_rules! pu8_as_u16 { () => { pu8!() as u16 }; }
-    macro_rules! pu16 { () => { itrparamu16!(codes, *pc) }; }
-    macro_rules! pbuf { () => { itrparambuf!(codes, *pc) }; }
-    macro_rules! pbufl { () => { itrparambufl!(codes, *pc) }; }
-    macro_rules! ops_pop_to_u16 { () => { ops.pop()?.checked_u16()? }; }
-    macro_rules! ops_peek_to_u16 { () => { ops.peek()?.checked_u16()? }; }
-    macro_rules! check_compo_type { ($m: ident) => { match ops.compo() { Ok(c) => c.$m(), _ => false, } }; }
-    
+    macro_rules! check_gas {
+        () => {
+            if *gas_usable < 0 {
+                return itr_err_code!(OutOfGas);
+            }
+        };
+    }
+    macro_rules! nsr {
+        () => {
+            if exec.effect == EffectMode::Pure {
+                return itr_err_code!(InstDisabled);
+            }
+        };
+    } // not read in pure mode
+    macro_rules! nsw {
+        () => {
+            if matches!(exec.effect, EffectMode::Pure | EffectMode::View) {
+                return itr_err_code!(InstDisabled);
+            }
+        };
+    } // not write in view/pure mode
+    macro_rules! pu8 {
+        () => {
+            itrparamu8!(codes, *pc)
+        };
+    }
+    macro_rules! pty {
+        () => {
+            ops.peek()?.ty()
+        };
+    }
+    macro_rules! ptyn {
+        () => {
+            ops.peek()?.ty_num()
+        };
+    }
+    macro_rules! pu8_as_u16 {
+        () => {
+            pu8!() as u16
+        };
+    }
+    macro_rules! pu16 {
+        () => {
+            itrparamu16!(codes, *pc)
+        };
+    }
+    macro_rules! pbuf {
+        () => {
+            itrparambuf!(codes, *pc)
+        };
+    }
+    macro_rules! pbufl {
+        () => {
+            itrparambufl!(codes, *pc)
+        };
+    }
+    macro_rules! ops_pop_to_u16 {
+        () => {
+            ops.pop()?.checked_u16()?
+        };
+    }
+    macro_rules! ops_peek_to_u16 {
+        () => {
+            ops.peek()?.checked_u16()?
+        };
+    }
+    macro_rules! check_compo_type {
+        ($m: ident) => {
+            match ops.compo() {
+                Ok(c) => c.$m(),
+                _ => false,
+            }
+        };
+    }
+
     enum Step {
         Continue,
         Exit(CallExit),
@@ -215,42 +276,45 @@ pub fn execute_code(
         *gas_usable -= gas_table.gas(instbyte); //
                                                 // println!("gas usable {} cp: {}, inst: {:?}", *gas_usable, gas_table.gas(instbyte), instruction);
 
-        macro_rules! actcall { ($act_kind: expr) => {{
-            let act_kind = $act_kind;
-            let idx = pu8!();
-            let pass_body = act_pass_body(act_kind);
-            let have_retv = act_have_retv(act_kind);
-            ensure_act_allowed(exec, act_kind, idx)?;
-            let kid = u16::from_be_bytes([instbyte, idx]);
-            let mut actbody = vec![];
-            if pass_body {
-                let mut bdv = ops.peek()?.canbe_call_data(heap)?;
-                actbody.append(&mut bdv);
-                match act_kind {
-                    ACTION => gas += gst.action_bytes(actbody.len()),
-                    ACTVIEW => gas += gst.actview_bytes(actbody.len()),
-                    _ => {}
-                }
-            }
-            let (bgasu, cres) = host.action_call(kid, actbody).map_err(|e|
-                ItrErr::new(ActCallError, e.as_str()))?;
-            gas += bgasu as i64;
-            if have_retv {
-                let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
-                match act_kind {
-                    ACTVIEW => gas += gst.actview_bytes(resv.val_size()),
-                    ACTENV => gas += gst.actenv_bytes(resv.val_size()),
-                    _ => {}
-                }
+        macro_rules! actcall {
+            ($act_kind: expr) => {{
+                let act_kind = $act_kind;
+                let idx = pu8!();
+                let pass_body = act_pass_body(act_kind);
+                let have_retv = act_have_retv(act_kind);
+                ensure_act_allowed(exec, act_kind, idx)?;
+                let kid = u16::from_be_bytes([instbyte, idx]);
+                let mut actbody = vec![];
                 if pass_body {
-                    *ops.peek()? = resv;
-                } else {
-                    ops.push(resv)?;
+                    let mut bdv = ops.peek()?.canbe_call_data(heap)?;
+                    actbody.append(&mut bdv);
+                    match act_kind {
+                        ACTION => gas += gst.action_bytes(actbody.len()),
+                        ACTVIEW => gas += gst.actview_bytes(actbody.len()),
+                        _ => {}
+                    }
                 }
-            } else {
-                ops.pop()?;
-            }
-        }}}
+                let (bgasu, cres) = host
+                    .action_call(kid, actbody)
+                    .map_err(|e| ItrErr::new(ActCallError, e.as_str()))?;
+                gas += bgasu as i64;
+                if have_retv {
+                    let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
+                    match act_kind {
+                        ACTVIEW => gas += gst.actview_bytes(resv.val_size()),
+                        ACTENV => gas += gst.actenv_bytes(resv.val_size()),
+                        _ => {}
+                    }
+                    if pass_body {
+                        *ops.peek()? = resv;
+                    } else {
+                        ops.push(resv)?;
+                    }
+                } else {
+                    ops.pop()?;
+                }
+            }};
+        }
 
         // NTFUNC: pure native function (has args, stack 1→1, allowed in Pure mode)
         macro_rules! ntcall {
@@ -268,7 +332,7 @@ pub fn execute_code(
                 let nt_idx = $idx;
                 nsr!();
                 let r = match nt_idx {
-                    NativeEnv::idx_context_address => Value::Address(context_addr.to_addr()),
+                    NativeEnv::idx_context_address => Value::Address(*context_addr),
                     _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not find", nt_idx),
                 };
                 let g = NativeEnv::gas(nt_idx)?;
@@ -396,7 +460,7 @@ pub fn execute_code(
                 // native func (pure computation, always allowed)
                 NTFUNC => ntcall!(func, pu8!()),
                 // native env (VM context read, forbidden in Pure mode)
-                NTENV  => ntcall!(env, pu8!()),
+                NTENV => ntcall!(env, pu8!()),
                 // constant
                 PU8 => ops.push(U8(pu8!()))?,
                 PU16 => ops.push(U16(pu16!()))?,
@@ -498,7 +562,7 @@ pub fn execute_code(
                     gas += gst.stack_op(outlen);
                     ops.peek()?.cutout(l, o)?;
                 }
-                LEFT  => peek_op_gas!(cutleft(pu8_as_u16!())),
+                LEFT => peek_op_gas!(cutleft(pu8_as_u16!())),
                 RIGHT => peek_op_gas!(cutright(pu8_as_u16!())),
                 LDROP => peek_op_gas!(dropleft(pu8_as_u16!())),
                 RDROP => peek_op_gas!(dropright(pu8_as_u16!())),
@@ -760,12 +824,12 @@ pub fn execute_code(
                 INC => unary_inc(ops.peek()?, pu8!())?,
                 DEC => unary_dec(ops.peek()?, pu8!())?,
                 // workflow control
-                JMPL  => jump!(codes, *pc, 2),
-                JMPS  => ostjump!(codes, *pc, 1),
+                JMPL => jump!(codes, *pc, 2),
+                JMPS => ostjump!(codes, *pc, 1),
                 JMPSL => ostjump!(codes, *pc, 2),
-                BRL   => branch!(ops, codes, *pc, 2),
-                BRS   => ostbranch!(ops, codes, *pc, 1),
-                BRSL  => ostbranch!(ops, codes, *pc, 2),
+                BRL => branch!(ops, codes, *pc, 2),
+                BRS => ostbranch!(ops, codes, *pc, 1),
+                BRSL => ostbranch!(ops, codes, *pc, 2),
                 BRSLN => ostbranchex!(ops, codes, *pc, 2, false),
                 // other
                 NT => return itr_err_code!(InstNeverTouch), // never touch
@@ -776,12 +840,15 @@ pub fn execute_code(
                 END => return Ok(Step::Exit(Finish)), // func end
                 ERR => return Ok(Step::Exit(Throw)),  // throw <ERROR>
                 ABT => return Ok(Step::Exit(Abort)),  // panic
-                AST => if !ops.pop()?.canbe_bool()? {
-                    return Ok(Step::Exit(Abort));
+                AST => {
+                    if !ops.pop()?.canbe_bool()? {
+                        return Ok(Step::Exit(Abort));
+                    }
                 } // assert(..)
-                PRT => debug_print_value(context_addr, current_addr, exec, ops.pop()?),
+                PRT => debug_print_value(context_addr, code_owner, exec, ops.pop()?),
                 // call
-                CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {
+                CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS
+                | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {
                     let plen = instruction.metadata().param as usize;
                     let end = *pc + plen;
                     if end > codes.len() {
@@ -811,15 +878,19 @@ pub fn execute_code(
 }
 
 fn debug_print_value(
-    _ctx: &ContractAddress,
-    _cur: &ContractAddress,
+    _ctx: &crate::Address,
+    _owner: Option<&ContractAddress>,
     _exec: ExecCtx,
     _val: Value,
 ) {
+    let _code: &crate::Address = match _owner {
+        Some(owner) => owner,
+        None => _ctx,
+    };
     debug_println!(
         "{}-{} {} {:?} => {:?}",
         _ctx.prefix(7),
-        _cur.prefix(7),
+        _code.prefix(7),
         _exec.call_depth,
         _exec,
         _val

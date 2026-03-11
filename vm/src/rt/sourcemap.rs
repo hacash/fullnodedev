@@ -16,6 +16,8 @@ struct SourceMapJson {
     vars: Vec<u8>,
     params: Vec<String>,
     #[serde(default)]
+    param_prelude_count: Option<u8>,
+    #[serde(default)]
     consts: Vec<ConstJson>,
 }
 
@@ -58,6 +60,7 @@ pub struct SourceMap {
     funcs: HashMap<FnSign, String>,
     slots: HashMap<u8, String>,
     params: Vec<String>,
+    param_prelude_count: Option<u8>,
     lets: HashSet<u8>,
     vars: HashSet<u8>,
     const_val_to_name: HashMap<String, String>,
@@ -72,6 +75,7 @@ impl Default for SourceMap {
             funcs: HashMap::new(),
             slots: HashMap::new(),
             params: Vec::new(),
+            param_prelude_count: None,
             lets: HashSet::new(),
             vars: HashSet::new(),
             const_val_to_name: HashMap::new(),
@@ -82,6 +86,9 @@ impl Default for SourceMap {
 
 impl SourceMap {
     pub fn register_lib(&mut self, idx: u8, name: String, address: Option<Address>) -> Rerr {
+        if self.libs.contains_key(&idx) {
+            return errf!("lib index {} repeat in source map", idx);
+        }
         self.libs.insert(idx, LibInfo { name, address });
         Ok(())
     }
@@ -118,6 +125,15 @@ impl SourceMap {
     pub fn register_param_names(&mut self, names: Vec<String>) -> Rerr {
         self.params = names;
         Ok(())
+    }
+
+    pub fn register_param_prelude_count(&mut self, count: u8) -> Rerr {
+        self.param_prelude_count = Some(count);
+        Ok(())
+    }
+
+    pub fn param_prelude_count(&self) -> Option<u8> {
+        self.param_prelude_count
     }
 
     pub fn param_names(&self) -> Option<&Vec<String>> {
@@ -200,7 +216,16 @@ impl SourceMap {
         }).collect();
         consts.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let doc = SourceMapJson { libs, funcs, slots, lets, vars, params: self.params.clone(), consts };
+        let doc = SourceMapJson {
+            libs,
+            funcs,
+            slots,
+            lets,
+            vars,
+            params: self.params.clone(),
+            param_prelude_count: self.param_prelude_count,
+            consts,
+        };
         serde_json::to_string(&doc).map_err(|_| s!("source map serialize failed"))
     }
 
@@ -244,6 +269,7 @@ impl SourceMap {
         }
         
         map.params = doc.params;
+        map.param_prelude_count = doc.param_prelude_count;
         Ok(map)
     }
 }

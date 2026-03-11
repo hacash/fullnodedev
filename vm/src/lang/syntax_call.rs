@@ -11,6 +11,9 @@ impl Syntax {
         if let Some(..) = self.bdlibs.get(&s) {
             return errf!("<use> cannot repeat bind the symbol '{}'", s);
         }
+        if self.bdlibs.values().any(|(bound_idx, _)| *bound_idx == idx) {
+            return errf!("lib index {} cannot repeat bind", idx);
+        }
         if let Some(adr) = adr {
             adr.must_contract()?;
         }

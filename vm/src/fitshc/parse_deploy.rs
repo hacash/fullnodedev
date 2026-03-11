@@ -84,10 +84,13 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
             }
         } else if key == "nonce" {
             if let Some(Integer(v)) = state.current() {
-                info.nonce = Some(Uint4::from(*v as u32));
+                let n = u32::try_from(*v).map_err(|_| format!("nonce overflow: {}", v))?;
+                info.nonce = Some(Uint4::from(n));
                 state.advance();
             } else if let Some(Identifier(v)) = state.current() {
-                let n = v.parse::<u32>().map_err(|e| e.to_string())?;
+                let n = v
+                    .parse::<u32>()
+                    .map_err(|_| format!("invalid nonce: {}", v))?;
                 info.nonce = Some(Uint4::from(n));
                 state.advance();
             } else {
@@ -148,8 +151,7 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
                 return errf!("expected argv value");
             }
         } else {
-            // ignore or error?
-            state.advance();
+            return errf!("unknown deploy field '{}'", key);
         }
 
         // comma?
@@ -159,4 +161,29 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
     }
 
     Ok(info)
+}
+
+
+#[cfg(test)]
+mod parse_deploy_tests {
+    use super::*;
+    use crate::lang::Tokenizer;
+
+    fn parse_snippet(src: &str) -> Ret<DeployInfo> {
+        let tokens = Tokenizer::new(src.as_bytes()).parse().unwrap();
+        let mut state = ParseState::new(tokens);
+        parse_deploy(&mut state)
+    }
+
+    #[test]
+    fn rejects_nonce_integer_overflow() {
+        let err = parse_snippet("deploy { nonce: 4294967296 }").unwrap_err();
+        assert!(err.to_string().contains("nonce overflow"));
+    }
+
+    #[test]
+    fn rejects_unknown_deploy_field() {
+        let err = parse_snippet("deploy { nonec: 1 }").unwrap_err();
+        assert!(err.to_string().contains("unknown deploy field 'nonec'"));
+    }
 }

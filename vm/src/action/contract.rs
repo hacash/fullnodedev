@@ -280,18 +280,19 @@ fn resolve_lookup_anchor_for_check(
     func_tag: &str,
     call: &CallSpec,
 ) -> Ret<ContractAddress> {
-    let target = call.target();
-    if target.anchor_from_state() || target.anchor_from_code() {
-        return Ok(root_addr.clone());
+    match call.lib_index() {
+        Some(lib) => {
+            let libs = root_contract.library.as_list();
+            let lidx = lib as usize;
+            if lidx >= libs.len() {
+                return errf!("{}: libidx overflow {} >= {}", func_tag, lidx, libs.len());
+            }
+            let addr = libs[lidx].clone();
+            let _ = load_contract_for_check(vmsta, root_addr, root_contract, &addr, "lookup")?;
+            Ok(addr)
+        }
+        None => Ok(root_addr.clone()),
     }
-    let libs = root_contract.library.as_list();
-    let lidx = target.lib_index().unwrap() as usize;
-    if lidx >= libs.len() {
-        return errf!("{}: libidx overflow {} >= {}", func_tag, lidx, libs.len());
-    }
-    let addr = libs[lidx].clone();
-    let _ = load_contract_for_check(vmsta, root_addr, root_contract, &addr, "lookup")?;
-    Ok(addr)
 }
 
 fn resolve_lookup_entries_for_check(
@@ -301,24 +302,15 @@ fn resolve_lookup_entries_for_check(
     anchor: &ContractAddress,
     call: &CallSpec,
 ) -> Ret<Vec<ContractAddress>> {
-    let target = call.target();
-    if target.searches_exact() {
-        return Ok(vec![anchor.clone()]);
-    }
-    if target.searches_parents() {
-        return Ok(load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?
+    let parents = if call.needs_inherit_chain() {
+        load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?
             .inherit
             .as_list()
-            .iter()
-            .cloned()
-            .collect());
-    }
-    let sto = load_contract_for_check(vmsta, root_addr, root_contract, anchor, "inherit")?;
-    let parents = sto.inherit.as_list();
-    let mut out = Vec::with_capacity(1 + parents.len());
-    out.push(anchor.clone());
-    out.extend(parents.iter().cloned());
-    Ok(out)
+            .to_vec()
+    } else {
+        vec![]
+    };
+    Ok(call.resolve_candidates(anchor, &parents))
 }
 
 fn resolve_userfn_meta_by_lookup_for_check(
@@ -329,15 +321,8 @@ fn resolve_userfn_meta_by_lookup_for_check(
     call: &CallSpec,
     sign: &FnSign,
 ) -> Ret<Option<(ContractAddress, UserfnMeta)>> {
-    let anchor =
-        resolve_lookup_anchor_for_check(vmsta, root_addr, root_contract, func_tag, call)?;
-    let entries = resolve_lookup_entries_for_check(
-        vmsta,
-        root_addr,
-        root_contract,
-        &anchor,
-        call,
-    )?;
+    let anchor = resolve_lookup_anchor_for_check(vmsta, root_addr, root_contract, func_tag, call)?;
+    let entries = resolve_lookup_entries_for_check(vmsta, root_addr, root_contract, &anchor, call)?;
     for owner in entries {
         if let Some(hit) =
             resolve_userfn_meta_on_owner(vmsta, root_addr, root_contract, &owner, sign)?

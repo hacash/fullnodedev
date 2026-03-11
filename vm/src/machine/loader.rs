@@ -4,19 +4,13 @@
 pub struct ResolvedFn {
     pub owner: ContractAddress,
     pub fnobj: Arc<FnObj>,
-    pub lib_table: Arc<[ContractAddress]>,
+    pub lib_table: Arc<[Address]>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ResolvedCallPlan {
     pub next_bindings: FrameBindings,
     pub fnobj: Arc<FnObj>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CallPlanReq<'a> {
-    pub call: &'a CallSpec,
-    pub bindings: &'a FrameBindings,
 }
 
 impl Resoure {
@@ -27,6 +21,25 @@ impl Resoure {
             return itr_err_code!(CallNotExist);
         };
         Ok(got)
+    }
+
+    fn build_resolved(
+        owner: &ContractAddress,
+        fnobj: Arc<FnObj>,
+        csto: &ContractObj,
+    ) -> ResolvedFn {
+        ResolvedFn {
+            owner: owner.clone(),
+            fnobj,
+            lib_table: csto
+                .sto
+                .library
+                .as_list()
+                .iter()
+                .map(|addr| addr.to_addr())
+                .collect::<Vec<_>>()
+                .into(),
+        }
     }
 
     fn load_contract_from_state(
@@ -115,11 +128,7 @@ impl Resoure {
         let Some(fnobj) = csto.userfns.get(&selector).cloned() else {
             return Ok(None);
         };
-        Ok(Some(ResolvedFn {
-            owner: owner.clone(),
-            fnobj,
-            lib_table: csto.sto.library.as_list().to_vec().into(),
-        }))
+        Ok(Some(Self::build_resolved(owner, fnobj, csto.as_ref())))
     }
 
     fn resolve_abst_on_owner(
@@ -133,13 +142,8 @@ impl Resoure {
         let Some(fnobj) = csto.abstfns.get(&selector).cloned() else {
             return Ok(None);
         };
-        Ok(Some(ResolvedFn {
-            owner: owner.clone(),
-            fnobj,
-            lib_table: csto.sto.library.as_list().to_vec().into(),
-        }))
+        Ok(Some(Self::build_resolved(owner, fnobj, csto.as_ref())))
     }
-
 
     pub fn resolve_abstfn(
         &mut self,
@@ -161,40 +165,6 @@ impl Resoure {
         Ok(None)
     }
 
-    fn resolve_lib_addr_by_list(
-        &self,
-        adrlist: &[ContractAddress],
-        lib: u8,
-    ) -> VmrtRes<ContractAddress> {
-        use ItrErrCode::*;
-        let libidx = lib as usize;
-        if libidx >= adrlist.len() {
-            return itr_err_code!(CallLibIdxOverflow);
-        }
-        let taradr = adrlist.get(libidx).unwrap();
-        taradr.check().map_ire(ContractAddrErr)?;
-        Ok(taradr.clone())
-    }
-
-    fn resolve_lookup_anchor(&mut self, req: &CallPlanReq<'_>) -> VmrtRes<ContractAddress> {
-        let target = req.call.target();
-        if target.anchor_from_state() {
-            return req
-                .bindings
-                .state_addr
-                .clone()
-                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid));
-        }
-        if target.anchor_from_code() {
-            return req
-                .bindings
-                .code_owner
-                .clone()
-                .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid));
-        }
-        self.resolve_lib_addr_by_list(req.bindings.lib_table.as_ref(), target.lib_index().unwrap())
-    }
-
     fn resolve_lookup_candidates(
         &mut self,
         vmsta: &mut VMState,
@@ -202,39 +172,30 @@ impl Resoure {
         anchor: &ContractAddress,
         call: &CallSpec,
     ) -> VmrtRes<Vec<ContractAddress>> {
-        let target = call.target();
-        if target.searches_exact() {
-            return Ok(vec![anchor.clone()]);
-        }
-        if target.searches_parents() {
-            return Ok(self
-                .resolve_contract(vmsta, gas, anchor)?
+        let parents = if call.needs_inherit_chain() {
+            self.resolve_contract(vmsta, gas, anchor)?
                 .sto
                 .inherit
                 .as_list()
-                .iter()
-                .cloned()
-                .collect());
-        }
-        let csto = self.resolve_contract(vmsta, gas, anchor)?;
-        let parents = csto.sto.inherit.as_list();
-        let mut out = Vec::with_capacity(1 + parents.len());
-        out.push(anchor.clone());
-        out.extend(parents.iter().cloned());
-        Ok(out)
+                .to_vec()
+        } else {
+            vec![]
+        };
+        Ok(call.resolve_candidates(anchor, &parents))
     }
 
-    fn resolve_user_call_fn(
+    fn resolve_user_call(
         &mut self,
         vmsta: &mut VMState,
         gas: &mut i64,
-        req: &CallPlanReq<'_>,
+        call: &CallSpec,
+        bindings: &FrameBindings,
     ) -> VmrtRes<(ContractAddress, ResolvedFn)> {
-        let anchor = self.resolve_lookup_anchor(req)?;
-        let entries = self.resolve_lookup_candidates(vmsta, gas, &anchor, req.call)?;
+        let anchor = call.resolve_anchor(bindings)?;
+        let entries = self.resolve_lookup_candidates(vmsta, gas, &anchor, call)?;
         let mut found = None;
         for owner in entries {
-            if let Some(hit) = self.resolve_user_on_owner(vmsta, gas, &owner, req.call.selector())? {
+            if let Some(hit) = self.resolve_user_on_owner(vmsta, gas, &owner, call.selector())? {
                 found = Some(hit);
                 break;
             }
@@ -246,11 +207,12 @@ impl Resoure {
         &mut self,
         ctx: &mut dyn Context,
         gas: &mut i64,
-        req: CallPlanReq<'_>,
+        call: &CallSpec,
+        bindings: &FrameBindings,
     ) -> VmrtRes<ResolvedCallPlan> {
         let mut vmsta = VMState::wrap(ctx.state());
-        let (anchor, hit) = self.resolve_user_call_fn(&mut vmsta, gas, &req)?;
-        if req.call.requires_external_visibility() && !hit.fnobj.check_conf(FnConf::External) {
+        let (anchor, hit) = self.resolve_user_call(&mut vmsta, gas, call, bindings)?;
+        if call.requires_external_visibility() && !hit.fnobj.check_conf(FnConf::External) {
             let vis = &anchor;
             let owner = &hit.owner;
             let impl_in = maybe!(
@@ -263,26 +225,13 @@ impl Resoure {
                 "contract {}{} func sign {}",
                 vis.to_readable(),
                 impl_in,
-                hex::encode(req.call.selector())
+                hex::encode(call.selector())
             );
         }
-        let next_context_addr = if req.call.switches_context() {
-            anchor.clone()
-        } else {
-            req.bindings.context_addr.clone()
-        };
-        let next_state_addr = if req.call.switches_context() {
-            Some(anchor)
-        } else {
-            req.bindings.state_addr.clone()
-        };
+        let next_bindings =
+            bindings.next_after_call(call.switches_context(), anchor, hit.owner, hit.lib_table);
         Ok(ResolvedCallPlan {
-            next_bindings: FrameBindings::new(
-                next_context_addr,
-                next_state_addr,
-                Some(hit.owner),
-                hit.lib_table,
-            ),
+            next_bindings,
             fnobj: hit.fnobj,
         })
     }

@@ -57,6 +57,17 @@ fn bind_slot_and_cache_print() {
 }
 
 #[test]
+fn duplicate_lib_index_binding_is_rejected() {
+    let script = r##"
+        lib A = 1
+        lib B = 1
+        return A.0xabcdef01()
+    "##;
+    let err = lang_to_ircode(script).unwrap_err();
+    assert!(err.contains("lib index 1 cannot repeat bind"), "err: {}", err);
+}
+
+#[test]
 fn callextview_and_local_call_print() {
     let script = r##"
         lib(2):0xabcdef01()
@@ -858,6 +869,59 @@ fn reject_break_continue_in_expression_context() {
 }
 
 #[test]
+fn trim_param_unpack_false_does_not_bind_fake_param_names() {
+    let script = r##"
+        unpack(roll_0(), 0)
+        print 1
+    "##;
+    let block = lang_to_irnode(script).unwrap();
+    let mut smap = SourceMap::default();
+    smap.register_param_names(vec!["a".to_string(), "b".to_string()])
+        .unwrap();
+    let mut opt = PrintOption::new("  ", 0).with_source_map(&smap);
+    opt.trim_param_unpack = false;
+    let printed = Formater::new(&opt).print(&block);
+    assert!(!printed.contains("var a $0"), "printed: {}", printed);
+    assert!(!printed.contains("var b $1"), "printed: {}", printed);
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(lang_to_ircode(script).unwrap(), reparsed);
+}
+
+#[test]
+fn reusing_same_formater_instance_does_not_leak_runtime_state() {
+    let script = r##"
+        const ONE = 1
+        var sum = ONE + 1
+        print sum
+    "##;
+    let (block, smap) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let mut opt = PrintOption::new("  ", 0).with_source_map(&smap);
+    opt.recover_literals = true;
+    let formatter = Formater::new(&opt);
+    let first = formatter.print(&block);
+    let second = formatter.print(&block);
+    assert_eq!(first, second);
+    assert!(first.contains("const ONE = 1"), "first: {}", first);
+    assert!(second.contains("const ONE = 1"), "second: {}", second);
+}
+
+#[test]
+fn malformed_pbuf_try_print_returns_explicit_error() {
+    let malformed = IRNodeParams {
+        hrtv: true,
+        inst: Bytecode::PBUF,
+        para: vec![3, 0xaa],
+    };
+    let formatter = Formater::new(&PrintOption::new("  ", 0));
+    let err = formatter.try_print(&malformed).unwrap_err();
+    assert!(err.to_string().contains("malformed PBUF payload"));
+
+    let printed = Formater::new(&PrintOption::new("  ", 0)).print(&malformed);
+    assert!(printed.contains("__invalid_pbuf_payload__(0xaa)"), "printed: {}", printed);
+    assert!(!printed.contains("0x03aa"), "printed: {}", printed);
+}
+
+#[test]
 fn print_options_on_off_preserve_ircode_bytes() {
     // This script intentionally hits multiple formatter options:
     // - has a cast opcode (so `recover_literals` must not drop it)
@@ -907,6 +971,49 @@ fn print_options_on_off_preserve_ircode_bytes() {
         })
         .unwrap();
     assert_eq!(ircode, pretty_ir);
+}
+
+#[test]
+fn flatten_call_list_preserves_container_values_in_call_args() {
+    let cases = [
+        (
+            "return lib(1).0xabcdef01([1])",
+            "[1]",
+        ),
+        (
+            "return lib(1).0xabcdef01([1, 2])",
+            "[1, 2]",
+        ),
+        (
+            "return lib(1).0xabcdef01(args(1))",
+            "args(1)",
+        ),
+    ];
+
+    for (script, expect) in cases {
+        let ircode = lang_to_ircode(script).unwrap();
+        let pretty_text = format_ircode_to_lang(&ircode, None).unwrap();
+        let pretty_ir = lang_to_ircode(&pretty_text)
+            .map_err(|e| {
+                format!(
+                    "{}\n---- pretty_text ----\n{}\n---------------------\n",
+                    e, pretty_text
+                )
+            })
+            .unwrap();
+
+        assert!(
+            pretty_text.contains(expect),
+            "expected '{}' in decompiled text, got: {}",
+            expect,
+            pretty_text
+        );
+        assert_eq!(
+            ircode, pretty_ir,
+            "roundtrip mismatch for script: {}\nprinted: {}",
+            script, pretty_text
+        );
+    }
 }
 
 #[test]
@@ -1106,6 +1213,103 @@ fn fitsh_ir_roundtrip_suite() {
     for (script, keywords) in scripts {
         check_fitsh_ir_roundtrip(script, keywords);
     }
+}
+
+#[test]
+fn trim_param_unpack_without_sourcemap_keeps_multi_param_unpack() {
+    let script = r##"
+        param { a, b }
+        b = 3
+        print a
+    "##;
+    let ircode = lang_to_ircode(script).unwrap();
+    let printed = format_ircode_to_lang(&ircode, None).unwrap();
+    assert!(printed.contains("unpack(roll_0(), 0)"));
+    assert!(!printed.contains("param {"));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn explicit_unpack_roll0_p0_is_not_rewritten_by_param_names_alone() {
+    let script = r##"
+        unpack(roll_0(), 0)
+        print 1
+    "##;
+    let ircode = lang_to_ircode(script).unwrap();
+    let mut smap = SourceMap::default();
+    smap.register_param_names(vec!["a".to_string(), "b".to_string()])
+        .unwrap();
+    let printed = format_ircode_to_lang(&ircode, Some(&smap)).unwrap();
+    assert!(printed.contains("unpack(roll_0(), 0)"));
+    assert!(!printed.contains("param { a, b }"));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn single_param_block_prints_from_ir_roundtrip() {
+    let script = r##"
+        param { amt }
+        print amt
+    "##;
+    let (block, source_map) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = format_ircode_to_lang(&block, Some(&source_map)).unwrap();
+    assert!(printed.contains("param { amt }"));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(block, reparsed);
+}
+
+#[test]
+fn explicit_put_roll0_is_not_rewritten_by_param_names_alone() {
+    let script = r##"
+        var x $0 = roll_0()
+        print x
+    "##;
+    let ircode = lang_to_ircode(script).unwrap();
+    let mut smap = SourceMap::default();
+    smap.register_param_names(vec!["amt".to_string()]).unwrap();
+    let printed = format_ircode_to_lang(&ircode, Some(&smap)).unwrap();
+    assert!(!printed.contains("param { amt }"));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn statement_position_block_expr_keeps_irblockr_via_parentheses() {
+    let mut expr = IRNodeArray::with_opcode(Bytecode::IRBLOCKR);
+    expr.push(push_inst(Bytecode::P1));
+    let mut root = IRNodeArray::with_opcode(Bytecode::IRBLOCK);
+    root.push(Box::new(expr));
+
+    let ircode = drop_irblock_wrap(root.serialize()).unwrap();
+    let printed = format_ircode_to_lang(&ircode, None).unwrap();
+    assert!(printed.contains("({"), "printed: {}", printed);
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn statement_position_if_expr_keeps_irifr_via_parentheses() {
+    let mut then_block = IRNodeArray::with_opcode(Bytecode::IRBLOCKR);
+    then_block.push(push_inst(Bytecode::P1));
+    let mut else_block = IRNodeArray::with_opcode(Bytecode::IRBLOCKR);
+    else_block.push(push_inst(Bytecode::P2));
+    let ifexpr = IRNodeTriple {
+        hrtv: true,
+        inst: Bytecode::IRIFR,
+        subx: push_inst(Bytecode::PTRUE),
+        suby: Box::new(then_block),
+        subz: Box::new(else_block),
+    };
+    let mut root = IRNodeArray::with_opcode(Bytecode::IRBLOCK);
+    root.push(Box::new(ifexpr));
+
+    let ircode = drop_irblock_wrap(root.serialize()).unwrap();
+    let printed = format_ircode_to_lang(&ircode, None).unwrap();
+    assert!(printed.contains("(if true"), "printed: {}", printed);
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
 }
 
 #[test]
@@ -1338,6 +1542,46 @@ fn decompile_action_transfer_args_split_by_arity() {
     assert!(printed.contains("transfer_hac_from($0, zhu_to_hac($1))"));
 }
 
+
+#[test]
+fn recover_literals_false_keeps_bytes_constants_as_hex() {
+    let string_ir = lang_to_irnode(r#"return "abc""#).unwrap();
+    let string_out = Formater::new(&PrintOption::new("  ", 0)).print(&string_ir);
+    assert!(string_out.contains("0x616263"));
+    assert!(!string_out.contains("\"abc\""));
+    assert_eq!(lang_to_ircode(&string_out).unwrap(), lang_to_ircode(r#"return "abc""#).unwrap());
+
+    let address_ir = lang_to_irnode("return emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
+    let address_out = Formater::new(&PrintOption::new("  ", 0)).print(&address_ir);
+    assert!(address_out.contains("0x"));
+    assert!(address_out.contains("as address"));
+    assert!(!address_out.contains("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS"));
+    assert_eq!(
+        lang_to_ircode(&address_out).unwrap(),
+        lang_to_ircode("return emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap()
+    );
+}
+
+#[test]
+fn recover_literals_true_keeps_raw_address_bytes_as_hex() {
+    use field::{Address as FieldAddress, Serialize};
+
+    let readable = "emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS";
+    let addr = FieldAddress::from_readable(readable).unwrap();
+    let hexstr = hex::encode(addr.serialize());
+    let script = format!("return 0x{}", hexstr);
+    let ircode = lang_to_ircode(&script).unwrap();
+    let block = lang_to_irnode(&script).unwrap();
+    let mut opt = PrintOption::new("  ", 0);
+    opt.recover_literals = true;
+    let printed = Formater::new(&opt).print(&block);
+
+    assert!(printed.contains(&format!("0x{}", hexstr)));
+    assert!(!printed.contains(readable));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
 #[test]
 fn format_ircode_rehydrates_numeric_literal() {
     let script = r##"
@@ -1457,6 +1701,23 @@ fn format_ircode_preserves_cto_bytes_opcode_identity() {
 }
 
 #[test]
+fn old_pair_count_packmap_is_not_decompiled_as_map_literal() {
+    let mut list = IRNodeArray::with_opcode(Bytecode::IRLIST);
+    list.push(push_inst(Bytecode::P1));
+    list.push(push_inst(Bytecode::P2));
+    list.push(push_num(1));
+    list.push(push_inst(Bytecode::PACKMAP));
+    let mut root = IRNodeArray::with_opcode(Bytecode::IRBLOCK);
+    root.push(Box::new(list));
+
+    let ircode = drop_irblock_wrap(root.serialize()).unwrap();
+    let printed = format_ircode_to_lang(&ircode, None).unwrap();
+    assert!(!printed.contains("map {"), "printed: {}", printed);
+    assert!(printed.contains("pack_map()"), "printed: {}", printed);
+    assert!(lang_to_ircode(&printed).is_err(), "printed: {}", printed);
+}
+
+#[test]
 fn list_keyword_roundtrip() {
     let script = r##"
         print [1, 2, 3]
@@ -1512,6 +1773,27 @@ fn call_short_syntax_uses_comment_short_form() {
     assert!(printed.contains("print"));
 }
 
+
+#[test]
+fn call_short_syntax_without_lib_prelude_falls_back_to_indexed_lib_ref() {
+    let script = r##"
+        lib Fund = 2
+        return Fund.deposit(1)
+    "##;
+    let ircode = lang_to_ircode(script).unwrap();
+    let (block, smap) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let mut opt = PrintOption::new("  ", 0);
+    opt.map = Some(&smap);
+    opt.trim_root_block = true;
+    opt.call_short_syntax = true;
+    opt.emit_lib_prelude = false;
+    let printed = Formater::new(&opt).print(&block);
+    assert!(printed.contains("lib(2).deposit("));
+    assert!(!printed.contains("Fund.deposit("));
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
 #[test]
 fn empty_array_generates_newlist() {
     let script = r##"
@@ -1519,6 +1801,38 @@ fn empty_array_generates_newlist() {
     "##;
     let codes = lang_to_ircode(script).unwrap();
     assert!(codes.contains(&(Bytecode::NEWLIST as u8)));
+}
+
+#[test]
+fn display_root_block_after_lib_prelude_roundtrips() {
+    let script = r##"
+        lib Fund = 2
+        return Fund.deposit(1)
+    "##;
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+    let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
+    assert!(printed.starts_with("lib Fund = 2
+{"), "printed: {}", printed);
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
+}
+
+#[test]
+fn display_root_block_after_const_prelude_roundtrips() {
+    let script = r##"
+        const ONE = 1
+        return ONE + 1
+    "##;
+    let (block, smap) = lang_to_irnode_with_sourcemap(script).unwrap();
+    let ircode = lang_to_ircode(script).unwrap();
+    let mut opt = PrintOption::new("  ", 0);
+    opt.map = Some(&smap);
+    opt.recover_literals = true;
+    let printed = Formater::new(&opt).print(&block);
+    assert!(printed.starts_with("const ONE = 1
+{"), "printed: {}", printed);
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(ircode, reparsed);
 }
 
 #[test]

@@ -4,7 +4,7 @@ use super::parse_func::{parse_func_body_tokens, parse_func_sig, parse_function};
 use super::state::ParseState;
 use crate::contract::Abst;
 use crate::rt::Token::{self, *};
-use crate::rt::{AbstCall, KwTy};
+use crate::rt::{AbstCall, KwTy, calc_func_sign};
 use crate::value::ValueTy;
 use field::Address;
 use sys::*;
@@ -143,6 +143,9 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                 ConstValue::String(s) => format!("string:{}", String::from_utf8_lossy(s)),
             };
 
+            if state.consts.iter().any(|(n, _)| n == &name) {
+                return errf!("const '{}' repeat", name);
+            }
             state.consts.push((name, value_str));
         }
         Some(Keyword(KwTy::Deploy)) => {
@@ -153,6 +156,12 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             state.advance();
             let libs = parse_addr_list(state)?;
             for (name, addr) in libs {
+                if state.libs.len() >= u8::MAX as usize {
+                    return errf!("too many contract libraries: max {}", u8::MAX);
+                }
+                if !state.library_addrs.insert(addr) {
+                    return errf!("library address repeat");
+                }
                 // libidx is 0-based order
                 state.libs.push((name, addr));
                 state.contract = state.contract.clone().lib(addr);
@@ -162,6 +171,12 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             state.advance();
             let inherit_list = parse_addr_list(state)?;
             for (_name, addr) in inherit_list {
+                if state.inherit_addrs.len() >= u8::MAX as usize {
+                    return errf!("too many inherit contracts: max {}", u8::MAX);
+                }
+                if !state.inherit_addrs.insert(addr) {
+                    return errf!("inherit address repeat");
+                }
                 state.contract = state.contract.clone().inh(addr);
             }
         }
@@ -232,7 +247,9 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                 CompiledCode::IrCode(ircodes) => Abst::new(aid).ircode(ircodes)?,
                 CompiledCode::Bytecode(bts) => Abst::new(aid).bytecode(bts)?,
             };
-
+            if !state.abst_signs.insert(aid.uint()) {
+                return errf!("abstract '{}' repeat", name);
+            }
             state.contract = state.contract.clone().syst(abst);
             state
                 .source_maps
@@ -241,6 +258,10 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
         Some(Keyword(KwTy::Function)) => {
             // consume 'function' inside parse_function
             let (func, smap, name) = parse_function(state, true)?;
+            let sign = calc_func_sign(&name);
+            if !state.userfunc_signs.insert(sign) {
+                return errf!("function '{}' signature repeat", name);
+            }
             state.contract = state.contract.clone().func(func);
             state.source_maps.push((name, smap));
         }
@@ -283,6 +304,7 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, Address)>> {
         } else {
             return errf!("Expected address but got {:?}", state.current());
         };
+        addr.must_contract()?;
 
         list.push((name, addr));
 

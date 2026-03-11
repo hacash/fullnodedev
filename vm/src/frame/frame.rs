@@ -48,7 +48,6 @@ pub struct Frame {
     pub heap: Heap,
 }
 
-
 impl Frame {
     pub fn reclaim(self, r: &mut Resoure) {
         r.stack_reclaim(self.oprnds);
@@ -157,7 +156,7 @@ impl Frame {
             &mut self.locals,
             &mut self.heap,
             &self.bindings.context_addr,
-            self.bindings.current_addr(),
+            self.bindings.code_owner.as_ref(),
             env.gas,
             &r.gas_table,
             &r.gas_extra,
@@ -193,12 +192,7 @@ mod splice_prepare_tests {
     }
 
     fn mk_bindings(owner: ContractAddress) -> FrameBindings {
-        FrameBindings::contract(
-            owner.clone(),
-            owner.clone(),
-            owner,
-            Vec::<ContractAddress>::new().into(),
-        )
+        FrameBindings::contract(owner.clone(), owner, Vec::<Address>::new().into())
     }
 
     #[test]
@@ -206,13 +200,16 @@ mod splice_prepare_tests {
         let mut res = Resoure::create(1);
         let mut frame = Frame::new(&mut res);
         frame.call_argv = Value::U8(1);
-        frame.types = Some(FuncArgvTypes::from_types(Some(ValueTy::U8), vec![ValueTy::U8]).unwrap());
+        frame.types =
+            Some(FuncArgvTypes::from_types(Some(ValueTy::U8), vec![ValueTy::U8]).unwrap());
         frame.locals.push(Value::U8(9)).unwrap();
         frame.oprnds.push(Value::U8(7)).unwrap();
         let fnobj = FnObj::plain(CodeType::Bytecode, vec![Bytecode::END as u8], 0, None);
         let owner = mk_contract_addr(41);
         let bindings = mk_bindings(owner.clone());
-        frame.prepare_splice(ExecCtx::view(), bindings.clone(), &fnobj, 1).unwrap();
+        frame
+            .prepare_splice(ExecCtx::view(), bindings.clone(), &fnobj, 1)
+            .unwrap();
         assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);
         assert_eq!(frame.exec, ExecCtx::view());
         assert_eq!(frame.pc, 0);
@@ -220,8 +217,10 @@ mod splice_prepare_tests {
         assert_eq!(frame.oprnds.len(), 1);
         assert_eq!(*frame.oprnds.peek().unwrap(), Value::U8(7));
         assert_eq!(frame.call_argv, Value::U8(1));
-        assert_eq!(frame.types.as_ref().unwrap().output_type().unwrap(), Some(ValueTy::U8));
+        assert_eq!(
+            frame.types.as_ref().unwrap().output_type().unwrap(),
+            Some(ValueTy::U8)
+        );
         assert_eq!(frame.bindings, bindings);
     }
 }
-

@@ -1,4 +1,4 @@
-use super::ir::IRNodeArray;
+use super::ir::{IRNodeArray, IRNodeDouble, IRNodeLeaf, IRNodeParam1Single};
 use super::rt::Bytecode;
 
 /// Encapsulates PrintOption-driven tweaks applied during decompilation.
@@ -80,84 +80,56 @@ impl<'a> DecompilationHelper<'a> {
         self.build_param_line(arr, start_idx)
     }
 
-    /// Infer parameter names for a canonical param-unpack node.
-    /// - If SourceMap has parameter names, use them.
-    /// - Otherwise, generate placeholder `$0, $1, ...` with an inferred count.
-    ///
-    /// Returns `None` if the node at `start_idx` is not the canonical param-unpack form.
-    pub fn infer_param_names(&self, arr: &IRNodeArray, start_idx: usize) -> Option<Vec<String>> {
+    fn matches_param_prelude(&self, node: &dyn IRNode, count: u8) -> bool {
         use Bytecode::*;
+        match count {
+            1 => node
+                .as_any()
+                .downcast_ref::<IRNodeParam1Single>()
+                .is_some_and(|single| {
+                    single.inst == PUT
+                        && single.para == 0
+                        && single
+                            .subx
+                            .as_any()
+                            .downcast_ref::<IRNodeLeaf>()
+                            .is_some_and(|leaf| leaf.inst == ROLL0)
+                }),
+            2.. => node
+                .as_any()
+                .downcast_ref::<IRNodeDouble>()
+                .is_some_and(|double| {
+                    double.inst == UNPACK
+                        && double
+                            .subx
+                            .as_any()
+                            .downcast_ref::<IRNodeLeaf>()
+                            .is_some_and(|leaf| leaf.inst == ROLL0)
+                        && double
+                            .suby
+                            .as_any()
+                            .downcast_ref::<IRNodeLeaf>()
+                            .is_some_and(|leaf| leaf.inst == P0)
+                }),
+            _ => false,
+        }
+    }
+
+    /// Infer parameter names for a compiler-generated param prelude.
+    /// Only SourceMap-backed param preludes are safe to rewrite as `param { ... }`.
+    pub fn infer_param_names(&self, arr: &IRNodeArray, start_idx: usize) -> Option<Vec<String>> {
         if start_idx >= arr.subs.len() {
             return None;
         }
         let node = &arr.subs[start_idx];
-        // Canonical param-unpack IR form for stable roundtrip: UNPACK(ROLL0, P0)
-        let is_param_unpack = if let Some(double) = node.as_any().downcast_ref::<IRNodeDouble>() {
-            if double.inst != UNPACK {
-                false
-            } else {
-                let subx_is_roll0 = double
-                    .subx
-                    .as_any()
-                    .downcast_ref::<IRNodeLeaf>()
-                    .is_some_and(|leaf| leaf.inst == ROLL0);
-                let suby_is_p0 = double
-                    .suby
-                    .as_any()
-                    .downcast_ref::<IRNodeLeaf>()
-                    .is_some_and(|leaf| leaf.inst == P0);
-                subx_is_roll0 && suby_is_p0
-            }
-        } else {
-            false
+        let map = self.opt.map?;
+        let (Some(count), Some(names)) = (map.param_prelude_count(), map.param_names()) else {
+            return None;
         };
-        if !is_param_unpack {
+        if names.len() != count as usize || !self.matches_param_prelude(&**node, count) {
             return None;
         }
-
-        if let Some(names) = self
-            .opt
-            .map
-            .and_then(|m| m.param_names().cloned())
-            .filter(|n| !n.is_empty())
-        {
-            return Some(names);
-        }
-
-        // Fallback: infer a param count without SourceMap. We must avoid binding non-param locals (which would conflict with later `var $i $i = ...`). Heuristic: - Read total alloc slots from the nearest preceding ALLOC. - Look for an early PUT to a slot >= 1 shortly after UNPACK; its slot index typically equals the first non-param local slot, so it approximates param count. - If no such early PUT exists, fall back to alloc_count (or 1).
-        let mut alloc_count: usize = 0;
-        if start_idx > 0 {
-            for i in start_idx.saturating_sub(2)..start_idx {
-                if let Some(p1) = arr.subs[i].as_any().downcast_ref::<IRNodeParam1>() {
-                    if p1.inst == ALLOC {
-                        alloc_count = p1.para as usize;
-                        break;
-                    }
-                }
-            }
-        }
-        let mut first_local_slot: Option<usize> = None;
-        let max_scan = 32usize;
-        for s in arr.subs.iter().skip(start_idx + 1).take(max_scan) {
-            if let Some(p1s) = s.as_any().downcast_ref::<IRNodeParam1Single>() {
-                if p1s.inst == PUT {
-                    let slot = p1s.para as usize;
-                    if slot > 0 {
-                        first_local_slot = Some(first_local_slot.map_or(slot, |cur| cur.min(slot)));
-                    }
-                }
-            }
-        }
-
-        let mut count = first_local_slot.unwrap_or(alloc_count.max(1));
-        if alloc_count > 0 {
-            count = count.min(alloc_count);
-        }
-        if count == 0 {
-            count = 1;
-        }
-
-        Some((0..count).map(|i| format!("${}", i)).collect())
+        Some(names.clone())
     }
 
     fn build_param_line(&self, arr: &IRNodeArray, start_idx: usize) -> Option<String> {

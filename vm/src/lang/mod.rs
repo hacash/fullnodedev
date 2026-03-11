@@ -26,36 +26,115 @@ include! {"syntax.rs"}
 include! {"formater.rs"}
 include! {"test.rs"}
 
+fn try_consume_display_lib_prelude(tokens: &[Token], start: usize) -> Option<usize> {
+    let mut idx = start;
+    if !matches!(tokens.get(idx), Some(Token::Keyword(KwTy::Lib))) {
+        return None;
+    }
+    idx += 1;
+    if !matches!(tokens.get(idx), Some(Token::Identifier(_))) {
+        return None;
+    }
+    idx += 1;
+    if !matches!(tokens.get(idx), Some(Token::Keyword(KwTy::Assign))) {
+        return None;
+    }
+    idx += 1;
+    if !matches!(tokens.get(idx), Some(Token::Integer(_))) {
+        return None;
+    }
+    idx += 1;
+    if matches!(tokens.get(idx), Some(Token::Keyword(KwTy::Colon)) | Some(Token::Partition(':'))) {
+        idx += 1;
+        if !matches!(tokens.get(idx), Some(Token::Address(_)) | Some(Token::Identifier(_))) {
+            return None;
+        }
+        idx += 1;
+    }
+    Some(idx)
+}
+
+fn try_consume_display_const_prelude(tokens: &[Token], start: usize) -> Option<usize> {
+    let mut idx = start;
+    if !matches!(tokens.get(idx), Some(Token::Keyword(KwTy::Const))) {
+        return None;
+    }
+    idx += 1;
+    if !matches!(tokens.get(idx), Some(Token::Identifier(_))) {
+        return None;
+    }
+    idx += 1;
+    if !matches!(tokens.get(idx), Some(Token::Keyword(KwTy::Assign))) {
+        return None;
+    }
+    idx += 1;
+    if !matches!(tokens.get(idx), Some(Token::Integer(_)) | Some(Token::Bytes(_)) | Some(Token::Address(_))) {
+        return None;
+    }
+    Some(idx + 1)
+}
+
+fn skip_display_prelude(tokens: &[Token]) -> usize {
+    let mut idx = 0usize;
+    loop {
+        if let Some(next) = try_consume_display_lib_prelude(tokens, idx) {
+            idx = next;
+            continue;
+        }
+        if let Some(next) = try_consume_display_const_prelude(tokens, idx) {
+            idx = next;
+            continue;
+        }
+        break;
+    }
+    idx
+}
+
+fn strip_display_root_block(tokens: &mut Vec<Token>) {
+    let body_start = skip_display_prelude(tokens);
+    if tokens.len() < body_start + 2 {
+        return;
+    }
+    if !matches!(tokens.get(body_start), Some(Token::Partition('{'))) {
+        return;
+    }
+    if !matches!(tokens.last(), Some(Token::Partition('}'))) {
+        return;
+    }
+    let mut depth: isize = 0;
+    let mut close_at: Option<usize> = None;
+    for (i, tk) in tokens.iter().enumerate().skip(body_start) {
+        match tk {
+            Token::Partition('{') => depth += 1,
+            Token::Partition('}') => {
+                depth -= 1;
+                if depth == 0 {
+                    close_at = Some(i);
+                    break;
+                }
+                if depth < 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    if close_at != Some(tokens.len() - 1) {
+        return;
+    }
+    let mut stripped = Vec::with_capacity(tokens.len() - 2);
+    stripped.extend(tokens[..body_start].iter().cloned());
+    stripped.extend(tokens[body_start + 1..tokens.len() - 1].iter().cloned());
+    *tokens = stripped;
+}
+
 pub fn lang_to_irnode_with_sourcemap(langscript: &str) -> Ret<(IRNodeArray, SourceMap)> {
     let tkr = Tokenizer::new(langscript.as_bytes());
     let mut tks = tkr.parse()?;
-    // The formatter may emit a file-level `{ ... }` wrapper when `trim_root_block` is disabled. That wrapper is intended as a presentation detail, not a semantic block expression. To keep decompile->recompile closed, treat an outermost brace pair that encloses the entire file as a no-op wrapper and parse the inner content as the program body.
-    if tks.len() >= 2 {
-        if let (Partition('{'), Partition('}')) = (&tks[0], &tks[tks.len() - 1]) {
-            let mut depth: isize = 0;
-            let mut close_at: Option<usize> = None;
-            for (i, tk) in tks.iter().enumerate() {
-                match tk {
-                    Partition('{') => depth += 1,
-                    Partition('}') => {
-                        depth -= 1;
-                        if depth == 0 {
-                            close_at = Some(i);
-                            break;
-                        }
-                        if depth < 0 {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            if close_at == Some(tks.len() - 1) {
-                tks.remove(0);
-                tks.pop();
-            }
-        }
-    }
+    // The formatter may emit a file-level `{ ... }` wrapper when `trim_root_block` is disabled.
+    // That wrapper can appear after file-level `lib ...` / `const ...` prelude lines, so skip
+    // those declarations before deciding whether the outermost braces are presentation-only.
+    strip_display_root_block(&mut tks);
     let syx = Syntax::new(tks).with_ircode(true);
     syx.parse()
 }
@@ -78,14 +157,14 @@ pub fn lang_to_ircode_with_sourcemap(langscript: &str) -> Ret<(Vec<u8>, SourceMa
 pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Ret<String> {
     let mut opt = PrintOption::new("  ", 0);
     opt.map = Some(smap);
-    Ok(Formater::new(&opt).print(&block))
+    Formater::new(&opt).try_print(&block)
 }
 
 pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
     let mut opt = PrintOption::new("  ", 0);
     opt.recover_literals = true;
     opt.simplify_numeric_as_suffix = true;
-    Ok(Formater::new(&opt).print(&block))
+    Formater::new(&opt).try_print(&block)
 }
 
 pub fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<String> {
@@ -105,7 +184,7 @@ pub fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtR
     opt.flatten_syscall_cat = true;
     opt.recover_literals = true;
     opt.simplify_numeric_as_suffix = true;
-    Ok(Formater::new(&opt).print(&block))
+    Formater::new(&opt).try_print(&block).map_err(|e| ItrErr::new(ItrErrCode::InstInvalid, &e.to_string()))
 }
 
 pub fn ircode_to_lang_with_sourcemap(ircode: &Vec<u8>, smap: &SourceMap) -> Ret<String> {

@@ -55,7 +55,9 @@ impl Syntax {
             if !param_names.is_empty() {
                 self.emit.source_map.register_param_names(param_names)?;
             }
-
+            self.emit
+                .source_map
+                .register_param_prelude_count(params.len() as u8)?;
             self.emit.irnode
                 .push(Self::build_param_prelude(params.len(), true)?);
         }

@@ -35,6 +35,8 @@ pub struct PrintOption<'a> {
     allocated: Rc<RefCell<PrintHashSet<u8>>>,
     printed_consts: Rc<RefCell<PrintHashSet<String>>>,
     pending_consts: Rc<RefCell<Vec<String>>>,
+    print_error: Rc<RefCell<Option<String>>>,
+    print_depth: Rc<RefCell<usize>>,
 }
 
 impl<'a> PrintOption<'a> {
@@ -57,6 +59,39 @@ impl<'a> PrintOption<'a> {
             allocated: Rc::new(RefCell::new(PrintHashSet::new())),
             printed_consts: Rc::new(RefCell::new(PrintHashSet::new())),
             pending_consts: Rc::new(RefCell::new(Vec::new())),
+            print_error: Rc::new(RefCell::new(None)),
+            print_depth: Rc::new(RefCell::new(0)),
+        }
+    }
+
+    pub fn fresh_runtime_state_clone(&self) -> Self {
+        let mut next = self.clone();
+        next.allocated = Rc::new(RefCell::new(PrintHashSet::new()));
+        next.printed_consts = Rc::new(RefCell::new(PrintHashSet::new()));
+        next.pending_consts = Rc::new(RefCell::new(Vec::new()));
+        next.print_error = Rc::new(RefCell::new(None));
+        next.print_depth = Rc::new(RefCell::new(0));
+        next
+    }
+
+    pub fn reset_runtime_state(&self) {
+        self.allocated.borrow_mut().clear();
+        self.printed_consts.borrow_mut().clear();
+        self.pending_consts.borrow_mut().clear();
+        self.print_error.borrow_mut().take();
+    }
+
+    pub fn begin_print_session(&self) -> bool {
+        let mut depth = self.print_depth.borrow_mut();
+        let is_root = *depth == 0;
+        *depth += 1;
+        is_root
+    }
+
+    pub fn end_print_session(&self) {
+        let mut depth = self.print_depth.borrow_mut();
+        if *depth > 0 {
+            *depth -= 1;
         }
     }
 
@@ -93,6 +128,17 @@ impl<'a> PrintOption<'a> {
 
     pub fn is_const_printed(&self, name: &str) -> bool {
         self.printed_consts.borrow_mut().contains(name)
+    }
+
+    pub fn set_print_error<S: Into<String>>(&self, msg: S) {
+        let mut err = self.print_error.borrow_mut();
+        if err.is_none() {
+            *err = Some(msg.into());
+        }
+    }
+
+    pub fn take_print_error(&self) -> Option<String> {
+        self.print_error.borrow_mut().take()
     }
 
     pub fn add_pending_const(&self, name: String) {
