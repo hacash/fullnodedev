@@ -5,23 +5,16 @@ use protocol::action::*;
 use protocol::transaction::*;
 use sys::*;
 
-#[cfg(feature = "tex")]
 use testkit::sim::context::make_ctx_with_default_tx;
-#[cfg(feature = "ast")]
 use testkit::sim::context::{
     make_ctx_with_logs as testkit_make_ctx_with_logs,
     make_ctx_with_state as testkit_make_ctx_with_state,
 };
-#[cfg(feature = "ast")]
 use testkit::sim::logs::MemLogs as AstTestLogs;
-#[cfg(feature = "tex")]
 use testkit::sim::state::FlatMemState as TestMemState;
-#[cfg(feature = "ast")]
 use testkit::sim::state::ForkableMemState as AstTestState;
-#[cfg(feature = "ast")]
 use testkit::sim::vm::CounterMockVm as MockVM;
 
-#[cfg(feature = "ast")]
 fn build_ast_ctx_with_state<'a>(
     env: Env,
     sta: Box<dyn State>,
@@ -37,12 +30,10 @@ fn build_ast_ctx_with_state<'a>(
     ctx
 }
 
-#[cfg(feature = "ast")]
 fn ast_state_get_u8(ctx: &mut dyn Context, key: u8) -> Option<u8> {
     ctx.state().get(vec![key]).and_then(|v| v.first().copied())
 }
 
-#[cfg(feature = "ast")]
 fn ast_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
     protocol::state::CoreState::wrap(ctx.state())
         .balance(addr)
@@ -50,10 +41,8 @@ fn ast_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
         .hacash
 }
 
-#[cfg(feature = "ast")]
 static AST_TEST_GLOBAL_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
 
-#[cfg(feature = "ast")]
 fn ast_test_globals_guard() -> std::sync::MutexGuard<'static, ()> {
     AST_TEST_GLOBAL_LOCK
         .get_or_init(|| std::sync::Mutex::new(()))
@@ -61,14 +50,12 @@ fn ast_test_globals_guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap()
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestSet {
     key: Uint1,
     val: Uint1,
 }
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestSet {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let mut mv = self.key.parse(buf)?;
@@ -77,7 +64,6 @@ impl Parse for AstTestSet {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestSet {
     fn serialize(&self) -> Vec<u8> {
         [self.key.serialize(), self.val.serialize()].concat()
@@ -88,14 +74,12 @@ impl Serialize for AstTestSet {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestSet {
     fn new() -> Self {
         Self::default()
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestSet {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!(
@@ -106,7 +90,6 @@ impl ToJSON for AstTestSet {
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestSet {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -121,7 +104,6 @@ impl FromJSON for AstTestSet {
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestSet {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
@@ -129,10 +111,8 @@ impl ActExec for AstTestSet {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestSet {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestSet {
     fn kind(&self) -> u16 {
         65001
@@ -145,7 +125,6 @@ impl Action for AstTestSet {
     }
 }
 
-#[cfg(feature = "ast")]
 impl AstTestSet {
     fn create_by(key: u8, val: u8) -> Self {
         Self {
@@ -156,20 +135,17 @@ impl AstTestSet {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestGasOnly {
     gas: Uint1,
 }
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestGasOnly {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.gas.parse(buf)
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestGasOnly {
     fn serialize(&self) -> Vec<u8> {
         self.gas.serialize()
@@ -180,38 +156,32 @@ impl Serialize for AstTestGasOnly {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestGasOnly {
     fn new() -> Self {
         Self::default()
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestGasOnly {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestGasOnly {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestGasOnly {
     fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         Ok((*self.gas as u32, vec![]))
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestGasOnly {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestGasOnly {
     fn kind(&self) -> u16 {
         65030
@@ -224,7 +194,6 @@ impl Action for AstTestGasOnly {
     }
 }
 
-#[cfg(feature = "ast")]
 impl AstTestGasOnly {
     fn create_by(gas: u8) -> Self {
         Self {
@@ -233,18 +202,15 @@ impl AstTestGasOnly {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestFail {}
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestFail {
     fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
         Ok(0)
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestFail {
     fn serialize(&self) -> Vec<u8> {
         vec![]
@@ -255,38 +221,32 @@ impl Serialize for AstTestFail {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestFail {
     fn new() -> Self {
         Self::default()
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestFail {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestFail {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestFail {
     fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         xerr_rf!("ast test forced fail")
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestFail {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestFail {
     fn kind(&self) -> u16 {
         65002
@@ -299,7 +259,6 @@ impl Action for AstTestFail {
     }
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
     let mut tx = TransactionType2::default();
@@ -326,7 +285,6 @@ fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
     assert_eq!(ast_state_get_u8(&mut ctx, 3), None); // else branch not executed
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_plain_actions_no_over_or_under_charge() {
     let mut tx = TransactionType2::default();
@@ -366,7 +324,6 @@ fn test_ast_nested_plain_actions_no_over_or_under_charge() {
     assert_eq!(shared1 - shared0, 23);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_multilayer_nested_innermost_plain_return_gas_charged_once() {
     let mut tx = TransactionType2::default();
@@ -412,7 +369,6 @@ fn test_ast_multilayer_nested_innermost_plain_return_gas_charged_once() {
     assert_eq!(used19 - used7, 12);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_multilayer_innermost_unwind_does_not_charge_return_gas() {
     let mut tx = TransactionType2::default();
@@ -469,7 +425,6 @@ fn test_ast_multilayer_innermost_unwind_does_not_charge_return_gas() {
     assert_eq!(used_success - used_unwind, 17);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_static_size_repeated_charge_is_additive_per_execution() {
     let mut tx = TransactionType2::default();
@@ -504,7 +459,6 @@ fn test_ast_static_size_repeated_charge_is_additive_per_execution() {
     assert_eq!(shared2 - shared1, 40);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_single_select_plain_reported_gas_propagates() {
     let mut tx = TransactionType2::default();
@@ -537,7 +491,6 @@ fn test_ast_single_select_plain_reported_gas_propagates() {
     assert_eq!(shared1 - shared0, 18);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     let mut tx = TransactionType3::default();
@@ -576,7 +529,6 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     assert_eq!(ast_state_get_u8(&mut ctx, 7), None); // child write rolled back
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_if_select_else_path_commits_expected_layers() {
     let mut tx = TransactionType2::default();
@@ -615,7 +567,6 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
     assert_eq!(ast_state_get_u8(&mut ctx, 54), None); // outer else not executed
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
     let mut tx = TransactionType3::default();
@@ -645,7 +596,6 @@ fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
     assert!(err.contains("gas has run out"), "{}", err);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
     let mut tx = TransactionType2::default();
@@ -682,7 +632,6 @@ fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
     assert_eq!(before - after, 160);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_tx_without_ast_allows_nonzero_gasmax() {
     let mut tx = TransactionType3::default();
@@ -707,7 +656,6 @@ fn test_tx_without_ast_allows_nonzero_gasmax() {
     tx.execute(&mut ctx).unwrap();
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_tx_gas_settlement_charges_fee_plus_used_and_refunds_unused() {
     let mut tx = TransactionType3::default();
@@ -745,7 +693,6 @@ fn test_ast_tx_gas_settlement_charges_fee_plus_used_and_refunds_unused() {
     assert!(after <= before || maxc > used);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
     let mut tx = TransactionType2::default();
@@ -784,7 +731,6 @@ fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
     assert_eq!(ast_state_get_u8(&mut ctx, 61), None); // nested failed select write must not leak
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     let mut tx = TransactionType3::default();
@@ -828,7 +774,6 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     assert_eq!(ast_state_get_u8(&mut ctx, 72), None);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_4level_success_path_commits_expected_state() {
     let mut tx = TransactionType2::default();
@@ -876,7 +821,6 @@ fn test_ast_deep_4level_success_path_commits_expected_state() {
     assert_eq!(ast_state_get_u8(&mut ctx, 89), None);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
     let mut tx = TransactionType2::default();
@@ -929,7 +873,6 @@ fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
     assert_eq!(ast_state_get_u8(&mut ctx, 96), None);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_tree_depth_limit_6_rejects_7th_level() {
     let mut tx = TransactionType2::default();
@@ -956,7 +899,6 @@ fn test_ast_tree_depth_limit_6_rejects_7th_level() {
     assert_eq!(ast_state_get_u8(&mut ctx, 105), None);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_savepoint_recover_tex_and_p2sh() {
     #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -1051,7 +993,6 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
     assert!(ctx.p2sh(&new_adr).is_err());
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
     #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -1143,7 +1084,6 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
     assert!(ctx.p2sh(&new_adr).is_err());
 }
 
-#[cfg(feature = "tex")]
 fn build_tex_ctx_with_state(
     env: Env,
     sta: Box<dyn State>,
@@ -1151,7 +1091,6 @@ fn build_tex_ctx_with_state(
     make_ctx_with_default_tx(env, sta)
 }
 
-#[cfg(feature = "tex")]
 #[test]
 fn test_tex_sat_pay_records_sat_not_zhu() {
     use protocol::tex::*;
@@ -1177,7 +1116,6 @@ fn test_tex_sat_pay_records_sat_not_zhu() {
     assert_eq!(ctx.tex_ledger().zhu, 0);
 }
 
-#[cfg(feature = "tex")]
 #[test]
 fn test_tex_asset_serial_must_exist_and_cache() {
     use protocol::tex::*;
@@ -1221,7 +1159,6 @@ fn test_tex_asset_serial_must_exist_and_cache() {
     assert_eq!(ctx.tex_ledger().asset_checked.len(), 1);
 }
 
-#[cfg(feature = "tex")]
 #[test]
 fn test_tex_diamond_get_zero_rejected_early() {
     use protocol::tex::*;
@@ -1239,7 +1176,6 @@ fn test_tex_diamond_get_zero_rejected_early() {
     assert!(err.contains("cannot be zero"));
 }
 
-#[cfg(feature = "tex")]
 #[test]
 fn test_tex_cell_json_must_use_cellid() {
     use protocol::tex::*;
@@ -1254,7 +1190,6 @@ fn test_tex_cell_json_must_use_cellid() {
     assert!(err.contains("cellid"));
 }
 
-#[cfg(feature = "tex")]
 #[test]
 fn test_tex_action_signature_rejects_payload_tamper() {
     use protocol::tex::*;
@@ -1288,19 +1223,16 @@ fn test_tex_action_signature_rejects_payload_tamper() {
 // =====================================================================
 
 // --- Test helper: action that pushes a log entry ---
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestLog {
     tag: Uint1,
 }
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestLog {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.tag.parse(buf)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestLog {
     fn serialize(&self) -> Vec<u8> {
         self.tag.serialize()
@@ -1309,19 +1241,16 @@ impl Serialize for AstTestLog {
         self.tag.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestLog {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestLog {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!("{{\"tag\":{}}}", self.tag.to_json_fmt(fmt))
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestLog {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -1333,16 +1262,13 @@ impl FromJSON for AstTestLog {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestLog {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.logs().push(&self.tag);
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestLog {}
-#[cfg(feature = "ast")]
 impl Action for AstTestLog {
     fn kind(&self) -> u16 {
         65005
@@ -1354,7 +1280,6 @@ impl Action for AstTestLog {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestLog {
     fn create_by(tag: u8) -> Self {
         Self {
@@ -1364,18 +1289,15 @@ impl AstTestLog {
 }
 
 // --- Test helper: action that modifies tex_ledger ---
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestTexAdd {
     zhu_add: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestTexAdd {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.zhu_add.parse(buf)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestTexAdd {
     fn serialize(&self) -> Vec<u8> {
         self.zhu_add.serialize()
@@ -1384,19 +1306,16 @@ impl Serialize for AstTestTexAdd {
         self.zhu_add.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestTexAdd {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestTexAdd {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!("{{\"zhu_add\":{}}}", self.zhu_add.to_json_fmt(fmt))
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestTexAdd {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -1408,16 +1327,13 @@ impl FromJSON for AstTestTexAdd {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestTexAdd {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.tex_ledger().zhu += *self.zhu_add as i64;
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestTexAdd {}
-#[cfg(feature = "ast")]
 impl Action for AstTestTexAdd {
     fn kind(&self) -> u16 {
         65006
@@ -1429,7 +1345,6 @@ impl Action for AstTestTexAdd {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestTexAdd {
     fn create_by(zhu: u8) -> Self {
         Self {
@@ -1439,18 +1354,15 @@ impl AstTestTexAdd {
 }
 
 // --- Test helper: action that sets P2SH with configurable address byte ---
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestP2shSetN {
     addr_byte: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestP2shSetN {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.addr_byte.parse(buf)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestP2shSetN {
     fn serialize(&self) -> Vec<u8> {
         self.addr_byte.serialize()
@@ -1459,19 +1371,16 @@ impl Serialize for AstTestP2shSetN {
         self.addr_byte.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestP2shSetN {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestP2shSetN {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!("{{\"addr_byte\":{}}}", self.addr_byte.to_json_fmt(fmt))
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestP2shSetN {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -1483,9 +1392,7 @@ impl FromJSON for AstTestP2shSetN {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 struct AstTestP2shImpl;
-#[cfg(feature = "ast")]
 impl P2sh for AstTestP2shImpl {
     fn code_stuff(&self) -> &[u8] {
         b"code"
@@ -1494,7 +1401,6 @@ impl P2sh for AstTestP2shImpl {
         b"wit"
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestP2shSetN {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
@@ -1502,9 +1408,7 @@ impl ActExec for AstTestP2shSetN {
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestP2shSetN {}
-#[cfg(feature = "ast")]
 impl Action for AstTestP2shSetN {
     fn kind(&self) -> u16 {
         65007
@@ -1516,7 +1420,6 @@ impl Action for AstTestP2shSetN {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestP2shSetN {
     fn create_by(n: u8) -> Self {
         Self {
@@ -1526,13 +1429,11 @@ impl AstTestP2shSetN {
 }
 
 // --- Test helper: action that does state set + tex + log in one shot ---
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestCombo {
     key: Uint1,
     val: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestCombo {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let mut mv = self.key.parse(buf)?;
@@ -1540,7 +1441,6 @@ impl Parse for AstTestCombo {
         Ok(mv)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestCombo {
     fn serialize(&self) -> Vec<u8> {
         [self.key.serialize(), self.val.serialize()].concat()
@@ -1549,13 +1449,11 @@ impl Serialize for AstTestCombo {
         self.key.size() + self.val.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestCombo {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestCombo {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!(
@@ -1565,7 +1463,6 @@ impl ToJSON for AstTestCombo {
         )
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestCombo {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -1579,7 +1476,6 @@ impl FromJSON for AstTestCombo {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestCombo {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
@@ -1588,9 +1484,7 @@ impl ActExec for AstTestCombo {
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestCombo {}
-#[cfg(feature = "ast")]
 impl Action for AstTestCombo {
     fn kind(&self) -> u16 {
         65008
@@ -1602,7 +1496,6 @@ impl Action for AstTestCombo {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestCombo {
     fn create_by(key: u8, val: u8) -> Self {
         Self {
@@ -1613,7 +1506,6 @@ impl AstTestCombo {
 }
 
 // --- Helper to build ctx with AstTestLogs ---
-#[cfg(feature = "ast")]
 fn build_ast_ctx_with_logs<'a>(
     env: Env,
     sta: Box<dyn State>,
@@ -1635,7 +1527,6 @@ fn build_ast_ctx_with_logs<'a>(
 // ---- Test 1: AstIf branch failure triggers whole_snap recover ----
 // Validates the fix: without ctx_recover(ctx, whole_snap) on branch Err,
 // the state fork layer leaks.
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_fail_recovers_whole_snap() {
     let mut tx = TransactionType2::default();
@@ -1666,7 +1557,6 @@ fn test_ast_if_branch_fail_recovers_whole_snap() {
 }
 
 // ---- Test 2: AstIf else branch failure also recovers whole_snap ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_else_branch_fail_recovers_whole_snap() {
     let mut tx = TransactionType2::default();
@@ -1693,7 +1583,6 @@ fn test_ast_if_else_branch_fail_recovers_whole_snap() {
 
 // ---- Test 3: AstSelect early-return validation doesn't leak state fork ----
 // Validates the fix: validation checks moved before ctx_snapshot.
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_validation_early_return_no_state_leak() {
     let mut tx = TransactionType2::default();
@@ -1722,7 +1611,6 @@ fn test_ast_select_validation_early_return_no_state_leak() {
 // PLACEHOLDER_TESTS_PART2
 
 // ---- Test 4: Logs are truncated on AstSelect child failure ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_logs_truncated_on_child_failure() {
     let mut tx = TransactionType2::default();
@@ -1756,7 +1644,6 @@ fn test_ast_select_logs_truncated_on_child_failure() {
 }
 
 // ---- Test 5: Logs truncated on AstIf branch failure (whole_snap recover) ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_fail_truncates_logs() {
     let mut tx = TransactionType2::default();
@@ -1792,7 +1679,6 @@ fn test_ast_if_branch_fail_truncates_logs() {
 }
 
 // ---- Test 6: tex_ledger restored on nested AstSelect failure ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_tex_ledger_restored_on_failure() {
     let mut tx = TransactionType2::default();
@@ -1825,7 +1711,6 @@ fn test_ast_select_tex_ledger_restored_on_failure() {
 }
 
 // ---- Test 7: tex_ledger fully rolled back when AstIf fails ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_fail_rolls_back_tex_ledger() {
     let mut tx = TransactionType2::default();
@@ -1855,7 +1740,6 @@ fn test_ast_if_fail_rolls_back_tex_ledger() {
 // PLACEHOLDER_TESTS_PART3
 
 // ---- Test 8: P2SH set in successful branch kept, failed branch removed ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_p2sh_kept_on_success_removed_on_failure() {
     let mut tx = TransactionType2::default();
@@ -1896,7 +1780,6 @@ fn test_ast_select_p2sh_kept_on_success_removed_on_failure() {
 }
 
 // ---- Test 9: AstSelect min=0 all children fail -> success with empty result ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_min_zero_all_fail_succeeds() {
     let mut tx = TransactionType2::default();
@@ -1922,7 +1805,6 @@ fn test_ast_select_min_zero_all_fail_succeeds() {
 }
 
 // ---- Test 10: Combo action (state+tex+log) all restored on failure ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_combo_all_channels_restored_on_failure() {
     let mut tx = TransactionType2::default();
@@ -1956,7 +1838,6 @@ fn test_ast_combo_all_channels_restored_on_failure() {
 }
 
 // ---- Test 11: Nested AstIf inside AstSelect — inner if fails, outer select recovers ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
     let mut tx = TransactionType2::default();
@@ -2001,7 +1882,6 @@ fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
 // PLACEHOLDER_TESTS_PART4
 
 // ---- Test 12: State overwrite in failed branch doesn't leak ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_state_overwrite_in_failed_branch_does_not_leak() {
     let mut tx = TransactionType2::default();
@@ -2033,7 +1913,6 @@ fn test_ast_state_overwrite_in_failed_branch_does_not_leak() {
 }
 
 // ---- Test 13: AstIf else path with nested AstSelect partial success ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_else_with_nested_select_partial_success() {
     let mut tx = TransactionType2::default();
@@ -2069,7 +1948,6 @@ fn test_ast_if_else_with_nested_select_partial_success() {
 }
 
 // ---- Test 14: P2SH + state + tex all committed on success path ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_all_channels_committed_on_success() {
     let mut tx = TransactionType2::default();
@@ -2106,7 +1984,6 @@ fn test_ast_all_channels_committed_on_success() {
 }
 
 // ---- Test 15: Double nested AstIf — inner else, outer if ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_double_nested_if_inner_else_outer_if() {
     let mut tx = TransactionType2::default();
@@ -2142,7 +2019,6 @@ fn test_ast_double_nested_if_inner_else_outer_if() {
 }
 
 // ---- Test 16: AstSelect max reached stops early, remaining children not executed ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_stops_at_max() {
     let mut tx = TransactionType2::default();
@@ -2175,7 +2051,6 @@ fn test_ast_select_stops_at_max() {
 }
 
 // ---- Test 17: AstSelect validation max > num rejected without state leak ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_max_gt_num_rejected_no_leak() {
     let mut tx = TransactionType2::default();
@@ -2202,7 +2077,6 @@ fn test_ast_select_max_gt_num_rejected_no_leak() {
 
 // ---- Test 18: Sequential AST operations on same context ----
 // After one AST op completes (success or fail), the next one works correctly.
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_sequential_operations_on_same_context() {
     let mut tx = TransactionType2::default();
@@ -2239,7 +2113,6 @@ fn test_ast_sequential_operations_on_same_context() {
 }
 
 // ---- Test 19: P2SH duplicate address rejected even across AST branches ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_p2sh_duplicate_address_rejected() {
     let mut tx = TransactionType2::default();
@@ -2269,7 +2142,6 @@ fn test_ast_p2sh_duplicate_address_rejected() {
 
 // ---- Test 20: P2SH set in failed AstSelect child is rolled back,
 //               then same address can be set in next successful child ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_p2sh_rollback_allows_retry_in_next_child() {
     let mut tx = TransactionType2::default();
@@ -2312,19 +2184,16 @@ fn test_ast_p2sh_rollback_allows_retry_in_next_child() {
 // =====================================================================
 
 // --- Test action that mutates VM state (increments MockVM counter) ---
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestVMCall {
     increment: Uint1,
 }
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestVMCall {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.increment.parse(buf)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestVMCall {
     fn serialize(&self) -> Vec<u8> {
         self.increment.serialize()
@@ -2333,25 +2202,21 @@ impl Serialize for AstTestVMCall {
         self.increment.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestVMCall {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestVMCall {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestVMCall {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestVMCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         // The MockVM's counter is behind an Arc<AtomicI64>, so we can
@@ -2373,9 +2238,7 @@ impl ActExec for AstTestVMCall {
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestVMCall {}
-#[cfg(feature = "ast")]
 impl Action for AstTestVMCall {
     fn kind(&self) -> u16 {
         65009
@@ -2387,7 +2250,6 @@ impl Action for AstTestVMCall {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestVMCall {
     fn create_by(inc: u8) -> Self {
         Self {
@@ -2396,14 +2258,12 @@ impl AstTestVMCall {
     }
 }
 
-#[cfg(feature = "ast")]
 struct AstRecoverTrackVm {
     value: std::sync::Arc<std::sync::atomic::AtomicI64>,
     restore_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     clean_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
-#[cfg(feature = "ast")]
 impl VM for AstRecoverTrackVm {
     fn snapshot_volatile(&self) -> Box<dyn std::any::Any> {
         Box::new(self.value.load(std::sync::atomic::Ordering::SeqCst))
@@ -2424,7 +2284,6 @@ impl VM for AstRecoverTrackVm {
     }
 }
 
-#[cfg(feature = "ast")]
 static AST_RECOVER_TRACK_HANDLES: std::sync::OnceLock<
     std::sync::Mutex<
         Option<(
@@ -2435,7 +2294,6 @@ static AST_RECOVER_TRACK_HANDLES: std::sync::OnceLock<
     >,
 > = std::sync::OnceLock::new();
 
-#[cfg(feature = "ast")]
 fn set_ast_recover_track_handles(
     value: std::sync::Arc<std::sync::atomic::AtomicI64>,
     restore_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
@@ -2445,7 +2303,6 @@ fn set_ast_recover_track_handles(
     *lock.lock().unwrap() = Some((value, restore_count, clean_count));
 }
 
-#[cfg(feature = "ast")]
 fn take_ast_recover_track_vm() -> Box<dyn VM> {
     let lock = AST_RECOVER_TRACK_HANDLES.get_or_init(|| std::sync::Mutex::new(None));
     let guards = lock.lock().unwrap();
@@ -2460,20 +2317,17 @@ fn take_ast_recover_track_vm() -> Box<dyn VM> {
     })
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestVmInitReplace {
     value: Uint1,
 }
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestVmInitReplace {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.value.parse(buf)
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestVmInitReplace {
     fn serialize(&self) -> Vec<u8> {
         self.value.serialize()
@@ -2484,28 +2338,24 @@ impl Serialize for AstTestVmInitReplace {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestVmInitReplace {
     fn new() -> Self {
         Self::default()
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestVmInitReplace {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestVmInitReplace {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitReplace {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let vm = take_ast_recover_track_vm();
@@ -2515,10 +2365,8 @@ impl ActExec for AstTestVmInitReplace {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestVmInitReplace {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestVmInitReplace {
     fn kind(&self) -> u16 {
         65017
@@ -2531,7 +2379,6 @@ impl Action for AstTestVmInitReplace {
     }
 }
 
-#[cfg(feature = "ast")]
 impl AstTestVmInitReplace {
     fn create_by(v: u8) -> Self {
         Self {
@@ -2540,12 +2387,10 @@ impl AstTestVmInitReplace {
     }
 }
 
-#[cfg(feature = "ast")]
 struct AstRecoverFlipVm {
     non_nil: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
-#[cfg(feature = "ast")]
 impl VM for AstRecoverFlipVm {
     fn is_nil(&self) -> bool {
         !self.non_nil.load(std::sync::atomic::Ordering::SeqCst)
@@ -2556,29 +2401,24 @@ impl VM for AstRecoverFlipVm {
     }
 }
 
-#[cfg(feature = "ast")]
 static AST_RECOVER_FLIP_HANDLE: std::sync::OnceLock<
     std::sync::Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
 > = std::sync::OnceLock::new();
 
-#[cfg(feature = "ast")]
 fn set_ast_recover_flip_handle(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
     let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
     *lock.lock().unwrap() = Some(flag);
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestVmSetNilAndFail;
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestVmSetNilAndFail {
     fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
         Ok(0)
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestVmSetNilAndFail {
     fn serialize(&self) -> Vec<u8> {
         vec![]
@@ -2589,28 +2429,24 @@ impl Serialize for AstTestVmSetNilAndFail {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestVmSetNilAndFail {
     fn new() -> Self {
         Self
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestVmSetNilAndFail {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestVmSetNilAndFail {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestVmSetNilAndFail {
     fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
@@ -2621,10 +2457,8 @@ impl ActExec for AstTestVmSetNilAndFail {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestVmSetNilAndFail {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestVmSetNilAndFail {
     fn kind(&self) -> u16 {
         65018
@@ -2637,7 +2471,6 @@ impl Action for AstTestVmSetNilAndFail {
     }
 }
 
-#[cfg(feature = "ast")]
 struct AstDeepDelayVm {
     volatile: std::sync::Arc<std::sync::atomic::AtomicI64>,
     warmup: std::sync::Arc<std::sync::atomic::AtomicI64>,
@@ -2645,7 +2478,6 @@ struct AstDeepDelayVm {
     clean_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
-#[cfg(feature = "ast")]
 impl VM for AstDeepDelayVm {
     fn snapshot_volatile(&self) -> Box<dyn std::any::Any> {
         Box::new(self.volatile.load(std::sync::atomic::Ordering::SeqCst))
@@ -2684,7 +2516,6 @@ impl VM for AstDeepDelayVm {
     }
 }
 
-#[cfg(feature = "ast")]
 static AST_DEEP_DELAY_VM_HANDLES: std::sync::OnceLock<
     std::sync::Mutex<
         Option<(
@@ -2696,7 +2527,6 @@ static AST_DEEP_DELAY_VM_HANDLES: std::sync::OnceLock<
     >,
 > = std::sync::OnceLock::new();
 
-#[cfg(feature = "ast")]
 fn set_ast_deep_delay_vm_handles(
     volatile: std::sync::Arc<std::sync::atomic::AtomicI64>,
     warmup: std::sync::Arc<std::sync::atomic::AtomicI64>,
@@ -2707,7 +2537,6 @@ fn set_ast_deep_delay_vm_handles(
     *lock.lock().unwrap() = Some((volatile, warmup, restore_count, clean_count));
 }
 
-#[cfg(feature = "ast")]
 fn take_ast_deep_delay_vm() -> Box<dyn VM> {
     let lock = AST_DEEP_DELAY_VM_HANDLES.get_or_init(|| std::sync::Mutex::new(None));
     let guards = lock.lock().unwrap();
@@ -2723,18 +2552,15 @@ fn take_ast_deep_delay_vm() -> Box<dyn VM> {
     })
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestDeepDelayVmInit;
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestDeepDelayVmInit {
     fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
         Ok(0)
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestDeepDelayVmInit {
     fn serialize(&self) -> Vec<u8> {
         vec![]
@@ -2745,28 +2571,24 @@ impl Serialize for AstTestDeepDelayVmInit {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestDeepDelayVmInit {
     fn new() -> Self {
         Self
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestDeepDelayVmInit {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestDeepDelayVmInit {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmInit {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.vm_init_once(take_ast_deep_delay_vm())?;
@@ -2774,10 +2596,8 @@ impl ActExec for AstTestDeepDelayVmInit {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestDeepDelayVmInit {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestDeepDelayVmInit {
     fn kind(&self) -> u16 {
         65019
@@ -2790,7 +2610,6 @@ impl Action for AstTestDeepDelayVmInit {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestDeepDelayVmCall {
     vol_add: Uint1,
@@ -2798,7 +2617,6 @@ struct AstTestDeepDelayVmCall {
     fail: Uint1,
 }
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestDeepDelayVmCall {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let mut mv = self.vol_add.parse(buf)?;
@@ -2808,7 +2626,6 @@ impl Parse for AstTestDeepDelayVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestDeepDelayVmCall {
     fn serialize(&self) -> Vec<u8> {
         [
@@ -2824,28 +2641,24 @@ impl Serialize for AstTestDeepDelayVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestDeepDelayVmCall {
     fn new() -> Self {
         Self::default()
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestDeepDelayVmCall {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestDeepDelayVmCall {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.vol_add, *self.warm_add, *self.fail];
@@ -2866,10 +2679,8 @@ impl ActExec for AstTestDeepDelayVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestDeepDelayVmCall {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestDeepDelayVmCall {
     fn kind(&self) -> u16 {
         65020
@@ -2882,7 +2693,6 @@ impl Action for AstTestDeepDelayVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl AstTestDeepDelayVmCall {
     fn create_by(vol_add: u8, warm_add: u8, fail: u8) -> Self {
         Self {
@@ -2893,18 +2703,15 @@ impl AstTestDeepDelayVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestVmInitFlip;
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestVmInitFlip {
     fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
         Ok(0)
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestVmInitFlip {
     fn serialize(&self) -> Vec<u8> {
         vec![]
@@ -2915,28 +2722,24 @@ impl Serialize for AstTestVmInitFlip {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestVmInitFlip {
     fn new() -> Self {
         Self
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestVmInitFlip {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestVmInitFlip {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitFlip {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
@@ -2951,10 +2754,8 @@ impl ActExec for AstTestVmInitFlip {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestVmInitFlip {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestVmInitFlip {
     fn kind(&self) -> u16 {
         65021
@@ -2967,14 +2768,12 @@ impl Action for AstTestVmInitFlip {
     }
 }
 
-#[cfg(feature = "ast")]
 struct AstBugAssumeVm {
     remaining: std::sync::Arc<std::sync::atomic::AtomicI64>,
     burned: std::sync::Arc<std::sync::atomic::AtomicI64>,
     volatile_mark: i64,
 }
 
-#[cfg(feature = "ast")]
 impl AstBugAssumeVm {
     fn create(
         remaining: i64,
@@ -2997,7 +2796,6 @@ impl AstBugAssumeVm {
     }
 }
 
-#[cfg(feature = "ast")]
 impl VM for AstBugAssumeVm {
     fn snapshot_volatile(&self) -> Box<dyn std::any::Any> {
         Box::new(self.volatile_mark)
@@ -3028,14 +2826,12 @@ impl VM for AstBugAssumeVm {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestBugVmCall {
     fail: Uint1,
     cost: Uint1,
 }
 
-#[cfg(feature = "ast")]
 impl Parse for AstTestBugVmCall {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let mut mv = self.fail.parse(buf)?;
@@ -3044,7 +2840,6 @@ impl Parse for AstTestBugVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Serialize for AstTestBugVmCall {
     fn serialize(&self) -> Vec<u8> {
         [self.fail.serialize(), self.cost.serialize()].concat()
@@ -3055,28 +2850,24 @@ impl Serialize for AstTestBugVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Field for AstTestBugVmCall {
     fn new() -> Self {
         Self::default()
     }
 }
 
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestBugVmCall {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
 
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestBugVmCall {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
 
-#[cfg(feature = "ast")]
 impl ActExec for AstTestBugVmCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.fail, *self.cost];
@@ -3097,10 +2888,8 @@ impl ActExec for AstTestBugVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl Description for AstTestBugVmCall {}
 
-#[cfg(feature = "ast")]
 impl Action for AstTestBugVmCall {
     fn kind(&self) -> u16 {
         65016
@@ -3113,7 +2902,6 @@ impl Action for AstTestBugVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 impl AstTestBugVmCall {
     fn fail(cost: u8) -> Self {
         Self {
@@ -3130,7 +2918,6 @@ impl AstTestBugVmCall {
     }
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
     let mut tx = TransactionType2::default();
@@ -3160,7 +2947,6 @@ fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
     assert_eq!(burned.load(std::sync::atomic::Ordering::SeqCst), 5);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
     let mut tx = TransactionType2::default();
@@ -3183,7 +2969,6 @@ fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
     assert_eq!(burned.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_control_all_success_children_no_burn_gap() {
     let mut tx = TransactionType2::default();
@@ -3216,7 +3001,6 @@ fn test_ast_bug_control_all_success_children_no_burn_gap() {
     assert_eq!(100 - rem, bur);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_bug_control_min_zero_success_child_charged() {
     let mut tx = TransactionType2::default();
@@ -3242,7 +3026,6 @@ fn test_ast_bug_control_min_zero_success_child_charged() {
     assert_eq!(100 - rem, bur);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
     let _guard = ast_test_globals_guard();
@@ -3287,7 +3070,6 @@ fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
     assert_eq!(ast_state_get_u8(&mut ctx, 190), Some(190));
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_repeat_init_returns_error() {
     let mut tx = TransactionType2::default();
@@ -3305,7 +3087,6 @@ fn test_ast_vm_recover_repeat_init_returns_error() {
     assert!(err.contains("already initialized"), "{}", err);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_recover_true_to_false_returns_error() {
     let _guard = ast_test_globals_guard();
@@ -3330,7 +3111,6 @@ fn test_ast_vm_recover_true_to_false_returns_error() {
     assert!(err.contains("vm became nil"), "{}", err);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
     let _guard = ast_test_globals_guard();
@@ -3396,7 +3176,6 @@ fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
     assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_success_commits_unwinds() {
     let _guard = ast_test_globals_guard();
@@ -3454,7 +3233,6 @@ fn test_ast_vm_delay_init_deep_nested_success_commits_unwinds() {
     assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_true_to_false_returns_error_and_no_leak() {
     let _guard = ast_test_globals_guard();
@@ -3490,7 +3268,6 @@ fn test_ast_vm_delay_init_deep_nested_true_to_false_returns_error_and_no_leak() 
     assert_eq!(ast_state_get_u8(&mut ctx, 170), None);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_kept() {
     let _guard = ast_test_globals_guard();
@@ -3564,7 +3341,6 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
     assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_delay_init_depth6_unwind_and_interrupt_channels() {
     let _guard = ast_test_globals_guard();
@@ -3645,7 +3421,6 @@ fn test_ast_vm_delay_init_depth6_unwind_and_interrupt_channels() {
     assert!(clean_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
     let _guard = ast_test_globals_guard();
@@ -3708,7 +3483,6 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
     assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_layered_with_mid_vm_failure_unwind_and_warmup_monotonic() {
     let _guard = ast_test_globals_guard();
@@ -3779,7 +3553,6 @@ fn test_ast_layered_with_mid_vm_failure_unwind_and_warmup_monotonic() {
     assert!(restore_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balance() {
     let _guard = ast_test_globals_guard();
@@ -3844,7 +3617,6 @@ fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balanc
     assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
     let mut tx = TransactionType3::default();
@@ -3891,13 +3663,11 @@ fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
 }
 
 // PLACEHOLDER_VM_TESTS
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestMainSet {
     key: Uint1,
     val: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestMainSet {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let mut mv = self.key.parse(buf)?;
@@ -3905,7 +3675,6 @@ impl Parse for AstTestMainSet {
         Ok(mv)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestMainSet {
     fn serialize(&self) -> Vec<u8> {
         [self.key.serialize(), self.val.serialize()].concat()
@@ -3914,13 +3683,11 @@ impl Serialize for AstTestMainSet {
         self.key.size() + self.val.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestMainSet {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestMainSet {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!(
@@ -3930,7 +3697,6 @@ impl ToJSON for AstTestMainSet {
         )
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestMainSet {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -3944,16 +3710,13 @@ impl FromJSON for AstTestMainSet {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestMainSet {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestMainSet {}
-#[cfg(feature = "ast")]
 impl Action for AstTestMainSet {
     fn kind(&self) -> u16 {
         65011
@@ -3965,7 +3728,6 @@ impl Action for AstTestMainSet {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestMainSet {
     fn create_by(key: u8, val: u8) -> Self {
         Self {
@@ -3975,18 +3737,15 @@ impl AstTestMainSet {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestMainP2shSetN {
     addr_byte: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestMainP2shSetN {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.addr_byte.parse(buf)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestMainP2shSetN {
     fn serialize(&self) -> Vec<u8> {
         self.addr_byte.serialize()
@@ -3995,19 +3754,16 @@ impl Serialize for AstTestMainP2shSetN {
         self.addr_byte.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestMainP2shSetN {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestMainP2shSetN {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!("{{\"addr_byte\":{}}}", self.addr_byte.to_json_fmt(fmt))
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestMainP2shSetN {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -4019,7 +3775,6 @@ impl FromJSON for AstTestMainP2shSetN {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestMainP2shSetN {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
@@ -4027,9 +3782,7 @@ impl ActExec for AstTestMainP2shSetN {
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestMainP2shSetN {}
-#[cfg(feature = "ast")]
 impl Action for AstTestMainP2shSetN {
     fn kind(&self) -> u16 {
         65012
@@ -4041,7 +3794,6 @@ impl Action for AstTestMainP2shSetN {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestMainP2shSetN {
     fn create_by(n: u8) -> Self {
         Self {
@@ -4050,18 +3802,15 @@ impl AstTestMainP2shSetN {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestMainVMCall {
     increment: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestMainVMCall {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.increment.parse(buf)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestMainVMCall {
     fn serialize(&self) -> Vec<u8> {
         self.increment.serialize()
@@ -4070,25 +3819,21 @@ impl Serialize for AstTestMainVMCall {
         self.increment.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestMainVMCall {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestMainVMCall {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
         "{}".to_owned()
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestMainVMCall {
     fn from_json(&mut self, _json: &str) -> Ret<()> {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestMainVMCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let snap = ctx.vm().snapshot_volatile();
@@ -4099,9 +3844,7 @@ impl ActExec for AstTestMainVMCall {
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestMainVMCall {}
-#[cfg(feature = "ast")]
 impl Action for AstTestMainVMCall {
     fn kind(&self) -> u16 {
         65013
@@ -4113,7 +3856,6 @@ impl Action for AstTestMainVMCall {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestMainVMCall {
     fn create_by(inc: u8) -> Self {
         Self {
@@ -4122,18 +3864,15 @@ impl AstTestMainVMCall {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestRet {
     tag: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestRet {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         self.tag.parse(buf)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestRet {
     fn serialize(&self) -> Vec<u8> {
         self.tag.serialize()
@@ -4142,19 +3881,16 @@ impl Serialize for AstTestRet {
         self.tag.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestRet {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestRet {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!("{{\"tag\":{}}}", self.tag.to_json_fmt(fmt))
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestRet {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -4166,15 +3902,12 @@ impl FromJSON for AstTestRet {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestRet {
     fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         Ok((0, vec![*self.tag]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestRet {}
-#[cfg(feature = "ast")]
 impl Action for AstTestRet {
     fn kind(&self) -> u16 {
         65014
@@ -4186,7 +3919,6 @@ impl Action for AstTestRet {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestRet {
     fn create_by(tag: u8) -> Self {
         Self {
@@ -4195,7 +3927,6 @@ impl AstTestRet {
     }
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestMutateAllFail {
     key: Uint1,
@@ -4203,7 +3934,6 @@ struct AstTestMutateAllFail {
     addr_byte: Uint1,
     vm_add: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestMutateAllFail {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let mut mv = self.key.parse(buf)?;
@@ -4213,7 +3943,6 @@ impl Parse for AstTestMutateAllFail {
         Ok(mv)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestMutateAllFail {
     fn serialize(&self) -> Vec<u8> {
         [
@@ -4228,13 +3957,11 @@ impl Serialize for AstTestMutateAllFail {
         self.key.size() + self.val.size() + self.addr_byte.size() + self.vm_add.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestMutateAllFail {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestMutateAllFail {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!(
@@ -4246,7 +3973,6 @@ impl ToJSON for AstTestMutateAllFail {
         )
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestMutateAllFail {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -4264,7 +3990,6 @@ impl FromJSON for AstTestMutateAllFail {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestMutateAllFail {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
@@ -4280,9 +4005,7 @@ impl ActExec for AstTestMutateAllFail {
         xerr_rf!("ast test mutate-all fail")
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestMutateAllFail {}
-#[cfg(feature = "ast")]
 impl Action for AstTestMutateAllFail {
     fn kind(&self) -> u16 {
         65015
@@ -4294,7 +4017,6 @@ impl Action for AstTestMutateAllFail {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestMutateAllFail {
     fn create_by(key: u8, val: u8, addr_byte: u8, vm_add: u8) -> Self {
         Self {
@@ -4307,7 +4029,6 @@ impl AstTestMutateAllFail {
 }
 
 // ---- Test 21: VM state restored on AstSelect child failure ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_state_restored_on_select_child_failure() {
     let mut tx = TransactionType2::default();
@@ -4344,7 +4065,6 @@ fn test_ast_vm_state_restored_on_select_child_failure() {
 }
 
 // ---- Test 22: VM state fully rolled back when AstIf branch fails ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
     let mut tx = TransactionType2::default();
@@ -4380,7 +4100,6 @@ fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
 }
 
 // ---- Test 23: VM state committed on successful AstIf path ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_state_committed_on_success() {
     let mut tx = TransactionType2::default();
@@ -4408,7 +4127,6 @@ fn test_ast_vm_state_committed_on_success() {
 }
 
 // ---- Test 24: VM + state + tex + logs + p2sh all restored together on failure ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_all_five_channels_restored_on_failure() {
     let mut tx = TransactionType2::default();
@@ -4447,7 +4165,6 @@ fn test_ast_all_five_channels_restored_on_failure() {
 }
 
 // ---- Test 25: VM state in nested AstIf-inside-AstSelect: inner fail isolated ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
     let mut tx = TransactionType2::default();
@@ -4489,13 +4206,11 @@ fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
 // ---- Test 26: ctx_action_call (ACTION) nested inside AstSelect ----
 // Tests that actions created via ctx_action_call within AST branches
 // have their state changes properly rolled back on failure.
-#[cfg(feature = "ast")]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 struct AstTestExtCall {
     key: Uint1,
     val: Uint1,
 }
-#[cfg(feature = "ast")]
 impl Parse for AstTestExtCall {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let mut mv = self.key.parse(buf)?;
@@ -4503,7 +4218,6 @@ impl Parse for AstTestExtCall {
         Ok(mv)
     }
 }
-#[cfg(feature = "ast")]
 impl Serialize for AstTestExtCall {
     fn serialize(&self) -> Vec<u8> {
         [self.key.serialize(), self.val.serialize()].concat()
@@ -4512,13 +4226,11 @@ impl Serialize for AstTestExtCall {
         self.key.size() + self.val.size()
     }
 }
-#[cfg(feature = "ast")]
 impl Field for AstTestExtCall {
     fn new() -> Self {
         Self::default()
     }
 }
-#[cfg(feature = "ast")]
 impl ToJSON for AstTestExtCall {
     fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
         format!(
@@ -4528,7 +4240,6 @@ impl ToJSON for AstTestExtCall {
         )
     }
 }
-#[cfg(feature = "ast")]
 impl FromJSON for AstTestExtCall {
     fn from_json(&mut self, json: &str) -> Ret<()> {
         let pairs = json_split_object(json);
@@ -4542,7 +4253,6 @@ impl FromJSON for AstTestExtCall {
         Ok(())
     }
 }
-#[cfg(feature = "ast")]
 impl ActExec for AstTestExtCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         // Simulate what ACTION does: modify state through ctx_action_call path.
@@ -4553,9 +4263,7 @@ impl ActExec for AstTestExtCall {
         Ok((0, vec![]))
     }
 }
-#[cfg(feature = "ast")]
 impl Description for AstTestExtCall {}
-#[cfg(feature = "ast")]
 impl Action for AstTestExtCall {
     fn kind(&self) -> u16 {
         65010
@@ -4567,7 +4275,6 @@ impl Action for AstTestExtCall {
         self
     }
 }
-#[cfg(feature = "ast")]
 impl AstTestExtCall {
     fn create_by(key: u8, val: u8) -> Self {
         Self {
@@ -4578,7 +4285,6 @@ impl AstTestExtCall {
 }
 
 // ---- Test 26: ACTION-like state changes rolled back in failed AstSelect child ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_extcall_state_rolled_back_on_select_child_failure() {
     let mut tx = TransactionType2::default();
@@ -4618,7 +4324,6 @@ fn test_ast_extcall_state_rolled_back_on_select_child_failure() {
 }
 
 // ---- Test 27: Multiple sequential AST ops with VM — state accumulates correctly ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_vm_sequential_accumulation() {
     let mut tx = TransactionType2::default();
@@ -4665,7 +4370,6 @@ fn test_ast_vm_sequential_accumulation() {
 
 // ---- Test 28: Deep 3-level nesting with all channels ----
 // AstIf -> AstSelect -> AstIf, with VM + state + tex + logs + p2sh
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_3level_all_channels() {
     let mut tx = TransactionType2::default();
@@ -4718,7 +4422,6 @@ fn test_ast_deep_3level_all_channels() {
 }
 
 // ---- Test 29: AstIf cond partial failure with MainCall side-effects rolls back then runs else ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
     let mut tx = TransactionType2::default();
@@ -4768,7 +4471,6 @@ fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
 }
 
 // ---- Test 30: Mixed MainCall + AST nested failure is isolated by outer AstSelect ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
     let mut tx = TransactionType2::default();
@@ -4823,7 +4525,6 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
 }
 
 // ---- Test 31: Deep AstIf->AstSelect->AstIf with MainCall actions commits expected channels ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
     let mut tx = TransactionType2::default();
@@ -4883,7 +4584,6 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
 }
 
 // ---- Test 32: AstSelect rejects actions len > TX_ACTIONS_MAX without leaking state context ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_num_over_tx_actions_max_rejected_no_leak() {
     let mut tx = TransactionType2::default();
@@ -4914,7 +4614,6 @@ fn test_ast_select_num_over_tx_actions_max_rejected_no_leak() {
 }
 
 // ---- Test 33: AstSelect max=0 short-circuits and executes no child ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_max_zero_executes_no_children() {
     let mut tx = TransactionType2::default();
@@ -4948,7 +4647,6 @@ fn test_ast_select_max_zero_executes_no_children() {
 }
 
 // ---- Test 34: AstSelect returns result bytes from the last successful child ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_returns_last_success_result_bytes() {
     let mut tx = TransactionType2::default();
@@ -4976,7 +4674,6 @@ fn test_ast_select_returns_last_success_result_bytes() {
 }
 
 // ---- Test 35: AstIf returns selected branch bytes and restores ctx level ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_returns_selected_branch_result_and_restores_level() {
     let mut tx = TransactionType2::default();
@@ -5002,7 +4699,6 @@ fn test_ast_if_returns_selected_branch_result_and_restores_level() {
 }
 
 // ---- Test 36: AstIf branch error still restores ctx level by AstLevelGuard ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_error_restores_ctx_level() {
     let mut tx = TransactionType2::default();
@@ -5034,7 +4730,6 @@ fn test_ast_if_error_restores_ctx_level() {
 }
 
 // ---- Test 37: Invalid cond AstSelect in AstIf falls through to else without cond side-effects ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
     let mut tx = TransactionType2::default();
@@ -5070,7 +4765,6 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
 }
 
 // ---- Test 38: AstSelect child that mutates all channels then fails is fully recovered ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
     let mut tx = TransactionType2::default();
@@ -5110,7 +4804,6 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
 }
 
 // ---- Test 39: AstIf branch mutate-then-fail triggers whole-snap recovery of all channels ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
     let mut tx = TransactionType2::default();
@@ -5170,7 +4863,6 @@ fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
 }
 
 // ---- Test 40: AstSelect with actions len == TX_ACTIONS_MAX is allowed ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_num_eq_tx_actions_max_allowed() {
     let mut tx = TransactionType2::default();
@@ -5195,7 +4887,6 @@ fn test_ast_select_num_eq_tx_actions_max_allowed() {
 }
 
 // ---- Test 41: AstSelect error still restores ctx level by AstLevelGuard ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_error_restores_ctx_level() {
     let mut tx = TransactionType2::default();
@@ -5216,7 +4907,6 @@ fn test_ast_select_error_restores_ctx_level() {
 }
 
 // ---- Test 42: AstIf with cond=nop takes if-branch (cond success with 0-required select) ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_nop_takes_if_branch() {
     let mut tx = TransactionType2::default();
@@ -5242,7 +4932,6 @@ fn test_ast_if_cond_nop_takes_if_branch() {
 }
 
 // ---- Test 43: ast depth exactly 6 is allowed ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_tree_depth_exact_6_is_allowed() {
     let mut tx = TransactionType2::default();
@@ -5268,7 +4957,6 @@ fn test_ast_tree_depth_exact_6_is_allowed() {
 }
 
 // ---- Test 44: AstIf cond mutate-all fail is recovered, else commits ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
     let mut tx = TransactionType2::default();
@@ -5322,7 +5010,6 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
 }
 
 // ---- Test 45: AstIf branch validation error recovers cond side-effects (whole-snap) ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
     let mut tx = TransactionType2::default();
@@ -5366,7 +5053,6 @@ fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
 }
 
 // ---- Test 46: Nested invalid AstSelect is treated as failed child and isolated ----
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_nested_invalid_select_isolated() {
     let mut tx = TransactionType2::default();

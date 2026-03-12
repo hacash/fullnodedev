@@ -1,4 +1,3 @@
-#![cfg(feature = "vm")]
 
 #[cfg(test)]
 mod action_coverage {

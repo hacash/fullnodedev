@@ -217,7 +217,6 @@ fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
     assert_eq!(*sto_after_append.prev_engraved_height, 10_000);
 }
 
-#[cfg(feature = "hip22")]
 #[test]
 fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     let main_acc = Account::create_by("diamond-inscription-edit-main").unwrap();
@@ -259,7 +258,6 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     assert_eq!(balance_mei(&mut ok_ctx, &main), 1_000_000 - 1);
 }
 
-#[cfg(feature = "hip22")]
 #[test]
 fn diamond_inscription_move_charges_by_target_append_rule_only() {
     let from_acc = Account::create_by("diamond-inscription-move-from").unwrap();
@@ -303,7 +301,6 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
     assert_eq!(balance_mei(&mut ok_ctx, &from), 1_000_000 - 4);
 }
 
-#[cfg(feature = "hip22")]
 #[test]
 fn diamond_inscription_move_is_free_when_target_has_less_than_ten() {
     let from_acc = Account::create_by("diamond-inscription-move-free-from").unwrap();
@@ -354,7 +351,6 @@ fn diamond_inscription_rejects_non_privakey_owner() {
     assert!(err.as_str().to_lowercase().contains("privakey"), "{}", err);
 }
 
-#[cfg(all(feature = "hip22", feature = "ast"))]
 #[test]
 fn diamond_move_astselect_interrupt_child_aborts_whole_node() {
     let from_acc = Account::create_by("diamond-inscription-ast-child-from").unwrap();
@@ -400,7 +396,6 @@ fn diamond_move_astselect_interrupt_child_aborts_whole_node() {
     assert_eq!(balance_mei(&mut ctx, &from), balance_after_gas);
 }
 
-#[cfg(all(feature = "hip22", feature = "ast"))]
 #[test]
 fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
     let from_acc = Account::create_by("diamond-inscription-ast-whole-from").unwrap();

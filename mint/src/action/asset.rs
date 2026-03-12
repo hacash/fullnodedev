@@ -5,9 +5,6 @@ pub const ASSET_ALIVE_HEIGHT: u64 = 700000;
 
 #[allow(unused)]
 fn check_alive_blk_hei(ctx: &mut dyn Context) -> Ret<(u64, u64)> {
-    #[cfg(not(feature = "hip20"))]
-    return err!("HIP20 asset just for test chain now");
-    // open hip20 feature
     let chei = ctx.env().block.height;
     let is_mainnet = ctx.env().chain.id==0 && chei >= ASSET_ALIVE_HEIGHT;
     let alive_hei: u64 = maybe!(is_mainnet, ASSET_ALIVE_HEIGHT, 0);
@@ -50,6 +47,12 @@ action_define!{ AssetCreate, 16,
         }
         if nl < 1 || nl > 32 {
             return err!("name length must be 1 ~ 32")
+        }
+        if !check_readable_string(&amd.ticket) {
+            return err!("ticket must be ascii2 readable string")
+        }
+        if !check_readable_string(&amd.name) {
+            return err!("name must be ascii2 readable string")
         }
         if *amd.decimal > 16 {
             return err!("decimal cannot more than 16")

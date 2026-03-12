@@ -10,10 +10,6 @@ action_define! { AstIf, 26,
     },
     (self, "Asset if-else execute".to_owned()),
     (self, ctx, gas {
-        #[cfg(not(feature = "ast"))]
-        if true {
-            return errf!("ast if not open")
-        }
         gas = 0; // control-flow node: all gas consumed via ctx
         let mut guard = ast_enter(ctx)?;
         let ctx = guard.ctx();

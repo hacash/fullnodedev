@@ -11,10 +11,6 @@ action_define! { AstSelect, 25,
     (self, format!("Execute select {} to {} in {} actions",
         *self.exe_min, *self.exe_max, self.actions.length())),
     (self, ctx, gas {
-        #[cfg(not(feature = "ast"))]
-        if true {
-            return errf!("ast select not open")
-        }
         gas = 0; // control-flow node: all gas consumed via ctx
         let mut guard = ast_enter(ctx)?;
         let ctx = guard.ctx();

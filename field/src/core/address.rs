@@ -191,17 +191,9 @@ impl Address {
     https://en.bitcoin.it/wiki/List_of_address_prefixes
     scriptmh: Pay-to-Script-Merkl-Hash
 */
-#[cfg(feature = "vm")]
 address_version_define!{
     PRIVAKEY : privakey, 0 // leading symbol: 1
     CONTRACT : contract, 1 // leading symbol: Q-Z, a-k, m-o
-    SCRIPTMH : scriptmh, 5 // leading symbol: 3
-}
-
-
-#[cfg(not(feature = "vm"))]
-address_version_define!{
-    PRIVAKEY : privakey, 0 // leading symbol: 1
     SCRIPTMH : scriptmh, 5 // leading symbol: 3
 }
 

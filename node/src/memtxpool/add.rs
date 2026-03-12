@@ -43,7 +43,7 @@ impl TxGroup {
         Ok(())
     }
 
-    fn insert_rng(&mut self, txp: TxPkg, rng: (usize, usize)) ->TRerr {
+    fn insert_rng(&mut self, txp: TxPkg, rng: (usize, usize)) -> Rerr {
         let (rxl, rxr) = rng;
         let mut istx = usize::MAX;
         for i in rxl .. rxr {

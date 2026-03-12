@@ -116,14 +116,12 @@ fn init_action_env_test_registry() {
     });
 }
 
-#[cfg(feature = "ast")]
 #[derive(Default, Clone)]
 struct AstForkableState {
     parent: std::sync::Weak<Box<dyn State>>,
     mem: MemMap,
 }
 
-#[cfg(feature = "ast")]
 impl State for AstForkableState {
     fn fork_sub(&self, parent: std::sync::Weak<Box<dyn State>>) -> Box<dyn State> {
         Box::new(Self {
@@ -556,7 +554,6 @@ fn test_ctx_action_call_astif_must_check_unreachable_branch_req_sign() {
     );
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_select_min_failure_is_unwind() {
     init_test_registry();
@@ -601,7 +598,6 @@ fn test_ast_select_min_failure_is_unwind() {
     assert!(err.contains("must succeed at least"), "{}", err);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_ast_if_rethrow_preserves_unwind_kind() {
     init_test_registry();
@@ -652,7 +648,6 @@ fn test_ast_if_rethrow_preserves_unwind_kind() {
     assert!(err.is_unwind(), "{}", err);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_balance_floor_empty_and_duplicate_asset_rejected() {
     init_test_registry();
@@ -698,7 +693,6 @@ fn test_balance_floor_empty_and_duplicate_asset_rejected() {
     assert!(err.contains("duplicate"), "{}", err);
 }
 
-#[cfg(feature = "ast")]
 #[test]
 fn test_balance_floor_success_and_insufficient() {
     init_test_registry();

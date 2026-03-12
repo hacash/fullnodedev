@@ -337,7 +337,6 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     settle_res?;
     exec_res?;
     
-    #[cfg(feature = "tex")]
     super::tex::do_settlement(ctx)?;
 
     // spend fee

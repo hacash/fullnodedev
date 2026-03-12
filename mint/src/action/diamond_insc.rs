@@ -336,8 +336,6 @@ action_define! { DiaInscEdit, 34,
         desc
     }),
     (self, ctx, _gas {
-        #[cfg(not(feature = "hip22"))]
-        if true { return errf!("HIP-22 not activated") }
         diamond_inscription_edit(self, ctx)
     })
 }
@@ -406,8 +404,6 @@ action_define! { DiaInscMove, 35,
         desc
     }),
     (self, ctx, _gas {
-        #[cfg(not(feature = "hip22"))]
-        if true { return errf!("HIP-22 not activated") }
         diamond_inscription_move(self, ctx)
     })
 }
@@ -494,8 +490,6 @@ action_define! { DiaInscDrop, 36,
             *a.index, a.diamond.to_readable(), a.protocol_cost.to_fin_string())
     }),
     (self, ctx, _gas {
-        #[cfg(not(feature = "hip22"))]
-        if true { return errf!("HIP-22 not activated") }
         diamond_inscription_drop(self, ctx)
     })
 }

@@ -129,7 +129,7 @@ impl Drop for AstLevelGuard<'_> {
     }
 }
 
-#[cfg(all(test, feature = "ast"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::context::ContextInst;

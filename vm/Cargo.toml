@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 sys            = {path = "../sys"}
-field          = {path = "../field", features = ["vm"]}
+field          = {path = "../field"}
 basis          = {path = "../basis"}
 protocol       = {path = "../protocol"}
 hex = "0.4.3"

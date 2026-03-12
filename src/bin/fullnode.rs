@@ -44,18 +44,10 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {
     protocol::setup::action_register(mint::action::try_create, mint::action::try_json_decode);
     // let mut server_apis: Vec<Router<ApiCtx>> = vec![];
 
-    // tex feature
-    #[cfg(feature = "tex")]
-    {
-        protocol::setup::action_register(protocol::tex::try_create, protocol::tex::try_json_decode);
-    }
-    // vm feature (contracts + p2sh)
-    #[cfg(feature = "vm")]
-    {
-        protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
-        protocol::setup::action_hooker(vm::hook::try_action_hook);
-        protocol::setup::vm_assigner(vm::machine::vm_assign);
-    }
+    protocol::setup::action_register(protocol::tex::try_create, protocol::tex::try_json_decode);
+    protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
+    protocol::setup::action_hooker(vm::hook::try_action_hook);
+    protocol::setup::vm_assigner(vm::machine::vm_assign);
 
     // scan api
     server::setup::api_servicer(scan.api_services());
@@ -64,20 +56,17 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {
     builder.install_ctrlc(true).scaner(scan);
 
     // Configure global VM contract cache pool (performance-only).
-    #[cfg(feature = "vm")]
-    {
-        let engcnf = builder.engine_conf();
-        let size_mb = engcnf.contract_cache_size;
-        let bytes = if size_mb.is_finite() && size_mb > 0.0 {
-            (size_mb * 1024.0 * 1024.0) as usize
-        } else {
-            0
-        };
-        vm::configure_contract_cache(vm::machine::ContractCacheConfig {
-            max_bytes: bytes,
-            ..Default::default()
-        });
-    }
+    let engcnf = builder.engine_conf();
+    let size_mb = engcnf.contract_cache_size;
+    let bytes = if size_mb.is_finite() && size_mb > 0.0 {
+        (size_mb * 1024.0 * 1024.0) as usize
+    } else {
+        0
+    };
+    vm::configure_contract_cache(vm::machine::ContractCacheConfig {
+        max_bytes: bytes,
+        ..Default::default()
+    });
 
     builder
         .diskdb(|dir| Box::new(db::DiskKV::open(dir)))
@@ -90,7 +79,6 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {
         .server(|ini, hnoder| {
             #[allow(unused_mut)]
             let mut services: Vec<std::sync::Arc<dyn ApiService>> = vec![mint::api::service()];
-            #[cfg(feature = "vm")]
             services.push(vm::api::service());
             Ok(Box::new(HttpServer::open(
                 ini,

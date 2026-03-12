@@ -51,11 +51,6 @@ pub fn hacd_transfer(state: &mut CoreState,
     if from == to {
 		return errf!("cannot transfer to self")
     }
-    /*p2sh check*/
-    #[cfg(not(feature = "vm"))]
-    if from.is_scriptmh() {
-        return errf!("scriptmh address cannot be from yet")
-    }
     // do transfer
     hacd_sub(state, from, hacd)?;
     hacd_add(state, to,   hacd)?;

@@ -1,4 +1,3 @@
-#![cfg(feature = "vm")]
 
 use std::collections::BTreeMap;
 use std::fs;
