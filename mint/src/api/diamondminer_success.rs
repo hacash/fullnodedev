@@ -1,13 +1,13 @@
 fn diamondminer_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let cnf = ctx.engine.config();
     if !cnf.dmer_enable {
-        return api_error("diamond miner in config not enable");
+        return api_error("diamond miner in config not enabled");
     }
     let Ok(actdts) = body_data_may_hex(&req) else {
         return api_error("hex format error");
     };
     let Ok((mint, _)) = action::DiamondMint::create(&actdts) else {
-        return api_error("upload action error");
+        return api_error("upload action failed");
     };
 
     let staptr = read_mint_state(ctx);
@@ -18,10 +18,10 @@ fn diamondminer_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let mint_name = act.diamond.to_readable();
     let lastdia = state.get_latest_diamond();
     if mint_number != *lastdia.number + 1 {
-        return api_error("diamond number error");
+        return api_error("invalid diamond number");
     }
     if mint_number > 1 && act.prev_hash != lastdia.born_hash {
-        return api_error("diamond prev hash error");
+        return api_error("invalid diamond prev hash");
     }
 
     let bid_addr = Address::from(cnf.dmer_bid_account.address().clone());

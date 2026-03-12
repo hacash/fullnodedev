@@ -433,7 +433,7 @@ impl VMState<'_> {
     fn skey(cadr: &Address, key: &Value) -> VmrtRes<ValueKey> {
         cadr.check_version().map_ires(
             StorageError,
-            format!("storage must in dffective address but in {}", cadr),
+            format!("storage must be in effective address but got {}", cadr),
         )?;
         let k = key.canbe_key()?;
         if k.is_empty() {

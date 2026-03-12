@@ -62,11 +62,11 @@ impl Parse for Fold64 {
             value = (value << 8) | buf[1 + i] as u64;
         }
         if value > Fold64::MAX {
-            return errf!("Fold64 value {} overflow max {}", value, Fold64::MAX)
+            return errf!("Fold64 value {} exceeds max {}", value, Fold64::MAX)
         }
         let expect = Fold64{ value }.size();
         if expect != 1 + n {
-            return errf!("Fold64 non-canonical size {} expect {}", 1 + n, expect)
+            return errf!("Fold64 non-canonical size {} expected {}", 1 + n, expect)
         }
         self.value = value;
         Ok(1 + n)
@@ -117,7 +117,7 @@ impl FromJSON for Fold64 {
         let s = json_expect_unquoted(json)?;
         if let Ok(v) = s.parse::<u64>() {
             if v > Fold64::MAX {
-                return errf!("Fold64 value {} overflow max {}", v, Fold64::MAX)
+                return errf!("Fold64 value {} exceeds max {}", v, Fold64::MAX)
             }
             self.value = v;
             return Ok(());
@@ -145,7 +145,7 @@ impl Fold64 {
 
     pub fn checked(self) -> Ret<Self> {
         if self.value > Self::MAX {
-            return errf!("Fold64 value {} cannot more than max {}", self.value, Self::MAX)
+            return errf!("Fold64 value {} cannot exceed max {}", self.value, Self::MAX)
         }
         Ok(self)
     }
@@ -202,7 +202,7 @@ impl TryFrom<u128> for Fold64 {
     type Error = String;
     fn try_from(v: u128) -> Ret<Self> {
         if v > u64::MAX as u128 {
-            return errf!("Fold64 value {} overflow u64", v)
+            return errf!("Fold64 value {} overflows u64", v)
         }
         Self::from(v as u64)
     }
@@ -714,7 +714,7 @@ mod fold64_tests {
                 return errf!("leb128 overflow")
             }
         }
-        errf!("leb128 unterminated")
+        errf!("leb128 sequence is unterminated")
     }
 }
 

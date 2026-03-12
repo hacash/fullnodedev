@@ -7,10 +7,10 @@ api_querys_define!{ Q8936,
 async fn account(State(_ctx): State<ApiCtx>, q: Query<Q8936>) -> impl IntoResponse {
     q_must!(q, quantity, 1);
     if quantity == 0 {
-        return api_error("quantity error")
+        return api_error("invalid quantity")
     }
     if quantity > 200 {
-        return api_error("quantity max 200")
+        return api_error("quantity must not exceed 200")
     }
     let mut resbls = Vec::with_capacity(quantity as usize);
     for _ in 0..quantity {

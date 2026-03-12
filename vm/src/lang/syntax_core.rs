@@ -86,7 +86,7 @@ impl Syntax {
 
     fn next(&mut self) -> Ret<Token> {
         if self.idx >= self.tokens.len() {
-            return errf!("item_with_left get next token error");
+            return errf!("item_with_left: get next token failed");
         }
         let nxt = &self.tokens[self.idx];
         self.idx += 1;
@@ -120,7 +120,7 @@ impl Syntax {
             0 if allow_zero => Ok(push_inst_noret(POP)),
             1 => Ok(push_single_p1(PUT, 0, push_inst(ROLL0))),
             2.. => Ok(push_double(UNPACK, ROLL0, P0)),
-            _ => errf!("param must need at least one"),
+            _ => errf!("at least one param required"),
         }
     }
 }

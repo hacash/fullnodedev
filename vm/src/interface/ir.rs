@@ -14,7 +14,7 @@ pub trait IRNode : DynClone {
         maybe!(self.hasretval(), Ok(()), {
             let c: Bytecode = std_mem_transmute!( self.bytecode() );
             let n = c.metadata().intro;
-            errf!("ir build error: Inst {:?} ({}) not have return value", c, n)
+            errf!("IR build error: Inst {:?} ({}) does not have a return value", c, n)
         })
     }
     fn print(&self) -> String {

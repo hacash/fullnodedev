@@ -297,7 +297,7 @@ pub fn execute_code<'a>(
                 let (bgasu, cres) = host
                     .action_call(kid, actbody)
                     .map_err(|e| {
-                        let code = maybe!(e.is_unwind(), ActCallUnwind, ActCallError);
+                        let code = maybe!(e.is_revert(), ActCallRevert, ActCallError);
                         ItrErr::new(code, e.as_str())
                     })?;
                 gas += bgasu as i64;
@@ -336,7 +336,7 @@ pub fn execute_code<'a>(
                 nsr!();
                 let r = match nt_idx {
                     NativeEnv::idx_context_address => Value::Address(*context_addr),
-                    _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not find", nt_idx),
+                    _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not found", nt_idx),
                 };
                 let g = NativeEnv::gas(nt_idx)?;
                 let r = r.valid(cap)?;

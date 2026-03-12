@@ -14,7 +14,7 @@ macro_rules! transaction_register {
                         Ok((Box::new(trs), sk))
                     },
                 )+
-                _ => errf!("transaction type '{}' not find", ty)
+                _ => errf!("transaction type '{}' not found", ty)
             }
         }
 

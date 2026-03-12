@@ -8,11 +8,9 @@ pub fn join_path(a: &std::path::Path, b: &str) -> PathBuf {
     a
 }
 
-pub fn ini_section(ini: &IniObj, key: &str) -> HashMap<String, Option<String>> {
-    match ini.get(key) {
-        Some(sec) => sec.clone(),
-        None => HashMap::new(),
-    }
+pub fn ini_section<'a>(ini: &'a IniObj, key: &str) -> &'a HashMap<String, Option<String>> {
+    static EMPTY: std::sync::OnceLock<HashMap<String, Option<String>>> = std::sync::OnceLock::new();
+    ini.get(key).unwrap_or_else(|| EMPTY.get_or_init(HashMap::new))
 }
 
 pub fn ini_must(sec: &HashMap<String, Option<String>>, key: &str, def: &str) -> String {
@@ -20,11 +18,11 @@ pub fn ini_must(sec: &HashMap<String, Option<String>>, key: &str, def: &str) -> 
 }
 
 pub fn ini_must_maxlen(sec: &HashMap<String, Option<String>>, key: &str, def: &str, ml: usize) -> String {
-    let mut val = match sec.get(key) {
-        Some(Some(val)) => val.to_string(),
-        Some(None) => def.to_string(),
-        None => def.to_string(),
-    };
+    let mut val = sec
+        .get(key)
+        .and_then(|v| v.as_deref())
+        .unwrap_or(def)
+        .to_owned();
     if ml > 0 && val.len() > ml {
         let mut cut = ml;
         while cut > 0 && !val.is_char_boundary(cut) {

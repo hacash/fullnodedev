@@ -85,7 +85,7 @@ impl Balance {
 		}
 		// Fix: Check length before push to avoid inconsistent state
 		if self.assets.length() >= BALANCE_ASSET_MAX {
-			return errf!("balance asset item quantity cannot big than {}", BALANCE_ASSET_MAX)
+			return errf!("balance asset item quantity cannot exceed {}", BALANCE_ASSET_MAX)
 		}
 		self.assets.push(amt)?;
 		Ok(())

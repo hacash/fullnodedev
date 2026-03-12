@@ -104,7 +104,7 @@ impl Roller {
             if self.head.height() > self.root.height() + self.level {
                 let new_root_height = self.root.height() + 1;
                 let Some(new_root) = Self::trace_parent(self.head.clone(), new_root_height) else {
-                    return errf!("cannot trace root height {}", new_root_height);
+                    return errf!("root height {} not found when tracing", new_root_height);
                 };
                 self.root = new_root.clone();
                 root_change = Some(new_root);

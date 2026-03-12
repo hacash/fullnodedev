@@ -20,7 +20,7 @@ async fn scan_coin_transfer(State(ctx): State<ApiCtx>, q: Query<Q4538>) -> impl 
     let blkobj = &blkobj.objc;
     let trs = blkobj.transactions();
     if trs.len() == 0 {
-        return api_error("transaction len error")
+        return api_error("transaction length invalid")
     }
     if q.txposi < 0 {
         return api_error("txposi error")

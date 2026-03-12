@@ -60,7 +60,7 @@ impl $class {
 
     pub fn push_checked(&mut self, dia: DiamondName) -> Rerr {
         if self.contains(dia.as_ref()) {
-            return errf!("diamond name {} is duplicate", dia.to_readable())
+            return errf!("diamond name {} is duplicated", dia.to_readable())
         }
         self.push(dia)
     }
@@ -70,13 +70,13 @@ impl $class {
         let setlen = *self.count as usize;
         let reallen = self.lists.len() as usize ;
         if setlen != reallen {
-            return errf!("check fail: length need {} but got {}", setlen, reallen)
+            return errf!("check failed: length expected {} but got {}", setlen, reallen)
         }
         if reallen == 0 {
             return errf!("diamonds quantity cannot be zero")
         }
         if reallen > $max {
-            return errf!("diamonds quantity cannot over {}", $max)
+            return errf!("diamonds quantity cannot exceed {}", $max)
         }
         // check name + duplicate
         let mut seen = HashSet::with_capacity(reallen);
@@ -85,7 +85,7 @@ impl $class {
                 return errf!("diamond name {} is not valid", v.to_readable())
             }
             if !seen.insert(*v) {
-                return errf!("diamond name {} is duplicate", v.to_readable())
+                return errf!("diamond name {} is duplicated", v.to_readable())
             }
         }
         // success
@@ -120,10 +120,10 @@ impl $class {
     pub fn from_readable(stuff: &str) -> Ret<$class> {
         let s = stuff.replace(" ","").replace("\n","").replace("|","").replace(",","");
         if s.len() == 0 {
-            return errf!("diamond list empty")
+            return errf!("diamond list is empty")
         }
         if s.len() % 6 != 0 {
-            return errf!("diamond list format error")
+            return errf!("diamond list format invalid")
         }
         let num = s.len() / 6;
         if num > $max  {
@@ -144,7 +144,7 @@ impl $class {
     pub fn checked_append(&mut self, dias: Vec<DiamondName>) -> Rerr {
         for d in &dias {
             if self.contains(d.as_ref()) {
-                return errf!("diamond name {} is duplicate", d.to_readable())
+                return errf!("diamond name {} is duplicated", d.to_readable())
             }
         }
         let n = self.lists.len() + dias.len();

@@ -11,7 +11,7 @@ macro_rules! abst_call_type_define {
         enum_try_from_u8_by_variant!(
             AbstCall,
             ItrErrCode::AbstTypeError,
-            "AbstCall type {} not find",
+            "AbstCall type {} not found",
             [$( $k ),+]
         );
         impl AbstCall {
@@ -26,7 +26,7 @@ macro_rules! abst_call_type_define {
                     $(
                     stringify!($k) => Self::$k,
                     )+
-                    _ => return itr_err_fmt!(ItrErrCode::AbstTypeError, "AbstCall name {} not find", name)
+                    _ => return itr_err_fmt!(ItrErrCode::AbstTypeError, "AbstCall name {} not found", name)
                 })
             }
             pub fn param_types(&self) -> Vec<ValueTy> {

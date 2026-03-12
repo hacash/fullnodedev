@@ -48,7 +48,7 @@ asset_operate_define!(asset_sub, addr, asset, oldasset, {
 pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset: &AssetAmt
 ) -> Ret<Vec<u8>> {
     if from == to {
-		return errf!("cannot trs to self")
+		return errf!("cannot transfer to self")
     }
     // do transfer
     let state = &mut CoreState::wrap(ctx.state());
@@ -62,7 +62,7 @@ pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset
 
 pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> Ret<AssetAmt> {
     if *ast.amount == 0 {
-        return errf!("check asset is cannot empty")
+        return errf!("asset check amount cannot be empty")
     }
     addr.check_version()?;
     let state = CoreState::wrap(ctx.state());

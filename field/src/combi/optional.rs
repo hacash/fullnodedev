@@ -71,7 +71,7 @@ macro_rules! combi_optional {
                     self.exist = Bool::new(false);
                     self.$item = None;
                 } else if raw.is_empty() {
-                    return errf!("json value empty");
+                    return errf!("json value is empty");
                 } else {
                     self.exist = Bool::new(true);
                     let mut val = <$vty>::new();

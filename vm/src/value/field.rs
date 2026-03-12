@@ -86,7 +86,7 @@ impl Parse for Value {
                 let (adr, sz) = field::Address::create(buf)?;
                 (sz, Address(adr))
             },
-            _ => return errf!("Args, compo or slice value item cannot be parse"),
+            _ => return errf!("Args, compo or slice value item cannot be parsed"),
         };
         Ok(sz + 1)
     }

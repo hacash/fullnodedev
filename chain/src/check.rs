@@ -6,17 +6,17 @@ fn try_execute_tx_by(this: &ChainEngine, tx: &dyn TransactionRead, pd_hei: u64, 
     }
     let an = tx.action_count();
     if an != tx.actions().len() {
-        return errf!("tx action count not match")
+        return errf!("tx action count does not match")
     }
     if an > cnf.max_tx_actions {
-        return errf!("tx action count cannot more than {}", cnf.max_tx_actions)
+        return errf!("tx action count cannot exceed {}", cnf.max_tx_actions)
     }
     if tx.size() as usize > cnf.max_tx_size {
-        return errf!("tx size cannot more than {} bytes", cnf.max_tx_size)
+        return errf!("tx size cannot exceed {} bytes", cnf.max_tx_size)
     }
     let cur_time = curtimes();
     if tx.timestamp().uint() > cur_time {
-        return errf!("tx timestamp {} cannot more than now {}", tx.timestamp(), cur_time)
+        return errf!("tx timestamp {} cannot exceed now {}", tx.timestamp(), cur_time)
     }
     let hash = Hash::from([0u8; 32]);
     let env = Env {

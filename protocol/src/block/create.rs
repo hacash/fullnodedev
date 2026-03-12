@@ -7,7 +7,7 @@ pub fn block_create(buf: &[u8]) -> Ret<(Box<dyn Block>, usize)> {
             let (blk, mvsk) = BlockV1::create(buf)?;
             Ok((Box::new(blk), mvsk))
         }
-        _ => errf!("block version '{}' not find", version)
+        _ => errf!("block version '{}' not found", version)
     }
 }
 

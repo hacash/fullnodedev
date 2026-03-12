@@ -37,7 +37,7 @@ pub fn _create_old(buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
         }
     }
     // not find
-    errf!("action kind '{}' not find", kid).to_owned()
+    errf!("action kind '{}' not found", kid).to_owned()
 }
 */
 

@@ -65,7 +65,7 @@ pub fn both_interest(distribute_type: Uint1, amtl: &Amount, amtr: &Amount, cacll
 
 pub fn calculate_interest_of_height(curblkhei: u64, chanopenblkhei: u64, distribute_type: Uint1, amtl: &Amount, amtr: &Amount)-> Ret<(Amount, Amount)> {
     if curblkhei < chanopenblkhei {
-        return Err("current block height cannot less than channel open height".to_string())
+        return Err("current block height cannot be less than channel open height".to_string())
     }
     // increase interest calculation, compounding times: 
     // about 10000 blocks will be compounded once every 34 days, 
@@ -82,7 +82,7 @@ pub fn calculate_interest_of_height(curblkhei: u64, chanopenblkhei: u64, distrib
 
 pub fn _calculate_interest_of_height_old(curblkhei: u64, chanopenblkhei: u64, distribute_type: Uint1, amtl: &Amount, amtr: &Amount)-> Ret<(Amount, Amount)> {
     if curblkhei < chanopenblkhei {
-        return Err("current block height cannot less than channel open height".to_string())
+        return Err("current block height cannot be less than channel open height".to_string())
     }
 	let mut caclloop = ((curblkhei - chanopenblkhei) / 2500 ) as u64;
 	let mut wfzn: u64 = 1; // 1/10000

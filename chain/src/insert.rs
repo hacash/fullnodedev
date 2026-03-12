@@ -41,18 +41,18 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
 
     let old_root_height = tree.root_height();
     if height <= old_root_height || height > tree.head_height() + 1 {
-        return errf!("insert height must between [{}, {}] but got {}", old_root_height + 1, tree.head_height() + 1, height);
+        return errf!("insert height must be between [{}, {}] but got {}", old_root_height + 1, tree.head_height() + 1, height);
     }
 
     let prev_hash = blk.objc.prevhash();
-    let parent = tree.quick_find(prev_hash).ok_or(format!("not find prev block <{}, {}>", height - 1, prev_hash))?;
+    let parent = tree.quick_find(prev_hash).ok_or(format!("prev block <{}, {}> not found", height - 1, prev_hash))?;
     if parent.height() + 1 != height {
-        return errf!("not find prev block <{}, {}>", height - 1, prev_hash);
+        return errf!("prev block <{}, {}> not found", height - 1, prev_hash);
     }
 
     if !fast_sync {
         if tree.has_child_hash(&parent, &hash) {
-            return errf!("repetitive block");
+            return errf!("block already exists");
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();

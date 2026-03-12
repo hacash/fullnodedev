@@ -3,7 +3,7 @@ pub fn bytes_from_hex(stuff: &[u8], len: usize) -> Ret<Vec<u8>> {
     let rsz = stuff.len();
     let tsz = len * 2;
     if rsz != tsz {
-        return Err("FieldHex".to_owned()+" from_hex size error need "+&tsz.to_string()+" but got "+&rsz.to_string())
+        return Err("FieldHex".to_owned()+" from_hex size error: expected "+&tsz.to_string()+" but got "+&rsz.to_string())
     }
     let bts = hex::decode(stuff);
     match bts {
@@ -21,11 +21,14 @@ pub trait ToHex {
     fn to_hex(&self) -> String;
 }
 
-
-impl ToHex for Vec<u8> {
-
+impl ToHex for [u8] {
     fn to_hex(&self) -> String {
         hex::encode(self)
     }
+}
 
+impl<const N: usize> ToHex for [u8; N] {
+    fn to_hex(&self) -> String {
+        hex::encode(self)
+    }
 }

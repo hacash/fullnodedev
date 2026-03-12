@@ -19,7 +19,7 @@ pub fn create_account(pass: &str) -> Ret<Account> {
             prikey: hex::encode(&acc.secret_key().serialize()),
             pubkey: hex::encode(&acc.public_key().serialize_compressed()),
             address_hex: hex::encode(acc.address()),
-            address: acc.readable().clone(),
+            address: acc.readable().to_owned(),
         }
     })
 }
@@ -52,6 +52,5 @@ pub fn verify_address(pass: &str) -> VerifyAddressResult {
     // ok 
     VerifyAddressResult{ ok: true, error: "".into() }
 }
-
 
 

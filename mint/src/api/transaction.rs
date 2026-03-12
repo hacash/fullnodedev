@@ -8,10 +8,10 @@ fn transaction_sign(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     let lasthei = ctx.engine.latest_block().height().uint();
     let Ok(txdts) = body_data_may_hex(&req) else {
-        return api_error("transaction body error");
+        return api_error("transaction body invalid");
     };
     let Ok((mut tx, _)) = protocol::transaction::transaction_create(&txdts) else {
-        return api_error("transaction body error");
+        return api_error("transaction body invalid");
     };
 
     let (address, signobj) = if prikey.len() == 64 {
@@ -23,7 +23,7 @@ fn transaction_sign(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         };
         let fres = tx.fill_sign(&acc);
         if let Err(e) = fres {
-            return api_error(&format!("fill sign error: {}", e));
+            return api_error(&format!("fill sign failed: {}", e));
         }
         (Address::from(*acc.address()), fres.unwrap())
     } else {
@@ -43,7 +43,7 @@ fn transaction_sign(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             signature: Fixed64::from(sig),
         };
         if let Err(e) = tx.push_sign(signobj.clone()) {
-            return api_error(&format!("fill sign error: {}", e));
+            return api_error(&format!("fill sign failed: {}", e));
         }
         (Address::from(Account::get_address_by_public_key(pbk)), signobj)
     };
@@ -76,13 +76,13 @@ fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let description = q_bool(&req, "description", false);
 
     let Ok(txjsondts) = body_data_may_hex(&req) else {
-        return api_error("transaction json body error");
+        return api_error("transaction json body invalid");
     };
     let Ok(jsonstr) = std::str::from_utf8(&txjsondts) else {
-        return api_error("transaction json body error");
+        return api_error("transaction json body invalid");
     };
     let Ok(jsonv) = serde_json::from_str::<serde_json::Value>(jsonstr) else {
-        return api_error("transaction json body error");
+        return api_error("transaction json body invalid");
     };
 
     let Some(main_addr) = jsonv["main_address"].as_str() else {
@@ -136,10 +136,10 @@ fn transaction_check(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let description = q_bool(&req, "description", false);
 
     let Ok(txdts) = body_data_may_hex(&req) else {
-        return api_error("transaction body error");
+        return api_error("transaction body invalid");
     };
     let Ok((mut tx, _)) = protocol::transaction::transaction_create(&txdts) else {
-        return api_error("transaction body error");
+        return api_error("transaction body invalid");
     };
 
     if !set_fee.is_empty() {
@@ -202,7 +202,7 @@ fn transaction_exist(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let state_ptr = read_mint_state(ctx);
     let state = CoreStateRead::wrap(state_ptr.as_ref().as_ref());
     let Some(txp) = state.tx_exist(&txhx) else {
-        return api_error("transaction not find");
+        return api_error("transaction not found");
     };
     let Ok(blkpkg) = load_block_by_key(ctx, &txp.to_string()) else {
         return api_error("cannot find block by transaction ptr");
@@ -222,7 +222,7 @@ fn transaction_exist(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         found
     };
     let Some(tx) = tx else {
-        return api_error("transaction not find in the block");
+        return api_error("transaction not found in the block");
     };
 
     api_data(render_tx_info(

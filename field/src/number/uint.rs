@@ -46,7 +46,7 @@ macro_rules! uint_define {
                 full[start..].copy_from_slice(bts);
                 self.value = <$vty>::from_be_bytes(full);
                 if self.value > Self::MAX {
-                    return errf!("{} parse value {} overflow max {}", stringify!($class), self.value, Self::MAX)
+                    return errf!("{} parse value {} exceeds max {}", stringify!($class), self.value, Self::MAX)
                 }
                 Ok($size)
             }
@@ -78,7 +78,7 @@ macro_rules! uint_define {
                 let s = json_expect_unquoted(json)?;
                 if let Ok(v) = s.parse::<$vty>() {
                     if v > Self::MAX {
-                        return errf!("{} value {} overflow max {}", stringify!($class), v, Self::MAX)
+                        return errf!("{} value {} exceeds max {}", stringify!($class), v, Self::MAX)
                     }
                     self.value = v;
                     return Ok(());
@@ -111,7 +111,7 @@ macro_rules! uint_define {
             pub fn from_usize(v: usize) -> Ret<Self> {
                 // Use u128 comparison to avoid truncation on 32-bit platforms
                 if (v as u128) > (Self::MAX as u128) {
-                    return errf!("{} value {} overflow max {}", stringify!($class), v, Self::MAX)
+                    return errf!("{} value {} exceeds max {}", stringify!($class), v, Self::MAX)
                 }
                 Ok(Self{value: v as $vty})
             }
@@ -147,7 +147,7 @@ macro_rules! uint_define {
             
             pub fn checked(self) -> Ret<Self> {
                 if self.value > Self::MAX {
-                    return errf!("{} value {} overflow max {}", stringify!($class), self.value, Self::MAX)
+                    return errf!("{} value {} exceeds max {}", stringify!($class), self.value, Self::MAX)
                 }
                 Ok(self)
             }
@@ -174,7 +174,7 @@ uint_define!{Uint8, 8, 8, u64}
 impl ParsePrefix for Uint1 {
     fn create_with_prefix(prefix: &[u8], _rest: &[u8]) -> Ret<(Self, usize)> {
         if prefix.is_empty() {
-            return errf!("Uint1 prefix empty");
+            return errf!("Uint1 prefix is empty");
         }
         let v = Uint1::from(prefix[0]);
         Ok((v, 1))

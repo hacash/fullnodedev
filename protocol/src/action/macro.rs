@@ -87,7 +87,7 @@ macro_rules! action_define {
                 }
                 if *self.kind != Self::KIND {
                     return errf!(
-                        "action kind mismatch: expect {} but got {}",
+                        "action kind mismatch: expected {} but got {}",
                         Self::KIND,
                         *self.kind
                     )
@@ -215,14 +215,14 @@ pub fn check_action_level(
     let actlen = actions.len();
     let check_top_source = || -> Rerr {
         if exec_from != ActExecFrom::TxLoop {
-            return errf!("action {} just can execute in tx action loop", kid)
+            return errf!("action {} can only execute in tx action loop", kid)
         }
         Ok(())
     };
 
     macro_rules! check_level_top { ($actname: expr) => {
         if ctx_level != ACTION_CTX_LEVEL_TOP {
-            return errf!("action {} just can execute on {}", kid, $actname)
+            return errf!("action {} can only execute on {}", kid, $actname)
         }      
     }}
 
@@ -230,7 +230,7 @@ pub fn check_action_level(
         check_top_source()?;
         check_level_top!{"TOP_ONLY"}
         if actlen != 1 {
-            return errf!("action {} just can execute on TOP_ONLY", kid)
+            return errf!("action {} can only execute on TOP_ONLY", kid)
         }
     } else if alv == ActLv::TopOnlyWithGuard {
         check_top_source()?;
@@ -244,7 +244,7 @@ pub fn check_action_level(
         }
         if non_guard != 1 {
             return errf!(
-                "action {} just can execute on TOP_ONLY_WITH_GUARD (need exactly one non-guard action)",
+                "action {} can only execute on TOP_ONLY_WITH_GUARD (requires exactly one non-guard action)",
                 kid
             )
         }
@@ -258,12 +258,12 @@ pub fn check_action_level(
             }
         }
         if smalv != 1 {
-            return errf!("action {} just can execute on level TOP_UNIQUE", kid)
+            return errf!("action {} can only execute on level TOP_UNIQUE", kid)
         }
     } else if alv == ActLv::Guard {
         if ctx_level > ACTION_CTX_LEVEL_AST_MAX {
             return errf!(
-                "action {} just can execute on GUARD (AST and above), now ctx {}",
+                "action {} can only execute on GUARD (AST and above), now ctx {}",
                 kid,
                 ctx_level
             )
@@ -272,7 +272,7 @@ pub fn check_action_level(
         // AnyInCall is the only level using lower-bound enforcement.
         if ctx_level < ACTION_CTX_LEVEL_CALL_MAIN {
             return errf!(
-                "action {} just can execute in VM call context (ctx >= {})",
+                "action {} can only execute in VM call context (ctx >= {})",
                 kid,
                 ACTION_CTX_LEVEL_CALL_MAIN
             )

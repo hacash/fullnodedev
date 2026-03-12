@@ -204,7 +204,7 @@ impl VM for MachineBox {
                     .slice(mv, payload.len())
                     .map_err(XError::fault)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return xerrf!("p2sh argv type not match");
+                    return xerrf!("p2sh argv type mismatch");
                 };
                 machine.p2sh_call(
                     exenv,
@@ -219,7 +219,7 @@ impl VM for MachineBox {
                 let kid = AbstCall::try_from_u8(kind).map_err(XError::from)?;
                 let cadr = ContractAddress::parse(payload.as_ref()).map_err(XError::fault)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return xerrf!("abst argv type not match");
+                    return xerrf!("abst argv type mismatch");
                 };
                 machine.abst_call(exenv, kid, cadr, *param)
             }
@@ -251,7 +251,7 @@ impl VM for MachineBox {
         // propagate VM execution error (depth is auto-restored by guard drop)
         let resv = result.map(|a| a.raw())?;
         if cost <= 0 {
-            return xerrf!("gas cost error: {}", cost);
+            return xerrf!("gas cost invalid: {}", cost);
         }
         Ok((cost, resv))
     }
@@ -320,7 +320,7 @@ impl Machine {
             .resolve_abstfn(env.ctx, env.gas, &contract_addr, cty)
             .map_err(XError::from)?
         else {
-            return Err(XError::fault(format!("abst call {:?} not find in {}", cty, adr)));
+            return Err(XError::fault(format!("abst call {:?} not found in {}", cty, adr)));
         };
         // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
         let rv = self.do_call(
@@ -1456,7 +1456,7 @@ end",
     }
 
     #[test]
-    fn tail_call_unwind_uses_frozen_caller_return_contract() {
+    fn tail_call_revert_uses_frozen_caller_return_contract() {
         let base_addr = test_base_addr();
         let contract_outer = test_contract(&base_addr, 37);
         let contract_middle = test_contract(&base_addr, 38);
@@ -1517,7 +1517,7 @@ end",
         let res = run_main_script(base_addr, vec![contract_outer], ext_state, script);
         assert!(
             res.is_ok(),
-            "tail unwind must keep frozen caller return contract: {res:?}"
+            "tail revert must keep frozen caller return contract: {res:?}"
         );
     }
 

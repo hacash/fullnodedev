@@ -229,7 +229,7 @@ impl $class {
             }
         }
         // verify error
-        errf!("address {} verify signature failed", curaddr)
+        errf!("address {} signature verification failed", curaddr)
     }
 
 
@@ -271,7 +271,7 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
         let mty = tx.ty();
         // check BlockHeight more than 20w trs.Fee.Size() must less than 6 bytes.
         if blkhei > 20_0000 {
-            fee.check_6_long().map_err(|_| "tx fee size cannot be more than 6 bytes when block height abover 200,000".to_string())?;
+            fee.check_6_long().map_err(|_| "tx fee size cannot exceed 6 bytes when block height above 200,000".to_string())?;
         }
         if blkhei > 33033 && mty <= TXTY1 { // last is 33019
             return errf!("Type 1 transactions have been deprecated after height 33,033")
@@ -284,14 +284,14 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
             // handle hacash block chain bug start
             let bugtx = Hash::from_hex(b"f22deb27dd2893397c2bc203ddc9bc9034e455fe630d8ee310e8b5ecc6dc5628").unwrap();
             if *exhei != 63448 || hx != bugtx {
-                return errf!("tx {} already exist in height {}", hx, *exhei)
+                return errf!("tx {} already exists in height {}", hx, *exhei)
             }
             // pass the BUG
         }
     }
     if tx.ty() < TXTY3 && has_ast {
         return errf!(
-            "tx type {} cannot include AST actions, need at least {}",
+            "tx type {} cannot include AST actions; requires at least type {}",
             tx.ty(),
             TXTY3
         )

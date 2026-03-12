@@ -59,7 +59,7 @@ async fn create_coin_transfer(State(_ctx): State<ApiCtx>, q: Query<Q9374>) -> im
         let act: Box<dyn Action>;
         let dialist = DiamondNameListMax200::from_readable(&diamonds);
         if let Err(e) = dialist {
-            return api_error(&format!("diamonds error: {}", &e))
+            return api_error(&format!("diamonds invalid: {}", &e))
         }
         let dialist = dialist.unwrap();
         if is_from {
@@ -88,7 +88,7 @@ async fn create_coin_transfer(State(_ctx): State<ApiCtx>, q: Query<Q9374>) -> im
         let act: Box<dyn Action>;
         let hac = Amount::from(&hacash);
         if let Err(e) = hac {
-            return api_error(&format!("hacash amount {} error: {}", &hacash, &e))
+            return api_error(&format!("hacash amount {} invalid: {}", &hacash, &e))
         }
         let hac = hac.unwrap();
         if is_from {
@@ -107,16 +107,16 @@ async fn create_coin_transfer(State(_ctx): State<ApiCtx>, q: Query<Q9374>) -> im
     }
     // do sign
     if let Err(e) = trsobj.fill_sign(&main_acc) {
-        return api_error(&format!("fill main sgin error: {}", e))
+        return api_error(&format!("fill main sign failed: {}", e))
     }
     if is_from {
         if let Err(e) = trsobj.fill_sign(&from_acc) {
-            return api_error(&format!("fill from sgin error: {}", e))
+            return api_error(&format!("fill from sign failed: {}", e))
         }
     }
     /*
     if let Err(e) = trsobj.verify_signature() {
-        return api_error(&format!("verify signature error: {}", e))
+        return api_error(&format!("signature verification error: {}", e))
     }
     */
     // ok ret

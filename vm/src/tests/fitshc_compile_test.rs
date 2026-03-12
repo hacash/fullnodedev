@@ -112,7 +112,7 @@ mod fitshc_compile_tests {
                 const A = 2
             }
         "#;
-        expect_compile_err(src, "const 'A' repeat");
+        expect_compile_err(src, "duplicate const 'A'");
     }
 
     #[test]
@@ -152,7 +152,7 @@ mod fitshc_compile_tests {
                 function external f() -> u8 { return 1 }
             }
         "#;
-        expect_compile_err(src, "library address repeat");
+        expect_compile_err(src, "duplicate library address");
     }
 
     #[test]
@@ -163,7 +163,7 @@ mod fitshc_compile_tests {
                 function external f() -> u8 { return 1 }
             }
         "#;
-        expect_compile_err(src, "inherit address repeat");
+        expect_compile_err(src, "duplicate inherit address");
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod fitshc_compile_tests {
                 function external f() -> u8 { return 2 }
             }
         "#;
-        expect_compile_err(src, "function 'f' signature repeat");
+        expect_compile_err(src, "duplicate function 'f' signature");
     }
 
     #[test]
@@ -185,7 +185,7 @@ mod fitshc_compile_tests {
                 abstract Construct(data: bytes) { abort }
             }
         "#;
-        expect_compile_err(src, "abstract 'Construct' repeat");
+        expect_compile_err(src, "duplicate abstract 'Construct'");
     }
 
     #[test]

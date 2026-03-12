@@ -39,7 +39,7 @@ impl Engine for ChainEngine {
 
     fn synchronize(&self, datas: Vec<u8>) -> Rerr {
         let _isrtlock = inserting_lock(self, ISRT_STAT_SYNCING,
-            "the blockchain is syncing and need wait"
+            "the blockchain is syncing and must wait"
         )?;
         let _lk = self.syncing.lock().unwrap();
         do_synchronize(self, datas.into(), BlkOrigin::Sync)

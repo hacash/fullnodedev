@@ -209,7 +209,7 @@ fn get_miner_pending_block_stuff(
 ) -> ApiResponse {
     let mut stuff = MINER_PENDING_BLOCK.lock().unwrap();
     if stuff.is_empty() {
-        return api_error("pending block not yet");
+        return api_error("pending block not ready");
     }
     let stuff = &mut stuff[0];
 
@@ -307,10 +307,10 @@ fn hash_diff(dst: &Hash, tar: &Hash) -> i8 {
 fn load_block_by_height(ctx: &ApiExecCtx, height: u64) -> Ret<Arc<BlkPkg>> {
     let store = ctx.engine.store();
     let Some((_, blkdts)) = store.block_data_by_height(&BlockHeight::from(height)) else {
-        return errf!("block not find");
+        return errf!("block not found");
     };
     let Ok(blkpkg) = build_block_package(blkdts) else {
-        return errf!("block parse error");
+        return errf!("block parse failed");
     };
     Ok(Arc::new(blkpkg))
 }

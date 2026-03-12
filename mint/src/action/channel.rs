@@ -40,13 +40,13 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     check_valid_store_item_key("channel", &cid, ChannelId::SIZE)?;
     // check format
     if left_addr == right_addr {
-        return errf!("left address cannot equal with right address")
+        return errf!("left address cannot be equal to right address")
     }
     left_amt.check_6_long().map_err(|_| "left amount bytes too long".to_string())?;
     right_amt.check_6_long().map_err(|_| "right amount bytes too long".to_string())?;
     if left_amt.is_negative() || right_amt.is_negative() ||
         (left_amt.is_zero() && right_amt.is_zero()) {
-        return errf!("left or right amount is not positive or two both is empty")
+        return errf!("left or right amount must be positive, or both are empty")
     }
     // sub balance
     if left_amt.not_zero() {
@@ -71,7 +71,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
             let samebothaddr = *left_addr==chan.left_bill.address && *right_addr == chan.right_bill.address;
             if !samebothaddr || CHANNEL_STATUS_AGREEMENT_CLOSED != chan_stat {
                 // exist or cannot reuse
-                return errf!("channel {} is openning or cannot reuse.", cid)
+                return errf!("channel {} is opening or cannot be reused", cid)
             }
             reuse_version = chan.reuse_version.clone();
             let nv = (*reuse_version)

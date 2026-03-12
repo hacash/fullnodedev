@@ -37,7 +37,7 @@ impl NodeConf {
         // port
         let port = ini_must_u64(sec, "listen", 3337);
         if port<1001 || port>65535 {
-            panic!("{}", exiterr!(1,"node listen port '{}' not support", port))
+            panic!("{}", exiterr!(1,"node listen port '{}' not supported", port))
         }
         // off_find
         let find = ini_must_bool(sec, "not_find_nodes", false) == false;
@@ -51,7 +51,7 @@ impl NodeConf {
         if ! boots.is_empty() {
             let boots = boots.split(",");
             ipts = boots.map(
-                |s|s.parse::<SocketAddr>().expect(exiterr!(1,"boot node ip port '{}' not support", &s))
+                |s|s.parse::<SocketAddr>().expect(&exiterr!(1,"boot node ip port '{}' not supported", &s))
             ).collect();
         }
         // println!("boot nodes: {:?}", ipts);

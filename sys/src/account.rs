@@ -24,7 +24,7 @@ impl Account {
             return Ok(())
         }
         // not match
-        errf!("Account check failed, need {} but got {}", 
+        errf!("Account check failed: expected {} but got {}", 
             self.address_readable, Self::to_base58check(addr))
     }
     pub fn secret_key(&self) -> &SecretKey {
@@ -36,7 +36,7 @@ impl Account {
     pub fn address(&self) -> &[u8; ADDRESS_SIZE] {
         &self.address
     }
-    pub fn readable(&self) -> &String {
+    pub fn readable(&self) -> &str {
         &self.address_readable
     }
 }
@@ -82,11 +82,10 @@ impl Account {
     }
 
     pub fn create_by_secret_key_value(key32: [u8; PRIVATE_SIZE]) -> Ret<Account> {
-        let kkk = key32.to_vec();
-        if kkk[0] == 255 && kkk[1] == 255 && kkk[2] == 255 && kkk[3] == 255 {
-            return Err("not support secret_key, change one and try again.".to_string());
+        if key32[0] == 255 && key32[1] == 255 && key32[2] == 255 && key32[3] == 255 {
+            return Err("secret_key not supported; try a different one".to_string());
         }
-        let pk: [u8; util::SECRET_KEY_SIZE] = kkk.try_into().unwrap();
+        let pk: [u8; util::SECRET_KEY_SIZE] = key32;
         match SecretKey::parse(&pk) {
             Err(e) => Err(e.to_string()),
             Ok(sk) => Ok(Account::create_by_secret_key(&sk)),

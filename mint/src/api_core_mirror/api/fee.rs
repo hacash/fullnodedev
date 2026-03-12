@@ -68,14 +68,14 @@ async fn fee_raise(State(ctx): State<ApiCtx>, q: Query<Q5396>, body: Bytes) -> i
     // parse
     let txb = transaction::transaction_create(&bddts);
     if let Err(e) = txb {
-        return api_error(&format!("transaction parse error: {}", &e))
+        return api_error(&format!("transaction parse failed: {}", &e))
     }
     let (mut txb, _) = txb.unwrap();
 
     // check set fee
     let old_fee = txb.fee();
     if fee < *old_fee {
-        return api_error(&format!("fee {} cannot less than old set {}", fee, old_fee))
+        return api_error(&format!("fee {} cannot be less than old set {}", fee, old_fee))
     }
     txb.set_fee(fee.clone());
     txb.fill_sign(&acc).unwrap();

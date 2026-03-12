@@ -11,13 +11,13 @@ async fn submit_block(State(ctx): State<ApiCtx>, q: Query<Q3735>, body: Bytes) -
     // parse
     let blkpkg = block::build_block_package(bddts);
     if let Err(e) = blkpkg {
-        return api_error(&format!("block parse error: {}", &e))
+        return api_error(&format!("block parse failed: {}", &e))
     }
     let blkpkg = blkpkg.unwrap();
     // try submit
     let is_async = true;
     if let Err(e) = ctx.hcshnd.submit_block(&blkpkg, is_async) {
-        return api_error(&format!("submit block error: {}", &e))
+        return api_error(&format!("submit block failed: {}", &e))
     }
     // ok
     api_ok()

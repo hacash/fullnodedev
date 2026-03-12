@@ -42,7 +42,7 @@ fn tex_check_asset_serial(ctx: &mut dyn Context, serial: Fold64) -> Rerr {
         state.asset(&serial).is_some()
     };
     if !exist {
-        return errf!("tex asset <{}> not exist", serial.uint());
+        return errf!("tex asset <{}> does not exist", serial.uint());
     }
     ctx.tex_ledger().asset_checked.insert(serial);
     Ok(())

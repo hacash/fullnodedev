@@ -52,6 +52,24 @@ impl Drop for Worker {
 }
 
 impl Worker {
+    fn new(
+        state: Arc<ExitState>,
+        exiting: Arc<AtomicBool>,
+        sender: Sender<()>,
+        receiver: Receiver<()>,
+    ) -> Self {
+        state.add_job();
+        let worker = Self {
+            state,
+            exiting,
+            sender,
+            ended: Arc::new(AtomicBool::new(false)),
+            receiver,
+        };
+        worker.refresh_exit_signal();
+        worker
+    }
+
     fn refresh_exit_signal(&self) {
         if self.exiting.load(Ordering::Acquire) {
             let _ = self.sender.try_broadcast(());
@@ -62,16 +80,12 @@ impl Worker {
         if self.ended.load(Ordering::Acquire) {
             panic!("cannot fork ended worker");
         }
-        self.state.add_job();
-        let worker = Self {
-            state: self.state.clone(),
-            exiting: self.exiting.clone(),
-            sender: self.sender.clone(),
-            ended: Arc::new(AtomicBool::new(false)),
-            receiver: self.receiver.clone(),
-        };
-        worker.refresh_exit_signal();
-        worker
+        Self::new(
+            self.state.clone(),
+            self.exiting.clone(),
+            self.sender.clone(),
+            self.receiver.clone(),
+        )
     }
 
     fn end(&self) {
@@ -132,16 +146,12 @@ impl Exiter {
     }
 
     pub fn worker(&self) -> Worker {
-        self.state.add_job();
-        let worker = Worker {
-            state: self.state.clone(),
-            exiting: self.exiting.clone(),
-            sender: self.sender.clone(),
-            ended: Arc::new(AtomicBool::new(false)),
-            receiver: self.receiver.clone()
-        };
-        worker.refresh_exit_signal();
-        worker
+        Worker::new(
+            self.state.clone(),
+            self.exiting.clone(),
+            self.sender.clone(),
+            self.receiver.clone(),
+        )
     }
     
     pub fn exit(&self) {

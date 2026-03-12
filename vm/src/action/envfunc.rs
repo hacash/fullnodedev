@@ -76,7 +76,7 @@ action_define!{ ViewDiamondInscNum, 0x0603,
     (self, format!("Syscall: Get diamond inscription number for <{}>", self.diamond.to_readable())),
     (self, ctx, _gas {
         let Some(diaobj) = CoreStateRead::wrap(ctx.state()).diamond(&self.diamond) else {
-            return errf!("diamond {} not find", self.diamond.to_readable())
+            return errf!("diamond {} not found", self.diamond.to_readable())
         };
         let num = diaobj.inscripts.length();
         if num > u8::MAX as usize {
@@ -96,7 +96,7 @@ action_define!{ ViewDiamondInscGet, 0x0604,
     (self, format!("Syscall: Get diamond inscription data for <{}>", self.diamond.to_readable())),
     (self, ctx, _gas {
         let Some(diaobj) = CoreStateRead::wrap(ctx.state()).diamond(&self.diamond) else {
-            return errf!("diamond {} not find", self.diamond.to_readable())
+            return errf!("diamond {} not found", self.diamond.to_readable())
         };
         let num = diaobj.inscripts.length();
         let idx = self.inscidx.uint() as usize ;

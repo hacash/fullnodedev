@@ -16,7 +16,7 @@ action_define!{ ChainAllow, 0x0411,
         let ids = self.chains.as_list();
         if ! ids.iter().any(|id| id.uint() == cid) {
             let cids = cids_to_str!(ids);
-            return xerr_rf!("transction must belong to chains {} but on chain {}", cids, cid)
+            return xerr_rf!("transaction must belong to chains {} but on chain {}", cids, cid)
         }
         // ok
         Ok(vec![])
@@ -43,10 +43,10 @@ action_define!{ HeightScope, 0x0412,
             h => h,
         };
         if left > right {
-            return errf!("left height {} cannot big than rigth height {}", left, right)
+            return errf!("left height {} cannot exceed right height {}", left, right)
         }
         if pdhei < left || pdhei > right {
-            return xerr_rf!("transction must submit in height between {} and {}", left, right)
+            return xerr_rf!("transaction must be submitted in height between {} and {}", left, right)
         }
         // ok
         Ok(vec![])
@@ -133,7 +133,7 @@ action_define!{ BalanceFloor, 0x0413,
 fn check_balance_floor_assets(assets: &AssetAmtW1) -> Rerr {
     if assets.length() > BALANCE_ASSET_MAX {
         return errf!(
-            "balance floor assets item quantity cannot big than {}",
+            "balance floor assets item quantity cannot exceed {}",
             BALANCE_ASSET_MAX
         )
     }
@@ -151,7 +151,7 @@ fn check_balance_floor_assets(assets: &AssetAmtW1) -> Rerr {
             )
         }
         if !seen.insert(serial) {
-            return errf!("balance floor asset serial {} is duplicate", serial)
+            return errf!("balance floor asset serial {} is duplicated", serial)
         }
     }
     Ok(())

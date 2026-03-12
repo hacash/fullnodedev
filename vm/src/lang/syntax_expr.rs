@@ -36,7 +36,7 @@ impl Syntax {
         macro_rules! next {
             () => {{
                 if self.idx >= max {
-                    return errf!("item with left get next token error");
+                    return errf!("item-with-left get next token failed");
                 }
                 let nxt = self.tokens[self.idx].clone();
                 self.idx += 1;
@@ -80,7 +80,7 @@ impl Syntax {
                 }
                 Keyword(As) => {
                     left.checkretval()?; // must retv
-                    let e = errf!("<as> express format error");
+                    let e = errf!("<as> expression format error");
                     let nk = next!();
                     let Some(target_ty) = Self::parse_scalar_value_ty(&nk) else {
                         return e;
@@ -93,7 +93,7 @@ impl Syntax {
                     }
                 }
                 Keyword(Is) => {
-                    let e = errf!("<is> express format error");
+                    let e = errf!("<is> expression format error");
                     let mut nk = next!();
                     let mut is_not = false;
                     if let Keyword(Not) = nk {
@@ -208,7 +208,7 @@ impl Syntax {
         self.idx += jp;
         self.with_expect_retval(true, |s| match s.item_may()? {
             Some(n) => Ok(n),
-            None => errf!("not match next Syntax node"),
+            None => errf!("does not match next syntax node"),
         })
     }
 
@@ -272,7 +272,7 @@ impl Syntax {
             match block.subs.last() {
                 None => return errf!("block expression cannot be empty"),
                 Some(last) if !last.hasretval() => {
-                    return errf!("block expression must return value")
+                    return errf!("block expression must return a value")
                 }
                 _ => {}
             }

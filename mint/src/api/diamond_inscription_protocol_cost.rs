@@ -5,7 +5,7 @@ fn parse_one_diamond_param(req: &ApiRequest, key: &str) -> Ret<DiamondName> {
         return errf!("query '{}' cannot be empty", key);
     }
     let Ok(name) = DiamondName::from_readable(val.as_bytes()) else {
-        return errf!("query '{}' diamond name format error", key);
+        return errf!("query '{}' diamond name format invalid", key);
     };
     Ok(name)
 }

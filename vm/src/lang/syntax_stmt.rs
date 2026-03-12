@@ -34,7 +34,7 @@ impl Syntax {
         }
         // match
         if params == 0 {
-            return errf!("param must need at least one");
+            return errf!("at least one param required");
         }
         self.emit.source_map.register_param_names(param_names)?;
         self.emit.source_map.register_param_prelude_count(params)?;
@@ -86,7 +86,7 @@ impl Syntax {
         macro_rules! next {
             () => {{
                 if self.idx >= max {
-                    return errf!("item_may get next token error");
+                    return errf!("item_may get next token failed");
                 }
                 let nxt = &self.tokens[self.idx];
                 self.idx += 1;
@@ -394,7 +394,7 @@ impl Syntax {
                     match next!() {
                         Identifier(id) => {
                             let Some(t) = Bytecode::parse(id) else {
-                                return errf!("bytecode {} not find", id);
+                                return errf!("bytecode {} not found", id);
                             };
                             inst = t as u8;
                         }
@@ -459,7 +459,7 @@ impl Syntax {
                 }
             }
             Keyword(Log) => {
-                let e = errf!("log argv number error");
+                let e = errf!("log argv number invalid");
                 // `log` consumes values from the stack (see interpreter: LOG1 pops 2, LOG2 pops 3, ...). Therefore log arguments must be parsed as value expressions.
                 let max = self.tokens.len() - 1;
                 if self.idx >= max {
@@ -472,7 +472,7 @@ impl Syntax {
                     _ => return e,
                 };
                 let mut subs =
-                    Self::parse_delimited_value_exprs(self, open, close, "log argv number error")?;
+                    Self::parse_delimited_value_exprs(self, open, close, "log argv number invalid")?;
 
                 let num = subs.len();
                 match num {
@@ -542,7 +542,7 @@ impl Syntax {
                 }
                 push_single_noret(RET, exp)
             }
-            _ => return errf!("unsupport token '{:?}'", nxt),
+            _ => return errf!("unsupported token '{:?}'", nxt),
         };
         item = self.item_with_left(item)?;
         Ok(Some(item))

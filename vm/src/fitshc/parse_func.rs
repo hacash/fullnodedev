@@ -84,7 +84,7 @@ pub fn parse_func_sig(
                 break;
             }
             if state.idx >= state.max {
-                return errf!("args not closed");
+                return errf!("args list not closed (missing ')')");
             }
 
             // arg: type

@@ -88,7 +88,7 @@ impl ValueTy {
             "heapslice" => HeapSlice,
             "args"      => Args,
             "compo"     => Compo,
-            a => return errf!("not find value type '{}'", a)
+            a => return errf!("value type '{}' not found", a)
         })
     }
 
@@ -109,7 +109,7 @@ impl ValueTy {
             13 => HeapSlice ,
             14 => Args      ,
             15 => Compo     ,
-            _ => return errf!("ValueTy {} not find", t)
+            _ => return errf!("ValueTy {} not found", t)
         })
     }
 

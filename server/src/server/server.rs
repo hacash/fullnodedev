@@ -49,7 +49,7 @@ async fn server_listen(ser: &HttpServer, worker: Worker) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = TcpListener::bind(addr).await;
     if let Err(ref e) = listener {
-        println!("\n[Error] api server bind port {} error: {}\n", port, e);
+        println!("\n[Error] api server failed to bind port {}: {}\n", port, e);
         return
     }
     let listener = listener.unwrap();

@@ -2,7 +2,7 @@
 
 fn synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Rerr {
     let _isrtlock = inserting_lock(this, ISRT_STAT_SYNCING,
-        "the blockchain is syncing and need wait"
+        "the blockchain is syncing and must wait"
     )?;
     do_synchronize(this, datas, ori)
 }
@@ -13,11 +13,11 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
     let hei_min = tree.root_height() + 1;
     let hei_max = tree.head_height() + 1;
     let Ok(blkhei) = BlockHeadOnlyHeight::build(datas.as_ref()) else {
-        return sync_warning("block data format error".to_string())
+        return sync_warning("block data format invalid".to_string())
     };
     let hei_start = blkhei.height.uint();
     if hei_start < hei_min || hei_start > hei_max {
-        return sync_warning(format!("insert height need between {} and {} but got {}", hei_min, hei_max, hei_start))
+        return sync_warning(format!("insert height must be between {} and {} but got {}", hei_min, hei_max, hei_start))
     }
     // error channel (send only real errors; channel close means success)
     let (errch, errcv) = std::sync::mpsc::channel::<String>();
@@ -42,14 +42,14 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
                 let (blkobj, size) = match block::block_create(&datas.as_ref()[seek..]) {
                     Ok((b, s)) => (b, s),
                     Err(e) => {
-                        let _ = errch_parse.send(format!("block {} parse error: {}", need_blk_hei, e));
+                        let _ = errch_parse.send(format!("block {} parse failed: {}", need_blk_hei, e));
                         break;
                     }
                 };
                 let mut pkg = BlkPkg::from(blkobj, datas.clone(), seek, size);
                 seek += size;
                 if pkg.hein != need_blk_hei {
-                    let _ = errch_parse.send(format!("need block height {} but got {}", need_blk_hei, pkg.hein));
+                    let _ = errch_parse.send(format!("expected block height {} but got {}", need_blk_hei, pkg.hein));
                     break;
                 }                
                 pkg.set_origin(ori); // Sync or Rebuild
@@ -64,7 +64,7 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
                 let hei = blk.hein;
                 let rid = match insert_by(this, tree, blk) {
                     Err(e) => {
-                        let _ = errch1.send(format!("insert {} error: {}", hei, e));
+                        let _ = errch1.send(format!("insert {} failed: {}", hei, e));
                         break
                     },
                     Ok(r) => r,
@@ -77,7 +77,7 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
             let Ok(rid) = ridcv.recv() else { break };
             // let hei = rid.block.hein;
             if let Err(e) = roll_by(this, rid) {
-                let _ = errch2.send(format!("do roll error: {}", e));
+                let _ = errch2.send(format!("do roll failed: {}", e));
                 // Close roll receiver early so producer thread can exit instead of blocking on full channel.
                 drop(ridcv);
                 break

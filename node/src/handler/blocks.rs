@@ -44,7 +44,7 @@ impl MsgHandler {
     async fn receive_blocks(&self, peer: Arc<Peer>, mut buf: Vec<u8>) {
         // println!("&&&& receive_blocks ...");
         if buf.len() < 3 * 8 {
-            println!("check data failed.");
+            println!("data check failed");
             return
         }
         let blocks = buf.split_off(3*8);

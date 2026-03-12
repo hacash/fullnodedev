@@ -7,7 +7,7 @@ pub fn calc_func_sign(name: &str) -> FnSign {
 
 pub fn checked_func_sign(s: &[u8]) -> VmrtRes<FnSign> {
     if s.len() != FN_SIGN_WIDTH {
-        return itr_err!(CastParamFail, "fn sign size error")
+        return itr_err!(CastParamFail, "fn signature size invalid")
     }
     Ok(s.to_vec().try_into().unwrap())
 }

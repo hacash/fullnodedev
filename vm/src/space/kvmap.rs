@@ -36,7 +36,7 @@ macro_rules! memories_kvmap_define {
             fn key(k: &Value) -> VmrtRes<Vec<u8>> {
                 let key = k.canbe_key()?;
                 if key.is_empty() {
-                    return itr_err_fmt!($er1, "key {} cannot empty", k);
+                    return itr_err_fmt!($er1, "key {} cannot be empty", k);
                 }
                 Ok(key)
             }

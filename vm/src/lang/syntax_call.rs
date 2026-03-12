@@ -9,10 +9,10 @@ impl Syntax {
 
     pub fn bind_lib(&mut self, s: String, idx: u8, adr: Option<field::Address>) -> Rerr {
         if let Some(..) = self.bdlibs.get(&s) {
-            return errf!("<use> cannot repeat bind the symbol '{}'", s);
+            return errf!("<use> symbol '{}' binding already exists", s);
         }
         if self.bdlibs.values().any(|(bound_idx, _)| *bound_idx == idx) {
-            return errf!("lib index {} cannot repeat bind", idx);
+            return errf!("lib index {} binding already exists", idx);
         }
         if let Some(adr) = adr {
             adr.must_contract()?;
@@ -29,7 +29,7 @@ impl Syntax {
             }
             return Ok(*n as u8);
         }
-        errf!("call index must be integer")
+        errf!("call index must be an integer")
     }
 
     fn parse_fn_sig_str(s: &str) -> Ret<[u8; 4]> {
@@ -39,11 +39,11 @@ impl Syntax {
         }
         let bytes = match hex::decode(hex) {
             Ok(b) => b,
-            Err(_) => return errf!("function signature '{}' decode error", s),
+            Err(_) => return errf!("function signature '{}' decode failed", s),
         };
         let arr: [u8; 4] = match bytes.as_slice().try_into() {
             Ok(a) => a,
-            Err(_) => return errf!("function signature expects 4 bytes"),
+            Err(_) => return errf!("function signature must be 4 bytes"),
         };
         Ok(arr)
     }
@@ -85,16 +85,16 @@ impl Syntax {
 
     fn parse_fixed_body_token<const N: usize>(token: &Token, label: &str) -> Ret<[u8; N]> {
         match token {
-            Bytes(bytes) if bytes.len() == N => bytes.as_slice().try_into().map_err(|_| format!("{} expects fixed width", label)),
+            Bytes(bytes) if bytes.len() == N => bytes.as_slice().try_into().map_err(|_| format!("{} must be fixed width", label)),
             Identifier(hex) => {
                 let raw = hex.strip_prefix("0x").unwrap_or(hex.as_str());
                 if raw.len() != N * 2 {
-                    return errf!("{} expects {} hex digits", label, N * 2)
+                    return errf!("{} must be {} hex digits", label, N * 2)
                 }
-                let bytes = hex::decode(raw).map_err(|_| format!("{} decode error", label))?;
-                bytes.as_slice().try_into().map_err(|_| format!("{} expects fixed width", label).into())
+                let bytes = hex::decode(raw).map_err(|_| format!("{} decode failed", label))?;
+                bytes.as_slice().try_into().map_err(|_| format!("{} must be fixed width", label).into())
             }
-            Bytes(..) => errf!("{} expects {} bytes", label, N),
+            Bytes(..) => errf!("{} must be {} bytes", label, N),
             _ => errf!("{} must be {}-byte literal", label, N),
         }
     }
@@ -342,7 +342,7 @@ impl Syntax {
                 let effect = maybe!(sep == KwTy::DColon, EffectMode::Pure, EffectMode::View);
                 match id.as_str() {
                     "self" => CallSpec::invoke(CallTarget::Self_, effect, fnsign),
-                    "this" | "super" => return errf!("call express after identifier format error"),
+                    "this" | "super" => return errf!("call expression after identifier format error"),
                     _ => {
                         let idx = self.link_lib(&id)?;
                         let target = maybe!(sep == KwTy::DColon, CallTarget::Use(idx), CallTarget::Ext(idx));

@@ -1,10 +1,10 @@
 fn account(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let quantity = req.query_u64("quantity", 1);
     if quantity == 0 {
-        return api_error("quantity error");
+        return api_error("invalid quantity");
     }
     if quantity > 200 {
-        return api_error("quantity max 200");
+        return api_error("quantity must not exceed 200");
     }
 
     let mut resbls = Vec::with_capacity(quantity as usize);
@@ -14,7 +14,7 @@ fn account(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             Ok(())
         });
         let Ok(acc) = acc else {
-            return api_error("create account error");
+            return api_error("create account failed");
         };
         resbls.push(json!({
             "address": acc.readable(),

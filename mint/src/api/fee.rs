@@ -35,7 +35,7 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     let bddts = if !hash.is_empty() {
         let Ok(hx) = hex::decode(&hash) else {
-            return api_error("hash parse error");
+            return api_error("hash parse failed");
         };
         if hx.len() != Hash::SIZE {
             return api_error("hash size error");
@@ -48,23 +48,23 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         tx.data
     } else {
         let Ok(b) = body_data_may_hex(&req) else {
-            return api_error("tx body error");
+            return api_error("tx body invalid");
         };
         b.into()
     };
 
     let txb = protocol::transaction::transaction_create(&bddts);
     let Ok((mut txb, _)) = txb else {
-        return api_error("transaction parse error");
+        return api_error("transaction parse failed");
     };
 
     let old_fee = txb.fee();
     if fee < *old_fee {
-        return api_error(&format!("fee {} cannot less than old set {}", fee, old_fee));
+        return api_error(&format!("fee {} cannot be less than previous fee {}", fee, old_fee));
     }
     txb.set_fee(fee.clone());
     if txb.fill_sign(&acc).is_err() {
-        return api_error("fill sign error");
+        return api_error("fill sign failed");
     }
     let txhash = txb.hash();
     let txhashwf = txb.hash_with_fee();

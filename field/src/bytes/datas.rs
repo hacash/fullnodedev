@@ -135,7 +135,7 @@ macro_rules! datas_define {
             pub fn update_count(&mut self) -> Rerr {
                 let l = self.bytes.len();
                 if l > <$lty>::MAX as usize {
-                    return errf!("cannot update count {} overflow", l)
+                    return errf!("count {} overflow on update", l)
                 }
                 self.count = <$sty>::from(l as $lty);
                 Ok(())

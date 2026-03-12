@@ -79,5 +79,5 @@ pub fn verify_one_sign(hash: &Hash, addr: &Address, signs: &Vec<Sign>) -> Ret<bo
             return Ok(true)
         }
     }
-    errf!("{} verify signature failed", addr)
+    errf!("{} signature verification failed", addr)
 }

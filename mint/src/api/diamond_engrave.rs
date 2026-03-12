@@ -21,7 +21,7 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     };
     let trs = blkpkg.objc.transactions();
     if trs.is_empty() {
-        return api_error("transaction len error");
+        return api_error("transaction length invalid");
     }
     if txposi >= 0 && txposi >= trs.len() as i64 - 1 {
         return api_error("txposi overflow");

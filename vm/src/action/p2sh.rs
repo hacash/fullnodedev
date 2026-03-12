@@ -108,11 +108,11 @@ impl P2SHScriptProve {
         for step in merkels.as_list().iter() {
             let posi = step.posi.uint();
             if posi > 1 {
-                return errf!("p2sh merkel posi {} invalid, must be 0 or 1", posi)
+                return errf!("p2sh Merkle position {} invalid, must be 0 or 1", posi)
             }
             let ch = h.clone();
             if step.hash == ch {
-                return errf!("p2sh merkel self pair is not allowed")
+                return errf!("p2sh Merkle self pair is not allowed")
             }
             // left or right: posi==0 means sibling on the left, posi==1 means sibling on the right.
             let pair = maybe!(posi == 0, [step.hash, ch], [ch, step.hash]);
@@ -135,7 +135,7 @@ impl P2SHScriptProve {
             return errf!("p2sh libs overflow ({}>{})", libs.len(), cap.library)
         }
         if ! libs.iter().all(|a|a.is_contract()) {
-            return errf!("contract libs error")
+            return errf!("contract libs invalid")
         }
         for i in 1..libs.len() {
             if libs[..i].iter().any(|a| a == &libs[i]) {

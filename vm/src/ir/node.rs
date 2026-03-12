@@ -545,14 +545,14 @@ impl IRNode for IRNodeArray {
         match self.inst {
             Bytecode::IRLIST => compile_list(&self.subs),
             Bytecode::IRBLOCK | Bytecode::IRBLOCKR => compile_block(self.inst, &self.subs),
-            _ => errf!("IRNodeArray invalid opcode {:?}", self.inst).map_ire(InstInvalid)
+            _ => errf!("IRNodeArray: invalid opcode {:?}", self.inst).map_ire(InstInvalid)
         }
     }
     fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
         match self.inst {
             Bytecode::IRLIST => compile_list_into(&self.subs, buf),
             Bytecode::IRBLOCK | Bytecode::IRBLOCKR => compile_block_into(self.inst, &self.subs, buf),
-            _ => errf!("IRNodeArray invalid opcode {:?}", self.inst).map_ire(InstInvalid),
+            _ => errf!("IRNodeArray: invalid opcode {:?}", self.inst).map_ire(InstInvalid),
         }
     }
     fn serialize(&self) -> Vec<u8> {
@@ -615,7 +615,7 @@ impl IRNodeArray {
     }
     pub fn with_capacity(n: usize, inst: Bytecode) -> Ret<Self> {
         if n > u16::MAX as usize {
-            return errf!("IRNodeArray length max {}", u16::MAX)
+            return errf!("IRNodeArray length cannot exceed {}", u16::MAX)
         }
         Ok(Self{
             subs: Vec::with_capacity(n),
@@ -624,7 +624,7 @@ impl IRNodeArray {
     }
     pub fn from_vec(subs: Vec<Box<dyn IRNode>>, inst: Bytecode) -> Ret<Self> {
         if subs.len() > u16::MAX as usize {
-            return errf!("IRNodeArray length max {}", u16::MAX)
+            return errf!("IRNodeArray length cannot exceed {}", u16::MAX)
         }
         Ok(Self{subs, inst})
     }

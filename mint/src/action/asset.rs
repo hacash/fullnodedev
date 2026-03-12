@@ -32,11 +32,11 @@ action_define!{ AssetCreate, 16,
             return err!("The asset issuance has not yet begun")
         }
         if serial < minsri {
-            return errf!("serial cannot less than {}", minsri)
+            return errf!("serial cannot be less than {}", minsri)
         }
         let serial_limit = chei - alive_hei;
         if serial > serial_limit {
-            return err!("The asset serial overflow")
+            return err!("asset serial overflow")
         }
         // check meta
         amd.issuer.check_version()?;
@@ -55,7 +55,7 @@ action_define!{ AssetCreate, 16,
             return err!("name must be ascii2 readable string")
         }
         if *amd.decimal > 16 {
-            return err!("decimal cannot more than 16")
+            return err!("decimal cannot exceed 16")
         }
         if amd.supply.is_zero() {
             return err!("supply must be greater than zero")
@@ -64,7 +64,7 @@ action_define!{ AssetCreate, 16,
         let blkrw = super::genesis::block_reward(chei);
         let pfee = self.protocol_fee.clone();
         if pfee != blkrw {
-            return errf!("Protocol fee need {} but got {}", blkrw, pfee)
+            return errf!("Protocol fee must be {} but got {}", blkrw, pfee)
         }
 	    // sub main addr balance for protocol fee
         let main_addr = ctx.env().tx.main; 

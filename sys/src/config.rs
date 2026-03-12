@@ -18,7 +18,7 @@ pub fn get_current_exe_absolute_dir(dir: &str) -> PathBuf {
 pub fn get_mainnet_data_dir(ini: &IniObj) -> PathBuf {
 
     let sec = ini_section(ini, "default"); // default = root
-    let data_dir = ini_must(&sec, "data_dir", "hacash_mainnet_data");
+    let data_dir = ini_must(sec, "data_dir", "hacash_mainnet_data");
 
     get_current_exe_absolute_dir(&data_dir)
 }

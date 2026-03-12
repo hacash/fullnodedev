@@ -73,13 +73,13 @@ macro_rules! ast_try_item {
 
 pub fn validate_ast_select(min: usize, max: usize, num: usize) -> Ret<()> {
     if min > max {
-        return errf!("action ast select max cannot less than min");
+        return errf!("action ast select max cannot be less than min");
     }
     if max > num {
-        return errf!("action ast select max cannot more than list num");
+        return errf!("action ast select max cannot exceed list num");
     }
     if num > TX_ACTIONS_MAX {
-        return errf!("action ast select num cannot more than {}", TX_ACTIONS_MAX);
+        return errf!("action ast select num cannot exceed {}", TX_ACTIONS_MAX);
     }
     Ok(())
 }
@@ -103,12 +103,12 @@ pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {
     Ok(AstLevelGuard { ctx, old_level })
 }
 
-/// `Ok` => continue with value, `Unwind` => skip (continue without value), `Interrupt` => rethrow.
-pub fn ast_unwind_continue<T>(out: XRet<T>) -> Ret<Option<T>> {
+/// `Ok` => continue with value, `Revert` => skip (continue without value), `Fault` => rethrow.
+pub fn ast_revert_continue<T>(out: XRet<T>) -> Ret<Option<T>> {
     match out {
         Ok(v) => Ok(Some(v)),
-        Err(XError::Unwind(_)) => Ok(None),
-        Err(e) => Err(e.into()), // XError → Error preserves interrupt semantics
+        Err(XError::Revert(_)) => Ok(None),
+        Err(e) => Err(e.into()), // XError → Error preserves fault semantics
     }
 }
 
@@ -218,7 +218,7 @@ mod tests {
         ctx.gas_init_tx(40, 1).unwrap();
         let out = run_try_item_gas_fail(&mut ctx).unwrap();
         let err = out.unwrap_err();
-        assert!(err.is_interrupt(), "{}", err);
+        assert!(err.is_fault(), "{}", err);
         assert!(err.contains("gas has run out"), "{}", err);
         assert_eq!(ctx.state().get(key), Some(val));
     }

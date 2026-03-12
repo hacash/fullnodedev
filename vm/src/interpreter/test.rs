@@ -1586,7 +1586,7 @@ mod bounds_tests {
             &mut host,
         );
 
-        assert!(matches!(res, Err(ItrErr(ItrErrCode::ActCallUnwind, _))));
+        assert!(matches!(res, Err(ItrErr(ItrErrCode::ActCallRevert, _))));
         let used = 1000 - gas;
         let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.action_bytes(21);
         assert_eq!(used, expected);

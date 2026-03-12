@@ -81,7 +81,7 @@ impl AstSelect {
             if ok >= slt_max {
                 break; // reached max success limit
             }
-            if let Some(ret) = ast_unwind_continue(ast_try_item!(ctx, act.execute(ctx), act.burn_90()))? {
+            if let Some(ret) = ast_revert_continue(ast_try_item!(ctx, act.execute(ctx), act.burn_90()))? {
                 last_ok_ret = Some(ret);
                 ok += 1;
             }

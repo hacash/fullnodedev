@@ -33,12 +33,12 @@ pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
     }
 
     if bidstep < minstep {
-        printerr!("bid step amount cannot less than {} HAC", &minstep);
+        printerr!("bid step amount cannot be less than {} HAC", &minstep);
     }
 
     if bidmax < bidmin {
         printerr!(
-            "max bid fee {} cannot less than min fee {}",
+            "max bid fee {} cannot be less than min fee {}",
             &bidmax,
             &bidmin
         );
@@ -119,7 +119,7 @@ fn check_bidding_step(
         retry!(10); // my max too low
     }
     let Ok(first_bid_fee) = first_bid_fee.compress(2, AmtCpr::Grow) else {
-        printerr!("cannot compress fee {} to 4 legnth", &first_bid_fee);
+        printerr!("cannot compress fee {} to 4 length", &first_bid_fee);
         retry!(10); // move step fail
     };
 
@@ -138,11 +138,11 @@ fn check_bidding_step(
     }
 
     let Ok(new_bid_fee) = first_bid_fee.add_mode_u64(&bid_step) else {
-        printerr!("cannot add fee {} with {}, ", &first_bid_fee, bid_step);
+        printerr!("cannot add fee {} with {}", &first_bid_fee, bid_step);
         retry!(10); // move step fail
     };
     let Ok(mut new_bid_fee) = new_bid_fee.compress(2, AmtCpr::Grow) else {
-        printerr!("cannot compress fee {} to 4 legnth", &new_bid_fee);
+        printerr!("cannot compress fee {} to 4 length", &new_bid_fee);
         retry!(10); // move step fail
     };
     if new_bid_fee > engcnf.dmer_bid_max {
@@ -179,7 +179,7 @@ fn check_bidding_step(
 
     // submit tx
     if let Err(e) = hnode.submit_transaction(&txp, false, false) {
-        printerr!("ㄨㄨㄨ submit tx error: {}", e);
+        printerr!("submit tx error: {}", e);
         retry!(3); // submit error
     }
 

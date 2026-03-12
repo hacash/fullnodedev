@@ -89,7 +89,7 @@ pub fn check_diamond_status(state: &mut CoreState, addr_from: &Address, hacd_nam
         return xerr_rf!("diamond {} has been mortgaged and cannot be transferred", hacd_name.to_readable())
     }
     if *addr_from != diaitem.address {
-        return xerr_rf!("diamond {} not belong to address {}", hacd_name.to_readable(), addr_from)
+        return xerr_rf!("diamond {} does not belong to address {}", hacd_name.to_readable(), addr_from)
     }
     // ok
     Ok(diaitem)
@@ -125,7 +125,7 @@ pub fn diamond_owned_move(state: &mut CoreState, from: &Address, to: &Address, l
     // do drop
     let from_owned = state.diamond_owned(from);
     if let None = from_owned {
-        return errf!("from diamond owned form not find")
+        return errf!("diamond owner record not found")
     }
     let mut from_owned = from_owned.unwrap();
     let _blsnum = from_owned.drop(list)?;

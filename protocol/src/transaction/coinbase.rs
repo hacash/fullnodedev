@@ -43,7 +43,7 @@ impl TransactionRead for TransactionCoinbase {
     }
 
     fn fee_extend(&self) -> Ret<u8> {
-        errf!("cannot get fee extend on coinbase tx")
+        errf!("cannot get fee extension on coinbase tx")
     }
 
     fn ty(&self) -> u8 {

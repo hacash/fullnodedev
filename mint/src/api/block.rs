@@ -17,7 +17,7 @@ fn load_block_by_key(ctx: &ApiExecCtx, key: &str) -> Ret<Arc<BlkPkg>> {
             return Ok(Arc::new(blkpkg));
         }
     }
-    errf!("block not find")
+    errf!("block not found")
 }
 
 fn api_bytes(data: Vec<u8>, content_type: &str) -> ApiResponse {

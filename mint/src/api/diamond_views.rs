@@ -31,7 +31,7 @@ fn diamond_views(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     if name.len() >= DiamondName::SIZE {
         let Ok(names) = DiamondNameListMax200::from_readable(&name) else {
-            return api_error("diamond name error");
+            return api_error("invalid diamond name");
         };
         for dian in names.as_list() {
             query_item(&dian);

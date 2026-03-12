@@ -28,7 +28,7 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
 
     let txdts = q_body_data_may_hex!(q, body);
     let Ok((mut tx, _)) = transaction::transaction_create(&txdts) else {
-        return api_error("transaction body error")
+        return api_error("transaction body invalid")
     };
 
     let (address, signobj) = maybe!(prikey.len() == 64, {
@@ -40,7 +40,7 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
         };
         let fres = tx.fill_sign(&acc);
         if let Err(e) = fres {
-            return api_error(&format!("fill sign error: {}", e))
+            return api_error(&format!("fill sign failed: {}", e))
         }
         (Address::from(*acc.address()), fres.unwrap())
     }, {
@@ -61,7 +61,7 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
             signature: Fixed64::from( sig ),
         };
         if let Err(e) = tx.push_sign(signobj.clone()) {
-            return api_error(&format!("fill sign error: {}", e))
+            return api_error(&format!("fill sign failed: {}", e))
         }
         (Address::from(Account::get_address_by_public_key(pbk)), signobj)
     });
@@ -108,10 +108,10 @@ async fn transaction_build(State(_ctx): State<ApiCtx>, q: Query<Q2856>, body: By
 
     let txjsondts = q_body_data_may_hex!(q, body);
     let Ok(jsonstr) = std::str::from_utf8(&txjsondts) else {
-        return api_error("transaction json body error")
+        return api_error("transaction json body invalid")
     };
     let Ok(jsonv) = serde_json::from_str::<serde_json::Value>(jsonstr) else {
-        return api_error("transaction json body error")
+        return api_error("transaction json body invalid")
     };
 
     macro_rules! j_addr {
@@ -194,7 +194,7 @@ async fn transaction_check(State(_ctx): State<ApiCtx>, q: Query<Q9764>, bodydata
 
     let txdts = q_body_data_may_hex!(q, bodydata);
     let Ok((mut tx, _)) = transaction::transaction_create(&txdts) else {
-        return api_error("transaction body error")
+        return api_error("transaction body invalid")
     };
 
     // if set fee
@@ -274,7 +274,7 @@ async fn transaction_exist(State(ctx): State<ApiCtx>, q: Query<Q3457>) -> impl I
 
     // load from disk block data
     let Some(txp) = state.tx_exist(&txhx) else {
-        return api_error("transaction not find")
+        return api_error("transaction not found")
     };
     let bkey = txp.to_string();
     let blkpkg = api_load_block(&ctx, store.as_ref(), &bkey);
@@ -295,7 +295,7 @@ async fn transaction_exist(State(ctx): State<ApiCtx>, q: Query<Q3457>) -> impl I
         }
         None
     })(&txhx) {
-        None => return api_error("transaction not find in the block"),
+        None => return api_error("transaction not found in the block"),
         Some(tx) => tx,
     };
 

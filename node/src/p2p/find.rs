@@ -87,7 +87,7 @@ async fn request_public_nodes(addr: SocketAddr, datas: &mut HashMap<PeerKey, Soc
     let adrbts = tcp_dial_handshake_send_msg_and_read_all(
         addr, MSG_REQUEST_NEAREST_PUBLIC_NODES, 5).await?;
     if adrbts.len() < 1 {
-        return errf!("data empty");
+        return errf!("data is empty");
     }
     let sn = 6+16; // ip port + key
     let num = adrbts[0] as usize;
@@ -95,7 +95,7 @@ async fn request_public_nodes(addr: SocketAddr, datas: &mut HashMap<PeerKey, Soc
         return Ok(()) // not find any
     }
     if num*sn != adrbts.len()-1 {
-        return errf!("data size error");
+        return errf!("data size invalid");
     }
     let addrs = parse_public_nodes(&adrbts[1..]);
     for p in addrs {

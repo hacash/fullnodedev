@@ -39,7 +39,7 @@ This document describes the current business semantics of AST execution, includi
 `AstIf(cond, br_if, br_else)` uses an `AstSelect` as its condition node.
 
 - `cond` success means condition is true.
-- `cond` unwind means condition is false.
+- `cond` revert means condition is false.
 - `cond` return bytes are ignored.
 - On true, `br_if` is executed.
 - On false, `br_else` is executed.
@@ -49,22 +49,22 @@ This document describes the current business semantics of AST execution, includi
 
 AST uses two execution outcomes for child actions.
 
-- `Unwind`: recoverable branch failure.
-- `Interrupt`: unrecoverable failure.
+- `Revert`: recoverable branch failure.
+- `Fault`: unrecoverable failure.
 
 The meaning depends on the current AST node.
 
 ### 4.1 Inside `AstSelect`
 
-- Child `Unwind` means: rollback that child attempt and continue with the next child.
-- Child `Interrupt` means: abort the current `AstSelect`.
-- If final success count is below `exe_min`, the whole `AstSelect` returns `Unwind`.
+- Child `Revert` means: rollback that child attempt and continue with the next child.
+- Child `Fault` means: abort the current `AstSelect`.
+- If final success count is below `exe_min`, the whole `AstSelect` returns `Revert`.
 
 ### 4.2 Inside `AstIf`
 
-- Condition `Unwind` means: condition is false.
-- Condition `Interrupt` means: abort the whole `AstIf`.
-- Selected branch `Unwind` or `Interrupt` means: fail the whole `AstIf`.
+- Condition `Revert` means: condition is false.
+- Condition `Fault` means: abort the whole `AstIf`.
+- Selected branch `Revert` or `Fault` means: fail the whole `AstIf`.
 
 AST preserves the original failure kind when it rethrows node failure.
 
@@ -315,7 +315,7 @@ When authoring AST transactions, the following rules are part of the protocol se
 
 - `AstSelect` is an ordered trial list, not a parallel chooser.
 - `exe_max` stops later children from executing, but later serialized children still contribute to static transaction metadata such as `burn_90` and `req_sign`.
-- `AstIf.cond` is success-driven, not value-driven; branch choice depends on success vs unwind, not on returned bytes.
+- `AstIf.cond` is success-driven, not value-driven; branch choice depends on success vs revert, not on returned bytes.
 - `AstSelect` success is provisional until the whole node succeeds; failing `exe_min` rolls back earlier successful children in that node.
 - AST rollback is state rollback only; it is not gas refund and not warmup refund.
 - Moving an action under AST or invoking it through runtime `EXTACTION` changes how returned gas is consumed; this is expected composition behavior.

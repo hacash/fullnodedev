@@ -45,7 +45,7 @@ pub fn do_action_create(kind: u16, buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> 
                 return Ok(act)
             }
         }
-        errf!("action kind {} not find", kind)
+        errf!("action kind {} not found", kind)
     }
 }
 

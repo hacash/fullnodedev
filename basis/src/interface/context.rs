@@ -38,6 +38,6 @@ pub trait Context : StateOperat {
     // log
     fn logs(&mut self) -> &mut dyn Logs;
     // p2sh
-    fn p2sh(&self, _: &Address) -> Ret<&dyn P2sh> { errf!("not find") }
+    fn p2sh(&self, _: &Address) -> Ret<&dyn P2sh> { errf!("not found") }
     fn p2sh_set(&mut self, _: Address, _: Box<dyn P2sh>) -> Rerr { Ok(()) }
 }

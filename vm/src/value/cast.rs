@@ -180,7 +180,7 @@ impl Value {
     fn fn_boundary_type_fail(expect: ValueTy, actual: ValueTy) -> ItrErr {
         ItrErr::new(
             CallArgvTypeFail,
-            &format!("need {:?} but got {:?}", expect, actual),
+            &format!("expected {:?} but got {:?}", expect, actual),
         )
     }
 

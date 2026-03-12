@@ -137,7 +137,7 @@ impl Stack {
     pub fn __popx(&mut self, x: u8) -> VmrtErr {
         let x = x as usize;
         if x < 2 {
-            return itr_err_fmt!(StackError, "inst popn param cannot less than 2");
+            return itr_err_fmt!(StackError, "inst popn param must be at least 2");
         }
         let cl = self.datas.len();
         if x > cl {
@@ -151,7 +151,7 @@ impl Stack {
     pub fn dupn(&mut self, n: u8) -> VmrtErr {
         let n = n as usize;
         if n < 2 {
-            return itr_err_fmt!(StackError, "inst dupn param cannot less than 2");
+            return itr_err_fmt!(StackError, "inst dupn param must be at least 2");
         }
         let m = self.datas.len();
         if n > m {
@@ -180,7 +180,7 @@ impl Stack {
     pub fn reverse(&mut self, x: u8) -> VmrtErr {
         let x = x as usize;
         if x < 2 {
-            return itr_err_fmt!(StackError, "inst reverse param cannot less than 2");
+            return itr_err_fmt!(StackError, "inst reverse param must be at least 2");
         }
         let l = self.datas.len();
         if x > l {
@@ -202,7 +202,7 @@ impl Stack {
     pub fn join(&mut self, n: u8, cap: &SpaceCap) -> VmrtErr {
         let n = n as usize;
         if n < 3 {
-            return itr_err_fmt!(StackError, "inst join param cannot less than 3");
+            return itr_err_fmt!(StackError, "inst join param must be at least 3");
         }
         if n > self.datas.len() {
             return itr_err_fmt!(StackError, "pop empty stack");
@@ -218,7 +218,7 @@ impl Stack {
     pub fn join_with_total(&mut self, n: u8, total: usize, cap: &SpaceCap) -> VmrtErr {
         let n = n as usize;
         if n < 3 {
-            return itr_err_fmt!(StackError, "inst join param cannot less than 3");
+            return itr_err_fmt!(StackError, "inst join param must be at least 3");
         }
         if n > self.datas.len() {
             return itr_err_fmt!(StackError, "pop empty stack");

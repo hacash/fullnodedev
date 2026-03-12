@@ -185,13 +185,13 @@ impl ContractSto {
 
 		let old_rev = self.metas.revision.uint();
 		if old_rev == Uint2::MAX {
-			return itr_err_fmt!(ContractError, "contract revision reach max");
+			return itr_err_fmt!(ContractError, "contract revision reached max");
 		}
 		let Some(next_rev) = old_rev.checked_add(1) else {
 			return itr_err_fmt!(ContractError, "contract revision overflow");
 		};
 		if edit.expect_revision.uint() != next_rev {
-			return itr_err_fmt!(ContractError, "contract revision expect {} but need {}", edit.expect_revision.uint(), next_rev);
+			return itr_err_fmt!(ContractError, "contract revision mismatch: expected {} but got {}", edit.expect_revision.uint(), next_rev);
 		}
 
 		let edit_empty = edit.inherit_add.length() == 0
@@ -201,7 +201,7 @@ impl ContractSto {
 			&& edit.abstcalls.length() == 0
 			&& edit.userfuncs.length() == 0;
 		if edit_empty {
-			return itr_err_fmt!(ContractError, "contract edit empty");
+			return itr_err_fmt!(ContractError, "contract edit is empty");
 		}
 
 		let mut did_append = false;
@@ -217,7 +217,7 @@ impl ContractSto {
 				r.addr.check().map_ire(ContractAddrErr)?;
 				let idx = r.idx.uint() as usize;
 				if !idxs.insert(r.idx.uint()) {
-					return itr_err_fmt!(InheritError, "inherit replace index duplicated")
+					return itr_err_fmt!(InheritError, "inherit replace index already exists")
 				}
 				if idx >= inh_len {
 					return itr_err_fmt!(InheritError, "inherit replace index overflow")
@@ -232,7 +232,7 @@ impl ContractSto {
 				r.addr.check().map_ire(ContractAddrErr)?;
 				let idx = r.idx.uint() as usize;
 				if !idxs.insert(r.idx.uint()) {
-					return itr_err_fmt!(LibraryError, "library replace index duplicated")
+					return itr_err_fmt!(LibraryError, "library replace index already exists")
 				}
 				if idx >= lib_len {
 					return itr_err_fmt!(LibraryError, "library replace index overflow")
@@ -267,13 +267,13 @@ impl ContractSto {
 		let mut inhset: HashSet<ContractAddress> = HashSet::new();
 		for a in self.inherit.as_list() {
 			if !inhset.insert(a.clone()) {
-				return itr_err_fmt!(InheritError, "inherit cannot repeat")
+				return itr_err_fmt!(InheritError, "inherit already exists")
 			}
 		}
 		let mut libset: HashSet<ContractAddress> = HashSet::new();
 		for a in self.library.as_list() {
 			if !libset.insert(a.clone()) {
-				return itr_err_fmt!(LibraryError, "library cannot repeat")
+				return itr_err_fmt!(LibraryError, "library already exists")
 			}
 		}
 
@@ -283,7 +283,7 @@ impl ContractSto {
 				let mut seen = HashSet::new();
 				for a in edit.abstcalls.as_list() {
 					if !seen.insert(a.sign[0]) {
-						return itr_err_fmt!(ContractUpgradeErr, "abstcall sign repeat in edit")
+						return itr_err_fmt!(ContractUpgradeErr, "abstcall sign already exists in edit")
 					}
 				}
 			}
@@ -301,7 +301,7 @@ impl ContractSto {
 				for a in edit.userfuncs.as_list() {
 					let key = a.sign.to_array();
 					if !seen.insert(key) {
-						return itr_err_fmt!(ContractUpgradeErr, "userfunc sign repeat in edit")
+						return itr_err_fmt!(ContractUpgradeErr, "userfunc sign already exists in edit")
 					}
 				}
 			}
@@ -348,10 +348,10 @@ impl ContractSto {
 		}
 		// inhs and libs check repeat
 		if self.inherit.check_repeat(&src.inherit) {
-			return itr_err_fmt!(InheritError, "inherit cannot repeat")
+			return itr_err_fmt!(InheritError, "inherit already exists")
 		}
 		if self.library.check_repeat(&src.library) {
-			return itr_err_fmt!(LibraryError, "library cannot repeat")
+			return itr_err_fmt!(LibraryError, "library already exists")
 		}
 		// append inherit and library
 		self.inherit.append(src.inherit.lists.clone()).unwrap();
@@ -396,14 +396,14 @@ impl ContractSto {
 			for a in self.inherit.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 				if !inhset.insert(a.clone()) {
-					return itr_err_fmt!(InheritError, "inherit cannot repeat")
+					return itr_err_fmt!(InheritError, "inherit already exists")
 				}
 			}
 			let mut libset: HashSet<ContractAddress> = HashSet::new();
 			for a in self.library.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 				if !libset.insert(a.clone()) {
-					return itr_err_fmt!(LibraryError, "library cannot repeat")
+					return itr_err_fmt!(LibraryError, "library already exists")
 				}
 			}
 		}
@@ -412,7 +412,7 @@ impl ContractSto {
 			let mut seen = HashSet::new();
 			for a in self.abstcalls.as_list() {
 				if !seen.insert(a.sign[0]) {
-					return itr_err_fmt!(ContractError, "abstcall sign repeat")
+					return itr_err_fmt!(ContractError, "abstcall sign already exists")
 				}
 			}
 		}
@@ -427,7 +427,7 @@ impl ContractSto {
 			for a in self.userfuncs.as_list() {
 				let key = a.sign.to_array();
 				if !seen.insert(key) {
-					return itr_err_fmt!(ContractError, "userfunc sign repeat")
+					return itr_err_fmt!(ContractError, "userfunc sign already exists")
 				}
 			}
 		}

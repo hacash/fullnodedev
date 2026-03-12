@@ -4,7 +4,7 @@
 
 pub async fn tcp_dial_connect(addr: SocketAddr, outsec: u64) -> Ret<TcpStream> {
     let Ok(res) = timeout(secs(outsec), TcpStream::connect(addr)).await else {
-        return errf!("tcp_dial_connect addr {} timeout.", addr)
+        return errf!("tcp_dial_connect addr {} timeout", addr)
     };
     terrunbox!( res )
 }
@@ -31,7 +31,7 @@ pub async fn tcp_dial_to_check_is_public_id(addr: SocketAddr, pid: &PeerKey, out
     tcp_send_msg(conn, MSG_REQUEST_NODE_KEY_FOR_PUBLIC_CHECK, vec![]).await?;
     let retmsg = tcp_read(conn, PEER_KEY_SIZE, 3).await?;
     if *pid != *retmsg {
-        return errf!("peer id not match") // false
+        return errf!("peer id does not match")
     }
     Ok(true)
 }
@@ -48,7 +48,7 @@ pub async fn tcp_check_handshake(conn: &mut (impl AsyncRead + AsyncWrite + Unpin
     // check magic
     let magicn = tcp_read(conn, 4, outsec).await?;
     if magicn != handshake {
-        return errf!("tcp handshake magic number error")
+        return errf!("tcp handshake magic number invalid")
     }
     Ok(())
 }
@@ -94,7 +94,7 @@ pub async fn tcp_read_msg(conn: &mut (impl AsyncRead + std::marker::Unpin), outs
     // println!("&&&& tcp_read(conn, 4, outsec) ok. size={}", size.to_hex());
     let size = u32::from_be_bytes( bufcut!(size, 0, 4) );
     if size < 1 || size > P2P_MSG_DATA_MAX_SIZE {
-        return errf!("tcp msg size error")
+        return errf!("tcp msg size invalid")
     }
     // println!("&&&& tcp_read(conn, size as usize, outsec) ... size={}", size);
     let tybody = tcp_read(conn, size as usize, outsec).await?;

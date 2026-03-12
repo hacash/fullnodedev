@@ -6,7 +6,7 @@ fn ctx_action_call(this: &mut ContextInst, k: u16, b: Vec<u8>) -> XRet<(u32, Vec
     let (action, used) = action::action_create(&body).into_xret()?;
     if used != body.len() {
         return xerrf!(
-            "action parse length mismatch: used {} but total {}",
+            "action parse length mismatch: consumed {} but body length is {}",
             used,
             body.len()
         )

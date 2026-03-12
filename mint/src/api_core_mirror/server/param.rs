@@ -67,7 +67,7 @@ impl CoinKind {
             }
             ck.assets = CoinKind::parse_assets_list(assets_part)?;
             if ck.assets.is_empty() {
-                return errf!("coinkind assets list empty")
+                return errf!("coinkind assets list is empty")
             }
             ck.assets_all = false;
         }
@@ -201,7 +201,7 @@ macro_rules! q_data_acc_from {
     ( $acc: expr) => ({
         let acc = Account::create_by(&$acc);
         if let Err(e) = acc {
-            return api_error(&format!("prikey error: {}", &e))
+            return api_error(&format!("private key error: {}", &e))
         }
         acc.unwrap()
     })

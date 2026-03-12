@@ -16,7 +16,7 @@ impl KwTy {
     pub fn build(s: &str) -> Ret<Self> {
         Ok(match s {
             $( $s => Self::$k, )+
-            _ => return errf!("unsupport Keyword '{}'", s)
+            _ => return errf!("unsupported keyword '{}'", s)
         })
     }
 }
@@ -145,7 +145,7 @@ impl OpTy {
         use OpTy::*;
         Ok(match s {
             $( $s => $k, )+
-            _ => return errf!("unsupport Operator '{}'", s)
+            _ => return errf!("unsupported operator '{}'", s)
         })
     }
 

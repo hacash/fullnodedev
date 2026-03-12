@@ -463,7 +463,7 @@ mod action_coverage {
         ctx.env.chain.fast_sync = true;
 
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
-        assert!(err.contains("already exist"), "{err}");
+        assert!(err.contains("already exists"), "{err}");
     }
 
     #[test]
@@ -566,7 +566,7 @@ mod action_coverage {
             )
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
-        assert!(err.contains("not exist"), "{err}");
+        assert!(err.contains("does not exist"), "{err}");
     }
 
     #[test]
@@ -659,7 +659,7 @@ mod action_coverage {
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
         assert!(
-            err.contains("library") && err.contains("not exist"),
+            err.contains("library") && err.contains("does not exist"),
             "{err}"
         );
     }
@@ -882,7 +882,7 @@ mod action_coverage {
         act.address = caddr.to_addr();
         act.protocol_cost = Amount::zero();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("not exist"), "{err}");
+        assert!(err.contains("does not exist"), "{err}");
     }
 
     #[test]
@@ -960,7 +960,7 @@ mod action_coverage {
         act.edit.library_add = ContractAddrListW1::from_list(vec![missing_lib]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
-            err.contains("library") && err.contains("not exist"),
+            err.contains("library") && err.contains("does not exist"),
             "{err}"
         );
     }
@@ -1569,7 +1569,7 @@ mod action_coverage {
         let mut act = ViewDiamondInscNum::new();
         act.diamond = DiamondName::from_readable(b"AAAAAA").unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("not find"), "{err}");
+        assert!(err.contains("not found"), "{err}");
     }
 
     #[test]
@@ -1632,7 +1632,7 @@ mod action_coverage {
         act.diamond = DiamondName::from_readable(b"AAAAAA").unwrap();
         act.inscidx = Uint1::from(0);
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("not find"), "{err}");
+        assert!(err.contains("not found"), "{err}");
     }
 
     #[test]
@@ -1742,7 +1742,7 @@ mod action_coverage {
         act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         act.argvkey = BytesW2::from(vec![]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("just can execute on TOP"), "{err}");
+        assert!(err.contains("can only execute on TOP"), "{err}");
     }
 
     #[test]
@@ -1851,7 +1851,7 @@ mod action_coverage {
             &merkels,
         )
         .unwrap_err();
-        assert!(err.contains("posi") && err.contains("invalid"), "{err}");
+        assert!(err.contains("position") && err.contains("invalid"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════

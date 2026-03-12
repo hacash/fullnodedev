@@ -370,7 +370,7 @@ fn test_ast_multilayer_nested_innermost_plain_return_gas_charged_once() {
 }
 
 #[test]
-fn test_ast_multilayer_innermost_unwind_does_not_charge_return_gas() {
+fn test_ast_multilayer_innermost_revert_does_not_charge_return_gas() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -398,12 +398,12 @@ fn test_ast_multilayer_innermost_unwind_does_not_charge_return_gas() {
         before - after
     };
 
-    let run_unwind = || {
+    let run_revert = || {
         let mut ctx = build_ast_ctx_with_state(env.clone(), Box::new(AstTestState::default()), &tx);
         ctx.gas_init_tx(10000, 1).unwrap();
 
         // Keep exactly the same multilayer structure, but replace the innermost
-        // plain-gas action with a forced Unwind action.
+        // plain-gas action with a forced Revert action.
         let level3 = AstSelect::create_by(0, 1, vec![Box::new(AstTestFail::new())]);
         let level2 = AstSelect::create_by(0, 1, vec![Box::new(level3)]);
         let level1 = AstSelect::create_by(0, 1, vec![Box::new(level2)]);
@@ -418,11 +418,11 @@ fn test_ast_multilayer_innermost_unwind_does_not_charge_return_gas() {
     };
 
     let used_success = run_success();
-    let used_unwind = run_unwind();
+    let used_revert = run_revert();
 
     // In success path, innermost AstTestGasOnly returns 17 gas and should be charged once.
-    // In unwind path, innermost action has no successful return gas channel.
-    assert_eq!(used_success - used_unwind, 17);
+    // In revert path, innermost action has no successful return gas channel.
+    assert_eq!(used_success - used_revert, 17);
 }
 
 #[test]
@@ -1145,7 +1145,7 @@ fn test_tex_asset_serial_must_exist_and_cache() {
     let miss = CellCondAssetEq::new(AssetAmt::from(999, 1).unwrap())
         .execute(&mut ctx, &addr)
         .unwrap_err();
-    assert!(miss.contains("not exist"));
+    assert!(miss.contains("does not exist"));
 
     let ok1 = CellCondAssetEq::new(AssetAmt::from(9, 0).unwrap());
     ok1.execute(&mut ctx, &addr).unwrap();
@@ -1215,7 +1215,7 @@ fn test_tex_action_signature_rejects_payload_tamper() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("signature verify failed"));
+    assert!(err.contains("signature verification failed"));
 }
 
 // =====================================================================
@@ -1600,7 +1600,7 @@ fn test_ast_select_validation_early_return_no_state_leak() {
     let bad = AstSelect::create_by(3, 1, vec![Box::new(AstTestSet::create_by(221, 221))]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = bad.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("max cannot less than min"));
+    assert!(err.contains("max cannot be less than min"));
 
     // State must still be available (no leaked fork layer)
     assert_eq!(ast_state_get_u8(&mut ctx, 220), Some(220));
@@ -2067,7 +2067,7 @@ fn test_ast_select_max_gt_num_rejected_no_leak() {
     let bad = AstSelect::create_by(1, 5, vec![Box::new(AstTestSet::create_by(2, 2))]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = bad.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("max cannot more than list num"));
+    assert!(err.contains("max cannot exceed list num"));
 
     // State still available
     assert_eq!(ast_state_get_u8(&mut ctx, 1), Some(1));
@@ -3112,7 +3112,7 @@ fn test_ast_vm_recover_true_to_false_returns_error() {
 }
 
 #[test]
-fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
+fn test_ast_vm_delay_init_deep_nested_revert_rollback_warmup_kept() {
     let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -3177,7 +3177,7 @@ fn test_ast_vm_delay_init_deep_nested_unwind_rollback_warmup_kept() {
 }
 
 #[test]
-fn test_ast_vm_delay_init_deep_nested_success_commits_unwinds() {
+fn test_ast_vm_delay_init_deep_nested_success_commits_reverts() {
     let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -3292,7 +3292,7 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
         clean_count.clone(),
     );
 
-    // op1: deep delayed init succeeds and commits unwind channels.
+    // op1: deep delayed init succeeds and commits revert channels.
     let op1 = AstIf::create_by(
         AstSelect::create_list(vec![
             Box::new(AstTestDeepDelayVmInit::new()),
@@ -3310,7 +3310,7 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
     assert!(volatile.load(std::sync::atomic::Ordering::SeqCst) >= 0);
     assert!(warmup.load(std::sync::atomic::Ordering::SeqCst) >= 1);
 
-    // op2: deep nested duplicate init fails; whole recover should rollback unwind channels,
+    // op2: deep nested duplicate init fails; whole recover should rollback revert channels,
     // while warmup-like counter stays monotonic.
     let op2 = AstIf::create_by(
         AstSelect::create_list(vec![
@@ -3342,7 +3342,7 @@ fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_ke
 }
 
 #[test]
-fn test_ast_vm_delay_init_depth6_unwind_and_interrupt_channels() {
+fn test_ast_vm_delay_init_depth6_revert_and_fault_channels() {
     let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -3408,13 +3408,13 @@ fn test_ast_vm_delay_init_depth6_unwind_and_interrupt_channels() {
     let err = root.execute(&mut ctx).unwrap_err();
     assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
 
-    // interrupt path aborts whole root AST node
+    // fault path aborts whole root AST node
     assert_eq!(ast_state_get_u8(&mut ctx, 230), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 231), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 232), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 233), None);
 
-    // interrupt-like warmup channel remains monotonic
+    // fault-like warmup channel remains monotonic
     assert_eq!(volatile.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert!(warmup.load(std::sync::atomic::Ordering::SeqCst) > 0);
     assert!(restore_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
@@ -3484,7 +3484,7 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
 }
 
 #[test]
-fn test_ast_layered_with_mid_vm_failure_unwind_and_warmup_monotonic() {
+fn test_ast_layered_with_mid_vm_failure_revert_and_warmup_monotonic() {
     let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
@@ -4605,7 +4605,7 @@ fn test_ast_select_num_over_tx_actions_max_rejected_no_leak() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = over.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("num cannot more than"), "{}", err);
+    assert!(err.contains("num cannot exceed"), "{}", err);
 
     // state fork should not leak; context stays available
     assert_eq!(ast_state_get_u8(&mut ctx, 241), Some(241));
@@ -4745,7 +4745,7 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
     ctx.gas_init_tx(10000, 1).unwrap();
 
     let astif = AstIf::create_by(
-        // invalid cond: min > max, now treated as interrupt and aborts whole AstIf
+        // invalid cond: min > max, now treated as fault and aborts whole AstIf
         AstSelect::create_by(2, 1, vec![Box::new(AstTestMainSet::create_by(246, 246))]),
         AstSelect::create_list(vec![Box::new(AstTestMainSet::create_by(247, 247))]),
         AstSelect::create_list(vec![Box::new(AstTestMainSet::create_by(248, 248))]),
@@ -4754,7 +4754,7 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = astif.execute(&mut ctx).unwrap_err();
     assert!(
-        err.contains("action ast select max cannot less than min"),
+        err.contains("action ast select max cannot be less than min"),
         "{}",
         err
     );
@@ -5042,7 +5042,7 @@ fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
 
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = astif.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("max cannot less than min"), "{}", err);
+    assert!(err.contains("max cannot be less than min"), "{}", err);
 
     assert_eq!(ast_state_get_u8(&mut ctx, 215), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 216), None);
@@ -5078,7 +5078,7 @@ fn test_ast_select_nested_invalid_select_isolated() {
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
     let err = outer.execute(&mut ctx).unwrap_err();
     assert!(
-        err.contains("action ast select max cannot less than min"),
+        err.contains("action ast select max cannot be less than min"),
         "{}",
         err
     );

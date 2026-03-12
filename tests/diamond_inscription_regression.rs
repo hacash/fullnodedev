@@ -167,7 +167,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
     fail_act.engraved_type = Uint1::from(100);
     fail_act.engraved_content = raw_non_readable.clone();
     let err = fail_act.execute(&mut fail_ctx).unwrap_err();
-    assert!(err.contains("must readable string"), "{}", err);
+    assert!(err.contains("readable string"), "{}", err);
 
     // engraved_type > 100 can carry non-readable bytes.
     let mut ok_ctx = make_ctx(10_000, tx.as_read());
@@ -352,7 +352,7 @@ fn diamond_inscription_rejects_non_privakey_owner() {
 }
 
 #[test]
-fn diamond_move_astselect_interrupt_child_aborts_whole_node() {
+fn diamond_move_astselect_fault_child_aborts_whole_node() {
     let from_acc = Account::create_by("diamond-inscription-ast-child-from").unwrap();
     let to_acc = Account::create_by("diamond-inscription-ast-child-to").unwrap();
     let from = addr_of(&from_acc);
@@ -372,7 +372,7 @@ fn diamond_move_astselect_interrupt_child_aborts_whole_node() {
     seed_diamond(&mut ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
 
-    // Child #1 fails with interrupt (index out of range), so AstSelect aborts
+    // Child #1 fails with fault (index out of range), so AstSelect aborts
     // the whole node immediately and child #2 must not run.
     let mut mv_fail = DiaInscMove::new();
     mv_fail.from_diamond = from_diamond;
@@ -389,7 +389,7 @@ fn diamond_move_astselect_interrupt_child_aborts_whole_node() {
     let ast = AstSelect::create_by(1, 1, vec![Box::new(mv_fail), Box::new(mv_ok)]);
     let err = ast.execute(&mut ctx).unwrap_err();
     assert!(err.contains("out of range"), "{}", err);
-    assert!(err.is_interrupt(), "{}", err);
+    assert!(err.is_fault(), "{}", err);
 
     assert_eq!(diamond_insc_len(&mut ctx, &from_diamond), 1);
     assert_eq!(diamond_insc_len(&mut ctx, &to_diamond), 9);
@@ -417,7 +417,7 @@ fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
     seed_diamond(&mut ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
 
-    // Child #1 succeeds, child #2 fails with interrupt (source becomes empty).
+    // Child #1 succeeds, child #2 fails with fault (source becomes empty).
     // Whole-node snapshot must rollback child #1 state changes.
     let mut mv_ok = DiaInscMove::new();
     mv_ok.from_diamond = from_diamond;
@@ -434,7 +434,7 @@ fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
     let ast = AstSelect::create_by(2, 2, vec![Box::new(mv_ok), Box::new(mv_fail)]);
     let err = ast.execute(&mut ctx).unwrap_err();
     assert!(err.contains("no inscriptions in source HACD"), "{}", err);
-    assert!(err.is_interrupt(), "{}", err);
+    assert!(err.is_fault(), "{}", err);
 
     assert_eq!(diamond_insc_len(&mut ctx, &from_diamond), 1);
     assert_eq!(diamond_insc_len(&mut ctx, &to_diamond), 9);

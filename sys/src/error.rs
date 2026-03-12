@@ -4,9 +4,9 @@ pub type TextRerr = Result<(), TextError>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecError {
     // Recoverable execution failure (business/runtime control-flow).
-    Unwind(String),
+    Revert(String),
     // Unrecoverable execution failure (hard stop).
-    Interrupt(String),
+    Fault(String),
 }
 
 pub type ExecRet<T> = Result<T, ExecError>;
@@ -19,10 +19,10 @@ pub type XRerr = ExecRerr;
 pub type Ret<T> = TextRet<T>;
 pub type Rerr = TextRerr;
 
-pub const UNWIND_PREFIX: &str = "[UNWIND] ";
+pub const REVERT_PREFIX: &str = "[REVERT] ";
 
 pub fn decode_exec_error_from_text(err: TextError) -> ExecError {
-    if let Some(msg) = err.strip_prefix(UNWIND_PREFIX) {
+    if let Some(msg) = err.strip_prefix(REVERT_PREFIX) {
         ExecError::revert(msg.to_owned())
     } else {
         ExecError::fault(err)
@@ -31,40 +31,32 @@ pub fn decode_exec_error_from_text(err: TextError) -> ExecError {
 
 pub fn encode_exec_error_to_text(err: ExecError) -> TextError {
     match err {
-        ExecError::Unwind(msg) => format!("{}{}", UNWIND_PREFIX, msg),
-        ExecError::Interrupt(msg) => msg,
+        ExecError::Revert(msg) => format!("{}{}", REVERT_PREFIX, msg),
+        ExecError::Fault(msg) => msg,
     }
 }
 
 impl ExecError {
     pub fn revert(msg: impl Into<String>) -> Self {
-        Self::Unwind(msg.into())
+        Self::Revert(msg.into())
     }
 
     pub fn fault(msg: impl Into<String>) -> Self {
-        Self::Interrupt(msg.into())
+        Self::Fault(msg.into())
     }
 
-    pub fn is_unwind(&self) -> bool {
-        matches!(self, Self::Unwind(_))
+    pub fn is_revert(&self) -> bool {
+        matches!(self, Self::Revert(_))
     }
 
-    pub fn is_interrupt(&self) -> bool {
-        matches!(self, Self::Interrupt(_))
-    }
-
-    pub fn is_recoverable(&self) -> bool {
-        self.is_unwind()
-    }
-
-    pub fn is_unrecoverable(&self) -> bool {
-        self.is_interrupt()
+    pub fn is_fault(&self) -> bool {
+        matches!(self, Self::Fault(_))
     }
 
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Unwind(msg) => msg,
-            Self::Interrupt(msg) => msg,
+            Self::Revert(msg) => msg,
+            Self::Fault(msg) => msg,
         }
     }
 
@@ -76,8 +68,8 @@ impl ExecError {
 impl std::fmt::Display for ExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unwind(msg) => write!(f, "{}{}", UNWIND_PREFIX, msg),
-            Self::Interrupt(msg) => write!(f, "{}", msg),
+            Self::Revert(msg) => write!(f, "{}{}", REVERT_PREFIX, msg),
+            Self::Fault(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -266,33 +258,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn xerror_into_text_error_uses_unwind_prefix_only_for_revert() {
+    fn xerror_into_text_error_uses_revert_prefix_only_for_revert() {
         let u: Error = XError::revert("biz fail").into();
-        assert_eq!(u, "[UNWIND] biz fail");
+        assert_eq!(u, "[REVERT] biz fail");
         let i: Error = XError::fault("sys fail").into();
         assert_eq!(i, "sys fail");
     }
 
     #[test]
-    fn tret_into_xret_recovers_unwind_prefix() {
-        let r: Ret<()> = Err("[UNWIND] fallback".to_owned());
+    fn tret_into_xret_recovers_revert_prefix() {
+        let r: Ret<()> = Err("[REVERT] fallback".to_owned());
         let e = r.into_xret().unwrap_err();
-        assert!(e.is_recoverable());
+        assert!(e.is_revert());
         assert_eq!(e.as_str(), "fallback");
     }
 
     #[test]
-    fn tret_into_xret_without_prefix_is_unrecoverable() {
+    fn tret_into_xret_without_prefix_is_fault() {
         let r: Ret<()> = Err("hard fail".to_owned());
         let e = r.into_xret().unwrap_err();
-        assert!(e.is_unrecoverable());
+        assert!(e.is_fault());
         assert_eq!(e.as_str(), "hard fail");
     }
 
     #[test]
     fn xerror_display_uses_wire_format() {
         let rec = XError::revert("biz fail").to_string();
-        assert_eq!(rec, "[UNWIND] biz fail");
+        assert_eq!(rec, "[REVERT] biz fail");
 
         let int = XError::fault("sys fail").to_string();
         assert_eq!(int, "sys fail");
@@ -301,8 +293,8 @@ mod tests {
     #[test]
     fn xerr_macros_map_to_exec_error_variants() {
         let u: XRet<()> = xerr_r!("biz fail");
-        assert!(u.unwrap_err().is_recoverable());
+        assert!(u.unwrap_err().is_revert());
         let i: XRet<()> = xerr!("sys fail");
-        assert!(i.unwrap_err().is_unrecoverable());
+        assert!(i.unwrap_err().is_fault());
     }
 }

@@ -238,7 +238,7 @@ async fn handle_success(
     let target = pending.target_hash.to_vec();
     let pass = hash_more_power(&blkhx, &target) || blkhx.as_slice() == target.as_slice();
     if !pass {
-        return Json(json!({"ret": 1, "err": "difficulty check fail"}));
+        return Json(json!({"ret": 1, "err": "difficulty check failed"}));
     }
 
     state.submit_count.fetch_add(1, Ordering::SeqCst);

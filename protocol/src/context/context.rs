@@ -179,7 +179,7 @@ impl Context for ContextInst<'_> {
     }
     // p2sh
     fn p2sh(&self, adr: &Address) -> Ret<&dyn P2sh> {
-        let e = format!("p2sh '{}' not find", adr);
+        let e = format!("p2sh '{}' not found", adr);
         self.psh.get(adr).map(|boxed| boxed.as_ref()).ok_or(e)
     }
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {

@@ -101,7 +101,7 @@ impl ChunkRef {
         }
         if child.0.height != self.0.height + 1 {
             return errf!(
-                "child height need {} but got {}",
+                "child height expected {} but got {}",
                 self.0.height + 1,
                 child.0.height
             );
@@ -111,7 +111,7 @@ impl ChunkRef {
             .iter()
             .any(|c| Arc::ptr_eq(c, &child.0) || c.hash == child.0.hash)
         {
-            return errf!("repetitive child <{}, {}>", child.0.height, child.0.hash);
+            return errf!("duplicate child <{}, {}>", child.0.height, child.0.hash);
         }
         childs.push(child.0.clone());
         Ok(())

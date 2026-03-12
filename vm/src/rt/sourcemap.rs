@@ -87,7 +87,7 @@ impl Default for SourceMap {
 impl SourceMap {
     pub fn register_lib(&mut self, idx: u8, name: String, address: Option<Address>) -> Rerr {
         if self.libs.contains_key(&idx) {
-            return errf!("lib index {} repeat in source map", idx);
+            return errf!("lib index {} repeated in source map", idx);
         }
         self.libs.insert(idx, LibInfo { name, address });
         Ok(())
@@ -242,7 +242,7 @@ impl SourceMap {
         for func in doc.funcs {
             let bytes = hex::decode(func.sig).map_err(|_| s!("function signature decode failed"))?;
             if bytes.len() != 4 {
-                return errf!("function signature wrong length")
+                return errf!("function signature has wrong length")
             }
             let mut sig = [0u8; 4];
             sig.copy_from_slice(&bytes);

@@ -7,7 +7,7 @@ impl TxGroup {
         if let Some((hid, hav)) = self.find(&txp.hash) {
             let lsth = purity_or_fee!{ self, txp, <=, hav };
             if lsth { // fee_purity
-                return errf!("tx already exists in tx pool and it's fee is higher")
+                return errf!("tx already exists in tx pool and its fee is higher")
             }
             // rm old
             self.txpkgs.remove(hid);

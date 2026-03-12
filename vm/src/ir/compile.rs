@@ -19,7 +19,7 @@ fn compile_block_into(inst: Bytecode, list: &[Box<dyn IRNode>], codes: &mut Vec<
     if is_expr {
         match list.last() {
             None => return itr_err_fmt!(ComplieError, "block expression cannot be empty"),
-            Some(last) if !last.hasretval() => return itr_err_fmt!(ComplieError, "block expression must return value"),
+            Some(last) if !last.hasretval() => return itr_err_fmt!(ComplieError, "block expression must return a value"),
             _ => {},
         }
     }
@@ -179,7 +179,7 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
     let alls_l = body_l + cond.len() + JIL;
     // check code len
     if body_l > MAXL || alls_l > MAXL {
-        return itr_err_fmt!(ComplieError, "compile ir codes too long")
+        return itr_err_fmt!(ComplieError, "compiled IR code is too long")
     }
     // condition
     let mut codes = Vec::with_capacity(cond.len() + 1 + 2 + body.len() + 1 + 2);
@@ -213,7 +213,7 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     y.codegen_into(&mut if_br)?;
     let is_expr = btcd == Bytecode::IRIFR;
     if is_expr && !y.hasretval() {
-        return itr_err_fmt!(ComplieError, "if expression branch must return value");
+        return itr_err_fmt!(ComplieError, "if expression branch must return a value");
     }
     // IRBLOCK already discards return values internally.
     if !is_expr && y.hasretval() && !is_stmt_block(y) {
@@ -222,7 +222,7 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     let mut el_br = Vec::new();
     z.codegen_into(&mut el_br)?;
     if is_expr && !z.hasretval() {
-        return itr_err_fmt!(ComplieError, "if expression branch must return value");
+        return itr_err_fmt!(ComplieError, "if expression branch must return a value");
     }
     if !is_expr && z.hasretval() && !is_stmt_block(z) {
         el_br.push(POP as u8); // pop inst
@@ -231,7 +231,7 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     let el_l = el_br.len() + JIL;
     // check code len
     if if_l > MAXL || el_l > MAXL {
-        return itr_err_fmt!(ComplieError, "compile ir codes too long")
+        return itr_err_fmt!(ComplieError, "compiled IR code is too long")
     }
     let mut codes = Vec::with_capacity(
         cond.len() + 1 + 2 + el_br.len() + 1 + 2 + if_br.len()

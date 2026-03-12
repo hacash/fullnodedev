@@ -51,7 +51,7 @@ satoshi_operate_define!(sat_sub, addr, sat, oldsat, {
 pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &Satoshi
 ) -> Ret<Vec<u8>> {
     if from == to {
-		return errf!("cannot trs to self")
+		return errf!("cannot transfer to self")
     }
     // do transfer
     sat_sub(ctx, from, sat)?;
@@ -66,7 +66,7 @@ pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &S
 pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Satoshi> {
     addr.check_version()?;
     if sat.uint() == 0 {
-        return errf!("check satoshi is cannot empty")
+        return errf!("satoshi check amount cannot be empty")
     }
     let state = CoreState::wrap(ctx.state());
     if let Some(bls) = state.balance( addr ) {

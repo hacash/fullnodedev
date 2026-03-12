@@ -12,7 +12,7 @@ fn channel(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let staptr = read_mint_state(ctx);
     let state = MintStateRead::wrap(staptr.as_ref().as_ref());
     let Some(channel) = state.channel(&chid) else {
-        return api_error("channel not find");
+        return api_error("channel not found");
     };
 
     let status = *channel.status;
@@ -77,7 +77,7 @@ fn channel(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             &distribution.left_bill.hacash,
             &distribution.right_bill.hacash,
         ) else {
-            return api_error("channel interest calculate error");
+            return api_error("channel interest calculation failed");
         };
         data.insert(
             "distribution".to_owned(),

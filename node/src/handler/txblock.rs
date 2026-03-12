@@ -94,7 +94,7 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
         may_show_miner_detail(engcnf, &blkp);
         let thsx = blkp.objc.transaction_hash_list(false); // hash no fee
         if let Err(e) = engptr.discover(blkp) {
-            println!("Error: {}, failed.", e);
+            println!("Error: {}", e);
             // println!("- error block data hex: {}", body.to_hex());
         }else{
             println!("ok.");

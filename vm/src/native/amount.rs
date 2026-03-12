@@ -3,7 +3,7 @@
 fn mei_to_hac(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     let num = buf_to_uint(buf)?.checked_u128()?;
     if num > u64::MAX as u128 {
-        return itr_err_fmt!(NativeFuncError, "call mei_to_hac amount too big")
+        return itr_err_fmt!(NativeFuncError, "call mei_to_hac amount too large")
     }
     Ok(Value::Bytes( Amount::mei(num as u64).serialize() ))
 }

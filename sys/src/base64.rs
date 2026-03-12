@@ -15,12 +15,16 @@ pub trait ToBase64 {
     fn to_base64(&self) -> String;
 }
 
-
-impl ToBase64 for Vec<u8> {
+impl ToBase64 for [u8] {
     fn to_base64(&self) -> String {
         BASE64_STANDARD.encode(self)
     }
+}
 
+impl<const N: usize> ToBase64 for [u8; N] {
+    fn to_base64(&self) -> String {
+        BASE64_STANDARD.encode(self)
+    }
 }
 
 

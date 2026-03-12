@@ -16,7 +16,7 @@ fn balance(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         return api_error("address format error");
     }
     if adrsz > 200 {
-        return api_error("address max 200");
+        return api_error("address count must not exceed 200");
     }
 
     let staptr = read_mint_state(ctx);

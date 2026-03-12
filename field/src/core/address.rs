@@ -99,7 +99,7 @@ impl FromJSON for Address {
         // Fall back to generic binary (0x, b64:, b58:, plain)
         let data = json_decode_binary(json)?;
         if data.len() != Self::SIZE {
-            return errf!("Address size error, need {}, but got {}", Self::SIZE, data.len());
+            return errf!("Address size mismatch: expected {} but got {}", Self::SIZE, data.len());
         }
         *self = Address(Fixed21::from(data.try_into().unwrap()));
         Ok(())
@@ -146,7 +146,7 @@ impl Address {
         let v = self.version();
         match v {
             $( $num )|+ => Ok(()),
-            _ => errf!("address version {} not support", v)
+            _ => errf!("address version {} not supported", v)
         }
     }
 
@@ -174,7 +174,7 @@ impl Address {
 
     pub fn from_bytes(stuff: &[u8]) -> Ret<Self> {
         if stuff.len() != Self::SIZE {
-            return errf!("address size not match")
+            return errf!("address size mismatch")
         }
         let addr = Self::from(<Vec<u8> as TryInto<[u8; 21]>>::try_into(stuff.to_vec()).unwrap());
         addr.check_version()?;
@@ -224,7 +224,7 @@ impl Address {
             return errf!("base58check error")
         };
         if body.len() != Self::SIZE - 1 {
-            return Err("address length error".to_string())
+            return Err("address length invalid".to_string())
         }
         let mut address = Self::default();
         address[0] = version;
@@ -249,7 +249,7 @@ combi_list!{ AddressW1, Uint1, Address }
 impl ParsePrefix for AddressW1 {
     fn create_with_prefix(prefix: &[u8], rest: &[u8]) -> Ret<(Self, usize)> {
         if prefix.is_empty() {
-            return errf!("AddressW1 prefix empty");
+            return errf!("AddressW1 prefix is empty");
         }
         let count_byte = prefix[0];
         let count = count_byte as usize;
@@ -316,7 +316,7 @@ impl FromJSON for AddrOrList {
             let max_count = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
             if v.length() > max_count {
                 return errf!(
-                    "invalid AddrOrList JSON: list length {} overflow max {}",
+                    "invalid AddrOrList JSON: list length {} exceeds max {}",
                     v.length(),
                     max_count
                 );
@@ -324,7 +324,7 @@ impl FromJSON for AddrOrList {
             *self = Self::Val2(v);
             return Ok(());
         }
-        errf!("invalid AddrOrList JSON: expect quoted address or address array")
+        errf!("invalid AddrOrList JSON: expected quoted address or address array")
     }
 }
 
@@ -416,7 +416,7 @@ impl FromJSON for AddrOrPtr {
             .map_err(|e: std::num::ParseIntError| e.to_string())?;
         let max_ix = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
         if ix as usize > max_ix {
-            return errf!("addr ptr index {} overflow max {}", ix, max_ix);
+            return errf!("addr ptr index {} exceeds max {}", ix, max_ix);
         }
         *self = Self::from_ptr(ix as u8);
         Ok(())

@@ -9,7 +9,7 @@ const APPEND_TIER2_MAX_INSCRIPTIONS: usize = 100;
 
 #[inline]
 fn check_protocol_cost_4_long(pfee: &Amount) -> Rerr {
-    pfee.check_4_long().map_err(|_| "protocol cost amount size cannot over 4 bytes".to_string())
+    pfee.check_4_long().map_err(|_| "protocol cost amount size cannot exceed 4 bytes".to_string())
 }
 
 #[inline]
@@ -28,13 +28,13 @@ fn check_inscription_content(engraved_type: u8, content: &BytesW1) -> Rerr {
     }
     if insc_len > INSCRIPTION_CONTENT_MAX_BYTES {
         return errf!(
-            "engraved content size cannot over {} bytes",
+            "engraved content size cannot exceed {} bytes",
             INSCRIPTION_CONTENT_MAX_BYTES
         );
     }
     if engraved_type <= INSCRIPTION_READABLE_TYPE_MAX {
         if !check_readable_string(content) {
-            return errf!("engraved content must readable string");
+            return errf!("engraved content must be a readable string");
         }
     }
     Ok(())
@@ -227,7 +227,7 @@ fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>
     // check cost
     if pfee < &ttcost {
         return errf!(
-            "diamond inscription cost error need {:?} but got {:?}",
+            "diamond inscription cost expected {:?} but got {:?}",
             ttcost,
             pfee
         );
@@ -291,7 +291,7 @@ fn diamond_inscription_clean(
     // check cost
     if pfee < &ttcost {
         return errf!(
-            "diamond inscription cost error need {:?} but got {:?}",
+            "diamond inscription cost expected {:?} but got {:?}",
             ttcost,
             pfee
         );
@@ -359,7 +359,7 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
     let cost = calc_edit_inscription_protocol_cost(avg_bid_burn_mei);
     if pfee < &cost {
         return errf!(
-            "inscription edit cost error need {:?} but got {:?}",
+            "inscription edit cost expected {:?} but got {:?}",
             cost,
             pfee
         );
@@ -449,7 +449,7 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
     // check protocol cost
     if pfee < &move_cost {
         return errf!(
-            "inscription move cost error need {:?} but got {:?}",
+            "inscription move cost expected {:?} but got {:?}",
             move_cost,
             pfee
         );
@@ -511,7 +511,7 @@ fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> Ret<Ve
     let cost = calc_drop_inscription_protocol_cost(avg_bid_burn_mei);
     if pfee < &cost {
         return errf!(
-            "inscription drop cost error need {:?} but got {:?}",
+            "inscription drop cost expected {:?} but got {:?}",
             cost,
             pfee
         );

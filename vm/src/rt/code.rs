@@ -9,7 +9,7 @@ pub enum CodeType {
 enum_try_from_u8_by_variant!(
     CodeType,
     ItrErrCode::CodeTypeError,
-    "code type {} not find",
+    "code type {} not found",
     [Bytecode, IRNode]
 );
 

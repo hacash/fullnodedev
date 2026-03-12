@@ -122,7 +122,7 @@ macro_rules! fixed_define_body {
                 // generic binary
                 let data = json_decode_binary(json)?;
                 if data.len() != $size {
-                    return errf!("{} size error, need {}, but got {}", stringify!($class), $size, data.len());
+                    return errf!("{} size error: expected {}, but got {}", stringify!($class), $size, data.len());
                 }
                 self.bytes.copy_from_slice(&data);
                 Ok(())

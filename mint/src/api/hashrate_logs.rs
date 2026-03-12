@@ -10,7 +10,7 @@ fn hashrate_logs(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let bac = mtcnf.difficulty_adjust_blocks;
 
     if days > 500 {
-        return api_error("param days cannot more than 500");
+        return api_error("param days cannot exceed 500");
     }
     let lasthei = ctx.engine.latest_block().height().uint();
     if lasthei < days {

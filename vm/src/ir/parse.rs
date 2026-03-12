@@ -180,7 +180,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
         _ => {
             // other inst
             if ! meta.valid {
-                return itr_err_fmt!(InstInvalid, "not find bytecode {}", inst as u8)
+                return itr_err_fmt!(InstInvalid, "bytecode {} not found", inst as u8)
             }
             if meta.otput>1 && meta.input<255 { 
                 return itr_err_fmt!(InstInvalid, "invalid irnode {}", inst as u8)
@@ -203,7 +203,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
     };
     // check return value based on the actual parsed node (not just bytecode metadata). This is important for container nodes like IRLIST/IRBLOCK whose return-value-ness is contextual.
     if isrtv && !irnode.hasretval() {
-        return itr_err_fmt!(InstInvalid, "irnode {} check return value failed", inst as u8)
+        return itr_err_fmt!(InstInvalid, "irnode {} return value check failed", inst as u8)
     }
     Ok(irnode)
 }

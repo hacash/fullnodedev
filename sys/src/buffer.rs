@@ -10,22 +10,22 @@ macro_rules! bufcut {
 /*
 *
 */
-pub fn bufeat(buf: &[u8], n: usize) -> Ret<Vec<u8>> {
-    let buflen = buf.len();
+fn ensure_buf_len(buflen: usize, n: usize) -> Ret<()> {
     maybe!(n > buflen, {
         let n1 = n.to_string();
         let n2 = buflen.to_string();
-        Err("buf length too short need ".to_owned()+&n1+" but got "+&n2)
-    }, Ok(buf[..n].to_vec()))
+        Err("buf length too short: expected ".to_owned()+&n1+" but got "+&n2)
+    }, Ok(()))
+}
+
+pub fn bufeat(buf: &[u8], n: usize) -> Ret<Vec<u8>> {
+    ensure_buf_len(buf.len(), n)?;
+    Ok(buf[..n].to_vec())
 }
 
 pub fn bufeat_ref(buf: &[u8], n: usize) -> Ret<&[u8]> {
-    let buflen = buf.len();
-    maybe!(n > buflen, {
-        let n1 = n.to_string();
-        let n2 = buflen.to_string();
-        Err("buf length too short need ".to_owned()+&n1+" but got "+&n2)
-    }, Ok(&buf[..n]))
+    ensure_buf_len(buf.len(), n)?;
+    Ok(&buf[..n])
 }
 
 

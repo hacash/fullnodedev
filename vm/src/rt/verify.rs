@@ -122,14 +122,14 @@ fn verify_valid_instruction(
             PBUF => {
                 let l = pu8!() as usize;
                 if l > max_push_buf_len {
-                    return itr_err_fmt!(InstParamsErr, "PBUF size {} too large", l);
+                    return itr_err_fmt!(InstParamsErr, "PBUF size {} invalid (exceeds max)", l);
                 }
                 i += l
             }
             PBUFL => {
                 let l = pu16!() as usize;
                 if l > max_push_buf_len {
-                    return itr_err_fmt!(InstParamsErr, "PBUFL size {} too large", l);
+                    return itr_err_fmt!(InstParamsErr, "PBUFL size {} invalid (exceeds max)", l);
                 }
                 i += l
             }

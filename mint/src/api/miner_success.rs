@@ -1,6 +1,6 @@
 fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     if !ctx.engine.config().miner_enable {
-        return api_error("miner not enable");
+        return api_error("miner not enabled");
     }
 
     let height = req.query_u64("height", 0);
@@ -10,7 +10,7 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let success_stuff = {
         let stf = MINER_PENDING_BLOCK.lock().unwrap();
         if stf.is_empty() {
-            return api_error("pending block not yet");
+            return api_error("pending block not ready");
         }
         let mut found_idx = None;
         for i in 0..stf.len() {
@@ -20,15 +20,15 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             }
         }
         let Some(stfidx) = found_idx else {
-            return api_error(&format!("pending block height {} not find", height));
+            return api_error(&format!("pending block height {} not found", height));
         };
         let tarstf = &stf[stfidx];
 
         let Ok(cb_nonce_bytes) = hex::decode(coinbase_nonce.as_bytes()) else {
-            return api_error("coinbase nonce format error");
+            return api_error("coinbase nonce format invalid");
         };
         if cb_nonce_bytes.len() != Hash::SIZE {
-            return api_error("coinbase nonce length error");
+            return api_error("coinbase nonce length invalid");
         }
 
         let mut local_block = tarstf.block.clone();
@@ -49,7 +49,7 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         let blkhx = local_block.hash();
         if 1 == hash_diff(&blkhx, &target_hash) {
             return api_error(&format!(
-                "difficulty check fail: at least need {} but got {}",
+                "difficulty check failed: expected at least {} but got {}",
                 target_hash.to_hex(),
                 blkhx.to_hex()
             ));
@@ -64,7 +64,7 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     block.replace_transaction(0, Box::new(coinbase_tx)).unwrap();
     let blkpkg = BlkPkg::create(Box::new(block));
     if let Err(e) = ctx.hnoder.submit_block(&blkpkg, true) {
-        return api_error(&format!("submit block error: {}", e));
+        return api_error(&format!("submit block failed: {}", e));
     }
 
     {

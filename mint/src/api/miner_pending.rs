@@ -5,7 +5,7 @@ fn miner_pending(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let base64 = q_bool(&req, "base64", false);
 
     if !ctx.engine.config().miner_enable {
-        return api_error("miner not enable");
+        return api_error("miner not enabled");
     }
 
     #[cfg(not(debug_assertions))]
@@ -17,7 +17,7 @@ fn miner_pending(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             .unwrap()
             .is_some();
         if ctx.engine.config().is_mainnet() && !gotdmintx && curtimes() < ctx.launch_time + 30 {
-            return api_error("miner worker need launch after 30 secs for node start");
+            return api_error("miner worker must be launched at least 30 secs after node start");
         }
     }
 

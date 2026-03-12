@@ -45,7 +45,7 @@ pub fn setup_vm_run(ctx: &mut dyn Context, entry: u8, kind: u8, payload: std::sy
     const TY3: u8 = TransactionType3::TYPE;
     let txty = ctx.env().tx.ty;
     if txty < TY3 {
-        return errf!("current transaction type {} too low to setup vm, need at least {}", txty, TY3)
+        return errf!("current transaction type {} too low to setup vm, requires at least {}", txty, TY3)
     }
     // Ensure VM is initialized if a VM assigner is registered. Protocol normally does this at tx execution entry, but callers may invoke `setup_vm_run` directly in tests/tools.
     protocol::setup::do_vm_init(ctx)?;

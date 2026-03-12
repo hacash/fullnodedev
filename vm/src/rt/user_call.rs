@@ -266,7 +266,7 @@ fn encode_call_target(target: CallTarget) -> (u8, u8) {
 
 fn decode_short_call_body(s: &[u8], target: CallTarget, effect: EffectMode) -> VmrtRes<CallSpec> {
     if s.len() != SHORT_CALL_BODY_WIDTH {
-        return itr_err!(CastParamFail, "call shortcut body size error");
+        return itr_err!(CastParamFail, "call shortcut body size invalid");
     }
     Ok(CallSpec::invoke(target, effect, checked_func_sign(s)?))
 }
@@ -277,7 +277,7 @@ fn decode_short_indexed_call_body(
     target: fn(u8) -> CallTarget,
 ) -> VmrtRes<CallSpec> {
     if s.len() != SHORT_LIB_CALL_BODY_WIDTH {
-        return itr_err!(CastParamFail, "call shortcut body size error");
+        return itr_err!(CastParamFail, "call shortcut body size invalid");
     }
     Ok(CallSpec::invoke(
         target(s[0]),
@@ -388,7 +388,7 @@ pub fn encode_user_call_site(call: CallSpec) -> (Bytecode, Vec<u8>) {
 
 pub fn decode_call_body(s: &[u8]) -> VmrtRes<CallSpec> {
     if s.len() != CALL_BODY_WIDTH {
-        return itr_err!(CastParamFail, "call body size error");
+        return itr_err!(CastParamFail, "call body size invalid");
     }
     let flags = s[0];
     if flags & CALL_RESERVED_MASK != 0 {
@@ -428,7 +428,7 @@ pub fn encode_call_body(
 
 pub fn decode_splice_body(s: &[u8]) -> VmrtRes<CallSpec> {
     if s.len() != SPLICE_BODY_WIDTH {
-        return itr_err!(CastParamFail, "splice body size error");
+        return itr_err!(CastParamFail, "splice body size invalid");
     }
     Ok(CallSpec::splice(s[0], checked_func_sign(&s[1..])?))
 }

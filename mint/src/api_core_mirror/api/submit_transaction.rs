@@ -17,7 +17,7 @@ async fn submit_transaction(State(ctx): State<ApiCtx>, q: Query<Q4396>, body: By
     // parse
     let txpkg = transaction::build_tx_package( bddts );
     if let Err(e) = txpkg {
-        return api_error(&format!("transaction parse error: {}", &e))
+        return api_error(&format!("transaction parse failed: {}", &e))
     }
     let txpkg = txpkg.unwrap();
     // check fee
@@ -27,7 +27,7 @@ async fn submit_transaction(State(ctx): State<ApiCtx>, q: Query<Q4396>, body: By
     }
     let txsz = txpkg.data.len();
     if txsz > engcnf.max_tx_size {
-        return api_error(&format!("tx size cannot more than {} bytes", engcnf.max_tx_size));
+        return api_error(&format!("tx size cannot exceed {} bytes", engcnf.max_tx_size));
     }
     // try submit
     let is_async = true;

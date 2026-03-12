@@ -555,7 +555,7 @@ fn test_ctx_action_call_astif_must_check_unreachable_branch_req_sign() {
 }
 
 #[test]
-fn test_ast_select_min_failure_is_unwind() {
+fn test_ast_select_min_failure_is_revert() {
     init_test_registry();
 
     use crate::context::ContextInst;
@@ -594,12 +594,12 @@ fn test_ast_select_min_failure_is_unwind() {
     let err = ctx
         .action_call(AstSelect::KIND, bytes[2..].to_vec())
         .unwrap_err();
-    assert!(err.is_unwind(), "{}", err);
+    assert!(err.is_revert(), "{}", err);
     assert!(err.contains("must succeed at least"), "{}", err);
 }
 
 #[test]
-fn test_ast_if_rethrow_preserves_unwind_kind() {
+fn test_ast_if_rethrow_preserves_revert_kind() {
     init_test_registry();
 
     use crate::context::ContextInst;
@@ -645,7 +645,7 @@ fn test_ast_if_rethrow_preserves_unwind_kind() {
     let err = ctx
         .action_call(AstIf::KIND, bytes[2..].to_vec())
         .unwrap_err();
-    assert!(err.is_unwind(), "{}", err);
+    assert!(err.is_revert(), "{}", err);
 }
 
 #[test]

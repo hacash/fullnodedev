@@ -1,14 +1,21 @@
 pub const USIZE_WIDTH: u32 = usize::BITS / 8;
 
+const fn max_uint_by_bytes(width: u32) -> u64 {
+    if width >= 8 {
+        u64::MAX
+    } else {
+        (1u64 << (width * 8)) - 1
+    }
+}
 
-pub const UINT_MAX_W1: u64 = 256 - 1;
-pub const UINT_MAX_W2: u64 = 256 * 256 - 1;
-pub const UINT_MAX_W3: u64 = 256 * 256 * 256 - 1;
-pub const UINT_MAX_W4: u64 = u32::MAX as u64;
-pub const UINT_MAX_W5: u64 = 256 * 256 * 256 * 256 * 256 - 1;
-pub const UINT_MAX_W6: u64 = 256 * 256 * 256 * 256 * 256 * 256 - 1;
-pub const UINT_MAX_W7: u64 = 256 * 256 * 256 * 256 * 256 * 256 * 256 - 1;
-pub const UINT_MAX_W8: u64 = u64::MAX;
+pub const UINT_MAX_W1: u64 = max_uint_by_bytes(1);
+pub const UINT_MAX_W2: u64 = max_uint_by_bytes(2);
+pub const UINT_MAX_W3: u64 = max_uint_by_bytes(3);
+pub const UINT_MAX_W4: u64 = max_uint_by_bytes(4);
+pub const UINT_MAX_W5: u64 = max_uint_by_bytes(5);
+pub const UINT_MAX_W6: u64 = max_uint_by_bytes(6);
+pub const UINT_MAX_W7: u64 = max_uint_by_bytes(7);
+pub const UINT_MAX_W8: u64 = max_uint_by_bytes(8);
 pub const UINT_MAX_DEFS: [u64; 9] = [
     0u64,
     UINT_MAX_W1,
@@ -32,7 +39,7 @@ pub fn gas_add(gas: &mut i64, spent: i64) {
 pub fn bytes_to_uint(buf: &[u8], msz: usize, len: usize) -> Ret<u64> {
     let max_len = maybe!(msz < 8, msz, 8);
     if len > max_len {
-        return Err("size cannot over ".to_owned() + &max_len.to_string())
+        return Err("size cannot exceed ".to_owned() + &max_len.to_string())
     }
     if buf.len() < len {
         return err_buf_short!()
@@ -47,7 +54,7 @@ pub fn bytes_to_uint(buf: &[u8], msz: usize, len: usize) -> Ret<u64> {
 pub fn bytes_from_uint(val: u64, msz: usize, len: usize) -> Ret<Vec<u8>> {
     let max_len = maybe!(msz < 8, msz, 8);
     if len > max_len {
-        return Err("size cannot over ".to_owned() + &max_len.to_string())
+        return Err("size cannot exceed ".to_owned() + &max_len.to_string())
     }
     let rlbt = val.to_be_bytes();
     let left = 8 - len;

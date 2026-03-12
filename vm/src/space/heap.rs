@@ -74,7 +74,7 @@ impl Heap {
             2 => 4,
             3 => 8,
             4 => 16,
-            _ => return itr_err_fmt!(HeapError, "uint type {} not support", uty),
+            _ => return itr_err_fmt!(HeapError, "uint type {} not supported", uty),
         };
         let idx = len
             .checked_mul(seg as usize)
@@ -87,7 +87,7 @@ impl Heap {
             2 => read_be_value!(bytes, 4, u32, U32),
             3 => read_be_value!(bytes, 8, u64, U64),
             4 => read_be_value!(bytes, 16, u128, U128),
-            _ => return itr_err_fmt!(HeapError, "uint type {} not support", uty),
+            _ => return itr_err_fmt!(HeapError, "uint type {} not supported", uty),
         })
     }
 
@@ -114,10 +114,10 @@ impl Heap {
     pub fn grow(&mut self, seg: u8) -> VmrtRes<i64> {
         let seg = seg as usize;
         if seg < 1 {
-            return itr_err_fmt!(HeapError, "heap grow cannot empty");
+            return itr_err_fmt!(HeapError, "heap grow cannot be empty");
         }
         if seg > 16 {
-            return itr_err_fmt!(HeapError, "heap grow cannot more than 16");
+            return itr_err_fmt!(HeapError, "heap grow cannot exceed 16");
         }
         let gas = self.calc_grow_gas(seg)?;
         let newsz = self.datas.len() + seg * Self::SEGLEN;

@@ -34,10 +34,10 @@ pub fn api_load_block_from_cache(apictx: &ApiCtx, store: &dyn Store, key: &Strin
         blkdts = store.block_data(&hash);
     }
     if let None = blkdts {
-        return errf!("block not find")
+        return errf!("block not found")
     }
     let Ok(blkpkg) = block::build_block_package(blkdts.unwrap()) else {
-        return errf!("block parse error")
+        return errf!("block parse failed")
     };
     // ok
     let blkcp = Arc::new(blkpkg);

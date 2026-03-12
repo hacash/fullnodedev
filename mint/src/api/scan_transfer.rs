@@ -70,7 +70,7 @@ fn parse_scan_coinkind(raw: &str) -> Ret<ScanCoinKind> {
             list.push(v);
         }
         if list.is_empty() {
-            return errf!("coinkind assets list empty");
+            return errf!("coinkind assets list is empty");
         }
         ck.assets = list;
         ck.assets_all = false;
@@ -94,12 +94,12 @@ fn scan_coin_transfer(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
 
     let Ok(blkpkg) = load_block_by_key(ctx, &height.to_string()) else {
-        return api_error("block not find");
+        return api_error("block not found");
     };
     let blkobj = &blkpkg.objc;
     let trs = blkobj.transactions();
     if trs.is_empty() {
-        return api_error("transaction len error");
+        return api_error("transaction length invalid");
     }
     let txposi = txposi as usize;
     let trs = &trs[1..];

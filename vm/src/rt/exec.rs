@@ -10,7 +10,7 @@ pub enum EntryKind {
 enum_try_from_u8_by_variant!(
     EntryKind,
     ItrErrCode::CallInvalid,
-    "entry kind {} not find",
+    "entry kind {} not found",
     [Main, P2sh, Abst]
 );
 

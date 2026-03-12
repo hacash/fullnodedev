@@ -60,7 +60,7 @@ impl BytecodePrint for Vec<u8> {
                 res.push_str(&format!("{:?} ", inst));
             }
             if ! meta.valid {
-                return itr_err_fmt!(InstInvalid, "bytecode_print err of inst {}", byte)
+                return itr_err_fmt!(InstInvalid, "bytecode_print failed for inst {}", byte)
             }
             i += 1;
             if meta.param > 0 {  

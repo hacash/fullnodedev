@@ -17,10 +17,10 @@ This separation enables:
 ## 2. Error model and signaling
 
 - `XRet<T> = Result<T, XError>` and `XRerr = Result<(), XError>` are the typed error carriers.
-- `XError::Unwind(msg)` means business/runtime failure that can be handled by caller logic.
-- `XError::Interrupt(msg)` means hard failure and must stop the current execution path.
+- `XError::Revert(msg)` means business/runtime failure that can be handled by caller logic.
+- `XError::Fault(msg)` means hard failure and must stop the current execution path.
 - Wire protocol between `Ret<Error>` and `XRet<XError>`:
-  - Recoverable: `"[UNWIND] " + msg`
+  - Recoverable: `"[REVERT] " + msg`
   - Unrecoverable: plain message with no prefix
 
 In action code:
@@ -65,7 +65,7 @@ External action bridge:
 
 `ExtActCallError` uses dynamic prefix classification:
 
-- `[UNWIND] ...` => recoverable.
+- `[REVERT] ...` => recoverable.
 - No explicit prefix => unrecoverable by default.
 
 Why recoverable:
@@ -182,9 +182,9 @@ Mapping location:
 
 ### 6.5 Ext action recoverability pass-through
 
-- Host `action_call` returns `XRet`; recoverability is carried by `XError` (Unwind vs Interrupt), not by string prefix.
-- Interpreter maps `XError::Unwind(msg)` → `ItrErr(ActCallUnwind, msg)`, `XError::Interrupt(msg)` → `ItrErr(ActCallError, msg)`.
-- `vm/src/rt/error.rs` maps `ActCallUnwind` → recoverable, `ActCallError` → unrecoverable (by code, no prefix parsing).
+- Host `action_call` returns `XRet`; recoverability is carried by `XError` (Revert vs Fault), not by string prefix.
+- Interpreter maps `XError::Revert(msg)` → `ItrErr(ActCallRevert, msg)`, `XError::Fault(msg)` → `ItrErr(ActCallError, msg)`.
+- `vm/src/rt/error.rs` maps `ActCallRevert` → recoverable, `ActCallError` → unrecoverable (by code, no prefix parsing).
 
 Mapping location:
 

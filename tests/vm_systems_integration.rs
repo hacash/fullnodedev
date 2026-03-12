@@ -246,7 +246,7 @@ fn deploy_rejects_missing_library_contract() {
 
     let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
     assert!(err.contains("library contract"), "{err}");
-    assert!(err.contains("not exist"), "{err}");
+    assert!(err.contains("does not exist"), "{err}");
 }
 
 #[test]

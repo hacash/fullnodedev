@@ -64,7 +64,7 @@ fn duplicate_lib_index_binding_is_rejected() {
         return A.0xabcdef01()
     "##;
     let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("lib index 1 cannot repeat bind"), "err: {}", err);
+    assert!(err.contains("lib index 1") && err.contains("binding already exists"), "err: {}", err);
 }
 
 #[test]
@@ -1330,7 +1330,7 @@ fn reject_unclosed_log_argument_delimiter() {
         log(1 2
     "##;
     let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("log argv number error"));
+    assert!(err.contains("log argv number invalid"));
 }
 
 #[test]

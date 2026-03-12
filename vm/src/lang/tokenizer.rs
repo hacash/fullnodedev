@@ -25,7 +25,7 @@ impl Tokenizer<'_> {
             });
         } else if s.starts_with("0b") && s.len() >= 10 {
             // 0b11110000
-            let e = errf!("binary data '{}' format error ", s);
+            let e = errf!("binary data '{}' format error", s);
             let v = s.to_owned().split_off(2);
             let vl = v.len();
             if vl % 8 != 0 {
@@ -43,7 +43,7 @@ impl Tokenizer<'_> {
         // maybe uint
         Ok(Integer(match s.parse::<u128>() {
             Ok(u) => u,
-            _ => return errf!("parse Integer type error for '{}'", s),
+            _ => return errf!("integer type parse failed for '{}'", s),
         }))
     }
 
@@ -191,7 +191,7 @@ impl Tokenizer<'_> {
             self.tokens.push(Operator(o));
             return ok;
         }
-        errf!("unsupport symbol '{}'", s)
+        errf!("unsupported symbol '{}'", s)
     }
 
     pub fn parse_bytes(&mut self, max: usize, _c: char) -> Rerr {
@@ -295,7 +295,7 @@ impl Tokenizer<'_> {
                 '"' => self.parse_bytes(max, c)?,
                 '\'' => self.parse_char(max, c)?,
                 ' ' | ',' | ';' | '\n' | '\r' | '\t' => {} // ignore
-                _ => return errf!("unsupport char [{}]", c),
+                _ => return errf!("unsupported char [{}]", c),
             }
         }
         Ok(self.tokens)

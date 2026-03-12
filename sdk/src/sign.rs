@@ -45,14 +45,14 @@ pub fn sign_transaction(param: SignTxParam) -> Ret<SignTxResult> {
     let acc = q_acc!(param.prikey);
     // let accadr = Address::from(acc.address().clone());
     let Ok(body) = hex::decode(&param.body) else {
-        return errf!("tx body hex decode error")
+        return errf!("tx body hex decode failed")
     };
     let (mut trs, _) = match transaction::transaction_create(&body) {
         Ok(v) => v,
         Err(e) => return errf!("tx parse error: {}", e),
     };
     let Ok(signature) = trs.fill_sign(&acc) else {
-        return errf!("do sign error")
+        return errf!("sign failed")
     };
     // ok finish
     Ok(SignTxResult {

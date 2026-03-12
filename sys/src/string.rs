@@ -11,26 +11,18 @@ pub fn start_with_char(s: &str, c: char) -> bool {
 }
 
 pub fn bytes_to_readable_string(bts: &[u8]) -> String {
-    let ss: Vec<u8> = bts.iter().map(|x|match x {
-        32..=126 => *x,
-        _ => b' ',
-    }).collect();
-    let resstr = String::from_utf8(ss).ok().unwrap();
-    resstr.trim_end().to_string()
+    let mut s = String::with_capacity(bts.len());
+    for &b in bts {
+        s.push(if (32..=126).contains(&b) { b as char } else { ' ' });
+    }
+    s.trim_end().to_owned()
 }
 
 
 pub fn bytes_from_readable_string(stuff: &[u8], len: usize) -> Vec<u8> {
-    let ept = b' ';
-    let mut bts = vec![ept; len];
-    for i in 0..stuff.len() {
-        if i >= len {
-            break
-        }
-        bts[i] = match stuff[i] {
-            a @ 32..=126 => a,
-            _ => ept,
-        };
+    let mut bts = vec![b' '; len];
+    for (dst, &src) in bts.iter_mut().zip(stuff.iter()) {
+        *dst = if (32..=126).contains(&src) { src } else { b' ' };
     }
     bts
 }
@@ -39,35 +31,30 @@ pub fn bytes_try_to_readable_string(bts: &[u8]) -> Option<String> {
     if !check_readable_string(bts) {
         return None
     }
-    let resstr = String::from_utf8(bts.to_vec()).ok().unwrap();
-    Some(resstr.to_string())
+    Some(std::str::from_utf8(bts).ok()?.to_owned())
 }
 
 
 pub fn bytes_to_readable_string_or_hex(bts: &[u8]) -> String {
-    maybe!(check_readable_string(bts), String::from_utf8(bts.to_vec()).ok().unwrap().to_string(), hex::encode(bts))
+    maybe!(
+        check_readable_string(bts),
+        std::str::from_utf8(bts).ok().unwrap().to_owned(),
+        hex::encode(bts)
+    )
 }
 
 
 pub fn check_readable_string(bts: &[u8]) -> bool {
-    for a in bts {
-        if *a<32 || *a>126 {
-            return false // cannot read
-        }
-    }
-    true
+    bts.iter().all(|a| (32..=126).contains(a))
 }
 
 
 pub fn left_readable_string(bts: &[u8]) -> String {
-    let mut ss: Vec<u8> = vec![];
-    for a in bts {
-        if *a<32 || *a>126 {
-            break // end
-        }
-        ss.push(*a);
-    }
-    String::from_utf8(ss).ok().unwrap().trim_end().to_string()
+    let end = bts
+        .iter()
+        .position(|a| !(32..=126).contains(a))
+        .unwrap_or(bts.len());
+    std::str::from_utf8(&bts[..end]).ok().unwrap().trim_end().to_owned()
 }
 
 #[cfg(test)]

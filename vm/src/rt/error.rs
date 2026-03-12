@@ -84,7 +84,7 @@ pub enum ItrErrCode {
     NativeFuncError = 92,
     NativeEnvError = 93,
     ActCallError = 94,   // unrecoverable action call failure
-    ActCallUnwind = 95,  // recoverable action call failure
+    ActCallRevert = 95,  // recoverable action call failure
     ItemNoSize = 96,
 
     StorageKeyInvalid = 101,
@@ -112,15 +112,8 @@ impl std::fmt::Display for ItrErr {
 
 impl From<ItrErr> for TextError {
     fn from(e: ItrErr) -> TextError {
-        use ItrErrCode::*;
-        let ItrErr(code, msg) = e;
-        let text = format!("{:?}({}): {}", code, code as u8, msg);
-        let is_unwind = matches!(code, ThrowAbort | ActCallUnwind);
-        if is_unwind {
-            format!("{}{}", UNWIND_PREFIX, text)
-        } else {
-            text
-        }
+        let ee: ExecError = e.into();
+        ee.into()
     }
 }
 
@@ -129,8 +122,8 @@ impl From<ItrErr> for ExecError {
         use ItrErrCode::*;
         let ItrErr(code, msg) = e;
         let text = format!("{:?}({}): {}", code, code as u8, msg);
-        let is_unwind = matches!(code, ThrowAbort | ActCallUnwind);
-        maybe!(is_unwind, XError::revert(text), XError::fault(text))
+        let is_revert = matches!(code, ThrowAbort | ActCallRevert);
+        maybe!(is_revert, XError::revert(text), XError::fault(text))
     }
 }
 
@@ -143,7 +136,7 @@ impl ItrErr {
     }
 }
 
-// VM Runtime TError
+// VM Runtime Error
 pub type VmrtRes<T> = Result<T, ItrErr>;
 pub type VmrtErr = Result<(), ItrErr>;
 

@@ -4,7 +4,7 @@ macro_rules! inc_dec_opt_define {
         if let $ty(v) = $self {
             *$self = match v.$f($n as $ty2).map(Self::$ty) {
                 Some(v) => v,
-                _ => return itr_err_fmt!(CastFail, "do {} error with {} and {}", stringify!($f), v, $n),
+                _ => return itr_err_fmt!(CastFail, "{} failed for {} and {}", stringify!($f), v, $n),
             };
             return Ok(())
         }

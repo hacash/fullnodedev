@@ -28,21 +28,21 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
 
     // check
     if paychan.status != CHANNEL_STATUS_OPENING {
-        return errf!("channel status is not opening")
+        return errf!("channel is not open")
     }
     let left_addr = &paychan.left_bill.address;
     let right_addr = &paychan.right_bill.address;
 	if left_amt.is_negative() || right_amt.is_negative() {
-		return errf!("channel distribution amount cannot be negative.")
+		return errf!("channel distribution amount cannot be negative")
 	}
     let ttamt = paychan.left_bill.balance.hacash.add_mode_u64(&paychan.right_bill.balance.hacash)?;
     if  left_amt.add_mode_u64(right_amt)? != ttamt {
-        return errf!("HAC distribution amount must equal with lock in.")
+        return errf!("HAC distribution amount must match lock-in")
     }
     let ttamt_238 = ttamt.to_238_u64()?;
     let ttsat = paychan.left_bill.balance.satoshi + paychan.right_bill.balance.satoshi;
     if *left_sat + *right_sat != ttsat {
-        return errf!("BTC distribution amount must equal with lock in.")
+        return errf!("BTC distribution amount must match lock-in")
     }
     // let mut state = ;
     // total supply
@@ -62,7 +62,7 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
         )?;
         let ttnewhac = newamt1.add_mode_u64(&newamt2) ?;
         if ttnewhac < ttamt {
-            return errf!("interest calculate error!")
+            return errf!("interest calculation failed")
         }
         let ttiesthac = ttnewhac.sub_mode_u64(&ttamt)?;
         let ttiesthac_238 = ttiesthac.to_238_u64()?;

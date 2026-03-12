@@ -99,7 +99,7 @@ impl FuncArgvTypes {
                 if items.len() != tn {
                     return itr_err_fmt!(
                         CallArgvTypeFail,
-                        "param length error need {} but got {}",
+                        "param length error: expected {} but got {}",
                         tn,
                         items.len()
                     );
@@ -135,7 +135,7 @@ impl FuncArgvTypes {
         };
         let n = tys.len();
         if n > 15 {
-            return errf!("func types cannot more than 15");
+            return errf!("func types cannot exceed 15");
         }
         if 0 == n {
             return Ok(Self {
@@ -179,7 +179,7 @@ impl FuncArgvTypes {
         let mut tys = vec![ValueTy::Nil; n];
         let z = (n + 1) / 2;
         if z > self.define.len() {
-            return errf!("FuncArgvTypes to bytes error");
+            return errf!("FuncArgvTypes to bytes conversion error");
         }
         for i in 0..n {
             let tn = self.define[i / 2];

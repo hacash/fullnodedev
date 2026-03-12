@@ -73,7 +73,7 @@ pub fn ensure_act_allowed(exec: ExecCtx, act_kind: Bytecode, id: u8) -> VmrtErr 
         if exec.entry != EntryKind::Main || exec.effect != EffectMode::Edit || !exec.is_outer_entry() {
             return Err(ItrErr::new(
                 ItrErrCode::ActDisabled,
-                "action not support in current call context",
+                "action not supported in current call context",
             ));
         }
     }
@@ -82,13 +82,13 @@ pub fn ensure_act_allowed(exec: ExecCtx, act_kind: Bytecode, id: u8) -> VmrtErr 
             Bytecode::ACTENV => {
                 return Err(ItrErr::new(
                     ItrErrCode::ActDisabled,
-                    "action env call not support in pure call",
+                    "action env call not supported in pure call",
                 ));
             }
             Bytecode::ACTVIEW => {
                 return Err(ItrErr::new(
                     ItrErrCode::ActDisabled,
-                    "action view call not support in pure call",
+                    "action view call not supported in pure call",
                 ));
             }
             _ => {}

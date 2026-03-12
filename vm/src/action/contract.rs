@@ -23,14 +23,14 @@ action_define! { ContractDeploy, 40,
     }),
     (self, ctx, _gas {
         if self._marks_.not_zero() { // compatibility for future
-            return errf!("marks byte error")
+            return errf!("marks bytes error")
         }
         let hei = ctx.env().block.height;
         let maddr = ctx.env().tx.main;
         // check contract
         let caddr = ContractAddress::calculate(&maddr, &self.nonce);
         if vmsto!(ctx).contract_exist(&caddr) {
-            return errf!("contract {} already exist", (*caddr).to_readable())
+            return errf!("contract {} already exists", (*caddr).to_readable())
         }
         // check
         self.contract.check(hei)?;
@@ -76,13 +76,13 @@ action_define! { ContractUpdate, 41,
     (self, ctx, _gas {
         use AbstCall::*;
         if self._marks_.not_zero() {
-            return errf!("marks byte error")
+            return errf!("marks bytes error")
         }
         let hei = ctx.env().block.height;
         // load old
         let caddr = ContractAddress::from_addr(self.address)?;
         let Some(contract) = vmsto!(ctx).contract(&caddr) else {
-            return errf!("contract {} not exist", (*caddr).to_readable())
+            return errf!("contract {} does not exist", (*caddr).to_readable())
         };
         // apply edit (in memory)
         let mut new_contract = contract.clone();
@@ -171,7 +171,7 @@ fn load_contract_for_check(
     }
     match vmsta.contract(addr) {
         Some(c) => Ok(c),
-        None => errf!("{} contract {} not exist", role, addr.to_readable()),
+        None => errf!("{} contract {} does not exist", role, addr.to_readable()),
     }
 }
 
@@ -420,7 +420,7 @@ fn check_sub_contract_protocol_fee(
     // check fee
     if pfee < &min_fee {
         return errf!(
-            "protocol fee must need at least {} (bytes={}, periods={}) but just got {}",
+            "protocol fee must be at least {} (bytes={}, periods={}) but got {}",
             &min_fee,
             charge_bytes,
             contract_store_perm_periods(ctx.env().block.height),
@@ -460,7 +460,7 @@ fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret
     };
     let Some(need) = need.checked_mul(periods) else {
         return errf!(
-            "contract protocol fee calculate failed: need * periods overflow ({} * {})",
+            "contract protocol fee calculate failed: required * periods overflow ({} * {})",
             need,
             periods
         );
@@ -617,7 +617,7 @@ mod contract_test {
         let err = run_deploy_with_preloaded(child_nonce, vec![(parent_addr, parent)], child)
             .expect_err("deploy should fail when Construct is absent");
         assert!(
-            err.contains("Construct") && err.contains("not find"),
+            err.contains("Construct") && err.contains("not found"),
             "unexpected deploy error: {err}"
         );
     }

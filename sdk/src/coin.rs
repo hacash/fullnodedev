@@ -76,7 +76,7 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
     // hac
     if ! param.hacash.is_empty() {
         let hac = match Amount::from(&param.hacash) {
-            Err(e) => return errf!("hacash amount {} error: {}", param.hacash, &e),
+            Err(e) => return errf!("hacash amount {} invalid: {}", param.hacash, &e),
             Ok(h) => h,
         };
         let act: Box<dyn Action> = maybe!(other_from, {
@@ -117,7 +117,7 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
     // hacd
     if param.diamonds.len() >= DiamondName::SIZE {
         let dialist = match DiamondNameListMax200::from_readable(&param.diamonds) {
-            Err(e) => return errf!("diamonds error: {}", &e),
+            Err(e) => return errf!("diamonds invalid: {}", &e),
             Ok(d) => d,
         };
         let act: Box<dyn Action> = maybe!(other_from, {
@@ -145,11 +145,11 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
     }
     // do sign
     if let Err(e) = trsobj.fill_sign(&main) {
-        return errf!("fill main sign error: {}", e)
+        return errf!("fill main sign failed: {}", e)
     }
     if other_from {
         if let Err(e) = trsobj.fill_sign(&from) {
-            return errf!("fill from sign error: {}", e)
+            return errf!("fill from sign failed: {}", e)
         }
     }
     // finish

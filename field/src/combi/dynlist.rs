@@ -92,7 +92,7 @@ impl FromJSON for $class {
             if let Some(item) = $json_createfn(&item_json)? {
                 vlist.push(item);
             } else {
-                return errf!("dynamic object JSON decode error from: {}", item_json);
+                return errf!("dynamic object JSON decode failed: {}", item_json);
             }
         }
         self.vlist = vlist;

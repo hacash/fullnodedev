@@ -11,7 +11,7 @@ fn diamond(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         };
         name = dian.to_readable();
     } else if !DiamondName::is_valid(name.as_bytes()) {
-        return api_error("diamond name error");
+        return api_error("invalid diamond name");
     }
 
     let dian = DiamondName::from(name.as_bytes().try_into().unwrap());

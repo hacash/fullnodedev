@@ -11,7 +11,7 @@ fn impl_tx_submit(this: &HacashMinter, engine: &dyn EngineRead, txp: &TxPkg) -> 
     // deal with diamond mint action
     if next_hei % 5 == 0 {
         // println!("diamond mint transaction cannot submit after height of ending in 4 or 9");
-        return errf!("diamond mint transaction cannot submit after height of ending in 4 or 9")
+        return errf!("diamond mint transaction cannot be submitted after height ending in 4 or 9")
     }
     /*  test start *
     let bidaddr = tx.main();
@@ -49,7 +49,7 @@ fn impl_blk_found(this: &HacashMinter, curblkhead: &dyn BlockRead, sto: &dyn Sto
         let bign = u32_to_biguint(difnum).mul(4usize); // max is 4 times
         let mindiffhx = biguint_to_hash(&bign);
         if hash_bigger_than(cblkhx.as_ref(), &mindiffhx) {
-            return errf!("block found {} PoW hashrates check failed cannot more than {} but got {}", 
+            return errf!("found block {} PoW hashrates check failed: must not exceed {} but got {}", 
                 curhei, hex::encode(mindiffhx),  hex::encode(cblkhx))
         }
         return Ok(()) // not check in here, difficulty change to update
@@ -57,10 +57,10 @@ fn impl_blk_found(this: &HacashMinter, curblkhead: &dyn BlockRead, sto: &dyn Sto
     // checka
     let (_, difnum, diffhx) = this.difficulty.req_cycle_block(curhei, sto);
     if difnum != curdifnum {
-        return errf!("found block {} PoW difficulty must be {} but got {}", curhei, difnum, curdifnum)
+        return errf!("found block {} PoW difficulty expected {} but got {}", curhei, difnum, curdifnum)
     }
     if hash_bigger_than(cblkhx.as_ref(), &diffhx) {
-        return errf!("found block {} PoW hashrates check failed cannot more than {} but got {}", 
+        return errf!("found block {} PoW hashrates check failed: must not exceed {} but got {}", 
             curhei, hex::encode(diffhx),  hex::encode(cblkhx))
     }
     // check success
@@ -98,11 +98,11 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
         return errf!("curbign != tarbign")
     }*/
     if tarn != curn {
-        return errf!("height {} PoW difficulty check failed must be {} but got {}", curhei, tarn, curn)
+        return errf!("height {} PoW difficulty check failed: expected {} but got {}", curhei, tarn, curn)
     }
     // must check hashrates cuz impl_prepare not do check
     if hash_bigger_than(curblk.hash().as_ref(), &tarhx) {
-        return errf!("height {} PoW hashrates check failed cannot more than {} but got {}", 
+        return errf!("height {} PoW hashrates check failed: must not exceed {} but got {}", 
             curhei, hex::encode(tarhx),  hex::encode(curblk.hash()))
     }
     // success
@@ -134,7 +134,7 @@ fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dy
         if let Some((tidx, txp, diamint)) = action::pickout_diamond_mint_action_from_block(block) {
             const CKN: u32 = DIAMOND_ABOVE_NUMBER_OF_MIN_FEE_AND_FORCE_CHECK_HIGHEST;
             if tidx != 1 && curhei > 600000 { // idx 0 is coinbase
-                return errf!("diamond mint transaction must be first one tx in block")
+                return errf!("diamond mint transaction must be the first tx in block")
             }
             let dianum  = *diamint.d.number;
             let bidfee  = txp.fee().clone();
@@ -145,14 +145,14 @@ fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dy
                 if bidfee < rhbf { // 
                     bidrecord.failure(dianum, curblk); // record check block fail
                     /* test print start */
-                    println!("\n✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖\ndiamond mint bidding fee {} less than consensus record {}", bidfee, rhbf);
-                    println!("block height {} have a diamond {}-{}, address: {}, fee: {}, RecordHighestBidding: {}, {}", 
+                    println!("\n✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖ ✕ ✖\ndiamond mint bidding fee {} is less than consensus record {}", bidfee, rhbf);
+                    println!("block height {} has a diamond {}-{}, address: {}, fee: {}, RecordHighestBidding: {}, {}", 
                         curhei, diamint.d.diamond.to_readable(), dianum, txp.main(), bidfee,
                         rhbf, bidrecord.print(dianum),
                     );
                     /* test print end */ 
                     if dianum > CKN {  // HIP-19, check after 107000, reject blocks that don't follow the rules
-                        return errf!("diamond mint bidding fee {} less than consensus record {}", bidfee, rhbf)
+                        return errf!("diamond mint bidding fee {} is less than consensus record {}", bidfee, rhbf)
                     }
                 } else if bidfee > rhbf {
                     print!(",\n        diamond bid fee {} record highest {} ", bidfee, rhbf)
@@ -181,11 +181,11 @@ fn check_diamond_mint_minimum_bidding_fee(next_hei: u64, tx: &dyn TransactionRea
     let dianum  = *dmact.d.number;
     // test print
     /* if bidfee < bidmin {
-        println!("DIAMOND MINT WARNNING: diamond biding fee {} cannot less than {} after number {}", bidfee, bidmin, CKN)
+        println!("DIAMOND MINT WARNING: diamond bidding fee {} cannot be less than {} after number {}", bidfee, bidmin, CKN)
     } */
     // not check before 107000
     if bidfee < bidmin && dianum > CKN {
-        return errf!("diamond biding fee {} cannot less than {} after number {}", bidfee, bidmin, CKN)
+        return errf!("diamond bidding fee {} cannot be less than {} after number {}", bidfee, bidmin, CKN)
     }
     // all ok
     Ok(())

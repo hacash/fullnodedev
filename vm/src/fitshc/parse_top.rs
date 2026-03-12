@@ -96,19 +96,19 @@ fn parse_const_value(state: &mut ParseState) -> Ret<ConstValue> {
                         let v = s[2..].to_string();
                         match hex::decode(v) {
                             Ok(d) => return Ok(ConstValue::Bytes(d)),
-                            Err(_) => return errf!("Invalid hex bytes: {}", s),
+                            Err(_) => return errf!("invalid hex bytes: {}", s),
                         }
                     }
-                    errf!("Invalid const value: {}", s)
+                    errf!("invalid const value: {}", s)
                 }
             }
         }
         Token::Keyword(kw) => match kw {
             KwTy::True => Ok(ConstValue::Bool(true)),
             KwTy::False => Ok(ConstValue::Bool(false)),
-            _ => errf!("Invalid const value keyword: {:?}", kw),
+            _ => errf!("invalid const value keyword: {:?}", kw),
         },
-        _ => errf!("Expected const value but got {:?}", token),
+        _ => errf!("expected const value but got {:?}", token),
     }
 }
 
@@ -120,7 +120,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             let name = if let Some(Identifier(n)) = state.current() {
                 n.clone()
             } else {
-                return errf!("Expected const name after 'const'");
+                return errf!("expected const name after 'const'");
             };
             state.advance();
 
@@ -128,7 +128,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             if let Some(Keyword(KwTy::Assign)) = state.current() {
                 state.advance();
             } else {
-                return errf!("Expected '=' after const name");
+                return errf!("expected '=' after const name");
             }
 
             // Parse the const value
@@ -144,7 +144,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             };
 
             if state.consts.iter().any(|(n, _)| n == &name) {
-                return errf!("const '{}' repeat", name);
+                return errf!("duplicate const '{}'", name);
             }
             state.consts.push((name, value_str));
         }
@@ -160,7 +160,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                     return errf!("too many contract libraries: max {}", u8::MAX);
                 }
                 if !state.library_addrs.insert(addr) {
-                    return errf!("library address repeat");
+                    return errf!("duplicate library address");
                 }
                 // libidx is 0-based order
                 state.libs.push((name, addr));
@@ -175,7 +175,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                     return errf!("too many inherit contracts: max {}", u8::MAX);
                 }
                 if !state.inherit_addrs.insert(addr) {
-                    return errf!("inherit address repeat");
+                    return errf!("duplicate inherit address");
                 }
                 state.contract = state.contract.clone().inh(addr);
             }
@@ -206,7 +206,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                     ValueTy::U8 | ValueTy::U16 | ValueTy::U32 | ValueTy::U64 | ValueTy::U128
                 );
                 if !ok {
-                    return errf!("abstract '{}' return type must be integer error code", name);
+                    return errf!("abstract '{}' return type must be integer (error code)", name);
                 }
             }
             // parse body for abstract code
@@ -216,7 +216,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             let expect = aid.param_types();
             if expect.len() != args.len() {
                 return errf!(
-                    "abstract '{}' params length mismatch: expect {}, got {}",
+                    "abstract '{}' params length mismatch: expected {}, got {}",
                     name,
                     expect.len(),
                     args.len()
@@ -225,7 +225,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             for (i, (_, ty)) in args.iter().enumerate() {
                 if *ty != expect[i] {
                     return errf!(
-                        "abstract '{}' param {} type mismatch: expect {:?}, got {:?}",
+                        "abstract '{}' param {} type mismatch: expected {:?}, got {:?}",
                         name,
                         i,
                         expect[i],
@@ -248,7 +248,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                 CompiledCode::Bytecode(bts) => Abst::new(aid).bytecode(bts)?,
             };
             if !state.abst_signs.insert(aid.uint()) {
-                return errf!("abstract '{}' repeat", name);
+                return errf!("duplicate abstract '{}'", name);
             }
             state.contract = state.contract.clone().syst(abst);
             state
@@ -260,7 +260,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
             let (func, smap, name) = parse_function(state, true)?;
             let sign = calc_func_sign(&name);
             if !state.userfunc_signs.insert(sign) {
-                return errf!("function '{}' signature repeat", name);
+                return errf!("duplicate function '{}' signature", name);
             }
             state.contract = state.contract.clone().func(func);
             state.source_maps.push((name, smap));
@@ -283,7 +283,7 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, Address)>> {
         let name = if let Some(Identifier(n)) = state.current() {
             n.clone()
         } else {
-            return errf!("Expected lib/inherit name");
+            return errf!("expected lib/inherit name");
         };
         state.advance();
 
@@ -302,7 +302,7 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, Address)>> {
             state.advance();
             adr
         } else {
-            return errf!("Expected address but got {:?}", state.current());
+            return errf!("expected address but got {:?}", state.current());
         };
         addr.must_contract()?;
 

@@ -80,10 +80,10 @@ impl Parse for Amount {
         self.byte.extend_from_slice(bts);
         let rbtl = self.byte.len();
         if btlen != rbtl {
-            return errf!("dist and byte len not match")
+            return errf!("dist and byte len mismatch")
         }
         if self.dist != 0 && rbtl == 0 {
-            return errf!("dist and byte zero not match")
+            return errf!("dist and byte zero mismatch")
         }
         if rbtl > 1 && bytes_is_zero(&self.byte)  {
             return errf!("multi-byte amount cannot be all zero")
@@ -160,14 +160,14 @@ impl Amount {
 
     pub fn tail_u128(&self) -> Ret<u128> {
         if self.byte.len() > U128S {
-            return errf!("amount tail bytes length too long over {}", U128S)
+            return errf!("amount tail bytes length exceeds max {}", U128S)
         }
         Ok(u128::from_be_bytes(add_left_padding(&self.byte, U128S).try_into().unwrap()))
     }
 
     pub fn tail_u64(&self) -> Ret<u64> {
         if self.byte.len() > U64S {
-            return errf!("amount tail bytes length too long over {}", U64S)
+            return errf!("amount tail bytes length exceeds max {}", U64S)
         }
         Ok(u64::from_be_bytes(add_left_padding(&self.byte, U64S).try_into().unwrap()))
     }
@@ -193,7 +193,7 @@ impl Amount {
     fn check_long(&self, max: usize) -> Ret<()> {
         let amtsz = self.size();
         if amtsz > max {
-            return errf!("amount {} size {} over {} can not to store", self, amtsz, max)
+            return errf!("amount {} size {} exceeds max {} for storage", self, amtsz, max)
         }
         Ok(())
     }
@@ -395,7 +395,7 @@ impl Amount {
         }
         let biguse = BigInt::from_str_radix(&numuse, 10);
         if let Err(e) = biguse {
-            return errf!("BigInt::from_str_radix error: {} {} {} {}", numstr, numuse, numuse, e.to_string())
+            return errf!("BigInt::from_str_radix failed: {} {} {} {}", numstr, numuse, numuse, e.to_string())
         }
         let biguse = biguse.unwrap();
         let (sign, byte) = biguse.to_bytes_be();
@@ -684,14 +684,14 @@ impl Amount {
             return Ok(Self::zero())
         }
         if self.dist < 0 {
-            return errf!("cannot dist_mul for negative")
+            return errf!("dist_mul not supported for negative amount")
         }
         if self.byte.len() > U128S {
-            return errf!("dist_mul error: dist overflow")
+            return errf!("dist_mul failed: dist overflow")
         }
         let du = u128::from_be_bytes(add_left_padding(&self.byte, U128S).try_into().unwrap());
         let Some(du) = du.checked_mul(n) else {
-            return errf!("dist_mul error: u128 overflow")
+            return errf!("dist_mul failed: u128 overflow")
         };
         Ok(Self::coin_u128(du, self.unit))
     }
@@ -721,7 +721,7 @@ impl Amount {
             return Ok(self.clone())
         }
         if sub > self.unit {
-            return errf!("unit_sub error: unit must be greater than {}", sub)
+            return errf!("unit_sub failed: unit must be greater than {}", sub)
         }
         let mut res = self.clone();
         res.unit -= sub;
@@ -774,7 +774,7 @@ impl Amount {
         }
         while amt.tail_len() > btn {
             if amt.unit == 255 {
-                return errf!("amount uint too big to compress")
+                return errf!("amount uint too large to compress")
             }
             let mut numpls = u128::from_be_bytes(add_left_padding(&amt.byte, U128S).try_into().unwrap()) / 10;
             if let AmtCpr::Grow = cpr {

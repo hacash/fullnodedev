@@ -1,11 +1,11 @@
 fn submit_transaction(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let engcnf = ctx.engine.config();
     let Ok(bddts) = body_data_may_hex(&req) else {
-        return api_error("transaction body error");
+        return api_error("transaction body invalid");
     };
     let txpkg = protocol::transaction::build_tx_package(bddts);
     let Ok(txpkg) = txpkg else {
-        return api_error("transaction parse error");
+        return api_error("transaction parse failed");
     };
 
     if txpkg.fpur < engcnf.lowest_fee_purity {
@@ -16,7 +16,7 @@ fn submit_transaction(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
     let txsz = txpkg.data.len();
     if txsz > engcnf.max_tx_size {
-        return api_error(&format!("tx size cannot more than {} bytes", engcnf.max_tx_size));
+        return api_error(&format!("tx size cannot exceed {} bytes", engcnf.max_tx_size));
     }
 
     let is_async = true;

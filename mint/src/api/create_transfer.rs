@@ -81,7 +81,7 @@ fn create_coin_transfer(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     if !hacash.is_empty() {
         let Ok(hac) = Amount::from(&hacash) else {
-            return api_error("hacash amount format error");
+            return api_error("hacash amount format invalid");
         };
         let act: Box<dyn Action> = if is_from {
             let mut obj = HacFromToTrs::new();
@@ -101,11 +101,11 @@ fn create_coin_transfer(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
 
     if let Err(e) = tx.fill_sign(&main_acc) {
-        return api_error(&format!("fill main sign error: {}", e));
+        return api_error(&format!("fill main sign failed: {}", e));
     }
     if is_from {
         if let Err(e) = tx.fill_sign(&from_acc) {
-            return api_error(&format!("fill from sign error: {}", e));
+            return api_error(&format!("fill from sign failed: {}", e));
         }
     }
 

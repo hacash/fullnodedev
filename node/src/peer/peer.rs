@@ -65,7 +65,7 @@ impl Peer {
         let idnamebts: &[u8];
         let mut oginport: u16 = 0;
         if msg.len() < 4 {
-            return errf!("msg length too short")
+            return errf!("msg length too short (min 4)")
         }
         if MSG_REPORT_PEER == ty {
             is_cntome = true;
@@ -76,10 +76,10 @@ impl Peer {
             idnamebts = &msg[..];
         }else{
             // unsupport msg ty
-            return errf!("unsupport msg ty {}", ty)
+            return errf!("unsupported msg type {}", ty)
         }
         if idnamebts.len() < 32 {
-            return errf!("msg length too short")
+            return errf!("msg length too short (min 4)")
         }
         let peerkey = bufcut!(idnamebts, 0, PEER_KEY_SIZE);
         let name = Fixed16::from( bufcut!(idnamebts, PEER_KEY_SIZE, PEER_KEY_SIZE*2) ).to_readable().replace(" ", "");

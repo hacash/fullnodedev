@@ -29,7 +29,7 @@ impl CellExec for $class {
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
         let zhu = self.haczhu.uint();
         if zhu > 100000000_00000000 {
-            return errf!("cell zhu too big")
+            return errf!("cell zhu too large")
         }
         let amt = Amount::zhu(zhu);
         $zhu_op(ctx, taradr, &amt)?;
@@ -93,7 +93,7 @@ impl CellExec for $class {
         // tex add
         let satnum = self.satnum.uint();
         if satnum > i64::MAX as u64 {
-            return errf!("cell sat too big")
+            return errf!("cell sat too large")
         }
         let tex = ctx.tex_ledger();
         let Some(satres) = tex.sat.$state_op(satnum as i64) else {
@@ -185,7 +185,7 @@ impl CellExec for CellTrsDiaGet {
 
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
         if self.dianum.uint() == 0 {
-            return errf!("cell diamond get number cannot be zero")
+            return errf!("cell diamond get: number cannot be zero")
         }
         // tex add
         let tex = ctx.tex_ledger();

@@ -66,10 +66,10 @@ fn create_genesis_block() -> BlockV1 {
     let checkhx = Hash::from_hex(b"000000077790ba2fcdeaef4a4299d9b667135bac577ce204dee8388f1b97f7e6").unwrap();
     let checkbd = hex::decode(b"010000000000005c57b08c0000000000000000000000000000000000000000000000000000000000000000ad557702fc70afaf70a855e7b8a4400159643cb5a7fc8a89ba2bce6f818a9b0100000001098b344500000000000000000c1aaa4e6007cc58cfb932052ac0ec25ca356183f80101686172646572746f646f62657474657200").unwrap();
     if blkhx != checkhx {
-        panic!("{}", format!("Genesis Block Hash Error: need {} but got {}", checkhx, blkhx))
+        panic!("{}", format!("Genesis Block Hash Error: expected {} but got {}", checkhx, blkhx))
     }    
     if blkbd != checkbd {
-        panic!("{}", format!("Genesis Block Body Error: need {} but got {}", hex::encode(checkbd), hex::encode(blkbd)))
+        panic!("{}", format!("Genesis Block Body Error: expected {} but got {}", hex::encode(checkbd), hex::encode(blkbd)))
     }
     // println!("{}", hex::encode(genesis_block.serialize()));
     // check ok 
