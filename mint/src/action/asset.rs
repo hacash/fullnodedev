@@ -90,6 +90,7 @@ action_define!{ AssetCreate, 16,
         // do mint
         let mut asset_obj = AssetAmt::from_serial(amd.serial);
         asset_obj.amount = amd.supply; // total supply
+        let asset_obj = asset_obj.checked()?;
         // issue
         let mut bls = sta.balance(&amd.issuer).unwrap_or_default();
         bls.asset_set(asset_obj)?;

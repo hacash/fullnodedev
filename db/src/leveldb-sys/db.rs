@@ -57,6 +57,14 @@ impl Drop for RawIter {
     }
 }
 
+unsafe extern "C" {
+    #[link_name = "leveldb_iter_get_error"]
+    fn leveldb_iter_get_error_mut(
+        it: *const leveldb_iterator_t,
+        errptr: *mut *mut c_char,
+    );
+}
+
 
 pub struct LevelDB {
     database: RawDB,
@@ -220,12 +228,12 @@ impl LevelDB {
                 leveldb_iter_next(iter.ptr);
             }
         }
-        let mut error: *const c_char = ptr::null();
+        let mut error: *mut c_char = ptr::null_mut();
         unsafe {
-            leveldb_iter_get_error(iter.ptr, &mut error as *mut *const c_char as *const *const c_char);
+            leveldb_iter_get_error_mut(iter.ptr as *const leveldb_iterator_t, &mut error);
         }
         if !error.is_null() {
-            return Err(new_string_from_char_ptr(error))
+            return Err(new_string_from_char_ptr(error as *const c_char))
         }
         Ok(())
     }

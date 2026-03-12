@@ -68,6 +68,7 @@ impl Balance {
 	}
 
 	pub fn asset_set(&mut self, amt: AssetAmt) -> Rerr {
+		let amt = if amt.amount.is_zero() { amt } else { amt.checked()? };
 		let assets = self.assets.as_mut();
 		for i in 0..assets.len() {
 			let ast = assets.get_mut(i).unwrap();
