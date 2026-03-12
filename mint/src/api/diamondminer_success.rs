@@ -4,7 +4,7 @@ fn diamondminer_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         return api_error("diamond miner in config not enabled");
     }
     let Ok(actdts) = body_data_may_hex(&req) else {
-        return api_error("hex format error");
+        return api_error("hex format invalid");
     };
     let Ok((mint, _)) = action::DiamondMint::create(&actdts) else {
         return api_error("upload action failed");

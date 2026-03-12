@@ -14,7 +14,7 @@ fn hashrate_logs(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
     let lasthei = ctx.engine.latest_block().height().uint();
     if lasthei < days {
-        return api_error("param days overflow");
+        return api_error("param days value overflow");
     }
     let secs = lasthei / days;
 

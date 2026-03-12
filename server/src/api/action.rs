@@ -4,14 +4,14 @@ use serde_json::Value;
 // action from json
 pub fn action_from_json(json_str: &str) -> Ret<Box<dyn Action>> {
     let jsonv: Value = serde_json::from_str(json_str)
-        .map_err(|e| format!("action json parse error: {}", e))?;
+        .map_err(|e| format!("action json parse failed: {}", e))?;
 
     let Some(..) = jsonv.as_object() else {
-        return errf!("action format error")
+        return errf!("action format invalid")
     };
 
     let Some(kind) = jsonv["kind"].as_u64() else {
-        return errf!("kind format error")
+        return errf!("kind format invalid")
     };
     if kind > u16::MAX as u64 {
         return errf!("kind {} value overflow", kind)

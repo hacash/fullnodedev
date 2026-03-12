@@ -73,7 +73,7 @@ combi_struct!{ ContractEdit,
 impl ContractMeta {
 
 	fn check(&self, _hei: u64) -> VmrtErr {
-		let e = itr_err_fmt!(ContractError, "contract format error");
+		let e = itr_err_fmt!(ContractError, "contract format invalid");
 		if self.vrsn.not_zero() |
 			self.mark.not_zero() |
 			self.mext.not_zero()
@@ -88,7 +88,7 @@ impl ContractMeta {
 impl ContractAbstCall {
 	
 	fn check(&self, _hei: u64) -> VmrtErr {
-		let e = itr_err_fmt!(ContractError, "contract ContractAbstCall format error");
+		let e = itr_err_fmt!(ContractError, "contract ContractAbstCall format invalid");
 		if self.mark.not_zero() {
 			return e
 		}
@@ -102,7 +102,7 @@ impl ContractAbstCall {
 impl ContractUserFunc {
 	
 	fn check(&self, _hei: u64) -> VmrtErr {
-		let e = itr_err_fmt!(ContractError, "contract ContractUserFunc format error");
+		let e = itr_err_fmt!(ContractError, "contract ContractUserFunc format invalid");
 		if self.mark.not_zero() {
 			return e
 		}
@@ -370,7 +370,7 @@ impl ContractSto {
 	pub fn check(&self, hei: u64) -> VmrtErr {
 		self.metas.check(hei)?;
 		use ItrErrCode::*;
-		let e = itr_err_fmt!(ContractError, "contract format error");
+		let e = itr_err_fmt!(ContractError, "contract format invalid");
 		let cap = SpaceCap::new(hei);
 		// check
 		if self.morextend.uint() > 0 {
@@ -381,7 +381,7 @@ impl ContractSto {
 			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
 		}
 		if 0 != *self.morextend {
-			return itr_err_fmt!(ContractError, "extend data format error")
+			return itr_err_fmt!(ContractError, "extend data format invalid")
 		}
 		// inherit and library
 		if self.inherit.length() > cap.inherit {

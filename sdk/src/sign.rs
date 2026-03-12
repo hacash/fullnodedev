@@ -49,7 +49,7 @@ pub fn sign_transaction(param: SignTxParam) -> Ret<SignTxResult> {
     };
     let (mut trs, _) = match transaction::transaction_create(&body) {
         Ok(v) => v,
-        Err(e) => return errf!("tx parse error: {}", e),
+        Err(e) => return errf!("tx parse failed: {}", e),
     };
     let Ok(signature) = trs.fill_sign(&acc) else {
         return errf!("sign failed")

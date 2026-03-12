@@ -69,7 +69,7 @@ impl CallFrame {
                         retv = curr_mut!().pop_value()?;
                     }
                     if matches!(exit, Abort | Throw) {
-                        return itr_err_fmt!(ThrowAbort, "VM return error: {}", retv);
+                        return itr_err_fmt!(ThrowAbort, "VM return failed: {}", retv);
                     }
                     curr!().check_return_value(&mut retv)?;
                     self.pop().unwrap().reclaim(r);

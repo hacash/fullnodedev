@@ -116,9 +116,9 @@ fn check_inscription_index(
 ) -> Rerr {
     if insc_len == 0 {
         if role_prefix.is_empty() {
-            return errf!("no inscriptions in HACD {}", diamond.to_readable());
+            return errf!("no inscriptions in diamond {}", diamond.to_readable());
         }
-        return errf!("no inscriptions in {}HACD {}", role_prefix, diamond.to_readable());
+        return errf!("no inscriptions in {} HACD {}", role_prefix, diamond.to_readable());
     }
     if idx >= insc_len {
         return errf!(

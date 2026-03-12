@@ -33,9 +33,9 @@ impl MemDB for MemKV {
         self.memry.get(k)
     }
 
-    fn for_each(&self, each: &mut dyn FnMut(&Vec<u8>, &Option<Vec<u8>>)) {
+    fn for_each(&self, each: &mut dyn FnMut(&[u8], Option<&[u8]>)) {
         for (k, v) in self.memry.iter() {
-            each(k, v);
+            each(k.as_slice(), v.as_deref());
         }
     }
 

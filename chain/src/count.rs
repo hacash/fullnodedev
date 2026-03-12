@@ -18,12 +18,12 @@ fn count_all_address_balance(db: &dyn DiskDB) {
     let mut satnum: usize = 0;
     let mut dianum: usize = 0;
 
-    db.for_each(&mut |k, v|{
-        if k[0] != 11 {
+    let _ = db.for_each(&mut |k, v|{
+        if k.is_empty() || k[0] != 11 {
             return true
         }
         let _adr = Address::must(&k[1..]);
-        let bls = Balance::must(&v);
+        let bls = Balance::must(v);
         let havhac = bls.hacash.not_zero();
         let havsat = bls.satoshi.not_zero();
         let havdia = bls.diamond.not_zero();
@@ -43,4 +43,3 @@ fn count_all_address_balance(db: &dyn DiskDB) {
         blsnum, hacnum, satnum, dianum
     );
 }
-

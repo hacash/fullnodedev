@@ -59,7 +59,7 @@ macro_rules! ast_try_item {
             }
             Err(e) => {
                 if let Err(re) = __snap.rollback($ctx) {
-                    return errf!("ast item recover failed: {}; original error: {}", re, e);
+                    return errf!("ast item recovery failed: {}; original error: {}", re, e);
                 }
                 Err(e)
             }

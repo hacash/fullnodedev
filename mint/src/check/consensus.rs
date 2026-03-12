@@ -95,7 +95,7 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
     /*if curbign!=tarbign || tarn!=curn || tarhx!=u32_to_hash(curn) {
         println!("\nheight: {}, {} {}, tarhx: {}  curhx: {} ----------------", 
         curhei, tarn, curn, hex::encode(&tarhx), hex::encode(u32_to_hash(curn)));
-        return errf!("curbign != tarbign")
+        return errf!("curbign and tarbign mismatch")
     }*/
     if tarn != curn {
         return errf!("height {} PoW difficulty check failed: expected {} but got {}", curhei, tarn, curn)

@@ -52,10 +52,10 @@ impl CoinKind {
         let mut assets_part = "";
         if let Some(start) = compact.find('(') {
             let Some(end) = compact.rfind(')') else {
-                return errf!("coinkind assets list format error")
+                return errf!("coinkind assets list format invalid")
             };
             if end <= start {
-                return errf!("coinkind assets list format error")
+                return errf!("coinkind assets list format invalid")
             }
             assets_part = &compact[start + 1..end];
             kind_part = compact[..start].trim_matches(|c: char| c == ',' || c == '|' || c == ';');
@@ -92,7 +92,7 @@ impl CoinKind {
             if p.is_empty() {
                 continue;
             }
-            let v = p.parse::<u64>().map_err(|_| format!("asset serial {} format error", p))?;
+            let v = p.parse::<u64>().map_err(|_| format!("asset serial {} format invalid", p))?;
             let _ = Fold64::from(v)?;
             out.push(v);
         }
@@ -139,7 +139,7 @@ macro_rules! q_body_data_may_hex {
             maybe!(hexbody, {
                 let res = hex::decode(&bddt);
                 if let Err(_) = res {
-                    return api_error("hex format error")
+                    return api_error("hex format invalid")
                 }
                 res.unwrap()
             }, bddt)
@@ -153,7 +153,7 @@ macro_rules! q_hex {
         {
             let res = hex::decode(&$d);
             if let Err(_) = res {
-                return api_error("hex format error")
+                return api_error("hex format invalid")
             }
             res.unwrap()
         }
@@ -165,7 +165,7 @@ macro_rules! q_addr {
     ($adr: expr) => ({
         let adr = Address::from_readable(&$adr);
         if let Err(e) = adr {
-            return api_error(&format!("address {} format error: {}", &$adr, &e))
+            return api_error(&format!("address {} format invalid: {}", &$adr, &e))
         }
         adr.unwrap()
     })
@@ -183,7 +183,7 @@ macro_rules! q_amt {
     ( $amt: expr) => ({
         let amt = Amount::from(&$amt);
         if let Err(e) = amt {
-            return api_error(&format!("amount {} format error: {}", &$amt, &e))
+            return api_error(&format!("amount {} format invalid: {}", &$amt, &e))
         }
         amt.unwrap()
     })
@@ -201,7 +201,7 @@ macro_rules! q_data_acc_from {
     ( $acc: expr) => ({
         let acc = Account::create_by(&$acc);
         if let Err(e) = acc {
-            return api_error(&format!("private key error: {}", &e))
+            return api_error(&format!("private key invalid: {}", &e))
         }
         acc.unwrap()
     })
@@ -219,11 +219,11 @@ macro_rules! q_data_hash {
     ( $hxstr: ident) => ({
         let hx = hex::decode($hxstr);
         if let Err(e) = hx {
-            return api_error(&format!("hash parse error: {}", &e))
+            return api_error(&format!("hash parse failed: {}", &e))
         }
         let hx = hx.unwrap();
         if hx.len() != Hash::SIZE {
-            return api_error(&format!("hash size error"))
+            return api_error(&format!("hash size invalid"))
         }
         Hash::from(hx.try_into().unwrap())
     })

@@ -11,7 +11,7 @@ action_define!{ ContractMainCall, 45,
     (self, format!("Run main codes with conf {}", *self.codeconf)),
     (self, ctx, _gas {
         if self.marks.not_zero() {
-            return errf!("marks bytes format error")
+            return errf!("marks bytes format invalid")
         }
         // check codes
         let hei = ctx.env().block.height;

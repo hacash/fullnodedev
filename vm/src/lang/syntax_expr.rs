@@ -55,7 +55,7 @@ impl Syntax {
                     let k = self.item_must(0)?;
                     k.checkretval()?; // key must be a value expression
                     let Partition(']') = next!() else {
-                        return errf!("item get statement format error");
+                        return errf!("item get statement format invalid");
                     };
                     left = Box::new(IRNodeDouble {
                         hrtv: true,
@@ -69,7 +69,7 @@ impl Syntax {
                 | Keyword(AsgSub)
                 | Keyword(AsgMul)
                 | Keyword(AsgDiv) => {
-                    let e = errf!("assign statement format error");
+                    let e = errf!("assign statement format invalid");
                     let Some(id) = Self::assign_target_name(&*left) else { return e };
                     let v = self.item_must(0)?;
                     v.checkretval()?; // must retv
@@ -80,7 +80,7 @@ impl Syntax {
                 }
                 Keyword(As) => {
                     left.checkretval()?; // must retv
-                    let e = errf!("<as> expression format error");
+                    let e = errf!("<as> expression format invalid");
                     let nk = next!();
                     let Some(target_ty) = Self::parse_scalar_value_ty(&nk) else {
                         return e;
@@ -93,7 +93,7 @@ impl Syntax {
                     }
                 }
                 Keyword(Is) => {
-                    let e = errf!("<is> expression format error");
+                    let e = errf!("<is> expression format invalid");
                     let mut nk = next!();
                     let mut is_not = false;
                     if let Keyword(Not) = nk {
@@ -223,14 +223,14 @@ impl Syntax {
         let mut block = IRNodeArray::with_opcode(inst); // was IRNodeArray::with_opcode(inst);
         let end = self.tokens.len() - 1; // trailing synthetic sentinel
         if self.idx >= end {
-            return errf!("block format error");
+            return errf!("block format invalid");
         }
         let nxt = &self.tokens[self.idx];
         let se = match nxt {
             Partition('{') => '}',
             Partition('(') => ')',
             Partition('[') => ']',
-            _ => return errf!("block format error"),
+            _ => return errf!("block format invalid"),
         };
         self.idx += 1;
         let mut block_err = false;
@@ -266,7 +266,7 @@ impl Syntax {
             Ok::<(), Error>(())
         })?;
         if block_err || !closed {
-            return errf!("block format error");
+            return errf!("block format invalid");
         }
         if keep_retval {
             match block.subs.last() {

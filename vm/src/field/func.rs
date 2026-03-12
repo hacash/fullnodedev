@@ -99,7 +99,7 @@ impl FuncArgvTypes {
                 if items.len() != tn {
                     return itr_err_fmt!(
                         CallArgvTypeFail,
-                        "param length error: expected {} but got {}",
+                        "param length invalid: expected {} but got {}",
                         tn,
                         items.len()
                     );

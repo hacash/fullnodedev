@@ -54,7 +54,7 @@ action_define!{ P2SHScriptProve, 46,
     (self, "Prove P2SH unlock script".to_owned()),
     (self, ctx, _gas {
         if self._marks_.not_zero() {
-            return errf!("marks bytes format error")
+            return errf!("marks bytes format invalid")
         }
         let adr = self.get_merkel()?;
         let stuff = self.get_stuff_with_merkel(ctx, &adr)?;
@@ -139,7 +139,7 @@ impl P2SHScriptProve {
         }
         for i in 1..libs.len() {
             if libs[..i].iter().any(|a| a == &libs[i]) {
-                return errf!("p2sh libs duplicate address '{}'", libs[i].to_readable())
+                return errf!("p2sh libs address '{}' already exists", libs[i].to_readable())
             }
         }
         Ok(())

@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 impl Syntax {
     pub fn item_param(&mut self) -> Ret<Box<dyn IRNode>> {
-        let e = errf!("param format error");
+        let e = errf!("param format invalid");
         let end = self.tokens.len() - 1; // trailing synthetic sentinel
         if self.idx >= end {
             return e;
@@ -122,7 +122,7 @@ impl Syntax {
                 let exp = self.item_must(0)?;
                 self.mode.check_op = ckop; // recover
                 exp.checkretval()?; // must retv
-                let e = errf!("(..) expression format error");
+                let e = errf!("(..) expression format invalid");
                 nxt = next!();
                 let Partition(')') = nxt else { return e };
                 Box::new(IRNodeWrapOne { node: exp })
@@ -196,13 +196,13 @@ impl Syntax {
                 let elseifobj =
                     self.with_expect_retval(keep_retval, |s| match s.item_may()? {
                         Some(n) => Ok(n),
-                        None => errf!("else if statement format error"),
+                        None => errf!("else if statement format invalid"),
                     })?;
                 ifobj.subz = elseifobj;
                 Box::new(ifobj)
             }
             Keyword(KwTy::Const) => {
-                let e = errf!("const statement format error");
+                let e = errf!("const statement format invalid");
                 let token = self.next()?;
                 let Identifier(name) = token else { return e };
                 let token = self.next()?;
@@ -245,14 +245,14 @@ impl Syntax {
                     _ => unreachable!(),
                 };
                 let err_msg = match kind {
-                    SlotKind::Var => "var statement format error",
-                    SlotKind::Let => "let statement format error",
+                    SlotKind::Var => "var statement format invalid",
+                    SlotKind::Let => "let statement format invalid",
                     _ => unreachable!(),
                 };
                 self.parse_local_statement(kind, err_msg)?
             }
             Keyword(Bind) => {
-                let e = errf!("bind statement format error");
+                let e = errf!("bind statement format invalid");
                 let token = self.next()?;
                 let Identifier(name) = token else { return e };
                 let token = self.next()?;
@@ -264,10 +264,10 @@ impl Syntax {
                 self.bind_macro(name.clone(), expr)?;
                 return Ok(Some(push_empty()));
             }
-            /* Keyword(Use) => { // use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS let e = errf!("use statement format error"); nxt = next!(); let Identifier(id) = nxt else { return e }; nxt = next!(); let Keyword(KwTy::Assign) = nxt else { return e }; nxt = next!(); let Token::Bytes(addr) = nxt else { return e }; self.bind_uses(id.clone(), addr.clone())?; push_empty() } */
+            /* Keyword(Use) => { // use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS let e = errf!("use statement format invalid"); nxt = next!(); let Identifier(id) = nxt else { return e }; nxt = next!(); let Keyword(KwTy::Assign) = nxt else { return e }; nxt = next!(); let Token::Bytes(addr) = nxt else { return e }; self.bind_uses(id.clone(), addr.clone())?; push_empty() } */
             Keyword(Ext) => {
                 if self.idx < max && matches!(self.tokens[self.idx], Partition('(')) {
-                    self.parse_lib_receiver_call("ext(index) call format error")?
+                    self.parse_lib_receiver_call("ext(index) call format invalid")?
                 } else {
                     return errf!("ext must be followed by (index) for external call");
                 }
@@ -277,7 +277,7 @@ impl Syntax {
                     return errf!("use ext(index) for external call, lib is for binding only");
                 }
                 {
-                    let e = errf!("lib statement format error");
+                    let e = errf!("lib statement format invalid");
                     nxt = next!();
                     let Identifier(id) = nxt else { return e };
                     nxt = next!();
@@ -306,10 +306,10 @@ impl Syntax {
                 {
                     decode_call_body(&body).map_err(|x| x.to_string())?
                 } else {
-                    let effect = Self::parse_call_effect_token(&first, "call effect format error")?;
+                    let effect = Self::parse_call_effect_token(&first, "call effect format invalid")?;
                     let head = self.next()?;
                     let (target, fnsign) =
-                        self.parse_generic_call_target_selector(head, "call target format error")?;
+                        self.parse_generic_call_target_selector(head, "call target format invalid")?;
                     CallSpec::invoke(target, effect, fnsign)
                 };
                 let argv = self.deal_func_argv()?;
@@ -320,7 +320,7 @@ impl Syntax {
                 let call = if let Ok(body) = Self::parse_codecall_body_token(&first) {
                     decode_splice_body(&body).map_err(|x| x.to_string())?
                 } else {
-                    let (idx, fnsign) = self.parse_codecall_target_selector(first, "codecall target format error")?;
+                    let (idx, fnsign) = self.parse_codecall_target_selector(first, "codecall target format invalid")?;
                     CallSpec::codecall(idx, fnsign)
                 };
                 let argv = if self.idx < max && matches!(self.tokens[self.idx], Partition('(')) {
@@ -333,59 +333,59 @@ impl Syntax {
             Keyword(CallExt) => self.parse_short_lib_call_invoke(
                 CALLEXT,
                 "callext body",
-                "callext target format error",
+                "callext target format invalid",
                 CallSpec::callext,
             )?,
             Keyword(CallExtView) => self.parse_short_lib_call_invoke(
                 CALLEXTVIEW,
                 "callextview body",
-                "callextview target format error",
+                "callextview target format invalid",
                 CallSpec::callextview,
             )?,
             Keyword(CallUseView) => self.parse_short_lib_call_invoke(
                 CALLUSEVIEW,
                 "calluseview body",
-                "calluseview target format error",
+                "calluseview target format invalid",
                 CallSpec::calluseview,
             )?,
             Keyword(CallUsePure) => self.parse_short_lib_call_invoke(
                 CALLUSEPURE,
                 "callusepure body",
-                "callusepure target format error",
+                "callusepure target format invalid",
                 CallSpec::callusepure,
             )?,
             Keyword(CallThis) => self.parse_short_local_call_invoke(
                 CALLTHIS,
                 "callthis body",
-                "callthis target format error",
+                "callthis target format invalid",
                 CallSpec::callthis,
             )?,
             Keyword(CallSelf) => self.parse_short_local_call_invoke(
                 CALLSELF,
                 "callself body",
-                "callself target format error",
+                "callself target format invalid",
                 CallSpec::callself,
             )?,
             Keyword(CallSuper) => self.parse_short_local_call_invoke(
                 CALLSUPER,
                 "callsuper body",
-                "callsuper target format error",
+                "callsuper target format invalid",
                 CallSpec::callsuper,
             )?,
             Keyword(CallSelfView) => self.parse_short_local_call_invoke(
                 CALLSELFVIEW,
                 "callselfview body",
-                "callselfview target format error",
+                "callselfview target format invalid",
                 CallSpec::callselfview,
             )?,
             Keyword(CallSelfPure) => self.parse_short_local_call_invoke(
                 CALLSELFPURE,
                 "callselfpure body",
-                "callselfpure target format error",
+                "callselfpure target format invalid",
                 CallSpec::callselfpure,
             )?,
             Keyword(ByteCode) => {
-                let e = errf!("bytecode format error");
+                let e = errf!("bytecode format invalid");
                 nxt = next!();
                 let Partition('{') = nxt else { return e };
                 let mut codes: Vec<u8> = Vec::new();
@@ -410,7 +410,7 @@ impl Syntax {
             }
 
             Keyword(List) => {
-                let e = errf!("list statement format error");
+                let e = errf!("list statement format invalid");
                 nxt = next!();
                 let Partition('{') = nxt else { return e };
                 let mut subs = vec![];
@@ -427,7 +427,7 @@ impl Syntax {
                 self.build_list_node(subs)?
             }
             Keyword(Map) => {
-                let e = errf!("map format error");
+                let e = errf!("map format invalid");
                 nxt = next!();
                 let Partition('{') = nxt else { return e };
                 let mut subs = Vec::new();

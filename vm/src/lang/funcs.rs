@@ -5,7 +5,7 @@ impl Syntax {
     fn parse_paren_argv_items(&mut self) -> Ret<Vec<Box<dyn IRNode>>> {
         // Parse `(...)` argument lists as a sequence of value expressions.
         // Note: the tokenizer ignores commas, so argument separation is by expression boundaries.
-        self.parse_delimited_value_exprs('(', ')', "call argv format error")
+        self.parse_delimited_value_exprs('(', ')', "call argv format invalid")
     }
 
     pub fn item_get(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
@@ -19,7 +19,7 @@ impl Syntax {
         let k = self.item_must(1)?;  // over [
         k.checkretval()?; // ITEMGET consumes a key value from the stack
         let Partition(']') = self.next()? else {
-            return errf!("item get statement format error")
+            return errf!("item get statement format invalid")
         };
         let obj = self.link_local(&id)?;
         let nd = IRNodeDouble{hrtv: true, inst: ITEMGET, subx: obj, suby: k};

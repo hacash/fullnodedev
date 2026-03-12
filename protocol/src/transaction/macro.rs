@@ -202,7 +202,7 @@ impl $class {
     fn insert_sign(&mut self, signobj: Sign) -> Rerr {
         let plen = self.signs.length();
         if plen >= u16::MAX as usize - 1 {
-            return errf!("sign object too much")
+            return errf!("too many sign objects")
         }
         let curaddr = Address::from(Account::get_address_by_public_key(*signobj.publickey));
         // insert
@@ -301,12 +301,12 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Rerr {
     /*
     if mty <= TXTY3 {
         if self.ano_mark[0] != 0 {
-            return errf!("tx extend data error")
+            return errf!("tx extend data invalid")
         }
     }
     if mty <= TXTY2 {
         if self.gas_max.value() != 0 {
-            return errf!("tx extend data error")
+            return errf!("tx extend data invalid")
         }
     }
     */

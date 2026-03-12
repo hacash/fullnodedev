@@ -5,7 +5,7 @@ fn load_block_by_key(ctx: &ApiExecCtx, key: &str) -> Ret<Arc<BlkPkg>> {
             if hx.len() == Hash::SIZE {
                 let hash = Hash::must(&hx);
                 if let Some(blkdts) = store.block_data(&hash) {
-                    let blkpkg = build_block_package(blkdts).map_err(|e| format!("block parse error: {}", e))?;
+                    let blkpkg = build_block_package(blkdts).map_err(|e| format!("block parse failed: {}", e))?;
                     return Ok(Arc::new(blkpkg));
                 }
             }
@@ -13,7 +13,7 @@ fn load_block_by_key(ctx: &ApiExecCtx, key: &str) -> Ret<Arc<BlkPkg>> {
     }
     if let Ok(height) = key.parse::<u64>() {
         if let Some((_, blkdts)) = store.block_data_by_height(&BlockHeight::from(height)) {
-            let blkpkg = build_block_package(blkdts).map_err(|e| format!("block parse error: {}", e))?;
+            let blkpkg = build_block_package(blkdts).map_err(|e| format!("block parse failed: {}", e))?;
             return Ok(Arc::new(blkpkg));
         }
     }

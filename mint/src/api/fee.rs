@@ -27,10 +27,10 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let fee_prikey = q_string(&req, "fee_prikey", "");
     let hash = q_string(&req, "hash", "");
     let Ok(fee) = Amount::from(&fee_s) else {
-        return api_error("fee format error");
+        return api_error("fee format invalid");
     };
     let Ok(acc) = Account::create_by(&fee_prikey) else {
-        return api_error("fee_prikey format error");
+        return api_error("fee_prikey format invalid");
     };
 
     let bddts = if !hash.is_empty() {
@@ -38,7 +38,7 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             return api_error("hash parse failed");
         };
         if hx.len() != Hash::SIZE {
-            return api_error("hash size error");
+            return api_error("hash size invalid");
         }
         let txhx = Hash::must(&hx);
         let txf = ctx.hnoder.txpool().find(&txhx);

@@ -339,12 +339,12 @@ fn load_init(cnf: &mut DiaWorkConf) {
         }
         let adr1 = jstr("bid_address");
         let Ok(bid_addr) = Address::from_readable(&adr1) else {
-            println!("Error: bid_address '{}' format error", &adr1);
+            println!("Error: bid_address '{}' format invalid", &adr1);
             delay_continue!(30);
         };
         let adr2 = jstr("reward_address");
         let Ok(rwd_addr) = Address::from_readable(&adr2) else {
-            println!("Error: reward_address '{}' format error", &adr2);
+            println!("Error: reward_address '{}' format invalid", &adr2);
             delay_continue!(30);
         };
         println!(

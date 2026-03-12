@@ -15,9 +15,53 @@ impl Drop for RawDB {
 unsafe impl Send for RawDB {}
 unsafe impl Sync for RawDB {}
 
+struct RawReadOptions {
+    ptr: *mut leveldb_readoptions_t,
+}
+
+impl Drop for RawReadOptions {
+    fn drop(&mut self) {
+        unsafe {
+            leveldb_readoptions_destroy(self.ptr);
+        }
+    }
+}
+
+unsafe impl Send for RawReadOptions {}
+unsafe impl Sync for RawReadOptions {}
+
+struct RawWriteOptions {
+    ptr: *mut leveldb_writeoptions_t,
+}
+
+impl Drop for RawWriteOptions {
+    fn drop(&mut self) {
+        unsafe {
+            leveldb_writeoptions_destroy(self.ptr);
+        }
+    }
+}
+
+unsafe impl Send for RawWriteOptions {}
+unsafe impl Sync for RawWriteOptions {}
+
+struct RawIter {
+    ptr: *mut leveldb_iterator_t,
+}
+
+impl Drop for RawIter {
+    fn drop(&mut self) {
+        unsafe {
+            leveldb_iter_destroy(self.ptr);
+        }
+    }
+}
+
 
 pub struct LevelDB {
     database: RawDB,
+    read_options: RawReadOptions,
+    write_options: RawWriteOptions,
     // ldb: LevelDatabase<LDBKey>,
 }
 
@@ -43,9 +87,19 @@ impl LevelDB {
             let err = new_string_from_char_ptr(error);
             panic!("{}", err)
         }
+        let read_options = unsafe {
+            RawReadOptions { ptr: leveldb_readoptions_create() }
+        };
+        let write_options = unsafe {
+            let ptr = leveldb_writeoptions_create();
+            leveldb_writeoptions_set_sync(ptr, if db_sync_enabled() { 1 } else { 0 });
+            RawWriteOptions { ptr }
+        };
         // create
         LevelDB{
             database: RawDB { ptr: database },
+            read_options,
+            write_options,
         }
     }
 
@@ -55,14 +109,12 @@ impl LevelDB {
         let mut error = ptr::null_mut();
         let mut length: size_t = 0;
         let result = unsafe {
-            let c_readoptions = leveldb_readoptions_create();
             let res = leveldb_get(self.database.ptr,
-                c_readoptions,
+                self.read_options.ptr,
                 k.as_ptr() as *mut c_char,
                 k.len() as size_t,
                 &mut length,
                 &mut error);
-            leveldb_readoptions_destroy(c_readoptions);
             res
         };
         if error != ptr::null_mut() {
@@ -90,15 +142,13 @@ impl LevelDB {
     pub fn put(&self, k: &[u8], value: &[u8]) {
         let mut error = ptr::null_mut();
         unsafe {
-            let c_writeoptions = leveldb_writeoptions_create();
             leveldb_put(self.database.ptr,
-                c_writeoptions,
+                self.write_options.ptr,
                 k.as_ptr() as *mut c_char,
                 k.len() as size_t,
                 value.as_ptr() as *mut c_char,
                 value.len() as size_t,
                 &mut error);
-            leveldb_writeoptions_destroy(c_writeoptions);
         }
         if error != ptr::null_mut() {
             let err = new_string_from_char_ptr(error);
@@ -111,13 +161,11 @@ impl LevelDB {
     pub fn rm(&self, k: &[u8]) {
         let mut error = ptr::null_mut();
         unsafe {
-            let c_writeoptions = leveldb_writeoptions_create();
             leveldb_delete(self.database.ptr,
-                c_writeoptions,
+                self.write_options.ptr,
                 k.as_ptr() as *mut c_char,
                 k.len() as size_t,
                 &mut error);
-            leveldb_writeoptions_destroy(c_writeoptions);
         }
         if error != ptr::null_mut() {
             let err = new_string_from_char_ptr(error);
@@ -130,17 +178,56 @@ impl LevelDB {
     pub fn write(&self, batch: &Writebatch) {
         let mut error = ptr::null_mut();
         unsafe {
-            let c_writeoptions = leveldb_writeoptions_create();
             leveldb_write(self.database.ptr,
-                          c_writeoptions,
+                          self.write_options.ptr,
                           batch.ptr,
                           &mut error);
-            leveldb_writeoptions_destroy(c_writeoptions);
         }
         if error != ptr::null_mut() {
             let err = new_string_from_char_ptr(error);
             panic!("{}", err)
         }
+    }
+
+    pub fn for_each(&self, each: &mut dyn FnMut(&[u8], &[u8])->bool) -> Rerr{
+        let iter = unsafe {
+            let ptr = leveldb_create_iterator(self.database.ptr, self.read_options.ptr);
+            leveldb_iter_seek_to_first(ptr);
+            RawIter { ptr }
+        };
+        loop {
+            if unsafe { leveldb_iter_valid(iter.ptr) } == 0 {
+                break
+            }
+            let mut klen: size_t = 0;
+            let mut vlen: size_t = 0;
+            let (kptr, vptr) = unsafe {
+                (
+                    leveldb_iter_key(iter.ptr, &mut klen),
+                    leveldb_iter_value(iter.ptr, &mut vlen),
+                )
+            };
+            let (k, v) = unsafe {
+                (
+                    ::std::slice::from_raw_parts(kptr as *const u8, klen as usize),
+                    ::std::slice::from_raw_parts(vptr as *const u8, vlen as usize),
+                )
+            };
+            if !each(k, v) {
+                break
+            }
+            unsafe {
+                leveldb_iter_next(iter.ptr);
+            }
+        }
+        let mut error: *const c_char = ptr::null();
+        unsafe {
+            leveldb_iter_get_error(iter.ptr, &mut error as *mut *const c_char as *const *const c_char);
+        }
+        if !error.is_null() {
+            return Err(new_string_from_char_ptr(error))
+        }
+        Ok(())
     }
 
 

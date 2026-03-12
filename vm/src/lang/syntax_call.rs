@@ -3,7 +3,7 @@ impl Syntax {
     pub fn link_lib(&self, s: &String) -> Ret<u8> {
         match self.bdlibs.get(s).map(|d| d.0) {
             Some(i) => Ok(i),
-            _ => errf!("cannot find any lib bind '{}'", s),
+            _ => errf!("no lib binding '{}' found", s),
         }
     }
 
@@ -342,7 +342,7 @@ impl Syntax {
                 let effect = maybe!(sep == KwTy::DColon, EffectMode::Pure, EffectMode::View);
                 match id.as_str() {
                     "self" => CallSpec::invoke(CallTarget::Self_, effect, fnsign),
-                    "this" | "super" => return errf!("call expression after identifier format error"),
+                    "this" | "super" => return errf!("call expression after identifier format invalid"),
                     _ => {
                         let idx = self.link_lib(&id)?;
                         let target = maybe!(sep == KwTy::DColon, CallTarget::Use(idx), CallTarget::Ext(idx));

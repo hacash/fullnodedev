@@ -21,11 +21,11 @@ impl Tokenizer<'_> {
             let v = s.to_owned().split_off(2);
             return Ok(match hex::decode(v) {
                 Ok(d) => Bytes(d),
-                _ => return errf!("hex data format error '{}'", s),
+                _ => return errf!("hex data format invalid '{}'", s),
             });
         } else if s.starts_with("0b") && s.len() >= 10 {
             // 0b11110000
-            let e = errf!("binary data '{}' format error", s);
+            let e = errf!("binary data '{}' format invalid", s);
             let v = s.to_owned().split_off(2);
             let vl = v.len();
             if vl % 8 != 0 {
@@ -195,7 +195,7 @@ impl Tokenizer<'_> {
     }
 
     pub fn parse_bytes(&mut self, max: usize, _c: char) -> Rerr {
-        let e = errf!("bytes format error");
+        let e = errf!("bytes format invalid");
         let mut s = vec![];
         let mut closed = false;
         while self.idx < max {
@@ -233,7 +233,7 @@ impl Tokenizer<'_> {
     }
 
     pub fn parse_char(&mut self, max: usize, _c: char) -> Rerr {
-        let e = errf!("char format error");
+        let e = errf!("char format invalid");
         // 需要确保有字符内容和闭引号: idx < max - 1
         if self.idx >= max - 1 {
             return e;

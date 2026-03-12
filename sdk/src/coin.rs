@@ -92,7 +92,7 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
             Box::new(obj)
         });
         if let Err(e) = trsobj.push_action(act) {
-            return errf!("push hac transfer action error: {}", e);
+            return errf!("push hac transfer action failed: {}", e);
         }
     }
     // sat
@@ -111,7 +111,7 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
             Box::new(obj)
         });
         if let Err(e) = trsobj.push_action(act) {
-            return errf!("push sat transfer action error: {}", e);
+            return errf!("push sat transfer action failed: {}", e);
         }
     }
     // hacd
@@ -140,7 +140,7 @@ pub fn create_coin_transfer(param: CoinTransferParam) -> Ret<CoinTransferResult>
             )
         );
         if let Err(e) = trsobj.push_action(act) {
-            return errf!("push diamond transfer action error: {}", e);
+            return errf!("push diamond transfer action failed: {}", e);
         }
     }
     // do sign

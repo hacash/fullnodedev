@@ -149,6 +149,22 @@ mod tests {
         fn remove(&self, key: &[u8]) {
             self.kv.lock().unwrap().remove(key);
         }
+
+        fn for_each(&self, each: &mut dyn FnMut(&[u8], &[u8])->bool) -> Result<(), String> {
+            let rows: Vec<(Vec<u8>, Vec<u8>)> = self
+                .kv
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            for (k, v) in rows {
+                if !each(&k, &v) {
+                    break
+                }
+            }
+            Ok(())
+        }
     }
 
     #[test]

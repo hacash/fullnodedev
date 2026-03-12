@@ -13,7 +13,7 @@ fn balance(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let addrs: Vec<_> = ads.split(',').collect();
     let adrsz = addrs.len();
     if adrsz == 0 || (adrsz == 1 && addrs[0].is_empty()) {
-        return api_error("address format error");
+        return api_error("address format invalid");
     }
     if adrsz > 200 {
         return api_error("address count must not exceed 200");
@@ -24,7 +24,7 @@ fn balance(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let mut resbls = Vec::with_capacity(adrsz);
     for a in addrs {
         let Ok(adr) = Address::from_readable(a) else {
-            return api_error(&format!("address {} format error", a));
+            return api_error(&format!("address {} format invalid", a));
         };
         let bls = core.balance(&adr).unwrap_or_default();
         let mut one = serde_json::Map::new();

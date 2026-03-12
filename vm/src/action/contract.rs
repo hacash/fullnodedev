@@ -23,7 +23,7 @@ action_define! { ContractDeploy, 40,
     }),
     (self, ctx, _gas {
         if self._marks_.not_zero() { // compatibility for future
-            return errf!("marks bytes error")
+            return errf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
         let maddr = ctx.env().tx.main;
@@ -76,7 +76,7 @@ action_define! { ContractUpdate, 41,
     (self, ctx, _gas {
         use AbstCall::*;
         if self._marks_.not_zero() {
-            return errf!("marks bytes error")
+            return errf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
         // load old

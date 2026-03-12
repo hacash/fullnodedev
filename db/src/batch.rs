@@ -13,8 +13,8 @@ impl MemBatch for Membatch {
         let mut batch = Self::new();
         kv.for_each(&mut |k, v|{
             match v {
-                None => batch.del(k.as_ref()),
-                Some(v) => batch.put(k, &v),
+                None => batch.del(k),
+                Some(v) => batch.put(k, v),
             };
         });
         batch

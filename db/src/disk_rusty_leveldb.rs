@@ -4,7 +4,6 @@ include!{"batch_rusty_leveldb.rs"}
 
 use rusty_leveldb::LdbIterator;
 
-
 pub struct DiskKV {
     ldb: Mutex<rusty_leveldb::DB>,
 }
@@ -26,13 +25,17 @@ impl DiskDB for DiskKV {
     fn remove(&self, k: &[u8]) {
         let mut ldb =  self.ldb.lock().unwrap();
         ldb.delete(k).unwrap();
-        // ldb.flush().unwrap();
+        if db_sync_enabled() {
+            ldb.flush().unwrap();
+        }
     }
 
     fn save(&self, k: &[u8], v: &[u8]) {
         let mut ldb =  self.ldb.lock().unwrap();
         ldb.put(k, v).unwrap();
-        // ldb.flush().unwrap();
+        if db_sync_enabled() {
+            ldb.flush().unwrap();
+        }
     }
 
     fn read(&self, k: &[u8]) -> Option<Vec<u8>> {
@@ -41,9 +44,12 @@ impl DiskDB for DiskKV {
 
     fn write(&self, memkv: &dyn MemDB) {
         let wb = Membatch::from_memkv(memkv);
+        let sync = db_sync_enabled();
         let mut ldb =  self.ldb.lock().unwrap();
-        ldb.write(wb.into_batch().obj, true).unwrap(); // must
-        // ldb.flush().unwrap();
+        ldb.write(wb.into_batch().obj, sync).unwrap(); // must
+        if sync {
+            ldb.flush().unwrap();
+        }
     }
 
     /*
@@ -55,18 +61,24 @@ impl DiskDB for DiskKV {
     }
     */
 
-    fn for_each(&self, each: &mut dyn FnMut(Vec<u8>, Vec<u8>)->bool) {
-        let mut ldb =  self.ldb.lock().unwrap();
-        let mut ldbiter = ldb.new_iter().unwrap();
-        while let Some((k, v)) = ldbiter.next() {
-            if !each(k, v) {
-                break // end
+    fn for_each(&self, each: &mut dyn FnMut(&[u8], &[u8])->bool) -> Rerr{
+        // Collect first, then call callback outside the DB lock to avoid re-entrant deadlock.
+        let rows: Vec<(Vec<u8>, Vec<u8>)> = {
+            let mut ldb = self.ldb.lock().unwrap();
+            let mut ldbiter = ldb.new_iter().map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            while let Some((k, v)) = ldbiter.next() {
+                out.push((k, v));
+            }
+            out
+        };
+        for (k, v) in rows {
+            if !each(&k, &v) {
+                break
             }
         }
+        Ok(())
     }
 
 
 }
-
-
-

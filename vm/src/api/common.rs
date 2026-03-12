@@ -23,11 +23,11 @@ fn api_data_raw(s: String) -> ApiResponse {
 }
 
 fn req_hex(s: &str) -> Ret<Vec<u8>> {
-    hex::decode(s).map_err(|_| "hex format error".to_owned())
+    hex::decode(s).map_err(|_| "hex format invalid".to_owned())
 }
 
 fn req_addr(s: &str) -> Ret<Address> {
-    Address::from_readable(s).map_err(|e| format!("address {} format error: {}", s, e))
+    Address::from_readable(s).map_err(|e| format!("address {} format invalid: {}", s, e))
 }
 
 

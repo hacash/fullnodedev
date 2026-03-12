@@ -2,10 +2,10 @@ fn channel(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let unit = q_string(&req, "unit", "fin");
     let id = q_string(&req, "id", "");
     let Ok(id) = hex::decode(&id) else {
-        return api_error("channel id format error");
+        return api_error("channel id format invalid");
     };
     if id.len() != ChannelId::SIZE {
-        return api_error("channel id format error");
+        return api_error("channel id format invalid");
     }
     let chid = ChannelId::must(&id);
 

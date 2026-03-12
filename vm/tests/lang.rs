@@ -1341,7 +1341,7 @@ fn reject_unclosed_if_block() {
         end
     "##;
     let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("block format error"));
+    assert!(err.contains("block format invalid"));
 }
 
 #[test]
@@ -1359,7 +1359,7 @@ fn reject_param_block_non_identifier_member() {
         param { a 1 }
     "##;
     let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("param format error"));
+    assert!(err.contains("param format invalid"));
 }
 
 #[test]
@@ -1368,7 +1368,7 @@ fn reject_param_block_without_close_brace() {
         param { a
     "##;
     let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("param format error"));
+    assert!(err.contains("param format invalid"));
 }
 
 #[test]
@@ -1377,7 +1377,7 @@ fn reject_param_as_value_expression() {
         print (param { a })
     "##;
     let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("return value") || err.contains("format error"));
+    assert!(err.contains("return value") || err.contains("format invalid"));
 }
 
 fn find_print_expression(block: &IRNodeArray) -> &Box<dyn IRNode> {

@@ -6,7 +6,7 @@ pub trait MemDB : Send + Sync {
     fn del(&mut self, _: Vec<u8>) {}
     fn put(&mut self, _: Vec<u8>, _: Vec<u8>) {}
     fn get(&self, _: &Vec<u8>) -> Option<&Option<Vec<u8>>> { None }
-    fn for_each(&self, _:&mut dyn FnMut(&Vec<u8>, &Option<Vec<u8>>)) {}
+    fn for_each(&self, _:&mut dyn FnMut(&[u8], Option<&[u8]>)) {}
 }
 
 
@@ -26,8 +26,7 @@ pub trait DiskDB : Send + Sync {
     fn write(&self, _: &dyn MemDB) {} // dyn MemDB
     // fn write_batch(&self, _: Box<dyn Any>) {} // dyn MemBatch
     // debug
-    fn for_each(&self, _: &mut dyn FnMut(Vec<u8>, Vec<u8>)->bool) {}
+    fn for_each(&self, _: &mut dyn FnMut(&[u8], &[u8])->bool) -> Ret<()>;
 }
-
 
 

@@ -24,10 +24,10 @@ fn parse_scan_coinkind(raw: &str) -> Ret<ScanCoinKind> {
     let mut assets_part = "";
     if let Some(start) = compact.find('(') {
         let Some(end) = compact.rfind(')') else {
-            return errf!("coinkind assets list format error");
+            return errf!("coinkind assets list format invalid");
         };
         if end <= start {
-            return errf!("coinkind assets list format error");
+            return errf!("coinkind assets list format invalid");
         }
         kind_part = compact[..start].trim_matches(|c: char| c == ',' || c == '|' || c == ';');
         assets_part = &compact[start + 1..end];
@@ -36,13 +36,13 @@ fn parse_scan_coinkind(raw: &str) -> Ret<ScanCoinKind> {
     let mut s = kind_part.to_owned();
     s.retain(|c| !c.is_whitespace() && c != ',' && c != ';' && c != '|');
     if s.is_empty() {
-        return errf!("coinkind format error");
+        return errf!("coinkind format invalid");
     }
     if !s
         .chars()
         .all(|c| c == 'h' || c == 's' || c == 'd' || c == 'a')
     {
-        return errf!("coinkind format error");
+        return errf!("coinkind format invalid");
     }
 
     let mut ck = ScanCoinKind {
@@ -65,7 +65,7 @@ fn parse_scan_coinkind(raw: &str) -> Ret<ScanCoinKind> {
             }
             let v = p
                 .parse::<u64>()
-                .map_err(|_| format!("asset serial {} format error", p))?;
+                .map_err(|_| format!("asset serial {} format invalid", p))?;
             let _ = Fold64::from(v)?;
             list.push(v);
         }
@@ -82,7 +82,7 @@ fn scan_coin_transfer(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let unit = q_string(&req, "unit", "fin");
     let coinkind_raw = q_string(&req, "coinkind", "hsda");
     let Ok(coinkind) = parse_scan_coinkind(&coinkind_raw) else {
-        return api_error("coinkind format error");
+        return api_error("coinkind format invalid");
     };
     let height = req.query_u64("height", 1);
     let txposi = req

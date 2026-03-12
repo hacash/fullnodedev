@@ -9,19 +9,19 @@ fn create_coin_transfer(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let diamonds = q_string(&req, "diamonds", "");
 
     let Ok(toaddr) = Address::from_readable(&to_address) else {
-        return api_error("to_address format error");
+        return api_error("to_address format invalid");
     };
     let Ok(fee) = Amount::from(&fee) else {
-        return api_error("fee format error");
+        return api_error("fee format invalid");
     };
     let Ok(main_acc) = Account::create_by(&main_prikey) else {
-        return api_error("main_prikey format error");
+        return api_error("main_prikey format invalid");
     };
 
     let mut from_acc = main_acc.clone();
     if !from_prikey.is_empty() {
         let Ok(acc) = Account::create_by(&from_prikey) else {
-            return api_error("from_prikey format error");
+            return api_error("from_prikey format invalid");
         };
         from_acc = acc;
     }
@@ -49,13 +49,13 @@ fn create_coin_transfer(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             Box::new(obj)
         };
         if tx.push_action(act).is_err() {
-            return api_error("push sat action error");
+            return api_error("push sat action failed");
         }
     }
 
     if diamonds.len() >= DiamondName::SIZE {
         let Ok(dialist) = DiamondNameListMax200::from_readable(&diamonds) else {
-            return api_error("diamonds format error");
+            return api_error("diamonds format invalid");
         };
         let act: Box<dyn Action> = if is_from {
             let mut obj = DiaFromToTrs::new();
@@ -75,7 +75,7 @@ fn create_coin_transfer(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             Box::new(obj)
         };
         if tx.push_action(act).is_err() {
-            return api_error("push diamond action error");
+            return api_error("push diamond action failed");
         }
     }
 
@@ -96,7 +96,7 @@ fn create_coin_transfer(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             Box::new(obj)
         };
         if tx.push_action(act).is_err() {
-            return api_error("push hac action error");
+            return api_error("push hac action failed");
         }
     }
 

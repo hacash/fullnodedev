@@ -80,7 +80,7 @@ action_define!{ ViewDiamondInscNum, 0x0603,
         };
         let num = diaobj.inscripts.length();
         if num > u8::MAX as usize {
-            return errf!("diamond {} inscripts number error", self.diamond.to_readable())
+            return errf!("diamond {} inscripts number invalid", self.diamond.to_readable())
         }
         // ok
         Ok(vec![num as u8])

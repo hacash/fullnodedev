@@ -15,12 +15,12 @@ fn vm_logs_read(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         return api_data_raw(s!(r#""end":true"#));
     };
     let Ok(item) = VmLog::build(&itdts).map_ire(ItrErrCode::LogError) else {
-        return api_error("log format error");
+        return api_error("log format invalid");
     };
     let ignore = api_data_raw(s!(r#""ignore":true"#));
     if let Some(qadr) = req.query("address") {
         let Ok(addr) = req_addr(qadr) else {
-            return api_error("address format error");
+            return api_error("address format invalid");
         };
         if addr != item.addr {
             return ignore;
@@ -31,7 +31,7 @@ fn vm_logs_read(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         ($key:expr, $topic:expr) => {
             if let Some(tp) = req.query($key) {
                 let Ok(raw) = req_hex(tp) else {
-                    return api_error("hex format error");
+                    return api_error("hex format invalid");
                 };
                 if raw.as_slice() != $topic.raw() {
                     return ignore;

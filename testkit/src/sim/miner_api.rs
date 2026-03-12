@@ -203,7 +203,7 @@ async fn handle_success(
         return Json(json!({"ret": 1, "err": "height missing"}));
     };
     let Ok(height) = height_text.parse::<u64>() else {
-        return Json(json!({"ret": 1, "err": "height format error"}));
+        return Json(json!({"ret": 1, "err": "height format invalid"}));
     };
     if height != pending.height {
         return Json(json!({"ret": 1, "err": "height mismatch"}));
@@ -213,7 +213,7 @@ async fn handle_success(
         return Json(json!({"ret": 1, "err": "block_nonce missing"}));
     };
     let Ok(block_nonce) = block_nonce_text.parse::<u32>() else {
-        return Json(json!({"ret": 1, "err": "block_nonce format error"}));
+        return Json(json!({"ret": 1, "err": "block_nonce format invalid"}));
     };
 
     let Some(coinbase_nonce_text) = query.get("coinbase_nonce") else {
@@ -223,7 +223,7 @@ async fn handle_success(
         return Json(json!({"ret": 1, "err": "coinbase_nonce decode error"}));
     };
     if coinbase_nonce_bytes.len() != Hash::SIZE {
-        return Json(json!({"ret": 1, "err": "coinbase_nonce length error"}));
+        return Json(json!({"ret": 1, "err": "coinbase_nonce length invalid"}));
     }
 
     let mut cbtx = pending.coinbase_tx.clone();

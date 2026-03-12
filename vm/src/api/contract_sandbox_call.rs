@@ -26,7 +26,7 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let function = req.query("function").unwrap_or("").to_owned();
     let params = req.query("params").unwrap_or("");
     let Ok(addr) = Address::from_readable(contract) else {
-        return api_error("contract address format error");
+        return api_error("contract address format invalid");
     };
     let Ok(ctrladdr) = ContractAddress::from_addr(addr) else {
         return api_error("contract address version error");

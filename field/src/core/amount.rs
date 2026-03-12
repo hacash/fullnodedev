@@ -215,7 +215,7 @@ impl Amount {
 
 macro_rules! ret_amtfmte {
     ($tip: expr, $v: expr) => {
-        return Err(format!("amount {} from '{}' format error or overflow", $tip, $v))
+        return Err(format!("amount {} from '{}' format invalid or overflow", $tip, $v))
     };
 }
 

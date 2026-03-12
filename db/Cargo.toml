@@ -5,6 +5,7 @@ edition = "2024"
 resolver = "2"
 
 [dependencies]
+sys            = {path = "../sys"}
 basis          = {path = "../basis"}
 sled = { version = "0.34.7", optional = true }
 rusty-leveldb = { version = "3.0.2", optional = true }

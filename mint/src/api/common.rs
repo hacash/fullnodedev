@@ -108,7 +108,7 @@ fn q_coinkind_hsd(req: &ApiRequest) -> Ret<(bool, bool, bool)> {
         .chars()
         .all(|c| c == 'h' || c == 's' || c == 'd' || c == 'a')
     {
-        return errf!("coinkind format error");
+        return errf!("coinkind format invalid");
     }
     Ok((s.contains('h'), s.contains('s'), s.contains('d')))
 }
@@ -141,7 +141,7 @@ fn body_data_may_hex(req: &ApiRequest) -> Ret<Vec<u8>> {
     if !q_bool(req, "hexbody", false) {
         return Ok(req.body.clone());
     }
-    hex::decode(&req.body).map_err(|_| "hex format error".to_owned())
+    hex::decode(&req.body).map_err(|_| "hex format invalid".to_owned())
 }
 
 fn right_00_to_ff(hx: &mut [u8]) {

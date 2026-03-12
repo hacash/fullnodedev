@@ -221,7 +221,7 @@ impl Address {
     
     pub fn from_readable(addr: &str) -> Ret<Self> {
         let Ok((version, body)) = addr.from_base58check() else {
-            return errf!("base58check error")
+            return errf!("base58check failed")
         };
         if body.len() != Self::SIZE - 1 {
             return Err("address length invalid".to_string())
@@ -355,7 +355,7 @@ impl AddrOrPtr {
             Self::Val2(v) => {
                 let ix = v.uint();
                 if ix < ADDR_OR_PTR_DIV_NUM {
-                    return errf!("addr ptr index error")
+                    return errf!("addr ptr index invalid")
                 }
                 let i = (ix - ADDR_OR_PTR_DIV_NUM) as usize;
                 maybe!(i < addrs.len(), Ok(addrs[i].clone()), errf!("addr ptr index overflow"))

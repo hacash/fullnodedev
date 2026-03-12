@@ -16,10 +16,10 @@ fn transaction_sign(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     let (address, signobj) = if prikey.len() == 64 {
         let Ok(prik) = hex::decode(&prikey) else {
-            return api_error("prikey format error");
+            return api_error("prikey format invalid");
         };
         let Ok(acc) = Account::create_by_secret_key_value(prik.try_into().unwrap()) else {
-            return api_error("prikey data error");
+            return api_error("prikey data invalid");
         };
         let fres = tx.fill_sign(&acc);
         if let Err(e) = fres {
@@ -28,13 +28,13 @@ fn transaction_sign(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         (Address::from(*acc.address()), fres.unwrap())
     } else {
         if pubkey.len() != 33 * 2 || sigdts.len() != 64 * 2 {
-            return api_error("pubkey or signature data error");
+            return api_error("pubkey or signature data invalid");
         }
         let Ok(pbk) = hex::decode(&pubkey) else {
-            return api_error("pubkey format error");
+            return api_error("pubkey format invalid");
         };
         let Ok(sig) = hex::decode(&sigdts) else {
-            return api_error("sigdts format error");
+            return api_error("sigdts format invalid");
         };
         let pbk: [u8; 33] = pbk.try_into().unwrap();
         let sig: [u8; 64] = sig.try_into().unwrap();
@@ -86,16 +86,16 @@ fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     };
 
     let Some(main_addr) = jsonv["main_address"].as_str() else {
-        return api_error("address format error");
+        return api_error("address format invalid");
     };
     let Ok(main_addr) = Address::from_readable(main_addr) else {
-        return api_error("address format error");
+        return api_error("address format invalid");
     };
     let Some(fee) = jsonv["fee"].as_str() else {
-        return api_error("amount format error");
+        return api_error("amount format invalid");
     };
     let Ok(fee) = Amount::from(fee) else {
-        return api_error("amount format error");
+        return api_error("amount format invalid");
     };
 
     let mut tx = TransactionType2::new_by(main_addr, fee, curtimes());
@@ -104,14 +104,14 @@ fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
 
     let Some(acts) = jsonv["actions"].as_array() else {
-        return api_error("actions format error");
+        return api_error("actions format invalid");
     };
     for act in acts {
         let Ok(a) = action_from_json(&act.to_string()) else {
-            return api_error("push action error");
+            return api_error("push action failed");
         };
         if tx.push_action(a).is_err() {
-            return api_error("push action error");
+            return api_error("push action failed");
         }
     }
 
@@ -144,7 +144,7 @@ fn transaction_check(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     if !set_fee.is_empty() {
         let Ok(fee) = Amount::from(&set_fee) else {
-            return api_error("fee format error");
+            return api_error("fee format invalid");
         };
         tx.set_fee(fee);
     }
@@ -153,7 +153,7 @@ fn transaction_check(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let mut data = render_tx_info(tx, None, 0, &unit, body, signature, true, description);
     if !sign_address.is_empty() {
         let Ok(addr) = Address::from_readable(&sign_address) else {
-            return api_error("sign_address format error");
+            return api_error("sign_address format invalid");
         };
         let sign_hash = if tx.main() == addr {
             tx.hash_with_fee()
@@ -176,10 +176,10 @@ fn transaction_exist(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let lasthei = ctx.engine.latest_block().height().uint();
 
     let Ok(hx) = hex::decode(&hash) else {
-        return api_error("transaction hash format error");
+        return api_error("transaction hash format invalid");
     };
     if hx.len() != Hash::SIZE {
-        return api_error("transaction hash format error");
+        return api_error("transaction hash format invalid");
     }
     let txhx = Hash::must(&hx);
 

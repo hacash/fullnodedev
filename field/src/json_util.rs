@@ -184,7 +184,7 @@ pub fn json_decode_binary(s: &str) -> Ret<Vec<u8>> {
         if rest.is_empty() {
             return Ok(vec![]);
         }
-        let (_ver, b) = rest.from_base58check().map_err(|e| format!("base58check error: {:?}", e))?;
+        let (_ver, b) = rest.from_base58check().map_err(|e| format!("base58check failed: {:?}", e))?;
         let mut full = vec![_ver];
         full.extend(b);
         return Ok(full);

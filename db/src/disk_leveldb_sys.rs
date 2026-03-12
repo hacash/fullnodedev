@@ -46,8 +46,9 @@ impl DiskDB for DiskKV {
     }
     */
 
-    
+    fn for_each(&self, each: &mut dyn FnMut(&[u8], &[u8])->bool) -> Rerr{
+        self.ldb.for_each(each)
+    }
+
 }
-
-
 

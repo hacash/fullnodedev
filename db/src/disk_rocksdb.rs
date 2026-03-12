@@ -16,19 +16,25 @@ impl DiskKV {
         Self { rdb: rocksdb::DB::open(&opts, dir).unwrap() }
     }
 
+    fn write_options() -> rocksdb::WriteOptions {
+        let mut opts = rocksdb::WriteOptions::default();
+        opts.set_sync(db_sync_enabled());
+        opts
+    }
+
 }
 
 
 impl DiskDB for DiskKV {
 
     fn remove(&self, k: &[u8]) {
-        self.rdb.delete(k).unwrap();
-        // self.rdb.flush().unwrap();
+        let opts = Self::write_options();
+        self.rdb.delete_opt(k, &opts).unwrap();
     }
 
     fn save(&self, k: &[u8], v: &[u8]) {
-        self.rdb.put(k, v).unwrap();
-        // self.rdb.flush().unwrap();
+        let opts = Self::write_options();
+        self.rdb.put_opt(k, v, &opts).unwrap();
     }
 
     fn read(&self, k: &[u8]) -> Option<Vec<u8>> {
@@ -37,8 +43,8 @@ impl DiskDB for DiskKV {
 
     fn write(&self, memkv: &dyn MemDB) {
         let wb = Membatch::from_memkv(memkv);
-        self.rdb.write(wb.into_batch().obj).unwrap(); // must
-        // self.rdb.flush().unwrap();
+        let opts = Self::write_options();
+        self.rdb.write_opt(wb.into_batch().obj, &opts).unwrap(); // must
     }
 
     /*
@@ -49,16 +55,16 @@ impl DiskDB for DiskKV {
     }
     */
 
-    fn for_each(&self, each: &mut dyn FnMut(Vec<u8>, Vec<u8>)->bool) {
-        let mut rdbiter = self.rdb.iterator(rocksdb::IteratorMode::Start);
-        while let Some(Ok(it)) = rdbiter.next() {
-            if !each(it.0.to_vec(), it.1.to_vec()) {
-                break // end
+    fn for_each(&self, each: &mut dyn FnMut(&[u8], &[u8])->bool) -> Rerr{
+        let rdbiter = self.rdb.iterator(rocksdb::IteratorMode::Start);
+        for item in rdbiter {
+            let (k, v) = item.map_err(|e| e.to_string())?;
+            if !each(k.as_ref(), v.as_ref()) {
+                break
             }
         }
+        Ok(())
     }
 
 }
-
-
 

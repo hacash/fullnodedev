@@ -33,10 +33,10 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
 
     let (address, signobj) = maybe!(prikey.len() == 64, {
         let Ok(prik) = hex::decode(&prikey) else {
-            return api_error("prikey format error")
+            return api_error("prikey format invalid")
         };
         let Ok(acc) = Account::create_by_secret_key_value(prik.try_into().unwrap()) else {
-            return api_error("prikey data error")
+            return api_error("prikey data invalid")
         };
         let fres = tx.fill_sign(&acc);
         if let Err(e) = fres {
@@ -46,13 +46,13 @@ async fn transaction_sign(State(ctx): State<ApiCtx>, q: Query<Q8826>, body: Byte
     }, {
         // replace
         if pubkey.len() != 33*2 || sigdts.len() != 64*2 {
-            return api_error("pubkey or signature data error")
+            return api_error("pubkey or signature data invalid")
         }
         let Ok(pbk) = hex::decode(&pubkey) else {
-            return api_error("pubkey format error")
+            return api_error("pubkey format invalid")
         };
         let Ok(sig) = hex::decode(&sigdts) else {
-            return api_error("sigdts format error")
+            return api_error("sigdts format invalid")
         };
         let pbk: [u8; 33] = pbk.try_into().unwrap();
         let sig: [u8; 64] = sig.try_into().unwrap();
@@ -117,7 +117,7 @@ async fn transaction_build(State(_ctx): State<ApiCtx>, q: Query<Q2856>, body: By
     macro_rules! j_addr {
         ($k: expr) => ({
             let Some(adr) = jsonv[$k].as_str() else {
-                return api_error("address format error")
+                return api_error("address format invalid")
             };
             let Ok(adrobj) = Address::from_readable(adr) else {
                 return api_error(&format!("address {} error", adr))
@@ -129,7 +129,7 @@ async fn transaction_build(State(_ctx): State<ApiCtx>, q: Query<Q2856>, body: By
     macro_rules! j_hac { // hac
         ($k: expr) => ({
             let Some(amt) = jsonv[$k].as_str() else {
-                return api_error("amount format error")
+                return api_error("amount format invalid")
             };
             let Ok(amtobj) = Amount::from(amt) else {
                 return api_error(&format!("amount {} error", amt))
@@ -147,15 +147,15 @@ async fn transaction_build(State(_ctx): State<ApiCtx>, q: Query<Q2856>, body: By
 
     // insert actions
     let Some(acts) = jsonv["actions"].as_array() else {
-        return api_error("actions format error")
+        return api_error("actions format invalid")
     };
     for act in acts {
         let a = action_from_json(&act.to_string());
         if let Err(e) = a {
-            return api_error(&format!("push action error: {}", &e))
+            return api_error(&format!("push action failed: {}", &e))
         }
         if let Err(e) = tx.push_action( a.unwrap()) {
-            return api_error(&format!("push action error: {}", &e))
+            return api_error(&format!("push action failed: {}", &e))
         }
     }
 
@@ -257,10 +257,10 @@ async fn transaction_exist(State(ctx): State<ApiCtx>, q: Query<Q3457>) -> impl I
 
     // parse tx hash
     let Ok(hx) = hex::decode(&hash) else {
-        return api_error("transaction hash format error")
+        return api_error("transaction hash format invalid")
     };
     if hx.len() != 32 {
-        return api_error("transaction hash format error")
+        return api_error("transaction hash format invalid")
     }
     let txhx = Hash::must(&hx);
 

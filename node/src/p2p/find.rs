@@ -17,7 +17,7 @@ async fn do_insert_new_nodes(this: &P2PManage, mearest_addrs: Vec<SocketAddr>, f
     let nodelen = mearest_addrs.len();
     if nodelen == 0 {
         let publen = this.backbones.lock().unwrap().len();
-        println!("connected {} public nodes, not find any nearest.", publen);
+        println!("connected {} public nodes, did not find any nearest.", publen);
         return
     }
     println!("find {} nearest nodes, try connect...", nodelen);
@@ -63,7 +63,7 @@ async fn do_find_nodes(this: &P2PManage) {
     }
     let newndcount = allfindnodes.len();
     if newndcount == 0 {
-        println!("not find any new nodes.");
+        println!("did not find any new nodes.");
         return
     }
     // check nearest
