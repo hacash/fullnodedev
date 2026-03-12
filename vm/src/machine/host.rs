@@ -5,7 +5,7 @@
 /// - Host implementations can enforce runtime policies (allowlists, mode gating, accounting) centrally.
 pub trait VmHost {
     fn height(&mut self) -> u64;
-    fn action_call(&mut self, kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)>;
+    fn action_call(&mut self, kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)>;
 
     // Logs
     fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr;
@@ -48,9 +48,9 @@ impl VmHost for CtxHost<'_> {
         self.ctx.env().block.height
     }
 
-    fn action_call(&mut self, kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+    fn action_call(&mut self, kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
         // ctx.level was already set to the correct call level by setup_vm_run
-        self.ctx.action_call(kid, body).into_ret()
+        self.ctx.action_call(kid, body)
     }
 
     fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr {

@@ -13,7 +13,7 @@ use protocol::operate::{
     hac_sub, hacd_sub, hacd_transfer, sat_check, sat_sub, sat_transfer,
 };
 use protocol::state::CoreState;
-use sys::{BError, BRet, Error, IntoBRet, Ret, UNWIND_PREFIX};
+use sys::{XError, XRet, TError, IntoXRet, Ret, UNWIND_PREFIX};
 use testkit::sim::integration::{
     make_ctx_from_tx as make_ctx, make_stub_tx as make_tx, test_guard, vm_alt_addr as alt_addr,
     vm_main_addr as main_addr,
@@ -36,8 +36,8 @@ fn mk_ctx<'a>(
     ctx
 }
 
-fn expect_unwind_ret<T>(ret: Ret<T>, msg: &str) -> BError {
-    let err = match ret.into_bret() {
+fn expect_unwind_ret<T>(ret: Ret<T>, msg: &str) -> XError {
+    let err = match ret.into_xret() {
         Ok(_) => panic!("expect unwind error but got Ok"),
         Err(err) => err,
     };
@@ -48,7 +48,7 @@ fn expect_unwind_ret<T>(ret: Ret<T>, msg: &str) -> BError {
     err
 }
 
-fn expect_unwind_bret<T>(ret: BRet<T>, msg: &str) -> BError {
+fn expect_unwind_bret<T>(ret: XRet<T>, msg: &str) -> XError {
     let err = match ret {
         Ok(_) => panic!("expect unwind error but got Ok"),
         Err(err) => err,
@@ -60,7 +60,7 @@ fn expect_unwind_bret<T>(ret: BRet<T>, msg: &str) -> BError {
     err
 }
 
-fn expect_interrupt_bret<T>(ret: BRet<T>, msg: &str) -> BError {
+fn expect_interrupt_bret<T>(ret: XRet<T>, msg: &str) -> XError {
     let err = match ret {
         Ok(_) => panic!("expect interrupt error but got Ok"),
         Err(err) => err,
@@ -72,8 +72,8 @@ fn expect_interrupt_bret<T>(ret: BRet<T>, msg: &str) -> BError {
     err
 }
 
-fn expect_interrupt_ret<T>(ret: Ret<T>, msg: &str) -> BError {
-    let err = match ret.into_bret() {
+fn expect_interrupt_ret<T>(ret: Ret<T>, msg: &str) -> XError {
+    let err = match ret.into_xret() {
         Ok(_) => panic!("expect interrupt error but got Ok"),
         Err(err) => err,
     };
@@ -235,7 +235,7 @@ fn vm_non_zero_return_code_is_unwind() {
     let _guard = test_guard();
     assert!(check_vm_return_value(&Value::nil(), "main call").is_ok());
     assert!(check_vm_return_value(&Value::u8(0), "main call").is_ok());
-    expect_unwind_ret(
+    expect_unwind_bret(
         check_vm_return_value(&Value::u8(7), "main call"),
         "return error code 7",
     );
@@ -244,26 +244,26 @@ fn vm_non_zero_return_code_is_unwind() {
 #[test]
 fn vm_non_numeric_return_is_unwind_with_stable_detail() {
     let _guard = test_guard();
-    expect_unwind_ret(
+    expect_unwind_bret(
         check_vm_return_value(&Value::bytes(b"bad".to_vec()), "main call"),
         "return error bytes \"bad\"",
     );
-    expect_unwind_ret(
+    expect_unwind_bret(
         check_vm_return_value(&Value::bytes(vec![0xff, 0x00]), "main call"),
         "return error bytes 0xff00",
     );
     let addr = main_addr();
-    expect_unwind_ret(
+    expect_unwind_bret(
         check_vm_return_value(&Value::Address(addr), "main call"),
         &format!("return error address {}", addr.to_readable()),
     );
-    expect_unwind_ret(
+    expect_interrupt_bret(
         check_vm_return_value(&Value::HeapSlice((0, 2)), "main call"),
-        "return error error <object>",
+        "return type HeapSlice is not supported",
     );
-    expect_unwind_ret(
+    expect_unwind_bret(
         check_vm_return_value(&Value::Compo(CompoItem::new_list()), "main call"),
-        "return error error <object>",
+        "return error object",
     );
 }
 
@@ -271,7 +271,7 @@ fn vm_non_numeric_return_is_unwind_with_stable_detail() {
 fn vm_throw_abort_and_action_pass_through_policy() {
     let _guard = test_guard();
 
-    let throw_abort: BError = ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
+    let throw_abort: XError = ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
     assert!(throw_abort.is_unwind(), "{throw_abort}");
     let throw_abort_wire: Error =
         ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
@@ -280,27 +280,25 @@ fn vm_throw_abort_and_action_pass_through_policy() {
         "{throw_abort_wire}"
     );
 
-    let action_prefixed: BError =
-        ItrErr(ItrErrCode::ActCallError, format!("{UNWIND_PREFIX}biz fail")).into();
-    assert!(action_prefixed.is_unwind(), "{action_prefixed}");
+    let action_unwind: XError =
+        ItrErr(ItrErrCode::ActCallUnwind, "biz fail".to_owned()).into();
+    assert!(action_unwind.is_unwind(), "{action_unwind}");
+    assert!(action_unwind.contains("ActCallUnwind"), "{action_unwind}");
+    let action_unwind_wire: Error =
+        ItrErr(ItrErrCode::ActCallUnwind, "biz fail".to_owned()).into();
     assert!(
-        action_prefixed.contains("ActCallError"),
-        "{action_prefixed}"
+        action_unwind_wire.starts_with(UNWIND_PREFIX),
+        "{action_unwind_wire}"
     );
 
-    let action_prefixed_wire: Error =
-        ItrErr(ItrErrCode::ActCallError, format!("{UNWIND_PREFIX}biz fail")).into();
+    let action_interrupt: XError =
+        ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
+    assert!(action_interrupt.is_interrupt(), "{action_interrupt}");
+    let action_interrupt_wire: Error =
+        ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
     assert!(
-        action_prefixed_wire.starts_with(UNWIND_PREFIX),
-        "{action_prefixed_wire}"
-    );
-
-    let action_plain: BError = ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
-    assert!(action_plain.is_interrupt(), "{action_plain}");
-    let action_plain_wire: Error = ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
-    assert!(
-        !action_plain_wire.starts_with(UNWIND_PREFIX),
-        "{action_plain_wire}"
+        !action_interrupt_wire.starts_with(UNWIND_PREFIX),
+        "{action_interrupt_wire}"
     );
 }
 
@@ -383,6 +381,7 @@ fn vm_itr_err_code_unwind_mapping_is_strict() {
         NativeFuncError,
         NativeEnvError,
         ActCallError,
+        ActCallUnwind,
         ItemNoSize,
         StorageKeyInvalid,
         StorageKeyNotFind,
@@ -394,17 +393,17 @@ fn vm_itr_err_code_unwind_mapping_is_strict() {
         ThrowAbort,
         NeverError,
     ];
-    assert_eq!(all_codes.len(), 82);
+    assert_eq!(all_codes.len(), 83);
 
     for code in all_codes {
-        let berr: BError = ItrErr(code, "x".to_owned()).into();
-        let should_unwind = matches!(code, ThrowAbort);
+        let xerr: XError = ItrErr(code, "x".to_owned()).into();
+        let should_unwind = matches!(code, ThrowAbort | ActCallUnwind);
         assert_eq!(
-            berr.is_unwind(),
+            xerr.is_unwind(),
             should_unwind,
             "ItrErrCode::{:?} unwind mismatch: {}",
             code,
-            berr
+            xerr
         );
     }
 }
@@ -495,36 +494,36 @@ fn expect_multiset_eq(
 #[test]
 fn unwind_macro_callsites_are_allowlisted() {
     let _guard = test_guard();
-    let actual = scan_lines_with_patterns(&["erru!(", "erruf!(", "berru!(", "berruf!("]);
+    let actual = scan_lines_with_patterns(&["xerr_r!(", "xerr_rf!("]);
     let expected = expected_multiset(&[
-        "protocol/src/action/astselect.rs:return erruf!(\"action ast select must succeed at least {} but only {}\", slt_min, ok);",
-        "protocol/src/action/chain.rs:return erruf!(\"transction must submit in height between {} and {}\", left, right)",
-        "protocol/src/action/chain.rs:return erruf!(\"transction must belong to chains {} but on chain {}\", cids, cid)",
-        "protocol/src/action/chain.rs:return erruf!(",
-        "protocol/src/action/chain.rs:return erruf!(",
-        "protocol/src/action/chain.rs:return erruf!(",
-        "protocol/src/action/chain.rs:return erruf!(",
-        "protocol/src/operate/asset.rs:return erruf!(\"address {} asset {} is insufficient, at least {}\",",
-        "protocol/src/operate/asset.rs:erruf!(\"address {} asset is insufficient, at least {}\", addr, ast)",
-        "protocol/src/operate/diamond.rs:return erruf!(\"address {} diamond {} is insufficient, at least {}\",",
-        "protocol/src/operate/diamond.rs:return erruf!(\"diamond {} has been mortgaged and cannot be transferred\", hacd_name.to_readable())",
-        "protocol/src/operate/diamond.rs:return erruf!(\"diamond {} not belong to address {}\", hacd_name.to_readable(), addr_from)",
-        "protocol/src/operate/hacash.rs:return erruf!(\"address {} balance {} is insufficient, at least {}\",",
-        "protocol/src/operate/hacash.rs:erruf!(\"address {} balance is insufficient, at least {}\", addr, amt)",
-        "protocol/src/operate/satoshi.rs:return erruf!(\"address {} satoshi {} is insufficient, at least {}\",",
-        "protocol/src/operate/satoshi.rs:erruf!(\"address {} satoshi is insufficient\", addr)",
-        "vm/src/machine/setup.rs:Ok(true) | Err(_) => erruf!(\"{} return error {}\", err_msg, vm_error_detail(rv)),",
+        "protocol/src/action/astselect.rs:return xerr_rf!(\"action ast select must succeed at least {} but only {}\", slt_min, ok);",
+        "protocol/src/action/chain.rs:return xerr_rf!(\"transction must submit in height between {} and {}\", left, right)",
+        "protocol/src/action/chain.rs:return xerr_rf!(\"transction must belong to chains {} but on chain {}\", cids, cid)",
+        "protocol/src/action/chain.rs:return xerr_rf!(",
+        "protocol/src/action/chain.rs:return xerr_rf!(",
+        "protocol/src/action/chain.rs:return xerr_rf!(",
+        "protocol/src/action/chain.rs:return xerr_rf!(",
+        "protocol/src/operate/asset.rs:return xerr_rf!(\"address {} asset {} is insufficient, at least {}\",",
+        "protocol/src/operate/asset.rs:xerr_rf!(\"address {} asset is insufficient, at least {}\", addr, ast)",
+        "protocol/src/operate/diamond.rs:return xerr_rf!(\"address {} diamond {} is insufficient, at least {}\",",
+        "protocol/src/operate/diamond.rs:return xerr_rf!(\"diamond {} has been mortgaged and cannot be transferred\", hacd_name.to_readable())",
+        "protocol/src/operate/diamond.rs:return xerr_rf!(\"diamond {} not belong to address {}\", hacd_name.to_readable(), addr_from)",
+        "protocol/src/operate/hacash.rs:return xerr_rf!(\"address {} balance {} is insufficient, at least {}\",",
+        "protocol/src/operate/hacash.rs:xerr_rf!(\"address {} balance is insufficient, at least {}\", addr, amt)",
+        "protocol/src/operate/satoshi.rs:return xerr_rf!(\"address {} satoshi {} is insufficient, at least {}\",",
+        "protocol/src/operate/satoshi.rs:xerr_rf!(\"address {} satoshi is insufficient\", addr)",
     ]);
     expect_multiset_eq("unwind macro callsites", &actual, expected);
 }
 
 #[test]
-fn direct_berror_unwind_callsites_are_allowlisted() {
+fn direct_xerror_revert_callsites_are_allowlisted() {
     let _guard = test_guard();
-    let actual = scan_lines_with_patterns(&["BError::unwind("]);
+    let actual = scan_lines_with_patterns(&["XError::revert("]);
     let expected = expected_multiset(&[
-        "vm/src/rt/error.rs:return BError::unwind(format!(\"{:?}({}): {}\", code, code as u8, m));",
-        "vm/src/rt/error.rs:BError::unwind(text)",
+        "vm/src/rt/error.rs:maybe!(is_unwind, XError::revert(text), XError::fault(text))",
+        "vm/src/interpreter/test.rs:return Err(XError::revert(e.clone()));",
+        "vm/src/machine/setup.rs:Some(d) => Err(XError::revert(format!(\"{} return error {}\", err_msg, d))),",
     ]);
-    expect_multiset_eq("direct BError::unwind callsites", &actual, expected);
+    expect_multiset_eq("direct XError::revert callsites", &actual, expected);
 }

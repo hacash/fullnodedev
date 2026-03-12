@@ -40,6 +40,7 @@ keyword_define! {
     Pragma    : "pragma"
     Use       : "use"
     Lib       : "lib"
+    Ext       : "ext"
     Let       : "let"
     Bind      : "bind"
     Const     : "const"

@@ -38,7 +38,7 @@ macro_rules! ast_try_item {
     ($ctx:expr, $exec:expr, $child_burn90:expr) => {{
         let __child_burn90 = $child_burn90;
         let __snap = CtxSnapshot::begin_ast_item($ctx)?;
-        let __raw: BRet<(u32, Vec<u8>)> = $exec;
+        let __raw: XRet<(u32, Vec<u8>)> = $exec;
         let __out = match __raw {
             Ok((child_gas, ret)) => {
                 let charge_gas = crate::context::apply_burn90_multiplier(
@@ -104,11 +104,11 @@ pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {
 }
 
 /// `Ok` => continue with value, `Unwind` => skip (continue without value), `Interrupt` => rethrow.
-pub fn ast_unwind_continue<T>(out: BRet<T>) -> Ret<Option<T>> {
+pub fn ast_unwind_continue<T>(out: XRet<T>) -> Ret<Option<T>> {
     match out {
         Ok(v) => Ok(Some(v)),
-        Err(BError::Unwind(_)) => Ok(None),
-        Err(e) => Err(e.into()), // BError → Error preserves interrupt semantics
+        Err(XError::Unwind(_)) => Ok(None),
+        Err(e) => Err(e.into()), // XError → Error preserves interrupt semantics
     }
 }
 
@@ -185,7 +185,7 @@ mod tests {
         }
     }
 
-    fn run_try_item_gas_fail(ctx: &mut dyn Context) -> Ret<BRet<Vec<u8>>> {
+    fn run_try_item_gas_fail(ctx: &mut dyn Context) -> Ret<XRet<Vec<u8>>> {
         Ok(ast_try_item!(ctx, Ok((1u32, vec![1u8]))))
     }
 

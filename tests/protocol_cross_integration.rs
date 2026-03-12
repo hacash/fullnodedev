@@ -123,7 +123,7 @@ impl FromJSON for AstTestSet {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestSet {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         Ok((0, vec![]))
     }
@@ -203,7 +203,7 @@ impl FromJSON for AstTestGasOnly {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestGasOnly {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         Ok((*self.gas as u32, vec![]))
     }
 }
@@ -278,8 +278,8 @@ impl FromJSON for AstTestFail {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestFail {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
-        berruf!("ast test forced fail")
+    fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
+        xerr_rf!("ast test forced fail")
     }
 }
 
@@ -999,7 +999,7 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
         }
     }
     impl ActExec for AstTestTexP2shSet {
-        fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+        fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
             ctx.tex_ledger().sat += 7;
             let adr = Address::create_scriptmh([7u8; 20]);
             ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
@@ -1097,7 +1097,7 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
     }
 
     impl ActExec for AstTestP2shSetOnly {
-        fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+        fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
             let adr = Address::create_scriptmh([8u8; 20]);
             ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
             Ok((0, vec![]))
@@ -1335,7 +1335,7 @@ impl FromJSON for AstTestLog {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestLog {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.logs().push(&self.tag);
         Ok((0, vec![]))
     }
@@ -1410,7 +1410,7 @@ impl FromJSON for AstTestTexAdd {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestTexAdd {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.tex_ledger().zhu += *self.zhu_add as i64;
         Ok((0, vec![]))
     }
@@ -1496,7 +1496,7 @@ impl P2sh for AstTestP2shImpl {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestP2shSetN {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
         ctx.p2sh_set(adr, Box::new(AstTestP2shImpl))?;
         Ok((0, vec![]))
@@ -1581,7 +1581,7 @@ impl FromJSON for AstTestCombo {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestCombo {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         ctx.tex_ledger().zhu += *self.val as i64;
         ctx.logs().push(&self.key);
@@ -2353,7 +2353,7 @@ impl FromJSON for AstTestVMCall {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVMCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         // The MockVM's counter is behind an Arc<AtomicI64>, so we can
         // mutate it through the shared reference obtained via ctx.vm().
         // snapshot_volatile captures the current value; restore_volatile resets it.
@@ -2507,7 +2507,7 @@ impl FromJSON for AstTestVmInitReplace {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitReplace {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let vm = take_ast_recover_track_vm();
         ctx.vm_init_once(vm)?;
         ctx.vm().restore_volatile(Box::new(*self.value as i64));
@@ -2612,12 +2612,12 @@ impl FromJSON for AstTestVmSetNilAndFail {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmSetNilAndFail {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
         if let Some(flag) = lock.lock().unwrap().as_ref() {
             flag.store(false, std::sync::atomic::Ordering::SeqCst);
         }
-        berruf!("flip to nil and fail")
+        xerr_rf!("flip to nil and fail")
     }
 }
 
@@ -2665,10 +2665,10 @@ impl VM for AstDeepDelayVm {
         self.volatile.store(0, std::sync::atomic::Ordering::SeqCst);
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
+    fn call(&mut self, call: VMCall<'_>) -> XRet<(i64, Vec<u8>)> {
         let data = call.payload.as_ref();
         if data.len() < 3 {
-            return berrf!("deep delay vm payload too short");
+            return xerrf!("deep delay vm payload too short");
         }
         let vol_add = data[0] as i64;
         let warm_add = data[1] as i64;
@@ -2678,7 +2678,7 @@ impl VM for AstDeepDelayVm {
         self.warmup
             .fetch_add(warm_add, std::sync::atomic::Ordering::SeqCst);
         if should_fail {
-            return berruf!("deep delay vm forced fail");
+            return xerr_rf!("deep delay vm forced fail");
         }
         Ok((0, vec![]))
     }
@@ -2768,7 +2768,7 @@ impl FromJSON for AstTestDeepDelayVmInit {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmInit {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.vm_init_once(take_ast_deep_delay_vm())?;
         Ok((0, vec![]))
     }
@@ -2847,7 +2847,7 @@ impl FromJSON for AstTestDeepDelayVmCall {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestDeepDelayVmCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.vol_add, *self.warm_add, *self.fail];
         let ctxptr = ctx as *mut dyn Context;
         let (_gas, rv) = unsafe {
@@ -2938,7 +2938,7 @@ impl FromJSON for AstTestVmInitFlip {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestVmInitFlip {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
         let non_nil = lock
             .lock()
@@ -3009,10 +3009,10 @@ impl VM for AstBugAssumeVm {
         }
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
+    fn call(&mut self, call: VMCall<'_>) -> XRet<(i64, Vec<u8>)> {
         let data = call.payload.as_ref();
         if data.len() < 2 {
-            return berrf!("ast bug assume vm payload too short");
+            return xerrf!("ast bug assume vm payload too short");
         }
         let should_fail = data[0] != 0;
         let gas_cost = data[1] as i64;
@@ -3020,7 +3020,7 @@ impl VM for AstBugAssumeVm {
             .fetch_sub(gas_cost, std::sync::atomic::Ordering::SeqCst);
         self.volatile_mark += gas_cost;
         if should_fail {
-            return berruf!("ast bug assume vm forced fail");
+            return xerr_rf!("ast bug assume vm forced fail");
         }
         self.burned
             .fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
@@ -3078,7 +3078,7 @@ impl FromJSON for AstTestBugVmCall {
 
 #[cfg(feature = "ast")]
 impl ActExec for AstTestBugVmCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.fail, *self.cost];
         let ctxptr = ctx as *mut dyn Context;
         let (_gas, rv) = unsafe {
@@ -3946,7 +3946,7 @@ impl FromJSON for AstTestMainSet {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainSet {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         Ok((0, vec![]))
     }
@@ -4021,7 +4021,7 @@ impl FromJSON for AstTestMainP2shSetN {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainP2shSetN {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
         ctx.p2sh_set(adr, Box::new(AstTestP2shImpl))?;
         Ok((0, vec![]))
@@ -4090,7 +4090,7 @@ impl FromJSON for AstTestMainVMCall {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMainVMCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let snap = ctx.vm().snapshot_volatile();
         if let Ok(cur) = snap.downcast::<i64>() {
             let new_val = *cur + *self.increment as i64;
@@ -4168,7 +4168,7 @@ impl FromJSON for AstTestRet {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestRet {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         Ok((0, vec![*self.tag]))
     }
 }
@@ -4266,7 +4266,7 @@ impl FromJSON for AstTestMutateAllFail {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestMutateAllFail {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         ctx.state().set(vec![*self.key], vec![*self.val]);
         ctx.tex_ledger().zhu += *self.val as i64;
         ctx.logs().push(&self.key);
@@ -4277,7 +4277,7 @@ impl ActExec for AstTestMutateAllFail {
             let new_val = *cur + *self.vm_add as i64;
             ctx.vm().restore_volatile(Box::new(new_val));
         }
-        berruf!("ast test mutate-all fail")
+        xerr_rf!("ast test mutate-all fail")
     }
 }
 #[cfg(feature = "ast")]
@@ -4544,7 +4544,7 @@ impl FromJSON for AstTestExtCall {
 }
 #[cfg(feature = "ast")]
 impl ActExec for AstTestExtCall {
-    fn execute(&self, ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         // Simulate what ACTION does: modify state through ctx_action_call path.
         // We directly set state here since ctx_action_call ultimately calls action.execute(ctx).
         ctx.state().set(vec![*self.key], vec![*self.val]);

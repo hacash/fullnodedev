@@ -48,7 +48,7 @@ impl Account {
 
     // create
     
-    pub fn create_randomly(randomfill: &dyn Fn(&mut [u8])->Rerr) -> Ret<Account> {
+    pub fn create_randomly(randomfill: &dyn Fn(&mut [u8]) -> Rerr) -> Ret<Account> {
         loop {
             let mut data = [0u8; PRIVATE_SIZE];
             /*if let Err(e) = getrandom::fill(&mut data) {

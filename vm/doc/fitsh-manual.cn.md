@@ -56,7 +56,7 @@ Fitsh 编译为 IR 字节码。该 IR 可通过 `format_ircode_to_lang` 或 `irc
 |------|------|
 | `trim_param_unpack` | 推断参数名时输出 `param { $0 $1 ... }` |
 | `hide_default_call_argv` | 无参数时省略 `nil` 或 `""` 占位符 |
-| `call_short_syntax` | 有 SourceMap 时优先 `lib.func(...)` 而非 `callext idx::0x...(args)` |
+| `call_short_syntax` | 影响 `call ... ext(i).sig(...)`/`codecall` 中库索引是否用库名显示 |
 | `flatten_array_list` | 输出 `[a, b, c]` 而非 `list { a b c }` |
 | `flatten_syscall_cat` | 展开系统调用参数中的嵌套 `++` |
 | `recover_literals` | 恢复并输出数字/字节字面量 |
@@ -64,8 +64,8 @@ Fitsh 编译为 IR 字节码。该 IR 可通过 `format_ircode_to_lang` 或 `irc
 ### 2.4 输出形式
 
 - **参数**：`param { owner amount fee }` 或名称不可用时 `param { $0 $1 $2 }`
-- **调用**：内部调用 `this.foo(...)`、`self.foo(...)`、`super.foo(...)`；有 SourceMap 时库调用 `Token.balance_of(addr)`
-- **原始调用**：库/函数名未知时 `callext 1::0xabcdef01(10, 20)`
+- **调用**：统一输出 `call <effect> <target>.<sig>(...)`，例如 `call view ext(1).0xabcdef01(addr)`
+- **代码拼接**：统一输出 `codecall <libidx>.<sig>`，例如 `codecall 1.0xabcdef01`
 
 ---
 
@@ -281,14 +281,15 @@ param { owner amount fee }
 - 必须出现在函数体开头
 - 规范 IR：`UNPACK(ROLL0, P0)`
 
-### 6.2 `codecall lib_idx::func_sig`
+### 6.2 `codecall lib_idx.func_sig`
 
-- 无参数；尾调用
+- 支持可选参数列表：`codecall C.f`、`codecall C.f()`、`codecall C.f(nil)`、`codecall C.f(a)`、`codecall C.f(a, b)`
+- `codecall C.f`、`codecall C.f()`、`codecall C.f(nil)` 三者等价
 - 必须紧跟 `end`
 - 用于底层委托
 
 ```fitsh
-codecall 0::0xabcdef01
+codecall 0.0xabcdef01
 end
 ```
 

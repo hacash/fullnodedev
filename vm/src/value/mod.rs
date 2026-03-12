@@ -14,6 +14,7 @@ use super::*;
 pub const REF_DUP_SIZE: usize = 8;
 
 include!("util.rs");
+include!("list.rs");
 include!("convert.rs");
 include!("compo.rs");
 include!("args.rs");

@@ -9,7 +9,7 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 - Identifiers allow `$` prefixes (slot access) and alphanumeric characters plus `_`/`$`. Symbol sequences are mapped to keywords or operators (e.g., `+=`, `==`, `++`; see `vm/src/rt/lang.rs:30-169`).
 
 ## 2. Keywords and operators
-- Keywords cover control flow (`if/else/while`), type annotations (`as/is`, `u8`, etc.), declarations/assignments (`bind/var/lib/param`), primitives (`log/print/assert/throw/return/end/abort`), and low-level hooks (`codecall/bytecode`); see `vm/src/rt/lang.rs:30-169`.  
+- Keywords cover control flow (`if/else/while`), type annotations (`as/is`, `u8`, etc.), declarations/assignments (`bind/var/lib/ext/param`), primitives (`log/print/assert/throw/return/end/abort`), and low-level hooks (`codecall/bytecode`); see `vm/src/rt/lang.rs`. Canonical external call target in source is `ext(i)` (e.g. `call pure ext(1).0x01020304()`); `lib` is for binding only (`lib Name = idx`).  
 - Binary operators honor precedence via `parse_next_op` in `syntax.rs`. `+`/`-` have precedence 120, `*`/`/`/`%` 150, while logic short-circuit operators `&&`/`||` are lowest; concatenation is represented by `++`.  
 - The `++` operator concatenates bytes/addresses into a new `Bytes`, commonly used in finance contracts to build storage keys (e.g., `"b_" ++ addr`).
 
@@ -55,7 +55,7 @@ Rule of thumb:
 - `bind name = expr`: lazy/cached macro binding; declarations store the expression template and never emit `PUT`/`GET`. Every reference to `name` clones the template, so it behaves like an inline macro. Because `bind` does not allocate slots, there is no `$slot` form anymore; use `var` whenever you need a reusable slot.
 - `lib Foo = idx [: address]?`: binds a short alias to an external library/contract, optionally with an explicit address, for use in `Foo.method(...)` calls.  
 - `param { a b c }`: declares function parameters at the top of the body; the implementation uses `ROLL` and `UNPACK` to populate slots (`syntax.rs:412-452`).  
-- `codecall Foo::bar` and `bytecode {...}` inject low-level bytecode directly; use them sparingly, as the compiler does not enforce safety and they can bypass language invariants (`syntax.rs:738-780`).  
+- `codecall Foo.bar` and `bytecode {...}` inject low-level bytecode directly; use them sparingly, as the compiler does not enforce safety and they can bypass language invariants (`syntax.rs:738-780`).  
 - `log`, `print`, `assert`, `throw`, `return`, `end`, and `abort` map directly to IR primitives.  
 - Avoid naming `list`/`map` blocks the same as `bind` bindings, and do not reuse slots or empty keys to prevent runtime errors.
 

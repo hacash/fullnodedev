@@ -339,7 +339,7 @@ mod fitsh_compile_tests {
             log_five: "log(1, 2, 3, 4, 5)",
             log_bracket: "log[1, 2, 3]",
             log_brace: "log{1, 2, 3}",
-            codecall_simple: "codecall lib(0).0xabcdef01",
+            codecall_simple: "codecall ext(0).0xabcdef01",
         );
     }
 
@@ -487,7 +487,7 @@ mod fitsh_compile_tests {
             call_edit_keyword: "return call edit self.0x01020304(1)",
             call_view_upper_keyword: "return call view upper.0x01020304(1)",
             call_pure_use_keyword: "return call pure use(1).0x01020304(1)",
-            codecall_keyword: "codecall 0::0xabcdef01",
+              codecall_keyword: "codecall 0.0xabcdef01",
         );
 
         assert_compile_err!(

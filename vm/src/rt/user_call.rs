@@ -1,6 +1,5 @@
 pub const CALL_BODY_WIDTH: usize = 6;
 pub const SPLICE_BODY_WIDTH: usize = 5;
-pub const CODECALL_BODY_WIDTH: usize = SPLICE_BODY_WIDTH;
 
 const CALL_TARGET_MASK: u8 = 0b0000_0111;
 const CALL_EFFECT_MASK: u8 = 0b0001_1000;
@@ -31,7 +30,50 @@ pub enum CallSpec {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnchorSource {
+    StateThis,
+    CodeOwner,
+    Lib(u8),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CandidateSet {
+    AnchorOnly,
+    ParentsOnly,
+    AnchorAndParents,
+}
+
 impl CallSpec {
+    fn anchor_semantics(&self) -> (AnchorSource, CandidateSet) {
+        match *self {
+            Self::Invoke {
+                target: CallTarget::This,
+                ..
+            } => (AnchorSource::StateThis, CandidateSet::AnchorAndParents),
+            Self::Invoke {
+                target: CallTarget::Self_,
+                ..
+            } => (AnchorSource::CodeOwner, CandidateSet::AnchorOnly),
+            Self::Invoke {
+                target: CallTarget::Upper,
+                ..
+            } => (AnchorSource::CodeOwner, CandidateSet::AnchorAndParents),
+            Self::Invoke {
+                target: CallTarget::Super,
+                ..
+            } => (AnchorSource::CodeOwner, CandidateSet::ParentsOnly),
+            Self::Invoke {
+                target: CallTarget::Ext(lib),
+                ..
+            } => (AnchorSource::Lib(lib), CandidateSet::AnchorAndParents),
+            Self::Invoke {
+                target: CallTarget::Use(lib),
+                ..
+            } => (AnchorSource::Lib(lib), CandidateSet::AnchorOnly),
+            Self::Splice { lib, .. } => (AnchorSource::Lib(lib), CandidateSet::AnchorOnly),
+        }
+    }
     pub const fn invoke(target: CallTarget, effect: EffectMode, selector: FnSign) -> Self {
         Self::Invoke {
             target,
@@ -58,32 +100,34 @@ impl CallSpec {
     }
 
     pub fn resolve_anchor(&self, bindings: &FrameBindings) -> VmrtRes<ContractAddress> {
+        self.resolve_anchor_from(
+            bindings.state_this.as_ref(),
+            bindings.code_owner.as_ref(),
+            &bindings.lib_table,
+        )
+    }
+
+    pub fn resolve_anchor_from(
+        &self,
+        state_this: Option<&ContractAddress>,
+        code_owner: Option<&ContractAddress>,
+        lib_table: &[Address],
+    ) -> VmrtRes<ContractAddress> {
         use ItrErrCode::*;
-        match *self {
-            Self::Invoke {
-                target: CallTarget::This,
-                ..
-            } => bindings
-                .state_this
-                .clone()
+        let (src, _) = self.anchor_semantics();
+        match src {
+            AnchorSource::StateThis => state_this
+                .cloned()
                 .ok_or_else(|| ItrErr::code(CallInvalid)),
-            Self::Invoke {
-                target: CallTarget::Self_ | CallTarget::Upper | CallTarget::Super,
-                ..
-            } => bindings
-                .code_owner
-                .clone()
+            AnchorSource::CodeOwner => code_owner
+                .cloned()
                 .ok_or_else(|| ItrErr::code(CallInvalid)),
-            Self::Invoke {
-                target: CallTarget::Ext(lib) | CallTarget::Use(lib),
-                ..
-            }
-            | Self::Splice { lib, .. } => {
+            AnchorSource::Lib(lib) => {
                 let libidx = lib as usize;
-                if libidx >= bindings.lib_table.len() {
+                if libidx >= lib_table.len() {
                     return itr_err_code!(CallLibIdxOverflow);
                 }
-                ContractAddress::from_addr(bindings.lib_table[libidx]).map_ire(ContractAddrErr)
+                ContractAddress::from_addr(lib_table[libidx]).map_ire(ContractAddrErr)
             }
         }
     }
@@ -93,48 +137,28 @@ impl CallSpec {
         anchor: &ContractAddress,
         parents: &[ContractAddress],
     ) -> Vec<ContractAddress> {
-        match *self {
-            Self::Invoke {
-                target: CallTarget::Super,
-                ..
-            } => parents.iter().cloned().collect(),
-            Self::Invoke {
-                target: CallTarget::This | CallTarget::Upper | CallTarget::Ext(_),
-                ..
-            } => {
+        let (_, set) = self.anchor_semantics();
+        match set {
+            CandidateSet::AnchorOnly => vec![anchor.clone()],
+            CandidateSet::ParentsOnly => parents.to_vec(),
+            CandidateSet::AnchorAndParents => {
                 let mut out = Vec::with_capacity(1 + parents.len());
                 out.push(anchor.clone());
                 out.extend(parents.iter().cloned());
                 out
             }
-            Self::Invoke {
-                target: CallTarget::Self_ | CallTarget::Use(_),
-                ..
-            }
-            | Self::Splice { .. } => vec![anchor.clone()],
         }
     }
 
-    pub const fn needs_inherit_chain(&self) -> bool {
-        matches!(
-            *self,
-            Self::Invoke {
-                target: CallTarget::This
-                    | CallTarget::Upper
-                    | CallTarget::Super
-                    | CallTarget::Ext(_),
-                ..
-            }
-        )
+    pub fn needs_inherit_chain(&self) -> bool {
+        let (_, set) = self.anchor_semantics();
+        matches!(set, CandidateSet::ParentsOnly | CandidateSet::AnchorAndParents)
     }
 
-    pub const fn lib_index(&self) -> Option<u8> {
-        match *self {
-            Self::Invoke {
-                target: CallTarget::Ext(lib) | CallTarget::Use(lib),
-                ..
-            }
-            | Self::Splice { lib, .. } => Some(lib),
+    pub fn lib_index(&self) -> Option<u8> {
+        let (src, _) = self.anchor_semantics();
+        match src {
+            AnchorSource::Lib(l) => Some(l),
             _ => None,
         }
     }
@@ -211,29 +235,17 @@ impl CallSpec {
 
 fn decode_call_target(tag: u8, arg: u8) -> VmrtRes<CallTarget> {
     Ok(match tag {
-        0 => {
+        0..=3 => {
             if arg != 0 {
                 return itr_err_code!(CallInvalid);
             }
-            CallTarget::This
-        }
-        1 => {
-            if arg != 0 {
-                return itr_err_code!(CallInvalid);
+            match tag {
+                0 => CallTarget::This,
+                1 => CallTarget::Self_,
+                2 => CallTarget::Upper,
+                3 => CallTarget::Super,
+                _ => unreachable!(),
             }
-            CallTarget::Self_
-        }
-        2 => {
-            if arg != 0 {
-                return itr_err_code!(CallInvalid);
-            }
-            CallTarget::Upper
-        }
-        3 => {
-            if arg != 0 {
-                return itr_err_code!(CallInvalid);
-            }
-            CallTarget::Super
         }
         4 => CallTarget::Ext(arg),
         5 => CallTarget::Use(arg),
@@ -304,7 +316,7 @@ pub const fn is_user_call_inst(inst: Bytecode) -> bool {
 
 pub fn decode_user_call_site(inst: Bytecode, s: &[u8]) -> VmrtRes<CallSpec> {
     match inst {
-        Bytecode::CODECALL => decode_codecall_body(s),
+        Bytecode::CODECALL => decode_splice_body(s),
         Bytecode::CALL => decode_call_body(s),
         Bytecode::CALLEXT => decode_short_indexed_call_body(s, EffectMode::Edit, CallTarget::Ext),
         Bytecode::CALLEXTVIEW => {
@@ -329,7 +341,7 @@ pub fn encode_user_call_site(call: CallSpec) -> (Bytecode, Vec<u8>) {
     match call {
         CallSpec::Splice { lib, selector } => (
             Bytecode::CODECALL,
-            encode_codecall_body(lib, selector).to_vec(),
+            encode_splice_body(lib, selector).to_vec(),
         ),
         CallSpec::Invoke {
             target,
@@ -426,14 +438,6 @@ pub fn encode_splice_body(lib: u8, selector: FnSign) -> [u8; SPLICE_BODY_WIDTH] 
     out[0] = lib;
     out[1..].copy_from_slice(&selector);
     out
-}
-
-pub fn decode_codecall_body(s: &[u8]) -> VmrtRes<CallSpec> {
-    decode_splice_body(s)
-}
-
-pub fn encode_codecall_body(lib: u8, selector: FnSign) -> [u8; CODECALL_BODY_WIDTH] {
-    encode_splice_body(lib, selector)
 }
 
 #[cfg(test)]

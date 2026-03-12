@@ -96,12 +96,31 @@ impl BytecodePrint for Vec<u8> {
                         let ary = ACTION_VIEW_DEFS;
                         let f = search_act_name_by_id(self[i], &ary);
                         pms.push(format!(" {}(..) ", f));
-                    }else if let CALLEXT = inst {
-                        let lib = self[i];
-                        let func = hex::encode(&self[i+1..i+1+4]);
-                        pms.push(format!(" {}.<{}> ", lib, func));
-                        /* let lx = Address::SIZE;1` FA `Aq1    `` let addr = Address::must_vec(self[i..i+lx].to_vec()); let func = hex::encode(&self[i+lx..i+lx+4]); pms.push(format!(" {}.<{}> ", addr.readable(), func)); */
-                    }else{
+                    } else if is_user_call_inst(inst) {
+                        let body = &self[i..i + meta.param as usize];
+                        match decode_user_call_site(inst, body) {
+                            Ok(CallSpec::Invoke { target, effect, selector }) => {
+                                let eff = match effect {
+                                    EffectMode::Edit => "edit",
+                                    EffectMode::View => "view",
+                                    EffectMode::Pure => "pure",
+                                };
+                                let tgt = match target {
+                                    CallTarget::This => "this".to_string(),
+                                    CallTarget::Self_ => "self".to_string(),
+                                    CallTarget::Upper => "upper".to_string(),
+                                    CallTarget::Super => "super".to_string(),
+                                    CallTarget::Ext(n) => format!("ext({})", n),
+                                    CallTarget::Use(n) => format!("use({})", n),
+                                };
+                                pms.push(format!("call {} {}.<{}>", eff, tgt, hex::encode(&selector)));
+                            }
+                            Ok(CallSpec::Splice { lib, selector }) => {
+                                pms.push(format!("codecall {}.<{}>", lib, hex::encode(&selector)));
+                            }
+                            Err(_) => nmpm(),
+                        }
+                    } else {
                         nmpm();
                     }
                 }else{
@@ -200,5 +219,68 @@ mod parse_tests {
         ];
         let printed = codes.bytecode_print(true).unwrap();
         assert!(printed.contains("block: [3]"), "unexpected print: {}", printed);
+    }
+
+    #[test]
+    fn bytecode_print_desc_covers_all_user_call_forms() {
+        let selector_a = [0x01, 0x02, 0x03, 0x04];
+        let selector_b = [0xaa, 0xbb, 0xcc, 0xdd];
+        let cases = [
+            (
+                CallSpec::invoke(CallTarget::This, EffectMode::Edit, selector_a),
+                "call edit this.<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Self_, EffectMode::Edit, selector_a),
+                "call edit self.<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Super, EffectMode::Edit, selector_a),
+                "call edit super.<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Self_, EffectMode::View, selector_a),
+                "call view self.<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Self_, EffectMode::Pure, selector_a),
+                "call pure self.<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Ext(7), EffectMode::Edit, selector_a),
+                "call edit ext(7).<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Ext(7), EffectMode::View, selector_a),
+                "call view ext(7).<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Use(7), EffectMode::View, selector_a),
+                "call view use(7).<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Use(7), EffectMode::Pure, selector_a),
+                "call pure use(7).<01020304>",
+            ),
+            (
+                CallSpec::invoke(CallTarget::Upper, EffectMode::View, selector_b),
+                "call view upper.<aabbccdd>",
+            ),
+            (CallSpec::splice(9, selector_b), "codecall 9.<aabbccdd>"),
+        ];
+
+        for (call, needle) in cases {
+            let (inst, para) = encode_user_call_site(call);
+            let mut codes = vec![inst as u8];
+            codes.extend_from_slice(&para);
+            codes.push(Bytecode::END as u8);
+            let printed = codes.bytecode_print(true).unwrap();
+            assert!(
+                printed.contains(needle),
+                "missing '{}' in print:\n{}",
+                needle,
+                printed
+            );
+        }
     }
 }

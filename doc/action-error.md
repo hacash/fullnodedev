@@ -16,19 +16,18 @@ This separation enables:
 
 ## 2. Error model and signaling
 
-- `BRet<T> = Result<T, BError>` and `BRerr = Result<(), BError>` are the typed error carriers.
-- `BError::Unwind(msg)` means business/runtime failure that can be handled by caller logic.
-- `BError::Interrupt(msg)` means hard failure and must stop the current execution path.
-- Wire protocol between `Ret<String>` and `BRet<BError>`:
+- `XRet<T> = Result<T, XError>` and `XRerr = Result<(), XError>` are the typed error carriers.
+- `XError::Unwind(msg)` means business/runtime failure that can be handled by caller logic.
+- `XError::Interrupt(msg)` means hard failure and must stop the current execution path.
+- Wire protocol between `Ret<Error>` and `XRet<XError>`:
   - Recoverable: `"[UNWIND] " + msg`
   - Unrecoverable: plain message with no prefix
 
 In action code:
 
 - `err!` / `errf!` => unrecoverable by default.
-- `berr!` / `berrf!` => unrecoverable by default.
-- `erru!` / `erruf!` => explicitly recoverable.
-- `berru!` / `berruf!` => explicitly recoverable.
+- `xerr!` / `xerrf!` => unrecoverable by default.
+- `xerr_r!` / `xerr_rf!` => explicitly recoverable.
 
 ## 3. Business errors (recoverable)
 
@@ -121,8 +120,8 @@ In `Action::execute`, these must be unrecoverable:
 
 Use this strict split in all action implementations:
 
-- Unrecoverable (`err!`/`errf!`, `berr!`/`berrf!`): default for all framework/system/usage/policy errors.
-- Recoverable (`erru!`/`erruf!`, `berru!`/`berruf!`): only for contract explicit business throw/return semantics.
+- Unrecoverable (`err!`/`errf!`, `xerr!`/`xerrf!`): default for all framework/system/usage/policy errors.
+- Recoverable (`xerr_r!`/`xerr_rf!`): only for contract explicit business throw/return semantics.
 
 This keeps action semantics aligned with VM and snapshot rollback strategy.
 
@@ -154,14 +153,17 @@ This checklist is the authoritative reference for recoverable errors.
 
 ### 6.3 `maincall` / `p2shcall` / `abstcall` return error codes
 
-Recoverable here means: `Machine::main_call`, `Machine::p2sh_call`, and
-`Machine::abst_call` fail in `check_vm_return_value` because the return value is
-non-zero (error code).
+`check_vm_return_value` (logic inlined, no separate helper):
+
+- **Success:** Return value is falsy (nil, 0, false, empty/all-zero bytes or address).
+- **Recoverable:** Non-falsy scalar or object (Args, Compo) — business error code or JSON detail; all reported via `xerr_rf!`/`XError::revert`.
+- **Unrecoverable:** Return type is `HeapSlice` — not supported; reported via `xerrf!`/`XError::fault`.
 
 Rule:
 
-- Only `nil` or `0` is success.
-- Any non-zero return value is treated as business error code and recoverable.
+- Falsy return => success.
+- Non-falsy or Args/Compo => recoverable return error.
+- HeapSlice => unrecoverable (return type not supported).
 
 Mapping location:
 
@@ -180,13 +182,15 @@ Mapping location:
 
 ### 6.5 Ext action recoverability pass-through
 
-- `ExtActCallError` with `[UNWIND] ` => recoverable.
-- `ExtActCallError` without explicit prefix => unrecoverable.
+- Host `action_call` returns `XRet`; recoverability is carried by `XError` (Unwind vs Interrupt), not by string prefix.
+- Interpreter maps `XError::Unwind(msg)` → `ItrErr(ActCallUnwind, msg)`, `XError::Interrupt(msg)` → `ItrErr(ActCallError, msg)`.
+- `vm/src/rt/error.rs` maps `ActCallUnwind` → recoverable, `ActCallError` → unrecoverable (by code, no prefix parsing).
 
 Mapping location:
 
-- `vm/src/interpreter/execute.rs` (error passthrough source)
-- `vm/src/rt/error.rs` (classification sink)
+- `vm/src/machine/host.rs` (trait returns `XRet`)
+- `vm/src/interpreter/execute.rs` (XError → ItrErr by variant)
+- `vm/src/rt/error.rs` (ItrErrCode → XError/Error)
 
 ## 7. Additional business-failure candidates (optional)
 

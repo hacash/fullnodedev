@@ -147,11 +147,11 @@ impl Value {
 
     pub fn type_from(ty: ValueTy, stuff: Vec<u8>) -> VmrtRes<Self> {
         let vlen = stuff.len();
-        macro_rules! err {()=>{ itr_err_fmt!(CastParamFail, "cannot cast 0x{} to type id {:?}", stuff.clone().to_hex(), ty) }}
+        macro_rules! cast_err {()=>{ itr_err_fmt!(CastParamFail, "cannot cast 0x{} to type id {:?}", stuff.clone().to_hex(), ty) }}
         macro_rules! ensure_len {
             ($l:expr) => {
                 if vlen != $l {
-                    return err!()
+                    return cast_err!()
                 }
             };
         }
@@ -177,7 +177,7 @@ impl Value {
                     &stuff[0..field::Address::SIZE]).unwrap();
                 Ok(Self::Address(addr))
             },
-            _ => err!(),
+            _ => cast_err!(),
         }
     }
     

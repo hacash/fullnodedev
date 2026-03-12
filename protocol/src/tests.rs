@@ -73,7 +73,7 @@ impl Description for TestExtEnvReadOnly {
 }
 
 impl ActExec for TestExtEnvReadOnly {
-    fn execute(&self, _ctx: &mut dyn Context) -> BRet<(u32, Vec<u8>)> {
+    fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         Ok((0, vec![1u8]))
     }
 }

@@ -1,26 +1,15 @@
 fn check_call_mode(exec: ExecCtx, call: &CallSpec) -> VmrtErr {
-    if call.requires_external_visibility() && exec.entry == EntryKind::Abst {
-        return itr_err_code!(CallInAbst);
-    }
-    if matches!(
-        call,
-        CallSpec::Invoke {
-            effect: EffectMode::Edit,
-            ..
-        }
-    ) && exec.entry == EntryKind::P2sh
-    {
-        return itr_err_code!(CallOtherInP2sh);
-    }
-    if let CallSpec::Invoke { effect, .. } = *call {
-        match (
-            exec.is_outer_entry(),
-            exec.entry,
-            call.switches_context(),
-            effect,
-        ) {
-            (true, EntryKind::Main, false, EffectMode::Edit) => {
-                return itr_err_code!(CallOtherInMain)
+    if let CallSpec::Invoke { target, effect, .. } = *call {
+        match (exec.entry, effect, exec.is_outer_entry()) {
+            (EntryKind::Abst, _, _) if matches!(target, CallTarget::Ext(_)) => {
+                return itr_err_code!(CallInAbst);
+            }
+            // P2SH allows Edit-mode calls only for Use(lib) without context switch; extending this rule changes P2SH write capabilities and must be reviewed carefully.
+            (EntryKind::P2sh, EffectMode::Edit, _) if !matches!(target, CallTarget::Use(_)) => {
+                return itr_err_code!(CallOtherInP2sh);
+            }
+            (EntryKind::Main, EffectMode::Edit, true) if !call.switches_context() => {
+                return itr_err_code!(CallOtherInMain);
             }
             _ => {}
         }

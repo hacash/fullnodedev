@@ -326,7 +326,7 @@ bytecode_metadata_define!{
     NTFUNC     : 1, 1, 1,     native_func
     NTENV      : 1, 0, 1,     native_env
 
-    CODECALL     : 1+4, 0, 0,   code_call
+    CODECALL     : 1+4, 1, 0,   code_call
     CALL         :   6, 1, 1,   call
     CALLEXT      : 1+4, 1, 1,   callext
     CALLEXTVIEW  : 1+4, 1, 1,   callextview

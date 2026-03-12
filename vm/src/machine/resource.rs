@@ -65,6 +65,7 @@ impl Resoure {
     pub fn settle_new_contract_load_gas(&mut self, gas: &mut i64, bytes: usize) -> VmrtErr {
         *gas -= self.gas_extra.load_new_contract + (bytes as i64 / 64);
         if *gas < 0 {
+            // OutOfGas is terminal for the current VM call path and is not recovered.
             return itr_err_code!(OutOfGas);
         }
         Ok(())

@@ -368,7 +368,7 @@ Compiler convention:
 
 Therefore:
 
-1. `CODECALL` does not pop argv
+1. `CODECALL` consumes one explicit argv expression value from the operand stack
 2. `CODECALL` does not rebuild locals
 3. normal callee `param { ... }` prologue still executes if present
 4. that prologue operates on the inherited current operand-stack state
@@ -380,6 +380,49 @@ Upper-layer development requirement:
 3. any required locals/stack layout must be treated as part of the library interface
 
 ## 12. Source-Language Manual
+
+Canonical source form for `Invoke` is:
+
+- `call <effect> <target>.<sig>(...)`
+
+Where:
+
+1. `<effect>` is one of `edit / view / pure`
+2. `<target>` is one of `this / self / upper / super / ext(i) / use(i)`
+3. `<sig>` is a 4-byte selector (hex or named function mapped to selector)
+
+All 18 valid `Invoke` combinations are:
+
+- `call edit this.0x01020304()`
+- `call view this.0x01020304()`
+- `call pure this.0x01020304()`
+- `call edit self.0x01020304()`
+- `call view self.0x01020304()`
+- `call pure self.0x01020304()`
+- `call edit upper.0x01020304()`
+- `call view upper.0x01020304()`
+- `call pure upper.0x01020304()`
+- `call edit super.0x01020304()`
+- `call view super.0x01020304()`
+- `call pure super.0x01020304()`
+- `call edit ext(1).0x01020304()`
+- `call view ext(1).0x01020304()`
+- `call pure ext(1).0x01020304()`
+- `call edit use(1).0x01020304()`
+- `call view use(1).0x01020304()`
+- `call pure use(1).0x01020304()`
+
+Canonical source form for `Splice` is:
+
+- `codecall <libidx>.<sig>(...)`
+
+Source sugar accepted as equivalent empty-argv forms:
+
+- `codecall C.f`
+- `codecall C.f()`
+- `codecall C.f(nil)`
+
+`codecall` accepts only `.` as separator.
 
 ### 12.1 Inheritance-Line Shortcuts
 
@@ -398,20 +441,25 @@ Upper-layer development requirement:
 | `C.f(args)` | `Invoke(Ext(C), Edit, f)` |
 | `C:f(args)` | `Invoke(Ext(C), View, f)` |
 | `C::f(args)` | `Invoke(Use(C), Pure, f)` |
-| `codecall C.f` | `Splice(lib(C), f)` |
+| `codecall C.f` | `Splice(ext(C), f)` |
+
+Notes:
+
+1. Shortcut forms are input sugar.
+2. Decompilation output should normalize to canonical `call` / `codecall` form.
 
 ### 12.3 Generic `call`
 
 Generic `call` may explicitly specify:
 
 1. effect: `edit / view / pure`
-2. target: `this / self / upper / super / lib(idx) / use(idx) / bound library name`
+2. target: `this / self / upper / super / ext(idx) / use(idx) / bound library name`
 
 Examples:
 
 - `call edit upper.f(args)`
 - `call pure use(1).f(args)`
-- `call view lib(0).f(args)`
+- `call view ext(0).f(args)`
 
 ## 13. Upper-Layer Contract Guidance
 

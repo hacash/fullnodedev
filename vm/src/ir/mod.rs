@@ -190,12 +190,12 @@ pub fn push_user_invoke(call: CallSpec, subx: Box<dyn IRNode>) -> Ret<Box<dyn IR
     Ok(mk_ps1(true, inst, para, subx))
 }
 
-pub fn push_user_splice(call: CallSpec) -> Ret<Box<dyn IRNode>> {
+pub fn push_user_splice(call: CallSpec, subx: Box<dyn IRNode>) -> Ret<Box<dyn IRNode>> {
     if !matches!(call, CallSpec::Splice { .. }) {
         return errf!("splice call spec required");
     }
     let (inst, para) = encode_user_call_site(call);
-    Ok(mk_ps(false, inst, para))
+    Ok(mk_ps1(false, inst, para, subx))
 }
 
 pub fn drop_irblock_wrap(mut serialized: Vec<u8>) -> Ret<Vec<u8>> {

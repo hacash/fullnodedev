@@ -280,19 +280,19 @@ fn resolve_lookup_anchor_for_check(
     func_tag: &str,
     call: &CallSpec,
 ) -> Ret<ContractAddress> {
-    match call.lib_index() {
-        Some(lib) => {
-            let libs = root_contract.library.as_list();
-            let lidx = lib as usize;
-            if lidx >= libs.len() {
-                return errf!("{}: libidx overflow {} >= {}", func_tag, lidx, libs.len());
-            }
-            let addr = libs[lidx].clone();
-            let _ = load_contract_for_check(vmsta, root_addr, root_contract, &addr, "lookup")?;
-            Ok(addr)
-        }
-        None => Ok(root_addr.clone()),
+    let lib_addrs: Vec<Address> = root_contract
+        .library
+        .as_list()
+        .iter()
+        .map(|a| a.to_addr())
+        .collect();
+    let anchor = call
+        .resolve_anchor_from(Some(root_addr), Some(root_addr), &lib_addrs)
+        .map_err(|e| format!("{}: {}", func_tag, e))?;
+    if call.lib_index().is_some() {
+        let _ = load_contract_for_check(vmsta, root_addr, root_contract, &anchor, "lookup")?;
     }
+    Ok(anchor)
 }
 
 fn resolve_lookup_entries_for_check(
@@ -480,7 +480,7 @@ mod contract_test {
     use protocol::context::decode_gas_budget;
     use protocol::transaction::TransactionType3;
     use std::sync::Once;
-    use sys::IntoRet;
+    use sys::IntoTRet;
     use testkit::sim::context::make_ctx_with_state;
     use testkit::sim::state::FlatMemState as StateMem;
     use testkit::sim::tx::StubTxBuilder;
@@ -541,7 +541,7 @@ mod contract_test {
         act.protocol_cost = Amount::unit238(10_000_000);
         act.construct_call = Bool::new(true);
         act.contract = deploy_contract;
-        let _ = act.execute(&mut ctx).into_ret()?;
+        let _ = act.execute(&mut ctx).into_tret()?;
         Ok(())
     }
 

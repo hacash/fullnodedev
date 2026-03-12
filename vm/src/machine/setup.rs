@@ -11,30 +11,31 @@ fn call_level_from_entry_kind(entry: u8) -> Ret<usize> {
     }
 }
 
-/// Check VM return value using unified truthiness:
-/// falsy (`canbe_bool == false`) is success, otherwise execution failure.
-fn vm_error_detail(rv: &Value) -> String {
-    match rv {
-        Value::Nil => "code 0".to_owned(),
-        Value::Bool(b) => format!("code {}", maybe!(b, 1, 0)),
-        Value::U8(n) => format!("code {}", n),
-        Value::U16(n) => format!("code {}", n),
-        Value::U32(n) => format!("code {}", n),
-        Value::U64(n) => format!("code {}", n),
-        Value::U128(n) => format!("code {}", n),
-        Value::Bytes(buf) => match ascii_show_string(buf) {
+/// Falsy return => success. Non-falsy or object return => recoverable (XError::revert). HeapSlice => unrecoverable (XError::fault).
+pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
+    use Value::*;
+    let detail: Option<String> = match rv {
+        Nil => None,
+        Bool(false) => None,
+        Bool(true) => Some("code 1".to_owned()),
+        U8(n)   => (*n != 0).then(|| format!("code {}", n)),
+        U16(n)  => (*n != 0).then(|| format!("code {}", n)),
+        U32(n)  => (*n != 0).then(|| format!("code {}", n)),
+        U64(n)  => (*n != 0).then(|| format!("code {}", n)),
+        U128(n) => (*n != 0).then(|| format!("code {}", n)),
+        Bytes(buf) => maybe!(buf_is_empty_or_all_zero(buf), None, Some(match ascii_show_string(buf) {
             Some(s) => format!("bytes {:?}", s),
             None => format!("bytes 0x{}", buf.to_hex()),
-        },
-        Value::Address(a) => format!("address {}", a.to_readable()),
-        _ => "error <object>".to_owned(),
-    }
-}
-
-pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> Rerr {
-    match rv.canbe_bool() {
-        Ok(false) => Ok(()),
-        Ok(true) | Err(_) => erruf!("{} return error {}", err_msg, vm_error_detail(rv)),
+        })),
+        Value::Address(a) => maybe!(buf_is_empty_or_all_zero(a.as_bytes()), None, 
+            Some(format!("address {}", a.to_readable()))
+        ),
+        HeapSlice(_) => return Err(XError::fault(format!("{} return type HeapSlice is not supported", err_msg))),
+        Args(_) | Compo(_) => Some(format!("object {}", rv.to_json())),
+    };
+    match detail {
+        None => Ok(()),
+        Some(d) => Err(XError::revert(format!("{} return error {}", err_msg, d))),
     }
 }
 
@@ -60,7 +61,7 @@ pub fn setup_vm_run(ctx: &mut dyn Context, entry: u8, kind: u8, payload: std::sy
     let ctxptr = ctx as *mut dyn Context;
     let res = unsafe {
         let vm = (*ctxptr).vm() as *mut dyn VM;
-        (*vm).call(VMCall::new(&mut *ctxptr, entry, kind, payload, Box::new(param))).into_ret()
+        (*vm).call(VMCall::new(&mut *ctxptr, entry, kind, payload, Box::new(param))).into_tret()
     };
     ctx.level_set(old_level);
     let (cost, rv) = res?;

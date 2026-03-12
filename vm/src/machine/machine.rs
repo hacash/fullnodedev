@@ -132,7 +132,7 @@ impl VM for MachineBox {
             .remove_addr(&caddr);
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> BRet<(i64, Vec<u8>)> {
+    fn call(&mut self, call: VMCall<'_>) -> XRet<(i64, Vec<u8>)> {
         use EntryKind::*;
         let VMCall {
             ctx,
@@ -149,7 +149,7 @@ impl VM for MachineBox {
         // (2) enter call layer (depth check). Guard guarantees leave() on all exits.
         let _guard = VmReentryGuard::enter(&mut self.call_state)?;
         // min gas cost per call type
-        let entry_kind = EntryKind::try_from_u8(entry).map_err(BError::from)?;
+        let entry_kind = EntryKind::try_from_u8(entry).map_err(XError::from)?;
         let min_cost = {
             let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
             match entry_kind {
@@ -164,11 +164,11 @@ impl VM for MachineBox {
         if gas_before < min_cost {
             let gas = ctx
                 .vm_gas_mut()
-                .into_bret()?
+                .into_xret()?
                 .gas_remaining_mut()
-                .into_bret()?;
+                .into_xret()?;
             *gas -= min_cost; // keep the same "min cost consumes from shared counter" semantics
-            return berrf!(
+            return xerrf!(
                 "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
                 gas_before,
                 min_cost,
@@ -178,8 +178,8 @@ impl VM for MachineBox {
         let machine = self.machine.as_mut().unwrap();
         let ctxptr = ctx as *mut dyn Context;
         let gasptr = unsafe {
-            let gasctx = (*ctxptr).vm_gas_mut().into_bret()?;
-            gasctx.gas_remaining_mut().into_bret()? as *mut i64
+            let gasctx = (*ctxptr).vm_gas_mut().into_xret()?;
+            gasctx.gas_remaining_mut().into_xret()? as *mut i64
         };
         let exenv = unsafe {
             &mut ExecEnv {
@@ -196,15 +196,15 @@ impl VM for MachineBox {
                 let codeconf = CodeConf::parse(kind)?;
                 let payload = ByteView::from_arc(payload);
                 let payload_ref = payload.as_slice();
-                let (state_addr, mv1) = Address::create(payload_ref).map_err(BError::interrupt)?;
+                let (state_addr, mv1) = Address::create(payload_ref).map_err(XError::fault)?;
                 let (calibs, mv2) =
-                    ContractAddressW1::create(&payload_ref[mv1..]).map_err(BError::interrupt)?;
+                    ContractAddressW1::create(&payload_ref[mv1..]).map_err(XError::fault)?;
                 let mv = mv1 + mv2;
                 let realcodes = payload
                     .slice(mv, payload.len())
-                    .map_err(BError::interrupt)?;
+                    .map_err(XError::fault)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return berrf!("p2sh argv type not match");
+                    return xerrf!("p2sh argv type not match");
                 };
                 machine.p2sh_call(
                     exenv,
@@ -216,10 +216,10 @@ impl VM for MachineBox {
                 )
             }
             Abst => {
-                let kid = AbstCall::try_from_u8(kind).map_err(BError::from)?;
-                let cadr = ContractAddress::parse(payload.as_ref()).map_err(BError::interrupt)?;
+                let kid = AbstCall::try_from_u8(kind).map_err(XError::from)?;
+                let cadr = ContractAddress::parse(payload.as_ref()).map_err(XError::fault)?;
                 let Ok(param) = param.downcast::<Value>() else {
-                    return berrf!("abst argv type not match");
+                    return xerrf!("abst argv type not match");
                 };
                 machine.abst_call(exenv, kid, cadr, *param)
             }
@@ -233,12 +233,12 @@ impl VM for MachineBox {
             let shortfall = min_cost - cost;
             let gas = ctx
                 .vm_gas_mut()
-                .into_bret()?
+                .into_xret()?
                 .gas_remaining_mut()
-                .into_bret()?;
+                .into_xret()?;
             *gas -= shortfall;
             if *gas < 0 {
-                return berrf!(
+                return xerrf!(
                     "gas has run out after min cost enforcement: remaining={} (before={} min_call_cost={} actual_cost={})",
                     *gas,
                     gas_before,
@@ -249,9 +249,9 @@ impl VM for MachineBox {
             cost = min_cost;
         }
         // propagate VM execution error (depth is auto-restored by guard drop)
-        let resv = result.map(|a| a.raw()).into_bret()?;
+        let resv = result.map(|a| a.raw())?;
         if cost <= 0 {
-            return berrf!("gas cost error: {}", cost);
+            return xerrf!("gas cost error: {}", cost);
         }
         Ok((cost, resv))
     }
@@ -298,8 +298,8 @@ impl Machine {
         env: &mut ExecEnv,
         ctype: CodeType,
         codes: Arc<[u8]>,
-    ) -> Ret<Value> {
-        let rv = self.main_call_raw(env, ctype, codes)?;
+    ) -> XRet<Value> {
+        let rv = self.main_call_raw(env, ctype, codes).into_xret()?;
         check_vm_return_value(&rv, "main call")?;
         Ok(rv)
     }
@@ -310,16 +310,17 @@ impl Machine {
         cty: AbstCall,
         contract_addr: ContractAddress,
         param: Value,
-    ) -> Ret<Value> {
+    ) -> XRet<Value> {
         let exec = ExecCtx::abst();
-        exec.ensure_call_depth(&self.r.space_cap)?;
-        param.canbe_func_argv()?;
+        exec.ensure_call_depth(&self.r.space_cap).map_err(XError::from)?;
+        param.canbe_func_argv().map_err(XError::from)?;
         let adr = contract_addr.to_readable();
         let Some(hit) = self
             .r
-            .resolve_abstfn(env.ctx, env.gas, &contract_addr, cty)?
+            .resolve_abstfn(env.ctx, env.gas, &contract_addr, cty)
+            .map_err(XError::from)?
         else {
-            return errf!("abst call {:?} not find in {}", cty, adr);
+            return Err(XError::fault(format!("abst call {:?} not find in {}", cty, adr)));
         };
         // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
         let rv = self.do_call(
@@ -328,7 +329,7 @@ impl Machine {
             hit.fnobj.as_ref(),
             FrameBindings::contract(contract_addr, hit.owner, hit.lib_table),
             Some(param),
-        )?;
+        ).map_err(XError::from)?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
     }
@@ -341,7 +342,7 @@ impl Machine {
         libs: Vec<ContractAddress>,
         codes: ByteView,
         param: Value,
-    ) -> Ret<Value> {
+    ) -> XRet<Value> {
         // Caller must pre-validate lock script bytes. Production P2SH flow verifies inputs before VM call.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = p2sh_addr;
@@ -357,7 +358,7 @@ impl Machine {
                     .into(),
             ),
             Some(param),
-        )?;
+        ).map_err(XError::from)?;
         check_vm_return_value(&rv, "p2sh call")?;
         Ok(rv)
     }
@@ -441,7 +442,7 @@ mod machine_test {
         if raw {
             machine.main_call_raw(&mut exec, CodeType::Bytecode, main_codes.into())
         } else {
-            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into()).into_tret()
         }
     }
 
@@ -500,7 +501,7 @@ mod machine_test {
             tx_libs,
             p2sh_codes.into(),
             Value::Nil,
-        )
+        ).into_tret()
     }
 
     fn assert_err_contains(res: Ret<Value>, needle: &str) {
@@ -793,7 +794,7 @@ mod machine_test {
                 gas: &mut gas,
             };
             let mut machine = Machine::create(Resoure::create(1));
-            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into()).into_tret()
         };
 
         // CALLEXT (External): should resolve inherited `probe` on parent.
@@ -1271,7 +1272,7 @@ mod machine_test {
     }
 
     #[test]
-    fn codecall_reuses_current_argv_and_allows_nested_calls() {
+    fn codecall_uses_explicit_argv_and_allows_nested_calls() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 23);
         let target_sto = Contract::new()
@@ -1282,7 +1283,8 @@ mod machine_test {
                     .types(Some(VT::U8), vec![VT::U8])
                     .fitsh(
                         "param { x }
-return x",
+return x
+end",
                     )
                     .unwrap(),
             )
@@ -1297,11 +1299,12 @@ return x",
                 Func::new("jump_need_arg")
                     .unwrap()
                     .external()
-                    .types(Some(VT::U8), vec![VT::U8])
+                    .types(Some(VT::U8), vec![])
                     .fitsh(
                         r##"
                         lib C = 0
-                        codecall C.need_arg
+                        codecall C.need_arg(9)
+                        end
                         "##,
                     )
                     .unwrap(),
@@ -1314,6 +1317,7 @@ return x",
                         r##"
                         lib C = 0
                         codecall C.nested
+                        end
                         "##,
                     )
                     .unwrap(),
@@ -1327,7 +1331,7 @@ return x",
 
         let arg_script = r##"
             lib C = 0
-            assert C.jump_need_arg(9) == 9
+            assert C.jump_need_arg() == 9
             return 0
         "##;
         let nested_script = r##"
@@ -1344,7 +1348,7 @@ return x",
         );
         assert!(
             arg_res.is_ok(),
-            "codecall should forward current argv: {arg_res:?}"
+            "codecall should use explicit argv expression: {arg_res:?}"
         );
 
         let nested_res =

@@ -167,6 +167,188 @@ mod token_t {
         );
     }
 
+    #[test]
+    fn test_codecall_double_colon_rejected() {
+        use super::lang_to_irnode;
+        let script = "codecall 1::0x01020304";
+        let result = lang_to_irnode(script);
+        assert!(result.is_err(), "codecall :: must be rejected");
+    }
+
+    #[test]
+    fn test_codecall_dot_accepted() {
+        use super::lang_to_irnode;
+        let script = "codecall 1.0x01020304";
+        let result = lang_to_irnode(script);
+        assert!(result.is_ok(), "codecall . must be accepted");
+    }
+
+    #[test]
+    fn test_codecall_dot_with_argument_accepted() {
+        use super::lang_to_irnode;
+        let script = "codecall 1.0x01020304(7)";
+        let result = lang_to_irnode(script);
+        assert!(result.is_ok(), "codecall . with argument must be accepted");
+    }
+
+    #[test]
+    fn test_codecall_all_required_forms_are_valid() {
+        use super::lang_to_irnode;
+        let scripts = [
+            r#"
+                lib C = 1
+                codecall C.f
+            "#,
+            r#"
+                lib C = 1
+                codecall C.f()
+            "#,
+            r#"
+                lib C = 1
+                codecall C.f(nil)
+            "#,
+            r#"
+                lib C = 1
+                let a = 1
+                codecall C.f (a)
+            "#,
+            r#"
+                lib C = 1
+                let a = 1
+                let b = 2
+                codecall C.f(a, b)
+            "#,
+        ];
+        for script in scripts {
+            let result = lang_to_irnode(script);
+            assert!(
+                result.is_ok(),
+                "codecall form must be valid: {script} -> {:?}",
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn test_codecall_first_three_forms_are_equivalent() {
+        use super::lang_to_bytecode;
+
+        let s1 = r#"
+            lib C = 1
+            codecall C.f
+        "#;
+        let s2 = r#"
+            lib C = 1
+            codecall C.f()
+        "#;
+        let s3 = r#"
+            lib C = 1
+            codecall C.f(nil)
+        "#;
+
+        let b1 = lang_to_bytecode(s1).expect("compile codecall C.f failed");
+        let b2 = lang_to_bytecode(s2).expect("compile codecall C.f() failed");
+        let b3 = lang_to_bytecode(s3).expect("compile codecall C.f(nil) failed");
+
+        assert_eq!(b1, b2, "codecall C.f and codecall C.f() must be equivalent");
+        assert_eq!(b1, b3, "codecall C.f and codecall C.f(nil) must be equivalent");
+    }
+
+    #[test]
+    fn test_codecall_with_argument_emits_argument_push_before_opcode() {
+        use super::lang_to_bytecode;
+        use crate::rt::{verify_bytecodes, Bytecode};
+
+        let codes = lang_to_bytecode("codecall 1.0x01020304(7)").expect("compile failed");
+        let marks = verify_bytecodes(&codes).expect("verify failed");
+        let mut codecall_idx = None;
+        for (idx, mark) in marks.iter().enumerate() {
+            if *mark == 0 {
+                continue;
+            }
+            if codes[idx] == Bytecode::CODECALL as u8 {
+                codecall_idx = Some(idx);
+                break;
+            }
+        }
+        let idx = codecall_idx.expect("must contain CODECALL opcode");
+        assert!(idx > 0, "CODECALL must not be the first instruction");
+        let prev_inst_idx = marks
+            .iter()
+            .enumerate()
+            .take(idx)
+            .filter_map(|(i, m)| (*m != 0).then_some(i))
+            .last()
+            .expect("CODECALL must have a previous instruction");
+        assert_ne!(
+            codes[prev_inst_idx],
+            Bytecode::PNIL as u8,
+            "codecall(expr) must not fallback to implicit nil argument"
+        );
+    }
+
+    #[test]
+    fn test_decompile_call_is_canonical_generic_form() {
+        use super::irnode_to_lang;
+        use super::lang_to_irnode;
+        let ir = lang_to_irnode("this.0x01020304()").expect("compile shortcut call failed");
+        let decompiled = irnode_to_lang(ir).expect("decompile failed");
+        assert!(
+            decompiled.contains("call edit this.0x01020304("),
+            "decompiled call must be canonical generic form, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
+    fn test_decompile_codecall_shows_argument_expression() {
+        use super::irnode_to_lang;
+        use super::lang_to_irnode;
+        let script = r#"
+            lib C = 1
+            codecall C.0x01020304(7)
+        "#;
+        let ir = lang_to_irnode(script).expect("compile codecall failed");
+        let decompiled = irnode_to_lang(ir).expect("decompile failed");
+        assert!(
+            decompiled.contains("codecall ext(1).0x01020304(7)"),
+            "decompiled codecall must include argument expression, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
+    fn test_generic_call_maps_to_short_opcode() {
+        use super::lang_to_bytecode;
+        use crate::rt::Bytecode;
+        let bytecode =
+            lang_to_bytecode("call edit this.0x01020304()").expect("compile generic call failed");
+        assert!(
+            bytecode.contains(&(Bytecode::CALLTHIS as u8)),
+            "generic call should map to CALLTHIS opcode, got: {:02x?}",
+            bytecode
+        );
+    }
+
+    #[test]
+    fn test_canonical_call_syntax_covers_all_invoke_combinations() {
+        use super::lang_to_irnode;
+        let effects = ["edit", "view", "pure"];
+        let targets = ["this", "self", "upper", "super", "ext(1)", "use(1)"];
+        for effect in effects {
+            for target in targets {
+                let script = format!("call {} {}.0x01020304()", effect, target);
+                let result = lang_to_irnode(&script);
+                assert!(
+                    result.is_ok(),
+                    "canonical call must compile: {} -> {:?}",
+                    script,
+                    result.err()
+                );
+            }
+        }
+    }
+
     // ==================== BUG 2: 空 Map Roundtrip 测试 ====================
 
     #[test]

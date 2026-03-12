@@ -48,9 +48,9 @@ fn source_map_recovery_records_symbols() {
     opt.map = Some(&source_map);
     opt.call_short_syntax = true;
     let printed = Formater::new(&opt).print(&ir_block);
-    assert!(printed.contains("Fund.deposit("));
-    assert!(printed.contains("Fund::audit("));
-    assert!(printed.contains("this.notify("));
+    assert!(printed.contains("call edit Fund.deposit("));
+    assert!(printed.contains("call pure use(2).audit("));
+    assert!(printed.contains("call edit this.notify("));
     assert!(printed.contains("var total $0 ="));
     assert!(printed.contains("let increment $1 ="));
 }

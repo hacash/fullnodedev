@@ -101,7 +101,7 @@ impl Syntax {
 
 
 
-    fn parse_codecall_body_token(token: &Token) -> Ret<[u8; CODECALL_BODY_WIDTH]> {
+    fn parse_codecall_body_token(token: &Token) -> Ret<[u8; SPLICE_BODY_WIDTH]> {
         Self::parse_fixed_body_token(token, "codecall body")
     }
 
@@ -153,7 +153,7 @@ impl Syntax {
             Keyword(KwTy::Self_) => CallTarget::Self_,
             Keyword(KwTy::Upper) => CallTarget::Upper,
             Keyword(KwTy::Super) => CallTarget::Super,
-            Keyword(KwTy::Lib) => CallTarget::Ext(self.parse_lib_ctor_index(err_msg)?),
+            Keyword(KwTy::Ext) => CallTarget::Ext(self.parse_lib_ctor_index(err_msg)?),
             Keyword(KwTy::Use) => CallTarget::Use(self.parse_lib_ctor_index(err_msg)?),
             Identifier(id) => CallTarget::Ext(self.link_lib(&id)?),
             Integer(..) => CallTarget::Ext(Self::parse_lib_index_token(&head)?),
@@ -214,16 +214,13 @@ impl Syntax {
         let idx = match head {
             Identifier(id) => self.link_lib(&id)?,
             Integer(..) => Self::parse_lib_index_token(&head)?,
-            Keyword(KwTy::Lib) => self.parse_lib_ctor_index(err_msg)?,
+            Keyword(KwTy::Ext) => self.parse_lib_ctor_index(err_msg)?,
             _ => return errf!("{}", err_msg),
         };
         let sep = self.next()?;
-        let Keyword(sep) = sep else {
+        let Keyword(KwTy::Dot) = sep else {
             return errf!("{}", err_msg)
         };
-        if !matches!(sep, KwTy::Dot | KwTy::DColon) {
-            return errf!("{}", err_msg)
-        }
         let selector = self.next()?;
         Ok((idx, self.parse_call_selector_token(&selector)?))
     }
@@ -232,7 +229,7 @@ impl Syntax {
         let idx = match head {
             Identifier(id) => self.link_lib(&id)?,
             Integer(..) => Self::parse_lib_index_token(&head)?,
-            Keyword(KwTy::Lib) => self.parse_lib_ctor_index(err_msg)?,
+            Keyword(KwTy::Ext) => self.parse_lib_ctor_index(err_msg)?,
             _ => return errf!("{}", err_msg),
         };
         self.expect_keyword_token(KwTy::DColon, err_msg)?;

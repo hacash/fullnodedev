@@ -293,14 +293,14 @@ contract TestToken {
         it is the final instruction. Keep it as a tail call in a dedicated function.
     */
     function external ircode coverage_tail_codecall() -> u32 {
-        codecall 0::0xabcdef01
+        codecall 0.0xabcdef01
         end
     }
 
     function external ircode coverage_tail_codecall_libid() -> u32 {
         // cover: lib statement + codecall lib-index by identifier
-        lib TmpLib = 1 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
-        codecall TmpLib::0xabcdef01
+        lib TmpLib = 2 : bJKaNA2dLGxJEwp3xSok8g2buv9Bz65H5
+        codecall TmpLib.0xabcdef01
         end
     }
 

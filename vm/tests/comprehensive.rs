@@ -87,9 +87,9 @@ let succ = Token.transfer(target_addr, 100) // Lib call (dot)
 let bal = Token:balance_of(target_addr) // Lib call (colon)
 let info = Token::info() // Lib static call (double colon)
 let res = self.internal_func(1, 2) // Inner call
-lib(1).0x01020304(10, 20) // Direct external call (index + hash)
+ext(1).0x01020304(10, 20) // Direct external call (index + hash)
 this.0x11223344(30, 40) // Direct inner call
-lib(2)::0x55667788(50) // Direct pure call
+ext(2)::0x55667788(50) // Direct pure call
 
 // 10. Special Instructions
 memory_put(0, "data") // Memory put

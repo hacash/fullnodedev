@@ -36,7 +36,7 @@ satoshi_operate_define!(sat_add, addr, sat, oldsat, {
 satoshi_operate_define!(sat_sub, addr, sat, oldsat, {  
     // check
     if *oldsat < *sat {
-        return erruf!("address {} satoshi {} is insufficient, at least {}", 
+        return xerr_rf!("address {} satoshi {} is insufficient, at least {}", 
             addr, oldsat, sat)
     }
     // do sub
@@ -80,7 +80,7 @@ pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Sa
             return Ok(usrsat)
         }
     }
-    erruf!("address {} satoshi is insufficient", addr)
+    xerr_rf!("address {} satoshi is insufficient", addr)
 }
 
 

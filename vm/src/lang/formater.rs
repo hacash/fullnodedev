@@ -144,7 +144,7 @@ impl<'a> Formater<'a> {
                 return name;
             }
         }
-        format!("lib({})", idx)
+        format!("ext({})", idx)
     }
 
     fn format_call_effect(&self, effect: EffectMode) -> &'static str {
@@ -165,46 +165,6 @@ impl<'a> Formater<'a> {
             CallTarget::Use(idx) => format!("use({})", idx),
         }
     }
-
-
-
-    fn format_special_call_target(
-        &self,
-        code: Bytecode,
-        pss: &IRNodeParamsSingle,
-        args: &str,
-    ) -> Option<String> {
-        use Bytecode::*;
-        let sig = match code {
-            CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE => {
-                if pss.para.len() < 5 {
-                    return None;
-                }
-                self.format_func_sig(&pss.para[1..])
-            }
-            CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {
-                if pss.para.len() != 4 {
-                    return None;
-                }
-                self.format_func_sig(&pss.para)
-            }
-            _ => return None,
-        };
-        Some(match code {
-            CALLTHIS => format!("this.{}({})", sig, args),
-            CALLSELF => format!("self.{}({})", sig, args),
-            CALLSUPER => format!("super.{}({})", sig, args),
-            CALLSELFVIEW => format!("self:{}({})", sig, args),
-            CALLSELFPURE => format!("self::{}({})", sig, args),
-            CALLEXT => format!("{}.{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLEXTVIEW => format!("{}:{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLUSEVIEW => format!("calluseview {}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLUSEPURE => format!("{}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            _ => return None,
-        })
-    }
-
-
     fn literals(&self, s: String) -> String {
         s.replace("\\", "\\\\")
             .replace("\t", "\\t")
@@ -720,38 +680,37 @@ impl<'a> Formater<'a> {
     }
 
     fn format_call_instruction(&self, node: &dyn IRNode, code: Bytecode) -> Option<String> {
-        use Bytecode::*;
         let pss = node.as_any().downcast_ref::<IRNodeParamsSingle>()?;
-        if code == CALL {
-            let call = decode_call_body(&pss.para).ok()?;
-            let CallSpec::Invoke {
+        let call = decode_user_call_site(code, &pss.para).ok()?;
+        let pre = self.line_prefix();
+        Some(match call {
+            CallSpec::Invoke {
                 target,
                 effect,
                 selector,
-            } = call else {
-                return None;
-            };
-            let pre = self.line_prefix();
-            let args = self.build_call_args(&*pss.subx, false, None);
-            let body = format!(
-                "call {} {}.{}({})",
-                self.format_call_effect(effect),
-                self.format_call_target_ref(target),
-                self.format_func_sig(&selector),
-                args
-            );
-            return Some(format!("{}{}", pre, body));
-        }
-        if !matches!(
-            code,
-            CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE
-        ) {
-            return None;
-        }
-        let pre = self.line_prefix();
-        let args = self.build_call_args(&*pss.subx, false, None);
-        let body = self.format_special_call_target(code, pss, &args)?;
-        Some(format!("{}{}", pre, body))
+            } => {
+                let args = self.build_call_args(&*pss.subx, false, None);
+                let sig = self.format_func_sig(&selector);
+                let body = format!(
+                    "call {} {}.{}({})",
+                    self.format_call_effect(effect),
+                    self.format_call_target_ref(target),
+                    sig,
+                    args
+                );
+                format!("{}{}", pre, body)
+            }
+            CallSpec::Splice { lib, selector } => {
+                let args = self.build_call_args(&*pss.subx, false, None);
+                let body = format!(
+                    "codecall {}.{}({})",
+                    self.format_lib_chain_ref(lib),
+                    self.format_func_sig(&selector),
+                    args
+                );
+                format!("{}{}", pre, body)
+            }
+        })
     }
 
     fn format_opty_double(&self, code: Bytecode, node: &dyn IRNode) -> Option<String> {
@@ -1399,7 +1358,7 @@ impl<'a> Formater<'a> {
                 buf.push_str(&self.format_data_bytes(node));
             }
             CODECALL => {
-                match decode_codecall_body(&node.para) {
+                match decode_splice_body(&node.para) {
                     Ok(CallSpec::Splice { lib, selector }) => buf.push_str(&format!(
                         "codecall {}.{}",
                         self.format_lib_chain_ref(lib),

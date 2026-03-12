@@ -70,21 +70,21 @@ fn duplicate_lib_index_binding_is_rejected() {
 #[test]
 fn callextview_and_local_call_print() {
     let script = r##"
-        lib(2):0xabcdef01()
+        ext(2):0xabcdef01()
         this.0x00ab4130()
         self:0x00ab4131()
         self::0x00ab4132()
         calluseview 3::0xdeadbeef()
-        lib(4)::0xfacecafe()
+        ext(4)::0xfacecafe()
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
-    assert!(printed.contains("lib(2):0xabcdef01("));
-    assert!(printed.contains("this.0x00ab4130("));
-    assert!(printed.contains("self:0x00ab4131("));
-    assert!(printed.contains("self::0x00ab4132("));
-    assert!(printed.contains("calluseview lib(3)::0xdeadbeef("));
-    assert!(printed.contains("lib(4)::0xfacecafe("));
+    assert!(printed.contains("call view ext(2).0xabcdef01("));
+    assert!(printed.contains("call edit this.0x00ab4130("));
+    assert!(printed.contains("call view self.0x00ab4131("));
+    assert!(printed.contains("call pure self.0x00ab4132("));
+    assert!(printed.contains("call view use(3).0xdeadbeef("));
+    assert!(printed.contains("call pure use(4).0xfacecafe("));
 }
 
 #[test]
@@ -119,8 +119,8 @@ fn self_view_and_self_pure_short_syntax_print_when_names_exist() {
     "##;
     let (ircd, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = format_ircode_to_lang(&ircd, Some(&smap)).unwrap();
-    assert!(printed.contains("self:view_ok("));
-    assert!(printed.contains("self::pure_ok("));
+    assert!(printed.contains("call view self.view_ok("));
+    assert!(printed.contains("call pure self.pure_ok("));
 }
 
 #[test]
@@ -137,11 +137,11 @@ fn codecall_short_syntax_print_when_names_exist() {
 #[test]
 fn callext_keyword_print() {
     let script = r##"
-        lib(1).0xabcdef01()
+        ext(1).0xabcdef01()
     "##;
     let ircodes = lang_to_ircode(script).unwrap();
     let printed = ircode_to_lang(&ircodes).unwrap();
-    assert!(printed.contains("lib(1).0xabcdef01("));
+    assert!(printed.contains("ext(1).0xabcdef01("));
 }
 
 #[test]
@@ -169,18 +169,18 @@ fn decompile_system_calls_preserve_default_empty_arg_unless_opted_in() {
 #[test]
 fn decompile_contract_calls_hide_default_nil_only_when_opted_in() {
     let script = r##"
-        lib(1).0xabcdef01()
+        ext(1).0xabcdef01()
     "##;
     let block = lang_to_irnode(script).unwrap();
 
     let plain = PrintOption::new("  ", 0);
     let printed_plain = Formater::new(&plain).print(&block);
-    assert!(printed_plain.contains("lib(1).0xabcdef01(nil)"));
+    assert!(printed_plain.contains("ext(1).0xabcdef01(nil)"));
 
     let mut pretty = PrintOption::new("  ", 0);
     pretty.hide_default_call_argv = true;
     let printed_pretty = Formater::new(&pretty).print(&block);
-    assert!(printed_pretty.contains("lib(1).0xabcdef01()"));
+    assert!(printed_pretty.contains("ext(1).0xabcdef01()"));
 }
 
 #[test]
@@ -931,7 +931,7 @@ fn print_options_on_off_preserve_ircode_bytes() {
     let script = r##"
         param { amt }
         print amt as u8
-        lib(1).0xabcdef01()
+        ext(1).0xabcdef01()
         print context_address("")
         print [1, 2]
         if true { print 3 } else { print 4 }
@@ -977,15 +977,15 @@ fn print_options_on_off_preserve_ircode_bytes() {
 fn flatten_call_list_preserves_container_values_in_call_args() {
     let cases = [
         (
-            "return lib(1).0xabcdef01([1])",
+            "return ext(1).0xabcdef01([1])",
             "[1]",
         ),
         (
-            "return lib(1).0xabcdef01([1, 2])",
+            "return ext(1).0xabcdef01([1, 2])",
             "[1, 2]",
         ),
         (
-            "return lib(1).0xabcdef01(args(1))",
+            "return ext(1).0xabcdef01(args(1))",
             "args(1)",
         ),
     ];
@@ -1023,7 +1023,7 @@ fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
     let script = r##"
         param { amt }
         print amt as u8
-        lib(1).0xabcdef01()
+        ext(1).0xabcdef01()
         print context_address("")
         print [1, 2]
         if true { print 3 } else { print 4 }
@@ -1165,17 +1165,17 @@ fn fitsh_ir_roundtrip_suite() {
                     builder
                 }
                 if sum > 0 {
-                    lib(1):0xabcdef01(sum)
+                    ext(1):0xabcdef01(sum)
                 } else {
-                    lib(1)::0xdeadbeef(sum, 0)
+                    ext(1)::0xdeadbeef(sum, 0)
                 }
                 this.0x00ab4130(sum)
             "##,
             &[
                 "while",
-                "lib(1):0xabcdef01",
-                "lib(1)::0xdeadbeef",
-                "this.0x00ab4130",
+                "call view ext(1).0xabcdef01",
+                "call pure use(1).0xdeadbeef",
+                "call edit this.0x00ab4130",
                 "if",
             ],
         ),
@@ -1788,7 +1788,7 @@ fn call_short_syntax_without_lib_prelude_falls_back_to_indexed_lib_ref() {
     opt.call_short_syntax = true;
     opt.emit_lib_prelude = false;
     let printed = Formater::new(&opt).print(&block);
-    assert!(printed.contains("lib(2).deposit("));
+    assert!(printed.contains("ext(2).deposit("));
     assert!(!printed.contains("Fund.deposit("));
     let reparsed = lang_to_ircode(&printed).unwrap();
     assert_eq!(ircode, reparsed);
@@ -1908,15 +1908,15 @@ fn explicit_shortcut_call_keywords_normalize_to_current_surface() {
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(printed.contains("lib(1).0xabcdef01("));
-    assert!(printed.contains("lib(2):0x01020304("));
-    assert!(printed.contains("calluseview lib(3)::0x0a0b0c0d("));
-    assert!(printed.contains("lib(4)::0x1a2b3c4d("));
-    assert!(printed.contains("this.0x11223344("));
-    assert!(printed.contains("self.0x22334455("));
-    assert!(printed.contains("super.0x33445566("));
-    assert!(printed.contains("self:0x44556677("));
-    assert!(printed.contains("self::0x55667788("));
+    assert!(printed.contains("call edit ext(1).0xabcdef01("));
+    assert!(printed.contains("call view ext(2).0x01020304("));
+    assert!(printed.contains("call view use(3).0x0a0b0c0d("));
+    assert!(printed.contains("call pure use(4).0x1a2b3c4d("));
+    assert!(printed.contains("call edit this.0x11223344("));
+    assert!(printed.contains("call edit self.0x22334455("));
+    assert!(printed.contains("call edit super.0x33445566("));
+    assert!(printed.contains("call view self.0x44556677("));
+    assert!(printed.contains("call pure self.0x55667788("));
     let reparsed = lang_to_ircode(&printed).unwrap();
     assert_eq!(ircode, reparsed);
 }
@@ -1935,76 +1935,76 @@ fn legacy_tailcall_keyword_is_not_supported() {
 fn each_call_opcode_roundtrips_and_emits_expected_bytecode() {
     let cases = [
         (
-            "lib(1).0x01020304(1)",
+            "ext(1).0x01020304(1)",
             Bytecode::CALLEXT,
-            "lib(1).0x01020304(",
+            "call edit ext(1).0x01020304(",
         ),
-        ("this.0x11223344(2)", Bytecode::CALLTHIS, "this.0x11223344("),
-        ("self.0x22334455(3)", Bytecode::CALLSELF, "self.0x22334455("),
+        ("this.0x11223344(2)", Bytecode::CALLTHIS, "call edit this.0x11223344("),
+        ("self.0x22334455(3)", Bytecode::CALLSELF, "call edit self.0x22334455("),
         (
             "super.0x33445566(4)",
             Bytecode::CALLSUPER,
-            "super.0x33445566(",
+            "call edit super.0x33445566(",
         ),
         (
             "self:0x44556677(5)",
             Bytecode::CALLSELFVIEW,
-            "self:0x44556677(",
+            "call view self.0x44556677(",
         ),
         (
             "self::0x55667788(6)",
             Bytecode::CALLSELFPURE,
-            "self::0x55667788(",
+            "call pure self.0x55667788(",
         ),
         (
-            "lib(1):0x66778899(7)",
+            "ext(1):0x66778899(7)",
             Bytecode::CALLEXTVIEW,
-            "lib(1):0x66778899(",
+            "call view ext(1).0x66778899(",
         ),
         (
             "calluseview 1::0x778899aa(8)",
             Bytecode::CALLUSEVIEW,
-            "calluseview lib(1)::0x778899aa(",
+            "call view use(1).0x778899aa(",
         ),
         (
             "callusepure 1::0x8899aabb(9)",
             Bytecode::CALLUSEPURE,
-            "lib(1)::0x8899aabb(",
+            "call pure use(1).0x8899aabb(",
         ),
         (
-            "codecall lib(1).0x99aabbcc",
+            "codecall ext(1).0x99aabbcc",
             Bytecode::CODECALL,
-            "codecall lib(1).0x99aabbcc",
+            "codecall ext(1).0x99aabbcc",
         ),
         (
             "callext 1::0xaabbccdd(10)",
             Bytecode::CALLEXT,
-            "lib(1).0xaabbccdd(",
+            "call edit ext(1).0xaabbccdd(",
         ),
         (
             "callthis 0::0xbbccddee(11)",
             Bytecode::CALLTHIS,
-            "this.0xbbccddee(",
+            "call edit this.0xbbccddee(",
         ),
         (
             "callself 0::0xccddeeff(12)",
             Bytecode::CALLSELF,
-            "self.0xccddeeff(",
+            "call edit self.0xccddeeff(",
         ),
         (
             "callsuper 0::0xddeeff00(13)",
             Bytecode::CALLSUPER,
-            "super.0xddeeff00(",
+            "call edit super.0xddeeff00(",
         ),
         (
             "callselfview 0::0xeeff0011(14)",
             Bytecode::CALLSELFVIEW,
-            "self:0xeeff0011(",
+            "call view self.0xeeff0011(",
         ),
         (
             "callselfpure 0::0xff001122(15)",
             Bytecode::CALLSELFPURE,
-            "self::0xff001122(",
+            "call pure self.0xff001122(",
         ),
     ];
 

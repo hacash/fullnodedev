@@ -265,10 +265,18 @@ impl Syntax {
                 return Ok(Some(push_empty()));
             }
             /* Keyword(Use) => { // use AnySwap = emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS let e = errf!("use statement format error"); nxt = next!(); let Identifier(id) = nxt else { return e }; nxt = next!(); let Keyword(KwTy::Assign) = nxt else { return e }; nxt = next!(); let Token::Bytes(addr) = nxt else { return e }; self.bind_uses(id.clone(), addr.clone())?; push_empty() } */
+            Keyword(Ext) => {
+                if self.idx < max && matches!(self.tokens[self.idx], Partition('(')) {
+                    self.parse_lib_receiver_call("ext(index) call format error")?
+                } else {
+                    return errf!("ext must be followed by (index) for external call");
+                }
+            }
             Keyword(Lib) => {
                 if self.idx < max && matches!(self.tokens[self.idx], Partition('(')) {
-                    self.parse_lib_receiver_call("lib(index) call format error")?
-                } else {
+                    return errf!("use ext(index) for external call, lib is for binding only");
+                }
+                {
                     let e = errf!("lib statement format error");
                     nxt = next!();
                     let Identifier(id) = nxt else { return e };
@@ -310,12 +318,17 @@ impl Syntax {
             Keyword(CodeCall) => {
                 let first = self.next()?;
                 let call = if let Ok(body) = Self::parse_codecall_body_token(&first) {
-                    decode_codecall_body(&body).map_err(|x| x.to_string())?
+                    decode_splice_body(&body).map_err(|x| x.to_string())?
                 } else {
                     let (idx, fnsign) = self.parse_codecall_target_selector(first, "codecall target format error")?;
                     CallSpec::codecall(idx, fnsign)
                 };
-                push_user_splice(call)?
+                let argv = if self.idx < max && matches!(self.tokens[self.idx], Partition('(')) {
+                    self.deal_func_argv()?
+                } else {
+                    push_nil()
+                };
+                push_user_splice(call, argv)?
             }
             Keyword(CallExt) => self.parse_short_lib_call_invoke(
                 CALLEXT,

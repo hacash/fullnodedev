@@ -4,7 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // use concat_idents::concat_idents;
 
-pub type Error = String;
+pub type TextError = String;
+pub type Error = TextError;
 
 include! {"panic.rs"}
 include! {"bit.rs"}

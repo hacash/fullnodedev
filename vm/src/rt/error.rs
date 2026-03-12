@@ -83,8 +83,9 @@ pub enum ItrErrCode {
     BytesHandle = 91,
     NativeFuncError = 92,
     NativeEnvError = 93,
-    ActCallError = 94,
-    ItemNoSize = 95,
+    ActCallError = 94,   // unrecoverable action call failure
+    ActCallUnwind = 95,  // recoverable action call failure
+    ItemNoSize = 96,
 
     StorageKeyInvalid = 101,
     StorageKeyNotFind = 102,
@@ -109,18 +110,12 @@ impl std::fmt::Display for ItrErr {
     }
 }
 
-impl From<ItrErr> for Error {
-    fn from(e: ItrErr) -> Error {
+impl From<ItrErr> for TextError {
+    fn from(e: ItrErr) -> TextError {
         use ItrErrCode::*;
         let ItrErr(code, msg) = e;
         let text = format!("{:?}({}): {}", code, code as u8, msg);
-        if code == ActCallError {
-            if let Some(m) = msg.strip_prefix(UNWIND_PREFIX) {
-                return format!("{}{:?}({}): {}", UNWIND_PREFIX, code, code as u8, m);
-            }
-            return text;
-        }
-        let is_unwind = matches!(code, ThrowAbort);
+        let is_unwind = matches!(code, ThrowAbort | ActCallUnwind);
         if is_unwind {
             format!("{}{}", UNWIND_PREFIX, text)
         } else {
@@ -129,23 +124,13 @@ impl From<ItrErr> for Error {
     }
 }
 
-impl From<ItrErr> for BError {
-    fn from(e: ItrErr) -> BError {
+impl From<ItrErr> for ExecError {
+    fn from(e: ItrErr) -> ExecError {
         use ItrErrCode::*;
         let ItrErr(code, msg) = e;
         let text = format!("{:?}({}): {}", code, code as u8, msg);
-        if code == ActCallError {
-            if let Some(m) = msg.strip_prefix(UNWIND_PREFIX) {
-                return BError::unwind(format!("{:?}({}): {}", code, code as u8, m));
-            }
-            return BError::interrupt(text);
-        }
-        let is_unwind = matches!(code, ThrowAbort);
-        if is_unwind {
-            BError::unwind(text)
-        } else {
-            BError::interrupt(text)
-        }
+        let is_unwind = matches!(code, ThrowAbort | ActCallUnwind);
+        maybe!(is_unwind, XError::revert(text), XError::fault(text))
     }
 }
 
@@ -158,7 +143,7 @@ impl ItrErr {
     }
 }
 
-// VM Runtime Error
+// VM Runtime TError
 pub type VmrtRes<T> = Result<T, ItrErr>;
 pub type VmrtErr = Result<(), ItrErr>;
 
@@ -177,7 +162,7 @@ pub trait MapItrErr<T> {
 }
 
 pub trait MapItrStrErr<T> {
-    fn map_ires(self, ec: ItrErrCode, es: Error) -> Result<T, ItrErr>;
+    fn map_ires(self, ec: ItrErrCode, es: TextError) -> Result<T, ItrErr>;
 }
 
 impl<T> MapItrErr<T> for Ret<T> {
@@ -187,7 +172,7 @@ impl<T> MapItrErr<T> for Ret<T> {
 }
 
 impl<T> MapItrStrErr<T> for Ret<T> {
-    fn map_ires(self, ec: ItrErrCode, es: Error) -> Result<T, ItrErr> {
+    fn map_ires(self, ec: ItrErrCode, es: TextError) -> Result<T, ItrErr> {
         self.map_err(|e| ItrErr::new(ec, &(es + &e.to_string())))
     }
 }

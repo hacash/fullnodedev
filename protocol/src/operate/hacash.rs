@@ -30,7 +30,7 @@ macro_rules! amount_op_func_define {
 
 amount_op_func_define!{do_hac_sub, hac, addr, amt, {
     if hac < *amt {
-        return erruf!("address {} balance {} is insufficient, at least {}", 
+        return xerr_rf!("address {} balance {} is insufficient, at least {}", 
             addr, hac, amt)
     }
     hac.sub_mode_u128(amt)?
@@ -85,7 +85,7 @@ pub fn hac_check(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Amo
             return Ok(bls.hacash)
         }
     }
-    erruf!("address {} balance is insufficient, at least {}", addr, amt)
+    xerr_rf!("address {} balance is insufficient, at least {}", addr, amt)
 }
 
 

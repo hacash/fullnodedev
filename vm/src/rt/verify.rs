@@ -356,10 +356,9 @@ mod call_verify_tests {
 
     #[test]
     fn verify_accepts_codecall_without_linear_end_guard() {
-        let body = encode_codecall_body(1, [0x01, 0x02, 0x03, 0x04]);
-        let mut codes = vec![Bytecode::CODECALL as u8];
+        let body = encode_splice_body(1, [0x01, 0x02, 0x03, 0x04]);
+        let mut codes = vec![Bytecode::P0 as u8, Bytecode::CODECALL as u8];
         codes.extend_from_slice(&body);
-        codes.push(Bytecode::P0 as u8);
         codes.push(Bytecode::END as u8);
         verify_bytecodes(&codes).unwrap();
     }

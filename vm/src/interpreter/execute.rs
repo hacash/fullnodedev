@@ -296,7 +296,10 @@ pub fn execute_code<'a>(
                 }
                 let (bgasu, cres) = host
                     .action_call(kid, actbody)
-                    .map_err(|e| ItrErr::new(ActCallError, e.as_str()))?;
+                    .map_err(|e| {
+                        let code = maybe!(e.is_unwind(), ActCallUnwind, ActCallError);
+                        ItrErr::new(code, e.as_str())
+                    })?;
                 gas += bgasu as i64;
                 if have_retv {
                     let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;

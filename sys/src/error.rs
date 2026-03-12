@@ -1,33 +1,47 @@
-pub type Ret<T> = Result<T, Error>;
-pub type Rerr = Result<(), Error>;
-
-pub type BRet<T> = Result<T, BError>;
-pub type BRerr = Result<(), BError>;
-pub const UNWIND_PREFIX: &str = "[UNWIND] ";
-// Keep compatibility aliases for existing call sites.
-pub const RECOVERABLE_PREFIX: &str = UNWIND_PREFIX;
-pub const UNRECOVERABLE_PREFIX: &str = "";
+pub type TextRet<T> = Result<T, TextError>;
+pub type TextRerr = Result<(), TextError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BError {
+pub enum ExecError {
+    // Recoverable execution failure (business/runtime control-flow).
     Unwind(String),
+    // Unrecoverable execution failure (hard stop).
     Interrupt(String),
 }
 
-impl BError {
-    pub fn unwind(msg: impl Into<String>) -> Self {
+pub type ExecRet<T> = Result<T, ExecError>;
+pub type ExecRerr = Result<(), ExecError>;
+pub type XError = ExecError;
+pub type XRet<T> = ExecRet<T>;
+pub type XRerr = ExecRerr;
+
+// Text-layer aliases (legacy Ret/Rerr are removed).
+pub type Ret<T> = TextRet<T>;
+pub type Rerr = TextRerr;
+
+pub const UNWIND_PREFIX: &str = "[UNWIND] ";
+
+pub fn decode_exec_error_from_text(err: TextError) -> ExecError {
+    if let Some(msg) = err.strip_prefix(UNWIND_PREFIX) {
+        ExecError::revert(msg.to_owned())
+    } else {
+        ExecError::fault(err)
+    }
+}
+
+pub fn encode_exec_error_to_text(err: ExecError) -> TextError {
+    match err {
+        ExecError::Unwind(msg) => format!("{}{}", UNWIND_PREFIX, msg),
+        ExecError::Interrupt(msg) => msg,
+    }
+}
+
+impl ExecError {
+    pub fn revert(msg: impl Into<String>) -> Self {
         Self::Unwind(msg.into())
     }
 
-    pub fn interrupt(msg: impl Into<String>) -> Self {
-        Self::Interrupt(msg.into())
-    }
-
-    pub fn recoverable(msg: impl Into<String>) -> Self {
-        Self::Unwind(msg.into())
-    }
-
-    pub fn unrecoverable(msg: impl Into<String>) -> Self {
+    pub fn fault(msg: impl Into<String>) -> Self {
         Self::Interrupt(msg.into())
     }
 
@@ -59,7 +73,7 @@ impl BError {
     }
 }
 
-impl std::fmt::Display for BError {
+impl std::fmt::Display for ExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unwind(msg) => write!(f, "{}{}", UNWIND_PREFIX, msg),
@@ -68,63 +82,86 @@ impl std::fmt::Display for BError {
     }
 }
 
-impl std::error::Error for BError {}
+impl std::error::Error for ExecError {}
 
-impl From<String> for BError {
-    fn from(v: String) -> Self {
-        Self::Interrupt(v)
+impl From<TextError> for ExecError {
+    fn from(v: TextError) -> Self {
+        Self::fault(v)
     }
 }
 
-impl From<&str> for BError {
+impl From<&str> for ExecError {
     fn from(v: &str) -> Self {
-        Self::Interrupt(v.to_owned())
+        Self::fault(v.to_owned())
     }
 }
 
-impl From<BError> for Error {
-    fn from(v: BError) -> Self {
-        match v {
-            BError::Unwind(msg) => format!("{}{}", UNWIND_PREFIX, msg),
-            BError::Interrupt(msg) => msg,
-        }
+impl From<ExecError> for TextError {
+    fn from(v: ExecError) -> Self {
+        encode_exec_error_to_text(v)
     }
 }
 
-pub trait IntoBRet<T> {
-    fn into_bret(self) -> BRet<T>;
+pub trait IntoExecRet<T> {
+    fn into_exec_ret(self) -> ExecRet<T>;
 }
 
-impl<T> IntoBRet<T> for Ret<T> {
-    fn into_bret(self) -> BRet<T> {
-        self.map_err(|e| {
-            if let Some(msg) = e.strip_prefix(UNWIND_PREFIX) {
-                BError::recoverable(msg.to_owned())
-            } else {
-                BError::unrecoverable(e)
-            }
-        })
+impl<T> IntoExecRet<T> for TextRet<T> {
+    fn into_exec_ret(self) -> ExecRet<T> {
+        self.map_err(decode_exec_error_from_text)
     }
 }
 
-impl<T> IntoBRet<T> for BRet<T> {
-    fn into_bret(self) -> BRet<T> {
+impl<T> IntoExecRet<T> for ExecRet<T> {
+    fn into_exec_ret(self) -> ExecRet<T> {
         self
     }
 }
 
-pub trait IntoRet<T> {
-    fn into_ret(self) -> Ret<T>;
+pub trait IntoTextRet<T> {
+    fn into_text_ret(self) -> TextRet<T>;
 }
 
-impl<T> IntoRet<T> for BRet<T> {
-    fn into_ret(self) -> Ret<T> {
-        self.map_err(Error::from)
+impl<T> IntoTextRet<T> for ExecRet<T> {
+    fn into_text_ret(self) -> TextRet<T> {
+        self.map_err(TextError::from)
     }
 }
 
-impl<T> IntoRet<T> for Ret<T> {
-    fn into_ret(self) -> Ret<T> {
+impl<T> IntoTextRet<T> for TextRet<T> {
+    fn into_text_ret(self) -> TextRet<T> {
+        self
+    }
+}
+
+pub trait IntoXRet<T> {
+    fn into_xret(self) -> XRet<T>;
+}
+
+impl<T> IntoXRet<T> for Ret<T> {
+    fn into_xret(self) -> XRet<T> {
+        self.into_exec_ret()
+    }
+}
+
+impl<T> IntoXRet<T> for XRet<T> {
+    fn into_xret(self) -> XRet<T> {
+        self
+    }
+}
+
+pub trait IntoTRet<T> {
+    fn into_tret(self) -> Ret<T>;
+}
+
+impl<T> IntoTRet<T> for XRet<T> {
+    fn into_tret(self) -> Ret<T> {
+        self.into_text_ret()
+    }
+}
+
+impl<T> IntoTRet<T> for Ret<T> {
+    fn into_tret(self) -> Ret<T> {
         self
     }
 }
@@ -151,48 +188,36 @@ macro_rules! err {
 }
 
 #[macro_export]
-macro_rules! berr {
-    ($v:expr) => {
-        Err($crate::BError::unrecoverable(($v).to_string()))
-    };
-}
-
-#[macro_export]
-macro_rules! berru {
-    ($v:expr) => {
-        Err($crate::BError::recoverable(($v).to_string()))
-    };
-}
-
-#[macro_export]
 macro_rules! errf {
     ( $($v:expr),+ ) => { err!(format!( $($v),+ )) };
 }
 
 #[macro_export]
-macro_rules! erru {
+macro_rules! xerr {
     ($v:expr) => {
-        err!(format!("{}{}", $crate::UNWIND_PREFIX, ($v).to_string()))
+        Err($crate::XError::fault(($v).to_string()).into())
     };
 }
 
 #[macro_export]
-macro_rules! erruf {
-    ( $($v:expr),+ ) => { erru!(format!( $($v),+ )) };
+macro_rules! xerr_r {
+    ($v:expr) => {
+        Err($crate::XError::revert(($v).to_string()).into())
+    };
 }
 
 #[macro_export]
-macro_rules! berrf {
-    ( $($v:expr),+ ) => { berr!(format!( $($v),+ )) };
+macro_rules! xerrf {
+    ( $($v:expr),+ ) => { xerr!(format!( $($v),+ )) };
 }
 
 #[macro_export]
-macro_rules! berruf {
-    ( $($v:expr),+ ) => { berru!(format!( $($v),+ )) };
+macro_rules! xerr_rf {
+    ( $($v:expr),+ ) => { xerr_r!(format!( $($v),+ )) };
 }
 
 #[macro_export]
-macro_rules! errunbox {
+macro_rules! terrunbox {
     ($errbox:expr) => {
         match $errbox {
             Ok(v) => Ok(v),
@@ -202,19 +227,8 @@ macro_rules! errunbox {
 }
 
 #[macro_export]
-macro_rules! berrunbox {
-    ($errbox:expr) => {
-        match $errbox {
-            Ok(v) => Ok(v),
-            Err(e) => Err($crate::BError::unrecoverable(e.to_string())),
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! ifer {
+macro_rules! ifter {
     ( $value:expr ) => {
-        // Some => Err
         if let Some(e) = $value {
             return Err(e);
         }
@@ -222,10 +236,20 @@ macro_rules! ifer {
 }
 
 #[macro_export]
-macro_rules! ifber {
+macro_rules! ifxer {
     ( $value:expr ) => {
         if let Some(e) = $value {
-            return Err($crate::BError::unrecoverable(e));
+            return Err($crate::XError::fault(e).into());
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! xerrunbox {
+    ($errbox:expr) => {
+        match $errbox {
+            Ok(v) => Ok(v),
+            Err(e) => Err($crate::XError::fault(e.to_string()).into()),
         }
     };
 }
@@ -242,35 +266,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn berror_into_error_uses_unwind_prefix_only_for_unwind() {
-        let u: Error = BError::recoverable("biz fail").into();
+    fn xerror_into_text_error_uses_unwind_prefix_only_for_revert() {
+        let u: Error = XError::revert("biz fail").into();
         assert_eq!(u, "[UNWIND] biz fail");
-        let i: Error = BError::unrecoverable("sys fail").into();
+        let i: Error = XError::fault("sys fail").into();
         assert_eq!(i, "sys fail");
     }
 
     #[test]
-    fn ret_into_bret_recovers_unwind_prefix() {
+    fn tret_into_xret_recovers_unwind_prefix() {
         let r: Ret<()> = Err("[UNWIND] fallback".to_owned());
-        let e = r.into_bret().unwrap_err();
+        let e = r.into_xret().unwrap_err();
         assert!(e.is_recoverable());
         assert_eq!(e.as_str(), "fallback");
     }
 
     #[test]
-    fn ret_into_bret_without_prefix_is_unrecoverable() {
+    fn tret_into_xret_without_prefix_is_unrecoverable() {
         let r: Ret<()> = Err("hard fail".to_owned());
-        let e = r.into_bret().unwrap_err();
+        let e = r.into_xret().unwrap_err();
         assert!(e.is_unrecoverable());
         assert_eq!(e.as_str(), "hard fail");
     }
 
     #[test]
-    fn berror_display_uses_wire_format() {
-        let rec = BError::recoverable("biz fail").to_string();
+    fn xerror_display_uses_wire_format() {
+        let rec = XError::revert("biz fail").to_string();
         assert_eq!(rec, "[UNWIND] biz fail");
 
-        let int = BError::unrecoverable("sys fail").to_string();
+        let int = XError::fault("sys fail").to_string();
         assert_eq!(int, "sys fail");
+    }
+
+    #[test]
+    fn xerr_macros_map_to_exec_error_variants() {
+        let u: XRet<()> = xerr_r!("biz fail");
+        assert!(u.unwrap_err().is_recoverable());
+        let i: XRet<()> = xerr!("sys fail");
+        assert!(i.unwrap_err().is_unrecoverable());
     }
 }

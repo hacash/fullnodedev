@@ -99,7 +99,7 @@ impl StateOperat for ContextInst<'_> {
 
 impl Context for ContextInst<'_> {
 
-    fn action_call(&mut self, k: u16, b: Vec<u8>) -> BRet<(u32, Vec<u8>)> {
+    fn action_call(&mut self, k: u16, b: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
         ctx_action_call(self, k, b)
     }
     fn action_exec_from(&self) -> ActExecFrom { self.exec_from }

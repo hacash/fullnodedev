@@ -45,7 +45,7 @@ impl AstIf {
     fn execute_if_core(&self, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         let cond_ok = ast_unwind_continue(ast_try_item!(ctx, self.cond.execute(ctx), self.cond.burn_90()))?.is_some();
         let branch = maybe!(cond_ok, &self.br_if, &self.br_else);
-        let ret = ast_try_item!(ctx, branch.execute(ctx), branch.burn_90()).into_ret()?;
+        let ret = ast_try_item!(ctx, branch.execute(ctx), branch.burn_90()).into_tret()?;
         Ok(ret)
     }
 }

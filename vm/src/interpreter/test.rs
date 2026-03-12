@@ -7,7 +7,7 @@ mod bounds_tests {
     use crate::value::{CompoItem, Value, ValueTy, RESERVED_U256_TYPE_ID};
     use crate::ContractAddress;
     use field::Address;
-    use sys::Ret;
+    use sys::{XError, XRet};
 
     #[derive(Default)]
     struct DummyHost {
@@ -25,9 +25,9 @@ mod bounds_tests {
             1
         }
 
-        fn action_call(&mut self, _kid: u16, body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+        fn action_call(&mut self, _kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
             if let Some(e) = &self.act_err {
-                return Err(e.clone());
+                return Err(XError::revert(e.clone()));
             }
             self.act_body = body;
             Ok((self.act_gas, self.act_res.clone()))
@@ -1550,12 +1550,11 @@ mod bounds_tests {
     #[test]
     fn action_host_error_still_charges_input_dynamic_gas() {
         use crate::rt::Bytecode;
-        use sys::UNWIND_PREFIX;
 
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
         let mut host = DummyHost {
-            act_err: Some(format!("{}mock action recoverable fail", UNWIND_PREFIX)),
+            act_err: Some("mock action recoverable fail".to_owned()),
             ..Default::default()
         };
         let mut operands = Stack::new(256);
@@ -1587,7 +1586,7 @@ mod bounds_tests {
             &mut host,
         );
 
-        assert!(matches!(res, Err(ItrErr(ItrErrCode::ActCallError, _))));
+        assert!(matches!(res, Err(ItrErr(ItrErrCode::ActCallUnwind, _))));
         let used = 1000 - gas;
         let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.action_bytes(21);
         assert_eq!(used, expected);
@@ -1596,11 +1595,10 @@ mod bounds_tests {
     #[test]
     fn action_host_error_out_of_gas_has_higher_priority() {
         use crate::rt::Bytecode;
-        use sys::UNWIND_PREFIX;
 
         let mut pc: usize = 0;
         let mut host = DummyHost {
-            act_err: Some(format!("{}mock action recoverable fail", UNWIND_PREFIX)),
+            act_err: Some("mock action recoverable fail".to_owned()),
             ..Default::default()
         };
         let mut operands = Stack::new(256);
@@ -1810,14 +1808,13 @@ mod bounds_tests {
     #[test]
     fn sdel_charges_storage_delete_min_dynamic_gas() {
         use crate::rt::Bytecode;
-        use sys::Ret;
 
         struct SdelOkHost;
         impl VmHost for SdelOkHost {
             fn height(&mut self) -> u64 {
                 1
             }
-            fn action_call(&mut self, _kid: u16, _body: Vec<u8>) -> Ret<(u32, Vec<u8>)> {
+            fn action_call(&mut self, _kid: u16, _body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
                 unreachable!()
             }
             fn log_push(&mut self, _cadr: &Address, _items: Vec<Value>) -> VmrtErr {
@@ -2309,7 +2306,7 @@ mod bounds_tests {
     #[test]
     fn shortcut_call_gas_matches_opcode_tiers() {
         use crate::rt::{
-            calc_func_sign, encode_call_body, encode_codecall_body, CallTarget, EffectMode, ExecCtx,
+            calc_func_sign, encode_call_body, encode_splice_body, CallTarget, EffectMode, ExecCtx,
         };
 
         let sign = calc_func_sign("jump");
@@ -2367,7 +2364,7 @@ mod bounds_tests {
             (
                 {
                     let mut codes = vec![Bytecode::CODECALL as u8];
-                    codes.extend_from_slice(&encode_codecall_body(1, sign));
+                    codes.extend_from_slice(&encode_splice_body(1, sign));
                     codes
                 },
                 16,

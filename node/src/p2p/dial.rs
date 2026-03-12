@@ -6,7 +6,7 @@ pub async fn tcp_dial_connect(addr: SocketAddr, outsec: u64) -> Ret<TcpStream> {
     let Ok(res) = timeout(secs(outsec), TcpStream::connect(addr)).await else {
         return errf!("tcp_dial_connect addr {} timeout.", addr)
     };
-    errunbox!( res )
+    terrunbox!( res )
 }
 
 pub async fn tcp_dial_handshake(addr: SocketAddr, outsec: u64) -> Ret<TcpStream> {
@@ -44,7 +44,7 @@ pub async fn tcp_dial_to_check_is_public_id(addr: SocketAddr, pid: &PeerKey, out
 pub async fn tcp_check_handshake(conn: &mut (impl AsyncRead + AsyncWrite + Unpin), outsec: u64) -> Rerr {
     // send handshake
     let handshake = P2P_HAND_SHAKE_MAGIC_NUMBER.to_be_bytes();
-    errunbox!( AsyncWriteExt::write_all(conn, &handshake).await )?;
+    terrunbox!( AsyncWriteExt::write_all(conn, &handshake).await )?;
     // check magic
     let magicn = tcp_read(conn, 4, outsec).await?;
     if magicn != handshake {
@@ -79,7 +79,7 @@ pub fn tcp_create_msg(msgty: u8, mut body: Vec<u8>) -> Vec<u8> {
 }
 
 pub async fn tcp_send(conn: &mut (impl AsyncWrite + Unpin), body: &Vec<u8>) -> Rerr {
-    errunbox!( AsyncWriteExt::write_all(conn, body).await )
+    terrunbox!( AsyncWriteExt::write_all(conn, body).await )
 }
 
 
@@ -119,7 +119,7 @@ pub async fn tcp_read(conn: &mut (impl AsyncRead + std::marker::Unpin), readlen:
                 return errf!("tcp read timeout")
             }
         }else{
-            errunbox!( ft.await )?;
+            terrunbox!( ft.await )?;
         }
 
     }else{
@@ -132,7 +132,7 @@ pub async fn tcp_read(conn: &mut (impl AsyncRead + std::marker::Unpin), readlen:
                 return errf!("tcp read timeout")
             }
         }else{
-            errunbox!( ft.await )?;
+            terrunbox!( ft.await )?;
         }
 
     }

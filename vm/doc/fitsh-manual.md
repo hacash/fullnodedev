@@ -56,7 +56,7 @@ Fitsh compiles to IR bytecode. This IR can be **decompiled back to Fitsh source*
 |--------|--------|
 | `trim_param_unpack` | Emit `param { $0 $1 ... }` when param names inferred |
 | `hide_default_call_argv` | Omit `nil` or `""` placeholder when no args |
-| `call_short_syntax` | Prefer `lib.func(...)` over `callext idx::0x...(args)` when SourceMap available |
+| `call_short_syntax` | Controls whether lib index in `call ... ext(i).sig(...)`/`codecall` prints as a named lib when SourceMap is available |
 | `flatten_array_list` | Emit `[a, b, c]` instead of `list { a b c }` |
 | `flatten_syscall_cat` | Flatten nested `++` in system call args |
 | `recover_literals` | Recover and emit numeric/bytes literals |
@@ -64,8 +64,8 @@ Fitsh compiles to IR bytecode. This IR can be **decompiled back to Fitsh source*
 ### 2.4 Output Forms
 
 - **Parameters**: `param { owner amount fee }` or `param { $0 $1 $2 }` when names unavailable
-- **Calls**: `this.foo(...)`, `self.foo(...)`, `super.foo(...)` for internal; `Token.balance_of(addr)` for lib when SourceMap present
-- **Raw calls**: `callext 1::0xabcdef01(10, 20)` when lib/func name unknown
+- **Calls**: Canonical output is `call <effect> <target>.<sig>(...)`, e.g. `call view ext(1).0xabcdef01(addr)`
+- **Code splice**: Canonical output is `codecall <libidx>.<sig>`, e.g. `codecall 1.0xabcdef01`
 
 ---
 
@@ -281,14 +281,15 @@ param { owner amount fee }
 - Must appear at the top of the function body
 - Canonical IR: `UNPACK(ROLL0, P0)`
 
-### 6.2 `codecall lib_idx::func_sig`
+### 6.2 `codecall lib_idx.func_sig`
 
-- No arguments; tail call
+- Optional argument list is supported: `codecall C.f`, `codecall C.f()`, `codecall C.f(nil)`, `codecall C.f(a)`, `codecall C.f(a, b)`
+- `codecall C.f`, `codecall C.f()`, and `codecall C.f(nil)` are equivalent
 - Must be followed by `end`
 - Used for low-level delegation
 
 ```fitsh
-codecall 0::0xabcdef01
+codecall 0.0xabcdef01
 end
 ```
 

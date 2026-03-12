@@ -95,11 +95,13 @@ impl Resoure {
             .contract_cache()
             .get(addr, &state_ed)
         {
+            // OutOfGas here is terminal for the VM call; warmup is only recorded after gas settlement succeeds.
             self.settle_new_contract_load_gas(gas, cbytes)?;
             self.contracts.insert(addr.clone(), obj.clone());
             return Ok(obj);
         }
         let cobj = self.load_contract_from_state(vmsta, addr, &state_ed)?;
+        // Keep this order explicit: even on miss, warmup/cache write is gated by successful gas settlement.
         self.settle_new_contract_load_gas(gas, cbytes)?;
         self.contracts.insert(addr.clone(), cobj.clone());
         global_machine_manager()

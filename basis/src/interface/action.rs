@@ -1,7 +1,7 @@
 
 
 pub trait ActExec {
-    fn execute(&self, _: &mut dyn Context) -> BRet<(u32, Vec<u8>)> { never!() }
+    fn execute(&self, _: &mut dyn Context) -> XRet<(u32, Vec<u8>)> { never!() }
 }
 
 

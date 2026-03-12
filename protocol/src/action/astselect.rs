@@ -91,7 +91,7 @@ impl AstSelect {
             }
         }
         if ok < slt_min {
-            return erruf!("action ast select must succeed at least {} but only {}", slt_min, ok);
+            return xerr_rf!("action ast select must succeed at least {} but only {}", slt_min, ok);
         }
         Ok(last_ok_ret.unwrap_or_default())
     }

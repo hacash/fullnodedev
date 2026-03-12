@@ -16,7 +16,7 @@ action_define!{ ChainAllow, 0x0411,
         let ids = self.chains.as_list();
         if ! ids.iter().any(|id| id.uint() == cid) {
             let cids = cids_to_str!(ids);
-            return erruf!("transction must belong to chains {} but on chain {}", cids, cid)
+            return xerr_rf!("transction must belong to chains {} but on chain {}", cids, cid)
         }
         // ok
         Ok(vec![])
@@ -46,7 +46,7 @@ action_define!{ HeightScope, 0x0412,
             return errf!("left height {} cannot big than rigth height {}", left, right)
         }
         if pdhei < left || pdhei > right {
-            return erruf!("transction must submit in height between {} and {}", left, right)
+            return xerr_rf!("transction must submit in height between {} and {}", left, right)
         }
         // ok
         Ok(vec![])
@@ -88,7 +88,7 @@ action_define!{ BalanceFloor, 0x0413,
         let adr = ctx.addr(&self.addr)?;
         let bls = CoreState::wrap(ctx.state()).balance(&adr).unwrap_or_default();
         if check_hac && bls.hacash < self.hacash {
-            return erruf!(
+            return xerr_rf!(
                 "address {} hacash {} is lower than floor {}",
                 adr, bls.hacash, self.hacash
             )
@@ -96,7 +96,7 @@ action_define!{ BalanceFloor, 0x0413,
         if check_sat {
             let sat = bls.satoshi.to_satoshi();
             if sat < self.satoshi {
-                return erruf!(
+                return xerr_rf!(
                     "address {} satoshi {} is lower than floor {}",
                     adr, sat, self.satoshi
                 )
@@ -105,7 +105,7 @@ action_define!{ BalanceFloor, 0x0413,
         if check_dia {
             let dia = bls.diamond.to_diamond();
             if dia < self.diamond {
-                return erruf!(
+                return xerr_rf!(
                     "address {} diamond {} is lower than floor {}",
                     adr, dia, self.diamond
                 )
@@ -116,7 +116,7 @@ action_define!{ BalanceFloor, 0x0413,
                 .asset(floor.serial)
                 .unwrap_or(AssetAmt::from_serial(floor.serial));
             if cur.amount < floor.amount {
-                return erruf!(
+                return xerr_rf!(
                     "address {} asset {}:{} is lower than floor {}:{}",
                     adr,
                     cur.serial,

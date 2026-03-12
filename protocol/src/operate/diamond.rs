@@ -33,7 +33,7 @@ diamond_operate_define!(hacd_add, addr, hacd, oldhacd, {
 diamond_operate_define!(hacd_sub, addr, hacd, oldhacd, {  
     // check
     if *oldhacd < *hacd {
-        return erruf!("address {} diamond {} is insufficient, at least {}", 
+        return xerr_rf!("address {} diamond {} is insufficient, at least {}", 
             addr, oldhacd, hacd)
     }
     // do sub
@@ -91,10 +91,10 @@ pub fn check_diamond_status(state: &mut CoreState, addr_from: &Address, hacd_nam
         format!("diamond status {}", hacd_name.to_readable()),
         state.diamond(hacd_name));
     if diaitem.status != DIAMOND_STATUS_NORMAL {
-        return erruf!("diamond {} has been mortgaged and cannot be transferred", hacd_name.to_readable())
+        return xerr_rf!("diamond {} has been mortgaged and cannot be transferred", hacd_name.to_readable())
     }
     if *addr_from != diaitem.address {
-        return erruf!("diamond {} not belong to address {}", hacd_name.to_readable(), addr_from)
+        return xerr_rf!("diamond {} not belong to address {}", hacd_name.to_readable(), addr_from)
     }
     // ok
     Ok(diaitem)

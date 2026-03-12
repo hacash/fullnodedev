@@ -42,7 +42,7 @@ impl P2PManage {
                     }
                 },
                 client = server_listener.accept() => {
-                    let Ok((client, _)) = errunbox!( client ) else {
+                    let Ok((client, _)) = terrunbox!( client ) else {
                         continue
                     };
                     if !this.cnf.accept_nodes {

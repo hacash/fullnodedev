@@ -105,19 +105,17 @@ impl Frame {
         self.heap.reset(self.heap.limit());
     }
 
-    pub fn prepare(
+    fn prepare_common(
         &mut self,
         exec: ExecCtx,
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
-        param: Option<Value>,
+        mut argv: Value,
+        have_param: bool,
     ) -> VmrtErr {
         self.clear_runtime_state();
-        let have_param = param.is_some();
-        let mut argv = param.unwrap_or(Value::Nil);
         if have_param {
-            argv.canbe_func_argv()?;
             if let Some(vtys) = &fnobj.agvty {
                 vtys.check_params(&mut argv)?;
             }
@@ -132,16 +130,67 @@ impl Frame {
         Ok(())
     }
 
+    pub fn prepare_invoke_unchecked_shape(
+        &mut self,
+        exec: ExecCtx,
+        bindings: FrameBindings,
+        fnobj: &FnObj,
+        height: u64,
+        param: Value,
+    ) -> VmrtErr {
+        // Caller must validate argv shape before any contract planning/warmup.
+        self.prepare_common(exec, bindings, fnobj, height, param, true)
+    }
+
+    pub fn prepare(
+        &mut self,
+        exec: ExecCtx,
+        bindings: FrameBindings,
+        fnobj: &FnObj,
+        height: u64,
+        param: Option<Value>,
+    ) -> VmrtErr {
+        let have_param = param.is_some();
+        let argv = param.unwrap_or(Value::Nil);
+        if have_param {
+            argv.canbe_func_argv()?;
+        }
+        self.prepare_common(exec, bindings, fnobj, height, argv, have_param)
+    }
+
     pub fn prepare_splice(
         &mut self,
         exec: ExecCtx,
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        param: Value,
     ) -> VmrtErr {
+        param.canbe_func_argv()?;
+        let caller_output = match &self.types {
+            Some(types) => types
+                .output_type()
+                .map_err(|e| ItrErr::new(ItrErrCode::CallArgvTypeFail, &e))?,
+            None => None,
+        };
+        let callee_params = match &fnobj.agvty {
+            Some(types) => types
+                .param_types()
+                .map_err(|e| ItrErr::new(ItrErrCode::CallArgvTypeFail, &e))?,
+            None => vec![],
+        };
+        self.types = if caller_output.is_none() && callee_params.is_empty() {
+            None
+        } else {
+            Some(
+                FuncArgvTypes::from_types(caller_output, callee_params)
+                    .map_err(|e| ItrErr::new(ItrErrCode::CallArgvTypeFail, &e))?,
+            )
+        };
         self.bindings = bindings;
         self.pc = 0;
         self.exec = exec;
+        self.call_argv = param;
         self.codes = fnobj.exec_bytecodes(height)?;
         Ok(())
     }
@@ -208,7 +257,7 @@ mod splice_prepare_tests {
         let owner = mk_contract_addr(41);
         let bindings = mk_bindings(owner.clone());
         frame
-            .prepare_splice(ExecCtx::view(), bindings.clone(), &fnobj, 1)
+            .prepare_splice(ExecCtx::view(), bindings.clone(), &fnobj, 1, Value::U8(2))
             .unwrap();
         assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);
         assert_eq!(frame.exec, ExecCtx::view());
@@ -216,7 +265,7 @@ mod splice_prepare_tests {
         assert_eq!(frame.locals.len(), 1);
         assert_eq!(frame.oprnds.len(), 1);
         assert_eq!(*frame.oprnds.peek().unwrap(), Value::U8(7));
-        assert_eq!(frame.call_argv, Value::U8(1));
+        assert_eq!(frame.call_argv, Value::U8(2));
         assert_eq!(
             frame.types.as_ref().unwrap().output_type().unwrap(),
             Some(ValueTy::U8)
