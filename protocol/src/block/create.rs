@@ -14,6 +14,12 @@ pub fn block_create(buf: &[u8]) -> Ret<(Box<dyn Block>, usize)> {
 
 pub fn build_block_package(data: Vec<u8>) -> Ret<BlkPkg> {
     let (objc, sk) = block_create(&data)?;
-    let data = maybe!(sk == data.len(), data, data[..sk].to_vec());
+    if sk != data.len() {
+        return errf!(
+            "block parse length mismatch: consumed {} but input length is {}",
+            sk,
+            data.len()
+        )
+    }
     Ok(BlkPkg::new(objc, data))
 }

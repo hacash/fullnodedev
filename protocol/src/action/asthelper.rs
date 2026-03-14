@@ -84,10 +84,11 @@ pub fn validate_ast_select(min: usize, max: usize, num: usize) -> Ret<()> {
     Ok(())
 }
 
-/// Enter an AST branch node: check depth limit and increment level.
-/// Returns a guard that restores level on drop.
+/// Enter an AST branch node: check depth limit, increment level, and set exec_from to AstWrap.
+/// Returns a guard that restores both level and exec_from on drop.
 pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {
     let old_level = ctx.level();
+    let old_exec_from = ctx.action_exec_from();
     let next = match old_level.checked_add(1) {
         Some(v) => v,
         None => return errf!("ast tree depth overflow"),
@@ -100,7 +101,8 @@ pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {
         );
     }
     ctx.level_set(next);
-    Ok(AstLevelGuard { ctx, old_level })
+    ctx.action_exec_from_set(ActExecFrom::AstWrap);
+    Ok(AstLevelGuard { ctx, old_level, old_exec_from })
 }
 
 /// `Ok` => continue with value, `Revert` => skip (continue without value), `Fault` => rethrow.
@@ -115,6 +117,7 @@ pub fn ast_revert_continue<T>(out: XRet<T>) -> Ret<Option<T>> {
 pub struct AstLevelGuard<'a> {
     ctx: &'a mut dyn Context,
     old_level: usize,
+    old_exec_from: ActExecFrom,
 }
 
 impl AstLevelGuard<'_> {
@@ -126,6 +129,7 @@ impl AstLevelGuard<'_> {
 impl Drop for AstLevelGuard<'_> {
     fn drop(&mut self) {
         self.ctx.level_set(self.old_level);
+        self.ctx.action_exec_from_set(self.old_exec_from);
     }
 }
 

@@ -261,6 +261,13 @@ pub fn check_action_level(
             return errf!("action {} can only execute on level TOP_UNIQUE", kid)
         }
     } else if alv == ActLv::Guard {
+        // Guard is an env constraint; disallow execution from VM ActionCall.
+        if exec_from == ActExecFrom::ActionCall {
+            return errf!(
+                "action {} (Guard) cannot execute from ActionCall context",
+                kid
+            )
+        }
         if ctx_level > ACTION_CTX_LEVEL_AST_MAX {
             return errf!(
                 "action {} can only execute on GUARD (AST and above), now ctx {}",
@@ -278,6 +285,7 @@ pub fn check_action_level(
             )
         }
     } else if alv == ActLv::Top {
+        check_top_source()?;
         check_level_top!{"TOP"}
     } else if let Some(max_ctx_level) = alv.max_ctx_level() {
         // All other levels are upper-bound compatible: shallower ctx is allowed.

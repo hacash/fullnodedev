@@ -9,22 +9,26 @@ pub const ACTION_CTX_LEVEL_AST_MAX: usize = ACTION_CTX_LEVEL_CALL_BASE - 1;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ActExecFrom {
     TxLoop,
+    AstWrap,
     ActionCall,
 }
 
-
+// Upper-bound levels: action cannot run deeper than max_ctx_level().
+// Lower-bound level: AnyInCall requires minimum depth.
+// All Top* variants are handled by dedicated branches in check_action_level
+// and never fall through to the generic max_ctx_level() path.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ActLv {
-    TopOnly,      // only this single one on top
-    TopOnlyWithGuard, // only one non-guard action on top, guards can appear anywhere in tx actions
-    TopUnique,    // top and unique
-    Guard,        // guard action, allowed in AST and above
-    Top,          // must on top
-    Ast,          // in act cond AST
-    MainCall,     // tx main call (depth=0)
-    ContractCall, // max ctx is contract call; shallower ctx is compatible by upper-bound rule
-    AnyInCall,    // strict lower-bound: only callable inside VM call context (main/contract call)
-    Any,          // any context
+    TopOnly,          // top, single action only
+    TopOnlyWithGuard, // top, single non-guard + guards
+    TopUnique,        // top, unique by kind
+    Top,              // must on top
+    Guard,            // env constraint, tx-loop or AST only (ctx <= 99)
+    Ast,              // AST and above (ctx <= 99)
+    MainCall,         // up to main call (ctx <= 100)
+    ContractCall,     // up to contract call (ctx <= 101)
+    AnyInCall,        // only inside VM call (ctx >= 100)
+    Any,              // any context
 }
 
 
@@ -33,6 +37,7 @@ impl ActLv {
     pub fn max_ctx_level(&self) -> Option<usize> {
         use ActLv::*;
         match self {
+            // Top* variants are checked by dedicated branches; this arm is defensive only.
             TopOnly | TopOnlyWithGuard | TopUnique | Top => Some(ACTION_CTX_LEVEL_TOP),
             Guard | Ast => Some(ACTION_CTX_LEVEL_AST_MAX),
             MainCall => Some(ACTION_CTX_LEVEL_CALL_MAIN),
