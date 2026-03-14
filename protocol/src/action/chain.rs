@@ -103,7 +103,8 @@ action_define!{ BalanceFloor, 0x0413,
             }
         }
         if check_dia {
-            let dia = bls.diamond.to_diamond();
+            let dia = bls.diamond.to_diamond()
+                .map_err(|e| format!("address {} diamond count decode failed: {}", adr, e))?;
             if dia < self.diamond {
                 return xerr_rf!(
                     "address {} diamond {} is lower than floor {}",
@@ -114,7 +115,7 @@ action_define!{ BalanceFloor, 0x0413,
         for floor in self.assets.as_list() {
             let cur = bls
                 .asset(floor.serial)
-                .unwrap_or(AssetAmt::from_serial(floor.serial));
+                .unwrap_or(AssetAmt::from_serial(floor.serial).unwrap());
             if cur.amount < floor.amount {
                 return xerr_rf!(
                     "address {} asset {}:{} is lower than floor {}:{}",

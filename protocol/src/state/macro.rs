@@ -20,12 +20,11 @@ macro_rules! inst_state_get_or_none {
 #[macro_export]
 macro_rules! inst_state_get_or_default {
     ($self:ident, $idx:expr, $vty:ty) => {{
-        // let k = ($idx as u8).to_be_bytes();
-        let mut v = <$vty>::default();
         if let Some(bts) = $self.sta.get(vec![$idx]) {
-            v.parse(&bts).unwrap(); // must
+            <$vty>::build(&bts).unwrap()
+        } else {
+            <$vty>::default()
         }
-        v
     }}
 }
 
@@ -141,5 +140,4 @@ macro_rules! inst_state_define {
 inst_state_define!{ TestSta834765495863457,
     1, balance, Address : Uint8
 }
-
 

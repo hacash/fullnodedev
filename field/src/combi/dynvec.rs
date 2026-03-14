@@ -32,13 +32,17 @@ impl Parse for $class {
     fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
         let mut seek = 0;
         let count = *self.count as usize;
-        self.vlist = Vec::with_capacity(count);
+        let mut cur = *buf;
+        let mut new_vlist = Vec::with_capacity(count);
         for _ in 0..count {
-            let (obj, mvsk) = $parseobjfunc(*buf)?;
-            *buf = &(*buf)[mvsk..];
+            let (obj, mvsk) = $parseobjfunc(cur)?;
+            cur = &cur[mvsk..];
             seek += mvsk;
-            self.vlist.push(obj);
+            new_vlist.push(obj);
         }
+        *buf = cur;
+        self.count = <$lenty>::from_usize(new_vlist.len())?;
+        self.vlist = new_vlist;
         Ok(seek)
     }
 }
@@ -86,8 +90,9 @@ impl FromJSON for $class {
                 return errf!("dynamic object JSON decode failed: {}", item_json);
             }
         }
+        let count = <$lenty>::from_usize(vlist.len())?;
+        self.count = count;
         self.vlist = vlist;
-        self.count = <$lenty>::from_usize(self.vlist.len())?;
         Ok(())
     }
 }
@@ -124,14 +129,15 @@ impl $class {
 	}
 
 	pub fn length(&self) -> usize {
-		*self.count as usize
+		self.vlist.len()
 	}
 
 	pub fn count(&self) -> &$lenty {
 		&self.count
 	}
 
-	pub fn set_count(&mut self, c: $lenty) {
+	#[allow(dead_code)]
+	pub(crate) fn set_count(&mut self, c: $lenty) {
 		self.count = c;
 	}
 
@@ -159,6 +165,3 @@ fn test_json_create_838464857639363(_b:&str)->Ret<Option<Box<dyn Test78756388732
 combi_dynvec!{ Test294635492624,
     Uint1, Test78756388732645, test_create_838464857639363, test_json_create_838464857639363
 }
-
-
-

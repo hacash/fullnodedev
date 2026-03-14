@@ -40,17 +40,102 @@ combi_struct!{ AddrBalance,
 
 combi_list!{ AssetAmtW1, Uint1, AssetAmt }
 
-// Balance
-combi_struct!{ Balance, 
-	hacash:  Amount
-	satoshi: SatoshiAuto
-    diamond: DiamondNumberAuto
-	assets: AssetAmtW1
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct Balance {
+    pub hacash: Amount,
+    pub satoshi: SatoshiAuto,
+    pub diamond: DiamondNumberAuto,
+    pub assets: AssetAmtW1,
+}
+
+impl Parse for Balance {
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        let mut hacash = Amount::new();
+        let mut satoshi = SatoshiAuto::new();
+        let mut diamond = DiamondNumberAuto::new();
+        let mut assets = AssetAmtW1::new();
+        let mut seek = hacash.parse(buf)?;
+        seek += satoshi.parse(&buf[seek..])?;
+        seek += diamond.parse(&buf[seek..])?;
+        seek += assets.parse(&buf[seek..])?;
+        Self::check_assets(&assets)?;
+        self.hacash = hacash;
+        self.satoshi = satoshi;
+        self.diamond = diamond;
+        self.assets = assets;
+        Ok(seek)
+    }
+}
+
+impl Serialize for Balance {
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        self.hacash.serialize_to(out);
+        self.satoshi.serialize_to(out);
+        self.diamond.serialize_to(out);
+        self.assets.serialize_to(out);
+    }
+    fn size(&self) -> usize {
+        self.hacash.size() + self.satoshi.size() + self.diamond.size() + self.assets.size()
+    }
+}
+
+impl_field_only_new!{Balance}
+
+impl ToJSON for Balance {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        format!(
+            "{{\"hacash\":{},\"satoshi\":{},\"diamond\":{},\"assets\":{}}}",
+            self.hacash.to_json_fmt(fmt),
+            self.satoshi.to_json_fmt(fmt),
+            self.diamond.to_json_fmt(fmt),
+            self.assets.to_json_fmt(fmt)
+        )
+    }
+}
+
+impl FromJSON for Balance {
+    fn from_json(&mut self, json_str: &str) -> Ret<()> {
+        let pairs = json_split_object(json_str)?;
+        let mut hacash = self.hacash.clone();
+        let mut satoshi = self.satoshi;
+        let mut diamond = self.diamond;
+        let mut assets = self.assets.clone();
+        for (k, v) in pairs {
+            if k == "hacash" {
+                hacash.from_json(v)?;
+            } else if k == "satoshi" {
+                satoshi.from_json(v)?;
+            } else if k == "diamond" {
+                diamond.from_json(v)?;
+            } else if k == "assets" {
+                assets.from_json(v)?;
+            }
+        }
+        Self::check_assets(&assets)?;
+        self.hacash = hacash;
+        self.satoshi = satoshi;
+        self.diamond = diamond;
+        self.assets = assets;
+        Ok(())
+    }
 }
 
 pub const BALANCE_ASSET_MAX: usize = 20;
 
 impl Balance {
+    fn check_assets(assets: &AssetAmtW1) -> Rerr {
+        if assets.length() > BALANCE_ASSET_MAX {
+            return errf!("balance asset item quantity cannot exceed {}", BALANCE_ASSET_MAX)
+        }
+        let mut seen = HashSet::new();
+        for ast in assets.as_list() {
+            ast.clone().checked()?;
+            if !seen.insert(ast.serial.uint()) {
+                return errf!("balance asset serial {} duplicated", ast.serial)
+            }
+        }
+        Ok(())
+    }
 
 	pub fn hac(amt: Amount) -> Self {
 		Self {
@@ -64,7 +149,7 @@ impl Balance {
 	}
 
 	pub fn asset_must(&self, seri: Fold64) -> AssetAmt {
-		self.asset(seri).unwrap_or(AssetAmt::from_serial(seri))
+		self.asset(seri).unwrap_or(AssetAmt::from_serial(seri).unwrap())
 	}
 
 	pub fn asset_set(&mut self, amt: AssetAmt) -> Rerr {

@@ -47,19 +47,21 @@ impl Hash {
     }
 
     // value +1 bigend
-    pub fn increase(&mut self) {
+    pub fn increase(&mut self) -> Ret<()> {
         const S128: usize = 16;
         let right: [u8; S128] = self.bytes[S128..].try_into().unwrap();
         let mut rnum: u128 = u128::from_be_bytes(right);
         if rnum == u128::MAX {
             let left: [u8; S128] = self.bytes[0..S128].try_into().unwrap();
             let mut lnum: u128 = u128::from_be_bytes(left);
-            lnum += 1;
+            lnum = lnum.checked_add(1).ok_or_else(|| "hash increase overflow".to_string())?;
             self.bytes[0..S128].copy_from_slice(&lnum.to_be_bytes());
+            rnum = 0;
+        } else {
+            rnum += 1;
         }
-        // yes
-        rnum += 1;
         self.bytes[S128..].copy_from_slice(&rnum.to_be_bytes());
+        Ok(())
     }
 
 }

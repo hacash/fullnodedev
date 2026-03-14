@@ -14,8 +14,8 @@ fn diamond_bidding(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         if datalist.len() >= limit {
             return false;
         }
-        let txhx = a.hash;
-        let txr = a.objc.as_ref().as_read();
+        let txhx = a.hash();
+        let txr = a.objc().as_read();
         let Some(diamtact) = action::pickout_diamond_mint_action(txr) else {
             return true;
         };
@@ -46,7 +46,7 @@ fn diamond_bidding(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     if since {
         if let Ok(blk) = load_block_by_height(ctx, lastdia.born_height.uint()) {
-            data.insert("since".to_owned(), json!(blk.objc.timestamp().uint()));
+            data.insert("since".to_owned(), json!(blk.objc().timestamp().uint()));
         }
     }
     api_data(data)

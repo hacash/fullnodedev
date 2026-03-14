@@ -160,6 +160,11 @@ mod tests {
         assert!(b.check());
         b.from_json("0").unwrap();
         assert!(!b.check());
+        b.from_json("true").unwrap();
+        assert!(b.check());
+        b.from_json("false").unwrap();
+        assert!(!b.check());
+        assert!(b.from_json("2").is_err());
         assert!(b.from_json("\"1\"").is_err());
     }
 

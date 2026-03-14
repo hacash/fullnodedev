@@ -88,9 +88,7 @@ action_define!{ AssetCreate, 16,
         ttcount.asset_issue_burn_238 = Uint8::from(new_asset_issue_burn_238);
         sta.set_total_count(&ttcount);
         // do mint
-        let mut asset_obj = AssetAmt::from_serial(amd.serial);
-        asset_obj.amount = amd.supply; // total supply
-        let asset_obj = asset_obj.checked()?;
+        let asset_obj = AssetAmt::from(amd.serial.uint(), amd.supply.uint())?;
         // issue
         let mut bls = sta.balance(&amd.issuer).unwrap_or_default();
         bls.asset_set(asset_obj)?;

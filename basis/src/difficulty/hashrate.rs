@@ -55,6 +55,9 @@ pub fn u32_to_rates(num: u32, secs: f64) -> f64 {
 }
 
 pub fn hash_to_rates(hx: &[u8; HXS], secs: f64) -> f64 {
+    if secs <= 0.0 || !secs.is_finite() {
+        return 0.0
+    }
     hash_to_power(&hx) / secs
 }
 
@@ -64,12 +67,15 @@ pub fn hash_to_power_u128(hx: &[u8; HXS]) -> u128 {
 }
 
 pub fn hash_to_power(hx: &[u8; HXS]) -> f64 {
+    if hx.iter().all(|a| *a == 0) {
+        // Zero target is outside normal mining input; keep API math finite instead of propagating inf/NaN.
+        return 0.0
+    }
     let bigv = BigInt::from_bytes_be(BigSign::Plus, &hx[..]);
     let base = BigInt::from_bytes_be(BigSign::Plus, &HASHRATE_VALUE_BASE[..]);
     let power = base.to_f64().unwrap() / bigv.to_f64().unwrap() * (u64::MAX as f64 + 1.0);
     power
 }
-
 
 
 

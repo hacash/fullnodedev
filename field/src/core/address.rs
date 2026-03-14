@@ -1,6 +1,4 @@
 use base58check::*;
-use std::ops::DerefMut;
-
 pub const ADDR_OR_PTR_DIV_NUM: u8 = 20;
 
 #[repr(transparent)]
@@ -26,12 +24,6 @@ impl Deref for Address {
     }
 }
 
-impl DerefMut for Address {
-    fn deref_mut(&mut self) -> &mut Fixed21 {
-        &mut self.0
-    }
-}
-
 impl From<[u8; 21]> for Address {
     fn from(v: [u8; 21]) -> Self {
         Address(Fixed21::from(v))
@@ -48,12 +40,6 @@ impl Index<usize> for Address {
     type Output = u8;
     fn index(&self, idx: usize) -> &u8 {
         &self.0[idx]
-    }
-}
-
-impl IndexMut<usize> for Address {
-    fn index_mut(&mut self, idx: usize) -> &mut u8 {
-        &mut self.0[idx]
     }
 }
 
@@ -89,7 +75,7 @@ impl ToJSON for Address {
 
 impl FromJSON for Address {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let raw = json_expect_quoted(json)?;
+        let raw = json_expect_quoted_decoded(json)?;
         let trimmed = raw.trim();
         // Try bare base58check first (Address-specific, no prefix)
         if let Ok(addr) = Self::from_readable(trimmed) {
@@ -101,7 +87,9 @@ impl FromJSON for Address {
         if data.len() != Self::SIZE {
             return errf!("Address size mismatch: expected {} but got {}", Self::SIZE, data.len());
         }
-        *self = Address(Fixed21::from(data.try_into().unwrap()));
+        let addr = Address(Fixed21::from(data.try_into().unwrap()));
+        addr.check_version()?;
+        *self = addr;
         Ok(())
     }
 }
@@ -226,11 +214,10 @@ impl Address {
         if body.len() != Self::SIZE - 1 {
             return Err("address length invalid".to_string())
         }
-        let mut address = Self::default();
-        address[0] = version;
-        for i in 1..Self::SIZE {
-            address[i] = body[i-1];
-        }
+        let mut data = [0u8; Self::SIZE];
+        data[0] = version;
+        data[1..].copy_from_slice(&body);
+        let address = Self::from(data);
         address.check_version()?;
         Ok(address)
     }
@@ -252,6 +239,9 @@ impl ParsePrefix for AddressW1 {
             return errf!("AddressW1 prefix is empty");
         }
         let count_byte = prefix[0];
+        if count_byte == 0 {
+            return errf!("AddressW1 count cannot be zero");
+        }
         let count = count_byte as usize;
         let mut v = AddressW1::new();
         v.count = Uint1::from(count_byte);
@@ -281,6 +271,13 @@ impl AddrOrList {
     }
 
     pub fn from_list(list: Vec<Address>) -> Ret<Self> {
+        if list.is_empty() {
+            return errf!("AddrOrList list cannot be empty");
+        }
+        let max_count = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
+        if list.len() > max_count {
+            return errf!("AddrOrList list length {} exceeds max {}", list.len(), max_count);
+        }
         let mut v = AddressW1::new();
         v.append(list)?;
         Ok(Self::Val2(v))
@@ -313,6 +310,9 @@ impl FromJSON for AddrOrList {
         if s.starts_with('[') && s.ends_with(']') {
             let mut v = AddressW1::new();
             v.from_json(s)?;
+            if v.length() == 0 {
+                return errf!("invalid AddrOrList JSON: list length cannot be zero");
+            }
             let max_count = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize;
             if v.length() > max_count {
                 return errf!(
@@ -515,6 +515,24 @@ mod address_tests {
         let mut got = AddrOrList::default();
         got.from_json(&json).unwrap();
         assert_eq!(got.serialize(), obj.serialize());
+    }
+
+    #[test]
+    fn test_addr_or_list_json_reject_empty_list() {
+        let mut obj = AddrOrList::default();
+        assert!(obj.from_json("[]").is_err());
+    }
+
+    #[test]
+    fn test_addr_or_list_binary_reject_zero_count_list() {
+        let mut obj = AddrOrList::default();
+        assert!(obj.parse(&[ADDR_OR_PTR_DIV_NUM]).is_err());
+    }
+
+    #[test]
+    fn test_addr_or_list_from_list_reject_unencodable_count() {
+        let too_many = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize + 1;
+        assert!(AddrOrList::from_list(vec![ADDRESS_ONEX; too_many]).is_err());
     }
 
 }

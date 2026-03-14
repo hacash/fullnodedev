@@ -39,12 +39,12 @@ fn block_intro(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok(blkpkg) = load_block_by_key(ctx, &key) else {
         return api_error("cannot find block");
     };
-    let blkobj = &blkpkg.objc;
+    let blkobj = blkpkg.objc();
     let cbtx = create_recent_block_info(blkobj.as_read());
 
     let txnum = blkobj.transaction_count().uint() as usize - 1;
     let mut data = serde_json::Map::new();
-    data.insert("hash".to_owned(), json!(blkpkg.hash.to_hex()));
+    data.insert("hash".to_owned(), json!(blkpkg.hash().to_hex()));
     data.insert("version".to_owned(), json!(blkobj.version().uint()));
     data.insert("height".to_owned(), json!(blkobj.height().uint()));
     data.insert("timestamp".to_owned(), json!(blkobj.timestamp().uint()));

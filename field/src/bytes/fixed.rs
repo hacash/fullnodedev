@@ -36,12 +36,6 @@ macro_rules! fixed_define_body {
             }
         }
 
-        impl IndexMut<usize> for $class {
-            fn index_mut(&mut self, idx: usize) -> &mut Self::Output{
-                &mut self.bytes[idx]
-            }
-        }
-
         impl Deref for $class {
             type Target = [u8; $size];
             fn deref(&self) -> &[u8; $size] {
@@ -54,13 +48,6 @@ macro_rules! fixed_define_body {
                 self.bytes.as_slice()
             }
         }
-        
-        impl AsMut<[u8]> for $class {
-            fn as_mut(&mut self) -> &mut [u8] {
-                &mut self.bytes
-            }
-        }
-
         impl $class {
             pub fn is_zero(&self) -> bool { self.bytes.iter().all(|&x| x == 0) }
             pub fn not_zero(&self) -> bool { !self.is_zero() }
@@ -149,9 +136,15 @@ macro_rules! fixed_define_body {
 
         impl Readable for $class {
             fn from_readable(v: &[u8]) -> Ret<Self> {
-                Ok(Self {
-                    bytes: bytes_from_readable_string(v, $size).try_into().unwrap()
-                })
+                if v.len() != $size {
+                    return errf!("{} size invalid: expected {}, but got {}", stringify!($class), $size, v.len());
+                }
+                if !check_readable_string(v) {
+                    return errf!("{} contains unreadable bytes", stringify!($class));
+                }
+                let mut bytes = [0u8; $size];
+                bytes.copy_from_slice(v);
+                Ok(Self { bytes })
             }
             fn to_readable(&self) -> String {
                 bytes_to_readable_string(&self.bytes)
@@ -235,23 +228,3 @@ fixed_define!{Fixed21, 21}
 fixed_define!{Fixed32, 32}
 fixed_define!{Fixed33, 33}
 fixed_define!{Fixed64, 64}
-
-
-/*
-* Bool
-*/
-pub type Bool = Fixed1;
-
-impl Bool {
-
-    pub fn check(&self) -> bool {
-        self[0] != 0
-    }
-
-    pub fn new(v: bool) -> Self where Self: Sized {
-        Self {
-            bytes: [ maybe!(v, 1, 0)]
-        }
-    }
-
-}

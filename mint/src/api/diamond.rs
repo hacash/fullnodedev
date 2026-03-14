@@ -14,7 +14,8 @@ fn diamond(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         return api_error("invalid diamond name");
     }
 
-    let dian = DiamondName::from(name.as_bytes().try_into().unwrap());
+    let raw: [u8; 6] = name.as_bytes().try_into().unwrap();
+    let dian = DiamondName::from(raw);
     let Some(diaobj) = state.diamond(&dian) else {
         return api_error("cannot find diamond");
     };

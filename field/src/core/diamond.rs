@@ -1,22 +1,140 @@
 
-pub type DiamondName = Fixed6;
+#[repr(transparent)]
+#[derive(Default, Debug, Hash, Copy, Clone, PartialEq, Eq)]
+pub struct DiamondName(Fixed6);
+
 impl DiamondName {
+    pub const SIZE: usize = Fixed6::SIZE;
+
+    pub fn is_valid(stuff: &[u8]) -> bool {
+        const DIAMOND_NAME_VALID_CHARS: [u8; 16] = *b"WTYUIAHXVMEKBSZN";
+        stuff.len() == 6 && stuff.iter().all(|&x| DIAMOND_NAME_VALID_CHARS.contains(&x))
+    }
+
+    fn check_bytes(stuff: &[u8]) -> Rerr {
+        if Self::is_valid(stuff) {
+            return Ok(());
+        }
+        errf!("diamond name {} is not valid", String::from_utf8_lossy(stuff))
+    }
 
     pub fn name(&self) -> String {
         String::from_utf8(self.serialize()).unwrap()
     }
+}
 
-    pub fn is_valid(stuff: &[u8]) -> bool {
-        const DIAMOND_NAME_VALID_CHARS: [u8; 16] =  *b"WTYUIAHXVMEKBSZN";
-        if 6 != stuff.len() {
-            return false // length not match
-        }
-        // all 6 char is in "WTYUIAHXVMEKBSZN"
-        let rrr = stuff.iter().all(|&x|
-            DIAMOND_NAME_VALID_CHARS.iter().position(|&a|a==x).is_some()
-        );
-        // println!("DiamondName::is_valid({}) => {}", std::str::from_utf8(&stuff).unwrap(), rrr);
-        rrr
+impl Deref for DiamondName {
+    type Target = Fixed6;
+    fn deref(&self) -> &Fixed6 {
+        &self.0
+    }
+}
+
+impl DerefMut for DiamondName {
+    fn deref_mut(&mut self) -> &mut Fixed6 {
+        &mut self.0
+    }
+}
+
+impl AsRef<[u8]> for DiamondName {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl Parse for DiamondName {
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        let mut raw = Fixed6::new();
+        let sk = raw.parse(buf)?;
+        Self::check_bytes(raw.as_ref())?;
+        self.0 = raw;
+        Ok(sk)
+    }
+}
+
+impl Serialize for DiamondName {
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        self.0.serialize_to(out);
+    }
+    fn size(&self) -> usize {
+        self.0.size()
+    }
+}
+
+impl_field_only_new!{DiamondName}
+
+impl ToJSON for DiamondName {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        self.0.to_json_fmt(fmt)
+    }
+}
+
+impl FromJSON for DiamondName {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        let mut raw = Fixed6::new();
+        raw.from_json(json)?;
+        Self::check_bytes(raw.as_ref())?;
+        self.0 = raw;
+        Ok(())
+    }
+}
+
+impl Hex for DiamondName {
+    fn to_hex(&self) -> String {
+        self.0.to_hex()
+    }
+}
+
+impl Base64 for DiamondName {
+    fn to_base64(&self) -> String {
+        self.0.to_base64()
+    }
+}
+
+impl Readable for DiamondName {
+    fn from_readable(v: &[u8]) -> Ret<Self> {
+        let raw = Fixed6::from_readable(v)?;
+        Self::check_bytes(raw.as_ref())?;
+        Ok(Self(raw))
+    }
+    fn to_readable(&self) -> String {
+        self.0.to_readable()
+    }
+    fn to_readable_left(&self) -> String {
+        self.0.to_readable_left()
+    }
+    fn to_readable_or_hex(&self) -> String {
+        self.0.to_readable_or_hex()
+    }
+}
+
+impl From<[u8; 6]> for DiamondName {
+    fn from(v: [u8; 6]) -> Self {
+        Self(Fixed6::from(v))
+    }
+}
+
+impl From<Fixed6> for DiamondName {
+    fn from(v: Fixed6) -> Self {
+        Self(v)
+    }
+}
+
+impl std::fmt::Display for DiamondName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.to_readable())
+    }
+}
+
+impl PartialEq<Fixed6> for DiamondName {
+    fn eq(&self, other: &Fixed6) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<DiamondName> for Fixed6 {
+    fn eq(&self, other: &DiamondName) -> bool {
+        *self == other.0
     }
 }
 
@@ -30,8 +148,12 @@ combi_optional!{ DiamondNumberOptional,
     diamond: DiamondNumber
 }
 impl DiamondNumberAuto {
-	pub fn to_diamond(&self) -> DiamondNumber {
-		DiamondNumber::from( self.uint() as u32 )
+	pub fn to_diamond(&self) -> Ret<DiamondNumber> {
+        let v = self.uint();
+        if v > u32::MAX as u64 {
+            return errf!("diamond number {} exceeds u32::MAX", v);
+        }
+		Ok(DiamondNumber::from(v as u32))
 	}
 	pub fn from_diamond(dia: &DiamondNumber) -> DiamondNumberAuto {
 		DiamondNumberAuto::from( dia.uint() as u64 ).unwrap()
@@ -42,15 +164,155 @@ impl DiamondNumberAuto {
 
 macro_rules! define_diamond_name_list { ( $class: ident, $nty: ty, $max: expr ) => {
 
-/*
-* Diamond Name List
-*/
-combi_list!{ $class, 
-	$nty, DiamondName
+#[derive(Default, Clone, PartialEq, Eq)]
+pub struct $class {
+    count: $nty,
+    lists: Vec<DiamondName>,
 }
 
+impl Iterator for $class {
+    type Item = DiamondName;
+    fn next(&mut self) -> Option<DiamondName> {
+        self.pop()
+    }
+}
+
+impl std::fmt::Debug for $class {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,"[list {}]", *self.count)
+    }
+}
+
+impl Parse for $class {
+    fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
+        let mut count = <$nty>::default();
+        let mut seek = count.parse_from(buf)?;
+        let mut lists = Vec::with_capacity(*count as usize);
+        for _ in 0..*count as usize {
+            let mut obj = DiamondName::new();
+            seek += obj.parse_from(buf)?;
+            lists.push(obj);
+        }
+        let tmp = Self { count, lists };
+        tmp.check()?;
+        self.count = tmp.count;
+        self.lists = tmp.lists;
+        Ok(seek)
+    }
+}
+
+impl Serialize for $class {
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        self.count.serialize_to(out);
+        for v in &self.lists {
+            v.serialize_to(out);
+        }
+    }
+    fn size(&self) -> usize {
+        self.count.size() + self.lists.iter().map(|v| v.size()).sum::<usize>()
+    }
+}
+
+impl_field_only_new!{$class}
+
+impl ToJSON for $class {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        let mut res = String::from("[");
+        for i in 0..self.lists.len() {
+            if i > 0 {
+                res.push(',');
+            }
+            res.push_str(&self.lists[i].to_json_fmt(fmt));
+        }
+        res.push(']');
+        res
+    }
+}
+
+impl FromJSON for $class {
+    fn from_json(&mut self, json_str: &str) -> Ret<()> {
+        let items = json_split_array(json_str)?;
+        let mut lists = Vec::with_capacity(items.len());
+        for item in items {
+            let mut obj = DiamondName::new();
+            obj.from_json(item)?;
+            lists.push(obj);
+        }
+        let count = <$nty>::from_usize(lists.len())?;
+        let tmp = Self { count, lists };
+        tmp.check()?;
+        self.count = tmp.count;
+        self.lists = tmp.lists;
+        Ok(())
+    }
+}
 
 impl $class {
+
+    pub fn length(&self) -> usize {
+        *self.count as usize
+    }
+
+    pub fn as_list(&self) -> &Vec<DiamondName> {
+        &self.lists
+    }
+
+    pub fn into_list(self) -> Vec<DiamondName> {
+        self.lists
+    }
+
+    pub fn replace(&mut self, i: usize, v: DiamondName) -> Rerr {
+        if i >= self.length() {
+            return errf!("list index overflow");
+        }
+        self.lists[i] = v;
+        Ok(())
+    }
+
+    pub fn drop(&mut self, i: usize) -> Rerr {
+        if i >= self.length() {
+            return errf!("list index overflow");
+        }
+        self.count = <$nty>::from_usize(self.length() - 1)?;
+        self.lists.remove(i);
+        Ok(())
+    }
+
+    pub fn push(&mut self, v: DiamondName) -> Rerr {
+        let n = self.length() + 1;
+        self.count = <$nty>::from_usize(n)?;
+        self.lists.push(v);
+        Ok(())
+    }
+
+    pub fn append(&mut self, mut list: Vec<DiamondName>) -> Rerr {
+        let n = self.length() + list.len();
+        self.count = <$nty>::from_usize(n)?;
+        self.lists.append(&mut list);
+        Ok(())
+    }
+
+    pub fn pop(&mut self) -> Option<DiamondName> {
+        if self.length() == 0 {
+            return None;
+        }
+        self.count = <$nty>::from_usize(self.length() - 1).ok()?;
+        self.lists.pop()
+    }
+
+    pub fn as_mut(&mut self) -> &mut [DiamondName] {
+        self.lists.as_mut_slice()
+    }
+
+    pub fn fetch_list(&mut self, n: usize) -> Ret<Vec<DiamondName>> {
+        let m = self.length();
+        if n > m {
+            return errf!("list data length is {} but will fetch {}", m, n);
+        }
+        let l = m - n;
+        self.count = <$nty>::from_usize(l)?;
+        Ok(self.lists.split_off(l))
+    }
 
     pub fn one(dia: DiamondName) -> Self {        
         let mut obj = Self::default();
@@ -59,10 +321,16 @@ impl $class {
     }
 
     pub fn push_checked(&mut self, dia: DiamondName) -> Rerr {
+        DiamondName::check_bytes(dia.as_ref())?;
         if self.contains(dia.as_ref()) {
             return errf!("diamond name {} is duplicated", dia.to_readable())
         }
-        self.push(dia)
+        if self.length() + 1 > $max {
+            return errf!("diamond list max {} overflow", $max)
+        }
+        self.count = <$nty>::from_usize(self.length() + 1)?;
+        self.lists.push(dia);
+        Ok(())
     }
 
     pub fn check(&self) -> Ret<usize> {
@@ -133,7 +401,8 @@ impl $class {
         let bs = s.as_bytes();
         for i in 0 .. num {
             let x = i*6;
-            let name = DiamondName::from( bufcut!(bs, x, x+6) );
+            let raw: [u8; 6] = bs[x..x + 6].try_into().unwrap();
+            let name = DiamondName::from(raw);
             obj.push_checked(name)?;
         }
         obj.check()?;
@@ -143,6 +412,7 @@ impl $class {
     
     pub fn checked_append(&mut self, dias: Vec<DiamondName>) -> Rerr {
         for d in &dias {
+            DiamondName::check_bytes(d.as_ref())?;
             if self.contains(d.as_ref()) {
                 return errf!("diamond name {} is duplicated", d.to_readable())
             }
@@ -155,7 +425,8 @@ impl $class {
         if set.len() != dias.len() {
             return errf!("diamond name list contains duplicates")
         }
-        self.append(dias)?;
+        self.count = <$nty>::from_usize(n)?;
+        self.lists.extend(dias);
         Ok(())
     }
 
@@ -165,6 +436,7 @@ impl $class {
             return errf!("diamond list max {} overflow", $max)
         }
         for i in 0..num {
+            DiamondName::check_bytes(v[i].as_ref())?;
             for j in (i+1)..num {
                 if v[i] == v[j] {
                     return errf!("diamond name list contains duplicates")
@@ -186,4 +458,3 @@ impl $class {
 
 define_diamond_name_list!{ DiamondNameListMax200,   Uint1, 200 }
 define_diamond_name_list!{ DiamondNameListMax60000, Uint2, 60000 }
-

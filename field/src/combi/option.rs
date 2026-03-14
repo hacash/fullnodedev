@@ -27,17 +27,21 @@ macro_rules! combi_option {
         impl Parse for $class {
 
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-                let swt = Uint1::build(buf)?;
+                let (swt, _) = Uint1::create(buf)?;
                 let buf = &buf[1..];
-                Ok(1 + maybe!(*swt == 0, {
-                    let (v, sk) = <$t1>::create(buf)?;
-                    *self = Self::Val1( v );
-                    sk
-                }, {
-                    let (v, sk) = <$t2>::create(buf)?;
-                    *self = Self::Val2( v );
-                    sk
-                }))
+                Ok(1 + match *swt {
+                    0 => {
+                        let (v, sk) = <$t1>::create(buf)?;
+                        *self = Self::Val1(v);
+                        sk
+                    },
+                    1 => {
+                        let (v, sk) = <$t2>::create(buf)?;
+                        *self = Self::Val2(v);
+                        sk
+                    },
+                    i => return errf!("option switch invalid: {}", i),
+                })
             }
         }
 
@@ -78,7 +82,7 @@ macro_rules! combi_option {
 
         impl FromJSON for $class {
             fn from_json(&mut self, json: &str) -> Ret<()> {
-                let pairs = json_split_object(json);
+                let pairs = json_split_object(json)?;
                 let mut ty: i32 = -1;
                 let mut val_str = "";
                 for (k, v) in pairs {

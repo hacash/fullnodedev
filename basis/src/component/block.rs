@@ -1,13 +1,13 @@
 
 #[derive(Debug, Clone)]
 pub struct BlkPkg {
-    pub data: Arc<Vec<u8>>,
-    pub seek: usize,
-    pub size: usize,
-    pub orgi: BlkOrigin,
-    pub objc: Arc<dyn Block>,
-    pub hash: Hash,
-    pub hein: u64, // block height
+    data: Arc<Vec<u8>>,
+    seek: usize,
+    size: usize,
+    orgi: BlkOrigin,
+    objc: Arc<dyn Block>,
+    hash: Hash,
+    hein: u64, // block height
 }
 
 
@@ -30,6 +30,22 @@ impl BlkPkg {
     pub fn new(objc: Box<dyn Block>, data: Vec<u8>) -> Self {
         let size = data.len();
         Self::from(objc, Arc::new(data), 0, size)
+    }
+
+    pub fn objc(&self) -> &dyn Block {
+        self.objc.as_ref()
+    }
+
+    pub fn objc_arc(&self) -> Arc<dyn Block> {
+        self.objc.clone()
+    }
+
+    pub fn hash(&self) -> Hash {
+        self.hash
+    }
+
+    pub fn hein(&self) -> u64 {
+        self.hein
     }
 
 }
@@ -68,4 +84,3 @@ pub fn create_recent_block_info(blk: &dyn BlockRead) -> RecentBlockInfo {
         arrive:  curtimes(),
     }
 }
-

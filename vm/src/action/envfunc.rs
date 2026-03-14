@@ -59,9 +59,13 @@ action_define!{ ViewBalance, 0x0602,
     (self, format!("Syscall: Get balance for {}", self.addr)),
     (self, ctx, _gas {
         let bls = CoreState::wrap(ctx.state()).balance(&self.addr).unwrap_or_default();
+        let dia = bls.diamond.uint();
+        if dia > u32::MAX as u64 {
+            return errf!("address {} diamond count {} exceeds u32::MAX", self.addr, dia);
+        }
         let hac = bls.hacash.serialize();
         let mut res = Vec::with_capacity(12 + hac.len());
-        res.extend_from_slice(&(bls.diamond.uint() as u32).to_be_bytes());
+        res.extend_from_slice(&(dia as u32).to_be_bytes());
         res.extend_from_slice(&bls.satoshi.uint().to_be_bytes());
         res.extend_from_slice(&hac);
         Ok(res)

@@ -68,30 +68,32 @@ impl PartialOrd for Amount {
 
 impl Parse for Amount {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-        self.unit = bufeatone(&buf)?;
+        let unit = bufeatone(&buf)?;
         let dist = bufeatone(&buf[1..])?;
         if dist == i8::MIN as u8 {
             return errf!("dist cannot be {}", i8::MIN)
         }
-        self.dist = dist as i8;
-        let btlen = self.dist.abs() as usize;
+        let dist = dist as i8;
+        let btlen = dist.abs() as usize;
         let bts = bufeat_ref(&buf[2..], btlen)?;
-        self.byte.clear();
-        self.byte.extend_from_slice(bts);
-        let rbtl = self.byte.len();
+        let byte = bts.to_vec();
+        let rbtl = byte.len();
         if btlen != rbtl {
             return errf!("dist and byte len mismatch")
         }
-        if self.dist != 0 && rbtl == 0 {
+        if dist != 0 && rbtl == 0 {
             return errf!("dist and byte zero mismatch")
         }
-        if rbtl > 1 && bytes_is_zero(&self.byte)  {
+        if rbtl > 1 && bytes_is_zero(&byte)  {
             return errf!("multi-byte amount cannot be all zero")
         }
-        if bytes_is_zero(&self.byte) && (self.unit != 0 || self.dist != 0 || !self.byte.is_empty()) {
-            println!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte={:?})", self.unit, self.dist, self.byte)
+        if bytes_is_zero(&byte) && (unit != 0 || dist != 0 || !byte.is_empty()) {
+            println!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte={:?})", unit, dist, byte)
             // return errf!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte_len={})", self.unit, self.dist, self.byte.len())
         }
+        self.unit = unit;
+        self.dist = dist;
+        self.byte = byte;
         Ok(2 + btlen)
     }
 }
@@ -130,8 +132,8 @@ impl ToJSON for Amount {
 
 impl FromJSON for Amount {
     fn from_json(&mut self, json_str: &str) -> Ret<()> {
-        let s = json_expect_quoted(json_str)?;
-        let amt = Amount::from(s)?;
+        let s = json_expect_quoted_decoded(json_str)?;
+        let amt = Amount::from(&s)?;
         self.unit = amt.unit;
         self.dist = amt.dist;
         self.byte = amt.byte;
@@ -298,7 +300,7 @@ impl Amount {
     }
 
     pub fn from(v: &str) -> Ret<Self> {
-        let v = v.replace(",", "").replace(" ", "").replace("\n", "");
+        let v = v.trim().replace(",", "");
         for a in v.chars() {
             if !a.is_ascii() || !FROM_CHARS.contains(&(a as u8)) {
                 ret_amtfmte!{"unsupported characters", String::from(a)}

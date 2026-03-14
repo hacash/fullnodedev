@@ -23,19 +23,22 @@ impl TexLedger {
         let Some(newdia) = self.dia.checked_add(dias.length() as i32) else {
             return errf!("cell state diamond record overflow")
         };
+        let mut diamonds = self.diamonds.clone();
+        diamonds.checked_append(dias.into_list())?;
+        self.diamonds = diamonds;
         self.dia = newdia;
-        self.diamonds.checked_append(dias.into_list())
+        Ok(())
     }
     
     pub fn record_diamond_get(&mut self, addr: &Address, num: usize) -> Rerr {
         if num > 200 {
             return errf!("Tex state diamond trs num cannot exceed 200")
         }
-        self.diatrs.push((addr.clone(), num));
         let Some(diares) = self.dia.checked_sub(num as i32) else {
             return errf!("cell state diamond overflow")
         };
         self.dia = diares;
+        self.diatrs.push((addr.clone(), num));
         Ok(())
     }
 

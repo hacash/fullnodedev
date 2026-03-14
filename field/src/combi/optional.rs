@@ -21,14 +21,17 @@ macro_rules! combi_optional {
         impl Parse for $class {
 
             fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
-                let mut seek = self.exist.parse_from(buf)?;
-                if self.is_exist() {
+                let mut exist = Bool::default();
+                let mut seek = exist.parse_from(buf)?;
+                let item = if exist.check() {
                     let mut val = <$vty>::new();
                     seek += val.parse_from(buf)?;
-                    self.$item = Some(val);
+                    Some(val)
                 } else {
-                    self.$item = None;
-                }
+                    None
+                };
+                self.exist = exist;
+                self.$item = item;
                 Ok(seek)
             }
         }
@@ -73,9 +76,9 @@ macro_rules! combi_optional {
                 } else if raw.is_empty() {
                     return errf!("json value is empty");
                 } else {
-                    self.exist = Bool::new(true);
                     let mut val = <$vty>::new();
                     val.from_json(raw)?; // Pass original if it contains nested JSON
+                    self.exist = Bool::new(true);
                     self.$item = Some(val);
                 }
                 Ok(())

@@ -73,7 +73,8 @@ macro_rules! compute_other_impl {
             type Output = Self;
             #[inline]
             fn $opt(self, other: $eqty) -> Self {
-                Self {$vn: self.$vn.$opt(other as $vty)}
+                let r = *<$class as From<$eqty>>::from(other);
+                Self {$vn: self.$vn.$opt(r)}
             }
         }
     )
@@ -85,7 +86,8 @@ macro_rules! compute_other_impl_checked {
             type Output = Self;
             #[inline]
             fn $opt(self, other: $eqty) -> Self {
-                let v = self.$vn.$checked_opt(other as $vty)
+                let r = *<$class as From<$eqty>>::from(other);
+                let v = self.$vn.$checked_opt(r)
                     .expect(concat!(stringify!($class), " ", stringify!($opt), " overflow"));
                 Self {$vn: v}.checked()
                     .expect(concat!(stringify!($class), " ", stringify!($opt), " overflow max"))
@@ -100,7 +102,7 @@ macro_rules! compute_other_impl_checked_div {
             type Output = Self;
             #[inline]
             fn div(self, other: $eqty) -> Self {
-                let r = other as $vty;
+                let r = *<$class as From<$eqty>>::from(other);
                 if r == 0 {
                     panic!("{} div divide by zero", stringify!($class))
                 }
@@ -156,7 +158,8 @@ macro_rules! compute_assign_other_impl {
                 concat_idents!{opa2 = $opt, _assign {
                     #[inline]
                     fn opa2(&mut self, other: $eqty) {
-                        self.$vn.opa2(other as $vty);
+                        let r = *<$class as From<$eqty>>::from(other);
+                        self.$vn.opa2(r);
                     }
                 }}
             }

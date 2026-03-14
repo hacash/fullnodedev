@@ -1,7 +1,58 @@
 
-combi_struct!{ AssetAmt,
-    serial: Fold64
-    amount: Fold64
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct AssetAmt {
+    pub serial: Fold64,
+    pub amount: Fold64,
+}
+
+impl Parse for AssetAmt {
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        let mut serial = Fold64::new();
+        let mut amount = Fold64::new();
+        let mut seek = serial.parse(buf)?;
+        seek += amount.parse(&buf[seek..])?;
+        *self = Self { serial, amount }.checked()?;
+        Ok(seek)
+    }
+}
+
+impl Serialize for AssetAmt {
+    fn serialize_to(&self, out: &mut Vec<u8>) {
+        self.serial.serialize_to(out);
+        self.amount.serialize_to(out);
+    }
+    fn size(&self) -> usize {
+        self.serial.size() + self.amount.size()
+    }
+}
+
+impl_field_only_new!{AssetAmt}
+
+impl ToJSON for AssetAmt {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        format!(
+            "{{\"serial\":{},\"amount\":{}}}",
+            self.serial.to_json_fmt(fmt),
+            self.amount.to_json_fmt(fmt)
+        )
+    }
+}
+
+impl FromJSON for AssetAmt {
+    fn from_json(&mut self, json_str: &str) -> Ret<()> {
+        let pairs = json_split_object(json_str)?;
+        let mut serial = self.serial;
+        let mut amount = self.amount;
+        for (k, v) in pairs {
+            if k == "serial" {
+                serial.from_json(v)?;
+            } else if k == "amount" {
+                amount.from_json(v)?;
+            }
+        }
+        *self = Self { serial, amount }.checked()?;
+        Ok(())
+    }
 }
 
 impl std::fmt::Display for AssetAmt {
@@ -68,20 +119,19 @@ impl AssetAmt {
         Self::default()
     }
 
-    pub fn from_serial(serial: Fold64) -> Self {
+    pub fn from_serial(serial: Fold64) -> Ret<Self> {
         Self {
             serial,
             ..Default::default()
-        }
+        }.checked()
     }
 
     pub fn from(s: u64, a: u64) -> Ret<Self> {
-        Ok(Self {
+        Self {
             serial: Fold64::from(s)?,
             amount: Fold64::from(a)?,
-        })
+        }.checked()
     }
 
 }
-
 

@@ -16,7 +16,7 @@ pub struct EngineConf {
     pub data_dir: String,
     pub block_data_dir: PathBuf, // block data
     pub state_data_dir: PathBuf, // chain state
-    pub blogs_data_dir: PathBuf, // logs  state
+    pub vmlog_data_dir: PathBuf, // vmlog state
     pub show_miner_name: bool,
     // block logs
     pub vmlogs_enable: bool,
@@ -95,7 +95,7 @@ impl EngineConf {
             sync_maxh: 0,
             block_data_dir: join_path(&data_dir, "block"),
             state_data_dir: state_data_dir,
-            blogs_data_dir: join_path(&data_dir, "logs"),
+            vmlog_data_dir: join_path(&data_dir, "vmlog"),
             data_dir: data_dir.to_str().unwrap().to_owned(),
             dev_count_switch: 0,
             show_miner_name: false,

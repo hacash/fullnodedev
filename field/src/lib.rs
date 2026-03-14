@@ -33,6 +33,7 @@ include! {"number/fold64.rs"}
 
 // bytes
 include! {"bytes/fixed.rs"}
+include! {"bytes/bool.rs"}
 include! {"bytes/datas.rs"}
 
 // combi

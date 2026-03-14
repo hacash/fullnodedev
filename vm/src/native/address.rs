@@ -1,7 +1,7 @@
 
 fn address_ptr(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     if buf.len() != 1 {
-        return itr_err_fmt!(NativeFuncError, "invalid param")
+        return itr_err_fmt!(NativeFuncError, "param error")
     }
     const DVN: u8 = ADDR_OR_PTR_DIV_NUM;
     let idx = buf[0];

@@ -45,7 +45,7 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         let Some(tx) = txf else {
             return api_error(&format!("cannot find tx by hash {} in tx pool", hash));
         };
-        tx.data
+        tx.data().to_vec()
     } else {
         let Ok(b) = body_data_may_hex(&req) else {
             return api_error("tx body invalid");
@@ -79,6 +79,6 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         ("hash".to_owned(), json!(txhash.to_hex())),
         ("hash_with_fee".to_owned(), json!(txhashwf.to_hex())),
         ("fee".to_owned(), json!(fee.to_fin_string())),
-        ("tx_body".to_owned(), json!(txpkg.objc.serialize().to_hex())),
+        ("tx_body".to_owned(), json!(txpkg.objc().serialize().to_hex())),
     ]))
 }

@@ -26,7 +26,7 @@ macro_rules! native_dispatch_method {
         pub fn gas(idx: u8) -> VmrtRes<i64> {
             match idx {
                 $( $v => Ok($gas), )+
-                _ => return itr_err_fmt!($ErrCode, "native env idx {} not found", idx),
+                _ => return itr_err_fmt!($ErrCode, "not find native env idx {}", idx),
             }
         }
     };
@@ -58,7 +58,7 @@ impl $EnumName {
     pub fn try_from_u8(idx: u8) -> VmrtRes<Self> {
         match idx {
             $( x if x == Self::$name as u8 => Ok(Self::$name), )+
-            _ => itr_err_fmt!($ErrCode, "{} idx {} not found", stringify!($EnumName), idx),
+            _ => itr_err_fmt!($ErrCode, "not find {} idx {}", stringify!($EnumName), idx),
         }
     }
 

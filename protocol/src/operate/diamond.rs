@@ -7,7 +7,9 @@ macro_rules! diamond_operate_define {
 pub fn $func_name(state: &mut CoreState, $addr: &Address, $hacd: &DiamondNumber) -> Ret<DiamondNumber> {
     $addr.check_version()?;
     let mut userbls = state.balance( $addr ).unwrap_or_default();
-    let $oldhacd = &userbls.diamond.to_diamond();
+    let oldhacd_val = userbls.diamond.to_diamond()
+        .map_err(|e| format!("address {} diamond count decode failed: {}", $addr, e))?;
+    let $oldhacd = &oldhacd_val;
     /* -------- */
     let newhacd = $newhacdblock;// operate
     /* -------- */

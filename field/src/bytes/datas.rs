@@ -43,11 +43,12 @@ macro_rules! datas_define {
 
         impl Parse for $class {
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
-                let sk = self.count.parse(buf)?;
-                let sz = *self.count as usize;
+                let mut count = <$sty>::default();
+                let sk = count.parse(buf)?;
+                let sz = *count as usize;
                 let bts = bufeat_ref(&buf[sk..], sz)?;
-                self.bytes.clear();
-                self.bytes.extend_from_slice(bts);
+                self.count = count;
+                self.bytes = bts.to_vec();
                 Ok(sk + sz)
             }
         }

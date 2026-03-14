@@ -14,6 +14,18 @@ macro_rules! impl_pkg_common {
                 self.orgi = orgi;
             }
 
+            pub fn origin(&self) -> $origin {
+                self.orgi
+            }
+
+            pub fn seek(&self) -> usize {
+                self.seek
+            }
+
+            pub fn size(&self) -> usize {
+                self.size
+            }
+
             pub fn data(&self) -> &[u8] {
                 let sk = self.seek;
                 &self.data.as_ref()[sk .. sk + self.size]

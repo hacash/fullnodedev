@@ -205,7 +205,12 @@ impl Frame {
             &mut self.locals,
             &mut self.heap,
             &self.bindings.context_addr,
-            self.bindings.code_owner.as_ref(),
+            self.bindings
+                .code_owner
+                .as_ref()
+                .map(ContractAddress::to_addr)
+                .as_ref()
+                .unwrap_or(&self.bindings.context_addr),
             env.gas,
             &r.gas_table,
             &r.gas_extra,

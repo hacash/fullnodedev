@@ -5,7 +5,7 @@ impl Syntax {
     fn parse_paren_argv_items(&mut self) -> Ret<Vec<Box<dyn IRNode>>> {
         // Parse `(...)` argument lists as a sequence of value expressions.
         // Note: the tokenizer ignores commas, so argument separation is by expression boundaries.
-        self.parse_delimited_value_exprs('(', ')', "call argv format invalid")
+        self.parse_delimited_value_exprs('(', ')', "call argv format error")
     }
 
     pub fn item_get(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
@@ -19,7 +19,7 @@ impl Syntax {
         let k = self.item_must(1)?;  // over [
         k.checkretval()?; // ITEMGET consumes a key value from the stack
         let Partition(']') = self.next()? else {
-            return errf!("item get statement format invalid")
+            return errf!("item get statement format error")
         };
         let obj = self.link_local(&id)?;
         let nd = IRNodeDouble{hrtv: true, inst: ITEMGET, subx: obj, suby: k};
@@ -54,7 +54,7 @@ impl Syntax {
                 arg.checkretval()?;
             }
             if pms + args != argvs.len() {
-                return errf!("ir func call argv length must be {} but got {}", 
+                return errf!("ir func call argv length must {} but got {}", 
                     pms + args, argvs.len()
                 )
             }
@@ -108,7 +108,7 @@ impl Syntax {
                     .downcast_ref::<IRNodeLeaf>()
                     .is_some_and(|leaf| leaf.inst == Bytecode::PNBUF);
             if num != args_len && !allow_empty_placeholder {
-                 return errf!("action function '{}' argv length must be {} but got {}", 
+                 return errf!("action function '{}' argv length must {} but got {}", 
                     id, args_len, num
                 )
             }
@@ -137,7 +137,7 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
     }}
     macro_rules! param { () => {{
         let mut para = -1i16;
-        let e = errf!("IR func call param error");
+        let e = errf!("ir func call param error");
         let ag = avg!();
         if let Some(n) = ag.as_any().downcast_ref::<IRNodeParam1>() {
             para = n.para as i16;
@@ -257,7 +257,7 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
             subs.push(pkargs);
             Box::new(Syntax::build_irlist(subs)?)
         },
-        _ => return errf!("function argv length cannot exceed 15"),
+        _ => return errf!("function argv length cannot more than 15"),
     })
     /* 
     let mut res = list.pop().unwrap();
@@ -275,7 +275,7 @@ fn pack_explicit_args(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
         return errf!("args() cannot be empty")
     }
     if argv_len > 15 {
-        return errf!("args length cannot exceed 15")
+        return errf!("args length cannot more than 15")
     }
     let num = push_num(argv_len as u128);
     let pkargs = push_inst(PACKARGS);

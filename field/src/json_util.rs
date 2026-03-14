@@ -52,6 +52,97 @@ pub fn json_expect_quoted(s: &str) -> Ret<&str> {
     errf!("json string must be quoted")
 }
 
+fn json_quote_is_escaped(s: &str, quote_idx: usize) -> bool {
+    let bts = s.as_bytes();
+    let mut n = 0usize;
+    let mut i = quote_idx;
+    while i > 0 {
+        i -= 1;
+        if bts[i] != b'\\' {
+            break;
+        }
+        n += 1;
+    }
+    n % 2 == 1
+}
+
+fn json_u16_from_hex4(h: &[u8]) -> Ret<u16> {
+    if h.len() != 4 {
+        return errf!("invalid unicode escape");
+    }
+    let mut v: u16 = 0;
+    for c in h {
+        let n = match c {
+            b'0'..=b'9' => (c - b'0') as u16,
+            b'a'..=b'f' => (c - b'a' + 10) as u16,
+            b'A'..=b'F' => (c - b'A' + 10) as u16,
+            _ => return errf!("invalid unicode escape"),
+        };
+        v = (v << 4) | n;
+    }
+    Ok(v)
+}
+
+pub fn json_unescape_str(raw: &str) -> Ret<String> {
+    let bts = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    let mut i = 0usize;
+    while i < bts.len() {
+        if bts[i] != b'\\' {
+            let ch = raw[i..]
+                .chars()
+                .next()
+                .ok_or_else(|| "invalid utf-8".to_string())?;
+            out.push(ch);
+            i += ch.len_utf8();
+            continue;
+        }
+        i += 1;
+        if i >= bts.len() {
+            return errf!("invalid escape sequence");
+        }
+        match bts[i] {
+            b'"' => out.push('"'),
+            b'\\' => out.push('\\'),
+            b'/' => out.push('/'),
+            b'b' => out.push('\u{0008}'),
+            b'f' => out.push('\u{000C}'),
+            b'n' => out.push('\n'),
+            b'r' => out.push('\r'),
+            b't' => out.push('\t'),
+            b'u' => {
+                if i + 4 >= bts.len() {
+                    return errf!("invalid unicode escape");
+                }
+                let mut cp = json_u16_from_hex4(&bts[i + 1..i + 5])? as u32;
+                i += 4;
+                if (0xD800..=0xDBFF).contains(&cp) {
+                    if i + 6 >= bts.len() || bts[i + 1] != b'\\' || bts[i + 2] != b'u' {
+                        return errf!("invalid unicode surrogate pair");
+                    }
+                    let lo = json_u16_from_hex4(&bts[i + 3..i + 7])? as u32;
+                    if !(0xDC00..=0xDFFF).contains(&lo) {
+                        return errf!("invalid unicode surrogate pair");
+                    }
+                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                    i += 6;
+                } else if (0xDC00..=0xDFFF).contains(&cp) {
+                    return errf!("invalid unicode surrogate pair");
+                }
+                let ch = char::from_u32(cp).ok_or_else(|| "invalid unicode scalar".to_string())?;
+                out.push(ch);
+            }
+            _ => return errf!("invalid escape sequence"),
+        }
+        i += 1;
+    }
+    Ok(out)
+}
+
+pub fn json_expect_quoted_decoded(s: &str) -> Ret<String> {
+    json_unescape_str(json_expect_quoted(s)?)
+}
+
 pub fn json_expect_unquoted(s: &str) -> Ret<&str> {
     let s = s.trim();
     if s.starts_with('"') || s.ends_with('"') {
@@ -60,20 +151,19 @@ pub fn json_expect_unquoted(s: &str) -> Ret<&str> {
     Ok(s)
 }
 
-pub fn json_split(s: &str, start_char: char, end_char: char) -> Vec<&str> {
+pub fn json_split(s: &str, start_char: char, end_char: char) -> Ret<Vec<&str>> {
     let s = s.trim();
     if !s.starts_with(start_char) || !s.ends_with(end_char) {
-        return vec![];
+        return errf!("json root must be wrapped by '{}' and '{}'", start_char, end_char);
     }
     let content = &s[1..s.len()-1];
     let mut items = Vec::new();
     let mut depth = 0;
     let mut last_start = 0;
     let mut in_quote = false;
-    let mut last_char = ' ';
 
     for (i, c) in content.char_indices() {
-        if c == '"' && last_char != '\\' {
+        if c == '"' && !json_quote_is_escaped(content, i) {
             in_quote = !in_quote;
         }
         if !in_quote {
@@ -86,22 +176,20 @@ pub fn json_split(s: &str, start_char: char, end_char: char) -> Vec<&str> {
                 last_start = i + 1;
             }
         }
-        last_char = c;
     }
     let last_item = content[last_start..].trim();
     if !last_item.is_empty() {
         items.push(last_item);
     }
-    items
+    Ok(items)
 }
 
 pub fn json_decode_object(s: &str) -> Ret<HashMap<String, String>> {
-    Ok(json_split(s, '{', '}').into_iter().filter_map(|pair| {
+    Ok(json_split(s, '{', '}')?.into_iter().filter_map(|pair| {
         let mut depth = 0;
         let mut in_quote = false;
-        let mut last_char = ' ';
         for (i, c) in pair.char_indices() {
-             if c == '"' && last_char != '\\' {
+             if c == '"' && !json_quote_is_escaped(pair, i) {
                  in_quote = !in_quote;
              }
              if !in_quote {
@@ -115,14 +203,13 @@ pub fn json_decode_object(s: &str) -> Ret<HashMap<String, String>> {
                      return Some((key.to_string(), val.to_string()));
                  }
              }
-             last_char = c;
         }
         None
     }).collect())
 }
 
 pub fn json_decode_array(s: &str) -> Ret<(Vec<String>, usize)> {
-    let items = json_split(s, '[', ']')
+    let items = json_split(s, '[', ']')?
         .into_iter()
         .map(|x| x.to_string())
         .collect::<Vec<String>>();
@@ -130,17 +217,16 @@ pub fn json_decode_array(s: &str) -> Ret<(Vec<String>, usize)> {
     Ok((items, n))
 }
 
-pub fn json_split_array(s: &str) -> Vec<&str> {
+pub fn json_split_array(s: &str) -> Ret<Vec<&str>> {
     json_split(s, '[', ']')
 }
 
-pub fn json_split_object(s: &str) -> Vec<(&str, &str)> {
-    json_split(s, '{', '}').into_iter().filter_map(|pair| {
+pub fn json_split_object(s: &str) -> Ret<Vec<(&str, &str)>> {
+    Ok(json_split(s, '{', '}')?.into_iter().filter_map(|pair| {
         let mut depth = 0;
         let mut in_quote = false;
-        let mut last_char = ' ';
         for (i, c) in pair.char_indices() {
-            if c == '"' && last_char != '\\' {
+            if c == '"' && !json_quote_is_escaped(pair, i) {
                 in_quote = !in_quote;
             }
             if !in_quote {
@@ -154,14 +240,13 @@ pub fn json_split_object(s: &str) -> Vec<(&str, &str)> {
                     return Some((key, val));
                 }
             }
-            last_char = c;
         }
         None
-    }).collect()
+    }).collect())
 }
 
 pub fn json_decode_binary(s: &str) -> Ret<Vec<u8>> {
-    let raw = json_expect_quoted(s)?;
+    let raw = json_expect_quoted_decoded(s)?;
     let trimmed = raw.trim();
     // 0x / 0X: hex (trim content)
     if trimmed.len() >= 2 && (trimmed.starts_with("0x") || trimmed.starts_with("0X")) {

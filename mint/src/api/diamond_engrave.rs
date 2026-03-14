@@ -19,7 +19,7 @@ fn diamond_engrave(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         Ok(v) => v,
         Err(e) => return api_error(&e),
     };
-    let trs = blkpkg.objc.transactions();
+    let trs = blkpkg.objc().transactions();
     if trs.is_empty() {
         return api_error("transaction length invalid");
     }

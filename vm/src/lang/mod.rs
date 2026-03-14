@@ -157,14 +157,14 @@ pub fn lang_to_ircode_with_sourcemap(langscript: &str) -> Ret<(Vec<u8>, SourceMa
 pub fn irnode_to_lang_with_sourcemap(block: IRNodeArray, smap: &SourceMap) -> Ret<String> {
     let mut opt = PrintOption::new("  ", 0);
     opt.map = Some(smap);
-    Formater::new(&opt).try_print(&block)
+    Ok(Formater::new(&opt).print(&block))
 }
 
 pub fn irnode_to_lang(block: IRNodeArray) -> Ret<String> {
     let mut opt = PrintOption::new("  ", 0);
     opt.recover_literals = true;
     opt.simplify_numeric_as_suffix = true;
-    Formater::new(&opt).try_print(&block)
+    Ok(Formater::new(&opt).print(&block))
 }
 
 pub fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtRes<String> {
@@ -184,7 +184,7 @@ pub fn format_ircode_to_lang(ircode: &Vec<u8>, map: Option<&SourceMap>) -> VmrtR
     opt.flatten_syscall_cat = true;
     opt.recover_literals = true;
     opt.simplify_numeric_as_suffix = true;
-    Formater::new(&opt).try_print(&block).map_err(|e| ItrErr::new(ItrErrCode::InstInvalid, &e.to_string()))
+    Ok(Formater::new(&opt).print(&block))
 }
 
 pub fn ircode_to_lang_with_sourcemap(ircode: &Vec<u8>, smap: &SourceMap) -> Ret<String> {

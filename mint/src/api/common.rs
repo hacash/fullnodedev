@@ -213,7 +213,9 @@ fn get_miner_pending_block_stuff(
     }
     let stuff = &mut stuff[0];
 
-    stuff.coinbase_nonce.increase();
+    if let Err(e) = stuff.coinbase_nonce.increase() {
+        return api_error(&e)
+    }
     stuff.coinbase_tx.set_nonce(stuff.coinbase_nonce);
     let cbhx = stuff.coinbase_tx.hash();
     let mkrl = calculate_mrkl_coinbase_update(cbhx, &stuff.mrklrts);
@@ -330,7 +332,7 @@ fn query_hashrate(ctx: &ApiExecCtx) -> serde_json::Map<String, Value> {
     let ltc = 100u64;
     if curhei > ltc {
         if let Ok(pblk) = load_block_by_height(ctx, curhei - ltc) {
-            let p100t = pblk.objc.timestamp().uint();
+            let p100t = pblk.objc().timestamp().uint();
             let cttt = (lastblk.timestamp().uint() - p100t) / ltc;
             if cttt > 0 {
                 rt_rate = rt_rate * btt / cttt as f64;
@@ -362,7 +364,7 @@ fn query_hashrate(ctx: &ApiExecCtx) -> serde_json::Map<String, Value> {
 
 
 fn get_blk_rate(ctx: &ApiExecCtx, hei: u64) -> Ret<u128> {
-    let difn = load_block_by_height(ctx, hei)?.objc.difficulty().uint();
+    let difn = load_block_by_height(ctx, hei)?.objc().difficulty().uint();
     let mtcnf = ctx.engine.minter().config().downcast::<MintConf>().unwrap();
     let tms = mtcnf.each_block_target_time as f64 * 1000.0;
     Ok(u32_to_rates(difn, tms) as u128)
@@ -400,6 +402,3 @@ fn get_id_range(max: i64, page: i64, limit: i64, instart: i64, desc: bool) -> Ve
     rng.retain(|&x| x >= 1 || x <= max);
     rng
 }
-
-
-

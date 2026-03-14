@@ -31,7 +31,7 @@ impl ChainEngine {
     ) -> ChainEngine {
         let blk_dir = &cnf.block_data_dir;
         let sta_dir = &cnf.state_data_dir;
-        let log_dir = &cnf.blogs_data_dir;
+        let log_dir = &cnf.vmlog_data_dir;
         let rebuild_mark = sta_dir.join(REBUILD_ALL_MARKER_FILE);
         
         std::fs::create_dir_all(blk_dir).unwrap();

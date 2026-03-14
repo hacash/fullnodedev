@@ -18,8 +18,11 @@ impl Serialize for Empty {
 
 impl Parse for Empty {
 
-    fn parse(&mut self, _: &[u8]) -> Ret<usize> {
-        Ok(0)    
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        if !buf.is_empty() {
+            return errf!("empty parse must consume empty input")
+        }
+        Ok(0)
     }
 
 }
@@ -37,7 +40,10 @@ impl ToJSON for Empty {
 }
 
 impl FromJSON for Empty {
-    fn from_json(&mut self, _: &str) -> Ret<()> {
+    fn from_json(&mut self, json: &str) -> Ret<()> {
+        if json.trim() != "{}" {
+            return errf!("empty json must be object")
+        }
         Ok(())
     }
 }
@@ -70,6 +76,9 @@ impl Serialize for VecWrap {
 impl Parse for VecWrap {
 
     fn parse(&mut self, s: &[u8]) -> Ret<usize> {
+        if self.data.is_empty() && !s.is_empty() {
+            return errf!("vecwrap parse length is undefined")
+        }
         self.data.parse(s)
     }
 

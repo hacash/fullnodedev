@@ -45,7 +45,49 @@ combi_optional!{ ClosedDistributionDataOptional, closed_distribution : ClosedDis
 /*
 * ChannelSto
 */
-combi_struct!{ ChannelSto, 
+#[inline]
+fn check_channel_status(status: Uint1, if_challenging: bool, if_distribution: bool) -> Ret<()> {
+	match *status {
+		0 => {
+			if if_challenging || if_distribution {
+				return errf!("channel opening status cannot carry extra data")
+			}
+		},
+		1 => {
+			if !if_challenging || if_distribution {
+				return errf!("channel challenging status data mismatch")
+			}
+		},
+		2 | 3 => {
+			if if_challenging || !if_distribution {
+				return errf!("channel closed status data mismatch")
+			}
+		},
+		_ => return errf!("channel status invalid"),
+	}
+	Ok(())
+}
+
+combi_struct_with_parse!{ ChannelSto, (self, buf, {
+	let mut mv = 0;
+	let mut seek = buf;
+	mv += self.status.parse_from(&mut seek)?;
+	mv += self.reuse_version.parse_from(&mut seek)?;
+	mv += self.open_height.parse_from(&mut seek)?;
+	mv += self.close_height.parse_from(&mut seek)?;
+	mv += self.arbitration_lock_block.parse_from(&mut seek)?;
+	mv += self.interest_attribution.parse_from(&mut seek)?;
+	mv += self.left_bill.parse_from(&mut seek)?;
+	mv += self.right_bill.parse_from(&mut seek)?;
+	mv += self.if_challenging.parse_from(&mut seek)?;
+	mv += self.if_distribution.parse_from(&mut seek)?;
+	check_channel_status(
+		self.status,
+		self.if_challenging.is_exist(),
+		self.if_distribution.is_exist(),
+	)?;
+	Ok(mv)
+}), 
 
 	status                        : Uint1           // Closed and settled
 	reuse_version                 : Uint4           // Reuse version number from 1

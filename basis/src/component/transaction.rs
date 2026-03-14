@@ -2,13 +2,13 @@
 
 #[derive(Debug, Clone)]
 pub struct TxPkg {
-    pub data: Arc<Vec<u8>>,
-    pub seek: usize,
-    pub size: usize,
-    pub orgi: TxOrigin,
-    pub objc: Box<dyn Transaction>,
-    pub hash: Hash,
-    pub fpur: u64, // fee purity
+    data: Arc<Vec<u8>>,
+    seek: usize,
+    size: usize,
+    orgi: TxOrigin,
+    objc: Box<dyn Transaction>,
+    hash: Hash,
+    fpur: u64, // fee purity
 }
     
 impl_pkg_common!{ TxPkg, Transaction, TxOrigin }
@@ -29,6 +29,20 @@ impl TxPkg {
         }
     }
 
+    pub fn objc(&self) -> &dyn Transaction {
+        self.objc.as_ref()
+    }
 
+    pub fn objc_box(&self) -> &Box<dyn Transaction> {
+        &self.objc
+    }
+
+    pub fn hash(&self) -> Hash {
+        self.hash
+    }
+
+    pub fn fpur(&self) -> u64 {
+        self.fpur
+    }
 
 }

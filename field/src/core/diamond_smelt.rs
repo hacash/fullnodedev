@@ -66,12 +66,23 @@ combi_struct!{ DiamondOwnedForm,
 	names : BytesW4
 }
 impl DiamondOwnedForm {
+    fn contains_diamond(&self, dian: &DiamondName) -> bool {
+        const DS: usize = DiamondName::SIZE;
+        let names = self.names.as_ref();
+        if names.len() % DS != 0 {
+            return false;
+        }
+        names.chunks_exact(DS).any(|x| x == dian.as_ref())
+    }
 
 	pub fn readable(&self) -> String {
 		String::from_utf8_lossy( self.names.as_ref() ).to_string()
 	}
 	
 	pub fn push_one(&mut self, dian: &DiamondName) {
+		if self.contains_diamond(dian) {
+			return;
+		}
 		let mut bytes = dian.serialize();
 		self.names.append(&mut bytes).unwrap();
 	}
@@ -82,23 +93,26 @@ impl DiamondOwnedForm {
 	}
 
 	pub fn push(&mut self, dian: &DiamondNameListMax200) {
-		let mut bytes = dian.form();
-		self.names.append(&mut bytes).unwrap();
+		for name in dian.as_list() {
+			self.push_one(name);
+		}
 	}
 
 	// return balance quantity
 	pub fn drop(&mut self, dian: &DiamondNameListMax200) -> Ret<usize> {
 		const DS: usize = DiamondName::SIZE;
 		let mut form = std::mem::take(&mut self.names).into_vec();
-		if form.len() % DS != 0 {
-			return errf!("DiamondOwnedForm names length {} is not divisible by {}", form.len(), DS)
+		let form_len = form.len();
+		if form_len % DS != 0 {
+			self.names = BytesW4::from(form)?;
+			return errf!("DiamondOwnedForm names length {} is not divisible by {}", form_len, DS)
 		}
 		let mut len = form.len() / DS;
 		let mut i = 0;
 		let mut dropn = 0;
 		let mut delst = dian.hashset();
 		while i < len {
-			let id = DiamondName::from(form[i*DS..i*DS+DS].try_into().unwrap());
+			let id = DiamondName::from(<[u8; 6]>::try_from(&form[i * DS..i * DS + DS]).unwrap());
 			if delst.contains(&id) {
 				dropn += 1;
 				delst.remove(&id);
@@ -117,6 +131,7 @@ impl DiamondOwnedForm {
 		}
 		// System-level invariant: all requested diamonds must be found
 		if !delst.is_empty() {
+			self.names = BytesW4::from(form)?;
 			return errf!("DiamondOwnedForm drop: some diamonds {} not found in form, found {}, requested {}", 
 				dian.readable(), dropn, dian.length())
 		}
@@ -129,6 +144,3 @@ impl DiamondOwnedForm {
 
 
 }
-
-
-

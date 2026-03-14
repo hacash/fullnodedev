@@ -3,6 +3,7 @@
 
 impl Parse for Vec<u8> {
     fn parse(&mut self, s: &[u8]) -> Ret<usize> {
+        // Intentional: Vec<u8> parse behaves as fixed-length read using current self.len().
         let sl = self.len();
         if sl > s.len() {
             return errf!("buffer too short")
@@ -43,5 +44,4 @@ impl FromJSON for Vec<u8> {
         Ok(())
     }
 }
-
 

@@ -47,7 +47,7 @@ macro_rules! combi_struct {
 
         impl FromJSON for $class {
             fn from_json(&mut self, json_str: &str) -> Ret<()> {
-                let pairs = json_split_object(json_str);
+                let pairs = json_split_object(json_str)?;
                 for (k, v) in pairs {
                     $(
                         if k == stringify!($item) {
@@ -123,7 +123,7 @@ macro_rules! combi_struct_with_parse_serialize {
 
         impl FromJSON for $class {
             fn from_json(&mut self, json_str: &str) -> Ret<()> {
-                let pairs = json_split_object(json_str);
+                let pairs = json_split_object(json_str)?;
                 for (k, v) in pairs {
                     $(
                         if k == stringify!($item) {
@@ -223,13 +223,16 @@ macro_rules! combi_struct_field_more_than_condition {
 
         impl FromJSON for $class {
             fn from_json(&mut self, json_str: &str) -> Ret<()> {
-                let pairs = json_split_object(json_str);
+                let pairs = json_split_object(json_str)?;
                 for (k, v) in &pairs {
                     $(
                         if *k == stringify!($item) {
                             self.$item.from_json(v)?;
                         }
                     )+
+                }
+                if *self.$cdn <= $cdv {
+                    self.$mrn = <$mrv>::default();
                 }
                 for (k, v) in pairs {
                     if k == stringify!($mrn) && *self.$cdn > $cdv {

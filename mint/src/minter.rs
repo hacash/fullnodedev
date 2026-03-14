@@ -22,7 +22,7 @@ impl HacashMinter {
         Self {
             cnf: cnf,
             difficulty: dgnr,
-            genesis_block: genesis::genesis_block_pkg().objc,
+            genesis_block: genesis::genesis_block_pkg().objc_arc(),
             bidding_prove: Mutex::default(),
         }
     }
@@ -70,7 +70,7 @@ impl Minter for HacashMinter {
         std::thread::spawn(move ||{
             if let Ok(Some(txp)) = txpool.first_at(TXGID_DIAMINT) {
                 // send highest bidding diamond mint tx
-                let _ = peer.send_msg_on_block(P2P_MSG_TX_SUBMIT, txp.data.to_vec());
+                let _ = peer.send_msg_on_block(P2P_MSG_TX_SUBMIT, txp.data().to_vec());
             }
         });
         Ok(())
@@ -85,7 +85,7 @@ impl Minter for HacashMinter {
 
     fn tx_pool_group(&self, tx: &TxPkg) -> usize {
         let mut group_id =  TXGID_NORMAL;
-        if let Some(..) = action::pickout_diamond_mint_action(tx.objc.as_read()) {
+        if let Some(..) = action::pickout_diamond_mint_action(tx.objc().as_read()) {
             group_id = TXGID_DIAMINT;
         }
         group_id

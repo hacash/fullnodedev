@@ -8,13 +8,13 @@ fn submit_transaction(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         return api_error("transaction parse failed");
     };
 
-    if txpkg.fpur < engcnf.lowest_fee_purity {
+    if txpkg.fpur() < engcnf.lowest_fee_purity {
         return api_error(&format!(
             "The transaction fee purity {} is too low, the node minimum configuration is {}.",
-            txpkg.fpur, engcnf.lowest_fee_purity
+            txpkg.fpur(), engcnf.lowest_fee_purity
         ));
     }
-    let txsz = txpkg.data.len();
+    let txsz = txpkg.data().len();
     if txsz > engcnf.max_tx_size {
         return api_error(&format!("tx size cannot exceed {} bytes", engcnf.max_tx_size));
     }
@@ -29,6 +29,6 @@ fn submit_transaction(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
     api_data(serde_json::Map::from_iter([(
         "hash".to_owned(),
-        json!(txpkg.hash.to_hex()),
+        json!(txpkg.hash().to_hex()),
     )]))
 }

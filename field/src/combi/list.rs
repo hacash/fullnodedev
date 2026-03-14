@@ -43,14 +43,17 @@ impl std::ops::IndexMut<usize> for $class {
 impl Parse for $class {
 
     fn parse_from(&mut self, buf: &mut &[u8]) -> Ret<usize> {
-        let mut seek = self.count.parse_from(buf)?;
-        let count = *self.count as usize;
-        self.lists = Vec::with_capacity(count);
-        for _ in 0..count {
+        let mut count = <$cty>::default();
+        let mut seek = count.parse_from(buf)?;
+        let count_usize = *count as usize;
+        let mut new_lists = Vec::with_capacity(count_usize);
+        for _ in 0..count_usize {
             let mut obj = <$vty>::new();
             seek += obj.parse_from(buf)?;
-            self.lists.push(obj);
+            new_lists.push(obj);
         }
+        self.count = count;
+        self.lists = new_lists;
         Ok(seek)
     }
 
@@ -94,14 +97,15 @@ impl ToJSON for $class {
 
 impl FromJSON for $class {
     fn from_json(&mut self, json_str: &str) -> Ret<()> {
-        let items = json_split_array(json_str);
-        self.lists = Vec::with_capacity(items.len());
-        self.count = <$cty>::from_usize(items.len())?;
+        let items = json_split_array(json_str)?;
+        let mut new_lists = Vec::with_capacity(items.len());
         for item in items {
             let mut obj = <$vty>::new();
             obj.from_json(item)?;
-            self.lists.push(obj);
+            new_lists.push(obj);
         }
+        self.count = <$cty>::from_usize(new_lists.len())?;
+        self.lists = new_lists;
         Ok(())
     }
 }
@@ -187,8 +191,8 @@ impl $class {
         }
 	}
 
-	pub fn as_mut(&mut self) -> &mut Vec<$vty> {
-	    &mut self.lists
+	pub fn as_mut(&mut self) -> &mut [$vty] {
+	    self.lists.as_mut_slice()
     }
 
     pub fn from_list(v: Vec<$vty>) -> Ret<Self> {

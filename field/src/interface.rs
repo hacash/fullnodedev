@@ -41,18 +41,19 @@ pub trait Field : Serialize + Parse + ToJSON + FromJSON {
     fn new() -> Self where Self: Sized { never!() }
 
     fn must(buf: &[u8]) -> Self where Self: Sized {
-        let mut v = Self::new();
-        let res = v.parse(buf);
-        match res {
-            Ok(_) => v,
+        match Self::build(buf) {
+            Ok(v) => v,
             Err(e) => panic!("{}", e),
         }
     }
 
     fn build(buf: &[u8]) -> Ret<Self> where Self: Sized {
         let mut v = Self::new();
-        let res = v.parse(buf);
-        res.map(|_|v)
+        let used = v.parse(buf)?;
+        if used != buf.len() {
+            return errf!("field parse not consumed all bytes")
+        }
+        Ok(v)
     }
     
     fn create(buf: &[u8]) -> Ret<(Self, usize)> where Self: Sized {
@@ -130,5 +131,4 @@ pub trait Float : Field {
     fn parse_f32(&mut self, _: f32) -> Rerr { never!(); }
     fn parse_f64(&mut self, _: f64) -> Rerr { never!(); }
 }
-
 

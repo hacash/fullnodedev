@@ -17,7 +17,8 @@ pub fn u32_to_biguint(num: u32) -> BigUint {
 pub fn biguint_to_hash(bn: &BigUint) -> [u8; HXS] {
     let res = bn.to_bytes_be();
     if res.len() > HXS {
-        return [255; HXS] // max
+        // Targets above the 256-bit hash space are equivalent to the maximum representable target.
+        return [255; HXS]
     }
     vec![
         vec![0u8; HXS-res.len()],
@@ -30,25 +31,37 @@ pub fn hash_to_biguint(hx: &[u8; HXS]) -> BigUint {
 }
 
 pub fn u32_to_hash(num: u32) -> [u8; HXS] {
+    if num == 0 {
+        return [0; HXS]
+    }
     let numbts = num.to_be_bytes();
-    let mut bits = Vec::with_capacity(BITS);
-    bits.append( &mut vec![0u8; 255 - numbts[0] as usize] );
-    let mut bits2 = vec![
+    let lzero = 255usize.saturating_sub(numbts[0] as usize);
+    let bits2 = vec![
         byte_to_bits(numbts[1]).to_vec(),
         byte_to_bits(numbts[2]).to_vec(),
         byte_to_bits(numbts[3]).to_vec(),
     ].concat();
-    bits.append( &mut bits2 );
-    bits.append( &mut vec![0u8; 256-bits.len()] );
+    let keep = BITS.saturating_sub(lzero).min(bits2.len());
+    let mut bits = Vec::with_capacity(BITS);
+    bits.extend(vec![0u8; lzero]);
+    bits.extend_from_slice(&bits2[..keep]);
+    bits.extend(vec![0u8; BITS - bits.len()]);
     // ok
     bits_to_bytes(bits.as_slice().try_into().unwrap())
 }
 
 pub fn hash_to_u32(hx: &[u8; HXS]) -> u32 {
-    let mut bits = bytes_to_bits(hx).to_vec();
+    let bits = bytes_to_bits(hx).to_vec();
     let lzero = left_zero(&bits);
-    bits.append(&mut vec![1u8; lzero]);
-    let reshx = bits_to_bytes(&bits[lzero..].try_into().unwrap());
+    if lzero >= BITS {
+        return 0
+    }
+    let mut body = bits[lzero..].to_vec();
+    body.truncate(24);
+    body.extend(vec![1u8; 24 - body.len()]);
+    let reshx = bits_to_bytes(
+        &vec![body, vec![0u8; BITS - 24]].concat().as_slice().try_into().unwrap()
+    );
     let mut u32bts = [0u8; 4];
     u32bts[0] = 255 - lzero as u8;
     u32bts[1] = reshx[0];
@@ -134,7 +147,6 @@ fn byte_to_bits(b: u8) -> [u8; 8] {
 		(b >> 0) & 0x1,
     ]
 }
-
 
 
 

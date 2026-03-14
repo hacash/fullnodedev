@@ -63,7 +63,7 @@ macro_rules! combi_revenum {
         }
         impl FromJSON for $class {
             fn from_json(&mut self, json: &str) -> Ret<()> {
-                let pairs = json_split_object(json);
+                let pairs = json_split_object(json)?;
                 let mut ty = 0u8;
                 let mut val_str = "";
                 for (k, v) in pairs {
@@ -233,7 +233,7 @@ macro_rules! combi_revenum_old {
 
         impl FromJSON for $class {
             fn from_json(&mut self, json: &str) -> Ret<()> {
-                let pairs = json_split_object(json);
+                let pairs = json_split_object(json)?;
                 let mut ty = 0u8;
                 let mut val_str = "";
                 for (k, v) in pairs {

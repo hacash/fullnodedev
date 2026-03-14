@@ -56,7 +56,7 @@ impl ToJSON for TestExtEnvReadOnly {
 
 impl FromJSON for TestExtEnvReadOnly {
     fn from_json(&mut self, json_str: &str) -> Ret<()> {
-        let pairs = json_split_object(json_str);
+        let pairs = json_split_object(json_str)?;
         for (k, v) in pairs {
             if k == "kind" {
                 self.kind.from_json(v)?;
