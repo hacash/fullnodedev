@@ -8,11 +8,22 @@ use std::sync::Once;
 use sys::*;
 
 static INIT: Once = Once::new();
-static INIT_EXT_ENV: Once = Once::new();
 
 fn init_test_registry() {
     INIT.call_once(|| {
-        crate::setup::action_register(crate::action::try_create, crate::action::try_json_decode);
+        let builder = crate::setup::SetupBuilder::new()
+            .block_hasher(|_, stuff| sys::calculate_hash(stuff))
+            .action_register(crate::action::register);
+        let registry = builder
+            .register_codec(
+                &[TestExtEnvReadOnly::KIND],
+                action_env_try_create,
+                action_env_try_json_decode,
+                false,
+            )
+            .build()
+            .unwrap();
+        crate::setup::install_once(registry).unwrap();
     });
 }
 
@@ -111,9 +122,7 @@ fn action_env_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Actio
 }
 
 fn init_action_env_test_registry() {
-    INIT_EXT_ENV.call_once(|| {
-        crate::setup::action_register(action_env_try_create, action_env_try_json_decode);
-    });
+    init_test_registry();
 }
 
 #[derive(Default, Clone)]

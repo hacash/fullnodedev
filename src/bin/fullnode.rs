@@ -36,18 +36,16 @@ pub fn run_with_config(cnfpath: &str) -> Rerr {
 
 pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {
     // setup
-    protocol::setup::block_hasher(x16rs::block_hash);
-    protocol::setup::action_register(
-        protocol::action::try_create,
-        protocol::action::try_json_decode,
-    );
-    protocol::setup::action_register(mint::action::try_create, mint::action::try_json_decode);
-    // let mut server_apis: Vec<Router<ApiCtx>> = vec![];
-
-    protocol::setup::action_register(protocol::tex::try_create, protocol::tex::try_json_decode);
-    protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
-    protocol::setup::action_hooker(vm::hook::try_action_hook);
-    protocol::setup::vm_assigner(vm::machine::vm_assign);
+    let builder = protocol::setup::SetupBuilder::new()
+        .block_hasher(x16rs::block_hash)
+        .action_register(protocol::action::register)
+        .action_register(protocol::tex::register)
+        .action_register(mint::action::register)
+        .action_register(vm::action::register)
+        .action_hooker(vm::hook::try_action_hook)
+        .vm_assigner(vm::machine::vm_assign);
+    let registry = builder.build()?;
+    protocol::setup::install_once(registry)?;
 
     // scan api
     server::setup::api_servicer(scan.api_services());

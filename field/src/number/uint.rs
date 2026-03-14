@@ -328,7 +328,7 @@ mod uint_tests {
 
     #[test]
     fn test_from_usize_platform_independent() {
-        // 使用 u128 比较，32/64 位平台行为一致
+        // Use u128 comparison so 32/64-bit platforms behave the same
         assert!(Uint3::from_usize(16777215).is_ok());
         assert!(Uint3::from_usize(16777216).is_err());
         assert!(Uint5::from_usize(1099511627775).is_ok()); // 2^40 - 1

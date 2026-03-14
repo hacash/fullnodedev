@@ -188,6 +188,7 @@ impl CellExec for CellTrsDiaGet {
         if self.dianum.uint() == 0 {
             return errf!("cell diamond get: number cannot be zero")
         }
+        // Diamond pay locks concrete names immediately, while diamond get stays as a receipt until final settlement.
         // tex add
         let tex = ctx.tex_ledger();
         tex.record_diamond_get(taradr, self.dianum.uint() as usize)

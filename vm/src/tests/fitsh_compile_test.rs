@@ -88,7 +88,7 @@ mod fitsh_compile_tests {
             str_with_escape: "return \"hello\\nworld\"",
             str_with_tab: "return \"hello\\tworld\"",
             str_with_quotes: "return \"hello \\\"world\\\"\"",
-            str_unicode: "return \"你好\"",
+            str_unicode: "return \"café\"",
             char_a: "return 'A'",
             char_digit: "return '0'",
             char_space: "return ' '",

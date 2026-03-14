@@ -1,11 +1,13 @@
-
-fn impl_packing_next_block(this: &HacashMinter, engine: &dyn EngineRead, txpool: &dyn TxPool) -> Box<dyn Any> {
-        
+fn impl_packing_next_block(
+    this: &HacashMinter,
+    engine: &dyn EngineRead,
+    txpool: &dyn TxPool,
+) -> Box<dyn Any> {
     let engcnf = engine.config();
 
     let mtcnf = this.cnf;
     let oldblk = engine.latest_block();
-    
+
     let prevhash = oldblk.hash();
     let mut newdifn = oldblk.difficulty().clone();
     if *newdifn == 0 {
@@ -19,23 +21,26 @@ fn impl_packing_next_block(this: &HacashMinter, engine: &dyn EngineRead, txpool:
         newdifn = Uint4::from(difn);
     }
     // create coinbase tx
-    let cbtx = create_coinbase_tx(nexthei, engcnf.miner_message.clone(), 
-        engcnf.miner_reward_address.clone());
+    let cbtx = create_coinbase_tx(
+        nexthei,
+        engcnf.miner_message.clone(),
+        engcnf.miner_reward_address.clone(),
+    );
     // create block v1
     let mut intro = BlockIntro {
         head: BlockHead {
-            version           : Uint1::from(1),
-            height            : BlockHeight::from(nexthei),
-            timestamp         : Timestamp::from(curtimes()),
-            prevhash          : prevhash,
-            mrklroot          : Hash::default(),
-            transaction_count : Uint4::default()
+            version: Uint1::from(1),
+            height: BlockHeight::from(nexthei),
+            timestamp: Timestamp::from(curtimes()),
+            prevhash: prevhash,
+            mrklroot: Hash::default(),
+            transaction_count: Uint4::default(),
         },
         meta: BlockMeta {
-            nonce         : Uint4::default(), 
-            difficulty    : newdifn, 
-            witness_stage : Fixed2::default()
-        }
+            nonce: Uint4::default(),
+            difficulty: newdifn,
+            witness_stage: Fixed2::default(),
+        },
     };
     /* debug test
     // intro.head.timestamp = Timestamp::from(1723385108);
@@ -50,11 +55,15 @@ fn impl_packing_next_block(this: &HacashMinter, engine: &dyn EngineRead, txpool:
     // trs
     let mut transactions = DynVecTransaction::default();
     transactions.push(Box::new(cbtx.clone())).unwrap();
-    
-    append_valid_tx_pick_from_txpool( nexthei, 
-        &mut trslen, &mut trshxs, &mut transactions, 
+
+    append_valid_tx_pick_from_txpool(
+        nexthei,
+        &mut trslen,
+        &mut trshxs,
+        &mut transactions,
         cbtx.size(),
-        engine, txpool,
+        engine,
+        txpool,
     );
 
     // set mrkl & trs count
@@ -62,36 +71,39 @@ fn impl_packing_next_block(this: &HacashMinter, engine: &dyn EngineRead, txpool:
     intro.head.transaction_count = Uint4::from(trslen as u32);
 
     // ok
-    let block = BlockV1{ intro, transactions };
+    let block = BlockV1 {
+        intro,
+        transactions,
+    };
 
     Box::new(block)
-
 }
-
-
 
 pub fn create_coinbase_tx(hei: u64, msg: Fixed16, adr: Address) -> TransactionCoinbase {
     let rwdamt = genesis::block_reward(hei);
     TransactionCoinbase {
-        ty      : Uint1::from(0), // ccoinbase type = 0
-        address : adr,
-        reward  : rwdamt,
-        message : msg,
-        extend  : CoinbaseExtend::must(CoinbaseExtendDataV1 {
+        ty: Uint1::from(0), // ccoinbase type = 0
+        address: adr,
+        reward: rwdamt,
+        message: msg,
+        extend: CoinbaseExtend::must(CoinbaseExtendDataV1 {
             miner_nonce: Hash::default(),
             witness_count: Uint1::from(0),
-        })
+        }),
     }
 }
-
-
-
 
 /*
     park txs to block
 */
-fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs: &mut Vec<Hash>, 
-    trs: &mut DynVecTransaction, base_tx_size: usize, engine: &dyn EngineRead, txpool: &dyn TxPool,
+fn append_valid_tx_pick_from_txpool(
+    pending_hei: u64,
+    trslen: &mut usize,
+    trshxs: &mut Vec<Hash>,
+    trs: &mut DynVecTransaction,
+    base_tx_size: usize,
+    engine: &dyn EngineRead,
+    txpool: &dyn TxPool,
 ) {
     let engcnf = engine.config();
     let txmaxn = engcnf.max_block_txs;
@@ -106,12 +118,12 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
     macro_rules! ok_push_one_tx {
         ($a: expr, $txsz: expr) => {
             if trs.push($a.objc_box().clone()).is_err() {
-                return false
+                return false;
             }
             trshxs.push($a.objc().as_read().hash_with_fee());
             *trslen += 1;
             *txallsz += $txsz;
-        }
+        };
     }
 
     macro_rules! check_pick_one_tx {
@@ -119,15 +131,14 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
             let txr = $a.objc().as_read();
             if let Err(..) = engine.try_execute_tx_by(txr, pending_hei, &mut sub_state) {
                 invalidtxhxs.push(txr.hash());
-                return true // execute fail, ignore, next
+                return true; // execute fail, ignore, next
             };
             let Ok(nf) = allfee.add_mode_u64(&$a.objc().fee_got()) else {
                 invalidtxhxs.push(txr.hash());
                 return true; // fee size err, ignore, next
             };
             allfee = nf;
-        }
-
+        };
     }
 
     // pick one diamond mint tx
@@ -135,10 +146,10 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
         let mut pick_dmint = |a: &TxPkg| {
             let txsz = a.data().len();
             if txsz + *txallsz > txmaxsz {
-                return true // try next one
+                return true; // try next one
             }
             if *trslen >= txmaxn {
-                return false // end
+                return false; // end
             }
             // check tx
             check_pick_one_tx!(a);
@@ -153,10 +164,10 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
     let mut pick_normal_tx = |a: &TxPkg| {
         let txsz = a.data().len();
         if *trslen >= txmaxn {
-            return false // end, num enough
+            return false; // end, num enough
         }
         if txsz + *txallsz > txmaxsz {
-            return true // skip oversize tx and continue
+            return true; // skip oversize tx and continue
         }
         // check tx
         check_pick_one_tx!(a);
@@ -172,10 +183,7 @@ fn append_valid_tx_pick_from_txpool(pending_hei: u64, trslen: &mut usize, trshxs
     // ok
 }
 
-
-
 /********************************************/
-
 
 #[cfg(test)]
 mod tests {
@@ -187,29 +195,45 @@ mod tests {
 
     struct DummyStore;
     impl Store for DummyStore {
-        fn status(&self) -> ChainStatus { ChainStatus::default() }
+        fn status(&self) -> ChainStatus {
+            ChainStatus::default()
+        }
         fn save_block_data(&self, _: &Hash, _: &Vec<u8>) {}
         fn save_block_hash(&self, _: &BlockHeight, _: &Hash) {}
         fn save_block_hash_path(&self, _: &dyn MemDB) {}
         fn save_batch(&self, _: &dyn MemDB) {}
-        fn block_data(&self, _: &Hash) -> Option<Vec<u8>> { None }
-        fn block_hash(&self, _: &BlockHeight) -> Option<Hash> { None }
-        fn block_data_by_height(&self, _: &BlockHeight) -> Option<(Hash, Vec<u8>)> { None }
+        fn block_data(&self, _: &Hash) -> Option<Vec<u8>> {
+            None
+        }
+        fn block_hash(&self, _: &BlockHeight) -> Option<Hash> {
+            None
+        }
+        fn block_data_by_height(&self, _: &BlockHeight) -> Option<(Hash, Vec<u8>)> {
+            None
+        }
     }
 
     struct DummyState;
     impl State for DummyState {
-        fn fork_sub(&self, _: Weak<Box<dyn State>>) -> Box<dyn State> { Box::new(DummyState) }
+        fn fork_sub(&self, _: Weak<Box<dyn State>>) -> Box<dyn State> {
+            Box::new(DummyState)
+        }
         fn merge_sub(&mut self, _: Box<dyn State>) {}
         fn detach(&mut self) {}
-        fn clone_state(&self) -> Box<dyn State> { Box::new(DummyState) }
+        fn clone_state(&self) -> Box<dyn State> {
+            Box::new(DummyState)
+        }
         fn as_mem(&self) -> &MemMap {
             static EMPTY: std::sync::LazyLock<MemMap> = std::sync::LazyLock::new(HashMap::new);
             &EMPTY
         }
-        fn disk(&self) -> Arc<dyn DiskDB> { never!() }
+        fn disk(&self) -> Arc<dyn DiskDB> {
+            never!()
+        }
         fn write_to_disk(&self) {}
-        fn get(&self, _: Vec<u8>) -> Option<Vec<u8>> { None }
+        fn get(&self, _: Vec<u8>) -> Option<Vec<u8>> {
+            None
+        }
         fn set(&mut self, _: Vec<u8>, _: Vec<u8>) {}
         fn del(&mut self, _: Vec<u8>) {}
     }
@@ -228,8 +252,12 @@ mod tests {
             }
             Ok(())
         }
-        fn drain(&self, _: &[Hash]) -> Ret<Vec<TxPkg>> { Ok(vec![]) }
-        fn print(&self) -> String { s!("OneTxPool") }
+        fn drain(&self, _: &[Hash]) -> Ret<Vec<TxPkg>> {
+            Ok(vec![])
+        }
+        fn print(&self) -> String {
+            s!("OneTxPool")
+        }
     }
 
     struct TestEngine {
@@ -239,18 +267,38 @@ mod tests {
     }
 
     impl EngineRead for TestEngine {
-        fn config(&self) -> &EngineConf { &self.cnf }
-        fn latest_block(&self) -> Arc<dyn Block> { self.latest.clone() }
-        fn store(&self) -> Arc<dyn Store> { self.store.clone() }
-        fn fork_sub_state(&self) -> Box<dyn State> { Box::new(DummyState) }
-        fn try_execute_tx_by(&self, _: &dyn TransactionRead, _: u64, _: &mut Box<dyn State>) -> Rerr { Ok(()) }
+        fn config(&self) -> &EngineConf {
+            &self.cnf
+        }
+        fn latest_block(&self) -> Arc<dyn Block> {
+            self.latest.clone()
+        }
+        fn store(&self) -> Arc<dyn Store> {
+            self.store.clone()
+        }
+        fn fork_sub_state(&self) -> Box<dyn State> {
+            Box::new(DummyState)
+        }
+        fn try_execute_tx_by(
+            &self,
+            _: &dyn TransactionRead,
+            _: u64,
+            _: &mut Box<dyn State>,
+        ) -> Rerr {
+            Ok(())
+        }
     }
 
     #[test]
     fn packing_merkle_root_uses_hash_with_fee() {
-        // HacashMinter::create() constructs the genesis block, which validates against a
-        // hard-coded mainnet hash. That requires the global block hasher to be configured.
-        protocol::setup::block_hasher(x16rs::block_hash);
+        // HacashMinter::create() validates genesis hash, so setup must provide block hasher.
+        let _setup = protocol::setup::install_scoped_for_test(
+            protocol::setup::SetupBuilder::new()
+                .block_hasher(x16rs::block_hash)
+                .action_register(protocol::action::register)
+                .build()
+                .unwrap(),
+        );
 
         // Keep test independent from genesis init checks (which require the global block hasher
         // to be configured by the binary).
@@ -281,7 +329,10 @@ mod tests {
             let mut txs = DynVecTransaction::default();
             txs.push(Box::new(cbtx)).unwrap();
 
-            let mut blk = BlockV1 { intro, transactions: txs };
+            let mut blk = BlockV1 {
+                intro,
+                transactions: txs,
+            };
             blk.update_mrklroot();
             blk
         };
@@ -349,15 +400,15 @@ mod tests {
     }
 }
 
-
-
-
 /********************************************/
 
-
-
-fn impl_tx_pool_refresh(_this: &HacashMinter, eng: &dyn EngineRead, txpool: &dyn TxPool, txs: Vec<Hash>, blkhei: u64) {
-
+fn impl_tx_pool_refresh(
+    _this: &HacashMinter,
+    eng: &dyn EngineRead,
+    txpool: &dyn TxPool,
+    txs: Vec<Hash>,
+    blkhei: u64,
+) {
     if blkhei % 15 == 0 {
         println!("{}.", txpool.print());
     }
@@ -370,11 +421,11 @@ fn impl_tx_pool_refresh(_this: &HacashMinter, eng: &dyn EngineRead, txpool: &dyn
         let _ = txpool.drain(&txs[1..]); // over coinbase tx
     }
     // drop invalid normal
-    if blkhei % 11 == 0 { // 1 hours
+    if blkhei % 11 == 0 {
+        // 1 hours
         clean_invalid_normal_txs(eng, txpool, blkhei);
     }
 }
-
 
 // clean_
 fn clean_invalid_normal_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, blkhei: u64) {
@@ -384,17 +435,19 @@ fn clean_invalid_normal_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, blkhei: u
     let _ = txpool.retain_at(TXGID_NORMAL, &mut |a: &TxPkg| {
         let txr = a.objc().as_read();
         let exec = eng.try_execute_tx_by(txr, pdhei, &mut sub_state);
-        exec.is_ok() // keep or delete 
+        exec.is_ok() // keep or delete
     });
 }
-
 
 // clean_
 fn clean_invalid_diamond_mint_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, _blkhei: u64) {
     // already minted hacd number
     let sta = eng.state();
     let sta = sta.as_ref();
-    let curdn = CoreStateRead::wrap(sta.as_ref()).get_latest_diamond().number.uint();
+    let curdn = CoreStateRead::wrap(sta.as_ref())
+        .get_latest_diamond()
+        .number
+        .uint();
     let nextdn = curdn + 1;
     let _ = txpool.retain_at(TXGID_DIAMINT, &mut |a: &TxPkg| {
         // must be next diamond number, or delete

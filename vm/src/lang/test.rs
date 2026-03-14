@@ -349,7 +349,7 @@ mod token_t {
         }
     }
 
-    // ==================== BUG 2: 空 Map Roundtrip 测试 ====================
+    // ==================== BUG 2: Empty Map Roundtrip Test ====================
 
     #[test]
     fn test_empty_map_roundtrip() {
@@ -435,18 +435,18 @@ mod token_t {
         println!("Empty map serialized: {:?}", map_serialized);
     }
 
-    // ==================== Bug 5: Tokenizer 数字解析测试 ====================
+    // ==================== Bug 5: Tokenizer Number Parsing Test ====================
 
     #[test]
     fn test_number_with_letters_should_fail() {
-        // 数字中包含字母应该失败
+        // Digits mixed with letters should fail
         let result = super::Tokenizer::new("123abc".as_bytes()).parse();
         assert!(result.is_err(), "123abc should fail to parse as number");
     }
 
     #[test]
     fn test_underscore_in_numbers() {
-        // 下划线分隔的数字应该工作
+        // Underscore-separated digits should parse
         let result = super::Tokenizer::new("1000_000".as_bytes()).parse();
         match result {
             Ok(tokens) => {

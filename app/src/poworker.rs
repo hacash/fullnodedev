@@ -234,10 +234,10 @@ fn run_block_mining_item(
     let mut coinbase_nonce = [0u8; HASH_WIDTH];
     getrandom::fill(&mut coinbase_nonce).unwrap();
     let coinbase_nonce = Hash::from(coinbase_nonce);
-    // 说明：这里所有线程都从 nonce_start = 0 开始并不是 BUG。
-    // 因为上面已经为每个线程/任务生成了随机的 coinbase_nonce，
-    // 这会导致 block_intro (即区块头 hash) 完全不同，
-    // 所以即使 nonce_start 相同，实际搜索的 Hash 空间也是完全隔离的，不会产生算力冲突。
+    // Note: All threads starting from nonce_start = 0 here is not a bug:
+    // each thread/task has been assigned a random coinbase_nonce above,
+    // so block_intro (block header hash) differs; even with the same nonce_start,
+    // the actual search hash space is disjoint and no hashrate conflict occurs.
     let mut nonce_start: u32 = 0;
     let nonce_limit = _cnf.noncemax.max(1);
     let mut nonce_space: u32 = match backend {

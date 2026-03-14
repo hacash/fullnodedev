@@ -234,19 +234,19 @@ impl Tokenizer<'_> {
 
     pub fn parse_char(&mut self, max: usize, _c: char) -> Rerr {
         let e = errf!("char format invalid");
-        // 需要确保有字符内容和闭引号: idx < max - 1
+        // Require room for at least one char and closing quote: idx < max - 1
         if self.idx >= max - 1 {
             return e;
         }
 
         let byte = if self.texts[self.idx] == b'\\' {
-            // 转义序列
+            // Escape sequence
             let nxt = self.idx + 1;
             if nxt >= max {
                 return e;
             }
             let esc = self.texts[nxt] as char;
-            self.idx += 2; // 跳过转义字符
+            self.idx += 2; // Skip escape char
             match esc {
                 't' => b'\t',
                 'n' => b'\n',
@@ -256,16 +256,16 @@ impl Tokenizer<'_> {
                 _ => return e,
             }
         } else {
-            // 普通字符
+            // Ordinary character
             let byte = self.texts[self.idx];
             self.idx += 1;
             if byte == b'\'' {
-                return e; // 不能是开引号
+                return e; // Must not be opening quote
             }
             byte
         };
 
-        // 检查闭引号
+        // Expect closing quote
         if self.idx >= max || self.texts[self.idx] != b'\'' {
             return e;
         }

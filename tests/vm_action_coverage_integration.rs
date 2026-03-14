@@ -35,11 +35,15 @@ mod action_coverage {
     fn init_action_registry() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            protocol::setup::action_register(
-                protocol::action::try_create,
-                protocol::action::try_json_decode,
-            );
-            protocol::setup::action_register(vm::action::try_create, vm::action::try_json_decode);
+            let registry = protocol::setup::SetupBuilder::new()
+                .block_hasher(|_, stuff| sys::calculate_hash(stuff))
+                .action_register(protocol::action::register)
+                .action_register(vm::action::register)
+                .action_hooker(vm::hook::try_action_hook)
+                .vm_assigner(machine::vm_assign)
+                .build()
+                .unwrap();
+            protocol::setup::install_once(registry).unwrap();
         });
     }
 

@@ -140,7 +140,13 @@ mod difficulty_tests {
 
     #[test]
     fn req_cycle_block_reads_disk_once_after_cache_warmup() {
-        protocol::setup::block_hasher(x16rs::block_hash);
+        let _setup = protocol::setup::install_scoped_for_test(
+            protocol::setup::SetupBuilder::new()
+                .block_hasher(x16rs::block_hash)
+                .action_register(protocol::action::register)
+                .build()
+                .unwrap(),
+        );
         let dgnr = DifficultyGnr::new(MintConf::new(&IniObj::new()));
         let store = CountingStore {
             reads: AtomicUsize::new(0),

@@ -1,7 +1,9 @@
 use basis::interface::{Logs, State, TransactionRead};
 use field::{Address, Amount};
 use protocol::context::ContextInst;
+use protocol::setup::{ScopedSetupGuard, SetupBuilder};
 use protocol::transaction::create_tx_info;
+use std::cell::RefCell;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use crate::sim::context::make_ctx_with_logs;
@@ -46,8 +48,31 @@ pub fn make_ctx_from_tx<'a>(
     make_ctx_with_logs(env, state, logs, tx)
 }
 
-pub fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
-    unsafe {
-        protocol::setup::VM_ASSIGN_FUNC = assigner;
+thread_local! {
+    static TEST_SETUP_SCOPE: RefCell<Option<ScopedSetupGuard>> = const { RefCell::new(None) };
+}
+
+fn build_basic_registry(
+    vm_assigner: Option<protocol::setup::FnVmAssignFunc>,
+) -> protocol::setup::SetupRegistry {
+    let mut builder = SetupBuilder::new()
+        .block_hasher(x16rs::block_hash)
+        .action_register(protocol::action::register);
+    if let Some(assigner) = vm_assigner {
+        builder = builder.vm_assigner(assigner);
     }
+    builder
+        .build()
+        .unwrap_or_else(|e| panic!("build scoped setup failed: {}", e))
+}
+
+pub fn scoped_setup(vm_assigner: Option<protocol::setup::FnVmAssignFunc>) -> ScopedSetupGuard {
+    protocol::setup::install_scoped_for_test(build_basic_registry(vm_assigner))
+}
+
+pub fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
+    let guard = scoped_setup(assigner);
+    TEST_SETUP_SCOPE.with(|cell| {
+        *cell.borrow_mut() = Some(guard);
+    });
 }

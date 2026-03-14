@@ -455,7 +455,7 @@ mod fold64_tests {
         assert_eq!(decoded, m);
     }
 
-    /// 每个字节增长边界：size-1, size, size+1 的序列化与解析
+    /// Roundtrip at each byte-growth boundary: size-1, size, size+1
     #[test]
     fn test_byte_growth_boundaries_roundtrip() {
         let boundaries: [(u64, usize); 8] = [
@@ -465,7 +465,7 @@ mod fold64_tests {
             (8192, 3),         // 3 byte min
             (2_097_151, 3),    // 3 byte max
             (2_097_152, 4),    // 4 byte min
-            (5_368_709_11, 4), // 4 byte max (注意下划线分隔)
+            (5_368_709_11, 4), // 4 byte max (underscores for readability)
             (5_368_709_12, 5), // 5 byte min
         ];
         for (v, expected_size) in boundaries {
@@ -480,7 +480,7 @@ mod fold64_tests {
         }
     }
 
-    /// 所有 7 个字节增长边界的完整 roundtrip
+    /// Full roundtrip for all 7 byte-growth boundaries
     #[test]
     fn test_all_byte_boundaries_roundtrip() {
         let cases = [
@@ -523,26 +523,26 @@ mod fold64_tests {
         }
     }
 
-    /// 非规范编码应被拒绝：小值用大 size 编码
+    /// Non-canonical encoding should be rejected: small value encoded with larger size
     #[test]
     fn test_parse_rejects_non_canonical_at_boundaries() {
-        // value 0 用 size=2 编码 [0x20, 0x00]
+        // value 0 encoded as size=2 [0x20, 0x00]
         let buf = vec![0b0010_0000, 0x00];
         let mut p = Fold64::default();
         assert!(p.parse(&buf).is_err());
 
-        // value 31 用 size=2 编码
+        // value 31 encoded as size=2
         let buf = vec![0b0010_0000, 0x1F];
         let mut p = Fold64::default();
         assert!(p.parse(&buf).is_err());
 
-        // value 32 用 size=3 编码（应为 2 字节）
+        // value 32 encoded as size=3 (should be 2 bytes)
         let buf = vec![0b0100_0000, 0x00, 0x20];
         let mut p = Fold64::default();
         assert!(p.parse(&buf).is_err());
     }
 
-    /// 解析截断的 buffer 应失败
+    /// Parsing a truncated buffer should fail
     #[test]
     fn test_parse_rejects_truncated_buffer() {
         let full = Fold64::from(8192).unwrap().serialize();
@@ -552,7 +552,7 @@ mod fold64_tests {
         assert!(p.parse(&full[..2]).is_err());
     }
 
-    /// 解析后 consume 的字节数正确
+    /// Parse consumes the correct number of bytes
     #[test]
     fn test_parse_consumes_correct_length() {
         let v = Fold64::from(9007199254740992).unwrap();
@@ -563,7 +563,7 @@ mod fold64_tests {
         assert_eq!(p.uint(), 9007199254740992);
     }
 
-    /// 解析时 buffer 后有额外字节，只消费正确长度
+    /// With trailing bytes after buffer, only the correct length is consumed
     #[test]
     fn test_parse_with_trailing_bytes_consumes_only_self() {
         let v = Fold64::from(32).unwrap();
@@ -577,7 +577,7 @@ mod fold64_tests {
         assert_eq!(p.uint(), 32);
     }
 
-    /// 连续解析多个 Fold64
+    /// Parse multiple Fold64 values in sequence
     #[test]
     fn test_parse_concatenated() {
         let a = Fold64::from(31).unwrap();

@@ -496,7 +496,13 @@ mod contract_test {
     fn init_vm_assigner_once() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            protocol::setup::vm_assigner(crate::machine::vm_assign);
+            let registry = protocol::setup::SetupBuilder::new()
+                .block_hasher(|_, stuff| sys::calculate_hash(stuff))
+                .action_register(protocol::action::register)
+                .vm_assigner(crate::machine::vm_assign)
+                .build()
+                .unwrap();
+            protocol::setup::install_once(registry).unwrap();
         });
     }
 
