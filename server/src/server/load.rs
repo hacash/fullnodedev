@@ -21,7 +21,7 @@ pub fn api_load_block_from_cache(apictx: &ApiCtx, store: &dyn Store, key: &Strin
     if with_cache {
         let list = apictx.blocks.lock().unwrap();
         for blk in list.iter() {
-            if height == *blk.objc.height() || hash == blk.hash {
+            if height == *blk.objc().height() || hash == blk.hash() {
                 return Ok(blk.clone())
             }
         }
@@ -50,7 +50,6 @@ pub fn api_load_block_from_cache(apictx: &ApiCtx, store: &dyn Store, key: &Strin
     }
     return Ok(blkcp)
 }
-
 
 
 

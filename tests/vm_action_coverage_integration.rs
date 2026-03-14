@@ -1,4 +1,3 @@
-
 #[cfg(test)]
 mod action_coverage {
     use std::sync::Once;
@@ -13,7 +12,7 @@ mod action_coverage {
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
     use protocol::transaction::TransactionType3;
-    use sys::{Account, XRet, IntoTRet, Ret};
+    use sys::{Account, IntoTRet, Ret, XRet};
     use testkit::sim::integration::{
         make_ctx_from_tx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
         vm_alt_addr as alt_addr, vm_main_addr as main_addr,
@@ -29,7 +28,7 @@ mod action_coverage {
     use vm::machine::{self, Machine, Resoure};
     use vm::rt::{AbstCall, Bytecode, Bytecode::*, CodeConf, CodeType, SpaceCap, calc_func_sign};
     use vm::value::Value;
-    use vm::{ContractAddress, ContractAddressW1, ContractAddrListW1, ContractSto, VMState};
+    use vm::{ContractAddrListW1, ContractAddress, ContractAddressW1, ContractSto, VMState};
 
     // ─── Test infrastructure ───
 
@@ -84,7 +83,9 @@ mod action_coverage {
         let height = ctx.env().block.height;
         let mut machine = Machine::create(Resoure::create(height));
         let mut exenv = ExecEnv { ctx, gas: &mut gas };
-        machine.main_call(&mut exenv, CodeType::Bytecode, codes.into()).into_tret()
+        machine
+            .main_call(&mut exenv, CodeType::Bytecode, codes.into())
+            .into_tret()
     }
 
     fn execute_main_bytecode_as_call_ctx(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {

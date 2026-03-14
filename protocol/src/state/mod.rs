@@ -5,6 +5,7 @@ use concat_idents::concat_idents;
 
 // use db::*;
 
+use basis::component::MemKV;
 use basis::interface::*;
 use field::*;
 

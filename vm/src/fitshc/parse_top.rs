@@ -206,7 +206,10 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
                     ValueTy::U8 | ValueTy::U16 | ValueTy::U32 | ValueTy::U64 | ValueTy::U128
                 );
                 if !ok {
-                    return errf!("abstract '{}' return type must be integer (error code)", name);
+                    return errf!(
+                        "abstract '{}' return type must be integer (error code)",
+                        name
+                    );
                 }
             }
             // parse body for abstract code

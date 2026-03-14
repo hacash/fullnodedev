@@ -84,7 +84,8 @@ impl Func {
     define_func_codes!{}
 
     pub fn external(mut self) -> Self {
-        self.func.fncnf[0] |= FnConf::External as u8;
+        let fc1 = [self.func.fncnf[0] | FnConf::External as u8];
+        self.func.fncnf = Fixed1::from(fc1);
         self
     }
 

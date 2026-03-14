@@ -1,19 +1,16 @@
-
 pub struct EmptyLogs {}
 impl Logs for EmptyLogs {}
-
 
 pub struct BlockLogs {
     bhei: u64,
     logs: Vec<Vec<u8>>,
-    disk: Arc<dyn DiskDB>
+    disk: Arc<dyn DiskDB>,
 }
-
 
 impl Logs for BlockLogs {
     fn push(&mut self, stuff: &dyn Serialize) {
         if self.bhei == 0 {
-            return // not save
+            return; // not save
         }
         self.logs.push(stuff.serialize())
     }
@@ -27,11 +24,13 @@ impl Logs for BlockLogs {
         let hei = Uint8::from(height);
         let lnk = [hei.serialize(), b"n".to_vec()].concat();
         let num = self.read_len(&lnk);
-        for i in 0 .. num {
+        let mut batch = MemKV::new();
+        for i in 0..num {
             let k = Self::wnk(height, i);
-            self.disk.remove(&k);
+            batch.del(k);
         }
-        self.disk.remove(&lnk);
+        batch.del(lnk);
+        self.disk.write(&batch);
     }
 
     fn height(&self) -> u64 {
@@ -40,12 +39,16 @@ impl Logs for BlockLogs {
 
     fn write_to_disk(&self) {
         let m = self.logs.len();
-        for i in 0 .. m {
-            self.disk.save(&self.nk(i), &self.logs[i]);
+        if m == 0 {
+            return;
         }
-        if m > 0 {
-            self.update_len(self.logs.len());
+        let mut batch = MemKV::new();
+        for i in 0..m {
+            batch.put(self.nk(i), self.logs[i].clone());
         }
+        let num = Uint8::from(m as u64);
+        batch.put(self.lnk(), num.serialize());
+        self.disk.write(&batch);
     }
 
     fn snapshot_len(&self) -> usize {
@@ -55,12 +58,9 @@ impl Logs for BlockLogs {
     fn truncate(&mut self, len: usize) {
         self.logs.truncate(len);
     }
-
 }
 
-
 impl BlockLogs {
-
     fn lnk(&self) -> Vec<u8> {
         let hei = Uint8::from(self.bhei);
         [hei.serialize(), b"n".to_vec()].concat()
@@ -77,17 +77,23 @@ impl BlockLogs {
     }
 
     pub fn wrap(disk: Arc<dyn DiskDB>) -> Self {
-        Self { disk, bhei: 0, logs: Vec::new() }
+        Self {
+            disk,
+            bhei: 0,
+            logs: Vec::new(),
+        }
     }
 
     pub fn next(&self, hei: u64) -> Self {
-        Self { disk: self.disk.clone(), bhei: hei, logs: Vec::new() }
+        Self {
+            disk: self.disk.clone(),
+            bhei: hei,
+            logs: Vec::new(),
+        }
     }
-
 }
 
 impl BlockLogs {
-
     fn read_len(&self, lnk: &Vec<u8>) -> usize {
         let mut num = Uint8::from(0);
         match self.disk.read(lnk) {
@@ -96,13 +102,14 @@ impl BlockLogs {
                 num.parse(&v).unwrap(); // must
                 num
             }
-        }.uint() as usize
+        }
+        .uint() as usize
     }
 
     pub fn len(&self) -> usize {
         let l = self.logs.len();
         if l > 0 {
-            return l
+            return l;
         }
         self.read_len(&self.lnk())
     }
@@ -110,21 +117,11 @@ impl BlockLogs {
     // load
     pub fn read(&self, idx: usize) -> Option<Vec<u8>> {
         if idx < self.logs.len() {
-            return Some(self.logs[idx].clone())
+            return Some(self.logs[idx].clone());
         }
         let i = &self.nk(idx);
         self.disk.read(i)
     }
-
-
-    // write
-
-    fn update_len(&self, n: usize) {
-        let num = Uint8::from(n as u64);
-        self.disk.save(&self.lnk(), &num.serialize());
-    }
-
-
 }
 
 #[cfg(test)]
@@ -142,6 +139,18 @@ mod tests {
             self.kv.lock().unwrap().get(key).cloned()
         }
 
+        fn write(&self, batch: &dyn MemDB) {
+            let mut kv = self.kv.lock().unwrap();
+            batch.for_each(&mut |key, val| match val {
+                Some(v) => {
+                    kv.insert(key.to_vec(), v.to_vec());
+                }
+                None => {
+                    kv.remove(key);
+                }
+            });
+        }
+
         fn save(&self, key: &[u8], val: &[u8]) {
             self.kv.lock().unwrap().insert(key.to_vec(), val.to_vec());
         }
@@ -150,7 +159,7 @@ mod tests {
             self.kv.lock().unwrap().remove(key);
         }
 
-        fn for_each(&self, each: &mut dyn FnMut(&[u8], &[u8])->bool) -> Result<(), String> {
+        fn for_each(&self, each: &mut dyn FnMut(&[u8], &[u8]) -> bool) -> Result<(), String> {
             let rows: Vec<(Vec<u8>, Vec<u8>)> = self
                 .kv
                 .lock()
@@ -160,7 +169,7 @@ mod tests {
                 .collect();
             for (k, v) in rows {
                 if !each(&k, &v) {
-                    break
+                    break;
                 }
             }
             Ok(())
@@ -189,5 +198,21 @@ mod tests {
         after.remove(height);
         let final_view = BlockLogs::wrap(disk).next(height);
         assert_eq!(final_view.len(), 0);
+    }
+
+    #[test]
+    fn write_to_disk_persists_logs_and_length_key() {
+        let disk: Arc<dyn DiskDB> = Arc::new(MemDisk::default());
+        let height = 99u64;
+
+        let mut wr = BlockLogs::wrap(disk.clone()).next(height);
+        wr.push(&Uint1::from(3));
+        wr.push(&Uint1::from(4));
+        wr.write_to_disk();
+
+        let rd = BlockLogs::wrap(disk).next(height);
+        assert_eq!(rd.len(), 2);
+        assert_eq!(rd.load(height, 0), Some(Uint1::from(3).serialize()));
+        assert_eq!(rd.load(height, 1), Some(Uint1::from(4).serialize()));
     }
 }

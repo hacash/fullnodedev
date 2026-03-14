@@ -1,15 +1,14 @@
-
 #[cfg(test)]
 mod tests {
     use basis::interface::Context;
     use testkit::sim::integration::{make_ctx_from_tx, make_stub_tx, vm_main_addr};
     use testkit::sim::state::FlatMemState as MemState;
+    use vm::ContractAddress;
     use vm::interpreter::execute_code;
     use vm::machine::CtxHost;
     use vm::rt::SpaceCap;
     use vm::rt::{Bytecode, ExecCtx, GasExtra, GasTable, ItrErrCode};
     use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
-    use vm::ContractAddress;
 
     #[test]
     fn reject_unknown_action_ids() {

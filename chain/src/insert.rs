@@ -33,18 +33,18 @@ struct InsertResult {
 }
 
 fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<InsertResult> {
-    let orgi = blk.orgi;
+    let orgi = blk.origin();
     let fast_sync = (eng.cnf.fast_sync && orgi == BlkOrigin::Sync) || orgi == BlkOrigin::Rebuild;
 
-    let height = blk.hein;
-    let hash = blk.hash.clone();
+    let height = blk.hein();
+    let hash = blk.hash();
 
     let old_root_height = tree.root_height();
     if height <= old_root_height || height > tree.head_height() + 1 {
         return errf!("insert height must be between [{}, {}] but got {}", old_root_height + 1, tree.head_height() + 1, height);
     }
 
-    let prev_hash = blk.objc.prevhash();
+    let prev_hash = blk.objc().prevhash();
     let parent = tree.quick_find(prev_hash).ok_or(format!("prev block <{}, {}> not found", height - 1, prev_hash))?;
     if parent.height() + 1 != height {
         return errf!("prev block <{}, {}> not found", height - 1, prev_hash);
@@ -56,8 +56,8 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();
-        eng.minter.blk_verify(blk.objc.as_read(), parent_blk, eng.store.as_ref())?;
-        block_verify(&eng.cnf, blk.objc.as_read(), blk.data().len(), parent_blk)?;
+        eng.minter.blk_verify(blk.objc().as_read(), parent_blk, eng.store.as_ref())?;
+        block_verify(&eng.cnf, blk.objc().as_read(), blk.data().len(), parent_blk)?;
     }
 
     let prev_state = parent.state();
@@ -70,11 +70,13 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
     };
 
     let logs = Box::new(eng.logs.next(maybe!(is_open_vmlog(eng, height), height, 0)));
-    let (new_state, new_logs) = blk.objc.execute(chain_info, sub_state, logs)?;
+    let (new_state, new_logs) = blk.objc().execute(chain_info, sub_state, logs)?;
 
     if !fast_sync {
         blk.set_origin(orgi);
-        eng.minter.blk_insert(&blk, new_state.as_ref(), prev_state.as_ref().as_ref())?;
+        let new_state_ref: &dyn State = new_state.as_ref();
+        let prev_state_ref: &dyn State = prev_state.as_ref().as_ref();
+        eng.minter.blk_insert(&blk, new_state_ref, prev_state_ref)?;
     }
 
     // Snapshot current root. If root advances, we must keep this Arc alive until roll_by.
@@ -82,11 +84,12 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
     let prev_head = tree.head();
     let extend_old_head = parent.ptr_eq(&prev_head);
 
+    let new_logs: Arc<dyn Logs> = Arc::from(new_logs);
     let (root_change, head_change) = tree.insert_child(
         &parent,
-        blk.objc.clone(),
+        blk.objc_arc(),
         Arc::new(new_state),
-        new_logs.into(),
+        new_logs,
         fast_sync,
     )?;
     let head_change_kind = match &head_change {
@@ -103,7 +106,7 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
 fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     let InsertResult { old_root_hold, old_root_height, root_change, head_change, head_change_kind, hash, block } = rid;
     let mut batch = MemKV::new();
-    let not_rebuild = block.orgi != BlkOrigin::Rebuild;
+    let not_rebuild = block.origin() != BlkOrigin::Rebuild;
     if not_rebuild { // put block datas
         batch.put(hash.to_vec(), block.copy_data());
     }

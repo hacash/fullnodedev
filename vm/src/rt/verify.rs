@@ -268,12 +268,11 @@ mod call_verify_tests {
 
     #[test]
     fn verify_accepts_generic_call_slot() {
-        let body = encode_call_body(CallSpec::invoke(
+        let body = encode_call_body(
             CallTarget::Upper,
             EffectMode::Edit,
             [0x01, 0x02, 0x03, 0x04],
-        ))
-        .unwrap();
+        );
         let mut codes = vec![Bytecode::CALL as u8];
         codes.extend_from_slice(&body);
         codes.push(Bytecode::END as u8);
@@ -282,7 +281,7 @@ mod call_verify_tests {
 
     #[test]
     fn verify_accepts_codecall_without_linear_end_guard() {
-        let body = encode_codecall_body(CallSpec::codecall(1, [0x01, 0x02, 0x03, 0x04])).unwrap();
+        let body = encode_splice_body(1, [0x01, 0x02, 0x03, 0x04]);
         let mut codes = vec![Bytecode::CODECALL as u8];
         codes.extend_from_slice(&body);
         codes.push(Bytecode::P0 as u8);

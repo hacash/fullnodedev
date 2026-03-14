@@ -31,6 +31,7 @@ impl CellExec for $class {
         if zhu > 100000000_00000000 {
             return errf!("cell zhu too large")
         }
+        tex_check_addr_whole_zhu(ctx, taradr)?;
         let amt = Amount::zhu(zhu);
         $zhu_op(ctx, taradr, &amt)?;
         // tex add

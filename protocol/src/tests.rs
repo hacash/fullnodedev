@@ -845,6 +845,114 @@ fn test_transaction_base58check_format_roundtrip() {
     assert_eq!(tx.serialize(), tx2.serialize());
 }
 
+fn build_tex_test_ctx<'a>(tx: &'a dyn TransactionRead) -> crate::context::ContextInst<'a> {
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(tx);
+    ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        tx,
+    )
+}
+
+#[test]
+fn test_tex_zhu_condition_rejects_fractional_hac_balance() {
+    use crate::tex::*;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&field::ADDRESS_ONEX).unwrap_or_default();
+        let half = Amount::zhu(1).ratio_floor(1, 2).unwrap();
+        bls.hacash = Amount::zhu(1).add_mode_u128(&half).unwrap();
+        state.balance_set(&field::ADDRESS_ONEX, &bls);
+    }
+
+    let err = CellCondZhuEq::new(Fold64::from(1).unwrap())
+        .execute(&mut ctx, &field::ADDRESS_ONEX)
+        .unwrap_err();
+    assert!(err.contains("zhu check failed"), "{}", err);
+}
+
+#[test]
+fn test_tex_zhu_pay_rejects_fractional_hac_balance() {
+    use crate::tex::*;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&field::ADDRESS_ONEX).unwrap_or_default();
+        let half = Amount::zhu(1).ratio_floor(1, 2).unwrap();
+        bls.hacash = Amount::zhu(1).add_mode_u128(&half).unwrap();
+        state.balance_set(&field::ADDRESS_ONEX, &bls);
+    }
+
+    let err = CellTrsZhuPay::new(Fold64::from(1).unwrap())
+        .execute(&mut ctx, &field::ADDRESS_ONEX)
+        .unwrap_err();
+    assert!(err.contains("whole-zhu"), "{}", err);
+}
+
+#[test]
+fn test_tex_zhu_get_rejects_balance_below_one_zhu() {
+    use crate::tex::*;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&field::ADDRESS_ONEX).unwrap_or_default();
+        bls.hacash = Amount::zhu(1).ratio_floor(1, 2).unwrap();
+        state.balance_set(&field::ADDRESS_ONEX, &bls);
+    }
+
+    let err = CellTrsZhuGet::new(Fold64::from(1).unwrap())
+        .execute(&mut ctx, &field::ADDRESS_ONEX)
+        .unwrap_err();
+    assert!(err.contains("zero or at least 1 zhu"), "{}", err);
+}
+
+#[test]
+fn test_tex_zhu_condition_accepts_exact_one_zhu() {
+    use crate::tex::*;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&field::ADDRESS_ONEX).unwrap_or_default();
+        bls.hacash = Amount::zhu(1);
+        state.balance_set(&field::ADDRESS_ONEX, &bls);
+    }
+
+    CellCondZhuEq::new(Fold64::from(1).unwrap())
+        .execute(&mut ctx, &field::ADDRESS_ONEX)
+        .unwrap();
+}
+
 #[test]
 fn test_address_bare_base58check_in_protocol() {
     // Verify Address can parse from JSON with bare base58check (no b58: prefix)
@@ -855,7 +963,6 @@ fn test_address_bare_base58check_in_protocol() {
 
     // Verify AddrOrPtr with Address parses bare base58check
     let mut ptr = AddrOrPtr::default();
-    ptr.from_json(&format!(r#""{}""#, addr_str))
-        .unwrap();
+    ptr.from_json(&format!(r#""{}""#, addr_str)).unwrap();
     assert_eq!(ptr.to_readable(), addr_str);
 }

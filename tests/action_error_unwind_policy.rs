@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,7 +11,7 @@ use protocol::operate::{
     hac_sub, hacd_sub, hacd_transfer, sat_check, sat_sub, sat_transfer,
 };
 use protocol::state::CoreState;
-use sys::{decode_exec_error_from_text, XError, XRet, Error, IntoXRet, Ret};
+use sys::{Error, IntoXRet, Ret, XError, XRet, decode_exec_error_from_text};
 use testkit::sim::integration::{
     make_ctx_from_tx as make_ctx, make_stub_tx as make_tx, test_guard, vm_alt_addr as alt_addr,
     vm_main_addr as main_addr,
@@ -111,7 +110,10 @@ fn guard_action_failures_are_revert() {
     let mut out_of_range = HeightScope::new();
     out_of_range.start = BlockHeight::from(200);
     out_of_range.end = BlockHeight::from(300);
-    expect_revert_bret(out_of_range.execute(&mut ctx), "submitted in height between");
+    expect_revert_bret(
+        out_of_range.execute(&mut ctx),
+        "submitted in height between",
+    );
 
     let mut allow = ChainAllow::new();
     allow.chains = ChainIDList::from_list(vec![Uint4::from(1), Uint4::from(2)]).unwrap();
@@ -276,19 +278,15 @@ fn vm_throw_abort_and_action_pass_through_policy() {
         ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
     assert!(decode_exec_error_from_text(throw_abort_wire).is_revert());
 
-    let action_revert: XError =
-        ItrErr(ItrErrCode::ActCallRevert, "biz fail".to_owned()).into();
+    let action_revert: XError = ItrErr(ItrErrCode::ActCallRevert, "biz fail".to_owned()).into();
     assert!(action_revert.is_revert(), "{action_revert}");
     assert!(action_revert.contains("ActCallRevert"), "{action_revert}");
-    let action_revert_wire: Error =
-        ItrErr(ItrErrCode::ActCallRevert, "biz fail".to_owned()).into();
+    let action_revert_wire: Error = ItrErr(ItrErrCode::ActCallRevert, "biz fail".to_owned()).into();
     assert!(decode_exec_error_from_text(action_revert_wire).is_revert());
 
-    let action_fault: XError =
-        ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
+    let action_fault: XError = ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
     assert!(action_fault.is_fault(), "{action_fault}");
-    let action_fault_wire: Error =
-        ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
+    let action_fault_wire: Error = ItrErr(ItrErrCode::ActCallError, "plain fail".to_owned()).into();
     assert!(decode_exec_error_from_text(action_fault_wire).is_fault());
 }
 

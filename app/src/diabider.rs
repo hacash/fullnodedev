@@ -109,12 +109,12 @@ fn check_bidding_step(
         retry!(3); // tx pool empty
     };
 
-    let first_bid_addr = first_bid_txp.objc.main();
+    let first_bid_addr = first_bid_txp.objc().main();
     if my_addr == first_bid_addr {
         retry!(1); // im the first
     }
 
-    let first_bid_fee = first_bid_txp.objc.fee();
+    let first_bid_fee = first_bid_txp.objc().fee();
     if *first_bid_fee > engcnf.dmer_bid_max {
         retry!(10); // my max too low
     }
@@ -127,12 +127,12 @@ fn check_bidding_step(
         retry!(3); // have no my tx
     };
 
-    let my_bid_addr = my_bid_txp.objc.main();
+    let my_bid_addr = my_bid_txp.objc().main();
     if my_bid_addr == first_bid_addr {
         retry!(1); // im the first
     }
 
-    let my_bid_fee = my_bid_txp.objc.fee();
+    let my_bid_fee = my_bid_txp.objc().fee();
     if my_bid_fee >= &engcnf.dmer_bid_max {
         retry!(5); // my fee up max
     }
@@ -152,7 +152,7 @@ fn check_bidding_step(
         retry!(10); // my max too low
     }
     // ok
-    if let Some(mint) = pickout_diamond_mint_action(my_bid_txp.objc.as_read()) {
+    if let Some(mint) = pickout_diamond_mint_action(my_bid_txp.objc().as_read()) {
         let act = mint.d;
         let dia = act.diamond.to_readable();
         let dnum = *act.number;
@@ -172,7 +172,7 @@ fn check_bidding_step(
     }
 
     // raise fee
-    let mut my_tx = my_bid_txp.objc;
+    let mut my_tx = my_bid_txp.objc_box().clone();
     my_tx.set_fee(new_bid_fee.clone());
     let _ = my_tx.fill_sign(&engcnf.dmer_bid_account);
     let txp = TxPkg::create(my_tx);
@@ -198,7 +198,7 @@ fn pick_first_and_my_bid_tx(
         if first.is_none() {
             first = Some(a.clone());
         }
-        if mine.is_none() && *my_addr == a.objc.main() {
+        if mine.is_none() && *my_addr == a.objc().main() {
             mine = Some(a.clone());
         }
         if first.is_some() && mine.is_some() {

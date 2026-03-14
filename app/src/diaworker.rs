@@ -199,8 +199,9 @@ fn run_diamond_worker_thread(
     let current_mining_block_hash: Hash = { MINING_DIAMOND_STUFF.read().unwrap().clone() };
 
     // start mining
-    let mut custom_nonce = Hash::default();
-    getrandom::fill(custom_nonce.as_mut()).unwrap();
+    let mut custom_nonce = [0u8; HASH_WIDTH];
+    getrandom::fill(&mut custom_nonce).unwrap();
+    let custom_nonce = Hash::from(custom_nonce);
     // 说明：这里所有线程都从 nonce_start = 0 开始并不是 BUG。
     // 因为上面已经为每个线程/任务生成了随机的 custom_nonce，
     // 这会导致 x16rs::mine_diamond 的输入不同，
@@ -377,7 +378,7 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
     // println!("mining next num: {} {}", &mining_num, &next_num);
     if next_num == 1 {
         // println!("get latest: next_num == 1");
-        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_ptr().objc.hash();
+        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_ptr().objc().hash();
         MINING_DIAMOND_NUM.store(next_num, Relaxed);
         return; // first mining
     }

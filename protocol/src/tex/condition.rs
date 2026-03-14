@@ -26,13 +26,9 @@ impl CellExec for $class {
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
         let bls = CoreState::wrap(ctx.state()).balance(taradr).unwrap_or_default();
         let err = ||errf!("cell condition zhu check failed");
-        let Ok(zhu) = bls.hacash.to_zhu_u128() else {
+        let Ok(zhu) = tex_hac_amount_must_whole_zhu(&bls.hacash) else {
             return err();
         };
-        if zhu > u64::MAX as u128 {
-            return err();
-        }
-        let zhu = zhu as u64;
         let cnd = self.haczhu.uint().$check_op(&zhu);
         maybe!(cnd, Ok(()), err())
     }

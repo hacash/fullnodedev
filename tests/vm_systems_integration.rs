@@ -1,10 +1,9 @@
-
 use std::sync::Arc;
 
 use basis::interface::ActExec;
 use basis::interface::{Context, State};
 use field::{Address, Amount, Field, Uint4};
-use sys::{XRet, IntoTRet, Ret};
+use sys::{IntoTRet, Ret, XRet};
 use testkit::sim::integration::{
     make_ctx_from_tx as make_ctx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
     vm_main_addr as main_addr,
@@ -46,7 +45,9 @@ fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
     let height = ctx.env().block.height;
     let mut machine = Machine::create(Resoure::create(height));
     let mut exenv = ExecEnv { ctx, gas: &mut gas };
-    machine.main_call(&mut exenv, CodeType::Bytecode, codes.into()).into_tret()
+    machine
+        .main_call(&mut exenv, CodeType::Bytecode, codes.into())
+        .into_tret()
 }
 
 fn single_call_codes(lib_idx: u8, sig: FnSign) -> Vec<u8> {

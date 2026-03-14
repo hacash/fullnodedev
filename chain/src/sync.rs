@@ -48,8 +48,8 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
                 };
                 let mut pkg = BlkPkg::from(blkobj, datas.clone(), seek, size);
                 seek += size;
-                if pkg.hein != need_blk_hei {
-                    let _ = errch_parse.send(format!("expected block height {} but got {}", need_blk_hei, pkg.hein));
+                if pkg.hein() != need_blk_hei {
+                    let _ = errch_parse.send(format!("expected block height {} but got {}", need_blk_hei, pkg.hein()));
                     break;
                 }                
                 pkg.set_origin(ori); // Sync or Rebuild
@@ -61,7 +61,7 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
         s.spawn(move || {
             loop {
                 let Ok(blk) = blkcv.recv() else { break };
-                let hei = blk.hein;
+                let hei = blk.hein();
                 let rid = match insert_by(this, tree, blk) {
                     Err(e) => {
                         let _ = errch1.send(format!("insert {} failed: {}", hei, e));

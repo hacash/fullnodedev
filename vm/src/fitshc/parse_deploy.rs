@@ -163,7 +163,6 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
     Ok(info)
 }
 
-
 #[cfg(test)]
 mod parse_deploy_tests {
     use super::*;

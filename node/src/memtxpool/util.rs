@@ -1,7 +1,11 @@
 
 macro_rules! purity_or_fee {
     ($self:ident, $txp:expr, $opt:tt, $hav:expr) => {
-        maybe!($self.fpmd, $txp.fpur $opt $hav.fpur, $txp.objc.fee() $opt $hav.objc.fee() )
+        maybe!(
+            $self.fpmd,
+            $txp.fpur() $opt $hav.fpur(),
+            $txp.objc().fee() $opt $hav.objc().fee()
+        )
     };
 }
 
@@ -19,8 +23,8 @@ fn scan_group_rng_by_feep(txpkgs: &Vec<TxPkg>, feep: u64, fee: &Amount, fpmd: bo
         }
         let fct = rxl + rng/2;
         let ct = &txpkgs[fct];
-        let lcd = maybe!( fpmd, feep > ct.fpur, fee > ct.objc.fee() ); // fee
-        let rcd = maybe!( fpmd, feep < ct.fpur, fee < ct.objc.fee() ); // fee puery
+        let lcd = maybe!( fpmd, feep > ct.fpur(), fee > ct.objc().fee() ); // fee
+        let rcd = maybe!( fpmd, feep < ct.fpur(), fee < ct.objc().fee() ); // fee puery
         if lcd {
             rxr = fct; // in left
         } else if rcd {
@@ -33,4 +37,3 @@ fn scan_group_rng_by_feep(txpkgs: &Vec<TxPkg>, feep: u64, fee: &Amount, fpmd: bo
     // ok
     (rxl, rxr)
 }
-

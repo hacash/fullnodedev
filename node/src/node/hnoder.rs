@@ -9,7 +9,7 @@ impl HNoder for HacashNode {
 
 
     fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool, only_insert_txpool: bool) -> Rerr {
-        let txread = txpkg.objc.as_read();
+        let txread = txpkg.objc().as_read();
         self.engine.try_execute_tx(txread)?;
         if only_insert_txpool {
             // Direct insert to txpool, no channel, no broadcast
@@ -19,7 +19,7 @@ impl HNoder for HacashNode {
             return Ok(());
         }
         let msghdl = self.msghdl.clone();
-        let txbody = txpkg.data.to_vec();
+        let txbody = txpkg.data().to_vec();
         let runobj = async move {
             msghdl.submit_transaction(txbody).await;
         };
@@ -35,7 +35,7 @@ impl HNoder for HacashNode {
         // NOT do any check
         // insert
         let msghdl = self.msghdl.clone();
-        let blkbody = blkpkg.data.to_vec();
+        let blkbody = blkpkg.data().to_vec();
         let runobj = async move {
             msghdl.submit_block(blkbody).await;
         };

@@ -44,9 +44,15 @@ fn try_consume_display_lib_prelude(tokens: &[Token], start: usize) -> Option<usi
         return None;
     }
     idx += 1;
-    if matches!(tokens.get(idx), Some(Token::Keyword(KwTy::Colon)) | Some(Token::Partition(':'))) {
+    if matches!(
+        tokens.get(idx),
+        Some(Token::Keyword(KwTy::Colon)) | Some(Token::Partition(':'))
+    ) {
         idx += 1;
-        if !matches!(tokens.get(idx), Some(Token::Address(_)) | Some(Token::Identifier(_))) {
+        if !matches!(
+            tokens.get(idx),
+            Some(Token::Address(_)) | Some(Token::Identifier(_))
+        ) {
             return None;
         }
         idx += 1;
@@ -68,7 +74,10 @@ fn try_consume_display_const_prelude(tokens: &[Token], start: usize) -> Option<u
         return None;
     }
     idx += 1;
-    if !matches!(tokens.get(idx), Some(Token::Integer(_)) | Some(Token::Bytes(_)) | Some(Token::Address(_))) {
+    if !matches!(
+        tokens.get(idx),
+        Some(Token::Integer(_)) | Some(Token::Bytes(_)) | Some(Token::Address(_))
+    ) {
         return None;
     }
     Some(idx + 1)

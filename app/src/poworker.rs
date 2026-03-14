@@ -231,8 +231,9 @@ fn run_block_mining_item(
         delay_return_ms!(111); // not yet
     }
 
-    let mut coinbase_nonce = Hash::default();
-    getrandom::fill(coinbase_nonce.as_mut()).unwrap();
+    let mut coinbase_nonce = [0u8; HASH_WIDTH];
+    getrandom::fill(&mut coinbase_nonce).unwrap();
+    let coinbase_nonce = Hash::from(coinbase_nonce);
     // 说明：这里所有线程都从 nonce_start = 0 开始并不是 BUG。
     // 因为上面已经为每个线程/任务生成了随机的 coinbase_nonce，
     // 这会导致 block_intro (即区块头 hash) 完全不同，

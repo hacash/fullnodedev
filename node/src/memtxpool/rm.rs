@@ -43,7 +43,7 @@ impl TxGroup {
     fn del_one(&mut self, hx: &Hash) -> bool {
         let mut rmidx: usize = 0;
         for tx in self.txpkgs.iter() {
-            if tx.hash == *hx {
+            if tx.hash() == *hx {
                 self.txpkgs.remove(rmidx);
                 return true
             }

@@ -64,8 +64,8 @@ impl TxPool for MemTxPool {
 
     // insert to target group
     fn insert_at(&self, gi: usize, txp: TxPkg) -> Rerr { 
-        if txp.fpur < self.lowest_fepr {
-            return errf!("tx fee purity {} too low to add txpool", txp.fpur)
+        if txp.fpur() < self.lowest_fepr {
+            return errf!("tx fee purity {} too low to add txpool", txp.fpur())
         }
         // let test_hex_show = txp.data.to_hex();
         self.check_group_id(gi)?;

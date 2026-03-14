@@ -235,7 +235,6 @@ pub fn check_action_level(
     } else if alv == ActLv::TopOnlyWithGuard {
         check_top_source()?;
         check_level_top!{"TOP_ONLY_WITH_GUARD"}
-        // Order is intentionally unrestricted: guard actions do not need to be a prefix.
         let mut non_guard = 0;
         for txact in actions {
             if txact.level() != ActLv::Guard {

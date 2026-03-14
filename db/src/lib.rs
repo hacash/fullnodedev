@@ -1,8 +1,8 @@
 use std::path::*;
 use std::sync::OnceLock;
 
-use sys::{Rerr};
 use basis::interface::*;
+use sys::Rerr;
 
 /*****************************/
 
@@ -31,7 +31,12 @@ fn db_sync_enabled() -> bool {
     *DB_SYNC.get_or_init(|| {
         std::env::var("HACASH_DB_SYNC")
             .ok()
-            .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .map(|v| {
+                matches!(
+                    v.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
             .unwrap_or(false)
     })
 }

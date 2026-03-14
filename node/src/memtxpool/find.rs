@@ -3,7 +3,7 @@ impl TxGroup {
 
     fn search(&self, txhx: &Hash) -> Option<usize> {
         for (i, txp) in self.txpkgs.iter().enumerate() {
-            if *txhx == txp.hash {
+            if *txhx == txp.hash() {
                 return Some(i);
             }
         }

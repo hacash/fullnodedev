@@ -9,21 +9,21 @@ async fn handle_new_tx(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: Vec
         return // parse tx error
     };
     // tx hash with fee
-    let hxfe = txpkg.objc.hash_with_fee();
+    let hxfe = txpkg.objc().hash_with_fee();
     let (already, knowkey) = check_know(&this.knows, &hxfe, peer.clone());
     if already {
         return  // alreay know it
     }
     // println!("- devtest p2p recv new tx: {}, {}", txpkg.objc.hash().half(), hxfe.nonce());
     // check fee purity
-    if txpkg.fpur < engcnf.lowest_fee_purity {
+    if txpkg.fpur() < engcnf.lowest_fee_purity {
         return // tx fee purity too low to broadcast
     }
-    if txpkg.data.len() > engcnf.max_tx_size {
+    if txpkg.data().len() > engcnf.max_tx_size {
         return // tx size overflow
     }
-    let txdatas = txpkg.data.to_vec();
-    let txpr = txpkg.objc.as_read();
+    let txdatas = txpkg.data().to_vec();
+    let txpr = txpkg.objc().as_read();
     // try execute and check tx
     if let Err(..) = this.engine.try_execute_tx(txpr) {
         return // tx execute fail
@@ -92,7 +92,7 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
         let mut blkp = blkpkg.unwrap();
         blkp.set_origin( BlkOrigin::Discover );
         may_show_miner_detail(engcnf, &blkp);
-        let thsx = blkp.objc.transaction_hash_list(false); // hash no fee
+        let thsx = blkp.objc().transaction_hash_list(false); // hash no fee
         if let Err(e) = engptr.discover(blkp) {
             println!("Error: {}", e);
             // println!("- error block data hex: {}", body.to_hex());
@@ -135,7 +135,7 @@ fn may_show_miner_detail(engcnf: &EngineConf, blkp: &BlkPkg) {
         return
     }
     // devtest start
-    let Ok(cbtx) = blkp.objc.coinbase_transaction() else {
+    let Ok(cbtx) = blkp.objc().coinbase_transaction() else {
         return
     };
     let adrt = cbtx.main().to_readable().drain(..9).collect::<String>();
