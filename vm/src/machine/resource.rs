@@ -103,7 +103,6 @@ impl Resoure {
 #[cfg(test)]
 mod resource_tests {
     use super::*;
-    use field::Address as FieldAddress;
     use sys::XRet;
 
     struct GasHost {

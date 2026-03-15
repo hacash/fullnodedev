@@ -8,7 +8,6 @@ mod tests {
     use vm::ContractAddress;
     use vm::interpreter::execute_code;
     use vm::machine::VmHost;
-    use vm::rt::SpaceCap;
     use vm::rt::{Bytecode, ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes};
     use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
     use vm::{ContractEdition, ContractSto, VmLog};

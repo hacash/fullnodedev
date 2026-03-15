@@ -8,7 +8,7 @@ mod bounds_tests {
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
     use crate::value::{CompoItem, Value, ValueTy, RESERVED_U256_TYPE_ID};
     use crate::{ContractAddress, ContractEdition, ContractSto};
-    use field::Address as FieldAddress;
+    use field::Address;
     use sys::{XError, XRet};
 
     trait TestGasHost {
@@ -23,8 +23,8 @@ mod bounds_tests {
         operands: &mut Stack,
         locals: &mut Stack,
         heap: &mut Heap,
-        context_addr: &FieldAddress,
-        current_addr: &FieldAddress,
+        context_addr: &Address,
+        current_addr: &Address,
         gas_usable: &mut i64,
         gas_table: &GasTable,
         gas_extra: &GasExtra,
@@ -994,7 +994,7 @@ mod bounds_tests {
 
         let expect = gas_table.gas(Bytecode::NTENV as u8)
             + NativeEnv::gas(idx).unwrap()
-            + gas_extra.ntfunc_bytes(FieldAddress::SIZE)
+            + gas_extra.ntfunc_bytes(Address::SIZE)
             + gas_table.gas(Bytecode::END as u8);
         assert_eq!(1000 - gas, expect);
     }
@@ -1139,7 +1139,7 @@ mod bounds_tests {
         let expect = gas_table.gas(Bytecode::ITEMGET as u8)
             + gas_table.gas(Bytecode::END as u8)
             + gas_extra.compo_items_read(1)
-            + gas_extra.compo_bytes(FieldAddress::SIZE);
+            + gas_extra.compo_bytes(Address::SIZE);
         assert_eq!(1000 - gas, expect);
     }
 

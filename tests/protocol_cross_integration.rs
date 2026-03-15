@@ -92,7 +92,7 @@ impl ToJSON for AstTestSet {
 
 impl FromJSON for AstTestSet {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "key" {
                 self.key.from_json(v)?;
@@ -1253,7 +1253,7 @@ impl ToJSON for AstTestLog {
 }
 impl FromJSON for AstTestLog {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "tag" {
                 self.tag.from_json(v)?;
@@ -1318,7 +1318,7 @@ impl ToJSON for AstTestTexAdd {
 }
 impl FromJSON for AstTestTexAdd {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "zhu_add" {
                 self.zhu_add.from_json(v)?;
@@ -1383,7 +1383,7 @@ impl ToJSON for AstTestP2shSetN {
 }
 impl FromJSON for AstTestP2shSetN {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "addr_byte" {
                 self.addr_byte.from_json(v)?;
@@ -1465,7 +1465,7 @@ impl ToJSON for AstTestCombo {
 }
 impl FromJSON for AstTestCombo {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "key" {
                 self.key.from_json(v)?;
@@ -3699,7 +3699,7 @@ impl ToJSON for AstTestMainSet {
 }
 impl FromJSON for AstTestMainSet {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "key" {
                 self.key.from_json(v)?;
@@ -3766,7 +3766,7 @@ impl ToJSON for AstTestMainP2shSetN {
 }
 impl FromJSON for AstTestMainP2shSetN {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "addr_byte" {
                 self.addr_byte.from_json(v)?;
@@ -3893,7 +3893,7 @@ impl ToJSON for AstTestRet {
 }
 impl FromJSON for AstTestRet {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "tag" {
                 self.tag.from_json(v)?;
@@ -3975,7 +3975,7 @@ impl ToJSON for AstTestMutateAllFail {
 }
 impl FromJSON for AstTestMutateAllFail {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "key" {
                 self.key.from_json(v)?;
@@ -4242,7 +4242,7 @@ impl ToJSON for AstTestExtCall {
 }
 impl FromJSON for AstTestExtCall {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let pairs = json_split_object(json);
+        let pairs = json_split_object(json)?;
         for (k, v) in pairs {
             if k == "key" {
                 self.key.from_json(v)?;

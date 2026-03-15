@@ -363,7 +363,7 @@ mod shift_u64_tests {
 
     #[test]
     fn eq_neq_reject_different_non_uint_types() {
-        let adr = FieldAddress::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let adr = field::Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         assert!(lgc_equal(&Value::U16(1), &Value::Bytes(vec![1])).is_err());
         assert!(lgc_equal(&Value::U8(1), &Value::Bool(true)).is_err());
         assert!(lgc_equal(&Value::Nil, &Value::Bool(false)).is_err());

@@ -696,13 +696,15 @@ return C.0xabcdef01(1, 2)",
 
         fn execute_and_get_value(script: &str) -> u64 {
             use crate::machine::VmHost;
-            use crate::rt::{ExecCtx, GasExtra, GasTable, SpaceCap};
+            use crate::rt::{ExecCtx, FrameBindings, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
             use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
             use crate::value::Value;
+            use crate::{ContractAddress, ContractEdition, ContractSto};
             use basis::component::Env;
-            use field::Address as FieldAddress;
+            use field::Address;
             use protocol::context::ContextInst;
             use protocol::state::EmptyLogs;
+            use sys::XRet;
             use std::collections::HashMap;
 
             #[derive(Default, Clone, Debug)]
@@ -782,11 +784,11 @@ return C.0xabcdef01(1, 2)",
 
                 fn gas_charge(&mut self, gas: i64) -> VmrtErr {
                     if gas < 0 {
-                        return itr_err_fmt!(GasError, "gas cost invalid: {}", gas);
+                        return Err(ItrErr::new(ItrErrCode::GasError, &format!("gas cost invalid: {}", gas)));
                     }
                     self.gas_remaining -= gas;
                     if self.gas_remaining < 0 {
-                        return itr_err_code!(OutOfGas);
+                        return Err(ItrErr::code(ItrErrCode::OutOfGas));
                     }
                     Ok(())
                 }
@@ -810,27 +812,28 @@ return C.0xabcdef01(1, 2)",
                 }
 
                 fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
-                    let hei = self.ctx.env().block.height;
-                    crate::VMState::wrap(self.ctx.state()).srest(hei, addr, key)
+                    let _ = (addr, key);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
                 fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
-                    let hei = self.ctx.env().block.height;
-                    crate::VMState::wrap(self.ctx.state()).sload(hei, addr, key)
+                    let _ = (addr, key);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
                 fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
-                    crate::VMState::wrap(self.ctx.state()).sdel(addr, key)
+                    let _ = (addr, key);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
                 fn ssave(&mut self, gst: &GasExtra, addr: &Address, key: Value, val: Value) -> VmrtRes<i64> {
-                    let hei = self.ctx.env().block.height;
-                    crate::VMState::wrap(self.ctx.state()).ssave(gst, hei, addr, key, val)
+                    let _ = (gst, addr, key, val);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
                 fn srent(&mut self, gst: &GasExtra, addr: &Address, key: Value, period: Value) -> VmrtRes<i64> {
-                    let hei = self.ctx.env().block.height;
-                    crate::VMState::wrap(self.ctx.state()).srent(gst, hei, addr, key, period)
+                    let _ = (gst, addr, key, period);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
                 }
             }
 
