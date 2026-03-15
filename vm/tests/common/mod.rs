@@ -2,6 +2,7 @@
 
 use basis::component::Env;
 use basis::interface::Context;
+use field::Address as FieldAddress;
 use testkit::sim::context::make_ctx_with_state;
 use testkit::sim::state::FlatMemState;
 use testkit::sim::tx::DummyTx;
@@ -10,7 +11,7 @@ use vm::IRNode;
 use vm::interpreter::execute_code;
 use vm::ir::{convert_ir_to_bytecode, parse_ir_block};
 use vm::lang::*;
-use vm::machine::CtxHost;
+use vm::machine::VmHost;
 use vm::rt::Bytecode::*;
 use vm::rt::{
     Bytecode, BytecodePrint, ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes,
@@ -18,6 +19,81 @@ use vm::rt::{
 use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
 use vm::value::ValueTy::*;
 use vm::value::{Value, ValueTy};
+use vm::{ContractEdition, ContractSto, VmLog};
+use vm::rt::FrameBindings;
+
+struct TestVmHost<'a> {
+    ctx: &'a mut dyn Context,
+    gas_remaining: i64,
+}
+
+impl VmHost for TestVmHost<'_> {
+    fn height(&self) -> u64 {
+        self.ctx.env().block.height
+    }
+
+    fn main_entry_bindings(&self) -> FrameBindings {
+        FrameBindings::root(self.ctx.tx().main(), self.ctx.env().tx.addrs.clone().into())
+    }
+
+    fn gas_remaining(&self) -> i64 {
+        self.gas_remaining
+    }
+
+    fn gas_charge(&mut self, gas: i64) -> VmrtRes<()> {
+        if gas < 0 {
+            return Err(ItrErr::new(ItrErrCode::GasError, &format!("gas cost invalid: {}", gas)));
+        }
+        self.gas_remaining -= gas;
+        if self.gas_remaining < 0 {
+            return Err(ItrErr::code(ItrErrCode::OutOfGas));
+        }
+        Ok(())
+    }
+
+    fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
+        vm::VMState::wrap(self.ctx.state()).contract_edition(addr)
+    }
+
+    fn contract(&mut self, addr: &ContractAddress) -> Option<ContractSto> {
+        vm::VMState::wrap(self.ctx.state()).contract(addr)
+    }
+
+    fn action_call(&mut self, kid: u16, body: Vec<u8>) -> sys::XRet<(u32, Vec<u8>)> {
+        self.ctx.action_call(kid, body)
+    }
+
+    fn log_push(&mut self, addr: &FieldAddress, items: Vec<Value>) -> VmrtRes<()> {
+        let lgdt = VmLog::new(*addr, items)?;
+        self.ctx.logs().push(&lgdt);
+        Ok(())
+    }
+
+    fn srest(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+        let _ = (addr, key);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn sload(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+        let _ = (addr, key);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn sdel(&mut self, addr: &FieldAddress, key: Value) -> VmrtRes<()> {
+        let _ = (addr, key);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn ssave(&mut self, gst: &GasExtra, addr: &FieldAddress, key: Value, val: Value) -> VmrtRes<i64> {
+        let _ = (gst, addr, key, val);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn srent(&mut self, gst: &GasExtra, addr: &FieldAddress, key: Value, period: Value) -> VmrtRes<i64> {
+        let _ = (gst, addr, key, period);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+}
 
 fn ensure_ir_roundtrip(bytes: &[u8]) {
     let mut idx = 0;
@@ -150,8 +226,8 @@ pub fn build_push_params(params: &str) -> sys::Ret<Vec<u8>> {
                 }
             }
             Address => {
-                if let Ok(adr) = field::Address::from_readable(v) {
-                    push!(PBUF, field::Address::SIZE);
+                if let Ok(adr) = FieldAddress::from_readable(v) {
+                    push!(PBUF, FieldAddress::SIZE);
                     codes.extend_from_slice(&adr.into_vec());
                     push!(CTO, ty);
                 }
@@ -190,7 +266,7 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
     codes.extend_from_slice(&body_codes);
 
     let mut pc = 0usize;
-    let mut gas: i64 = 65535;
+    let gas: i64 = 65535;
     let cadr = ContractAddress::default();
 
     let tx = DummyTx::default();
@@ -201,7 +277,10 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
 
     let mut ops = Stack::new(256);
     let mut heap = Heap::new(64);
-    let mut host = CtxHost::new(ctx);
+    let mut host = TestVmHost {
+        ctx,
+        gas_remaining: gas,
+    };
 
     execute_code(
         &mut pc,
@@ -212,7 +291,6 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         &mut heap,
         &cadr,
         &cadr,
-        &mut gas,
         &GasTable::new(1),
         &GasExtra::new(1),
         &SpaceCap::new(1),

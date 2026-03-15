@@ -144,7 +144,7 @@ macro_rules! ostbranch {
 * Callers must only execute bytecode already accepted by rt/verify.
 */
 
-pub fn execute_code(
+pub fn execute_code<H: VmHost + ?Sized>(
     // frame local
     pc: &mut usize,
     codes: &[u8],
@@ -155,13 +155,12 @@ pub fn execute_code(
     context_addr: &field::Address,
     current_addr: &field::Address,
     // shared runtime
-    gas_usable: &mut i64,
     gas_table: &GasTable,
     gas_extra: &GasExtra,
     space_cap: &SpaceCap,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
-    host: &mut dyn VmHost,
+    host: &mut H,
 ) -> VmrtRes<CallExit> {
 
     use Bytecode::*;
@@ -178,7 +177,6 @@ pub fn execute_code(
     // let codelen = codes.len();
     // let tail = codelen;
 
-    macro_rules! check_gas { () => { if *gas_usable < 0 { return itr_err_code!(OutOfGas); } }; }
     macro_rules! nsr { () => { if exec.effect == EffectMode::Pure { return itr_err_code!(InstDisabled); } }; } // not read in pure mode
     macro_rules! nsw { () => { if matches!(exec.effect, EffectMode::Pure | EffectMode::View) { return itr_err_code!(InstDisabled); } }; } // not write in view/pure mode
     macro_rules! pu8 { () => { itrparamu8!(codes, *pc) }; }
@@ -211,9 +209,7 @@ pub fn execute_code(
         // debug_print_stack(ops, locals, pc, instruction);
 
         // do execute
-        let mut gas: i64 = 0;
-        *gas_usable -= gas_table.gas(instbyte); //
-                                                // println!("gas usable {} cp: {}, inst: {:?}", *gas_usable, gas_table.gas(instbyte), instruction);
+        let mut gas = gas_table.gas(instbyte);
 
         macro_rules! actcall { ($act_kind: expr) => {{
             let act_kind = $act_kind;
@@ -687,7 +683,7 @@ pub fn execute_code(
                     nsr!();
                     let v = {
                         let k = ops.peek()?;
-                        host.srest(hei, context_addr, k)?
+                        host.srest(context_addr, k)?
                     }
                     .valid(cap)?;
                     *ops.peek()? = v;
@@ -696,7 +692,7 @@ pub fn execute_code(
                     nsr!();
                     let v = {
                         let k = ops.peek()?;
-                        host.sload(hei, context_addr, k)?
+                        host.sload(context_addr, k)?
                     }
                     .valid(cap)?;
                     let vlen = v.val_size();
@@ -713,13 +709,13 @@ pub fn execute_code(
                     nsw!();
                     let v = ops.pop()?.valid(cap)?;
                     let k = ops.pop()?;
-                    gas += host.ssave(gst, hei, context_addr, k, v)?;
+                    gas += host.ssave(gst, context_addr, k, v)?;
                 }
                 SRENT => {
                     nsw!();
                     let t = ops.pop()?;
                     let k = ops.pop()?;
-                    gas += host.srent(gst, hei, context_addr, k, t)?;
+                    gas += host.srent(gst, context_addr, k, t)?;
                 }
                 // global_map & memory_map
                 GPUT => kvput!(global_map, gst.global_key_cost),
@@ -798,9 +794,8 @@ pub fn execute_code(
             Ok(Step::Continue)
         })();
 
-        // reduce gas for use
-        *gas_usable -= gas; // more gas use
-        check_gas!();
+        // reduce gas for use after the instruction completes; out-of-gas overrides the instruction result.
+        host.gas_charge(gas)?;
         match step {
             Ok(Step::Exit(exit)) => return Ok(exit),
             Ok(Step::Continue) => {}

@@ -1,8 +1,8 @@
 impl CallFrame {
-    pub fn start_call(
+    pub fn start_call<H: VmHost + ?Sized>(
         &mut self,
         r: &mut Resoure,
-        env: &mut ExecEnv,
+        host: &mut H,
         exec: ExecCtx,
         code: &FnObj,
         bindings: FrameBindings,
@@ -12,7 +12,7 @@ impl CallFrame {
         macro_rules! curr { () => { self.frames.last().unwrap() }; }
         macro_rules! curr_mut { () => { self.frames.last_mut().unwrap() }; }
 
-        let height = env.ctx.env().block.height;
+        let height = host.height();
 
         exec.ensure_call_depth(&r.space_cap)?;
         let mut root = self.increase(r)?;
@@ -20,7 +20,7 @@ impl CallFrame {
         self.push(root);
 
         loop {
-            let exit = curr_mut!().execute(r, env)?;
+            let exit = curr_mut!().execute(r, host)?;
             match exit {
                 Call(spec) => {
                     let curr_exec = curr!().exec;
@@ -30,7 +30,7 @@ impl CallFrame {
                     if matches!(spec, CallSpec::Invoke { .. }) {
                         curr_mut!().oprnds.peek()?.canbe_func_argv()?;
                     }
-                    let plan = r.plan_user_call(env.ctx, &mut *env.gas, &spec, &curr_bindings)?;
+                    let plan = r.plan_user_call(host, &spec, &curr_bindings)?;
 
                     match spec {
                         CallSpec::Splice { .. } => {

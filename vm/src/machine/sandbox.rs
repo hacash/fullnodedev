@@ -17,7 +17,7 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
 
     let gascp = GasExtra::new(hei);
     let gas_limit = gascp.max_gas_of_tx;
-    let gas = &mut gas_limit.clone();
+    ctx.gas_init_tx(gas_limit, gascp.gas_rate)?;
 
     let mut codes: Vec<u8> = vec![];
     parse_push_params(&mut codes, params)?;
@@ -34,11 +34,15 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
     // Intentionally do not restore level: sandbox call is one-shot and its context
     // state is discarded by the caller after return.
     ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
-    let mut exenv = ExecEnv{ ctx, gas };
+    let gas_before = ctx.gas_remaining();
     let mut vmb = global_machine_manager().assign(hei);
-    let res = vmb.machine.as_mut().unwrap().main_call_raw(&mut exenv, CodeType::Bytecode, codes.into());
+    let res = vmb
+        .machine
+        .as_mut()
+        .unwrap()
+        .main_call_raw(ctx, CodeType::Bytecode, codes.into());
     res.map(|v|(
-        gas_limit-*gas, v.to_debug_json()
+        gas_before - ctx.gas_remaining(), v.to_debug_json()
     ))
 
 }

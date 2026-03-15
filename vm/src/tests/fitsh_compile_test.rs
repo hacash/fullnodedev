@@ -695,12 +695,12 @@ return C.0xabcdef01(1, 2)",
         use crate::lang::lang_to_bytecode;
 
         fn execute_and_get_value(script: &str) -> u64 {
-            use crate::machine::CtxHost;
+            use crate::machine::VmHost;
             use crate::rt::{ExecCtx, GasExtra, GasTable, SpaceCap};
             use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
             use crate::value::Value;
             use basis::component::Env;
-            use field::Address;
+            use field::Address as FieldAddress;
             use protocol::context::ContextInst;
             use protocol::state::EmptyLogs;
             use std::collections::HashMap;
@@ -759,9 +759,84 @@ return C.0xabcdef01(1, 2)",
                 }
             }
 
+            struct TestVmHost<'a> {
+                ctx: &'a mut dyn basis::interface::Context,
+                gas_remaining: i64,
+            }
+
+            impl VmHost for TestVmHost<'_> {
+                fn height(&self) -> u64 {
+                    self.ctx.env().block.height
+                }
+
+                fn main_entry_bindings(&self) -> FrameBindings {
+                    FrameBindings::root(
+                        self.ctx.tx().main(),
+                        self.ctx.env().tx.addrs.clone().into(),
+                    )
+                }
+
+                fn gas_remaining(&self) -> i64 {
+                    self.gas_remaining
+                }
+
+                fn gas_charge(&mut self, gas: i64) -> VmrtErr {
+                    if gas < 0 {
+                        return itr_err_fmt!(GasError, "gas cost invalid: {}", gas);
+                    }
+                    self.gas_remaining -= gas;
+                    if self.gas_remaining < 0 {
+                        return itr_err_code!(OutOfGas);
+                    }
+                    Ok(())
+                }
+
+                fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
+                    crate::VMState::wrap(self.ctx.state()).contract_edition(addr)
+                }
+
+                fn contract(&mut self, addr: &ContractAddress) -> Option<ContractSto> {
+                    crate::VMState::wrap(self.ctx.state()).contract(addr)
+                }
+
+                fn action_call(&mut self, kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
+                    self.ctx.action_call(kid, body)
+                }
+
+                fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr {
+                    let lgdt = crate::VmLog::new(*addr, items)?;
+                    self.ctx.logs().push(&lgdt);
+                    Ok(())
+                }
+
+                fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+                    let hei = self.ctx.env().block.height;
+                    crate::VMState::wrap(self.ctx.state()).srest(hei, addr, key)
+                }
+
+                fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+                    let hei = self.ctx.env().block.height;
+                    crate::VMState::wrap(self.ctx.state()).sload(hei, addr, key)
+                }
+
+                fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
+                    crate::VMState::wrap(self.ctx.state()).sdel(addr, key)
+                }
+
+                fn ssave(&mut self, gst: &GasExtra, addr: &Address, key: Value, val: Value) -> VmrtRes<i64> {
+                    let hei = self.ctx.env().block.height;
+                    crate::VMState::wrap(self.ctx.state()).ssave(gst, hei, addr, key, val)
+                }
+
+                fn srent(&mut self, gst: &GasExtra, addr: &Address, key: Value, period: Value) -> VmrtRes<i64> {
+                    let hei = self.ctx.env().block.height;
+                    crate::VMState::wrap(self.ctx.state()).srent(gst, hei, addr, key, period)
+                }
+            }
+
             let codes = lang_to_bytecode(script).expect("Failed to compile");
             let mut pc = 0usize;
-            let mut gas: i64 = 65535;
+            let gas: i64 = 65535;
             let cadr = crate::ContractAddress::default();
 
             let tx = DummyTx::default();
@@ -777,7 +852,10 @@ return C.0xabcdef01(1, 2)",
 
             let mut ops = Stack::new(256);
             let mut heap = Heap::new(64);
-            let mut host = CtxHost::new(ctx);
+            let mut host = TestVmHost {
+                ctx,
+                gas_remaining: gas,
+            };
 
             crate::interpreter::execute_code(
                 &mut pc,
@@ -788,7 +866,6 @@ return C.0xabcdef01(1, 2)",
                 &mut heap,
                 &cadr,
                 &cadr,
-                &mut gas,
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),

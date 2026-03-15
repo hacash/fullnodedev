@@ -375,5 +375,5 @@ pub enum Token {
     Integer(u128),
     Character(u8),
     Bytes(Vec<u8>),
-    Address(field::Address),
+    Address(Address),
 }

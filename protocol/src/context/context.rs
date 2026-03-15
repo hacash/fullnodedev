@@ -152,11 +152,8 @@ impl Context for ContextInst<'_> {
     fn gas_remaining(&self) -> i64 {
         self.ctx_gas_remaining()
     }
-    fn gas_consume(&mut self, gas: u32) -> Rerr {
-        self.ctx_gas_consume(gas)
-    }
-    fn vm_gas_mut(&mut self) -> Ret<&mut dyn VmGasMut> {
-        Ok(self)
+    fn gas_charge(&mut self, gas: i64) -> Rerr {
+        self.ctx_gas_charge(gas)
     }
     fn addr(&self, ptr :&AddrOrPtr) -> Ret<Address> {
         self.debug_assert_tx_bound_consistent();
@@ -195,10 +192,4 @@ impl Context for ContextInst<'_> {
     }
     // psh: HashMap<Address, Box<dyn P2sh>>,
 
-}
-
-impl VmGasMut for ContextInst<'_> {
-    fn gas_remaining_mut(&mut self) -> Ret<&mut i64> {
-        self.ctx_gas_remaining_mut()
-    }
 }

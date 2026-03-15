@@ -7,7 +7,7 @@ impl Syntax {
         }
     }
 
-    pub fn bind_lib(&mut self, s: String, idx: u8, adr: Option<field::Address>) -> Rerr {
+    pub fn bind_lib(&mut self, s: String, idx: u8, adr: Option<FieldAddress>) -> Rerr {
         if let Some(..) = self.bdlibs.get(&s) {
             return errf!("<use> symbol '{}' binding already exists", s);
         }

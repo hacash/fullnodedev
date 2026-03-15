@@ -12,7 +12,6 @@ use testkit::sim::logs::MemLogs;
 use testkit::sim::state::FlatMemState as StateMem;
 use vm::action::ContractDeploy;
 use vm::contract::{Contract, Func};
-use vm::frame::ExecEnv;
 use vm::lang::lang_to_bytecode;
 use vm::machine::{self, ContractCacheConfig, Machine, Resoure};
 use vm::rt::{Bytecode, CodeType, EntryKind, FnSign, calc_func_sign};
@@ -41,12 +40,18 @@ fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
 }
 
 fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
-    let mut gas = 1_000_000i64;
+    let main = ctx.env().tx.main;
+    let _ = protocol::operate::hac_add(ctx, &main, &Amount::unit238(1_000_000_000));
+    if let Ok(gas_max) = ctx.tx().fee_extend() {
+        if gas_max > 0 {
+            let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(gas_max)?;
+            ctx.gas_init_tx(budget, gas_rate)?;
+        }
+    }
     let height = ctx.env().block.height;
     let mut machine = Machine::create(Resoure::create(height));
-    let mut exenv = ExecEnv { ctx, gas: &mut gas };
     machine
-        .main_call(&mut exenv, CodeType::Bytecode, codes.into())
+        .main_call(ctx, CodeType::Bytecode, codes.into())
         .into_tret()
 }
 

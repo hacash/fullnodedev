@@ -195,8 +195,7 @@ impl Frame {
         Ok(())
     }
 
-    pub fn execute(&mut self, r: &mut Resoure, env: &mut ExecEnv) -> VmrtRes<CallExit> {
-        let mut host = crate::machine::CtxHost::new(env.ctx);
+    pub fn execute<H: VmHost + ?Sized>(&mut self, r: &mut Resoure, host: &mut H) -> VmrtRes<CallExit> {
         execute_code(
             &mut self.pc,
             self.codes.as_slice(),
@@ -211,13 +210,12 @@ impl Frame {
                 .map(ContractAddress::to_addr)
                 .as_ref()
                 .unwrap_or(&self.bindings.context_addr),
-            env.gas,
             &r.gas_table,
             &r.gas_extra,
             &r.space_cap,
             &mut r.global_map,
             &mut r.memory_map,
-            &mut host,
+            host,
         )
     }
 }

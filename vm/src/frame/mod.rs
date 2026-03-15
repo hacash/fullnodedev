@@ -7,6 +7,5 @@ use super::*;
 
 use super::rt::ItrErrCode::*;
 
-include! {"env.rs"}
 include! {"frame.rs"}
 include! {"call.rs"}

@@ -46,7 +46,7 @@ macro_rules! ast_try_item {
                     __child_burn90,
                     child_gas,
                 );
-                if let Err(gas_err) = $ctx.gas_consume(charge_gas) {
+                if let Err(gas_err) = $ctx.gas_charge(charge_gas as i64) {
                     if let Err(re) = __snap.rollback($ctx) {
                         return errf!("ast item recover failed: {}; original error: {}",
                             re, gas_err);

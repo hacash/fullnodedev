@@ -1,16 +1,62 @@
 #[cfg(test)]
 mod bounds_tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::machine::VmHost;
     use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
     use crate::value::{CompoItem, Value, ValueTy, RESERVED_U256_TYPE_ID};
-    use crate::ContractAddress;
-    use field::Address;
+    use crate::{ContractAddress, ContractEdition, ContractSto};
+    use field::Address as FieldAddress;
     use sys::{XError, XRet};
+
+    trait TestGasHost {
+        fn set_test_gas(&mut self, gas: i64);
+        fn test_gas(&self) -> i64;
+    }
+
+    fn execute_code<H: VmHost + TestGasHost + ?Sized>(
+        pc: &mut usize,
+        codes: &[u8],
+        exec: ExecCtx,
+        operands: &mut Stack,
+        locals: &mut Stack,
+        heap: &mut Heap,
+        context_addr: &FieldAddress,
+        current_addr: &FieldAddress,
+        gas_usable: &mut i64,
+        gas_table: &GasTable,
+        gas_extra: &GasExtra,
+        space_cap: &SpaceCap,
+        global_map: &mut GKVMap,
+        memory_map: &mut CtcKVMap,
+        host: &mut H,
+    ) -> VmrtRes<CallExit> {
+        host.set_test_gas(*gas_usable);
+        let res = super::execute_code(
+            pc,
+            codes,
+            exec,
+            operands,
+            locals,
+            heap,
+            context_addr,
+            current_addr,
+            gas_table,
+            gas_extra,
+            space_cap,
+            global_map,
+            memory_map,
+            host,
+        );
+        *gas_usable = host.test_gas();
+        res
+    }
 
     #[derive(Default)]
     struct DummyHost {
+        gas_remaining: i64,
         act_res: Vec<u8>,
         act_gas: u32,
         act_err: Option<String>,
@@ -20,9 +66,46 @@ mod bounds_tests {
         log_calls: usize,
     }
 
+    impl TestGasHost for DummyHost {
+        fn set_test_gas(&mut self, gas: i64) {
+            self.gas_remaining = gas;
+        }
+
+        fn test_gas(&self) -> i64 {
+            self.gas_remaining
+        }
+    }
+
     impl VmHost for DummyHost {
-        fn height(&mut self) -> u64 {
+        fn height(&self) -> u64 {
             1
+        }
+
+        fn main_entry_bindings(&self) -> FrameBindings {
+            FrameBindings::root(Address::default(), Arc::<[Address]>::from(vec![]))
+        }
+
+        fn gas_remaining(&self) -> i64 {
+            self.gas_remaining
+        }
+
+        fn gas_charge(&mut self, gas: i64) -> VmrtErr {
+            if gas < 0 {
+                return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", gas);
+            }
+            self.gas_remaining -= gas;
+            if self.gas_remaining < 0 {
+                return itr_err_code!(ItrErrCode::OutOfGas);
+            }
+            Ok(())
+        }
+
+        fn contract_edition(&mut self, _addr: &ContractAddress) -> Option<ContractEdition> {
+            None
+        }
+
+        fn contract(&mut self, _addr: &ContractAddress) -> Option<ContractSto> {
+            None
         }
 
         fn action_call(&mut self, _kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
@@ -38,14 +121,14 @@ mod bounds_tests {
             Ok(())
         }
 
-        fn srest(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+        fn srest(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.srest_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
             }
         }
 
-        fn sload(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.sload_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
@@ -59,7 +142,6 @@ mod bounds_tests {
         fn ssave(
             &mut self,
             _gst: &GasExtra,
-            _hei: u64,
             _cadr: &Address,
             _key: Value,
             _val: Value,
@@ -70,7 +152,6 @@ mod bounds_tests {
         fn srent(
             &mut self,
             _gst: &GasExtra,
-            _hei: u64,
             _cadr: &Address,
             _key: Value,
             _period: Value,
@@ -913,7 +994,7 @@ mod bounds_tests {
 
         let expect = gas_table.gas(Bytecode::NTENV as u8)
             + NativeEnv::gas(idx).unwrap()
-            + gas_extra.ntfunc_bytes(field::Address::SIZE)
+            + gas_extra.ntfunc_bytes(FieldAddress::SIZE)
             + gas_table.gas(Bytecode::END as u8);
         assert_eq!(1000 - gas, expect);
     }
@@ -1058,7 +1139,7 @@ mod bounds_tests {
         let expect = gas_table.gas(Bytecode::ITEMGET as u8)
             + gas_table.gas(Bytecode::END as u8)
             + gas_extra.compo_items_read(1)
-            + gas_extra.compo_bytes(field::Address::SIZE);
+            + gas_extra.compo_bytes(FieldAddress::SIZE);
         assert_eq!(1000 - gas, expect);
     }
 
@@ -1809,10 +1890,42 @@ mod bounds_tests {
     fn sdel_charges_storage_delete_min_dynamic_gas() {
         use crate::rt::Bytecode;
 
-        struct SdelOkHost;
+        struct SdelOkHost {
+            gas_remaining: i64,
+        }
+        impl TestGasHost for SdelOkHost {
+            fn set_test_gas(&mut self, gas: i64) {
+                self.gas_remaining = gas;
+            }
+            fn test_gas(&self) -> i64 {
+                self.gas_remaining
+            }
+        }
         impl VmHost for SdelOkHost {
-            fn height(&mut self) -> u64 {
+            fn height(&self) -> u64 {
                 1
+            }
+            fn main_entry_bindings(&self) -> FrameBindings {
+                FrameBindings::root(Address::default(), Arc::<[Address]>::from(vec![]))
+            }
+            fn gas_remaining(&self) -> i64 {
+                self.gas_remaining
+            }
+            fn gas_charge(&mut self, gas: i64) -> VmrtErr {
+                if gas < 0 {
+                    return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", gas);
+                }
+                self.gas_remaining -= gas;
+                if self.gas_remaining < 0 {
+                    return itr_err_code!(ItrErrCode::OutOfGas);
+                }
+                Ok(())
+            }
+            fn contract_edition(&mut self, _addr: &ContractAddress) -> Option<ContractEdition> {
+                None
+            }
+            fn contract(&mut self, _addr: &ContractAddress) -> Option<ContractSto> {
+                None
             }
             fn action_call(&mut self, _kid: u16, _body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
                 unreachable!()
@@ -1820,10 +1933,10 @@ mod bounds_tests {
             fn log_push(&mut self, _cadr: &Address, _items: Vec<Value>) -> VmrtErr {
                 unreachable!()
             }
-            fn srest(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+            fn srest(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
                 unreachable!()
             }
-            fn sload(&mut self, _hei: u64, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+            fn sload(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
                 unreachable!()
             }
             fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtErr {
@@ -1832,7 +1945,6 @@ mod bounds_tests {
             fn ssave(
                 &mut self,
                 _gst: &GasExtra,
-                _hei: u64,
                 _cadr: &Address,
                 _key: Value,
                 _val: Value,
@@ -1842,7 +1954,6 @@ mod bounds_tests {
             fn srent(
                 &mut self,
                 _gst: &GasExtra,
-                _hei: u64,
                 _cadr: &Address,
                 _key: Value,
                 _period: Value,
@@ -1855,7 +1966,7 @@ mod bounds_tests {
         let mut gas: i64 = 1000;
         let gas_table = GasTable::new(1);
         let gas_extra = GasExtra::new(1);
-        let mut host = SdelOkHost;
+        let mut host = SdelOkHost { gas_remaining: 0 };
 
         let mut operands = Stack::new(256);
         operands.push(Value::Bytes(vec![1u8])).unwrap();

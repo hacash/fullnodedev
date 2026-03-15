@@ -64,7 +64,7 @@ impl CtxSnapshot {
 
     pub fn begin_ast_item(ctx: &mut dyn Context) -> Ret<Self> {
         const SNAPSHOT_TRY_GAS: u32 = 40;
-        ctx.gas_consume(SNAPSHOT_TRY_GAS)?;
+        ctx.gas_charge(SNAPSHOT_TRY_GAS as i64)?;
         Self::begin(ctx)
     }
 

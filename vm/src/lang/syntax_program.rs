@@ -5,7 +5,7 @@ impl Syntax {
         self
     }
 
-    pub fn with_libs(mut self, libs: Vec<(String, u8, Option<field::Address>)>) -> Self {
+    pub fn with_libs(mut self, libs: Vec<(String, u8, Option<FieldAddress>)>) -> Self {
         self.injected.ext_libs = Some(libs);
         self
     }

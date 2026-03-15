@@ -157,9 +157,9 @@ pub fn push_num(n: u128) -> Box<dyn IRNode> {
     }
 }
 
-pub fn push_addr(a: field::Address) -> Box<dyn IRNode> {
+pub fn push_addr(a: Address) -> Box<dyn IRNode> {
     use Bytecode::*;
-    let para = vec![vec![field::Address::SIZE as u8], a.serialize()].concat();
+    let para = vec![vec![Address::SIZE as u8], a.serialize()].concat();
     push_single_p1_hr(true, CTO, ValueTy::Address as u8, mk_ps(true, PBUF, para))
 }
 

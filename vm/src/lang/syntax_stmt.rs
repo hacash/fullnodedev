@@ -289,7 +289,7 @@ impl Syntax {
                         self.idx += 1;
                         nxt = next!();
                         let Token::Address(a) = nxt else { return e };
-                        adr = Some(*a as field::Address);
+                        adr = Some(*a as FieldAddress);
                     }
                     if *idx > u8::MAX as u128 {
                         return errf!("lib statement link index overflow");

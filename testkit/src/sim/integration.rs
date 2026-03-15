@@ -57,9 +57,13 @@ fn build_basic_registry(
 ) -> protocol::setup::SetupRegistry {
     let mut builder = SetupBuilder::new()
         .block_hasher(x16rs::block_hash)
-        .action_register(protocol::action::register);
+        .action_register(protocol::action::register)
+        .action_register(mint::action::register);
     if let Some(assigner) = vm_assigner {
-        builder = builder.vm_assigner(assigner);
+        builder = builder
+            .action_register(vm::action::register)
+            .action_hooker(vm::hook::try_action_hook)
+            .vm_assigner(assigner);
     }
     builder
         .build()

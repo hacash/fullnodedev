@@ -1,38 +1,37 @@
 use protocol::action::*;
 use super::action::*;
-use ValueTy::*;
 
 type ActionDefTy = (u8, &'static str, ValueTy, usize);
 
 const ACTION_UNKNOWN_NAME: &str = "__unknown__";
 
 pub const ACTION_DEFS: [ActionDefTy; 13] = [
-    (HacToTrs::IDX,      "transfer_hac_to",         Nil, 2),
-    (HacFromTrs::IDX,    "transfer_hac_from",       Nil, 2),
-    (HacFromToTrs::IDX,  "transfer_hac_from_to",    Nil, 3),
-    (SatToTrs::IDX,      "transfer_sat_to",         Nil, 2),
-    (SatFromTrs::IDX,    "transfer_sat_from",       Nil, 2),
-    (SatFromToTrs::IDX,  "transfer_sat_from_to",    Nil, 3),
-    (DiaSingleTrs::IDX,  "transfer_hacd_single_to", Nil, 2),
-    (DiaToTrs::IDX,      "transfer_hacd_to",        Nil, 2),
-    (DiaFromTrs::IDX,    "transfer_hacd_from",      Nil, 2),
-    (DiaFromToTrs::IDX,  "transfer_hacd_from_to",   Nil, 3),
-    (AssetToTrs::IDX,    "transfer_asset_to",       Nil, 2),
-    (AssetFromTrs::IDX,  "transfer_asset_from",     Nil, 2),
-    (AssetFromToTrs::IDX,"transfer_asset_from_to",  Nil, 3),
+    (HacToTrs::IDX,      "transfer_hac_to",         ValueTy::Nil, 2),
+    (HacFromTrs::IDX,    "transfer_hac_from",       ValueTy::Nil, 2),
+    (HacFromToTrs::IDX,  "transfer_hac_from_to",    ValueTy::Nil, 3),
+    (SatToTrs::IDX,      "transfer_sat_to",         ValueTy::Nil, 2),
+    (SatFromTrs::IDX,    "transfer_sat_from",       ValueTy::Nil, 2),
+    (SatFromToTrs::IDX,  "transfer_sat_from_to",    ValueTy::Nil, 3),
+    (DiaSingleTrs::IDX,  "transfer_hacd_single_to", ValueTy::Nil, 2),
+    (DiaToTrs::IDX,      "transfer_hacd_to",        ValueTy::Nil, 2),
+    (DiaFromTrs::IDX,    "transfer_hacd_from",      ValueTy::Nil, 2),
+    (DiaFromToTrs::IDX,  "transfer_hacd_from_to",   ValueTy::Nil, 3),
+    (AssetToTrs::IDX,    "transfer_asset_to",       ValueTy::Nil, 2),
+    (AssetFromTrs::IDX,  "transfer_asset_from",     ValueTy::Nil, 2),
+    (AssetFromToTrs::IDX,"transfer_asset_from_to",  ValueTy::Nil, 3),
 ];
 
 pub const ACTION_ENV_DEFS: [ActionDefTy; 3] = [
-    (EnvHeight::IDX,       "block_height",           U64,              0),
+    (EnvHeight::IDX,       "block_height",           ValueTy::U64,      0),
     (EnvCoinbaseAddr::IDX, "block_coinbase_address", ValueTy::Address, 0),
     (EnvMainAddr::IDX,     "tx_main_address",        ValueTy::Address, 0),
 ];
 
 pub const ACTION_VIEW_DEFS: [ActionDefTy; 4] = [
-    (ViewCheckSign::IDX,      "check_signature",   Bool,  1),
-    (ViewBalance::IDX,        "balance",           Bytes, 1),
-    (ViewDiamondInscNum::IDX, "diamond_insc_num",  U8,    1),
-    (ViewDiamondInscGet::IDX, "diamond_insc_get",  Bytes, 2),
+    (ViewCheckSign::IDX,      "check_signature",   ValueTy::Bool,  1),
+    (ViewBalance::IDX,        "balance",           ValueTy::Bytes, 1),
+    (ViewDiamondInscNum::IDX, "diamond_insc_num",  ValueTy::U8,    1),
+    (ViewDiamondInscGet::IDX, "diamond_insc_get",  ValueTy::Bytes, 2),
 ];
 
 pub fn search_act_by_id<'a>(id: u8, exts: &'a[ActionDefTy]) -> Option<&'a ActionDefTy> {

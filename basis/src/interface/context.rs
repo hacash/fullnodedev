@@ -7,10 +7,6 @@ pub trait StateOperat {
     fn state_recover(&mut self, _: Arc<Box<dyn State>>);
 }
 
-pub trait VmGasMut {
-    fn gas_remaining_mut(&mut self) -> Ret<&mut i64>;
-}
-
 pub trait Context : StateOperat {
     /// Reset per-transaction caches/state inside Context.
     /// This must be called whenever the underlying tx/env is replaced for a new transaction.
@@ -29,8 +25,7 @@ pub trait Context : StateOperat {
     fn gas_init_tx(&mut self, _: i64, _: i64) -> Rerr { errf!("context gas init not supported") }
     fn gas_refund(&mut self) -> Rerr { errf!("context gas refund not supported") }
     fn gas_remaining(&self) -> i64 { 0 }
-    fn gas_consume(&mut self, _: u32) -> Rerr { Ok(()) }
-    fn vm_gas_mut(&mut self) -> Ret<&mut dyn VmGasMut> { errf!("context vm gas mutable access not supported") }
+    fn gas_charge(&mut self, _: i64) -> Rerr { Ok(()) }
     fn snapshot_volatile(&self) -> Box<dyn Any> { Box::new(()) }
     fn restore_volatile(&mut self, _: Box<dyn Any>) {}
     // tex

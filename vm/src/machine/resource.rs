@@ -62,13 +62,12 @@ impl Resoure {
     }
 
     // Charge one cold contract load with per-load bytes fee.
-    pub fn settle_new_contract_load_gas(&mut self, gas: &mut i64, bytes: usize) -> VmrtErr {
-        *gas -= self.gas_extra.load_new_contract + (bytes as i64 / 64);
-        if *gas < 0 {
-            // OutOfGas is terminal for the current VM call path and is not recovered.
-            return itr_err_code!(OutOfGas);
-        }
-        Ok(())
+    pub fn settle_new_contract_load_gas<H: VmHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        bytes: usize,
+    ) -> VmrtErr {
+        host.gas_charge(self.gas_extra.load_new_contract + (bytes as i64 / 64))
     }
 
     pub fn stack_allocat(&mut self) -> Stack {
@@ -104,14 +103,81 @@ impl Resoure {
 #[cfg(test)]
 mod resource_tests {
     use super::*;
+    use field::Address as FieldAddress;
+    use sys::XRet;
+
+    struct GasHost {
+        remaining: i64,
+    }
+
+    impl VmHost for GasHost {
+        fn height(&self) -> u64 {
+            1
+        }
+
+        fn main_entry_bindings(&self) -> FrameBindings {
+            FrameBindings::root(Address::default(), Vec::<Address>::new().into())
+        }
+
+        fn gas_remaining(&self) -> i64 {
+            self.remaining
+        }
+
+        fn gas_charge(&mut self, gas: i64) -> VmrtErr {
+            if gas < 0 {
+                return itr_err_fmt!(GasError, "gas cost invalid: {}", gas);
+            }
+            self.remaining -= gas;
+            if self.remaining < 0 {
+                return itr_err_code!(OutOfGas);
+            }
+            Ok(())
+        }
+
+        fn contract_edition(&mut self, _: &ContractAddress) -> Option<ContractEdition> {
+            None
+        }
+
+        fn contract(&mut self, _: &ContractAddress) -> Option<ContractSto> {
+            None
+        }
+
+        fn action_call(&mut self, _: u16, _: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
+            unreachable!()
+        }
+
+        fn log_push(&mut self, _: &Address, _: Vec<Value>) -> VmrtErr {
+            unreachable!()
+        }
+
+        fn srest(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+            unreachable!()
+        }
+
+        fn sload(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+            unreachable!()
+        }
+
+        fn sdel(&mut self, _: &Address, _: Value) -> VmrtErr {
+            unreachable!()
+        }
+
+        fn ssave(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+            unreachable!()
+        }
+
+        fn srent(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+            unreachable!()
+        }
+    }
 
     #[test]
     fn settle_new_contract_load_gas_charges_base_plus_bytes_div_64() {
         let mut r = Resoure::create(1);
         let base = r.gas_extra.load_new_contract;
-        let mut gas = 1000i64;
-        r.settle_new_contract_load_gas(&mut gas, 129).unwrap();
-        assert_eq!(gas, 1000 - base - 2);
+        let mut host = GasHost { remaining: 1000 };
+        r.settle_new_contract_load_gas(&mut host, 129).unwrap();
+        assert_eq!(host.remaining, 1000 - base - 2);
     }
 
     #[test]

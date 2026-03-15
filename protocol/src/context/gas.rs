@@ -204,18 +204,14 @@ impl ContextInst<'_> {
         self.gas.remaining
     }
 
-    fn ctx_gas_remaining_mut(&mut self) -> Ret<&mut i64> {
+    fn ctx_gas_charge(&mut self, gas: i64) -> Rerr {
         if !self.gas.initialized {
             return errf!("gas has run out")
         }
-        Ok(&mut self.gas.remaining)
-    }
-
-    fn ctx_gas_consume(&mut self, gas: u32) -> Rerr {
-        if !self.gas.initialized {
-            return errf!("gas has run out")
+        if gas < 0 {
+            return errf!("gas cost invalid: {}", gas)
         }
-        self.gas.remaining -= gas as i64;
+        self.gas.remaining -= gas;
         if self.gas.remaining < 0 {
             return errf!("gas has run out")
         }

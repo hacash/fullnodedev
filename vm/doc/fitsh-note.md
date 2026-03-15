@@ -5,7 +5,7 @@ This guide is based on the lexer, parser, and call resolution in `vm/src/lang`, 
 ## 1. Lexical units
 - Fitsh uses the `Tokenizer` in `vm/src/lang/tokenizer.rs` to break source code into `Token`s (keywords, operators, punctuation, identifiers, integers, byte/address literals).  
 - Integers accept decimal, `0x`-prefixed hexadecimal, and `0b`-prefixed binary byte-aligned notation; literals prefixed with `0x/0b` become `Bytes` tokens, while other numerics become `Integer(u128)`.  
-- Addresses are recognized through `field::Address::from_readable`; byte strings are written in quotes with escape support (`\n`, `\r`, `\t`, `\\`).  
+- Addresses are recognized through `FieldAddress::from_readable`; byte strings are written in quotes with escape support (`\n`, `\r`, `\t`, `\\`).  
 - Identifiers allow `$` prefixes (slot access) and alphanumeric characters plus `_`/`$`. Symbol sequences are mapped to keywords or operators (e.g., `+=`, `==`, `++`; see `vm/src/rt/lang.rs:30-169`).
 
 ## 2. Keywords and operators

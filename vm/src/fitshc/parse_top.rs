@@ -6,7 +6,6 @@ use crate::contract::Abst;
 use crate::rt::Token::{self, *};
 use crate::rt::{AbstCall, KwTy, calc_func_sign};
 use crate::value::ValueTy;
-use field::Address;
 use sys::*;
 use sys::{Ret, errf};
 
@@ -274,7 +273,7 @@ fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
     Ok(())
 }
 
-fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, Address)>> {
+fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, field::Address)>> {
     state.eat_partition('[')?;
     let mut list = vec![];
     loop {
@@ -297,7 +296,7 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, Address)>> {
         }
 
         let addr = if let Some(Identifier(a)) = state.current() {
-            let adr = Address::from_readable(a).map_err(|e| e.to_string())?;
+            let adr = field::Address::from_readable(a).map_err(|e| e.to_string())?;
             state.advance();
             adr
         } else if let Some(Address(a)) = state.current() {

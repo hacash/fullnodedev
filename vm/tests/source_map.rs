@@ -1,4 +1,4 @@
-use field::Address;
+use field::Address as FieldAddress;
 use vm::PrintOption;
 use vm::lang::{Formater, lang_to_irnode_with_sourcemap};
 use vm::rt::*;

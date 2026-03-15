@@ -162,12 +162,11 @@ impl VM for MachineBox {
         let gas_before = ctx.gas_remaining();
         // Fail-fast: if remaining gas can't cover the per-call minimum, this call cannot start.
         if gas_before < min_cost {
-            let gas = ctx
-                .vm_gas_mut()
-                .into_xret()?
-                .gas_remaining_mut()
-                .into_xret()?;
-            *gas -= min_cost; // keep the same "min cost consumes from shared counter" semantics
+            if ctx.gas_charge(0).is_err() {
+                ctx.gas_charge(min_cost).into_xret()?;
+            } else {
+                let _ = ctx.gas_charge(min_cost);
+            }
             return xerrf!(
                 "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
                 gas_before,
@@ -176,21 +175,10 @@ impl VM for MachineBox {
             );
         }
         let machine = self.machine.as_mut().unwrap();
-        let ctxptr = ctx as *mut dyn Context;
-        let gasptr = unsafe {
-            let gasctx = (*ctxptr).vm_gas_mut().into_xret()?;
-            gasctx.gas_remaining_mut().into_xret()? as *mut i64
-        };
-        let exenv = unsafe {
-            &mut ExecEnv {
-                ctx: &mut *ctxptr,
-                gas: &mut *gasptr,
-            }
-        };
         let result = match entry_kind {
             Main => {
                 let codeconf = CodeConf::parse(kind)?;
-                machine.main_call(exenv, codeconf.code_type(), payload)
+                machine.main_call(ctx, codeconf.code_type(), payload)
             }
             P2sh => {
                 let codeconf = CodeConf::parse(kind)?;
@@ -207,7 +195,7 @@ impl VM for MachineBox {
                     return xerrf!("p2sh argv type mismatch");
                 };
                 machine.p2sh_call(
-                    exenv,
+                    ctx,
                     codeconf.code_type(),
                     state_addr,
                     calibs.into_list(),
@@ -221,7 +209,7 @@ impl VM for MachineBox {
                 let Ok(param) = param.downcast::<Value>() else {
                     return xerrf!("abst argv type mismatch");
                 };
-                machine.abst_call(exenv, kid, cadr, *param)
+                machine.abst_call(ctx, kid, cadr, *param)
             }
         };
         // (4) compute gas cost, enforce minimum, leave call layer
@@ -231,16 +219,12 @@ impl VM for MachineBox {
         // enforce per-call minimum gas by consuming shortfall from shared counter
         if cost < min_cost {
             let shortfall = min_cost - cost;
-            let gas = ctx
-                .vm_gas_mut()
-                .into_xret()?
-                .gas_remaining_mut()
-                .into_xret()?;
-            *gas -= shortfall;
-            if *gas < 0 {
+            let _ = ctx.gas_charge(shortfall);
+            let remaining = ctx.gas_remaining();
+            if remaining < 0 {
                 return xerrf!(
                     "gas has run out after min cost enforcement: remaining={} (before={} min_call_cost={} actual_cost={})",
-                    *gas,
+                    remaining,
                     gas_before,
                     min_cost,
                     actual
@@ -274,39 +258,37 @@ impl Machine {
         Self { r, frames: vec![] }
     }
 
-    pub fn main_call_raw(
+    pub fn main_call_raw<H: VmHost + ?Sized>(
         &mut self,
-        env: &mut ExecEnv,
+        host: &mut H,
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> Ret<Value> {
         // Caller must pre-validate code bytes. Production entry actions run convert_and_check before setup_vm_run.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
-        let ctx_adr = env.ctx.tx().main();
-        let lib_adr = env.ctx.env().tx.addrs.clone();
         Ok(self.do_call(
-            env,
+            host,
             ExecCtx::main(),
             &fnobj,
-            FrameBindings::root(ctx_adr, lib_adr.into()),
+            host.main_entry_bindings(),
             None,
         )?)
     }
 
-    pub fn main_call(
+    pub fn main_call<H: VmHost + ?Sized>(
         &mut self,
-        env: &mut ExecEnv,
+        host: &mut H,
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> XRet<Value> {
-        let rv = self.main_call_raw(env, ctype, codes).into_xret()?;
+        let rv = self.main_call_raw(host, ctype, codes).into_xret()?;
         check_vm_return_value(&rv, "main call")?;
         Ok(rv)
     }
 
-    pub fn abst_call(
+    pub fn abst_call<H: VmHost + ?Sized>(
         &mut self,
-        env: &mut ExecEnv,
+        host: &mut H,
         cty: AbstCall,
         contract_addr: ContractAddress,
         param: Value,
@@ -317,14 +299,14 @@ impl Machine {
         let adr = contract_addr.to_readable();
         let Some(hit) = self
             .r
-            .resolve_abstfn(env.ctx, env.gas, &contract_addr, cty)
+            .resolve_abstfn(host, &contract_addr, cty)
             .map_err(XError::from)?
         else {
             return Err(XError::fault(format!("abst call {:?} not found in {}", cty, adr)));
         };
         // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
         let rv = self.do_call(
-            env,
+            host,
             exec,
             hit.fnobj.as_ref(),
             FrameBindings::contract(contract_addr, hit.owner, hit.lib_table),
@@ -334,9 +316,9 @@ impl Machine {
         Ok(rv)
     }
 
-    fn p2sh_call(
+    fn p2sh_call<H: VmHost + ?Sized>(
         &mut self,
-        env: &mut ExecEnv,
+        host: &mut H,
         ctype: CodeType,
         p2sh_addr: Address,
         libs: Vec<ContractAddress>,
@@ -347,7 +329,7 @@ impl Machine {
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = p2sh_addr;
         let rv = self.do_call(
-            env,
+            host,
             ExecCtx::p2sh(),
             &fnobj,
             FrameBindings::root(
@@ -363,9 +345,9 @@ impl Machine {
         Ok(rv)
     }
 
-    fn do_call(
+    fn do_call<H: VmHost + ?Sized>(
         &mut self,
-        env: &mut ExecEnv,
+        host: &mut H,
         exec: ExecCtx,
         code: &FnObj,
         bindings: FrameBindings,
@@ -374,7 +356,7 @@ impl Machine {
         self.frames.push(CallFrame::new());
         let res = self.frames.last_mut().unwrap().start_call(
             &mut self.r,
-            env,
+            host,
             exec,
             code,
             bindings,
@@ -409,6 +391,96 @@ mod machine_test {
         crate::ContractAddress::calculate(base, &Uint4::from(nonce))
     }
 
+    struct TestVmHost<'a> {
+        ctx: &'a mut dyn Context,
+        gas_remaining: i64,
+    }
+
+    impl<'a> TestVmHost<'a> {
+        fn new(ctx: &'a mut dyn Context, gas_remaining: i64) -> Self {
+            Self { ctx, gas_remaining }
+        }
+    }
+
+    impl VmHost for TestVmHost<'_> {
+        fn height(&self) -> u64 {
+            self.ctx.env().block.height
+        }
+
+        fn main_entry_bindings(&self) -> FrameBindings {
+            FrameBindings::root(self.ctx.tx().main(), self.ctx.env().tx.addrs.clone().into())
+        }
+
+        fn gas_remaining(&self) -> i64 {
+            self.gas_remaining
+        }
+
+        fn gas_charge(&mut self, gas: i64) -> VmrtErr {
+            if gas < 0 {
+                return itr_err_fmt!(GasError, "gas cost invalid: {}", gas);
+            }
+            self.gas_remaining -= gas;
+            if self.gas_remaining < 0 {
+                return itr_err_code!(OutOfGas);
+            }
+            Ok(())
+        }
+
+        fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
+            crate::VMState::wrap(self.ctx.state()).contract_edition(addr)
+        }
+
+        fn contract(&mut self, addr: &ContractAddress) -> Option<ContractSto> {
+            crate::VMState::wrap(self.ctx.state()).contract(addr)
+        }
+
+        fn action_call(&mut self, kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
+            self.ctx.action_call(kid, body)
+        }
+
+        fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr {
+            let lgdt = crate::VmLog::new(*addr, items)?;
+            self.ctx.logs().push(&lgdt);
+            Ok(())
+        }
+
+        fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).srest(hei, addr, key)
+        }
+
+        fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).sload(hei, addr, key)
+        }
+
+        fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
+            crate::VMState::wrap(self.ctx.state()).sdel(addr, key)
+        }
+
+        fn ssave(
+            &mut self,
+            gst: &GasExtra,
+            addr: &Address,
+            key: Value,
+            val: Value,
+        ) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).ssave(gst, hei, addr, key, val)
+        }
+
+        fn srent(
+            &mut self,
+            gst: &GasExtra,
+            addr: &Address,
+            key: Value,
+            period: Value,
+        ) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).srent(gst, hei, addr, key, period)
+        }
+    }
+
     fn run_main_script_with(
         base_addr: Address,
         tx_libs: Vec<crate::ContractAddress>,
@@ -433,16 +505,12 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(std::mem::take(&mut ext_state)), &tx);
 
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
         if raw {
-            machine.main_call_raw(&mut exec, CodeType::Bytecode, main_codes.into())
+            machine.main_call_raw(&mut host, CodeType::Bytecode, main_codes.into())
         } else {
-            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into()).into_tret()
+            machine.main_call(&mut host, CodeType::Bytecode, main_codes.into()).into_tret()
         }
     }
 
@@ -488,14 +556,10 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(std::mem::take(&mut ext_state)), &tx);
 
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
         machine.p2sh_call(
-            &mut exec,
+            &mut host,
             CodeType::Bytecode,
             p2sh_addr,
             tx_libs,
@@ -666,15 +730,11 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
 
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
 
         let mut machine = Machine::create(Resoure::create(1));
         let rv = machine
-            .main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+            .main_call(&mut host, CodeType::Bytecode, main_codes.into())
             .unwrap();
 
         assert!(
@@ -788,13 +848,9 @@ mod machine_test {
                 .build();
             let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
 
-            let mut gas: i64 = 1_000_000;
-            let mut exec = crate::frame::ExecEnv {
-                ctx: &mut ctx as &mut dyn Context,
-                gas: &mut gas,
-            };
+            let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
             let mut machine = Machine::create(Resoure::create(1));
-            machine.main_call(&mut exec, CodeType::Bytecode, main_codes.into()).into_tret()
+            machine.main_call(&mut host, CodeType::Bytecode, main_codes.into()).into_tret()
         };
 
         // CALLEXT (External): should resolve inherited `probe` on parent.
@@ -933,15 +989,11 @@ mod machine_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
 
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
         let rv = machine
             .abst_call(
-                &mut exec,
+                &mut host,
                 AbstCall::Construct,
                 contract_child,
                 Value::Bytes(vec![]),
@@ -986,36 +1038,27 @@ mod machine_test {
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut machine = Machine::create(Resoure::create(1));
         let gas_budget = 1_000_000i64;
-
-        let mut gas_1 = gas_budget;
-        let mut exec_1 = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas_1,
-        };
+        let mut host_1 = TestVmHost::new(&mut ctx as &mut dyn Context, gas_budget);
         machine
             .abst_call(
-                &mut exec_1,
+                &mut host_1,
                 AbstCall::Construct,
                 contract_child.clone(),
                 Value::Bytes(vec![]),
             )
             .unwrap();
-        let used_1 = gas_budget - gas_1;
+        let used_1 = gas_budget - host_1.gas_remaining;
 
-        let mut gas_2 = gas_budget;
-        let mut exec_2 = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas_2,
-        };
+        let mut host_2 = TestVmHost::new(&mut ctx as &mut dyn Context, gas_budget);
         machine
             .abst_call(
-                &mut exec_2,
+                &mut host_2,
                 AbstCall::Construct,
                 contract_child,
                 Value::Bytes(vec![]),
             )
             .unwrap();
-        let used_2 = gas_budget - gas_2;
+        let used_2 = gas_budget - host_2.gas_remaining;
 
         assert!(
             used_1 > used_2,
@@ -1072,16 +1115,12 @@ mod machine_test {
             .fee_purity(1)
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
 
         let err = machine
             .abst_call(
-                &mut exec,
+                &mut host,
                 AbstCall::Construct,
                 contract_entry.clone(),
                 Value::Bytes(vec![]),
@@ -1929,16 +1968,12 @@ end",
             .fee_purity(1)
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
         machine.r.space_cap.call_depth = 1;
 
         let err = machine
-            .main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+            .main_call(&mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("nested call must exceed call_depth limit");
         assert!(err.contains("OutOfCallDepth"), "unexpected error: {err}");
         assert!(machine.r.contracts.contains_key(&contract_entry));
@@ -2004,15 +2039,11 @@ end",
             .fee_purity(1)
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
 
         let err = machine
-            .main_call(&mut exec, CodeType::Bytecode, main_codes.into())
+            .main_call(&mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("nested call without argv must fail locally");
         assert!(err.contains("Read empty stack"), "unexpected error: {err}");
         assert!(machine.r.contracts.contains_key(&contract_entry));
@@ -2047,16 +2078,12 @@ end",
             .fee_purity(1)
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
-        let mut gas: i64 = 1_000_000;
-        let mut exec = crate::frame::ExecEnv {
-            ctx: &mut ctx as &mut dyn Context,
-            gas: &mut gas,
-        };
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
 
         let err = machine
             .abst_call(
-                &mut exec,
+                &mut host,
                 AbstCall::Construct,
                 contract_target.clone(),
                 Value::HeapSlice((0, 1)),
@@ -2108,7 +2135,7 @@ end",
         let budget = decode_gas_budget(17); // lookup-table decoded budget
                                             // The min-call cost must be reflected in the shared gas counter.
         assert!(
-            ctx.gas_remaining() <= (budget - min),
+            Context::gas_remaining(&ctx) <= (budget - min),
             "ctx gas remaining should include min cost deduction"
         );
     }
@@ -2159,7 +2186,8 @@ end",
         let snap = vm.snapshot_volatile();
 
         // Mutate gas remaining in context (outside VM volatile snapshot).
-        *ctx.vm_gas_mut().unwrap().gas_remaining_mut().unwrap() = 1;
+        let gas_to_consume = Context::gas_remaining(&ctx) - 1;
+        Context::gas_charge(&mut ctx, gas_to_consume).unwrap();
         // Mutate volatile fields (should be restored)
         vm.machine
             .as_mut()
@@ -2171,7 +2199,7 @@ end",
         vm.restore_volatile(snap);
 
         // Gas remaining is NOT restored: gas usage must stay monotonic in one tx.
-        assert_eq!(ctx.gas_remaining(), 1);
+        assert_eq!(Context::gas_remaining(&ctx), 1);
         // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
         assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 2);
         assert!(vm
@@ -2326,7 +2354,7 @@ end",
             "vm call should fail when script returns non-zero"
         );
         assert!(
-            ctx.gas_remaining() < decode_gas_budget(17),
+            Context::gas_remaining(&ctx) < decode_gas_budget(17),
             "remaining gas should decrease even when call fails"
         );
         assert_eq!(
@@ -2381,7 +2409,7 @@ end",
             ));
             assert!(ok.is_ok(), "final success call must succeed");
 
-            (read_hac_balance(&mut ctx, &main), ctx.gas_remaining())
+            (read_hac_balance(&mut ctx, &main), Context::gas_remaining(&ctx))
         };
 
         let (bal_success_only, rem_success_only) = run(false);

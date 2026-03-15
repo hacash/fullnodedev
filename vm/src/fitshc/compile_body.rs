@@ -47,7 +47,7 @@ fn parse_const_value(value_str: &str) -> Ret<Box<dyn IRNode>> {
     }
     if value_str.starts_with("address:") {
         let addr_str = &value_str[8..];
-        let addr = field::Address::from_readable(addr_str)
+        let addr = Address::from_readable(addr_str)
             .map_err(|_| format!("invalid address constant: {}", value_str))?;
         return Ok(push_addr(addr));
     }
@@ -78,7 +78,7 @@ mod compile_body_tests {
     #[test]
     fn rejects_contract_lib_count_overflow() {
         let body_tokens = Tokenizer::new(b"return 1").parse().unwrap();
-        let addr = field::Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
+        let addr = Address::from_readable("emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS").unwrap();
         let libs: Vec<_> = (0..=u8::MAX as usize)
             .map(|idx| (format!("L{}", idx), addr.clone()))
             .collect();

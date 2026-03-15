@@ -4,8 +4,6 @@ use hex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use field::Address;
-
 
 #[derive(Serialize, Deserialize)]
 struct SourceMapJson {
