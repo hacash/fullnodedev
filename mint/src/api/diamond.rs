@@ -27,6 +27,20 @@ fn diamond(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     data.insert("name".to_owned(), json!(dian.to_readable()));
     data.insert("belong".to_owned(), json!(diaobj.address.to_readable()));
     data.insert("inscriptions".to_owned(), json!(diaobj.inscripts.array()));
+    data.insert(
+        "inscription_items".to_owned(),
+        json!(
+            diaobj
+                .inscripts
+                .as_list()
+                .iter()
+                .map(|item| json!({
+                    "engraved_type": *item.engraved_type,
+                    "content": item.to_readable_or_hex(),
+                }))
+                .collect::<Vec<_>>()
+        ),
+    );
     data.insert("number".to_owned(), json!(*diasmelt.number));
     data.insert(
         "miner".to_owned(),

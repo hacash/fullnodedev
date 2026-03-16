@@ -632,7 +632,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 }
                 UNPACK => {
                     let i = ops.pop()?.extract_u8()?;
-                    let items = ops.peek()?.clone_argv_items()?;
+                    let items = ops.peek()?.clone_unpack_items()?;
                     gas += unpack_seq(i, locals, items, gst)?;
                     ops.pop()?; // pop argv wrapper after unpack
                 }
@@ -795,6 +795,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         })();
 
         // reduce gas for use after the instruction completes; out-of-gas overrides the instruction result.
+        // Out-of-gas is intentionally checked after execution, with upper layers expected to roll back state writes.
         host.gas_charge(gas)?;
         match step {
             Ok(Step::Exit(exit)) => return Ok(exit),

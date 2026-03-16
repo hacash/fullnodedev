@@ -237,6 +237,7 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn TxDriverContext) -> Rerr {
     const TXTY3: u8 = TransactionType3::TYPE;
     let env = ctx.env();
     let blkhei = env.block.height;
+    crate::upgrade::check_gated_tx(blkhei, tx.ty())?;
     let not_fast_sync = !env.chain.fast_sync;
     let hx = tx.hash();
     let main = tx.main();

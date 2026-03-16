@@ -176,7 +176,7 @@ impl Value {
         itr_err_code!(CompoOpNotMatch)
     }
 
-    pub fn clone_argv_items(&self) -> VmrtRes<Vec<Value>> {
+    pub fn clone_unpack_items(&self) -> VmrtRes<Vec<Value>> {
         if let Some(tuple) = self.match_tuple() {
             return Ok(tuple.to_vec())
         }
@@ -184,6 +184,25 @@ impl Value {
             return Ok(compo.list_ref()?.iter().cloned().collect())
         }
         itr_err_code!(CompoOpNotMatch)
+    }
+
+    pub fn pack_call_args<I>(items: I) -> VmrtRes<Self>
+    where
+        I: IntoIterator<Item = Value>,
+    {
+        let mut items: Vec<_> = items.into_iter().collect();
+        if items.len() > crate::MAX_FUNC_PARAM_LEN {
+            return itr_err_fmt!(
+                CastBeFnArgvFail,
+                "func argv length cannot more than {}",
+                crate::MAX_FUNC_PARAM_LEN
+            );
+        }
+        Ok(match items.len() {
+            0 => Self::Nil,
+            1 => items.pop().unwrap(),
+            _ => Self::Tuple(TupleItem::new(items)?),
+        })
     }
 
     pub fn into_compo(self) -> Option<CompoItem> {
@@ -418,10 +437,27 @@ mod tests {
 
         let tuple = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
         assert!(tuple.match_tuple().is_some());
-        assert_eq!(tuple.clone_argv_items().unwrap(), vec![Value::U8(1), Value::U16(2)]);
+        assert_eq!(tuple.clone_unpack_items().unwrap(), vec![Value::U8(1), Value::U16(2)]);
         assert_eq!(tuple.container_len().unwrap(), 2);
         assert_eq!(tuple.haskey(Value::U8(1)).unwrap(), Value::Bool(true));
         assert_eq!(tuple.itemget(Value::U8(1)).unwrap(), Value::U16(2));
+    }
+
+    #[test]
+    fn pack_call_args_uses_nil_raw_and_tuple_shapes() {
+        assert_eq!(Value::pack_call_args(Vec::<Value>::new()).unwrap(), Value::Nil);
+        assert_eq!(
+            Value::pack_call_args(vec![Value::U8(7)]).unwrap(),
+            Value::U8(7)
+        );
+        assert_eq!(
+            Value::pack_call_args(vec![Value::U8(1), Value::U16(2)]).unwrap(),
+            Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap())
+        );
+        assert!(Value::pack_call_args(
+            (0..(crate::MAX_FUNC_PARAM_LEN + 1)).map(|_| Value::U8(1))
+        )
+        .is_err());
     }
 
     #[test]

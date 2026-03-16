@@ -80,6 +80,12 @@ impl<'a> DecompilationHelper<'a> {
         self.build_param_line(arr, start_idx)
     }
 
+    fn matches_leaf(node: &dyn IRNode, inst: Bytecode) -> bool {
+        node.as_any()
+            .downcast_ref::<IRNodeLeaf>()
+            .is_some_and(|leaf| leaf.inst == inst)
+    }
+
     fn matches_param_prelude(&self, node: &dyn IRNode, count: u8) -> bool {
         use Bytecode::*;
         match count {
@@ -89,27 +95,15 @@ impl<'a> DecompilationHelper<'a> {
                 .is_some_and(|single| {
                     single.inst == PUT
                         && single.para == 0
-                        && single
-                            .subx
-                            .as_any()
-                            .downcast_ref::<IRNodeLeaf>()
-                            .is_some_and(|leaf| leaf.inst == ROLL0)
+                        && Self::matches_leaf(&*single.subx, ROLL0)
                 }),
             2.. => node
                 .as_any()
                 .downcast_ref::<IRNodeDouble>()
                 .is_some_and(|double| {
                     double.inst == UNPACK
-                        && double
-                            .subx
-                            .as_any()
-                            .downcast_ref::<IRNodeLeaf>()
-                            .is_some_and(|leaf| leaf.inst == ROLL0)
-                        && double
-                            .suby
-                            .as_any()
-                            .downcast_ref::<IRNodeLeaf>()
-                            .is_some_and(|leaf| leaf.inst == P0)
+                        && Self::matches_leaf(&*double.subx, ROLL0)
+                        && Self::matches_leaf(&*double.suby, P0)
                 }),
             _ => false,
         }

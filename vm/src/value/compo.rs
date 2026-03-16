@@ -642,7 +642,7 @@ mod compo_tests {
     }
 
     #[test]
-    fn compo_merge_preserves_function_boundary_invariant() {
+    fn merged_compo_remains_valid_as_single_function_argument() {
         let cap = SpaceCap::new(1);
         let mut dst = CompoItem::new_list();
         dst.append(&cap, Value::U8(1)).unwrap();

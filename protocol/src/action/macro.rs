@@ -95,6 +95,8 @@ macro_rules! action_define {
         impl ActExec for $class {
             fn execute(&$pself, $pctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
                 use std::any::Any;
+                $crate::upgrade::check_gated_action($pctx.env().block.height, $pself.kind())
+                    .into_xret()?;
                 if !$pctx.env().chain.fast_sync {
                     check_action_scope($pctx.exec_from(), $pself).into_xret()?;
                 }

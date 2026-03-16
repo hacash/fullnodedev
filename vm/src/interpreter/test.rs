@@ -1591,10 +1591,10 @@ mod bounds_tests {
     fn actview_meters_input_and_return_bytes() {
         use crate::rt::Bytecode;
 
-        // view idx=2 -> returns Bytes; input body comes from stack top bytes.
+        // view idx=1 -> returns Bytes; input body comes from stack top bytes.
         let run = |input_len: usize, ret_len: usize| -> i64 {
             run_with_setup(
-                vec![Bytecode::ACTVIEW as u8, 2, Bytecode::END as u8],
+                vec![Bytecode::ACTVIEW as u8, 1, Bytecode::END as u8],
                 DummyHost {
                     act_res: vec![0u8; ret_len],
                     ..Default::default()
@@ -2155,7 +2155,7 @@ mod bounds_tests {
     }
 
     #[test]
-    fn uplist_accepts_args_wrapper() {
+    fn unpack_accepts_tuple_wrapper() {
         use crate::rt::Bytecode;
 
         let mut pc: usize = 0;
@@ -2200,6 +2200,50 @@ mod bounds_tests {
         assert!(matches!(exit, crate::rt::CallExit::Finish));
         assert!(matches!(locals.load(0).unwrap(), Value::Compo(_)));
         assert_eq!(locals.load(1).unwrap(), Value::U16(9));
+    }
+
+    #[test]
+    fn compiler_generated_multi_param_prelude_accepts_list_sequence() {
+        let codes = crate::lang::lang_to_bytecode("param { a b }\nend").unwrap();
+
+        let run = |argv: Value| -> VmrtRes<crate::rt::CallExit> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            operands.push(argv).unwrap();
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+        };
+
+        let list = Value::Compo(
+            CompoItem::list(std::collections::VecDeque::from([Value::U8(1), Value::U8(2)]))
+                .unwrap(),
+        );
+        assert!(matches!(run(list).unwrap(), crate::rt::CallExit::Finish));
+
+        let tuple = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U8(2)]).unwrap());
+        assert!(matches!(run(tuple).unwrap(), crate::rt::CallExit::Finish));
     }
 
     #[test]

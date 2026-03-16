@@ -67,7 +67,10 @@ impl Parse for Value {
             ValueTy::Nil     => (0, Nil),
             ValueTy::Bool    => {
                 let b = buf_to_uint!(u8, buf, 1);
-                (1, Bool(maybe!(b == 0, false, true)))
+                let Some(b) = decode_canonical_bool_byte(b) else {
+                    return errf!("value bool invalid")
+                };
+                (1, Bool(b))
             },
             ValueTy::U8      => (1, U8(buf_to_uint!(u8, buf, 1))),
             ValueTy::U16     => (2,   U16(buf_to_uint!(u16,  buf,  2))),
@@ -181,5 +184,20 @@ mod field_tests {
             <Value as Serialize>::serialize(&av)
         }));
         assert!(ap.is_err());
+    }
+
+    #[test]
+    fn value_parse_bool_requires_canonical_byte() {
+        let parse = |buf: &[u8]| -> Ret<Value> {
+            let mut out = Value::Nil;
+            let used = out.parse(buf)?;
+            if used != buf.len() {
+                return errf!("field parse not consumed all bytes");
+            }
+            Ok(out)
+        };
+        assert_eq!(parse(&[ValueTy::Bool as u8, 0]).unwrap(), Value::Bool(false));
+        assert_eq!(parse(&[ValueTy::Bool as u8, 1]).unwrap(), Value::Bool(true));
+        assert!(parse(&[ValueTy::Bool as u8, 2]).is_err());
     }
 }

@@ -16,7 +16,7 @@ include! {"decompilation_helper.rs"}
 
 pub enum ArgvMode {
     Concat,
-    List,
+    Packed,
 }
 
 include! {"interface.rs"}

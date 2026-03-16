@@ -6,6 +6,7 @@ pub mod setup;
 pub mod state;
 pub mod tex;
 pub mod transaction;
+pub mod upgrade;
 
 #[cfg(test)]
 mod tests;

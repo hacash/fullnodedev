@@ -124,7 +124,8 @@ impl Value {
         let e = BytesHandle;
         let av = a.extract_bytes_with_error_code(e)?;
         let bv = b.extract_bytes_with_error_code(e)?;
-        let mut v = Vec::with_capacity(av.len() + bv.len());
+        let total = checked_value_output_add(cap, av.len(), bv.len())?;
+        let mut v = Vec::with_capacity(total);
         v.extend_from_slice(&av);
         v.extend_from_slice(&bv);
         Ok(Value::bytes(v).valid(cap)?)

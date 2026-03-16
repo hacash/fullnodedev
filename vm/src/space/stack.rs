@@ -207,10 +207,11 @@ impl Stack {
         if n > self.datas.len() {
             return itr_err_fmt!(StackError, "pop empty stack");
         }
-        let total: usize = self.datas[self.datas.len() - n..]
-            .iter()
-            .map(Value::val_size)
-            .sum();
+        let mut total = 0usize;
+        for v in &self.datas[self.datas.len() - n..] {
+            let blen = v.extract_bytes_len_with_error_code(BytesHandle)?;
+            total = checked_value_output_add(cap, total, blen)?;
+        }
         self.join_with_total(n as u8, total, cap)
     }
 
@@ -223,6 +224,7 @@ impl Stack {
         if n > self.datas.len() {
             return itr_err_fmt!(StackError, "pop empty stack");
         }
+        let total = checked_value_output_len(cap, total)?;
         let items = self.popn(n as u8)?;
         let mut data = Vec::with_capacity(total);
         for v in items {
@@ -290,5 +292,25 @@ impl Stack {
         }
         self.datas.append(&mut vs);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod stack_join_tests {
+    use super::*;
+
+    #[test]
+    fn join_rejects_oversize_before_popping_items() {
+        let mut stack = Stack::new(8);
+        stack.push(Value::Bytes(vec![1u8])).unwrap();
+        stack.push(Value::Bytes(vec![2u8])).unwrap();
+        stack.push(Value::Bytes(vec![3u8])).unwrap();
+
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = 2;
+
+        let err = stack.join(3, &cap).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+        assert_eq!(stack.len(), 3);
     }
 }

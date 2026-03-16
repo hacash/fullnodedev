@@ -250,7 +250,7 @@ impl Syntax {
         };
         let selector = self.next()?;
         let sig = self.parse_call_selector_token(&selector)?;
-        let argv = self.deal_func_argv()?;
+        let argv = self.deal_call_args()?;
         push_user_invoke(CallSpec::invoke(target, effect, sig), argv)
     }
 
@@ -284,7 +284,7 @@ impl Syntax {
     {
         let first = self.next()?;
         let call = self.parse_short_lib_call_spec(first, inst, body_label, err_msg, build)?;
-        let argv = self.deal_func_argv()?;
+        let argv = self.deal_call_args()?;
         push_user_invoke(call, argv)
     }
 
@@ -323,14 +323,14 @@ impl Syntax {
     {
         let first = self.next()?;
         let call = self.parse_short_local_call_spec(first, inst, body_label, err_msg, build)?;
-        let argv = self.deal_func_argv()?;
+        let argv = self.deal_call_args()?;
         push_user_invoke(call, argv)
     }
 
     fn parse_identifier_receiver_call(&mut self, id: String, sep: KwTy) -> Ret<Box<dyn IRNode>> {
         let selector = self.next()?;
         let fnsign = self.parse_call_selector_token(&selector)?;
-        let argv = self.deal_func_argv()?;
+        let argv = self.deal_call_args()?;
         let call = match sep {
             KwTy::Dot => match id.as_str() {
                 "this" => CallSpec::invoke(CallTarget::This, EffectMode::Edit, fnsign),

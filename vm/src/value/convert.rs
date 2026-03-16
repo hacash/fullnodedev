@@ -170,7 +170,10 @@ impl Value {
             }
             ValueTy::Bool => {
                 ensure_len!(1);
-                Ok(Self::bool(stuff[0] != 0))
+                let Some(b) = decode_canonical_bool_byte(stuff[0]) else {
+                    return cast_err!();
+                };
+                Ok(Self::bool(b))
             }
             ValueTy::U8 => {
                 ensure_len!(1);
@@ -221,5 +224,17 @@ impl Value {
             Bytes(b) => checked_func_sign(&b),
             _ => itr_err_fmt!(CastParamFail, "cannot cast {:?} to fn sign", self),
         }
+    }
+}
+
+#[cfg(test)]
+mod convert_tests {
+    use super::*;
+
+    #[test]
+    fn type_from_bool_requires_canonical_byte() {
+        assert_eq!(Value::type_from(ValueTy::Bool, vec![0]).unwrap(), Value::Bool(false));
+        assert_eq!(Value::type_from(ValueTy::Bool, vec![1]).unwrap(), Value::Bool(true));
+        assert!(Value::type_from(ValueTy::Bool, vec![2]).is_err());
     }
 }

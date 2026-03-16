@@ -41,6 +41,11 @@ fn check_inscription_content(engraved_type: u8, content: &BytesW1) -> Rerr {
 }
 
 #[inline]
+fn create_diamond_inscript(engraved_type: u8, content: &BytesW1) -> DiamondInscript {
+    DiamondInscript::create_by(engraved_type, content.clone())
+}
+
+#[inline]
 fn check_inscription_owner_privakey(owner: &Address, diamond: &DiamondName) -> Rerr {
     if !owner.is_privakey() {
         return errf!(
@@ -219,7 +224,14 @@ fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>
     // do
     let mut state = CoreState::wrap(ctx.state());
     for dia in this.diamonds.as_list() {
-        let cc = engraved_one_diamond(pdhei, &mut state, &main_addr, &dia, &this.engraved_content)?;
+        let cc = engraved_one_diamond(
+            pdhei,
+            &mut state,
+            &main_addr,
+            &dia,
+            *this.engraved_type,
+            &this.engraved_content,
+        )?;
         ttcost = ttcost.add_mode_u64(&cc)?;
     }
     // check cost
@@ -311,7 +323,7 @@ fn diamond_inscription_clean(
 
 
 action_define!{ DiaInscEdit, 34,
-    ActScope::TOP, true, [], 
+    ActScope::CALL, true, [], 
     {
         diamond           : DiamondName
         index             : Uint1
@@ -361,7 +373,10 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
     // replace the inscription entry
     diasto
         .inscripts
-        .replace(idx, this.engraved_content.clone())?;
+        .replace(
+            idx,
+            create_diamond_inscript(*this.engraved_type, &this.engraved_content),
+        )?;
     diasto.prev_engraved_height = BlockHeight::from(pdhei);
     state.diamond_set(&this.diamond, &diasto);
     // burn protocol cost
@@ -378,7 +393,7 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
 
 
 action_define!{ DiaInscMove, 35,
-    ActScope::TOP, true, [], 
+    ActScope::AST, true, [], 
     {
         from_diamond    : DiamondName
         to_diamond      : DiamondName
@@ -447,13 +462,13 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
         );
     }
     // extract inscription from source
-    let content = from_sto.inscripts.as_list()[idx].clone();
+    let inscript = from_sto.inscripts.as_list()[idx].clone();
     from_sto.inscripts.drop(idx)?;
     from_sto.prev_engraved_height = BlockHeight::from(pdhei);
     let mut state = CoreState::wrap(ctx.state());
     state.diamond_set(&this.from_diamond, &from_sto);
     // push inscription to target
-    to_sto.inscripts.push(content)?;
+    to_sto.inscripts.push(inscript)?;
     to_sto.prev_engraved_height = BlockHeight::from(pdhei);
     state.diamond_set(&this.to_diamond, &to_sto);
     // burn protocol cost
@@ -569,6 +584,7 @@ pub fn engraved_one_diamond(
     state: &mut CoreState,
     addr: &Address,
     diamond: &DiamondName,
+    engraved_type: u8,
     content: &BytesW1,
 ) -> Ret<Amount> {
     let mut diasto = check_diamond_status_for_inscription(state, addr, diamond)?;
@@ -590,7 +606,9 @@ pub fn engraved_one_diamond(
     let cost = calc_append_inscription_protocol_cost(haveng, *diaslt.average_bid_burn);
     // do engraved
     diasto.prev_engraved_height = BlockHeight::from(pending_height);
-    diasto.inscripts.push(content.clone())?;
+    diasto
+        .inscripts
+        .push(create_diamond_inscript(engraved_type, content))?;
     // save
     state.diamond_set(diamond, &diasto);
     // ok finish

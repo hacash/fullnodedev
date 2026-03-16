@@ -207,4 +207,18 @@ mod tests {
         assert_eq!(head.readable(), "WTYUIAHYXYHY");
         assert_eq!(list.readable(), "UETWNKWYUKKZ");
     }
+
+    #[test]
+    fn test_diamond_inscript_roundtrip_keeps_type_and_content() {
+        let item = DiamondInscript::create_by(7, BytesW1::from_str("hello").unwrap());
+        let enc = item.serialize();
+        let mut dec = DiamondInscript::default();
+        dec.parse(&enc).unwrap();
+        assert_eq!(item, dec);
+
+        let list = Inscripts::from_list(vec![item.clone()]).unwrap();
+        assert_eq!(list.array(), vec!["hello".to_owned()]);
+        assert_eq!(*list.as_list()[0].engraved_type, 7);
+        assert_eq!(list.as_list()[0].content.to_readable_or_hex(), "hello");
+    }
 }

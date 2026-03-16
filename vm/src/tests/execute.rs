@@ -50,10 +50,11 @@ pub fn execute3() {
         return choose(mei<=4, 0, 1)
     "##).unwrap();
 
-    let argv = Value::Compo(CompoItem::list(VecDeque::from([
+    let argv = Value::pack_call_args(vec![
         Value::Address(Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap()),
         Value::Bytes(Amount::from("6:248").unwrap().serialize()),
-    ])).unwrap());
+    ])
+    .unwrap();
 
     println!("{}", permithac_codes.bytecode_print(true).unwrap());
     let exec_res = execute_test_with_argv(65535, permithac_codes, Some(argv));
@@ -88,10 +89,11 @@ pub fn execute5() {
         return 0
     "##).unwrap();
 
-    let argv = Value::Compo(CompoItem::list(VecDeque::from([
+    let argv = Value::pack_call_args(vec![
         Value::Address(Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap()),
         Value::Bytes(Amount::from("6:248").unwrap().serialize()),
-    ])).unwrap());
+    ])
+    .unwrap();
 
     println!("{}", permithac_codes.bytecode_print(true).unwrap());
     let exec_res = execute_test_with_argv(65535, permithac_codes, Some(argv));

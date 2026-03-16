@@ -32,7 +32,7 @@ impl Syntax {
         let alen = argvs.len();
         let argv = match md {
             ArgvMode::Concat => concat_func_argvs(argvs)?,
-            ArgvMode::List => pack_func_argvs(argvs)?,
+            ArgvMode::Packed => pack_call_args_exprs(argvs)?,
         };
         Ok((alen, argv))
 
@@ -244,7 +244,7 @@ fn concat_func_argvs(mut list: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
 }
 
 
-fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+fn pack_call_args_exprs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     let argv_len = subs.len();
     Ok(match argv_len {
         0 => push_nil(),

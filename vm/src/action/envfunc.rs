@@ -113,6 +113,6 @@ action_define!{ ViewDiamondInscGet, 0x0604,
         }
         let insc = &diaobj.inscripts.as_list()[idx];
         // ok
-        Ok(insc.to_vec())
+        Ok(insc.content.to_vec())
     })
 }

@@ -14,6 +14,15 @@ pub fn buf_is_empty_or_all_zero(buf: &[u8]) -> bool {
 }
 
 #[inline(always)]
+pub fn decode_canonical_bool_byte(byte: u8) -> Option<bool> {
+    match byte {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+#[inline(always)]
 pub fn trim_leading_zero_bytes(buf: &[u8]) -> &[u8] {
     let first_nz = buf.iter().position(|b| *b != 0).unwrap_or(buf.len());
     &buf[first_nz..]
@@ -25,6 +34,22 @@ pub fn minimal_active_uint_bytes(non_zero_len: usize) -> Option<usize> {
         .iter()
         .copied()
         .find(|w| non_zero_len <= *w)
+}
+
+#[inline(always)]
+pub fn checked_value_output_len(cap: &SpaceCap, len: usize) -> VmrtRes<usize> {
+    if len >= u16::MAX as usize || len > cap.value_size {
+        return itr_err_code!(OutOfValueSize)
+    }
+    Ok(len)
+}
+
+#[inline(always)]
+pub fn checked_value_output_add(cap: &SpaceCap, left: usize, right: usize) -> VmrtRes<usize> {
+    let total = left
+        .checked_add(right)
+        .ok_or_else(|| ItrErr::code(OutOfValueSize))?;
+    checked_value_output_len(cap, total)
 }
 
 pub fn buf_drop_left_zero(buf: &[u8], minl: usize) -> Vec<u8> {
@@ -51,4 +76,25 @@ pub fn length_value_by_len(cap: &SpaceCap, len: usize) -> VmrtRes<Value> {
         return itr_err_code!(OutOfCompoLen)
     }
     Ok(Value::U32(len as u32))
+}
+
+#[cfg(test)]
+mod value_output_len_tests {
+    use super::*;
+
+    #[test]
+    fn checked_value_output_add_rejects_usize_overflow() {
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = usize::MAX;
+        let err = checked_value_output_add(&cap, usize::MAX, 1).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+    }
+
+    #[test]
+    fn checked_value_output_len_keeps_u16_limit() {
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = usize::MAX;
+        let err = checked_value_output_len(&cap, u16::MAX as usize).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+    }
 }

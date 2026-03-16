@@ -93,11 +93,11 @@ impl FuncArgvTypes {
             0 => Ok(()),
             1 => v.cast_param(types[0]),
             _ => {
-                let rebuild_as_args = matches!(v, Value::Tuple(_));
-                let rebuild_as_list = matches!(v, Value::Compo(compo) if compo.list_ref().is_ok());
-                let mut items = v
-                    .clone_argv_items()
-                    .map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?;
+                // Multi-parameter call boundaries only accept Tuple packing.
+                let Value::Tuple(tuple) = v else {
+                    return itr_err_code!(CallArgvTypeFail);
+                };
+                let mut items = tuple.to_vec();
                 if items.len() != tn {
                     return itr_err_fmt!(
                         CallArgvTypeFail,
@@ -110,18 +110,9 @@ impl FuncArgvTypes {
                     item.cast_param(types[idx])?;
                 }
 
-                *v = if rebuild_as_args {
-                    Value::Tuple(
-                        TupleItem::new(items).map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?,
-                    )
-                } else if rebuild_as_list {
-                    let list = items.into_iter().collect();
-                    Value::Compo(
-                        CompoItem::list(list).map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?,
-                    )
-                } else {
-                    return itr_err_code!(CallArgvTypeFail);
-                };
+                *v = Value::Tuple(
+                    TupleItem::new(items).map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?,
+                );
                 Ok(())
             }
         }
@@ -300,7 +291,7 @@ mod code_stuff_tests {
     }
 
     #[test]
-    fn check_params_list_no_mutation_on_type_mismatch() {
+    fn check_params_multi_compo_list_is_rejected_without_mutation() {
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U8]).unwrap();
         let shared = CompoItem::list(VecDeque::from([Value::U16(1), Value::U16(256)])).unwrap();
         let mut argv = Value::Compo(shared.clone());
@@ -326,7 +317,7 @@ mod code_stuff_tests {
     }
 
     #[test]
-    fn check_params_multi_non_list_input_uses_call_argv_type_fail() {
+    fn check_params_multi_non_tuple_input_uses_call_argv_type_fail() {
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U16]).unwrap();
         let mut argv = Value::U8(1);
         let err = types.check_params(&mut argv).unwrap_err();
@@ -342,7 +333,7 @@ mod code_stuff_tests {
     }
 
     #[test]
-    fn check_params_multi_args_input_supports_args_and_legacy_list() {
+    fn check_params_multi_args_input_supports_tuple_only() {
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U16, ValueTy::U64]).unwrap();
 
         let mut args = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
@@ -351,19 +342,15 @@ mod code_stuff_tests {
             args,
             Value::Tuple(TupleItem::new(vec![Value::U16(1), Value::U64(2)]).unwrap())
         );
+    }
 
+    #[test]
+    fn check_params_multi_args_rejects_compo_list_input() {
+        let types = FuncArgvTypes::from_types(None, vec![ValueTy::U16, ValueTy::U64]).unwrap();
         let mut list =
             Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1), Value::U16(2)])).unwrap());
-        types.check_params(&mut list).unwrap();
-        let items: Vec<_> = list
-            .compo_ref()
-            .unwrap()
-            .list_ref()
-            .unwrap()
-            .iter()
-            .cloned()
-            .collect();
-        assert_eq!(items, vec![Value::U16(1), Value::U64(2)]);
+        let err = types.check_params(&mut list).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 
     #[test]

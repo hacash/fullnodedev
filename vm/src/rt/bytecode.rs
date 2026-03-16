@@ -119,7 +119,7 @@ pub enum Bytecode {
     BACK                = 0x6e, // &       compo pick last
     APPEND              = 0x6f, // &       compo append
     CLONE               = 0x70, // a++     compo clone
-    UNPACK              = 0x71, // a       unpack argv sequence to local
+    UNPACK              = 0x71, // a       unpack sequence to local
     PACKTUPLE           = 0x72, // (v...,n)+ pack tuple value
     TUPLE2LIST          = 0x73, // &       tuple to list
     _______________116  = 0x74,

@@ -23,12 +23,26 @@ fn check_func_boundary_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
             }
             Ok(())
         }
+        // Top-level Compo is a normal single argument/return value, not an argv wrapper.
         Compo(..) => Ok(()),
         _ => check_scalar_ec(value, ec),
     }
 }
 
 impl Value {
+    pub(crate) fn extract_bytes_len_with_error_code(&self, ec: ItrErrCode) -> VmrtRes<usize> {
+        match self {
+            Bool(..) | U8(..) => Ok(1),
+            U16(..) => Ok(2),
+            U32(..) => Ok(4),
+            U64(..) => Ok(8),
+            U128(..) => Ok(16),
+            Bytes(b) => Ok(b.len()),
+            Address(..) => Ok(field::Address::SIZE),
+            _ => itr_err_code!(ec),
+        }
+    }
+
     fn extract_bytes_with_error_code(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
         match self {
             Bool(b) => Ok(vec![maybe!(b, 1, 0)]),

@@ -449,6 +449,7 @@ impl VMState<'_> {
         }
         let mut k = vec![cadr.to_vec(), k].concat();
         if k.len() > Hash::SIZE {
+            // This sha3 cost is hidden from users and is not linked to the user-facing gas model.
             k = sys::sha3(k).to_vec();
         }
         Ok(ValueKey::from(k))
@@ -463,6 +464,7 @@ impl VMState<'_> {
         let (is_expire, is_delete, _) = v.check(curhei);
         if is_delete {
             // Maintenance-only cleanup for over-retention keys; no external billing side effects.
+            // This is internal state housekeeping and is not tied to user gas charges.
             self.ctrtkvdb_del(&k);
             return Ok(None); // over delete
         }

@@ -37,7 +37,8 @@ fn seed_balance(ctx: &mut dyn Context, addr: &Address, mei: u64) {
 fn make_inscripts(n: usize) -> Inscripts {
     let mut ins = Inscripts::default();
     for i in 0..n {
-        let one = BytesW1::from(format!("ins{}", i).into_bytes()).unwrap();
+        let one =
+            DiamondInscript::create_by(1, BytesW1::from(format!("ins{}", i).into_bytes()).unwrap());
         ins.push(one).unwrap();
     }
     ins
@@ -151,7 +152,11 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
         ok_act.engraved_content = BytesW1::from_str("hello").unwrap();
         ok_act.execute(&mut ok_ctx).unwrap();
 
-        assert_eq!(diamond_insc_len(&mut ok_ctx, &diamond), cur_len + 1);
+        let dia = CoreState::wrap(ok_ctx.state()).diamond(&diamond).unwrap();
+        assert_eq!(dia.inscripts.length(), cur_len + 1);
+        let last = dia.inscripts.as_list().last().unwrap();
+        assert_eq!(*last.engraved_type, 1);
+        assert_eq!(last.content.to_readable_or_hex(), "hello".to_owned());
         assert_eq!(
             balance_amount(&mut ok_ctx, &main),
             Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap()
@@ -267,8 +272,9 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     ok_act.execute(&mut ok_ctx).unwrap();
 
     let dia = CoreState::wrap(ok_ctx.state()).diamond(&diamond).unwrap();
+    assert_eq!(*dia.inscripts.as_list()[0].engraved_type, 1);
     assert_eq!(
-        dia.inscripts.as_list()[0].to_readable_or_hex(),
+        dia.inscripts.as_list()[0].content.to_readable_or_hex(),
         "edited".to_owned()
     );
     assert_eq!(

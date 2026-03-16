@@ -41,8 +41,8 @@ impl Syntax {
         Self::build_param_prelude(params as usize, false)
     }
 
-    fn deal_func_argv(&mut self) -> Ret<Box<dyn IRNode>> {
-        let (pms, mut subx) = self.must_get_func_argv(ArgvMode::List)?;
+    fn deal_call_args(&mut self) -> Ret<Box<dyn IRNode>> {
+        let (pms, mut subx) = self.must_get_func_argv(ArgvMode::Packed)?;
         if 0 == pms {
             // func() == func(nil)
             subx = push_nil()
@@ -313,7 +313,7 @@ impl Syntax {
                         self.parse_generic_call_target_selector(head, "call target format invalid")?;
                     CallSpec::invoke(target, effect, fnsign)
                 };
-                let argv = self.deal_func_argv()?;
+                let argv = self.deal_call_args()?;
                 push_user_invoke(call, argv)?
             }
             Keyword(CodeCall) => {
@@ -325,7 +325,7 @@ impl Syntax {
                     CallSpec::codecall(idx, fnsign)
                 };
                 let argv = if self.idx < max && matches!(self.tokens[self.idx], Partition('(')) {
-                    self.deal_func_argv()?
+                    self.deal_call_args()?
                 } else {
                     push_nil()
                 };

@@ -8,8 +8,8 @@ mod action_coverage {
         Context, Logs, State, StateOperat, Transaction, TransactionRead, TxDriverContext,
     };
     use field::{
-        Address, Amount, BytesW1, BytesW2, DiamondName, DiamondSto, Field, Hash, Inscripts, Parse,
-        Readable, Serialize, Uint1, Uint2, Uint4,
+        Address, Amount, BytesW1, BytesW2, DiamondInscript, DiamondName, DiamondSto, Field, Hash,
+        Inscripts, Parse, Readable, Serialize, Uint1, Uint2, Uint4,
     };
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
@@ -1605,8 +1605,8 @@ mod action_coverage {
         let mut dia = DiamondSto::new();
         dia.address = main;
         dia.inscripts = Inscripts::from_list(vec![
-            BytesW1::from_str("insc-1").unwrap(),
-            BytesW1::from_str("insc-2").unwrap(),
+            DiamondInscript::create_by(1, BytesW1::from_str("insc-1").unwrap()),
+            DiamondInscript::create_by(2, BytesW1::from_str("insc-2").unwrap()),
         ])
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
@@ -1658,8 +1658,8 @@ mod action_coverage {
         let mut dia = DiamondSto::new();
         dia.address = main;
         dia.inscripts = Inscripts::from_list(vec![
-            BytesW1::from_str("first").unwrap(),
-            BytesW1::from_str("second").unwrap(),
+            DiamondInscript::create_by(1, BytesW1::from_str("first").unwrap()),
+            DiamondInscript::create_by(2, BytesW1::from_str("second").unwrap()),
         ])
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
@@ -1687,7 +1687,11 @@ mod action_coverage {
         let diamond = DiamondName::from_readable(b"AABBCC").unwrap();
         let mut dia = DiamondSto::new();
         dia.address = main;
-        dia.inscripts = Inscripts::from_list(vec![BytesW1::from_str("only").unwrap()]).unwrap();
+        dia.inscripts = Inscripts::from_list(vec![DiamondInscript::create_by(
+            1,
+            BytesW1::from_str("only").unwrap(),
+        )])
+        .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
         let mut act = ViewDiamondInscGet::new();
