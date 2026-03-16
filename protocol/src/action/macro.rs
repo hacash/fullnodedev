@@ -100,7 +100,6 @@ macro_rules! action_define {
                         $pctx.level(),
                         $pctx.action_exec_from(),
                         $pself,
-                        $pctx.tx().actions(),
                     ).into_xret()?;
                 }
                 // act size is base gas use
@@ -211,122 +210,6 @@ macro_rules! action_register {
             builder.register_codec(ACTION_CODEC_KINDS, try_create, try_json_decode, false)
         }
     };
-}
-
-pub fn check_tx_action_set(actions: &Vec<Box<dyn Action>>) -> Rerr {
-    let actlen = actions.len();
-    if actlen < 1 || actlen > TX_ACTIONS_MAX {
-        return errf!(
-            "action length {} is 0 or one transaction max actions is {}",
-            actlen,
-            TX_ACTIONS_MAX
-        );
-    }
-    // Guard actions are environment constraints and cannot form a standalone tx.
-    if actions.iter().all(|a| a.level() == ActLv::Guard) {
-        return errf!("tx actions cannot be all GUARD");
-    }
-    Ok(())
-}
-
-// check action level
-pub fn check_action_level(
-    ctx_level: usize,
-    exec_from: ActExecFrom,
-    act: &dyn Action,
-    actions: &Vec<Box<dyn Action>>,
-) -> Rerr {
-    let kid = act.kind();
-    let alv = act.level();
-    let actlen = actions.len();
-    let check_top_source = || -> Rerr {
-        if exec_from != ActExecFrom::TxLoop {
-            return errf!("action {} can only execute in tx action loop", kid);
-        }
-        Ok(())
-    };
-
-    macro_rules! check_level_top {
-        ($actname: expr) => {
-            if ctx_level != ACTION_CTX_LEVEL_TOP {
-                return errf!("action {} can only execute on {}", kid, $actname);
-            }
-        };
-    }
-
-    if alv == ActLv::TopOnly {
-        check_top_source()?;
-        check_level_top! {"TOP_ONLY"}
-        if actlen != 1 {
-            return errf!("action {} can only execute on TOP_ONLY", kid);
-        }
-    } else if alv == ActLv::TopOnlyWithGuard {
-        check_top_source()?;
-        check_level_top! {"TOP_ONLY_WITH_GUARD"}
-        let mut non_guard = 0;
-        for txact in actions {
-            if txact.level() != ActLv::Guard {
-                non_guard += 1;
-            }
-        }
-        if non_guard != 1 {
-            return errf!(
-                "action {} can only execute on TOP_ONLY_WITH_GUARD (requires exactly one non-guard action)",
-                kid
-            );
-        }
-    } else if alv == ActLv::TopUnique {
-        check_top_source()?;
-        check_level_top! {"TOP_UNIQUE"}
-        let mut smalv = 0;
-        for act in actions {
-            if act.kind() == kid {
-                smalv += 1;
-            }
-        }
-        if smalv != 1 {
-            return errf!("action {} can only execute on level TOP_UNIQUE", kid);
-        }
-    } else if alv == ActLv::Guard {
-        // Guard is an env constraint; disallow execution from VM ActionCall.
-        if exec_from == ActExecFrom::ActionCall {
-            return errf!(
-                "action {} (Guard) cannot execute from ActionCall context",
-                kid
-            );
-        }
-        if ctx_level > ACTION_CTX_LEVEL_AST_MAX {
-            return errf!(
-                "action {} can only execute on GUARD (AST and above), now ctx {}",
-                kid,
-                ctx_level
-            );
-        }
-    } else if alv == ActLv::AnyInCall {
-        // AnyInCall is the only level using lower-bound enforcement.
-        if ctx_level < ACTION_CTX_LEVEL_CALL_MAIN {
-            return errf!(
-                "action {} can only execute in VM call context (ctx >= {})",
-                kid,
-                ACTION_CTX_LEVEL_CALL_MAIN
-            );
-        }
-    } else if alv == ActLv::Top {
-        check_top_source()?;
-        check_level_top! {"TOP"}
-    } else if let Some(max_ctx_level) = alv.max_ctx_level() {
-        // All other levels are upper-bound compatible: shallower ctx is allowed.
-        if ctx_level > max_ctx_level {
-            return errf!(
-                "action {} max ctx level {} but call in {}",
-                kid,
-                max_ctx_level,
-                ctx_level
-            );
-        }
-    }
-    // ok
-    Ok(())
 }
 
 //////////////////// TEST  ////////////////////

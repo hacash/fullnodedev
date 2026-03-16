@@ -1,23 +1,6 @@
 /*
     VM assigner: allows vm crate to register its assign function
-    so that protocol layer can pre-initialize VM at TX execution entry.
+    so that tx session can lazily initialize VM on first VM call.
 */
 
 pub type FnVmAssignFunc = fn(height: u64) -> Box<dyn VM>;
-
-fn tx_vm_enabled(ctx: &dyn Context) -> bool {
-    ctx.env().tx.ty >= crate::transaction::TransactionType3::TYPE
-}
-
-/// Initialize VM on context if an assigner is registered and VM is not yet created.
-pub fn do_vm_init(ctx: &mut dyn Context) -> Rerr {
-    if !ctx.vm().is_nil() || !tx_vm_enabled(ctx) {
-        return Ok(());
-    }
-    let assign = get_registry()?.vm_assigner;
-    if let Some(f) = assign {
-        let vm = f(ctx.env().block.height);
-        ctx.vm_init_once(vm)?;
-    }
-    Ok(())
-}

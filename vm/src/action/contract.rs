@@ -49,11 +49,9 @@ action_define! { ContractDeploy, 40,
         }
         // call construct only when explicitly enabled by action flag
         if self.construct_call.check() {
-            let cty = EntryKind::Abst as u8;
-            let _ = setup_vm_run(
+            let _ = setup_vm_run_abst(
                 ctx,
-                cty,
-                AbstCall::Construct as u8,
+                AbstCall::Construct,
                 Arc::from(caddr.as_bytes()),
                 Value::Bytes(cargv),
             )?;
@@ -93,13 +91,11 @@ action_define! { ContractUpdate, 41,
         let new_size = new_contract.size();
         let delta_bytes = new_size.saturating_sub(old_size);
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
-        let cty = EntryKind::Abst as u8;
         // Design choice: `Change` intentionally dominates `Append`; any edit marked as changed (including abstcall edits) dispatches `Change`, and `Append` is reserved for append-only growth.
-        let sys = maybe!(did_change, Change, Append) as u8; // Change or Append
+        let sys = maybe!(did_change, Change, Append); // Change or Append
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
-        let _ = setup_vm_run(
+        let _ = setup_vm_run_abst(
             ctx,
-            cty,
             sys,
             Arc::from(caddr.as_bytes()),
             Value::Nil,
@@ -107,7 +103,7 @@ action_define! { ContractUpdate, 41,
         // save the new
         vmsto!(ctx).contract_set_sync_edition(&caddr, &new_contract);
         let caddr_real = caddr.to_addr();
-        ctx.vm().invalidate_contract_cache(&caddr_real);
+        ctx.vm_invalidate_contract_cache(&caddr_real);
         Ok(vec![])
     })
 }
@@ -475,7 +471,7 @@ mod contract_test {
     use super::*;
     use crate::contract::{Abst, Contract};
     use basis::component::Env;
-    use basis::interface::{ActExec, Context};
+    use basis::interface::ActExec;
     use field::{Address, Amount, Uint4};
     use protocol::context::decode_gas_budget;
     use protocol::transaction::TransactionType3;
@@ -499,7 +495,7 @@ mod contract_test {
             let registry = protocol::setup::SetupBuilder::new()
                 .block_hasher(|_, stuff| sys::calculate_hash(stuff))
                 .action_register(protocol::action::register)
-                .vm_assigner(crate::machine::vm_assign)
+                .vm_assigner(|height| Box::new(crate::global_machine_manager().assign(height)))
                 .build()
                 .unwrap();
             protocol::setup::install_once(registry).unwrap();

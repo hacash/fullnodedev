@@ -225,7 +225,7 @@ mod verify_type_param_tests {
             ValueTy::Bytes,
             ValueTy::Address,
             ValueTy::HeapSlice,
-            ValueTy::Args,
+            ValueTy::Tuple,
             ValueTy::Compo,
         ];
         for ty in types {
@@ -254,7 +254,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_cto_targets_outside_cast_set() {
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Args, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Compo] {
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
             let res = verify_bytecodes(&cto_codes);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));

@@ -19,7 +19,7 @@ impl CounterMockVm {
 }
 
 impl VM for CounterMockVm {
-    fn snapshot_volatile(&self) -> Box<dyn Any> {
+    fn snapshot_volatile(&mut self) -> Box<dyn Any> {
         Box::new(self.counter.load(Ordering::SeqCst))
     }
 

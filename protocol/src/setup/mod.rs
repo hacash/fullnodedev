@@ -21,7 +21,7 @@ pub struct SetupBuilder {
 
 pub struct SetupRegistryData {
     block_hasher: FnBlockHasherFunc,
-    vm_assigner: Option<FnVmAssignFunc>,
+    pub(crate) vm_assigner: Option<FnVmAssignFunc>,
     action_codecs: HashMap<u16, ActionCodec>,
     action_hooks: Vec<FnActionHookFunc>,
 }

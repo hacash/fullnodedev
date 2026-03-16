@@ -10,8 +10,8 @@ use super::operate::*;
 use super::setup::*;
 use super::state::*;
 
-include! {"asthelper.rs"}
 include! {"macro.rs"}
+include! {"level.rs"}
 include! {"create.rs"}
 
 include! {"hacash.rs"}
@@ -25,6 +25,7 @@ include! {"asset.rs"}
 include! {"blob.rs"}
 include! {"chain.rs"}
 
+include! {"asthelper.rs"}
 include! {"astselect.rs"}
 include! {"astif.rs"}
 

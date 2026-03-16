@@ -15,7 +15,7 @@ pub enum ValueTy {
     Bytes       = 10,
     Address     = 11,
     HeapSlice   = 13,
-    Args        = 14,
+    Tuple        = 14,
     Compo       = 15
 }
 
@@ -23,16 +23,16 @@ pub const RESERVED_U256_TYPE_NAME: &str = "u256";
 
 impl ValueTy {
 
-    pub fn canbe_argv(&self) -> Rerr {
+    pub fn check_func_argv_type(&self) -> Rerr {
         use ValueTy::*;
         match self {
-            Nil | HeapSlice | Args => errf!("Value Type {:?} cannot be func argv", self),
+            Nil | HeapSlice | Tuple => errf!("Value Type {:?} cannot be func argv", self),
             _ => Ok(())
         }
     }
 
     /// Allowed as function return value.
-    pub fn canbe_retval(&self) -> Rerr {
+    pub fn check_func_retv_type(&self) -> Rerr {
         use ValueTy::*;
         match self {
             Nil | HeapSlice => errf!("Value Type {:?} cannot be func retval", self),
@@ -52,7 +52,7 @@ impl ValueTy {
             ValueTy::Bytes     => "bytes"     ,
             ValueTy::Address   => "address"   ,
             ValueTy::HeapSlice => "heapslice" ,
-            ValueTy::Args      => "args"      ,
+            ValueTy::Tuple     => "tuple"     ,
             ValueTy::Compo     => "compo"     ,
         }
     }
@@ -86,7 +86,7 @@ impl ValueTy {
             "bytes"     => Bytes,
             "address"   => Address,
             "heapslice" => HeapSlice,
-            "args"      => Args,
+            "tuple"     => Tuple,
             "compo"     => Compo,
             a => return errf!("value type '{}' not found", a)
         })
@@ -107,7 +107,7 @@ impl ValueTy {
             10 => Bytes     ,
             11 => Address   ,
             13 => HeapSlice ,
-            14 => Args      ,
+            14 => Tuple      ,
             15 => Compo     ,
             _ => return errf!("ValueTy {} not found", t)
         })
@@ -164,19 +164,20 @@ mod type_tests {
             assert_eq!(parse_cto_target_ty_param(ty as u8).unwrap(), ty);
         }
 
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Args, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Compo] {
             let res = parse_cto_target_ty_param(ty as u8);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }
     }
 
     #[test]
-    fn compo_and_args_return_types_are_allowed() {
-        assert!(ValueTy::Compo.canbe_argv().is_ok());
-        assert!(ValueTy::Compo.canbe_retval().is_ok());
-        assert!(ValueTy::Args.canbe_retval().is_ok());
-        assert!(ValueTy::Nil.canbe_argv().is_err());
-        assert!(ValueTy::HeapSlice.canbe_argv().is_err());
-        assert!(ValueTy::Args.canbe_argv().is_err());
+    fn compo_and_tuple_return_types_are_allowed() {
+        assert!(ValueTy::Compo.check_func_argv_type().is_ok());
+        assert!(ValueTy::Compo.check_func_retv_type().is_ok());
+        assert!(ValueTy::Tuple.check_func_retv_type().is_ok());
+        assert!(ValueTy::Nil.check_func_argv_type().is_err());
+        assert!(ValueTy::HeapSlice.check_func_argv_type().is_err());
+        assert!(ValueTy::Tuple.check_func_argv_type().is_err());
+        assert_eq!(ValueTy::from_name("tuple").unwrap(), ValueTy::Tuple);
     }
 }

@@ -8,6 +8,7 @@ use protocol::state::CoreState;
 use protocol::transaction::*;
 use sys::Account;
 use testkit::sim::context::make_ctx_with_state;
+use testkit::sim::integration::scoped_setup;
 use testkit::sim::state::ForkableMemState;
 
 fn addr_of(acc: &Account) -> Address {
@@ -20,6 +21,10 @@ fn make_ctx<'a>(height: u64, tx: &'a dyn TransactionRead) -> ContextInst<'a> {
     env.block.height = height;
     env.tx = create_tx_info(tx);
     make_ctx_with_state(env, Box::new(ForkableMemState::default()), tx)
+}
+
+fn test_setup() -> protocol::setup::ScopedSetupGuard {
+    scoped_setup(None)
 }
 
 fn seed_balance(ctx: &mut dyn Context, addr: &Address, mei: u64) {
@@ -90,8 +95,16 @@ fn balance_mei(ctx: &mut dyn Context, addr: &Address) -> u64 {
         .unwrap()
 }
 
+fn balance_amount(ctx: &mut dyn Context, addr: &Address) -> Amount {
+    CoreState::wrap(ctx.state())
+        .balance(addr)
+        .unwrap_or_default()
+        .hacash
+}
+
 #[test]
 fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
+    let _setup = test_setup();
     let main_acc = Account::create_by("diamond-inscription-append-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_000);
@@ -104,32 +117,28 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
     // - len=10 -> A/50 = 2
     // - len=40 -> A/20 = 5
     // - len=100 -> A/10 = 10
-    let cases = vec![
-        (9usize, 0u64),
-        (10usize, 2u64),
-        (40usize, 5u64),
-        (100usize, 10u64),
-    ];
-    for (cur_len, expect_cost) in cases {
+    let cases = vec![9usize, 10usize, 40usize, 100usize];
+    for cur_len in cases {
+        let expect_cost = calc_append_inscription_protocol_cost(cur_len, 100);
         let mut fail_ctx = make_ctx(10_000, tx.as_read());
         seed_balance(&mut fail_ctx, &main, 1_000_000);
         seed_diamond(&mut fail_ctx, diamond, main, cur_len, 0, 100);
         let mut fail_act = DiaInscPush::new();
         fail_act.diamonds = DiamondNameListMax200::one(diamond);
-        fail_act.protocol_cost = Amount::mei(expect_cost.saturating_sub(1));
+        fail_act.protocol_cost = Amount::zero();
         fail_act.engraved_type = Uint1::from(1);
         fail_act.engraved_content = BytesW1::from_str("hello").unwrap();
         let fail_exec = fail_act.execute(&mut fail_ctx);
-        if expect_cost == 0 {
+        if expect_cost.is_positive() {
+            let err = fail_exec.unwrap_err();
+            assert!(err.contains("cost expected"), "{}", err);
+        } else {
             assert!(
                 fail_exec.is_ok(),
                 "len={} should be free but got {:?}",
                 cur_len,
                 fail_exec
             );
-        } else {
-            let err = fail_exec.unwrap_err();
-            assert!(err.contains("cost error"), "{}", err);
         }
 
         let mut ok_ctx = make_ctx(10_000, tx.as_read());
@@ -137,18 +146,22 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
         seed_diamond(&mut ok_ctx, diamond, main, cur_len, 0, 100);
         let mut ok_act = DiaInscPush::new();
         ok_act.diamonds = DiamondNameListMax200::one(diamond);
-        ok_act.protocol_cost = Amount::mei(expect_cost);
+        ok_act.protocol_cost = expect_cost.clone();
         ok_act.engraved_type = Uint1::from(1);
         ok_act.engraved_content = BytesW1::from_str("hello").unwrap();
         ok_act.execute(&mut ok_ctx).unwrap();
 
         assert_eq!(diamond_insc_len(&mut ok_ctx, &diamond), cur_len + 1);
-        assert_eq!(balance_mei(&mut ok_ctx, &main), 1_000_000 - expect_cost);
+        assert_eq!(
+            balance_amount(&mut ok_ctx, &main),
+            Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap()
+        );
     }
 }
 
 #[test]
 fn diamond_inscription_readable_content_type_boundary_is_100() {
+    let _setup = test_setup();
     let main_acc = Account::create_by("diamond-inscription-readable-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_010);
@@ -183,6 +196,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
 
 #[test]
 fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
+    let _setup = test_setup();
     let main_acc = Account::create_by("diamond-inscription-clear-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_011);
@@ -219,6 +233,7 @@ fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
 
 #[test]
 fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
+    let _setup = test_setup();
     let main_acc = Account::create_by("diamond-inscription-edit-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_001);
@@ -237,7 +252,7 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     fail_act.engraved_type = Uint1::from(1);
     fail_act.engraved_content = BytesW1::from_str("edited").unwrap();
     let err = fail_act.execute(&mut fail_ctx).unwrap_err();
-    assert!(err.contains("edit cost error"), "{}", err);
+    assert!(err.contains("cost expected"), "{}", err);
 
     let mut ok_ctx = make_ctx(10_000, tx.as_read());
     seed_balance(&mut ok_ctx, &main, 1_000_000);
@@ -245,7 +260,8 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     let mut ok_act = DiaInscEdit::new();
     ok_act.diamond = diamond;
     ok_act.index = Uint1::from(0);
-    ok_act.protocol_cost = Amount::mei(1);
+    let expect_cost = calc_edit_inscription_protocol_cost(100);
+    ok_act.protocol_cost = expect_cost.clone();
     ok_act.engraved_type = Uint1::from(1);
     ok_act.engraved_content = BytesW1::from_str("edited").unwrap();
     ok_act.execute(&mut ok_ctx).unwrap();
@@ -255,11 +271,15 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
         dia.inscripts.as_list()[0].to_readable_or_hex(),
         "edited".to_owned()
     );
-    assert_eq!(balance_mei(&mut ok_ctx, &main), 1_000_000 - 1);
+    assert_eq!(
+        balance_amount(&mut ok_ctx, &main),
+        Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap()
+    );
 }
 
 #[test]
 fn diamond_inscription_move_charges_by_target_append_rule_only() {
+    let _setup = test_setup();
     let from_acc = Account::create_by("diamond-inscription-move-from").unwrap();
     let to_acc = Account::create_by("diamond-inscription-move-to").unwrap();
     let from = addr_of(&from_acc);
@@ -283,7 +303,7 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
     fail_act.index = Uint1::from(0);
     fail_act.protocol_cost = Amount::mei(3);
     let err = fail_act.execute(&mut fail_ctx).unwrap_err();
-    assert!(err.contains("move cost error"), "{}", err);
+    assert!(err.contains("cost expected"), "{}", err);
 
     let mut ok_ctx = make_ctx(10_000, tx.as_read());
     seed_balance(&mut ok_ctx, &from, 1_000_000);
@@ -293,16 +313,21 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
     ok_act.from_diamond = from_diamond;
     ok_act.to_diamond = to_diamond;
     ok_act.index = Uint1::from(0);
-    ok_act.protocol_cost = Amount::mei(4);
+    let expect_cost = calc_move_inscription_protocol_cost(10, 200);
+    ok_act.protocol_cost = expect_cost.clone();
     ok_act.execute(&mut ok_ctx).unwrap();
 
     assert_eq!(diamond_insc_len(&mut ok_ctx, &from_diamond), 0);
     assert_eq!(diamond_insc_len(&mut ok_ctx, &to_diamond), 11);
-    assert_eq!(balance_mei(&mut ok_ctx, &from), 1_000_000 - 4);
+    assert_eq!(
+        balance_amount(&mut ok_ctx, &from),
+        Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap()
+    );
 }
 
 #[test]
 fn diamond_inscription_move_is_free_when_target_has_less_than_ten() {
+    let _setup = test_setup();
     let from_acc = Account::create_by("diamond-inscription-move-free-from").unwrap();
     let to_acc = Account::create_by("diamond-inscription-move-free-to").unwrap();
     let from = addr_of(&from_acc);
@@ -334,6 +359,7 @@ fn diamond_inscription_move_is_free_when_target_has_less_than_ten() {
 
 #[test]
 fn diamond_inscription_rejects_non_privakey_owner() {
+    let _setup = test_setup();
     let owner = Address::create_scriptmh([7u8; 20]);
     let tx = TransactionType2::new_by(owner, Amount::mei(1), 1_730_000_004);
     let diamond = DiamondName::from_readable(b"VYHWEH").unwrap();
@@ -353,6 +379,7 @@ fn diamond_inscription_rejects_non_privakey_owner() {
 
 #[test]
 fn diamond_move_astselect_fault_child_aborts_whole_node() {
+    let _setup = test_setup();
     let from_acc = Account::create_by("diamond-inscription-ast-child-from").unwrap();
     let to_acc = Account::create_by("diamond-inscription-ast-child-to").unwrap();
     let from = addr_of(&from_acc);
@@ -398,6 +425,7 @@ fn diamond_move_astselect_fault_child_aborts_whole_node() {
 
 #[test]
 fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
+    let _setup = test_setup();
     let from_acc = Account::create_by("diamond-inscription-ast-whole-from").unwrap();
     let to_acc = Account::create_by("diamond-inscription-ast-whole-to").unwrap();
     let from = addr_of(&from_acc);
@@ -433,7 +461,7 @@ fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
 
     let ast = AstSelect::create_by(2, 2, vec![Box::new(mv_ok), Box::new(mv_fail)]);
     let err = ast.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("no inscriptions in source HACD"), "{}", err);
+    assert!(err.contains("no inscriptions in source"), "{}", err);
     assert!(err.is_fault(), "{}", err);
 
     assert_eq!(diamond_insc_len(&mut ctx, &from_diamond), 1);

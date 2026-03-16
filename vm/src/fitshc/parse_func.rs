@@ -169,6 +169,7 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
             KwTy::Address => Some(ValueTy::Address),
             KwTy::Bytes => Some(ValueTy::Bytes),
             KwTy::Bool => Some(ValueTy::Bool),
+            KwTy::Tuple => Some(ValueTy::Tuple),
             KwTy::List | KwTy::Map => Some(ValueTy::Compo),
             _ => None,
         }
@@ -182,7 +183,7 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
             "address" => Some(ValueTy::Address),
             "bytes" => Some(ValueTy::Bytes),
             "bool" => Some(ValueTy::Bool),
-            "args" => Some(ValueTy::Args),
+            "tuple" => Some(ValueTy::Tuple),
             "list" | "map" => Some(ValueTy::Compo),
             _ => None,
         }

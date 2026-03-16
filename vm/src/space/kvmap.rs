@@ -34,7 +34,7 @@ macro_rules! memories_kvmap_define {
             }
 
             fn key(k: &Value) -> VmrtRes<Vec<u8>> {
-                let key = k.canbe_key()?;
+                let key = k.extract_key_bytes()?;
                 if key.is_empty() {
                     return itr_err_fmt!($er1, "key {} cannot be empty", k);
                 }
@@ -46,7 +46,7 @@ macro_rules! memories_kvmap_define {
             }
 
             pub fn put_with_stats(&mut self, k: Value, v: Value) -> VmrtRes<(usize, bool)> {
-                v.canbe_value()?;
+                v.check_scalar()?;
                 let key = Self::key(&k)?;
                 let key_len = key.len();
                 let full = self.datas.len() >= self.limit;

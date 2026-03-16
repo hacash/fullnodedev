@@ -39,12 +39,12 @@ impl Syntax {
     }
 
     pub fn item_func_call(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
-        if id == "args" {
+        if id == "tuple" {
             let argvs = self.parse_paren_argv_items()?;
             for arg in &argvs {
                 arg.checkretval()?;
             }
-            return pack_explicit_args(argvs)
+            return pack_explicit_tuple(argvs)
         }
 
         // ir func
@@ -215,7 +215,7 @@ fn build_ir_func(inst: Bytecode, pms: usize, args: usize, rs: usize, argvs: Vec<
 fn pick_ir_func(id: &str) -> Option<(IrFn, Bytecode, usize, usize, usize)> {
     use Bytecode::*;
     match id {
-        "pack_args" => None,
+        "pack_tuple" => None,
         "unpack" => Some((IrFn::unpack, UNPACK, 0, 2, 0)),
         _ => IrFn::from_name(id),
     }
@@ -245,19 +245,18 @@ fn concat_func_argvs(mut list: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
 
 
 fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
-    use Bytecode::*;
     let argv_len = subs.len();
     Ok(match argv_len {
         0 => push_nil(),
         1 => subs.pop().unwrap(),
-        2..=15 => {
+        2..=crate::MAX_FUNC_PARAM_LEN => {
             let num = push_num(argv_len as u128);
-            let pkargs = push_inst(PACKARGS);
+            let pkargs = push_inst(Bytecode::PACKTUPLE);
             subs.push(num);
             subs.push(pkargs);
             Box::new(Syntax::build_irlist(subs)?)
         },
-        _ => return errf!("function argv length cannot more than 15"),
+        _ => return errf!("function argv length cannot more than {}", crate::MAX_FUNC_PARAM_LEN),
     })
     /* 
     let mut res = list.pop().unwrap();
@@ -268,17 +267,20 @@ fn pack_func_argvs(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     */
 }
 
-fn pack_explicit_args(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+fn pack_explicit_tuple(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     use Bytecode::*;
     let argv_len = subs.len();
     if argv_len == 0 {
-        return errf!("args() cannot be empty")
+        return errf!("tuple() cannot be empty")
     }
-    if argv_len > 15 {
-        return errf!("args length cannot more than 15")
+    if argv_len > crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH {
+        return errf!(
+            "tuple length cannot more than {}",
+            crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH
+        )
     }
     let num = push_num(argv_len as u128);
-    let pkargs = push_inst(PACKARGS);
+    let pkargs = push_inst(PACKTUPLE);
     subs.push(num);
     subs.push(pkargs);
     Ok(Box::new(Syntax::build_irlist(subs)?))

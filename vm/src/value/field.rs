@@ -86,7 +86,7 @@ impl Parse for Value {
                 let (adr, sz) = field::Address::create(buf)?;
                 (sz, Address(adr))
             },
-            _ => return errf!("Args, compo or slice value item cannot be parsed"),
+            _ => return errf!("Tuple, compo or slice value item cannot be parsed"),
         };
         Ok(sz + 1)
     }
@@ -97,8 +97,8 @@ impl Serialize for Value {
         match self {
             // Runtime-only variants are intentionally excluded from field serialization.
             // Parse also rejects them, so serialize must keep the same type boundary.
-            HeapSlice(..) | Args(..) | Compo(..) => {
-                panic!("Value::serialize does not support HeapSlice/Args/Compo")
+            HeapSlice(..) | Tuple(..) | Compo(..) => {
+                panic!("Value::serialize does not support HeapSlice/Tuple/Compo")
             }
             Bytes(buf) => {
                 let mut out = Vec::with_capacity(1 + 2 + buf.len());
@@ -156,7 +156,7 @@ mod field_tests {
         let sz = <Value as Serialize>::size(&cv);
         assert!(sz > 1);
 
-        let av = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
+        let av = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
         let asz = <Value as Serialize>::size(&av);
         assert!(asz > 1);
     }
@@ -176,7 +176,7 @@ mod field_tests {
         }));
         assert!(cp.is_err());
 
-        let av = Value::Args(ArgsItem::new(vec![Value::U8(1)]).unwrap());
+        let av = Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap());
         let ap = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             <Value as Serialize>::serialize(&av)
         }));

@@ -39,15 +39,20 @@ impl Logs for BlockLogs {
 
     fn write_to_disk(&self) {
         let m = self.logs.len();
-        if m == 0 {
-            return;
-        }
+        let old_len = self.read_len(&self.lnk());
         let mut batch = MemKV::new();
         for i in 0..m {
             batch.put(self.nk(i), self.logs[i].clone());
         }
-        let num = Uint8::from(m as u64);
-        batch.put(self.lnk(), num.serialize());
+        for i in m..old_len {
+            batch.del(self.nk(i));
+        }
+        if m > 0 {
+            let num = Uint8::from(m as u64);
+            batch.put(self.lnk(), num.serialize());
+        } else {
+            batch.del(self.lnk());
+        }
         self.disk.write(&batch);
     }
 
@@ -214,5 +219,46 @@ mod tests {
         assert_eq!(rd.len(), 2);
         assert_eq!(rd.load(height, 0), Some(Uint1::from(3).serialize()));
         assert_eq!(rd.load(height, 1), Some(Uint1::from(4).serialize()));
+    }
+
+    #[test]
+    fn rewrite_shorter_clears_stale_tail_items() {
+        let disk: Arc<dyn DiskDB> = Arc::new(MemDisk::default());
+        let height = 100u64;
+
+        let mut wr = BlockLogs::wrap(disk.clone()).next(height);
+        wr.push(&Uint1::from(1));
+        wr.push(&Uint1::from(2));
+        wr.push(&Uint1::from(3));
+        wr.write_to_disk();
+
+        let mut rewrite = BlockLogs::wrap(disk.clone()).next(height);
+        rewrite.push(&Uint1::from(9));
+        rewrite.write_to_disk();
+
+        let rd = BlockLogs::wrap(disk).next(height);
+        assert_eq!(rd.len(), 1);
+        assert_eq!(rd.load(height, 0), Some(Uint1::from(9).serialize()));
+        assert!(rd.load(height, 1).is_none());
+        assert!(rd.load(height, 2).is_none());
+    }
+
+    #[test]
+    fn rewrite_empty_clears_all_items_and_length_key() {
+        let disk: Arc<dyn DiskDB> = Arc::new(MemDisk::default());
+        let height = 101u64;
+
+        let mut wr = BlockLogs::wrap(disk.clone()).next(height);
+        wr.push(&Uint1::from(5));
+        wr.push(&Uint1::from(6));
+        wr.write_to_disk();
+
+        let rewrite = BlockLogs::wrap(disk.clone()).next(height);
+        rewrite.write_to_disk();
+
+        let rd = BlockLogs::wrap(disk).next(height);
+        assert_eq!(rd.len(), 0);
+        assert!(rd.load(height, 0).is_none());
+        assert!(rd.load(height, 1).is_none());
     }
 }

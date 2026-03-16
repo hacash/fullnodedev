@@ -33,7 +33,7 @@ impl VmLog {
         }
         // check can store
         for a in &tds {
-            a.canbe_value()?;
+            a.check_scalar()?;
         }
         let mut tp = || tds.pop().unwrap();
         let mut log = Self {

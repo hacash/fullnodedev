@@ -120,8 +120,8 @@ pub enum Bytecode {
     APPEND              = 0x6f, // &       compo append
     CLONE               = 0x70, // a++     compo clone
     UNPACK              = 0x71, // a       unpack argv sequence to local
-    PACKARGS            = 0x72, // (v...,n)+ pack function args
-    ARGS2LIST           = 0x73, // &       args to list
+    PACKTUPLE           = 0x72, // (v...,n)+ pack tuple value
+    TUPLE2LIST          = 0x73, // &       tuple to list
     _______________116  = 0x74,
     _______________117  = 0x75,
     _______________118  = 0x76,
@@ -400,8 +400,8 @@ bytecode_metadata_define!{
     BACK       : 0, 1, 1,     back
     APPEND     : 0, 2, 1,     append
     CLONE      : 0, 1, 1,     clone
-    PACKARGS   : 0, 255, 1,   pack_args
-    ARGS2LIST  : 0, 1, 1,     args_to_list
+    PACKTUPLE  : 0, 255, 1,   pack_tuple
+    TUPLE2LIST : 0, 1, 1,     tuple_to_list
     UNPACK     : 0, 2, 0,     unpack
 
     XLG        : 1, 1, 1,     local_logic    

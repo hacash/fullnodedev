@@ -226,7 +226,10 @@ impl Stack {
         let items = self.popn(n as u8)?;
         let mut data = Vec::with_capacity(total);
         for v in items {
-            data.extend_from_slice(&v.canbe_bytes_ec(BytesHandle)?);
+            data.extend_from_slice(
+                &v.extract_bytes()
+                    .map_err(|ItrErr(_, msg)| ItrErr::new(BytesHandle, &msg))?,
+            );
         }
         self.push(Value::bytes(data).valid(cap)?)
     }

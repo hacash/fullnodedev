@@ -380,7 +380,7 @@ mod bounds_tests {
         let non_castable_targets = [
             ValueTy::Nil,
             ValueTy::HeapSlice,
-            ValueTy::Args,
+            ValueTy::Tuple,
             ValueTy::Compo,
         ];
         for ty in non_castable_targets {
@@ -590,13 +590,13 @@ mod bounds_tests {
             Err(ItrErr(ItrErrCode::InstParamsErr, _))
         ));
 
-        let args = ArgsItem::new(vec![Value::U8(1)]).unwrap();
+        let args = TupleItem::new(vec![Value::U8(1)]).unwrap();
         assert_eq!(
-            run(Bytecode::TIS, Value::Args(args.clone()), ValueTy::Args).unwrap(),
+            run(Bytecode::TIS, Value::Tuple(args.clone()), ValueTy::Tuple).unwrap(),
             Value::Bool(true)
         );
         assert!(matches!(
-            run(Bytecode::CTO, Value::Args(args), ValueTy::Args),
+            run(Bytecode::CTO, Value::Tuple(args), ValueTy::Tuple),
             Err(ItrErr(ItrErrCode::InstParamsErr, _))
         ));
 
@@ -1182,8 +1182,8 @@ mod bounds_tests {
         };
 
         let args = || {
-            Value::Args(
-                ArgsItem::new(vec![Value::Compo(CompoItem::new_map()), Value::U16(9)]).unwrap(),
+            Value::Tuple(
+                TupleItem::new(vec![Value::Compo(CompoItem::new_map()), Value::U16(9)]).unwrap(),
             )
         };
 
@@ -1285,8 +1285,8 @@ mod bounds_tests {
                 DummyHost::default(),
                 |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     let args =
-                        crate::value::ArgsItem::new(vec![Value::Bytes(vec![0u8; len])]).unwrap();
-                    ops.push(Value::Args(args)).unwrap();
+                        crate::value::TupleItem::new(vec![Value::Bytes(vec![0u8; len])]).unwrap();
+                    ops.push(Value::Tuple(args)).unwrap();
                 },
             )
         };
@@ -1304,9 +1304,9 @@ mod bounds_tests {
                 DummyHost::default(),
                 |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
                     for _ in 0..5 {
-                        let args = crate::value::ArgsItem::new(vec![Value::Bytes(vec![0u8; len])])
+                        let args = crate::value::TupleItem::new(vec![Value::Bytes(vec![0u8; len])])
                             .unwrap();
-                        ops.push(Value::Args(args)).unwrap();
+                        ops.push(Value::Tuple(args)).unwrap();
                     }
                 },
             )
@@ -2171,8 +2171,8 @@ mod bounds_tests {
         locals.alloc(2).unwrap();
 
         let mut operands = Stack::new(256);
-        let args = Value::Args(
-            ArgsItem::new(vec![Value::Compo(CompoItem::new_list()), Value::U16(9)]).unwrap(),
+        let args = Value::Tuple(
+            TupleItem::new(vec![Value::Compo(CompoItem::new_list()), Value::U16(9)]).unwrap(),
         );
         operands.push(args).unwrap();
         operands.push(Value::U8(0)).unwrap();
@@ -2208,11 +2208,11 @@ mod bounds_tests {
 
         let run = |tail_len: usize| -> i64 {
             run_with_setup(
-                vec![Bytecode::ARGS2LIST as u8, Bytecode::END as u8],
+                vec![Bytecode::TUPLE2LIST as u8, Bytecode::END as u8],
                 DummyHost::default(),
                 |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
-                    ops.push(Value::Args(
-                        ArgsItem::new(vec![Value::U8(7), Value::Bytes(vec![0u8; tail_len])])
+                    ops.push(Value::Tuple(
+                        TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![0u8; tail_len])])
                             .unwrap(),
                     ))
                     .unwrap();
@@ -2238,7 +2238,7 @@ mod bounds_tests {
             let mut memory_map = CtcKVMap::new(12);
             let cadr = ContractAddress::default();
             operands.push(value).unwrap();
-            let codes = vec![Bytecode::ARGS2LIST as u8, Bytecode::END as u8];
+            let codes = vec![Bytecode::TUPLE2LIST as u8, Bytecode::END as u8];
             let _ = execute_code(
                 &mut pc,
                 &codes,
@@ -2264,13 +2264,13 @@ mod bounds_tests {
             Err(ItrErr(ItrErrCode::CastFail, _))
         ));
         assert!(matches!(
-            run(Value::Args(
-                ArgsItem::new(vec![Value::Compo(CompoItem::new_map())]).unwrap()
+            run(Value::Tuple(
+                TupleItem::new(vec![Value::Compo(CompoItem::new_map())]).unwrap()
             )),
             Err(ItrErr(ItrErrCode::CastFail, _))
         ));
-        let out = run(Value::Args(
-            ArgsItem::new(vec![Value::U8(1), Value::Bytes(vec![2])]).unwrap(),
+        let out = run(Value::Tuple(
+            TupleItem::new(vec![Value::U8(1), Value::Bytes(vec![2])]).unwrap(),
         ))
         .unwrap();
         assert!(matches!(out, Value::Compo(_)));
@@ -2280,8 +2280,8 @@ mod bounds_tests {
     fn dup_on_args_shares_storage_like_compo_clone() {
         use crate::rt::Bytecode;
 
-        let seed = ArgsItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
-        let value = Value::Args(seed.clone());
+        let seed = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let value = Value::Tuple(seed.clone());
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
         let mut host = DummyHost::default();
@@ -2312,10 +2312,10 @@ mod bounds_tests {
         )
         .unwrap();
         assert!(matches!(exit, crate::rt::CallExit::Finish));
-        let Value::Args(top) = operands.pop().unwrap() else {
+        let Value::Tuple(top) = operands.pop().unwrap() else {
             panic!("must be args")
         };
-        let Value::Args(bottom) = operands.pop().unwrap() else {
+        let Value::Tuple(bottom) = operands.pop().unwrap() else {
             panic!("must be args")
         };
         assert_eq!(seed.shared_count(), 3);

@@ -88,15 +88,11 @@ impl Frame {
     }
 
     pub fn check_output_type(&self, v: &mut Value) -> VmrtErr {
-        v.canbe_func_retv()?;
+        v.check_func_retv()?;
         match &self.types {
             Some(ty) => ty.check_output(v),
             None => Ok(()),
         }
-    }
-
-    pub fn check_return_value(&self, v: &mut Value) -> VmrtErr {
-        self.check_output_type(v)
     }
 
     fn clear_runtime_state(&mut self) {
@@ -153,7 +149,7 @@ impl Frame {
         let have_param = param.is_some();
         let argv = param.unwrap_or(Value::Nil);
         if have_param {
-            argv.canbe_func_argv()?;
+            argv.check_func_argv()?;
         }
         self.prepare_common(exec, bindings, fnobj, height, argv, have_param)
     }
@@ -166,7 +162,7 @@ impl Frame {
         height: u64,
         param: Value,
     ) -> VmrtErr {
-        param.canbe_func_argv()?;
+        param.check_func_argv()?;
         let caller_output = match &self.types {
             Some(types) => types
                 .output_type()

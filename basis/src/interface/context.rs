@@ -8,9 +8,6 @@ pub trait StateOperat {
 }
 
 pub trait Context : StateOperat {
-    /// Reset per-transaction caches/state inside Context.
-    /// This must be called whenever the underlying tx/env is replaced for a new transaction.
-    fn reset_for_new_tx(&mut self, _: &dyn TransactionRead);
     fn action_call(&mut self, _: u16, _: Vec<u8>) -> XRet<(u32, Vec<u8>)>;
     fn action_exec_from(&self) -> ActExecFrom { ActExecFrom::TxLoop }
     fn action_exec_from_set(&mut self, _: ActExecFrom) {}
@@ -20,10 +17,17 @@ pub trait Context : StateOperat {
     fn level(&self) -> usize;
     fn level_set(&mut self, _: usize);
     fn tx(&self) -> &dyn TransactionRead;
-    fn vm(&mut self) -> &mut dyn VM;
-    fn vm_init_once(&mut self, _: Box<dyn VM>) -> Rerr;
-    fn gas_init_tx(&mut self, _: i64, _: i64) -> Rerr { errf!("context gas init not supported") }
-    fn gas_refund(&mut self) -> Rerr { errf!("context gas refund not supported") }
+    fn vm_call(
+        &mut self,
+        entry: u8,
+        target: u8,
+        payload: Arc<[u8]>,
+        param: Box<dyn Any>,
+    ) -> XRet<(i64, Vec<u8>)>;
+    fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> { None }
+    fn vm_restore_volatile(&mut self, _: Box<dyn Any>) {}
+    fn vm_restore_but_keep_warmup(&mut self) {}
+    fn vm_invalidate_contract_cache(&mut self, _: &Address) {}
     fn gas_remaining(&self) -> i64 { 0 }
     fn gas_charge(&mut self, _: i64) -> Rerr { Ok(()) }
     fn snapshot_volatile(&self) -> Box<dyn Any> { Box::new(()) }
@@ -35,4 +39,9 @@ pub trait Context : StateOperat {
     // p2sh
     fn p2sh(&self, _: &Address) -> Ret<&dyn P2sh> { errf!("not found") }
     fn p2sh_set(&mut self, _: Address, _: Box<dyn P2sh>) -> Rerr { Ok(()) }
+}
+
+pub trait TxDriverContext : Context {
+    fn gas_init_tx(&mut self, _: i64, _: i64) -> Rerr { errf!("context gas init not supported") }
+    fn gas_refund(&mut self) -> Rerr { errf!("context gas refund not supported") }
 }

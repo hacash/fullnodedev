@@ -28,32 +28,6 @@ fn tex_check_settlement_addr_privakey() -> Rerr {
 }
 
 #[inline]
-fn tex_hac_amount_must_whole_zhu(amt: &Amount) -> Ret<u64> {
-    if amt.is_zero() {
-        return Ok(0);
-    }
-    let zhu = amt.to_zhu_u128()?;
-    if zhu == 0 {
-        return errf!("tex HAC balance must be zero or at least 1 zhu");
-    }
-    if zhu > u64::MAX as u128 {
-        return errf!("tex HAC balance zhu overflow");
-    }
-    let zhu = zhu as u64;
-    if amt.cmp(&Amount::zhu(zhu)) != std::cmp::Ordering::Equal {
-        return errf!("tex HAC balance must be an exact whole-zhu amount");
-    }
-    Ok(zhu)
-}
-
-#[inline]
-fn tex_check_addr_whole_zhu(ctx: &mut dyn Context, addr: &Address) -> Rerr {
-    let bls = CoreState::wrap(ctx.state())
-        .balance(addr)
-        .unwrap_or_default();
-    tex_hac_amount_must_whole_zhu(&bls.hacash).map(|_| ())
-}
-
 fn tex_check_asset_serial(ctx: &mut dyn Context, serial: Fold64) -> Rerr {
     if serial.is_zero() {
         return errf!("tex asset serial cannot be zero");

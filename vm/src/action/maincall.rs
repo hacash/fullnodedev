@@ -18,13 +18,7 @@ action_define!{ ContractMainCall, 45,
         let cap = SpaceCap::new(hei);
         let codeconf = CodeConf::parse(self.codeconf.to_uint())?;
         convert_and_check(&cap, codeconf.code_type(), &self.codes, hei)?;
-        let _ = setup_vm_run(
-            ctx,
-            EntryKind::Main as u8,
-            codeconf.raw(),
-            self.codes.as_vec().clone().into(),
-            Value::Nil,
-        )?;
+        let _ = setup_vm_run_main(ctx, codeconf.raw(), self.codes.as_vec().clone().into())?;
         Ok(vec![])
     })
 }

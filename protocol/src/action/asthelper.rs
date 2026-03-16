@@ -17,16 +17,14 @@ impl AstNodeTxn {
                 snap.commit(ctx);
                 Ok(v)
             }
-            Err(e) => {
-                match snap.rollback(ctx) {
-                    Ok(()) => Err(e),
-                    Err(recover_err) => errf!(
-                        "ast node recover failed: {}; original error: {}",
-                        recover_err,
-                        e
-                    ),
-                }
-            }
+            Err(e) => match snap.rollback(ctx) {
+                Ok(()) => Err(e),
+                Err(recover_err) => errf!(
+                    "ast node recover failed: {}; original error: {}",
+                    recover_err,
+                    e
+                ),
+            },
         }
     }
 }
@@ -48,8 +46,11 @@ macro_rules! ast_try_item {
                 );
                 if let Err(gas_err) = $ctx.gas_charge(charge_gas as i64) {
                     if let Err(re) = __snap.rollback($ctx) {
-                        return errf!("ast item recover failed: {}; original error: {}",
-                            re, gas_err);
+                        return errf!(
+                            "ast item recover failed: {}; original error: {}",
+                            re,
+                            gas_err
+                        );
                     }
                     Err(gas_err.into())
                 } else {
@@ -84,25 +85,43 @@ pub fn validate_ast_select(min: usize, max: usize, num: usize) -> Ret<()> {
     Ok(())
 }
 
-/// Enter an AST branch node: check depth limit, increment level, and set exec_from to AstWrap.
+pub(crate) fn is_ast_container_action(act: &dyn Action) -> bool {
+    act.as_any().downcast_ref::<AstSelect>().is_some() || act.as_any().downcast_ref::<AstIf>().is_some()
+}
+
+pub(crate) fn get_action_childs<'a>(act: &'a dyn Action) -> Option<Vec<&'a dyn Action>> {
+    if let Some(ast) = act.as_any().downcast_ref::<AstSelect>() {
+        return Some(ast.actions.as_list().iter().map(|sub| sub.as_ref()).collect());
+    }
+    if let Some(ast) = act.as_any().downcast_ref::<AstIf>() {
+        let cond = ast.cond.actions.as_list();
+        let br_if = ast.br_if.actions.as_list();
+        let br_else = ast.br_else.actions.as_list();
+        let mut childs = Vec::with_capacity(cond.len() + br_if.len() + br_else.len());
+        childs.extend(cond.iter().map(|sub| sub.as_ref()));
+        childs.extend(br_if.iter().map(|sub| sub.as_ref()));
+        childs.extend(br_else.iter().map(|sub| sub.as_ref()));
+        return Some(childs);
+    }
+    None
+}
+
+/// Enter an AST branch node: increment level and set exec_from to AstWrap.
 /// Returns a guard that restores both level and exec_from on drop.
 pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {
     let old_level = ctx.level();
     let old_exec_from = ctx.action_exec_from();
     let next = match old_level.checked_add(1) {
         Some(v) => v,
-        None => return errf!("ast tree depth overflow"),
+        None => return errf!("ast ctx level overflow"),
     };
-    if next > AST_TREE_DEPTH_MAX {
-        return errf!(
-            "ast tree depth {} exceeded max {}",
-            next,
-            AST_TREE_DEPTH_MAX
-        );
-    }
     ctx.level_set(next);
     ctx.action_exec_from_set(ActExecFrom::AstWrap);
-    Ok(AstLevelGuard { ctx, old_level, old_exec_from })
+    Ok(AstLevelGuard {
+        ctx,
+        old_level,
+        old_exec_from,
+    })
 }
 
 /// `Ok` => continue with value, `Revert` => skip (continue without value), `Fault` => rethrow.

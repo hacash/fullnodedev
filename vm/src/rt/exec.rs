@@ -39,11 +39,26 @@ pub enum CallExit {
 }
 
 impl EntryKind {
+    pub const fn action_level(self) -> usize {
+        match self {
+            Self::Main | Self::P2sh => basis::component::ACTION_CTX_LEVEL_CALL_MAIN,
+            Self::Abst => basis::component::ACTION_CTX_LEVEL_CALL_CONTRACT,
+        }
+    }
+
     pub const fn root_exec(self) -> ExecCtx {
         match self {
             Self::Main => ExecCtx::main(),
             Self::P2sh => ExecCtx::p2sh(),
             Self::Abst => ExecCtx::abst(),
+        }
+    }
+
+    pub fn min_call_cost(self, gas: &GasExtra) -> i64 {
+        match self {
+            Self::Main => gas.main_call_min,
+            Self::P2sh => gas.p2sh_call_min,
+            Self::Abst => gas.abst_call_min,
         }
     }
 }

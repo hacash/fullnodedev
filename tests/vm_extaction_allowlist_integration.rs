@@ -8,10 +8,10 @@ mod tests {
     use vm::ContractAddress;
     use vm::interpreter::execute_code;
     use vm::machine::VmHost;
+    use vm::rt::FrameBindings;
     use vm::rt::{Bytecode, ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes};
     use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
     use vm::{ContractEdition, ContractSto, VmLog};
-    use vm::rt::FrameBindings;
 
     struct TestVmHost<'a> {
         ctx: &'a mut dyn Context,
@@ -33,7 +33,10 @@ mod tests {
 
         fn gas_charge(&mut self, gas: i64) -> VmrtRes<()> {
             if gas < 0 {
-                return Err(ItrErr::new(ItrErrCode::GasError, &format!("gas cost invalid: {}", gas)));
+                return Err(ItrErr::new(
+                    ItrErrCode::GasError,
+                    &format!("gas cost invalid: {}", gas),
+                ));
             }
             self.gas_remaining -= gas;
             if self.gas_remaining < 0 {

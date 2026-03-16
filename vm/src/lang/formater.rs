@@ -292,7 +292,7 @@ impl<'a> Formater<'a> {
         }
         let last = &subs[num - 1];
         if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKARGS {
+            if leaf.inst != PACKTUPLE {
                 return None;
             }
         } else {
@@ -326,7 +326,7 @@ impl<'a> Formater<'a> {
         }
         let last = &subs[num - 1];
         if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKARGS {
+            if leaf.inst != PACKTUPLE {
                 return None;
             }
         } else {
@@ -534,7 +534,7 @@ impl<'a> Formater<'a> {
                 ));
             }
             if let Some(elements) = self.extract_args_elements(arr.inst, &arr.subs) {
-                return Some(format!("{}args({})", prefix, elements.join(", ")));
+                return Some(format!("{}tuple({})", prefix, elements.join(", ")));
             }
             if let Some(pairs) = self.extract_map_elements(arr.inst, &arr.subs) {
                 let mut buf = format!("{}map {{", prefix);

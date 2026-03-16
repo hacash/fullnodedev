@@ -113,7 +113,7 @@ macro_rules! ostjump {
 
 macro_rules! branch {
     ( $ops: expr, $codes: expr, $pc: expr, $l: expr) => {
-        if $ops.pop()?.canbe_bool()? {
+        if $ops.pop()?.extract_bool()? {
             jump!($codes, $pc, $l);
         } else {
             $pc += $l;
@@ -123,7 +123,7 @@ macro_rules! branch {
 
 macro_rules! ostbranchex {
     ( $ops: expr, $codes: expr, $pc: expr, $l: expr, $expect: expr) => {
-        if $ops.pop()?.canbe_bool()? == $expect {
+        if $ops.pop()?.extract_bool()? == $expect {
             ostjump!($codes, $pc, $l);
         } else {
             $pc += $l;
@@ -186,8 +186,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
     macro_rules! pu16 { () => { itrparamu16!(codes, *pc) }; }
     macro_rules! pbuf { () => { itrparambuf!(codes, *pc) }; }
     macro_rules! pbufl { () => { itrparambufl!(codes, *pc) }; }
-    macro_rules! ops_pop_to_u16 { () => { ops.pop()?.checked_u16()? }; }
-    macro_rules! ops_peek_to_u16 { () => { ops.peek()?.checked_u16()? }; }
+    macro_rules! ops_pop_to_u16 { () => { ops.pop()?.extract_u16()? }; }
+    macro_rules! ops_peek_to_u16 { () => { ops.peek()?.extract_u16()? }; }
     macro_rules! check_compo_type { ($m: ident) => { match ops.compo() { Ok(c) => c.$m(), _ => false, } }; }
     
     enum Step {
@@ -220,7 +220,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
             let kid = u16::from_be_bytes([instbyte, idx]);
             let mut actbody = vec![];
             if pass_body {
-                let mut bdv = ops.peek()?.canbe_call_data(heap)?;
+                let mut bdv = ops.peek()?.extract_call_data(heap)?;
                 actbody.append(&mut bdv);
                 match act_kind {
                     ACTION => gas += gst.action_bytes(actbody.len()),
@@ -252,7 +252,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         macro_rules! ntcall {
             (func, $idx: expr) => {{
                 let nt_idx = $idx;
-                let argv = ops.pop()?.canbe_call_data(heap)?;
+                let argv = ops.pop()?.extract_call_data(heap)?;
                 gas += gst.ntfunc_bytes(argv.len());
                 let (r, g) = NativeFunc::call(hei, nt_idx, &argv)?;
                 let r = r.valid(cap)?;
@@ -329,7 +329,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 let v = ops.pop()?.valid(cap)?;
                 let vlen = v.val_size();
                 let k = ops.pop()?;
-                let klen = k.canbe_key()?.len();
+                let klen = k.extract_key_bytes()?.len();
                 let is_new = !$store.contains_key(&k)?;
                 gas += gst.stack_write(klen);
                 gas += gst.stack_write(vlen);
@@ -455,7 +455,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // the chosen branch becomes the top of the stack. Leave the
                 // chosen value on the stack for subsequent instructions to consume.
                 CHOOSE => {
-                    if !ops.pop()?.canbe_bool()? {
+                    if !ops.pop()?.extract_bool()? {
                         ops.swap()?
                     }
                     ops.pop()?;
@@ -502,14 +502,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // compo
                 NEWLIST => ops.push(Compo(CompoItem::new_list()))?,
                 NEWMAP => ops.push(Compo(CompoItem::new_map()))?,
-                PACKARGS => {
-                    let (a, len) = ArgsItem::pack(cap, ops)?;
+                PACKTUPLE => {
+                    let (a, len) = TupleItem::pack(cap, ops)?;
                     gas += gst.compo_items_edit(len);
                     ops.push(a)?;
                 }
-                ARGS2LIST => {
+                TUPLE2LIST => {
                     let (list, len, bsz) = match ops.peek()? {
-                        Args(args) => args
+                        Tuple(args) => args
                             .to_list_with_stats()
                             .map_err(|ItrErr(_, msg)| ItrErr::new(CastFail, &msg))?,
                         _ => return itr_err_code!(CastFail),
@@ -533,7 +533,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     let k = ops.pop()?;
                     let ksz = {
                         let c = ops.compo()?;
-                        maybe!(c.is_map(), k.canbe_key()?.len(), 0)
+                        maybe!(c.is_map(), k.extract_key_bytes()?.len(), 0)
                     };
                     compo_edit_gas!();
                     gas += gst.compo_bytes(ksz);
@@ -631,7 +631,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     *ops.peek()? = Compo(c);
                 }
                 UNPACK => {
-                    let i = ops.pop()?.checked_u8()?;
+                    let i = ops.pop()?.extract_u8()?;
                     let items = ops.peek()?.clone_argv_items()?;
                     gas += unpack_seq(i, locals, items, gst)?;
                     ops.pop()?; // pop argv wrapper after unpack
@@ -641,7 +641,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 HWRITE => hwrite!(ops_pop_to_u16!()),
                 HREAD => {
                     let n = ops.pop()?;
-                    let len = n.checked_u16()? as usize;
+                    let len = n.extract_u16()? as usize;
                     gas += gst.heap_read(len);
                     let peek = ops.peek()?;
                     *peek = heap.read(peek, n)?.valid(cap)?;
@@ -772,7 +772,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 END => return Ok(Step::Exit(Finish)), // func end
                 ERR => return Ok(Step::Exit(Throw)),  // throw <ERROR>
                 ABT => return Ok(Step::Exit(Abort)),  // panic
-                AST => if !ops.pop()?.canbe_bool()? {
+                AST => if !ops.pop()?.extract_bool()? {
                     return Ok(Step::Exit(Abort));
                 } // assert(..)
                 PRT => debug_print_value(context_addr, current_addr, exec, ops.pop()?),

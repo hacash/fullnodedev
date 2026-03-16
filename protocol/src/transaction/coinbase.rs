@@ -92,7 +92,7 @@ impl Transaction for TransactionCoinbase {
 
 impl TxExec for TransactionCoinbase {
     
-    fn execute(&self, ctx: &mut dyn Context) -> Rerr {
+    fn execute(&self, ctx: &mut dyn TxDriverContext) -> Rerr {
         let addr = self.main();
         let amt = self.reward();
         operate::hac_add(ctx, &addr, amt)?;

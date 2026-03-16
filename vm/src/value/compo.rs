@@ -156,7 +156,7 @@ impl Compo {
     }
 
     fn append(&mut self, v: Value) -> VmrtErr {
-        v.canbe_value()?;
+        v.check_scalar()?;
         match self {
             Self::List(a) => a.push_back(v),
             _ => ret_invalid_compo_op! {},
@@ -167,14 +167,14 @@ impl Compo {
     fn remove(&mut self, k: Value) -> VmrtErr {
         match self {
             Self::List(a) => {
-                let i = k.checked_u32()?;
+                let i = k.extract_u32()?;
                 if i as usize >= a.len() {
                     return itr_err_code!(CompoNoFindItem);
                 }
                 a.remove(i as usize);
             }
             Self::Map(b) => {
-                let k = k.canbe_key()?;
+                let k = k.extract_key_bytes()?;
                 if b.remove(&k).is_none() {
                     return itr_err_code!(CompoNoFindItem);
                 }
@@ -184,15 +184,15 @@ impl Compo {
     }
 
     fn insert(&mut self, k: Value, v: Value) -> VmrtErr {
-        v.canbe_value()?;
+        v.check_scalar()?;
         match self {
             Self::List(a) => {
-                let i = k.checked_u32()?;
+                let i = k.extract_u32()?;
                 checked_compo_op_len! {i, a};
                 a.insert(i as usize, v);
             }
             Self::Map(b) => {
-                let k = k.canbe_key()?;
+                let k = k.extract_key_bytes()?;
                 b.insert(k, v);
             }
         }
@@ -204,7 +204,7 @@ impl Compo {
         match self {
             Self::List(a) => ReadList::Deque(a).haskey(k),
             Self::Map(b) => {
-                let k = k.canbe_key()?;
+                let k = k.extract_key_bytes()?;
                 Ok(Value::Bool(b.contains_key(&k)))
             }
         }
@@ -215,7 +215,7 @@ impl Compo {
             Self::List(a) => return ReadList::Deque(a).itemget(k),
             Self::Map(b) => {
                 let nfer = || itr_err_code!(CompoNoFindItem);
-                let k = k.canbe_key()?;
+                let k = k.extract_key_bytes()?;
                 match b.get(&k) {
                     Some(b) => b.clone(),
                     _ => return nfer(), // error not find
@@ -277,7 +277,7 @@ macro_rules! get_compo_inner_by {
 
 macro_rules! take_items_from_ops {
     ($is_map: expr, $cap: expr, $ops: expr) => {{
-        let n = $ops.pop()?.checked_u16()? as usize;
+        let n = $ops.pop()?.extract_u16()? as usize;
         if n == 0 {
             return itr_err_code!(CompoPackError);
         }
@@ -310,7 +310,7 @@ impl CompoItem {
 impl CompoItem {
     pub fn list(l: VecDeque<Value>) -> VmrtRes<Self> {
         for item in &l {
-            item.canbe_value()?;
+            item.check_scalar()?;
         }
         Ok(Self {
             compo: Rc::new(UnsafeCell::new(Compo::List(l))),
@@ -319,7 +319,7 @@ impl CompoItem {
 
     pub fn map(m: BTreeMap<Vec<u8>, Value>) -> VmrtRes<Self> {
         for v in m.values() {
-            v.canbe_value()?;
+            v.check_scalar()?;
         }
         Ok(Self {
             compo: Rc::new(UnsafeCell::new(Compo::Map(m))),
@@ -330,7 +330,7 @@ impl CompoItem {
         let items = take_items_from_ops!(false, cap, ops);
         let len = items.len();
         for item in &items {
-            item.canbe_value()?;
+            item.check_scalar()?;
         }
         Ok((Value::Compo(Self::list(VecDeque::from(items))?), len))
     }
@@ -349,8 +349,8 @@ impl CompoItem {
         for i in 0..sz {
             let k = items[i * 2].take().unwrap();
             let v = items[i * 2 + 1].take().unwrap();
-            let k = k.canbe_key()?;
-            v.canbe_value()?;
+            let k = k.extract_key_bytes()?;
+            v.check_scalar()?;
             mapobj.insert(k, v);
         }
         Ok((Value::Compo(Self::map(mapobj)?), sz))
@@ -461,7 +461,7 @@ impl CompoItem {
                 }
                 let mut src_bsz = 0usize;
                 for v in src.iter() {
-                    v.canbe_value()?;
+                    v.check_scalar()?;
                     src_bsz += v.val_size();
                 }
                 l.extend(src);
@@ -473,7 +473,7 @@ impl CompoItem {
                 let mut add = 0usize;
                 let mut src_bsz = 0usize;
                 for (k, v) in src.iter() {
-                    v.canbe_value()?;
+                    v.check_scalar()?;
                     src_bsz += k.len() + v.val_size();
                     if !m.contains_key(k) {
                         add += 1;
@@ -598,5 +598,56 @@ impl CompoItem {
             Some(v) => Ok(v),
             _ => itr_err_code!(CompoOpOverflow),
         }
+    }
+}
+
+#[cfg(test)]
+mod compo_tests {
+    use super::*;
+
+    #[test]
+    fn compo_rejects_tuple_and_compo_children() {
+        let tuple = Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap());
+        let err = CompoItem::list(VecDeque::from([tuple])).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+
+        let err =
+            CompoItem::list(VecDeque::from([Value::Compo(CompoItem::new_map())])).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+    }
+
+    #[test]
+    fn compo_append_rejects_tuple_values() {
+        let mut compo = CompoItem::new_list();
+        let err = compo
+            .append(
+                &SpaceCap::new(1),
+                Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()),
+            )
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+    }
+
+    #[test]
+    fn compo_insert_rejects_tuple_values() {
+        let mut compo = CompoItem::new_map();
+        let err = compo
+            .insert(
+                &SpaceCap::new(1),
+                Value::Bytes(vec![1]),
+                Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()),
+            )
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+    }
+
+    #[test]
+    fn compo_merge_preserves_function_boundary_invariant() {
+        let cap = SpaceCap::new(1);
+        let mut dst = CompoItem::new_list();
+        dst.append(&cap, Value::U8(1)).unwrap();
+        let src = CompoItem::list(VecDeque::from([Value::U16(2)])).unwrap();
+        dst.merge(&cap, src).unwrap();
+        assert!(Value::Compo(dst).check_func_argv().is_ok());
     }
 }

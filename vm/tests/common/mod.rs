@@ -13,6 +13,7 @@ use vm::ir::{convert_ir_to_bytecode, parse_ir_block};
 use vm::lang::*;
 use vm::machine::VmHost;
 use vm::rt::Bytecode::*;
+use vm::rt::FrameBindings;
 use vm::rt::{
     Bytecode, BytecodePrint, ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes,
 };
@@ -20,7 +21,6 @@ use vm::space::{CtcKVMap, GKVMap, Heap, Stack};
 use vm::value::ValueTy::*;
 use vm::value::{Value, ValueTy};
 use vm::{ContractEdition, ContractSto, VmLog};
-use vm::rt::FrameBindings;
 
 struct TestVmHost<'a> {
     ctx: &'a mut dyn Context,
@@ -42,7 +42,10 @@ impl VmHost for TestVmHost<'_> {
 
     fn gas_charge(&mut self, gas: i64) -> VmrtRes<()> {
         if gas < 0 {
-            return Err(ItrErr::new(ItrErrCode::GasError, &format!("gas cost invalid: {}", gas)));
+            return Err(ItrErr::new(
+                ItrErrCode::GasError,
+                &format!("gas cost invalid: {}", gas),
+            ));
         }
         self.gas_remaining -= gas;
         if self.gas_remaining < 0 {
@@ -84,12 +87,24 @@ impl VmHost for TestVmHost<'_> {
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn ssave(&mut self, gst: &GasExtra, addr: &FieldAddress, key: Value, val: Value) -> VmrtRes<i64> {
+    fn ssave(
+        &mut self,
+        gst: &GasExtra,
+        addr: &FieldAddress,
+        key: Value,
+        val: Value,
+    ) -> VmrtRes<i64> {
         let _ = (gst, addr, key, val);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn srent(&mut self, gst: &GasExtra, addr: &FieldAddress, key: Value, period: Value) -> VmrtRes<i64> {
+    fn srent(
+        &mut self,
+        gst: &GasExtra,
+        addr: &FieldAddress,
+        key: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
         let _ = (gst, addr, key, period);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }

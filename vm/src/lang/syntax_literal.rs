@@ -218,7 +218,7 @@ impl Syntax {
         };
 
         if literal.ty().is_uint() && target_ty.is_uint() {
-            let n = literal.canbe_u128()?;
+            let n = literal.extract_u128()?;
             Self::check_uint_literal_overflow(n, target_ty)?;
         }
 

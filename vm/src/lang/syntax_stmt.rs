@@ -99,6 +99,7 @@ impl Syntax {
             Keyword(This) => self.item_identifier("this".to_string())?,
             Keyword(Self_) => self.item_identifier("self".to_string())?,
             Keyword(Super) => self.item_identifier("super".to_string())?,
+            Keyword(Tuple) => self.item_identifier("tuple".to_string())?,
             Integer(n) => {
                 let num_node = push_num(*n);
                 if self.idx < self.tokens.len() {

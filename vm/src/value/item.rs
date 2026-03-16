@@ -13,7 +13,7 @@ pub enum Value {
     Bytes(Vec<u8>),          //           10
     Address(field::Address), //           11
     HeapSlice((u32, u32)),   //           13
-    Args(ArgsItem),          //           14
+    Tuple(TupleItem),        //           14
     Compo(CompoItem),        //           15
 }
 
@@ -43,7 +43,7 @@ impl Value {
             Bytes(..)     => ValueTy::Bytes,
             Address(..)   => ValueTy::Address,
             HeapSlice(..) => ValueTy::HeapSlice,
-            Args(..)      => ValueTy::Args,
+            Tuple(..)      => ValueTy::Tuple,
             Compo(..)     => ValueTy::Compo,
         }
     }
@@ -129,16 +129,16 @@ impl Value {
         }
     }
 
-    pub fn match_args(&self) -> Option<&ArgsItem> {
+    pub fn match_tuple(&self) -> Option<&TupleItem> {
         match self {
-            Args(args) => Some(args),
+            Tuple(tuple) => Some(tuple),
             _ => None,
         }
     }
 
     pub fn container_len(&self) -> VmrtRes<usize> {
-        if let Some(args) = self.match_args() {
-            return Ok(args.len())
+        if let Some(tuple) = self.match_tuple() {
+            return Ok(tuple.len())
         }
         if let Some(compo) = self.match_compo() {
             return Ok(compo.len())
@@ -147,8 +147,8 @@ impl Value {
     }
 
     pub fn length(&self, cap: &SpaceCap) -> VmrtRes<Value> {
-        if let Some(args) = self.match_args() {
-            return args.length(cap)
+        if let Some(tuple) = self.match_tuple() {
+            return tuple.length(cap)
         }
         if let Some(compo) = self.match_compo() {
             return compo.length(cap)
@@ -157,8 +157,8 @@ impl Value {
     }
 
     pub fn haskey(&self, k: Value) -> VmrtRes<Value> {
-        if let Some(args) = self.match_args() {
-            return args.haskey(k)
+        if let Some(tuple) = self.match_tuple() {
+            return tuple.haskey(k)
         }
         if let Some(compo) = self.match_compo() {
             return compo.haskey(k)
@@ -167,8 +167,8 @@ impl Value {
     }
 
     pub fn itemget(&self, k: Value) -> VmrtRes<Value> {
-        if let Some(args) = self.match_args() {
-            return args.itemget(k)
+        if let Some(tuple) = self.match_tuple() {
+            return tuple.itemget(k)
         }
         if let Some(compo) = self.match_compo() {
             return compo.itemget(k)
@@ -177,8 +177,8 @@ impl Value {
     }
 
     pub fn clone_argv_items(&self) -> VmrtRes<Vec<Value>> {
-        if let Some(args) = self.match_args() {
-            return Ok(args.to_vec())
+        if let Some(tuple) = self.match_tuple() {
+            return Ok(tuple.to_vec())
         }
         if let Some(compo) = self.match_compo() {
             return Ok(compo.list_ref()?.iter().cloned().collect())
@@ -231,7 +231,7 @@ impl Value {
             // ptr
             HeapSlice((s, l)) => vec![s.to_be_bytes(), l.to_be_bytes()].concat(),
             // not support
-            Args(..) => "{args value ...}".to_owned().into_bytes(),
+            Tuple(..) => "{tuple value ...}".to_owned().into_bytes(),
             Compo(..) => "{compo value ...}".to_owned().into_bytes(),
         }
     }
@@ -253,7 +253,7 @@ impl Value {
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
             HeapSlice((_, n)) => *n as usize,
-            Args(a) => a.val_size(),
+            Tuple(a) => a.val_size(),
             Compo(c) => c.val_size(),
         }
     }
@@ -269,12 +269,12 @@ impl Value {
             U128(..) => 16,
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
-            HeapSlice(..) | Args(..) | Compo(..) => REF_DUP_SIZE,
+            HeapSlice(..) | Tuple(..) | Compo(..) => REF_DUP_SIZE,
         }
     }
 
     pub fn can_get_size(&self) -> VmrtRes<u16> {
-        if let HeapSlice(..) | Args(..) | Compo(..) = self {
+        if let HeapSlice(..) | Tuple(..) | Compo(..) = self {
             return itr_err_code!(ItemNoSize)
         }
         let n = self.val_size();
@@ -310,7 +310,7 @@ impl Value {
             },
             Address(a) => a.to_string(),
             HeapSlice((s, l)) => format!("heap({},{})", s, l),
-            Args(a) => a.to_string(),
+            Tuple(a) => a.to_string(),
             Compo(a) => format!("compo({}){}", a.len(), a.to_string()),
         }
     }
@@ -328,7 +328,7 @@ impl Value {
             Bytes(b) => format!("\"{}\"", &to_readable_or_base64(b)),
             Address(a) =>  format!("\"{}\"", a),
             HeapSlice((s, l)) => format!("[{},{}]", s, l),
-            Args(a) => a.to_json(),
+            Tuple(a) => a.to_json(),
             Compo(a) => a.to_json(),
         }
     }
@@ -349,7 +349,7 @@ impl Value {
             },
             Address(a) => serde_json::to_string(&a.to_string()).unwrap(),
             HeapSlice((s, l)) => format!(r#"{{"$heap":[{},{}]}}"#, s, l),
-            Args(a) => a.to_debug_json(),
+            Tuple(a) => a.to_debug_json(),
             Compo(a) => a.to_debug_json(),
         }
     }
@@ -394,9 +394,9 @@ mod tests {
 
     #[test]
     fn dup_size_uses_handle_cost_for_ref_values() {
-        let args = Value::Args(ArgsItem::new(vec![Value::Bytes(vec![0u8; 128])]).unwrap());
+        let tuple = Value::Tuple(TupleItem::new(vec![Value::Bytes(vec![0u8; 128])]).unwrap());
         let compo = Value::Compo(CompoItem::list(VecDeque::from([Value::Bytes(vec![0u8; 128])])).unwrap());
-        assert_eq!(args.dup_size(), REF_DUP_SIZE);
+        assert_eq!(tuple.dup_size(), REF_DUP_SIZE);
         assert_eq!(compo.dup_size(), REF_DUP_SIZE);
         assert_eq!(Value::HeapSlice((7, 4096)).dup_size(), REF_DUP_SIZE);
         assert_eq!(Value::Bytes(vec![0u8; 33]).dup_size(), 33);
@@ -409,19 +409,19 @@ mod tests {
         bytes.match_bytes_mut().unwrap().push(4);
         assert_eq!(bytes.match_bytes(), Some(&[1, 2, 3, 4][..]));
         assert!(bytes.match_compo().is_none());
-        assert!(bytes.match_args().is_none());
+        assert!(bytes.match_tuple().is_none());
 
         let mut compo = Value::Compo(CompoItem::new_list());
         assert!(compo.match_compo().is_some());
         assert!(compo.match_compo_mut().is_some());
         assert!(compo.match_bytes().is_none());
 
-        let args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
-        assert!(args.match_args().is_some());
-        assert_eq!(args.clone_argv_items().unwrap(), vec![Value::U8(1), Value::U16(2)]);
-        assert_eq!(args.container_len().unwrap(), 2);
-        assert_eq!(args.haskey(Value::U8(1)).unwrap(), Value::Bool(true));
-        assert_eq!(args.itemget(Value::U8(1)).unwrap(), Value::U16(2));
+        let tuple = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
+        assert!(tuple.match_tuple().is_some());
+        assert_eq!(tuple.clone_argv_items().unwrap(), vec![Value::U8(1), Value::U16(2)]);
+        assert_eq!(tuple.container_len().unwrap(), 2);
+        assert_eq!(tuple.haskey(Value::U8(1)).unwrap(), Value::Bool(true));
+        assert_eq!(tuple.itemget(Value::U8(1)).unwrap(), Value::U16(2));
     }
 
     #[test]

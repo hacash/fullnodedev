@@ -462,7 +462,7 @@ mod address_tests {
         let mut ptr = AddrOrPtr::default();
         let too_large = u8::MAX as usize - ADDR_OR_PTR_DIV_NUM as usize + 1;
         let err = ptr.from_json(&too_large.to_string()).unwrap_err();
-        assert!(err.contains("overflow"));
+        assert!(err.contains("exceeds max"), "{}", err);
     }
 
     #[test]
@@ -495,7 +495,7 @@ mod address_tests {
         let json = list.to_json();
         let mut obj = AddrOrList::default();
         let err = obj.from_json(&json).unwrap_err();
-        assert!(err.contains("overflow"), "{}", err);
+        assert!(err.contains("exceeds max"), "{}", err);
     }
 
     #[test]

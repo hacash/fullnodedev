@@ -121,65 +121,63 @@ impl GasCounter {
     fn burn_amount(&self, cost: i64) -> Ret<Amount> {
         Self::calc_burn_amount(cost, self.purity_fee, self.purity_size, self.gas_rate)
     }
+    fn max_charge(&self) -> Ret<Amount> {
+        if !self.initialized {
+            return errf!("gas not initialized");
+        }
+        self.burn_amount(self.initial_budget)
+    }
+
+    fn used_charge(&self) -> Ret<Amount> {
+        if !self.initialized {
+            return Ok(Amount::zero());
+        }
+        let used = self.initial_budget.saturating_sub(self.remaining);
+        if used <= 0 {
+            return Ok(Amount::zero());
+        }
+        self.burn_amount(used)
+    }
 }
 
 impl ContextInst<'_> {
-    fn ctx_gas_reset(&mut self) {
-        self.gas.reset();
-    }
-
-    fn ctx_gas_init_tx(&mut self, budget: i64, gas_rate: i64) -> Rerr {
+    fn gas_init_tx_inner(&mut self, budget: i64, gas_rate: i64) -> Rerr {
         if self.gas.initialized {
-            return Ok(())
+            return Ok(());
         }
         if budget <= 0 {
-            return errf!("gas budget invalid: {}", budget)
+            return errf!("gas budget invalid: {}", budget);
         }
         let tx = self.tx();
         let purity_fee = tx.fee_got().to_238_u64().unwrap_or(0) as i128;
         let purity_size = tx.size() as i128;
         if purity_fee <= 0 || purity_size <= 0 {
-            return errf!("tx fee or size invalid for gas: purity_fee={} purity_size={}", purity_fee, purity_size)
+            return errf!(
+                "tx fee or size invalid for gas: purity_fee={} purity_size={}",
+                purity_fee,
+                purity_size
+            );
         }
-        
         let max_burn_amt = GasCounter::calc_burn_amount(budget, purity_fee, purity_size, gas_rate)?;
         let main = self.env().tx.main;
         crate::operate::hac_check(self, &main, &max_burn_amt)?;
         crate::operate::hac_sub(self, &main, &max_burn_amt)?;
-
-        self.gas.remaining = budget;
-        self.gas.initial_budget = budget;
-        self.gas.purity_fee = purity_fee;
-        self.gas.purity_size = purity_size;
-        self.gas.gas_rate = gas_rate.max(1);
-        self.gas.initialized = true;
+        let gas = &mut self.gas;
+        gas.remaining = budget;
+        gas.initial_budget = budget;
+        gas.purity_fee = purity_fee;
+        gas.purity_size = purity_size;
+        gas.gas_rate = gas_rate.max(1);
+        gas.initialized = true;
         Ok(())
     }
 
-    pub fn ctx_gas_max_charge(&self) -> Ret<Amount> {
+    fn gas_refund_inner(&mut self) -> Rerr {
         if !self.gas.initialized {
-            return errf!("gas not initialized")
+            return Ok(());
         }
-        self.gas.burn_amount(self.gas.initial_budget)
-    }
-
-    pub fn ctx_gas_used_charge(&self) -> Ret<Amount> {
-        if !self.gas.initialized {
-            return Ok(Amount::zero())
-        }
-        let used = self.gas.initial_budget.saturating_sub(self.gas.remaining);
-        if used <= 0 {
-            return Ok(Amount::zero())
-        }
-        self.gas.burn_amount(used)
-    }
-
-    fn ctx_gas_refund(&mut self) -> Rerr {
-        if !self.gas.initialized {
-            return Ok(())
-        }
-        let max_charge = self.ctx_gas_max_charge()?;
-        let used_charge = self.ctx_gas_used_charge()?;
+        let max_charge = self.gas.max_charge()?;
+        let used_charge = self.gas.used_charge()?;
         let refund = max_charge.sub_mode_u128(&used_charge)?;
         if refund.is_positive() {
             let main = self.env().tx.main;
@@ -200,20 +198,20 @@ impl ContextInst<'_> {
         Ok(())
     }
 
-    fn ctx_gas_remaining(&self) -> i64 {
+    fn gas_remaining_inner(&self) -> i64 {
         self.gas.remaining
     }
 
-    fn ctx_gas_charge(&mut self, gas: i64) -> Rerr {
+    fn gas_charge_inner(&mut self, gas: i64) -> Rerr {
         if !self.gas.initialized {
-            return errf!("gas has run out")
+            return errf!("gas has run out");
         }
         if gas < 0 {
-            return errf!("gas cost invalid: {}", gas)
+            return errf!("gas cost invalid: {}", gas);
         }
         self.gas.remaining -= gas;
         if self.gas.remaining < 0 {
-            return errf!("gas has run out")
+            return errf!("gas has run out");
         }
         Ok(())
     }

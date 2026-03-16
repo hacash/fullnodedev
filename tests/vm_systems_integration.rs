@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use basis::interface::ActExec;
-use basis::interface::{Context, State};
+use basis::interface::{Context, State, TxDriverContext};
 use field::{Address, Amount, Field, Uint4};
 use sys::{IntoTRet, Ret, XRet};
 use testkit::sim::integration::{
@@ -14,7 +14,7 @@ use vm::action::ContractDeploy;
 use vm::contract::{Contract, Func};
 use vm::lang::lang_to_bytecode;
 use vm::machine::{self, ContractCacheConfig, Machine, Resoure};
-use vm::rt::{Bytecode, CodeType, EntryKind, FnSign, calc_func_sign};
+use vm::rt::{Bytecode, CodeType, FnSign, calc_func_sign};
 use vm::value::Value;
 use vm::{ContractAddress, ContractSto, VMState, VmLog};
 
@@ -39,7 +39,7 @@ fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
         .into_sto()
 }
 
-fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
+fn execute_main_bytecode(ctx: &mut dyn TxDriverContext, codes: Vec<u8>) -> Ret<Value> {
     let main = ctx.env().tx.main;
     let _ = protocol::operate::hac_add(ctx, &main, &Amount::unit238(1_000_000_000));
     if let Ok(gas_max) = ctx.tx().fee_extend() {
@@ -89,12 +89,10 @@ fn setup_vm_run_rejects_low_tx_type() {
     );
     ctx.env.chain.fast_sync = true;
 
-    let err = machine::setup_vm_run(
+    let err = machine::setup_vm_run_main(
         &mut ctx,
-        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
-        Value::Nil,
     )
     .unwrap_err();
 
@@ -115,12 +113,10 @@ fn setup_vm_run_requires_registered_assigner() {
         Box::new(MemLogs::default()),
     );
 
-    let err = machine::setup_vm_run(
+    let err = machine::setup_vm_run_main(
         &mut ctx,
-        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
-        Value::Nil,
     )
     .unwrap_err();
 
@@ -130,7 +126,9 @@ fn setup_vm_run_requires_registered_assigner() {
 #[test]
 fn setup_vm_run_without_gas_init_reports_run_out() {
     let _guard = test_guard();
-    set_vm_assigner(Some(machine::vm_assign));
+    set_vm_assigner(Some(|height| {
+        Box::new(vm::global_machine_manager().assign(height))
+    }));
 
     let main = main_addr();
     let tx = make_tx(3, main, vec![], 0);
@@ -141,12 +139,10 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
         Box::new(MemLogs::default()),
     );
 
-    let err = machine::setup_vm_run(
+    let err = machine::setup_vm_run_main(
         &mut ctx,
-        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
-        Value::Nil,
     )
     .unwrap_err();
 
@@ -158,7 +154,9 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
 #[test]
 fn setup_vm_run_executes_after_assigner_registered() {
     let _guard = test_guard();
-    set_vm_assigner(Some(machine::vm_assign));
+    set_vm_assigner(Some(|height| {
+        Box::new(vm::global_machine_manager().assign(height))
+    }));
 
     let main = main_addr();
     let tx = make_tx(3, main, vec![], 17);
@@ -172,17 +170,15 @@ fn setup_vm_run_executes_after_assigner_registered() {
     let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(17).unwrap();
     ctx.gas_init_tx(budget, gas_rate).unwrap();
 
-    let (gas_used, rv) = machine::setup_vm_run(
+    let (gas_used, rv) = machine::setup_vm_run_main(
         &mut ctx,
-        EntryKind::Main as u8,
         CodeType::Bytecode as u8,
         Arc::from(vec![Bytecode::END as u8]),
-        Value::Nil,
     )
     .unwrap();
 
     assert!(gas_used > 0);
-    assert!(!rv.canbe_bool().unwrap());
+    assert!(!rv.extract_bool().unwrap());
 
     set_vm_assigner(None);
 }
@@ -474,11 +470,11 @@ fn runtime_log_roundtrip_is_readable() {
     let log = VmLog::build(&raw).expect("log item should decode");
 
     assert_eq!(log.addr, main);
-    assert_eq!(log.topic0.canbe_u128().unwrap(), 9);
-    assert_eq!(log.topic1.canbe_u128().unwrap(), 1);
-    assert_eq!(log.topic2.canbe_u128().unwrap(), 2);
-    assert_eq!(log.topic3.canbe_u128().unwrap(), 3);
-    assert_eq!(log.data.canbe_u128().unwrap(), 4);
+    assert_eq!(log.topic0.extract_u128().unwrap(), 9);
+    assert_eq!(log.topic1.extract_u128().unwrap(), 1);
+    assert_eq!(log.topic2.extract_u128().unwrap(), 2);
+    assert_eq!(log.topic3.extract_u128().unwrap(), 3);
+    assert_eq!(log.data.extract_u128().unwrap(), 4);
 }
 
 #[test]

@@ -1,43 +1,35 @@
+fn check_scalar_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
+    match value {
+        Nil | Bool(..) | U8(..) | U16(..) | U32(..) | U64(..) | U128(..) | Bytes(..)
+        | Address(..) => Ok(()),
+        _ => itr_err_code!(ec),
+    }
+}
 
+fn check_tuple_item_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
+    match value {
+        HeapSlice(..) | Tuple(..) => itr_err_code!(ec),
+        Compo(..) => Ok(()),
+        _ => check_scalar_ec(value, ec),
+    }
+}
+
+fn check_func_boundary_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
+    match value {
+        HeapSlice(..) => itr_err_code!(ec),
+        Tuple(tuple) => {
+            for item in tuple.as_slice() {
+                check_tuple_item_ec(item, ec)?;
+            }
+            Ok(())
+        }
+        Compo(..) => Ok(()),
+        _ => check_scalar_ec(value, ec),
+    }
+}
 
 impl Value {
-
-    fn check_func_boundary(value: &Value, ec: ItrErrCode, allow_args: bool) -> VmrtErr {
-        match value {
-            HeapSlice(..) => itr_err_code!(ec),
-            Args(args) => {
-                if !allow_args {
-                    return itr_err_code!(ec)
-                }
-                for item in args.as_slice() {
-                    Self::check_func_boundary(item, ec, false)?;
-                }
-                Ok(())
-            }
-            Compo(compo) => {
-                if let Ok(list) = compo.list_ref() {
-                    for v in list {
-                        Self::check_func_boundary(v, ec, false)?;
-                    }
-                    return Ok(())
-                }
-                if let Ok(map) = compo.map_ref() {
-                    for v in map.values() {
-                        Self::check_func_boundary(v, ec, false)?;
-                    }
-                    return Ok(())
-                }
-                itr_err_code!(ec)
-            }
-            _ => Ok(()),
-        }
-    }
-
-    fn check_func_argv_item(value: &Value, ec: ItrErrCode) -> VmrtErr {
-        Self::check_func_boundary(value, ec, false)
-    }
-
-    pub fn canbe_bytes_ec(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
+    fn extract_bytes_with_error_code(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
         match self {
             Bool(b) => Ok(vec![maybe!(b, 1, 0)]),
             U8(n) => Ok(n.to_be_bytes().into()),
@@ -51,31 +43,27 @@ impl Value {
         }
     }
 
-    pub fn canbe_key(&self) -> VmrtRes<Vec<u8>> {
+    pub fn extract_bytes(&self) -> VmrtRes<Vec<u8>> {
+        self.extract_bytes_with_error_code(CastBeBytesFail)
+    }
+
+    pub fn extract_key_bytes(&self) -> VmrtRes<Vec<u8>> {
         let ec = CastBeKeyFail;
         match self {
             Bool(..) => itr_err_code!(ec),
-            _ => self.canbe_bytes_ec(ec),
+            _ => self.extract_bytes_with_error_code(ec),
         }
     }
 
-    pub fn canbe_value(&self) -> VmrtErr {
-        let ec = CastBeValueFail;
-        match self {
-            Nil |
-            Bool(..)|
-            U8(..)    |
-            U16(..)   |
-            U32(..)   |
-            U64(..)   |
-            U128(..)  |
-            Bytes(..) |
-            Address(..) => Ok(()),
-            _ => itr_err_code!(ec)
-        }
+    pub fn check_scalar(&self) -> VmrtErr {
+        check_scalar_ec(self, CastBeValueFail)
     }
 
-    pub fn canbe_call_data(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
+    pub fn check_tuple_item(&self) -> VmrtErr {
+        check_tuple_item_ec(self, CastBeValueFail)
+    }
+
+    pub fn extract_call_data(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
         let ec = CastBeCallDataFail;
         match self {
             Nil => Ok(vec![]),
@@ -85,22 +73,27 @@ impl Value {
                 };
                 Ok(buf)
             }
-            _ => self.canbe_bytes_ec(ec),
+            _ => self.extract_bytes_with_error_code(ec),
         }
     }
 
-    pub fn canbe_func_argv(&self) -> VmrtErr {
-        Self::check_func_boundary(self, CastBeFnArgvFail, true)
+    pub fn check_func_argv(&self) -> VmrtErr {
+        check_func_boundary_ec(self, CastBeFnArgvFail)?;
+        if let Tuple(tuple) = self {
+            if tuple.len() > crate::MAX_FUNC_PARAM_LEN {
+                return itr_err_fmt!(
+                    CastBeFnArgvFail,
+                    "func argv length cannot more than {}",
+                    crate::MAX_FUNC_PARAM_LEN
+                );
+            }
+        }
+        Ok(())
     }
 
-    pub fn canbe_func_retv(&self) -> VmrtErr {
-        Self::check_func_boundary(self, CastBeFnRetvFail, true)
+    pub fn check_func_retv(&self) -> VmrtErr {
+        check_func_boundary_ec(self, CastBeFnRetvFail)
     }
-
-
-
-
-
 }
 
 #[cfg(test)]
@@ -114,21 +107,46 @@ mod canbe_tests {
         heap.write(0, Value::Bytes(vec![1, 2, 3, 4])).unwrap();
         let hs = Value::HeapSlice((1, 2));
 
-        assert_eq!(hs.canbe_call_data(&heap).unwrap(), vec![2, 3]);
-        assert!(hs.canbe_bytes_ec(CastBeBytesFail).is_err());
-        assert!(hs.canbe_func_argv().is_err());
-        assert!(hs.canbe_func_retv().is_err());
+        assert_eq!(hs.extract_call_data(&heap).unwrap(), vec![2, 3]);
+        assert!(hs.extract_bytes_with_error_code(CastBeBytesFail).is_err());
+        assert!(hs.check_func_argv().is_err());
+        assert!(hs.check_func_retv().is_err());
 
-        let args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_list())]).unwrap());
-        assert!(args.canbe_func_argv().is_ok());
-        assert!(args.canbe_func_retv().is_ok());
-
+        let tuple = Value::Tuple(
+            TupleItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_list())]).unwrap(),
+        );
+        assert!(tuple.check_func_argv().is_ok());
+        assert!(tuple.check_func_retv().is_ok());
     }
 
     #[test]
     fn heapslice_func_retv_uses_retv_error_code() {
         let hs = Value::HeapSlice((0, 1));
-        let err = hs.canbe_func_retv().unwrap_err();
+        let err = hs.check_func_retv().unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeFnRetvFail);
+    }
+
+    #[test]
+    fn func_argv_rejects_tuple_longer_than_param_limit() {
+        let tuple = Value::Tuple(
+            TupleItem::new(
+                (0..(crate::MAX_FUNC_PARAM_LEN + 1))
+                    .map(|_| Value::U8(1))
+                    .collect(),
+            )
+            .unwrap(),
+        );
+        let err = tuple.check_func_argv().unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeFnArgvFail);
+    }
+
+    #[test]
+    fn scalar_check_rejects_compo_and_tuple_values() {
+        assert!(Value::Compo(CompoItem::new_list()).check_scalar().is_err());
+        assert!(
+            Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap())
+                .check_scalar()
+                .is_err()
+        );
     }
 }

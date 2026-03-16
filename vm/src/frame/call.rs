@@ -28,7 +28,7 @@ impl CallFrame {
                     let next_effect = spec.callee_effect(curr_exec.effect);
                     let next_exec = curr_exec.enter_call(next_effect, &r.space_cap)?;
                     if matches!(spec, CallSpec::Invoke { .. }) {
-                        curr_mut!().oprnds.peek()?.canbe_func_argv()?;
+                        curr_mut!().oprnds.peek()?.check_func_argv()?;
                     }
                     let plan = r.plan_user_call(host, &spec, &curr_bindings)?;
 
@@ -71,7 +71,7 @@ impl CallFrame {
                     if matches!(exit, Abort | Throw) {
                         return itr_err_fmt!(ThrowAbort, "VM return failed: {}", retv);
                     }
-                    curr!().check_return_value(&mut retv)?;
+                    curr!().check_output_type(&mut retv)?;
                     self.pop().unwrap().reclaim(r);
 
                     loop {
@@ -84,7 +84,7 @@ impl CallFrame {
                             break;
                         }
                         let tail = self.pop().unwrap();
-                        tail.check_return_value(&mut retv)?;
+                        tail.check_output_type(&mut retv)?;
                         tail.reclaim(r);
                     }
                 }

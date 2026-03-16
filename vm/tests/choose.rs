@@ -7,13 +7,13 @@ fn choose_returns_yes_when_cond_true() {
     // Use numeric branches to avoid ambiguity of literal typing in tests.
     let src = "let r = choose(true, 1, 0); return r";
     let res = execute_lang_with_params(src, "").expect("execution failed");
-    // Accept any numeric type and compare via canbe_u128()
-    assert_eq!(res.canbe_u128().unwrap(), 1, "expected chosen value 1");
+    // Accept any numeric type and compare via extract_u128()
+    assert_eq!(res.extract_u128().unwrap(), 1, "expected chosen value 1");
 }
 
 #[test]
 fn choose_returns_no_when_cond_false() {
     let src = "let r = choose(false, 1, 0); return r";
     let res = execute_lang_with_params(src, "").expect("execution failed");
-    assert_eq!(res.canbe_u128().unwrap(), 0, "expected chosen value 0");
+    assert_eq!(res.extract_u128().unwrap(), 0, "expected chosen value 0");
 }

@@ -43,7 +43,7 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {
         .action_register(mint::action::register)
         .action_register(vm::action::register)
         .action_hooker(vm::hook::try_action_hook)
-        .vm_assigner(vm::machine::vm_assign);
+        .vm_assigner(|height| Box::new(vm::global_machine_manager().assign(height)));
     let registry = builder.build()?;
     protocol::setup::install_once(registry)?;
 

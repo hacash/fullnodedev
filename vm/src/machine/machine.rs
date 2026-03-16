@@ -1,10 +1,6 @@
-/// Per-tx VM call state. Gas ledger is stored in Context; VM only keeps
-/// re-entry level guard and call-limit state.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct VmCallState {
-    initialized: bool,  // whether init_once() has been called
-    reentry_level: u32, // current ACTION re-entry level (0 = not in call)
-    max_reentry: u32,   // hard cap from SpaceCap
+    reentry_level: u32,
 }
 
 struct VmReentryGuard<'a> {
@@ -12,8 +8,8 @@ struct VmReentryGuard<'a> {
 }
 
 impl<'a> VmReentryGuard<'a> {
-    fn enter(call_state: &'a mut VmCallState) -> Ret<Self> {
-        call_state.enter()?;
+    fn enter(call_state: &'a mut VmCallState, max_reentry: u32) -> Ret<Self> {
+        call_state.enter(max_reentry)?;
         Ok(Self { call_state })
     }
 }
@@ -24,49 +20,157 @@ impl Drop for VmReentryGuard<'_> {
     }
 }
 
-impl Default for VmCallState {
-    fn default() -> Self {
-        Self {
-            initialized: false,
-            reentry_level: 0,
-            max_reentry: 4,
-        }
-    }
-}
-
 impl VmCallState {
-    /// Initialize VM-side call limits only.
-    fn init_once(&mut self, cap: &SpaceCap) -> Rerr {
-        if self.initialized {
-            return Ok(());
-        }
-        self.max_reentry = cap.reentry_level;
-        self.initialized = true;
-        Ok(())
-    }
-
-    /// Enter a call layer. Increments level, enforces re-entry limit.
-    fn enter(&mut self) -> Rerr {
+    fn enter(&mut self, max_reentry: u32) -> Rerr {
         let next_level = self
             .reentry_level
             .checked_add(1)
             .ok_or_else(|| "re-entry level overflow".to_owned())?;
-        if next_level > self.max_reentry + 1 {
-            // level 1 = outermost call, level 2 = first re-entry, etc.
+        if next_level > max_reentry + 1 {
             return errf!(
                 "re-entry level {} exceeded limit {}",
                 next_level - 1,
-                self.max_reentry
+                max_reentry
             );
         }
         self.reentry_level = next_level;
         Ok(())
     }
 
-    /// Leave a call layer. Decrements level.
     fn leave(&mut self) {
         self.reentry_level = self.reentry_level.saturating_sub(1);
     }
+}
+
+enum VmCallDispatch {
+    Main {
+        code_type: CodeType,
+        codes: Arc<[u8]>,
+    },
+    P2sh {
+        code_type: CodeType,
+        state_addr: Address,
+        libs: Vec<ContractAddress>,
+        codes: ByteView,
+        param: Value,
+    },
+    Abst {
+        kind: AbstCall,
+        contract_addr: ContractAddress,
+        param: Value,
+    },
+}
+
+impl VmCallDispatch {
+    fn parse(entry: u8, target: u8, payload: Arc<[u8]>, param: Box<dyn Any>) -> XRet<Self> {
+        use EntryKind::*;
+        let entry = EntryKind::try_from_u8(entry).map_err(XError::from)?;
+        match entry {
+            Main => Ok(Self::Main {
+                code_type: CodeConf::parse(target)?.code_type(),
+                codes: payload,
+            }),
+            P2sh => {
+                let payload = ByteView::from_arc(payload);
+                let payload_ref = payload.as_slice();
+                let (state_addr, mv1) = Address::create(payload_ref).map_err(XError::fault)?;
+                let (libs, mv2) =
+                    ContractAddressW1::create(&payload_ref[mv1..]).map_err(XError::fault)?;
+                let mv = mv1 + mv2;
+                let Ok(param) = param.downcast::<Value>() else {
+                    return xerrf!("p2sh argv type mismatch");
+                };
+                Ok(Self::P2sh {
+                    code_type: CodeConf::parse(target)?.code_type(),
+                    state_addr,
+                    libs: libs.into_list(),
+                    codes: payload.slice(mv, payload.len()).map_err(XError::fault)?,
+                    param: *param,
+                })
+            }
+            Abst => Ok(Self::Abst {
+                kind: AbstCall::try_from_u8(target).map_err(XError::from)?,
+                contract_addr: ContractAddress::parse(payload.as_ref()).map_err(XError::fault)?,
+                param: match param.downcast::<Value>() {
+                    Ok(param) => *param,
+                    Err(_) => return xerrf!("abst argv type mismatch"),
+                },
+            }),
+        }
+    }
+
+    fn entry_kind(&self) -> EntryKind {
+        match self {
+            Self::Main { .. } => EntryKind::Main,
+            Self::P2sh { .. } => EntryKind::P2sh,
+            Self::Abst { .. } => EntryKind::Abst,
+        }
+    }
+
+    fn min_call_cost(&self, gas_extra: &GasExtra) -> i64 {
+        self.entry_kind().min_call_cost(gas_extra)
+    }
+
+    fn execute(self, machine: &mut Machine, ctx: &mut dyn Context) -> XRet<Value> {
+        match self {
+            Self::Main { code_type, codes } => machine.main_call(ctx, code_type, codes),
+            Self::P2sh {
+                code_type,
+                state_addr,
+                libs,
+                codes,
+                param,
+            } => machine.p2sh_call(ctx, code_type, state_addr, libs, codes, param),
+            Self::Abst {
+                kind,
+                contract_addr,
+                param,
+            } => machine.abst_call(ctx, kind, contract_addr, param),
+        }
+    }
+}
+
+fn reject_call_below_min_cost(
+    ctx: &mut dyn Context,
+    gas_before: i64,
+    min_cost: i64,
+    entry: EntryKind,
+) -> XRet<()> {
+    if gas_before >= min_cost {
+        return Ok(());
+    }
+    if ctx.gas_charge(0).is_err() {
+        ctx.gas_charge(min_cost).into_xret()?;
+    } else {
+        let _ = ctx.gas_charge(min_cost);
+    }
+    xerrf!(
+        "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
+        gas_before,
+        min_cost,
+        entry
+    )
+}
+
+fn settle_min_call_cost(ctx: &mut dyn Context, gas_before: i64, min_cost: i64) -> XRet<i64> {
+    let gas_after = ctx.gas_remaining();
+    let actual = gas_before - gas_after;
+    if actual >= min_cost {
+        return Ok(actual);
+    }
+    let shortfall = min_cost - actual;
+    let _ = ctx.gas_charge(shortfall);
+    let remaining = ctx.gas_remaining();
+    if remaining < 0 {
+        return xerrf!(
+            "gas has run out after min cost enforcement: remaining={} (before={} min_call_cost={} actual_cost={})",
+            remaining,
+            gas_before,
+            min_cost,
+            actual
+        );
+    }
+    Ok(min_cost)
 }
 
 /*********************************/
@@ -93,13 +197,37 @@ impl MachineBox {
             machine: Some(m),
         }
     }
+
+    #[inline]
+    fn machine_ref(&self) -> Ret<&Machine> {
+        self.machine
+            .as_ref()
+            .ok_or_else(|| "machine runtime missing".to_owned())
+    }
+
+    #[inline]
+    fn machine_mut(&mut self) -> Ret<&mut Machine> {
+        self.machine
+            .as_mut()
+            .ok_or_else(|| "machine runtime missing".to_owned())
+    }
+
+    pub fn sandbox_main_call_raw(
+        &mut self,
+        ctx: &mut dyn Context,
+        ctype: CodeType,
+        codes: Arc<[u8]>,
+    ) -> Ret<Value> {
+        self.machine_mut()?.main_call_raw(ctx, ctype, codes)
+    }
 }
 
 impl VM for MachineBox {
-    fn snapshot_volatile(&self) -> Box<dyn Any> {
-        let m = self.machine.as_ref().unwrap();
-        // Snapshot excludes gas and gas-charged warmup/cache accounting so AST recover rolls back state/log/memory only while keeping gas/warmup monotonic.
-        Box::new((m.r.global_map.clone(), m.r.memory_map.clone()))
+    fn snapshot_volatile(&mut self) -> Box<dyn Any> {
+        match self.machine_ref() {
+            Ok(m) => Box::new((m.r.global_map.clone(), m.r.memory_map.clone())),
+            Err(_) => Box::new((GKVMap::default(), CtcKVMap::default())),
+        }
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
@@ -107,24 +235,24 @@ impl VM for MachineBox {
             return;
         };
         let (global_map, memory_map) = *snap;
-        let m = self.machine.as_mut().unwrap();
-        m.r.global_map = global_map;
-        m.r.memory_map = memory_map;
-        // Do not restore `r.contracts` because tx-local warmup/cache accounting tied to already-paid gas must stay monotonic across AST recover.
+        if let Ok(m) = self.machine_mut() {
+            m.r.global_map = global_map;
+            m.r.memory_map = memory_map;
+        }
     }
 
     fn restore_but_keep_warmup(&mut self) {
-        let m = self.machine.as_mut().unwrap();
-        m.r.global_map.clear();
-        m.r.memory_map.clear();
-        // keep warmup/cache channel (`contracts`) and gas accounting monotonic.
+        if let Ok(m) = self.machine_mut() {
+            m.r.global_map.clear();
+            m.r.memory_map.clear();
+        }
     }
 
     fn invalidate_contract_cache(&mut self, addr: &Address) {
         let Ok(caddr) = ContractAddress::from_addr(*addr) else {
             return;
         };
-        if let Some(m) = self.machine.as_mut() {
+        if let Ok(m) = self.machine_mut() {
             m.r.contracts.remove(&caddr);
         }
         global_machine_manager()
@@ -132,107 +260,32 @@ impl VM for MachineBox {
             .remove_addr(&caddr);
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> XRet<(i64, Vec<u8>)> {
-        use EntryKind::*;
-        let VMCall {
-            ctx,
-            entry,
-            kind,
-            payload,
-            param,
-        } = call;
-        // (1) initialize gas budget on first call (idempotent)
-        {
-            let r = &self.machine.as_ref().unwrap().r;
-            self.call_state.init_once(&r.space_cap)?;
-        }
-        // (2) enter call layer (depth check). Guard guarantees leave() on all exits.
-        let _guard = VmReentryGuard::enter(&mut self.call_state)?;
-        // min gas cost per call type
-        let entry_kind = EntryKind::try_from_u8(entry).map_err(XError::from)?;
-        let min_cost = {
-            let gsext = &self.machine.as_ref().unwrap().r.gas_extra;
-            match entry_kind {
-                Main => gsext.main_call_min,
-                P2sh => gsext.p2sh_call_min,
-                Abst => gsext.abst_call_min,
-            }
+    fn call(
+        &mut self,
+        ctx: &mut dyn Context,
+        entry: u8,
+        target: u8,
+        payload: Arc<[u8]>,
+        param: Box<dyn Any>,
+    ) -> XRet<(i64, Vec<u8>)> {
+        let Some(machine) = self.machine.as_ref() else {
+            return xerrf!("machine runtime missing");
         };
-        // (3) execute VM call with shared gas counter
+        let max_reentry = machine.r.space_cap.reentry_level;
+        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry).into_xret()?;
+        let dispatch = VmCallDispatch::parse(entry, target, payload, param)?;
+        let entry_kind = dispatch.entry_kind();
+        let Some(machine) = self.machine.as_ref() else {
+            return xerrf!("machine runtime missing");
+        };
+        let min_cost = dispatch.min_call_cost(&machine.r.gas_extra);
         let gas_before = ctx.gas_remaining();
-        // Fail-fast: if remaining gas can't cover the per-call minimum, this call cannot start.
-        if gas_before < min_cost {
-            if ctx.gas_charge(0).is_err() {
-                ctx.gas_charge(min_cost).into_xret()?;
-            } else {
-                let _ = ctx.gas_charge(min_cost);
-            }
-            return xerrf!(
-                "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
-                gas_before,
-                min_cost,
-                entry_kind
-            );
-        }
-        let machine = self.machine.as_mut().unwrap();
-        let result = match entry_kind {
-            Main => {
-                let codeconf = CodeConf::parse(kind)?;
-                machine.main_call(ctx, codeconf.code_type(), payload)
-            }
-            P2sh => {
-                let codeconf = CodeConf::parse(kind)?;
-                let payload = ByteView::from_arc(payload);
-                let payload_ref = payload.as_slice();
-                let (state_addr, mv1) = Address::create(payload_ref).map_err(XError::fault)?;
-                let (calibs, mv2) =
-                    ContractAddressW1::create(&payload_ref[mv1..]).map_err(XError::fault)?;
-                let mv = mv1 + mv2;
-                let realcodes = payload
-                    .slice(mv, payload.len())
-                    .map_err(XError::fault)?;
-                let Ok(param) = param.downcast::<Value>() else {
-                    return xerrf!("p2sh argv type mismatch");
-                };
-                machine.p2sh_call(
-                    ctx,
-                    codeconf.code_type(),
-                    state_addr,
-                    calibs.into_list(),
-                    realcodes,
-                    *param,
-                )
-            }
-            Abst => {
-                let kid = AbstCall::try_from_u8(kind).map_err(XError::from)?;
-                let cadr = ContractAddress::parse(payload.as_ref()).map_err(XError::fault)?;
-                let Ok(param) = param.downcast::<Value>() else {
-                    return xerrf!("abst argv type mismatch");
-                };
-                machine.abst_call(ctx, kid, cadr, *param)
-            }
+        reject_call_below_min_cost(ctx, gas_before, min_cost, entry_kind)?;
+        let Some(machine) = self.machine.as_mut() else {
+            return xerrf!("machine runtime missing");
         };
-        // (4) compute gas cost, enforce minimum, leave call layer
-        let gas_after = ctx.gas_remaining();
-        let actual = gas_before - gas_after;
-        let mut cost = actual;
-        // enforce per-call minimum gas by consuming shortfall from shared counter
-        if cost < min_cost {
-            let shortfall = min_cost - cost;
-            let _ = ctx.gas_charge(shortfall);
-            let remaining = ctx.gas_remaining();
-            if remaining < 0 {
-                return xerrf!(
-                    "gas has run out after min cost enforcement: remaining={} (before={} min_call_cost={} actual_cost={})",
-                    remaining,
-                    gas_before,
-                    min_cost,
-                    actual
-                );
-            }
-            cost = min_cost;
-        }
-        // propagate VM execution error (depth is auto-restored by guard drop)
+        let result = dispatch.execute(machine, ctx);
+        let cost = settle_min_call_cost(ctx, gas_before, min_cost)?;
         let resv = result.map(|a| a.raw())?;
         if cost <= 0 {
             return xerrf!("gas cost invalid: {}", cost);
@@ -268,7 +321,7 @@ impl Machine {
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         Ok(self.do_call(
             host,
-            ExecCtx::main(),
+            EntryKind::Main.root_exec(),
             &fnobj,
             host.main_entry_bindings(),
             None,
@@ -293,9 +346,9 @@ impl Machine {
         contract_addr: ContractAddress,
         param: Value,
     ) -> XRet<Value> {
-        let exec = ExecCtx::abst();
+        let exec = EntryKind::Abst.root_exec();
         exec.ensure_call_depth(&self.r.space_cap).map_err(XError::from)?;
-        param.canbe_func_argv().map_err(XError::from)?;
+        param.check_func_argv().map_err(XError::from)?;
         let adr = contract_addr.to_readable();
         let Some(hit) = self
             .r
@@ -330,7 +383,7 @@ impl Machine {
         let ctx_adr = p2sh_addr;
         let rv = self.do_call(
             host,
-            ExecCtx::p2sh(),
+            EntryKind::P2sh.root_exec(),
             &fnobj,
             FrameBindings::root(
                 ctx_adr,
@@ -606,14 +659,14 @@ mod machine_test {
     }
 
     #[test]
-    fn main_call_still_rejects_args_return() {
+    fn main_call_still_rejects_tuple_return() {
         let base_addr = test_base_addr();
         let res = run_main_script(
             base_addr,
             vec![],
             StateMem::default(),
             r##"
-                return args(7, 8)
+                return tuple(7, 8)
             "##,
         );
         assert_err_contains(res, "main call return error");
@@ -738,21 +791,21 @@ mod machine_test {
             .unwrap();
 
         assert!(
-            !rv.canbe_bool().unwrap(),
+            !rv.extract_bool().unwrap(),
             "main call should return success (nil/0)"
         );
     }
 
     #[test]
-    fn internal_contract_call_accepts_args_return_value() {
+    fn internal_contract_call_accepts_tuple_return_value() {
         let base_addr = test_base_addr();
         let contract = test_contract(&base_addr, 88);
         let contract_sto = Contract::new()
             .func(
                 Func::new("build")
                     .unwrap()
-                    .types(Some(VT::Args), vec![])
-                    .fitsh(r##"return args(7, map { "kind": "hnft" })"##)
+                    .types(Some(VT::Tuple), vec![])
+                    .fitsh(r##"return tuple(7, map { "kind": "hnft" })"##)
                     .unwrap(),
             )
             .func(
@@ -1000,7 +1053,7 @@ mod machine_test {
             )
             .unwrap();
         assert!(
-            !rv.canbe_bool().unwrap(),
+            !rv.extract_bool().unwrap(),
             "abst call should finish without assertion failure"
         );
     }
@@ -2121,13 +2174,13 @@ end",
         // END is a minimal "return nil" program; actual instruction gas is tiny.
         let codes = vec![Bytecode::END as u8];
 
-        vm.call(VMCall::new(
+        vm.call(
             &mut ctx,
             EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             codes.clone().into(),
             Box::new(Value::Nil),
-        ))
+        )
         .unwrap();
 
         let gsext = GasExtra::new(1);
@@ -2166,13 +2219,13 @@ end",
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let codes = vec![Bytecode::END as u8];
-        vm.call(VMCall::new(
+        vm.call(
             &mut ctx,
             EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             codes.clone().into(),
             Box::new(Value::Nil),
-        ))
+        )
         .unwrap();
 
         let warm_a = test_contract(&main, 201);
@@ -2202,13 +2255,7 @@ end",
         assert_eq!(Context::gas_remaining(&ctx), 1);
         // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
         assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 2);
-        assert!(vm
-            .machine
-            .as_ref()
-            .unwrap()
-            .r
-            .contracts
-            .contains_key(&warm_b));
+        assert!(vm.machine.as_ref().unwrap().r.contracts.contains_key(&warm_b));
     }
 
     #[test]
@@ -2238,13 +2285,13 @@ end",
         let codes = vec![Bytecode::END as u8];
 
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            vm.call(VMCall::new(
+            vm.call(
                 &mut ctx,
                 EntryKind::Main as u8,
                 CodeType::Bytecode as u8,
                 codes.clone().into(),
                 Box::new(Value::Nil),
-            ))
+            )
         }));
         assert!(res.is_ok(), "settle must not panic");
         // low fee may cause an error return, but must never panic
@@ -2276,34 +2323,36 @@ end",
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         // Invalid code type causes early return inside Main branch before previous manual leave() point.
-        let early = vm.call(VMCall::new(
+        let early = vm.call(
             &mut ctx,
             EntryKind::Main as u8,
             255,
             Arc::from(vec![]),
             Box::new(Value::Nil),
-        ));
+        );
         assert!(early.is_err(), "invalid code type must fail");
         assert_eq!(
-            vm.call_state.reentry_level, 0,
+            vm.call_state.reentry_level,
+            0,
             "re-entry level must be restored after early return"
         );
 
         // Next normal call should still behave as an outermost call.
         let codes = vec![Bytecode::END as u8];
-        let ok = vm.call(VMCall::new(
+        let ok = vm.call(
             &mut ctx,
             EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             codes.into(),
             Box::new(Value::Nil),
-        ));
+        );
         assert!(
             ok.is_ok(),
             "subsequent call must not be poisoned by previous early return"
         );
         assert_eq!(
-            vm.call_state.reentry_level, 0,
+            vm.call_state.reentry_level,
+            0,
             "re-entry level must remain balanced after successful call"
         );
     }
@@ -2340,13 +2389,13 @@ end",
         let fail_codes = lang_to_bytecode("return 1").unwrap();
 
         let bal_before = read_hac_balance(&mut ctx, &main);
-        let call = vm.call(VMCall::new(
+        let call = vm.call(
             &mut ctx,
             EntryKind::Main as u8,
             CodeType::Bytecode as u8,
             fail_codes.into(),
             Box::new(Value::Nil),
-        ));
+        );
         let bal_after = read_hac_balance(&mut ctx, &main);
 
         assert!(
@@ -2390,23 +2439,23 @@ end",
 
             let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
             if run_failed_first {
-                let failed = vm.call(VMCall::new(
+                let failed = vm.call(
                     &mut ctx,
                     EntryKind::Main as u8,
                     CodeType::Bytecode as u8,
                     fail_codes.clone().into(),
                     Box::new(Value::Nil),
-                ));
+                );
                 assert!(failed.is_err(), "prelude failed call must fail");
             }
 
-            let ok = vm.call(VMCall::new(
+            let ok = vm.call(
                 &mut ctx,
                 EntryKind::Main as u8,
                 CodeType::Bytecode as u8,
                 ok_codes.clone().into(),
                 Box::new(Value::Nil),
-            ));
+            );
             assert!(ok.is_ok(), "final success call must succeed");
 
             (read_hac_balance(&mut ctx, &main), Context::gas_remaining(&ctx))

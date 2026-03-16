@@ -234,11 +234,11 @@ mod fitshc_compile_tests {
 
 
     #[test]
-    fn accepts_args_return_type_and_constructor() {
+    fn accepts_tuple_return_type_and_constructor() {
         let src = r#"
             contract demo {
-                function build() -> args {
-                    return args(7, map { "kind": "hnft" })
+                function build() -> tuple {
+                    return tuple(7, map { "kind": "hnft" })
                 }
                 function consume(num: u8, doc: map) -> u8 {
                     assert doc is map

@@ -128,7 +128,7 @@ impl ValueSto {
         if is_delete {
             return itr_err_fmt!(StorageError, "renewal failed, data invalid");
         }
-        let period = v.checked_u128().map_err(|_| {
+        let period = v.extract_u128().map_err(|_| {
             ItrErr::new(
                 StorageError,
                 &format!("period value {:?} is not uint type", v),
@@ -435,7 +435,7 @@ impl VMState<'_> {
             StorageError,
             format!("storage must be in effective address but got {}", cadr),
         )?;
-        let k = key.canbe_key()?;
+        let k = key.extract_key_bytes()?;
         if k.is_empty() {
             return itr_err_code!(StorageKeyInvalid);
         }
@@ -497,7 +497,7 @@ impl VMState<'_> {
         k: Value,
         v: Value,
     ) -> VmrtRes<i64> {
-        v.canbe_value()?; // check can store
+        v.check_scalar()?; // check can store
         let val_len = v.can_get_size()? as usize;
         let max_val = SpaceCap::new(curhei).value_size;
         if val_len > max_val {

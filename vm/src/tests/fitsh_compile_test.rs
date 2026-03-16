@@ -613,7 +613,7 @@ return x"
         }
 
         #[test]
-        fn multi_call_argv_uses_packargs_not_packlist() {
+        fn multi_call_argv_uses_packtuple_not_packlist() {
             use crate::rt::Bytecode;
 
             let result = lang_to_bytecode(
@@ -621,52 +621,90 @@ return x"
 return C.0xabcdef01(1, 2)",
             );
             let bytes = result.expect("Failed to compile multi-argv call");
-            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+            assert!(bytes.contains(&(Bytecode::PACKTUPLE as u8)));
             assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
         }
 
         #[test]
-        fn explicit_args_constructor_uses_packargs_even_for_single_item() {
+        fn explicit_tuple_constructor_uses_packtuple_even_for_single_item() {
             use crate::rt::Bytecode;
 
             let bytes =
-                lang_to_bytecode("return args(1)").expect("Failed to compile args constructor");
-            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+                lang_to_bytecode("return tuple(1)").expect("Failed to compile tuple constructor");
+            assert!(bytes.contains(&(Bytecode::PACKTUPLE as u8)));
             assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
         }
 
         #[test]
-        fn args_to_list_uses_dedicated_opcode() {
-            use crate::rt::Bytecode;
-
-            let bytes = lang_to_bytecode("return args_to_list(args(1, 2))")
-                .expect("Failed to compile args_to_list");
-            assert!(bytes.contains(&(Bytecode::ARGS2LIST as u8)));
-            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+        fn explicit_tuple_constructor_accepts_32_items() {
+            let argv = (1..=crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH)
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let code = format!("return tuple({})", argv);
+            lang_to_bytecode(&code).expect("tuple(32 items) should compile");
         }
 
         #[test]
-        fn args_index_expression_uses_itemget_on_packargs() {
+        fn explicit_tuple_constructor_rejects_33_items() {
+            let argv = (1..=(crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH + 1))
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let code = format!("return tuple({})", argv);
+            let err = lang_to_bytecode(&code).expect_err("tuple(33 items) must fail");
+            assert!(
+                err.to_string()
+                    .contains(&format!("tuple length cannot more than {}", crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH))
+            );
+        }
+
+        #[test]
+        fn multi_call_argv_rejects_more_than_15_args() {
+            let argv = (1..=(crate::MAX_FUNC_PARAM_LEN + 1))
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let code = format!("lib C = 1\nreturn C.0xabcdef01({})", argv);
+            let err = lang_to_bytecode(&code).expect_err("call argv over limit must fail");
+            assert!(
+                err.to_string()
+                    .contains(&format!("function argv length cannot more than {}", crate::MAX_FUNC_PARAM_LEN))
+            );
+        }
+
+        #[test]
+        fn tuple_to_list_uses_dedicated_opcode() {
             use crate::rt::Bytecode;
 
-            let bytes = lang_to_bytecode("return args(1, 2)[0]")
-                .expect("Failed to compile args itemget expression");
-            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+            let bytes = lang_to_bytecode("return tuple_to_list(tuple(1, 2))")
+                .expect("Failed to compile tuple_to_list(tuple(...))");
+            assert!(bytes.contains(&(Bytecode::TUPLE2LIST as u8)));
+            assert!(bytes.contains(&(Bytecode::PACKTUPLE as u8)));
+        }
+
+        #[test]
+        fn tuple_index_expression_uses_itemget_on_packtuple() {
+            use crate::rt::Bytecode;
+
+            let bytes = lang_to_bytecode("return tuple(1, 2)[0]")
+                .expect("Failed to compile tuple itemget expression");
+            assert!(bytes.contains(&(Bytecode::PACKTUPLE as u8)));
             assert!(bytes.contains(&(Bytecode::ITEMGET as u8)));
             assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
-            assert!(!bytes.contains(&(Bytecode::ARGS2LIST as u8)));
+            assert!(!bytes.contains(&(Bytecode::TUPLE2LIST as u8)));
         }
 
         #[test]
-        fn length_accepts_args_expression_without_args2list() {
+        fn length_accepts_tuple_expression_without_tuple2list() {
             use crate::rt::Bytecode;
 
-            let bytes = lang_to_bytecode("return length(args(1, 2))")
-                .expect("Failed to compile length(args(...))");
-            assert!(bytes.contains(&(Bytecode::PACKARGS as u8)));
+            let bytes = lang_to_bytecode("return length(tuple(1, 2))")
+                .expect("Failed to compile length(tuple(...))");
+            assert!(bytes.contains(&(Bytecode::PACKTUPLE as u8)));
             assert!(bytes.contains(&(Bytecode::LENGTH as u8)));
             assert!(!bytes.contains(&(Bytecode::PACKLIST as u8)));
-            assert!(!bytes.contains(&(Bytecode::ARGS2LIST as u8)));
+            assert!(!bytes.contains(&(Bytecode::TUPLE2LIST as u8)));
         }
 
         #[test]

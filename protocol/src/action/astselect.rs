@@ -54,17 +54,31 @@ impl AstSelect {
     }
 
     pub(crate) fn collect_req_sign(&self) -> Vec<AddrOrPtr> {
-        let mut req = vec![];
-        for act in self.actions.as_list() {
-            if let Some(sub) = AstSelect::downcast(act) {
-                req.extend(sub.collect_req_sign());
-                continue;
+        fn collect_from(req: &mut Vec<AddrOrPtr>, act: &dyn Action) {
+            if let Some(sub) = act.as_any().downcast_ref::<AstSelect>() {
+                for child in sub.actions.as_list() {
+                    collect_from(req, child.as_ref());
+                }
+                return;
             }
-            if let Some(sub) = AstIf::downcast(act) {
-                req.extend(sub.collect_req_sign());
-                continue;
+            if let Some(sub) = act.as_any().downcast_ref::<AstIf>() {
+                for child in sub.cond.actions.as_list() {
+                    collect_from(req, child.as_ref());
+                }
+                for child in sub.br_if.actions.as_list() {
+                    collect_from(req, child.as_ref());
+                }
+                for child in sub.br_else.actions.as_list() {
+                    collect_from(req, child.as_ref());
+                }
+                return;
             }
             req.extend(act.req_sign());
+        }
+
+        let mut req = vec![];
+        for act in self.actions.as_list() {
+            collect_from(&mut req, act.as_ref());
         }
         req
     }
@@ -81,13 +95,19 @@ impl AstSelect {
             if ok >= slt_max {
                 break; // reached max success limit
             }
-            if let Some(ret) = ast_revert_continue(ast_try_item!(ctx, act.execute(ctx), act.burn_90()))? {
+            if let Some(ret) =
+                ast_revert_continue(ast_try_item!(ctx, act.execute(ctx), act.burn_90()))?
+            {
                 last_ok_ret = Some(ret);
                 ok += 1;
             }
         }
         if ok < slt_min {
-            return xerr_rf!("action ast select must succeed at least {} but only {}", slt_min, ok);
+            return xerr_rf!(
+                "action ast select must succeed at least {} but only {}",
+                slt_min,
+                ok
+            );
         }
         Ok(last_ok_ret.unwrap_or_default())
     }

@@ -4,7 +4,9 @@ mod action_coverage {
 
     use basis::component::{ACTION_CTX_LEVEL_CALL_CONTRACT, ACTION_CTX_LEVEL_CALL_MAIN};
     use basis::interface::ActExec;
-    use basis::interface::{Context, Logs, State, StateOperat, Transaction};
+    use basis::interface::{
+        Context, Logs, State, StateOperat, Transaction, TransactionRead, TxDriverContext,
+    };
     use field::{
         Address, Amount, BytesW1, BytesW2, DiamondName, DiamondSto, Field, Hash, Inscripts, Parse,
         Readable, Serialize, Uint1, Uint2, Uint4,
@@ -39,7 +41,7 @@ mod action_coverage {
                 .action_register(protocol::action::register)
                 .action_register(vm::action::register)
                 .action_hooker(vm::hook::try_action_hook)
-                .vm_assigner(machine::vm_assign)
+                .vm_assigner(|height| Box::new(vm::global_machine_manager().assign(height)))
                 .build()
                 .unwrap();
             protocol::setup::install_once(registry).unwrap();
@@ -81,7 +83,7 @@ mod action_coverage {
             .into_sto()
     }
 
-    fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
+    fn execute_main_bytecode(ctx: &mut dyn TxDriverContext, codes: Vec<u8>) -> Ret<Value> {
         let main = ctx.env().tx.main;
         let _ = protocol::operate::hac_add(ctx, &main, &Amount::unit238(1_000_000_000));
         if let Ok(gas_max) = ctx.tx().fee_extend() {
@@ -97,7 +99,10 @@ mod action_coverage {
             .into_tret()
     }
 
-    fn execute_main_bytecode_as_call_ctx(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
+    fn execute_main_bytecode_as_call_ctx(
+        ctx: &mut dyn TxDriverContext,
+        codes: Vec<u8>,
+    ) -> Ret<Value> {
         // `Machine::main_call` itself does not mutate ctx.level; simulate protocol's call-level setup.
         let old_level = ctx.level();
         ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
@@ -300,7 +305,7 @@ mod action_coverage {
         let codes = lang_to_bytecode("return 0").unwrap();
         let rv = execute_main_bytecode(&mut ctx, codes).unwrap();
         assert!(
-            !rv.canbe_bool().unwrap(),
+            !rv.extract_bool().unwrap(),
             "return 0 should yield falsy value"
         );
     }
@@ -582,7 +587,9 @@ mod action_coverage {
     #[test]
     fn deploy_with_construct_function() {
         let _guard = test_guard();
-        set_vm_assigner(Some(machine::vm_assign));
+        set_vm_assigner(Some(|height| {
+            Box::new(vm::global_machine_manager().assign(height))
+        }));
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
         let mut ctx = make_ctx(
@@ -626,20 +633,9 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
-        tx.push_action(Box::new(TxMessage::new())).unwrap();
-        tx.push_action(Box::new(TxBlob::new())).unwrap();
-        let mut ctx = make_ctx_from_tx(
-            1,
-            &tx,
-            Box::new(StateMem::default()),
-            Box::new(MemLogs::default()),
-        );
-
-        let mut act = ContractDeploy::new();
-        act.nonce = Uint4::from(1u32);
-        act.protocol_cost = Amount::zero();
-        act.contract = make_external_contract("f", "return 0");
-        let err = act.execute(&mut ctx).unwrap_err();
+        tx.push_action(Box::new(ContractDeploy::new())).unwrap();
+        tx.push_action(Box::new(ContractDeploy::new())).unwrap();
+        let err = protocol::action::analyze_tx_action_set(tx.actions()).unwrap_err();
         assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
     }
 
@@ -1324,7 +1320,7 @@ mod action_coverage {
         assert!(codes.contains(&(Bytecode::ACTENV as u8)));
 
         let rv = execute_main_bytecode_as_call_ctx(&mut ctx, codes).unwrap();
-        assert!(!rv.canbe_bool().unwrap());
+        assert!(!rv.extract_bool().unwrap());
     }
 
     // ═══════════════════════════════════════════════════
@@ -1474,7 +1470,7 @@ mod action_coverage {
         assert!(codes.contains(&(Bytecode::ACTVIEW as u8)));
 
         let rv = execute_main_bytecode_as_call_ctx(&mut ctx, codes).unwrap();
-        assert!(!rv.canbe_bool().unwrap());
+        assert!(!rv.extract_bool().unwrap());
     }
 
     // ═══════════════════════════════════════════════════

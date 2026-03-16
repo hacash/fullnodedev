@@ -5,6 +5,7 @@ pub struct SpaceCap {
     pub call_depth: usize, // 32
 
     pub value_size: usize, // 1280
+    pub tuple_length: usize,
     pub compo_length: usize,
 
     pub stack_slot: usize, // 16*16 = 256
@@ -25,6 +26,8 @@ pub struct SpaceCap {
 }
 
 impl SpaceCap {
+    pub const DEFAULT_TUPLE_LENGTH: usize = 32;
+
     pub fn new(_hei: u64) -> SpaceCap {
         const U16M: usize = u16::MAX as usize; // 65535
 
@@ -32,6 +35,7 @@ impl SpaceCap {
             loaded_contract: 20,
             call_depth: 32,
             value_size: 1280, // = 32 * 40, diamond name list max bytes: 200*6 = 1200
+            tuple_length: Self::DEFAULT_TUPLE_LENGTH,
             compo_length: 128,
             stack_slot: 256,
             local_slot: 256,

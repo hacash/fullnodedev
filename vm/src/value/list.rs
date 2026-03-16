@@ -28,13 +28,13 @@ impl ReadList<'_> {
 
     #[inline(always)]
     pub fn haskey(&self, k: Value) -> VmrtRes<Value> {
-        let i = k.checked_u32()? as usize;
+        let i = k.extract_u32()? as usize;
         Ok(Value::Bool(i < self.len()))
     }
 
     #[inline(always)]
     pub fn itemget(&self, k: Value) -> VmrtRes<Value> {
-        let i = k.checked_u32()? as usize;
+        let i = k.extract_u32()? as usize;
         match self.get(i) {
             Some(v) => Ok(v.clone()),
             None => itr_err_code!(CompoNoFindItem),

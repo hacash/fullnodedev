@@ -2,7 +2,7 @@
 
 /* return gasuse, retval */
 // Test/tooling helper only; non-production execution path.
-pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: String, params: &str) -> Ret<(i64, String)> {
+pub fn sandbox_call(ctx: &mut dyn TxDriverContext, contract: ContractAddress, funcname: String, params: &str) -> Ret<(i64, String)> {
     use rt::Bytecode::*;
     use rt::verify_bytecodes;
 
@@ -33,14 +33,10 @@ pub fn sandbox_call(ctx: &mut dyn Context, contract: ContractAddress, funcname: 
     // do call
     // Intentionally do not restore level: sandbox call is one-shot and its context
     // state is discarded by the caller after return.
-    ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+    ctx.level_set(EntryKind::Main.action_level());
     let gas_before = ctx.gas_remaining();
     let mut vmb = global_machine_manager().assign(hei);
-    let res = vmb
-        .machine
-        .as_mut()
-        .unwrap()
-        .main_call_raw(ctx, CodeType::Bytecode, codes.into());
+    let res = vmb.sandbox_main_call_raw(ctx, CodeType::Bytecode, codes.into());
     res.map(|v|(
         gas_before - ctx.gas_remaining(), v.to_debug_json()
     ))
@@ -64,7 +60,7 @@ fn parse_push_params(codes: &mut Vec<u8>, pms: &str) -> Rerr {
     match pms_count {
         0      => { push!(PNIL); } // none argv
         1      => { /* single param: push raw value; contract uses PUT 0 ROLL0, not UNPACK */ }
-        2..255 => { push!(PU8, pms_count, PACKARGS); }
+        2..255 => { push!(PU8, pms_count, PACKTUPLE); }
         255..  => return errf!("param count exceeds limit"),
     }
     Ok(())

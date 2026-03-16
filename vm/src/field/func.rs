@@ -3,6 +3,8 @@ combi_struct! { CodeStuff,
     data: BytesW2
 }
 
+pub const MAX_FUNC_PARAM_LEN: usize = 15;
+
 impl CodeStuff {
     pub fn parse_conf(&self) -> VmrtRes<CodeConf> {
         CodeConf::parse(self.conf.uint())
@@ -91,7 +93,7 @@ impl FuncArgvTypes {
             0 => Ok(()),
             1 => v.cast_param(types[0]),
             _ => {
-                let rebuild_as_args = matches!(v, Value::Args(_));
+                let rebuild_as_args = matches!(v, Value::Tuple(_));
                 let rebuild_as_list = matches!(v, Value::Compo(compo) if compo.list_ref().is_ok());
                 let mut items = v
                     .clone_argv_items()
@@ -109,8 +111,8 @@ impl FuncArgvTypes {
                 }
 
                 *v = if rebuild_as_args {
-                    Value::Args(
-                        ArgsItem::new(items).map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?,
+                    Value::Tuple(
+                        TupleItem::new(items).map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?,
                     )
                 } else if rebuild_as_list {
                     let list = items.into_iter().collect();
@@ -128,14 +130,14 @@ impl FuncArgvTypes {
     pub fn from_types(otp: Option<ValueTy>, tys: Vec<ValueTy>) -> Ret<Self> {
         let output_ty = match otp {
             Some(o) => {
-                o.canbe_retval()?;
+                o.check_func_retv_type()?;
                 (o as u8) << 4
             }
             _ => 0,
         };
         let n = tys.len();
-        if n > 15 {
-            return errf!("func types cannot exceed 15");
+        if n > MAX_FUNC_PARAM_LEN {
+            return errf!("func types cannot exceed {}", MAX_FUNC_PARAM_LEN);
         }
         if 0 == n {
             return Ok(Self {
@@ -147,7 +149,7 @@ impl FuncArgvTypes {
         let mut dfs = vec![0u8; z];
         for i in 0..n {
             let ty = tys[i];
-            ty.canbe_argv()?;
+            ty.check_func_argv_type()?;
             let ty = ty as u8;
             let tn = maybe!(i % 2 == 0, ty << 4, ty);
             dfs[i / 2] = dfs[i / 2] | tn;
@@ -165,7 +167,7 @@ impl FuncArgvTypes {
         Ok(match ty {
             ValueTy::Nil => None,
             _ => {
-                ty.canbe_retval()?;
+                ty.check_func_retv_type()?;
                 Some(ty)
             }
         })
@@ -185,7 +187,7 @@ impl FuncArgvTypes {
             let tn = self.define[i / 2];
             let t = maybe!(i % 2 == 0, bit4l!(tn), bit4r!(tn));
             let ty = ValueTy::build(t)?;
-            ty.canbe_argv()?;
+            ty.check_func_argv_type()?;
             tys[i] = ty;
         }
         Ok(tys)
@@ -343,11 +345,11 @@ mod code_stuff_tests {
     fn check_params_multi_args_input_supports_args_and_legacy_list() {
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U16, ValueTy::U64]).unwrap();
 
-        let mut args = Value::Args(ArgsItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
+        let mut args = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
         types.check_params(&mut args).unwrap();
         assert_eq!(
             args,
-            Value::Args(ArgsItem::new(vec![Value::U16(1), Value::U64(2)]).unwrap())
+            Value::Tuple(TupleItem::new(vec![Value::U16(1), Value::U64(2)]).unwrap())
         );
 
         let mut list =
@@ -374,8 +376,8 @@ mod code_stuff_tests {
     #[test]
     fn check_params_multi_args_input_supports_compo_items() {
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo, ValueTy::U8]).unwrap();
-        let mut args = Value::Args(
-            ArgsItem::new(vec![Value::Compo(CompoItem::new_map()), Value::U8(7)]).unwrap(),
+        let mut args = Value::Tuple(
+            TupleItem::new(vec![Value::Compo(CompoItem::new_map()), Value::U8(7)]).unwrap(),
         );
         types.check_params(&mut args).unwrap();
     }
@@ -407,18 +409,18 @@ mod code_stuff_tests {
 
     #[test]
     fn args_output_type_roundtrips_and_checks_exact_match() {
-        let tys = FuncArgvTypes::from_types(Some(ValueTy::Args), vec![]).unwrap();
-        assert_eq!(tys.output_type().unwrap(), Some(ValueTy::Args));
+        let tys = FuncArgvTypes::from_types(Some(ValueTy::Tuple), vec![]).unwrap();
+        assert_eq!(tys.output_type().unwrap(), Some(ValueTy::Tuple));
 
-        let mut out = Value::Args(
-            ArgsItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_map())]).unwrap(),
+        let mut out = Value::Tuple(
+            TupleItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_map())]).unwrap(),
         );
         tys.check_output(&mut out).unwrap();
     }
 
     #[test]
     fn args_output_rejects_non_args_value() {
-        let tys = FuncArgvTypes::from_types(Some(ValueTy::Args), vec![]).unwrap();
+        let tys = FuncArgvTypes::from_types(Some(ValueTy::Tuple), vec![]).unwrap();
         let mut out = Value::U8(1);
         let err = tys.check_output(&mut out).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);

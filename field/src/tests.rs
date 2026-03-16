@@ -25,19 +25,19 @@ mod tests {
     #[test]
     fn test_json_full_cycle() {
         let mut main = TestMainStruct::default();
-        
+
         // 1. Set data
         main.id = Uint4::from(1024);
         // Hacash address example (Base58Check)
         let addr_str = "1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS";
         main.addr = Fixed21::from_hex(b"00681990afd226b1cbc6c5f085cfdc2092d0843241").unwrap();
-        
+
         main.sub.age = Uint1::from(25);
         main.sub.is_ok = Bool::new(true);
-        
+
         let _ = main.tags.push(Uint2::from(100));
         let _ = main.tags.push(Uint2::from(200));
-        
+
         main.opt = TestOptional::must(BytesW1::from(vec![1, 2, 3, 4]).unwrap());
 
         // 2. Serialize to JSON (default Hex format)
@@ -45,7 +45,10 @@ mod tests {
         println!("JSON Hex: {}", json_hex);
 
         // 3. Serialize to JSON (Base58Check format)
-        let fmt_58 = JSONFormater { unit: "HAC".to_string(), binary: JSONBinaryFormat::Base58Check };
+        let fmt_58 = JSONFormater {
+            unit: "HAC".to_string(),
+            binary: JSONBinaryFormat::Base58Check,
+        };
         let json_58 = main.to_json_fmt(&fmt_58);
         println!("JSON B58: {}", json_58);
 
@@ -76,7 +79,7 @@ mod tests {
     #[test]
     fn test_binary_auto_recognition() {
         let mut d = BytesW1::default();
-        
+
         // hex (0x prefix)
         d.from_json(r#""0x010203""#).unwrap();
         assert_eq!(d.to_vec(), vec![1, 2, 3]);
@@ -131,7 +134,10 @@ mod tests {
         assert_eq!(addr2.to_hex(), hex_expected);
 
         // Address ToJSON outputs bare base58check when Base58Check format (no prefix)
-        let fmt_58 = JSONFormater { unit: "HAC".to_string(), binary: JSONBinaryFormat::Base58Check };
+        let fmt_58 = JSONFormater {
+            unit: "HAC".to_string(),
+            binary: JSONBinaryFormat::Base58Check,
+        };
         let json = addr.to_json_fmt(&fmt_58);
         assert_eq!(json, format!(r#""{}""#, addr_str));
 
@@ -184,15 +190,21 @@ mod tests {
         let mut raw200 = vec![2u8];
         raw200.extend_from_slice(b"WTYUIA");
         raw200.extend_from_slice(b"WTYUIA");
-        let (list200, used200) = DiamondNameListMax200::create(&raw200).unwrap();
-        assert_eq!(used200, raw200.len());
-        assert!(list200.check().is_err());
+        assert!(DiamondNameListMax200::create(&raw200).is_err());
 
         let mut raw60000 = vec![0u8, 2u8];
         raw60000.extend_from_slice(b"WTYUIA");
         raw60000.extend_from_slice(b"WTYUIA");
-        let (list60000, used60000) = DiamondNameListMax60000::create(&raw60000).unwrap();
-        assert_eq!(used60000, raw60000.len());
-        assert!(list60000.check().is_err());
+        assert!(DiamondNameListMax60000::create(&raw60000).is_err());
+    }
+
+    #[test]
+    fn test_diamond_list_fetch_head_keeps_fifo_order() {
+        let mut list =
+            DiamondNameListMax60000::from_readable("WTYUIA,HYXYHY,UETWNK,WYUKKZ").unwrap();
+        let head =
+            DiamondNameListMax200::from_list_checked(list.fetch_head_list(2).unwrap()).unwrap();
+        assert_eq!(head.readable(), "WTYUIAHYXYHY");
+        assert_eq!(list.readable(), "UETWNKWYUKKZ");
     }
 }

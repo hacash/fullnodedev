@@ -1,138 +1,113 @@
-
-
 /*****************************************************/
 
-macro_rules! define_cell_trs_zhu { ( $cid: expr, $class: ident, $zhu_op: ident, $state_op: ident ) => {
-
-
-combi_struct!{ $class,
-    cellid: Uint1
-    haczhu: Fold64
-}
-
-impl $class {
-    
-    pub const CID: u8 = $cid;
-
-    pub fn new(zhu: Fold64) -> Self {
-        Self {
-            cellid: Uint1::from(Self::CID),
-            haczhu: zhu,
+macro_rules! define_cell_trs_zhu {
+    ( $cid: expr, $class: ident, $zhu_op: ident, $state_op: ident ) => {
+        combi_struct! { $class,
+            cellid: Uint1
+            haczhu: Fold64
         }
-    }
-}
 
+        impl $class {
+            pub const CID: u8 = $cid;
 
-
-impl CellExec for $class {
-
-    fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        let zhu = self.haczhu.uint();
-        if zhu > 100000000_00000000 {
-            return errf!("cell zhu too large")
+            pub fn new(zhu: Fold64) -> Self {
+                Self {
+                    cellid: Uint1::from(Self::CID),
+                    haczhu: zhu,
+                }
+            }
         }
-        tex_check_addr_whole_zhu(ctx, taradr)?;
-        let amt = Amount::zhu(zhu);
-        $zhu_op(ctx, taradr, &amt)?;
-        // tex add
-        let tex = ctx.tex_ledger();
-        let Some(zhures) = tex.zhu.$state_op(zhu as i64) else {
-            return errf!("cell state coin zhu overflow")
-        };
-        tex.zhu = zhures;
-        Ok(())
-    }
-}
 
-
-impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
-
-     
-}}
-
-
-/*****************************************************/
-
-
-
-define_cell_trs_zhu!{ 1, CellTrsZhuPay, hac_sub, checked_add } 
-define_cell_trs_zhu!{ 2, CellTrsZhuGet, hac_add, checked_sub } 
-
-
-
-/*****************************************************/
-
-
-
-macro_rules! define_cell_trs_sat { ( $cid: expr, $class: ident, $zhu_op: ident, $state_op: ident ) => {
-
-
-combi_struct!{ $class,
-    cellid: Uint1
-    satnum: Fold64
-}
-
-impl $class {
-    
-    pub const CID: u8 = $cid;
-
-    pub fn new(zhu: Fold64) -> Self {
-        Self {
-            cellid: Uint1::from(Self::CID),
-            satnum: zhu,
+        impl CellExec for $class {
+            fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
+                let zhu = self.haczhu.uint();
+                if zhu > 100000000_00000000 {
+                    return errf!("cell zhu too large");
+                }
+                let amt = Amount::zhu(zhu);
+                $zhu_op(ctx, taradr, &amt)?;
+                // tex add
+                let tex = ctx.tex_ledger();
+                let Some(zhures) = tex.zhu.$state_op(zhu as i64) else {
+                    return errf!("cell state coin zhu overflow");
+                };
+                tex.zhu = zhures;
+                Ok(())
+            }
         }
-    }
-}
 
-
-
-impl CellExec for $class {
-
-    fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        let sat = Uint8::from(self.satnum.uint());
-        $zhu_op(ctx, taradr, &sat)?;
-        // tex add
-        let satnum = self.satnum.uint();
-        if satnum > i64::MAX as u64 {
-            return errf!("cell sat too large")
+        impl TexCell for $class {
+            fn kind(&self) -> u16 {
+                Self::CID as u16
+            }
         }
-        let tex = ctx.tex_ledger();
-        let Some(satres) = tex.sat.$state_op(satnum as i64) else {
-            return errf!("cell state coin sat overflow")
-        };
-        tex.sat = satres;
-        Ok(())
-    }
+    };
 }
 
+/*****************************************************/
 
-impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
-
-     
-}}
-
-
+define_cell_trs_zhu! { 1, CellTrsZhuPay, hac_sub, checked_add }
+define_cell_trs_zhu! { 2, CellTrsZhuGet, hac_add, checked_sub }
 
 /*****************************************************/
 
+macro_rules! define_cell_trs_sat {
+    ( $cid: expr, $class: ident, $zhu_op: ident, $state_op: ident ) => {
+        combi_struct! { $class,
+            cellid: Uint1
+            satnum: Fold64
+        }
 
+        impl $class {
+            pub const CID: u8 = $cid;
 
-define_cell_trs_sat!{ 3, CellTrsSatPay, sat_sub, checked_add } 
-define_cell_trs_sat!{ 4, CellTrsSatGet, sat_add, checked_sub } 
+            pub fn new(zhu: Fold64) -> Self {
+                Self {
+                    cellid: Uint1::from(Self::CID),
+                    satnum: zhu,
+                }
+            }
+        }
 
+        impl CellExec for $class {
+            fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
+                let sat = Uint8::from(self.satnum.uint());
+                $zhu_op(ctx, taradr, &sat)?;
+                // tex add
+                let satnum = self.satnum.uint();
+                if satnum > i64::MAX as u64 {
+                    return errf!("cell sat too large");
+                }
+                let tex = ctx.tex_ledger();
+                let Some(satres) = tex.sat.$state_op(satnum as i64) else {
+                    return errf!("cell state coin sat overflow");
+                };
+                tex.sat = satres;
+                Ok(())
+            }
+        }
 
-
+        impl TexCell for $class {
+            fn kind(&self) -> u16 {
+                Self::CID as u16
+            }
+        }
+    };
+}
 
 /*****************************************************/
 
+define_cell_trs_sat! { 3, CellTrsSatPay, sat_sub, checked_add }
+define_cell_trs_sat! { 4, CellTrsSatGet, sat_add, checked_sub }
 
-combi_struct!{ CellTrsDiaPay,
+/*****************************************************/
+
+combi_struct! { CellTrsDiaPay,
     cellid: Uint1
     diamonds: DiamondNameListMax200
 }
 
 impl CellTrsDiaPay {
-    
     pub const CID: u8 = 5;
 
     pub fn new(diamonds: DiamondNameListMax200) -> Self {
@@ -143,10 +118,7 @@ impl CellTrsDiaPay {
     }
 }
 
-
-
 impl CellExec for CellTrsDiaPay {
-
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
         tex_check_settlement_addr_privakey()?;
         self.diamonds.check()?;
@@ -157,19 +129,18 @@ impl CellExec for CellTrsDiaPay {
     }
 }
 
+impl TexCell for CellTrsDiaPay {
+    fn kind(&self) -> u16 {
+        Self::CID as u16
+    }
+}
 
-impl TexCell for CellTrsDiaPay { fn kind(&self) -> u16 { Self::CID as u16 } }
-
-
-
-
-combi_struct!{ CellTrsDiaGet,
+combi_struct! { CellTrsDiaGet,
     cellid: Uint1
     dianum: DiamondNumber
 }
 
 impl CellTrsDiaGet {
-    
     pub const CID: u8 = 6;
 
     pub fn new(dianum: DiamondNumber) -> Self {
@@ -180,13 +151,10 @@ impl CellTrsDiaGet {
     }
 }
 
-
-
 impl CellExec for CellTrsDiaGet {
-
     fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
         if self.dianum.uint() == 0 {
-            return errf!("cell diamond get: number cannot be zero")
+            return errf!("cell diamond get: number cannot be zero");
         }
         // Diamond pay locks concrete names immediately, while diamond get stays as a receipt until final settlement.
         // tex add
@@ -195,68 +163,59 @@ impl CellExec for CellTrsDiaGet {
     }
 }
 
-
-impl TexCell for CellTrsDiaGet { fn kind(&self) -> u16 { Self::CID as u16 } }
-
-
-
-
-/*****************************************************/
-
-
-
-macro_rules! define_cell_trs_asset { ( $cid: expr, $class: ident, $asset_op: ident, $state_op: ident ) => {
-
-
-combi_struct!{ $class,
-    cellid: Uint1
-    asset:  AssetAmt
-}
-
-impl $class {
-    
-    pub const CID: u8 = $cid;
-
-    pub fn new(asset: AssetAmt) -> Self {
-        Self {
-            cellid: Uint1::from(Self::CID),
-            asset,
-        }
+impl TexCell for CellTrsDiaGet {
+    fn kind(&self) -> u16 {
+        Self::CID as u16
     }
 }
 
+/*****************************************************/
 
-
-impl CellExec for $class {
-
-    fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
-        tex_check_asset_serial(ctx, self.asset.serial)?;
-        {
-            let state = &mut CoreState::wrap(ctx.state());
-            $asset_op(state, taradr, &self.asset)?;
+macro_rules! define_cell_trs_asset {
+    ( $cid: expr, $class: ident, $asset_op: ident, $state_op: ident ) => {
+        combi_struct! { $class,
+            cellid: Uint1
+            asset:  AssetAmt
         }
-        // tex add
-        let tex = ctx.tex_ledger();
-        let rcd = tex.assets.entry(self.asset.serial).or_insert(0);
-        let Some(assetres) = rcd.$state_op(self.asset.amount.uint() as i128) else {
-            return errf!("cell state asset <{}> overflow", self.asset.serial.uint())
-        };
-        *rcd = assetres;
-        Ok(())
-    }
+
+        impl $class {
+            pub const CID: u8 = $cid;
+
+            pub fn new(asset: AssetAmt) -> Self {
+                Self {
+                    cellid: Uint1::from(Self::CID),
+                    asset,
+                }
+            }
+        }
+
+        impl CellExec for $class {
+            fn execute(&self, ctx: &mut dyn Context, taradr: &Address) -> Rerr {
+                tex_check_asset_serial(ctx, self.asset.serial)?;
+                {
+                    let state = &mut CoreState::wrap(ctx.state());
+                    $asset_op(state, taradr, &self.asset)?;
+                }
+                // tex add
+                let tex = ctx.tex_ledger();
+                let rcd = tex.assets.entry(self.asset.serial).or_insert(0);
+                let Some(assetres) = rcd.$state_op(self.asset.amount.uint() as i128) else {
+                    return errf!("cell state asset <{}> overflow", self.asset.serial.uint());
+                };
+                *rcd = assetres;
+                Ok(())
+            }
+        }
+
+        impl TexCell for $class {
+            fn kind(&self) -> u16 {
+                Self::CID as u16
+            }
+        }
+    };
 }
-
-
-impl TexCell for $class { fn kind(&self) -> u16 { Self::CID as u16 } }
-
-     
-}}
-
-
 
 /*****************************************************/
 
-
-
-define_cell_trs_asset!{ 7, CellTrsAssetPay, asset_sub, checked_add } 
-define_cell_trs_asset!{ 8, CellTrsAssetGet, asset_add, checked_sub } 
+define_cell_trs_asset! { 7, CellTrsAssetPay, asset_sub, checked_add }
+define_cell_trs_asset! { 8, CellTrsAssetGet, asset_add, checked_sub }

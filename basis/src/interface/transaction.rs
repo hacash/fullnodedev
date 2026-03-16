@@ -5,7 +5,7 @@ static TX_NIL_ACTIS: OnceLock<Vec<Box<dyn Action>>> = OnceLock::new();
 
 
 pub trait TxExec {
-    fn execute(&self, _: &mut dyn Context) -> Rerr { never!() }
+    fn execute(&self, _: &mut dyn TxDriverContext) -> Rerr { never!() }
 }
 
 
@@ -64,5 +64,4 @@ pub trait Transaction : TransactionRead + Field + Send + Sync {
 
 clone_trait_object!(TransactionRead);
 clone_trait_object!(Transaction);
-
 

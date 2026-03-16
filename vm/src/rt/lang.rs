@@ -286,8 +286,8 @@ irfn_define! {
 
     NEWLIST    : 0, 0, 1,     new_list
     NEWMAP     : 0, 0, 1,     new_map
-    PACKARGS   : 0, 0, 1,     pack_args
-    ARGS2LIST  : 0, 1, 1,     args_to_list
+    PACKTUPLE  : 0, 0, 1,     pack_tuple
+    TUPLE2LIST : 0, 1, 1,     tuple_to_list
     // PACKLIST   : 0, 255, 1,   pack_list PACKMAP    : 0, 255, 1,   pack_map
     INSERT     : 0, 3, 1,     insert
     REMOVE     : 0, 2, 1,     remove

@@ -13,8 +13,8 @@ pub enum ActExecFrom {
     ActionCall,
 }
 
-// Upper-bound levels: action cannot run deeper than max_ctx_level().
-// Lower-bound level: AnyInCall requires minimum depth.
+// Placement semantics: except AnyInCall, a level means the action may execute
+// on that layer or any shallower layer; Guard also cannot enter ActionCall.
 // All Top* variants are handled by dedicated branches in check_action_level
 // and never fall through to the generic max_ctx_level() path.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -23,11 +23,11 @@ pub enum ActLv {
     TopOnlyWithGuard, // top, single non-guard + guards
     TopUnique,        // top, unique by kind
     Top,              // must on top
-    Guard,            // env constraint, tx-loop or AST only (ctx <= 99)
+    Guard,            // env constraint, tx-loop or AST only (ctx <= 99), never ActionCall
     Ast,              // AST and above (ctx <= 99)
     MainCall,         // up to main call (ctx <= 100)
     ContractCall,     // up to contract call (ctx <= 101)
-    AnyInCall,        // only inside VM call (ctx >= 100)
+    AnyInCall,        // only from ActionCall, regardless of ctx_level
     Any,              // any context
 }
 
@@ -42,7 +42,7 @@ impl ActLv {
             Guard | Ast => Some(ACTION_CTX_LEVEL_AST_MAX),
             MainCall => Some(ACTION_CTX_LEVEL_CALL_MAIN),
             ContractCall => Some(ACTION_CTX_LEVEL_CALL_CONTRACT),
-            AnyInCall => None, // checked by lower-bound rule in check_action_level
+            AnyInCall => None, // checked by execution origin in check_action_level
             Any => None, // truly unlimited
         }
     }

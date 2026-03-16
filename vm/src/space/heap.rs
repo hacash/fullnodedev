@@ -126,13 +126,15 @@ impl Heap {
     }
 
     fn do_write(&mut self, start: usize, v: Value) -> VmrtErr {
-        let data = v.canbe_bytes_ec(HeapError)?;
+        let data = v
+            .extract_bytes()
+            .map_err(|ItrErr(_, msg)| ItrErr::new(HeapError, &msg))?;
         let right = self.checked_right(start, data.len(), "write overflow")?;
         self.datas[start..right].copy_from_slice(&data);
         Ok(())
     }
 
-    /* pub fn write(&mut self, k: Value, v: Value) -> VmrtErr { let start = k.checked_u32()? as usize; self.do_write(start, v) } pub fn write_x(&mut self, start: u8, v: Value) -> VmrtErr { self.do_write(start as usize, v) } */
+    /* pub fn write(&mut self, k: Value, v: Value) -> VmrtErr { let start = k.extract_u32()? as usize; self.do_write(start, v) } pub fn write_x(&mut self, start: u8, v: Value) -> VmrtErr { self.do_write(start as usize, v) } */
 
     pub fn write(&mut self, start: u16, v: Value) -> VmrtErr {
         self.do_write(start as usize, v)
@@ -146,14 +148,14 @@ impl Heap {
 
     // return Value::bytes
     pub fn read(&self, i: &Value, n: Value) -> VmrtRes<Value> {
-        let start = i.checked_u32()? as usize;
-        let length = n.checked_u16()? as usize;
+        let start = i.extract_u32()? as usize;
+        let length = n.extract_u16()? as usize;
         self.do_read(start, length)
     }
 
     pub fn slice(&self, l: Value, s: &Value) -> VmrtRes<Value> {
-        let start = s.checked_u32()?;
-        let length = l.checked_u32()?;
+        let start = s.extract_u32()?;
+        let length = l.extract_u32()?;
         self.checked_right(start as usize, length as usize, "create slice overflow")?;
         Ok(Value::HeapSlice((start, length)))
     }

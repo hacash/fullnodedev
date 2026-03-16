@@ -174,6 +174,159 @@ impl State for AstForkableState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TestLevelNoopAction {
+    kind: Uint2,
+    level: ActLv,
+    desc: &'static str,
+}
+
+impl TestLevelNoopAction {
+    const TOP_ONLY_WITH_GUARD_KIND: u16 = 0x07f2;
+    const TOP_UNIQUE_KIND: u16 = 0x07f3;
+    const ANY_IN_CALL_KIND: u16 = 0x07f4;
+    const AST_KIND: u16 = 0x07f5;
+
+    fn top_only_with_guard() -> Self {
+        Self::from_kind(Self::TOP_ONLY_WITH_GUARD_KIND).unwrap()
+    }
+
+    fn top_unique() -> Self {
+        Self::from_kind(Self::TOP_UNIQUE_KIND).unwrap()
+    }
+
+    fn any_in_call() -> Self {
+        Self::from_kind(Self::ANY_IN_CALL_KIND).unwrap()
+    }
+
+    fn ast() -> Self {
+        Self::from_kind(Self::AST_KIND).unwrap()
+    }
+
+    fn meta(kind: u16) -> Ret<(ActLv, &'static str)> {
+        match kind {
+            Self::TOP_ONLY_WITH_GUARD_KIND => {
+                Ok((ActLv::TopOnlyWithGuard, "Test top-only-with-guard"))
+            }
+            Self::TOP_UNIQUE_KIND => Ok((ActLv::TopUnique, "Test top-unique")),
+            Self::ANY_IN_CALL_KIND => Ok((ActLv::AnyInCall, "Test any-in-call")),
+            Self::AST_KIND => Ok((ActLv::Ast, "Test ast leaf")),
+            _ => errf!("unknown test level noop action kind {}", kind),
+        }
+    }
+
+    fn from_kind(kind: u16) -> Ret<Self> {
+        let (level, desc) = Self::meta(kind)?;
+        Ok(Self {
+            kind: Uint2::from(kind),
+            level,
+            desc,
+        })
+    }
+
+    fn refresh_meta(&mut self) -> Rerr {
+        let (level, desc) = Self::meta(*self.kind)?;
+        self.level = level;
+        self.desc = desc;
+        Ok(())
+    }
+}
+
+impl Default for TestLevelNoopAction {
+    fn default() -> Self {
+        Self {
+            kind: Uint2::default(),
+            level: ActLv::Any,
+            desc: "",
+        }
+    }
+}
+
+impl Parse for TestLevelNoopAction {
+    fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
+        let used = self.kind.parse(buf)?;
+        self.refresh_meta()?;
+        Ok(used)
+    }
+}
+
+impl Serialize for TestLevelNoopAction {
+    fn serialize(&self) -> Vec<u8> {
+        self.kind.serialize()
+    }
+
+    fn size(&self) -> usize {
+        self.kind.size()
+    }
+}
+
+impl Field for TestLevelNoopAction {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl ToJSON for TestLevelNoopAction {
+    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
+        format!(r#"{{"kind":{}}}"#, self.kind.to_json_fmt(fmt))
+    }
+}
+
+impl FromJSON for TestLevelNoopAction {
+    fn from_json(&mut self, json_str: &str) -> Ret<()> {
+        let pairs = json_split_object(json_str)?;
+        for (k, v) in pairs {
+            if k == "kind" {
+                self.kind.from_json(v)?;
+            }
+        }
+        self.refresh_meta()
+    }
+}
+
+impl Description for TestLevelNoopAction {
+    fn to_description(&self) -> String {
+        self.desc.to_owned()
+    }
+}
+
+impl ActExec for TestLevelNoopAction {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
+        if !ctx.env().chain.fast_sync {
+            check_action_level(ctx.level(), ctx.action_exec_from(), self).into_xret()?;
+        }
+        Ok((0, vec![]))
+    }
+}
+
+impl Action for TestLevelNoopAction {
+    fn kind(&self) -> u16 {
+        *self.kind
+    }
+
+    fn level(&self) -> ActLv {
+        self.level
+    }
+
+    fn req_sign(&self) -> Vec<AddrOrPtr> {
+        vec![]
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+fn build_depth_7_ast_select() -> AstSelect {
+    let lvl7 = AstSelect::create_list(vec![Box::new(HacToTrs::new())]);
+    let lvl6 = AstSelect::create_list(vec![Box::new(lvl7)]);
+    let lvl5 = AstSelect::create_list(vec![Box::new(lvl6)]);
+    let lvl4 = AstSelect::create_list(vec![Box::new(lvl5)]);
+    let lvl3 = AstSelect::create_list(vec![Box::new(lvl4)]);
+    let lvl2 = AstSelect::create_list(vec![Box::new(lvl3)]);
+    AstSelect::create_list(vec![Box::new(lvl2)])
+}
+
 #[test]
 fn test_transaction_json_full_cycle() {
     init_test_registry();
@@ -379,6 +532,236 @@ fn test_tx_execute_must_reject_action_count_over_max() {
 }
 
 #[test]
+fn test_tx_execute_must_reject_invalid_top_only_with_guard_before_any_action_runs() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let main_acc = Account::create_by("protocol-static-action-set-main").unwrap();
+    let main = Address::from(*main_acc.address());
+    let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1730000000);
+
+    let mut writer = HacToTrs::new();
+    writer.to = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
+    writer.hacash = Amount::mei(1);
+    tx.actions.push(Box::new(writer)).unwrap();
+    tx.actions
+        .push(Box::new(TestLevelNoopAction::top_only_with_guard()))
+        .unwrap();
+    tx.fill_sign(&main_acc).unwrap();
+
+    let mut env = Env::default();
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::mei(5);
+        state.balance_set(&main, &bls);
+    }
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
+    let bls = crate::state::CoreState::wrap(ctx.state())
+        .balance(&main)
+        .unwrap_or_default();
+    assert_eq!(bls.hacash, Amount::mei(5));
+}
+
+#[test]
+fn test_analyze_tx_action_set_rejects_guard_only_ast_select() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
+        HeightScope::new(),
+    )]))];
+
+    let err = analyze_tx_action_set(&actions).unwrap_err();
+    assert!(err.contains("all GUARD"), "{}", err);
+}
+
+#[test]
+fn test_analyze_tx_action_set_rejects_guard_only_ast_if() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(HeightScope::new())]),
+        AstSelect::nop(),
+        AstSelect::nop(),
+    ))];
+
+    let err = analyze_tx_action_set(&actions).unwrap_err();
+    assert!(err.contains("all GUARD"), "{}", err);
+}
+
+#[test]
+fn test_analyze_tx_action_set_allows_mixed_guard_and_non_guard_leafs_in_ast() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![
+        Box::new(HeightScope::new()),
+        Box::new(HacToTrs::new()),
+    ]))];
+
+    analyze_tx_action_set(&actions).unwrap();
+}
+
+#[test]
+fn test_analyze_tx_action_set_rejects_duplicate_top_unique() {
+    let actions: Vec<Box<dyn Action>> = vec![
+        Box::new(TestLevelNoopAction::top_unique()),
+        Box::new(TestLevelNoopAction::top_unique()),
+    ];
+
+    let err = analyze_tx_action_set(&actions).unwrap_err();
+    assert!(err.contains("TOP_UNIQUE"), "{}", err);
+}
+
+#[test]
+fn test_analyze_tx_action_set_rejects_nested_top_only_with_guard_in_ast() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
+        TestLevelNoopAction::top_only_with_guard(),
+    )]))];
+
+    let err = analyze_tx_action_set(&actions).unwrap_err();
+    assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
+}
+
+#[test]
+fn test_analyze_tx_action_set_rejects_any_in_call_in_tx_tree() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::any_in_call())];
+
+    let err = analyze_tx_action_set(&actions).unwrap_err();
+    assert!(err.contains("ActionCall context"), "{}", err);
+}
+
+#[test]
+fn test_check_action_ast_tree_depth_accepts_ast_leaf_action() {
+    let act = TestLevelNoopAction::ast();
+    check_action_ast_tree_depth(&act).unwrap();
+}
+
+#[test]
+fn test_analyze_tx_action_set_allows_top_level_ast_leaf_action() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::ast())];
+    analyze_tx_action_set(&actions).unwrap();
+}
+
+#[test]
+fn test_analyze_tx_action_set_allows_nested_ast_leaf_action() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
+        TestLevelNoopAction::ast(),
+    )]))];
+    analyze_tx_action_set(&actions).unwrap();
+}
+
+#[test]
+fn test_guard_level_error_message_reports_top_and_ast_scope() {
+    let err = check_action_level(
+        ACTION_CTX_LEVEL_CALL_MAIN,
+        ActExecFrom::TxLoop,
+        &HeightScope::new(),
+    )
+    .unwrap_err();
+    assert!(err.contains("TOP + AST"), "{}", err);
+    assert!(err.contains("ctx <= 99"), "{}", err);
+}
+
+#[test]
+fn test_check_action_level_allows_any_in_call_from_action_call_at_top_ctx() {
+    check_action_level(
+        ACTION_CTX_LEVEL_TOP,
+        ActExecFrom::ActionCall,
+        &TestLevelNoopAction::any_in_call(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn test_check_action_level_rejects_any_in_call_without_action_call_origin() {
+    let err = check_action_level(
+        ACTION_CTX_LEVEL_CALL_CONTRACT,
+        ActExecFrom::TxLoop,
+        &TestLevelNoopAction::any_in_call(),
+    )
+    .unwrap_err();
+    assert!(err.contains("ActionCall context"), "{}", err);
+}
+
+#[test]
+fn test_check_action_level_rejects_guard_from_action_call() {
+    let err = check_action_level(
+        ACTION_CTX_LEVEL_TOP,
+        ActExecFrom::ActionCall,
+        &HeightScope::new(),
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("Guard") && err.contains("ActionCall context"),
+        "{}",
+        err
+    );
+}
+
+#[test]
+fn test_tx_execute_fast_sync_ast_depth_precheck_rejects_7th_level() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let mut tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    tx.actions
+        .push(Box::new(build_depth_7_ast_select()))
+        .unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
+}
+
+#[test]
+fn test_ctx_action_call_rejects_ast_action_even_in_fast_sync() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(crate::context::EmptyState {}),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+
+    let bytes = AstSelect::nop().serialize();
+    let err = ctx
+        .action_call(AstSelect::KIND, bytes[2..].to_vec())
+        .unwrap_err();
+    assert!(
+        err.contains("AST") && err.contains("ActionCall context"),
+        "{}",
+        err
+    );
+}
+
+#[test]
 fn test_tx_req_sign_must_be_privakey_address() {
     init_test_registry();
 
@@ -451,37 +834,15 @@ fn test_tx_req_sign_must_collect_nested_ast_child_actions() {
 }
 
 #[test]
-fn test_ctx_action_call_must_check_nested_ast_req_sign() {
-    init_test_registry();
-
-    use crate::context::ContextInst;
-    use crate::state::EmptyLogs;
-    use crate::transaction::TransactionType2;
-
-    // tx without any signatures
-    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
-
-    let mut env = Env::default();
-    env.tx = crate::transaction::create_tx_info(&tx);
-
-    let mut ctx = ContextInst::new(
-        env,
-        Box::new(crate::context::EmptyState {}),
-        Box::new(EmptyLogs {}),
-        &tx,
-    );
-
-    let mut leaf = HacFromTrs::new();
-    leaf.from = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
-    leaf.hacash = Amount::mei(1);
-    let act = AstSelect::create_list(vec![Box::new(leaf)]);
-    let bytes = act.serialize();
-
-    let err = ctx
-        .action_call(AstSelect::KIND, bytes[2..].to_vec())
-        .unwrap_err();
+fn test_check_action_level_rejects_ast_leaf_from_action_call() {
+    let err = check_action_level(
+        ACTION_CTX_LEVEL_TOP,
+        ActExecFrom::ActionCall,
+        &TestLevelNoopAction::ast(),
+    )
+    .unwrap_err();
     assert!(
-        err.contains("signature") || err.contains("failed") || err.contains("verify"),
+        err.contains("AST") && err.contains("ActionCall context"),
         "{}",
         err
     );
@@ -523,44 +884,12 @@ fn test_tx_req_sign_astif_must_collect_cond_if_else_and_filter_scriptmh() {
 }
 
 #[test]
-fn test_ctx_action_call_astif_must_check_unreachable_branch_req_sign() {
-    init_test_registry();
-
-    use crate::context::ContextInst;
-    use crate::state::EmptyLogs;
-    use crate::transaction::TransactionType2;
-
-    // tx without any signatures
-    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
-    let mut env = Env::default();
-    env.tx = crate::transaction::create_tx_info(&tx);
-
-    let mut ctx = ContextInst::new(
-        env,
-        Box::new(crate::context::EmptyState {}),
-        Box::new(EmptyLogs {}),
-        &tx,
-    );
-
-    // cond=nop makes else logically unreachable, but req_sign is static and must still be checked.
-    let mut leaf = HacFromTrs::new();
-    leaf.from = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
-    leaf.hacash = Amount::mei(1);
-    let act = AstIf::create_by(
-        AstSelect::nop(),
-        AstSelect::nop(),
-        AstSelect::create_list(vec![Box::new(leaf)]),
-    );
-    let bytes = act.serialize();
-
-    let err = ctx
-        .action_call(AstIf::KIND, bytes[2..].to_vec())
-        .unwrap_err();
-    assert!(
-        err.contains("signature") || err.contains("failed") || err.contains("verify"),
-        "{}",
-        err
-    );
+fn test_analyze_tx_action_set_allows_top_only_with_guard_plus_guard_only_ast_wrapper() {
+    let actions: Vec<Box<dyn Action>> = vec![
+        Box::new(TestLevelNoopAction::top_only_with_guard()),
+        Box::new(AstSelect::create_list(vec![Box::new(HeightScope::new())])),
+    ];
+    analyze_tx_action_set(&actions).unwrap();
 }
 
 #[test]
@@ -598,11 +927,8 @@ fn test_ast_select_min_failure_is_revert() {
     bad_guard.start = BlockHeight::from(10);
     bad_guard.end = BlockHeight::from(20);
     let act = AstSelect::create_by(1, 1, vec![Box::new(bad_guard)]);
-    let bytes = act.serialize();
-
-    let err = ctx
-        .action_call(AstSelect::KIND, bytes[2..].to_vec())
-        .unwrap_err();
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.is_revert(), "{}", err);
     assert!(err.contains("must succeed at least"), "{}", err);
 }
@@ -649,12 +975,53 @@ fn test_ast_if_rethrow_preserves_revert_kind() {
     let br_else = AstSelect::create_by(1, 1, vec![Box::new(else_guard)]);
 
     let act = AstIf::create_by(cond, AstSelect::nop(), br_else);
-    let bytes = act.serialize();
-
-    let err = ctx
-        .action_call(AstIf::KIND, bytes[2..].to_vec())
-        .unwrap_err();
+    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.is_revert(), "{}", err);
+}
+
+#[test]
+fn test_analyze_tx_action_set_rejects_top_only_with_guard_plus_non_guard_ast_wrapper() {
+    let actions: Vec<Box<dyn Action>> = vec![
+        Box::new(TestLevelNoopAction::top_only_with_guard()),
+        Box::new(AstSelect::create_list(vec![Box::new(HacToTrs::new())])),
+    ];
+    let err = analyze_tx_action_set(&actions).unwrap_err();
+    assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
+}
+
+#[test]
+fn test_tx_execute_allows_type2_ast_leaf_action() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let main_acc = Account::create_by("protocol-ast-leaf-type2-main").unwrap();
+    let main = Address::from(*main_acc.address());
+    let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1730000000);
+    tx.actions
+        .push(Box::new(TestLevelNoopAction::ast()))
+        .unwrap();
+    tx.fill_sign(&main_acc).unwrap();
+
+    let mut env = Env::default();
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::mei(5);
+        state.balance_set(&main, &bls);
+    }
+
+    tx.execute(&mut ctx).unwrap();
 }
 
 #[test]
@@ -870,7 +1237,7 @@ fn build_tex_test_ctx<'a>(tx: &'a dyn TransactionRead) -> crate::context::Contex
 }
 
 #[test]
-fn test_tex_zhu_condition_rejects_fractional_hac_balance() {
+fn test_tex_zhu_condition_compares_fractional_hac_balance_exactly() {
     use crate::tex::*;
 
     let tx = TransactionType2::new_by(
@@ -887,6 +1254,9 @@ fn test_tex_zhu_condition_rejects_fractional_hac_balance() {
         state.balance_set(&field::ADDRESS_ONEX, &bls);
     }
 
+    CellCondZhuAtLeast::new(Fold64::from(1).unwrap())
+        .execute(&mut ctx, &field::ADDRESS_ONEX)
+        .unwrap();
     let err = CellCondZhuEq::new(Fold64::from(1).unwrap())
         .execute(&mut ctx, &field::ADDRESS_ONEX)
         .unwrap_err();
@@ -894,7 +1264,7 @@ fn test_tex_zhu_condition_rejects_fractional_hac_balance() {
 }
 
 #[test]
-fn test_tex_zhu_pay_rejects_fractional_hac_balance() {
+fn test_tex_zhu_pay_accepts_fractional_hac_balance() {
     use crate::tex::*;
 
     let tx = TransactionType2::new_by(
@@ -911,14 +1281,19 @@ fn test_tex_zhu_pay_rejects_fractional_hac_balance() {
         state.balance_set(&field::ADDRESS_ONEX, &bls);
     }
 
-    let err = CellTrsZhuPay::new(Fold64::from(1).unwrap())
+    CellTrsZhuPay::new(Fold64::from(1).unwrap())
         .execute(&mut ctx, &field::ADDRESS_ONEX)
-        .unwrap_err();
-    assert!(err.contains("whole-zhu"), "{}", err);
+        .unwrap();
+
+    let bls = crate::state::CoreState::wrap(ctx.state())
+        .balance(&field::ADDRESS_ONEX)
+        .unwrap();
+    assert_eq!(bls.hacash, Amount::zhu(1).ratio_floor(1, 2).unwrap());
+    assert_eq!(ctx.tex_ledger().zhu, 1);
 }
 
 #[test]
-fn test_tex_zhu_get_rejects_balance_below_one_zhu() {
+fn test_tex_zhu_get_accepts_fractional_hac_balance() {
     use crate::tex::*;
 
     let tx = TransactionType2::new_by(
@@ -934,10 +1309,17 @@ fn test_tex_zhu_get_rejects_balance_below_one_zhu() {
         state.balance_set(&field::ADDRESS_ONEX, &bls);
     }
 
-    let err = CellTrsZhuGet::new(Fold64::from(1).unwrap())
+    ctx.tex_ledger().zhu = 1;
+    CellTrsZhuGet::new(Fold64::from(1).unwrap())
         .execute(&mut ctx, &field::ADDRESS_ONEX)
-        .unwrap_err();
-    assert!(err.contains("zero or at least 1 zhu"), "{}", err);
+        .unwrap();
+
+    let bls = crate::state::CoreState::wrap(ctx.state())
+        .balance(&field::ADDRESS_ONEX)
+        .unwrap();
+    let half = Amount::zhu(1).ratio_floor(1, 2).unwrap();
+    assert_eq!(bls.hacash, Amount::zhu(1).add_mode_u128(&half).unwrap());
+    assert_eq!(ctx.tex_ledger().zhu, 0);
 }
 
 #[test]

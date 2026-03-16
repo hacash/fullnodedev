@@ -1,8 +1,10 @@
 use basis::component::*;
 use basis::interface::*;
 use field::*;
+use mint::action as mint_action;
 use protocol::action::*;
 use protocol::transaction::*;
+use std::sync::Once;
 use sys::*;
 
 use testkit::sim::context::make_ctx_with_default_tx;
@@ -20,6 +22,7 @@ fn build_ast_ctx_with_state<'a>(
     sta: Box<dyn State>,
     tx: &'a dyn TransactionRead,
 ) -> protocol::context::ContextInst<'a> {
+    init_setup_once();
     let mut ctx = testkit_make_ctx_with_state(env, sta, tx);
     let main = ctx.env().tx.main;
     let mut st = protocol::state::CoreState::wrap(ctx.state());
@@ -41,13 +44,30 @@ fn ast_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
         .hacash
 }
 
+unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::ContextInst<'a> {
+    unsafe { &mut *(ctx as *mut dyn Context as *mut protocol::context::ContextInst<'a>) }
+}
+
+fn init_setup_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let registry = protocol::setup::SetupBuilder::new()
+            .block_hasher(|_, stuff| sys::calculate_hash(stuff))
+            .action_register(protocol::action::register)
+            .action_register(mint_action::register)
+            .build()
+            .unwrap();
+        protocol::setup::install_once(registry).unwrap();
+    });
+}
+
 static AST_TEST_GLOBAL_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
 
 fn ast_test_globals_guard() -> std::sync::MutexGuard<'static, ()> {
     AST_TEST_GLOBAL_LOCK
         .get_or_init(|| std::sync::Mutex::new(()))
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -585,6 +605,7 @@ fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
     let mut env = Env::default();
     env.chain.fast_sync = true;
     env.tx = create_tx_info(&tx);
+    init_setup_once();
     let mut ctx = testkit_make_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     let mut state = protocol::state::CoreState::wrap(ctx.state());
     let mut bls = state.balance(&tx.main()).unwrap_or_default();
@@ -646,6 +667,7 @@ fn test_tx_without_ast_allows_nonzero_gasmax() {
     let mut env = Env::default();
     env.chain.fast_sync = true;
     env.tx = create_tx_info(&tx);
+    init_setup_once();
     let mut ctx = testkit_make_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
 
     let mut state = protocol::state::CoreState::wrap(ctx.state());
@@ -893,8 +915,7 @@ fn test_ast_tree_depth_limit_6_rejects_7th_level() {
     let lvl2 = AstSelect::create_list(vec![Box::new(lvl3)]);
     let lvl1 = AstSelect::create_list(vec![Box::new(lvl2)]);
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    let err = lvl1.execute(&mut ctx).unwrap_err();
+    let err = check_action_ast_tree_depth(&lvl1).unwrap_err();
     assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
     assert_eq!(ast_state_get_u8(&mut ctx, 105), None);
 }
@@ -1088,6 +1109,7 @@ fn build_tex_ctx_with_state(
     env: Env,
     sta: Box<dyn State>,
 ) -> protocol::context::ContextInst<'static> {
+    init_setup_once();
     make_ctx_with_default_tx(env, sta)
 }
 
@@ -1512,6 +1534,7 @@ fn build_ast_ctx_with_logs<'a>(
     log: Box<dyn Logs>,
     tx: &'a dyn TransactionRead,
 ) -> protocol::context::ContextInst<'a> {
+    init_setup_once();
     let mut ctx = testkit_make_ctx_with_logs(env, sta, log, tx);
     let main = ctx.env().tx.main;
     let mut st = protocol::state::CoreState::wrap(ctx.state());
@@ -2219,21 +2242,12 @@ impl FromJSON for AstTestVMCall {
 }
 impl ActExec for AstTestVMCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
-        // The MockVM's counter is behind an Arc<AtomicI64>, so we can
-        // mutate it through the shared reference obtained via ctx.vm().
-        // snapshot_volatile captures the current value; restore_volatile resets it.
-        // Here we just read the snapshot to get the current counter, add our increment,
-        // and "commit" by not restoring. The snapshot/restore mechanism in ctx_snapshot/
-        // ctx_recover will handle rollback if needed.
-        //
-        // We use a trick: snapshot gives us the current value, we compute new value,
-        // then restore to new value. This simulates what real VM execution does
-        // (modifying global_map in place).
-        let snap = ctx.vm().snapshot_volatile();
+        let Some(snap) = ctx.vm_snapshot_volatile() else {
+            return xerrf!("test vm missing");
+        };
         if let Ok(cur) = snap.downcast::<i64>() {
             let new_val = *cur + *self.increment as i64;
-            // Restore to the NEW value (this is how we "write" to the MockVM)
-            ctx.vm().restore_volatile(Box::new(new_val));
+            ctx.vm_restore_volatile(Box::new(new_val));
         }
         Ok((0, vec![]))
     }
@@ -2265,7 +2279,7 @@ struct AstRecoverTrackVm {
 }
 
 impl VM for AstRecoverTrackVm {
-    fn snapshot_volatile(&self) -> Box<dyn std::any::Any> {
+    fn snapshot_volatile(&mut self) -> Box<dyn std::any::Any> {
         Box::new(self.value.load(std::sync::atomic::Ordering::SeqCst))
     }
 
@@ -2281,6 +2295,17 @@ impl VM for AstRecoverTrackVm {
         self.clean_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.value.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn call(
+        &mut self,
+        _: &mut dyn Context,
+        _: u8,
+        _target: u8,
+        _: std::sync::Arc<[u8]>,
+        _: Box<dyn std::any::Any>,
+    ) -> XRet<(i64, Vec<u8>)> {
+        Ok((0, vec![]))
     }
 }
 
@@ -2358,9 +2383,8 @@ impl FromJSON for AstTestVmInitReplace {
 
 impl ActExec for AstTestVmInitReplace {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
-        let vm = take_ast_recover_track_vm();
-        ctx.vm_init_once(vm)?;
-        ctx.vm().restore_volatile(Box::new(*self.value as i64));
+        unsafe { ctx_inst(ctx) }.test_set_vm(take_ast_recover_track_vm());
+        ctx.vm_restore_volatile(Box::new(*self.value as i64));
         Ok((0, vec![]))
     }
 }
@@ -2387,90 +2411,6 @@ impl AstTestVmInitReplace {
     }
 }
 
-struct AstRecoverFlipVm {
-    non_nil: std::sync::Arc<std::sync::atomic::AtomicBool>,
-}
-
-impl VM for AstRecoverFlipVm {
-    fn is_nil(&self) -> bool {
-        !self.non_nil.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    fn snapshot_volatile(&self) -> Box<dyn std::any::Any> {
-        Box::new(())
-    }
-}
-
-static AST_RECOVER_FLIP_HANDLE: std::sync::OnceLock<
-    std::sync::Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
-> = std::sync::OnceLock::new();
-
-fn set_ast_recover_flip_handle(flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
-    let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
-    *lock.lock().unwrap() = Some(flag);
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-struct AstTestVmSetNilAndFail;
-
-impl Parse for AstTestVmSetNilAndFail {
-    fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
-        Ok(0)
-    }
-}
-
-impl Serialize for AstTestVmSetNilAndFail {
-    fn serialize(&self) -> Vec<u8> {
-        vec![]
-    }
-
-    fn size(&self) -> usize {
-        0
-    }
-}
-
-impl Field for AstTestVmSetNilAndFail {
-    fn new() -> Self {
-        Self
-    }
-}
-
-impl ToJSON for AstTestVmSetNilAndFail {
-    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-        "{}".to_owned()
-    }
-}
-
-impl FromJSON for AstTestVmSetNilAndFail {
-    fn from_json(&mut self, _json: &str) -> Ret<()> {
-        Ok(())
-    }
-}
-
-impl ActExec for AstTestVmSetNilAndFail {
-    fn execute(&self, _ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
-        let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
-        if let Some(flag) = lock.lock().unwrap().as_ref() {
-            flag.store(false, std::sync::atomic::Ordering::SeqCst);
-        }
-        xerr_rf!("flip to nil and fail")
-    }
-}
-
-impl Description for AstTestVmSetNilAndFail {}
-
-impl Action for AstTestVmSetNilAndFail {
-    fn kind(&self) -> u16 {
-        65018
-    }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 struct AstDeepDelayVm {
     volatile: std::sync::Arc<std::sync::atomic::AtomicI64>,
     warmup: std::sync::Arc<std::sync::atomic::AtomicI64>,
@@ -2479,7 +2419,7 @@ struct AstDeepDelayVm {
 }
 
 impl VM for AstDeepDelayVm {
-    fn snapshot_volatile(&self) -> Box<dyn std::any::Any> {
+    fn snapshot_volatile(&mut self) -> Box<dyn std::any::Any> {
         Box::new(self.volatile.load(std::sync::atomic::Ordering::SeqCst))
     }
 
@@ -2497,8 +2437,15 @@ impl VM for AstDeepDelayVm {
         self.volatile.store(0, std::sync::atomic::Ordering::SeqCst);
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> XRet<(i64, Vec<u8>)> {
-        let data = call.payload.as_ref();
+    fn call(
+        &mut self,
+        _: &mut dyn Context,
+        _: u8,
+        _target: u8,
+        payload: std::sync::Arc<[u8]>,
+        _: Box<dyn std::any::Any>,
+    ) -> XRet<(i64, Vec<u8>)> {
+        let data = payload.as_ref();
         if data.len() < 3 {
             return xerrf!("deep delay vm payload too short");
         }
@@ -2591,7 +2538,7 @@ impl FromJSON for AstTestDeepDelayVmInit {
 
 impl ActExec for AstTestDeepDelayVmInit {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
-        ctx.vm_init_once(take_ast_deep_delay_vm())?;
+        unsafe { ctx_inst(ctx) }.test_set_vm(take_ast_deep_delay_vm());
         Ok((0, vec![]))
     }
 }
@@ -2662,17 +2609,7 @@ impl FromJSON for AstTestDeepDelayVmCall {
 impl ActExec for AstTestDeepDelayVmCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.vol_add, *self.warm_add, *self.fail];
-        let ctxptr = ctx as *mut dyn Context;
-        let (_gas, rv) = unsafe {
-            let vm = (*ctxptr).vm() as *mut dyn VM;
-            (*vm).call(VMCall::new(
-                &mut *ctxptr,
-                0,
-                0,
-                payload.into(),
-                Box::new(()),
-            ))?
-        };
+        let (_gas, rv) = ctx.vm_call(0, 0, payload.into(), Box::new(()))?;
         // VM dynamic gas is charged through shared ctx remaining inside VM runtime.
         // Keep action return-gas channel as size-only (0 here for this custom test action).
         Ok((0, rv))
@@ -2703,75 +2640,10 @@ impl AstTestDeepDelayVmCall {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-struct AstTestVmInitFlip;
-
-impl Parse for AstTestVmInitFlip {
-    fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
-        Ok(0)
-    }
-}
-
-impl Serialize for AstTestVmInitFlip {
-    fn serialize(&self) -> Vec<u8> {
-        vec![]
-    }
-
-    fn size(&self) -> usize {
-        0
-    }
-}
-
-impl Field for AstTestVmInitFlip {
-    fn new() -> Self {
-        Self
-    }
-}
-
-impl ToJSON for AstTestVmInitFlip {
-    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-        "{}".to_owned()
-    }
-}
-
-impl FromJSON for AstTestVmInitFlip {
-    fn from_json(&mut self, _json: &str) -> Ret<()> {
-        Ok(())
-    }
-}
-
-impl ActExec for AstTestVmInitFlip {
-    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
-        let lock = AST_RECOVER_FLIP_HANDLE.get_or_init(|| std::sync::Mutex::new(None));
-        let non_nil = lock
-            .lock()
-            .unwrap()
-            .as_ref()
-            .expect("recover flip handle not set")
-            .clone();
-        ctx.vm_init_once(Box::new(AstRecoverFlipVm { non_nil }))?;
-        Ok((0, vec![]))
-    }
-}
-
-impl Description for AstTestVmInitFlip {}
-
-impl Action for AstTestVmInitFlip {
-    fn kind(&self) -> u16 {
-        65021
-    }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 struct AstBugAssumeVm {
     remaining: std::sync::Arc<std::sync::atomic::AtomicI64>,
     burned: std::sync::Arc<std::sync::atomic::AtomicI64>,
-    volatile_mark: i64,
+    volatile_mark: std::sync::atomic::AtomicI64,
 }
 
 impl AstBugAssumeVm {
@@ -2788,7 +2660,7 @@ impl AstBugAssumeVm {
             Box::new(Self {
                 remaining: rem.clone(),
                 burned: burned.clone(),
-                volatile_mark: 0,
+                volatile_mark: std::sync::atomic::AtomicI64::new(0),
             }),
             rem,
             burned,
@@ -2797,18 +2669,26 @@ impl AstBugAssumeVm {
 }
 
 impl VM for AstBugAssumeVm {
-    fn snapshot_volatile(&self) -> Box<dyn std::any::Any> {
-        Box::new(self.volatile_mark)
+    fn snapshot_volatile(&mut self) -> Box<dyn std::any::Any> {
+        Box::new(self.volatile_mark.load(std::sync::atomic::Ordering::SeqCst))
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn std::any::Any>) {
         if let Ok(mark) = snap.downcast::<i64>() {
-            self.volatile_mark = *mark;
+            self.volatile_mark
+                .store(*mark, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
-    fn call(&mut self, call: VMCall<'_>) -> XRet<(i64, Vec<u8>)> {
-        let data = call.payload.as_ref();
+    fn call(
+        &mut self,
+        _: &mut dyn Context,
+        _: u8,
+        _target: u8,
+        payload: std::sync::Arc<[u8]>,
+        _: Box<dyn std::any::Any>,
+    ) -> XRet<(i64, Vec<u8>)> {
+        let data = payload.as_ref();
         if data.len() < 2 {
             return xerrf!("ast bug assume vm payload too short");
         }
@@ -2816,7 +2696,8 @@ impl VM for AstBugAssumeVm {
         let gas_cost = data[1] as i64;
         self.remaining
             .fetch_sub(gas_cost, std::sync::atomic::Ordering::SeqCst);
-        self.volatile_mark += gas_cost;
+        self.volatile_mark
+            .fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
         if should_fail {
             return xerr_rf!("ast bug assume vm forced fail");
         }
@@ -2871,17 +2752,7 @@ impl FromJSON for AstTestBugVmCall {
 impl ActExec for AstTestBugVmCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.fail, *self.cost];
-        let ctxptr = ctx as *mut dyn Context;
-        let (_gas, rv) = unsafe {
-            let vm = (*ctxptr).vm() as *mut dyn VM;
-            (*vm).call(VMCall::new(
-                &mut *ctxptr,
-                0,
-                0,
-                payload.into(),
-                Box::new(()),
-            ))?
-        };
+        let (_gas, rv) = ctx.vm_call(0, 0, payload.into(), Box::new(()))?;
         // VM dynamic gas is charged through shared ctx remaining inside VM runtime.
         // Keep action return-gas channel as size-only (0 here for this custom test action).
         Ok((0, rv))
@@ -2930,7 +2801,7 @@ fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(vm).unwrap();
+    ctx.test_set_vm(vm);
 
     let act = AstSelect::create_by(
         1,
@@ -2959,7 +2830,7 @@ fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(vm).unwrap();
+    ctx.test_set_vm(vm);
 
     let act = AstSelect::create_by(0, 1, vec![Box::new(AstTestBugVmCall::fail(20))]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -2981,7 +2852,7 @@ fn test_ast_bug_control_all_success_children_no_burn_gap() {
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(vm).unwrap();
+    ctx.test_set_vm(vm);
 
     let act = AstSelect::create_by(
         1,
@@ -3013,7 +2884,7 @@ fn test_ast_bug_control_min_zero_success_child_charged() {
     let (vm, remaining, burned) = AstBugAssumeVm::create(100);
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(vm).unwrap();
+    ctx.test_set_vm(vm);
 
     let act = AstSelect::create_by(0, 1, vec![Box::new(AstTestBugVmCall::ok(20))]);
     ctx.level_set(ACTION_CTX_LEVEL_TOP);
@@ -3068,47 +2939,6 @@ fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
     assert_eq!(restore_count.load(std::sync::atomic::Ordering::SeqCst), 2);
     assert_eq!(value.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_eq!(ast_state_get_u8(&mut ctx, 190), Some(190));
-}
-
-#[test]
-fn test_ast_vm_recover_repeat_init_returns_error() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let (mock_vm, _counter) = MockVM::create();
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
-    let err = ctx.vm_init_once(VMNil::empty()).unwrap_err();
-    assert!(err.contains("already initialized"), "{}", err);
-}
-
-#[test]
-fn test_ast_vm_recover_true_to_false_returns_error() {
-    let _guard = ast_test_globals_guard();
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-
-    let non_nil = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    set_ast_recover_flip_handle(non_nil.clone());
-    ctx.vm_init_once(Box::new(AstRecoverFlipVm { non_nil }))
-        .unwrap();
-
-    let act = AstSelect::create_by(0, 1, vec![Box::new(AstTestVmSetNilAndFail::new())]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("vm became nil"), "{}", err);
 }
 
 #[test]
@@ -3234,114 +3064,6 @@ fn test_ast_vm_delay_init_deep_nested_success_commits_reverts() {
 }
 
 #[test]
-fn test_ast_vm_delay_init_deep_nested_true_to_false_returns_error_and_no_leak() {
-    let _guard = ast_test_globals_guard();
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-
-    let non_nil = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    set_ast_recover_flip_handle(non_nil.clone());
-
-    let nested = AstIf::create_by(
-        AstSelect::create_list(vec![
-            Box::new(AstTestVmInitFlip::new()),
-            Box::new(AstTestSet::create_by(170, 170)),
-        ]),
-        AstSelect::create_list(vec![Box::new(AstSelect::create_by(
-            0,
-            1,
-            vec![Box::new(AstTestVmSetNilAndFail::new())],
-        ))]),
-        AstSelect::nop(),
-    );
-
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    let err = nested.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("vm became nil"), "{}", err);
-    assert_eq!(ast_state_get_u8(&mut ctx, 170), None);
-}
-
-#[test]
-fn test_ast_vm_delay_init_deep_nested_sequential_reinit_rejected_and_rollback_kept() {
-    let _guard = ast_test_globals_guard();
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-
-    let volatile = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
-    let warmup = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
-    let restore_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let clean_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    set_ast_deep_delay_vm_handles(
-        volatile.clone(),
-        warmup.clone(),
-        restore_count.clone(),
-        clean_count.clone(),
-    );
-
-    // op1: deep delayed init succeeds and commits revert channels.
-    let op1 = AstIf::create_by(
-        AstSelect::create_list(vec![
-            Box::new(AstTestDeepDelayVmInit::new()),
-            Box::new(AstTestDeepDelayVmCall::create_by(2, 1, 0)),
-            Box::new(AstTestSet::create_by(171, 171)),
-        ]),
-        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(172, 172))]),
-        AstSelect::nop(),
-    );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    op1.execute(&mut ctx).unwrap();
-
-    assert_eq!(ast_state_get_u8(&mut ctx, 171), Some(171));
-    assert_eq!(ast_state_get_u8(&mut ctx, 172), Some(172));
-    assert!(volatile.load(std::sync::atomic::Ordering::SeqCst) >= 0);
-    assert!(warmup.load(std::sync::atomic::Ordering::SeqCst) >= 1);
-
-    // op2: deep nested duplicate init fails; whole recover should rollback revert channels,
-    // while warmup-like counter stays monotonic.
-    let op2 = AstIf::create_by(
-        AstSelect::create_list(vec![
-            Box::new(AstTestDeepDelayVmCall::create_by(5, 4, 0)),
-            Box::new(AstTestSet::create_by(173, 173)),
-        ]),
-        AstSelect::create_list(vec![Box::new(AstSelect::create_by(
-            1,
-            1,
-            vec![Box::new(AstTestDeepDelayVmInit::new())],
-        ))]),
-        AstSelect::nop(),
-    );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    let err = op2.execute(&mut ctx).unwrap_err();
-    assert!(
-        err.contains("already initialized") || err.contains("must succeed at least"),
-        "{}",
-        err
-    );
-
-    assert_eq!(ast_state_get_u8(&mut ctx, 171), Some(171));
-    assert_eq!(ast_state_get_u8(&mut ctx, 172), Some(172));
-    assert_eq!(ast_state_get_u8(&mut ctx, 173), None);
-    assert_eq!(volatile.load(std::sync::atomic::Ordering::SeqCst), 2);
-    assert!(warmup.load(std::sync::atomic::Ordering::SeqCst) >= 5);
-    assert!(restore_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
-    assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 0);
-}
-
-#[test]
 fn test_ast_vm_delay_init_depth6_revert_and_fault_channels() {
     let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
@@ -3404,11 +3126,10 @@ fn test_ast_vm_delay_init_depth6_revert_and_fault_channels() {
         vec![Box::new(lvl3), Box::new(AstTestSet::create_by(233, 233))],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
-    let err = root.execute(&mut ctx).unwrap_err();
+    let err = check_action_ast_tree_depth(&root).unwrap_err();
     assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
 
-    // fault path aborts whole root AST node
+    // precheck rejects the whole root AST node before execution
     assert_eq!(ast_state_get_u8(&mut ctx, 230), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 231), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 232), None);
@@ -3836,10 +3557,12 @@ impl FromJSON for AstTestMainVMCall {
 }
 impl ActExec for AstTestMainVMCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
-        let snap = ctx.vm().snapshot_volatile();
+        let Some(snap) = ctx.vm_snapshot_volatile() else {
+            return xerrf!("test vm missing");
+        };
         if let Ok(cur) = snap.downcast::<i64>() {
             let new_val = *cur + *self.increment as i64;
-            ctx.vm().restore_volatile(Box::new(new_val));
+            ctx.vm_restore_volatile(Box::new(new_val));
         }
         Ok((0, vec![]))
     }
@@ -3997,10 +3720,12 @@ impl ActExec for AstTestMutateAllFail {
         ctx.logs().push(&self.key);
         let adr = Address::create_scriptmh([*self.addr_byte; 20]);
         ctx.p2sh_set(adr, Box::new(AstTestP2shImpl))?;
-        let snap = ctx.vm().snapshot_volatile();
+        let Some(snap) = ctx.vm_snapshot_volatile() else {
+            return xerrf!("test vm missing");
+        };
         if let Ok(cur) = snap.downcast::<i64>() {
             let new_val = *cur + *self.vm_add as i64;
-            ctx.vm().restore_volatile(Box::new(new_val));
+            ctx.vm_restore_volatile(Box::new(new_val));
         }
         xerr_rf!("ast test mutate-all fail")
     }
@@ -4041,7 +3766,7 @@ fn test_ast_vm_state_restored_on_select_child_failure() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     // child1: vm += 5, succeed
     // child2: vm += 10, then fail -> vm should be rolled back to 5
@@ -4077,7 +3802,7 @@ fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     // cond: vm += 3, succeed -> br_if: vm += 7, fail
     // whole_snap recover should restore vm to 0
@@ -4112,7 +3837,7 @@ fn test_ast_vm_state_committed_on_success() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     // cond: vm += 2, br_if: vm += 3 -> total 5
     let astif = AstIf::create_by(
@@ -4140,7 +3865,7 @@ fn test_ast_all_five_channels_restored_on_failure() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
     ctx.tex_ledger().zhu = 100;
 
     // All channels modified, then fail
@@ -4177,7 +3902,7 @@ fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     // child1: vm += 10, ok
     // child2: AstIf(cond: vm += 20, br_if: fail) -> inner fail, outer select recovers
@@ -4336,7 +4061,7 @@ fn test_ast_vm_sequential_accumulation() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     // Op1: select(vm += 3) -> ok, counter = 3
     let act1 = AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(3))]);
@@ -4383,7 +4108,7 @@ fn test_ast_deep_3level_all_channels() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     // Level 3: AstIf(cond: fail -> else: set(130,130) + vm+=1 + log)
     let lvl3 = AstIf::create_by(
@@ -4437,7 +4162,7 @@ fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     let astif = AstIf::create_by(
         // cond: first three children mutate state/p2sh/vm, then final child fails -> cond Err
@@ -4486,7 +4211,7 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     let nested_if_fail = AstIf::create_by(
         AstSelect::create_list(vec![
@@ -4540,7 +4265,7 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     // level 3: cond fails after vm += 1, then else branch commits state + vm
     let lvl3 = AstIf::create_by(
@@ -4626,7 +4351,7 @@ fn test_ast_select_max_zero_executes_no_children() {
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
 
     let act = AstSelect::create_by(
         0,
@@ -4780,7 +4505,7 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
     ctx.tex_ledger().zhu = 10;
 
     let child_ok = AstSelect::create_list(vec![
@@ -4819,7 +4544,7 @@ fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
     ctx.tex_ledger().zhu = 20; // baseline
     counter.store(4, std::sync::atomic::Ordering::SeqCst); // baseline vm
     ctx.state().set(vec![253], vec![253]); // baseline state
@@ -4972,7 +4697,7 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
     ctx.tex_ledger().zhu = 30;
     counter.store(2, std::sync::atomic::Ordering::SeqCst);
     ctx.state().set(vec![214], vec![214]);
@@ -5025,7 +4750,7 @@ fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.vm_init_once(mock_vm).unwrap();
+    ctx.test_set_vm(mock_vm);
     ctx.tex_ledger().zhu = 40;
     counter.store(1, std::sync::atomic::Ordering::SeqCst);
     ctx.logs().push(&Uint1::from(2)); // baseline

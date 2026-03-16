@@ -21,7 +21,7 @@ This separation is strict and must remain stable.
 
 ## 3. Canonical Normalization Primitives
 
-## 3.1 Byte normalization (`canbe_bytes_ec`)
+## 3.1 Byte normalization (`extract_bytes_ec`)
 
 Output type: `Vec<u8>`.
 
@@ -31,7 +31,7 @@ Output type: `Vec<u8>`.
 - `Address` -> raw address bytes
 - Other types (`Nil`, `HeapSlice`, `Compo`) -> error
 
-## 3.2 Bool normalization (`canbe_bool`)
+## 3.2 Bool normalization (`extract_bool`)
 
 Output type: `bool`.
 
@@ -61,7 +61,7 @@ Output type: `Value` (`U8/U16/U32/U64/U128`).
     - `>16` -> error
 - `HeapSlice`, `Compo` -> error
 
-## 3.4 Numeric scalar normalization (`canbe_u128`)
+## 3.4 Numeric scalar normalization (`to_u128`)
 
 Output type: `u128`.
 
@@ -78,7 +78,7 @@ Output type: `u128`.
 
 ## 4.1 `cast_bool` / `CTO Bool`
 
-- Uses `canbe_bool`
+- Uses `extract_bool`
 - Same acceptance/failure set as section 3.2
 
 ## 4.2 `cast_u8/u16/u32/u64/u128` / `CU8..CU128`
@@ -89,7 +89,7 @@ For target width `W` bits (`N = W/8` bytes):
   - if `len <= N`: left-pad zeros to `N` and parse
   - if `len > N`: only allowed when truncated prefix bytes are all zero; otherwise error
 - If source is not `Bytes`:
-  - normalize by `canbe_u128`
+  - normalize by `to_u128`
   - check target range (`u8/u16/u32/u64/u128`)
   - overflow => error
 
@@ -119,7 +119,7 @@ So explicit uint cast and implicit numeric normalization share the same scalar d
 
 ## 5.1 Bool context (implicit bool normalization)
 
-Uses section 3.2 (`canbe_bool`):
+Uses section 3.2 (`extract_bool`):
 
 - Logic ops: `AND`, `OR`, `NOT`
 - Control-flow condition: `CHOOSE`, `BRL`, `BRS`, `BRSL`, `BRSLN`, `AST`
@@ -155,13 +155,13 @@ Failure in either operand normalization or width/range checks => immediate error
 
 - Ordered comparison is `uint`-only.
 - Both operands must already be uint types: `U8/U16/U32/U64/U128`.
-- No implicit `canbe_u128` conversion is applied for `Nil/Bool/Bytes/Address`.
+- No implicit `to_u128` conversion is applied for `Nil/Bool/Bytes/Address`.
 - Operands are compared as numeric uint values.
 - Any non-uint operand => immediate type error.
 
 ## 5.5 Byte-handle context
 
-Uses section 3.1 (`canbe_bytes_ec`):
+Uses section 3.1 (`extract_bytes_ec`):
 
 - `CAT`, `JOIN`, `BYTE`, `CUT`, `LEFT`, `RIGHT`, `LDROP`, `RDROP`
 
@@ -169,11 +169,11 @@ Uses section 3.1 (`canbe_bytes_ec`):
 
 ## 5.6 External/native call data context
 
-Uses `canbe_ext_call_data`:
+Uses `extract_call_data`:
 
 - `Nil` => `[]`
 - `HeapSlice(start, len)` => read bytes from heap slice
-- Otherwise => `canbe_bytes_ec`
+- Otherwise => `extract_bytes_ec`
 
 This is the only allowed conversion path where `HeapSlice` participates.
 
@@ -181,22 +181,18 @@ This is the only allowed conversion path where `HeapSlice` participates.
 
 ## 6.1 Signature-level constraints (`ValueTy`)
 
-- Param type cannot be `Nil`, `HeapSlice`, `Compo`
+- Param type cannot be `Nil`, `HeapSlice`, `Tuple`
 - Return type cannot be `Nil`, `HeapSlice`
 
-## 6.2 Runtime checked cast (`checked_param_cast`)
+## 6.2 Runtime checked cast (`check_param_type`)
 
-- If target type is `Nil`: wildcard, skip type check/cast (no mutation)
 - If source and target are identical: pass
-- Allowed widening/bridge casts only:
-  - `U8 -> U16/U32/U64/U128`
-  - `U16 -> U32/U64/U128`
-  - `U32 -> U64/U128`
-  - `U64 -> U128`
-  - `Bytes <-> Address`
+- Allowed checked casts are uint-family only:
+  - `U8/U16/U32/U64/U128 -> U8/U16/U32/U64/U128`
+  - narrowing succeeds only when the value fits the target width
 - All other source/target combinations: fail
 
-Note: in normal function signatures, param type `Nil` is rejected by section 6.1, so wildcard behavior is for low-level/internal call sites.
+Note: `check_param_type` is the non-mutating wrapper over `cast_param`.
 
 ## 7. Deterministic Edge Cases (Normative)
 

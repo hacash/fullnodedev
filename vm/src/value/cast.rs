@@ -86,8 +86,15 @@ pub fn cast_arithmetic(x: &mut Value, y: &mut Value) -> VmrtErr {
 }
 
 impl Value {
+    pub(crate) fn normalize_arithmetic_pair(x: &Value, y: &Value) -> VmrtRes<(Value, Value)> {
+        let mut lx = x.to_uint()?;
+        let mut ry = y.to_uint()?;
+        cast_arithmetic(&mut lx, &mut ry)?;
+        Ok((lx, ry))
+    }
+
     pub fn cast_bool(&mut self) -> VmrtErr {
-        *self = self.to_bool()?;
+        *self = Value::Bool(self.extract_bool()?);
         Ok(())
     }
 
@@ -105,7 +112,7 @@ impl Value {
             *self = bytes_to_uint_width(buf, bits)?;
             return Ok(());
         }
-        let v = self.canbe_u128().map_err(|_| cannot_cast_err(self, name))?;
+        let v = self.to_u128().map_err(|_| cannot_cast_err(self, name))?;
         *self = match bits {
             8 => Value::U8(u8::try_from(v).map_err(|_| cannot_cast_err(self, name))?),
             16 => Value::U16(u16::try_from(v).map_err(|_| cannot_cast_err(self, name))?),
@@ -141,7 +148,7 @@ impl Value {
         if matches!(self, Bytes(..)) {
             return Ok(());
         }
-        *self = Bytes(self.canbe_bytes_ec(CastFail)?);
+        *self = Bytes(self.extract_bytes_with_error_code(CastFail)?);
         Ok(())
     }
 
@@ -201,7 +208,7 @@ impl Value {
         Err(Self::fn_boundary_type_fail(ty, actual))
     }
 
-    pub fn checked_param_type(&self, ty: ValueTy) -> VmrtErr {
+    pub fn check_param_type(&self, ty: ValueTy) -> VmrtErr {
         let mut tmp = self.clone();
         tmp.cast_param(ty)
     }
@@ -241,15 +248,15 @@ mod cast_tests {
     }
 
     #[test]
-    fn checked_param_type_uses_uint_boundary_rules() {
+    fn check_param_type_uses_uint_boundary_rules() {
         let ok = Value::U32(1);
-        assert!(ok.checked_param_type(ValueTy::U16).is_ok());
+        assert!(ok.check_param_type(ValueTy::U16).is_ok());
 
         let overflow = Value::U32(70000);
-        assert!(overflow.checked_param_type(ValueTy::U16).is_err());
+        assert!(overflow.check_param_type(ValueTy::U16).is_err());
 
         let bytes = Value::Bytes(vec![1]);
-        assert!(bytes.checked_param_type(ValueTy::U8).is_err());
+        assert!(bytes.check_param_type(ValueTy::U8).is_err());
     }
 
     #[test]
