@@ -3,9 +3,7 @@
 * 
 */
 action_define!{ DiaSingleTrs, 5, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [], // need sign
+    ActScope::CALL, false, [],
     {
         diamond   : DiamondName  
         to        : AddrOrPtr 
@@ -24,9 +22,10 @@ action_define!{ DiaSingleTrs, 5,
 * 
 */
 action_define!{ DiaFromToTrs, 6, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [self.from], // need sign
+    ActScope::CALL, false, 
+    [
+        self.from
+    ],
     {
         from      : AddrOrPtr
         to        : AddrOrPtr
@@ -45,9 +44,7 @@ action_define!{ DiaFromToTrs, 6,
 * 
 */
 action_define!{ DiaToTrs, 7, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [], // need sign
+    ActScope::CALL, false, [],
     {
         to        : AddrOrPtr
         diamonds  : DiamondNameListMax200
@@ -65,9 +62,10 @@ action_define!{ DiaToTrs, 7,
 * 
 */
 action_define!{ DiaFromTrs, 8, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [self.from], // need sign
+    ActScope::CALL, false, 
+    [
+        self.from
+    ],
     {
         from      : AddrOrPtr
         diamonds  : DiamondNameListMax200 

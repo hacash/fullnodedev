@@ -78,6 +78,14 @@ macro_rules! transaction_define {
                 Ok(*self.gas_max)
             }
 
+            fn raw_gas_max(&self) -> u8 {
+                *self.gas_max
+            }
+
+            fn raw_ano_mark(&self) -> u8 {
+                self.ano_mark[0]
+            }
+
             fn req_sign(&self) -> Ret<HashSet<Address>> {
                 let addrs = &self.addrs();
                 let mut adrsets = HashSet::from([self.main()]);
@@ -284,20 +292,19 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn TxDriverContext) -> Rerr {
             TXTY3
         );
     }
+    let txty = tx.ty();
+    if txty < TXTY3 {
+        let gas_max = tx.raw_gas_max();
+        if gas_max != 0 {
+            return errf!("tx type {} gas_max must be zero", txty);
+        }
+        let ano_mark = tx.raw_ano_mark();
+        if ano_mark != 0 {
+            return errf!("tx type {} ano_mark must be zero", txty);
+        }
+    }
     // set tx exist mark
     state.tx_exist_set(&hx, &BlockHeight::from(blkhei));
-    /*
-    if mty <= TXTY3 {
-        if self.ano_mark[0] != 0 {
-            return errf!("tx extend data invalid")
-        }
-    }
-    if mty <= TXTY2 {
-        if self.gas_max.value() != 0 {
-            return errf!("tx extend data invalid")
-        }
-    }
-    */
     let gas_max_byte = tx.fee_extend().unwrap_or(0);
 
     let gas_enabled = gas_max_byte > 0;
@@ -306,14 +313,13 @@ fn do_tx_execute(tx: &dyn Transaction, ctx: &mut dyn TxDriverContext) -> Rerr {
         ctx.gas_init_tx(budget, gas_rate)?;
     }
     // execute actions
-    let exec_res: Rerr = (|| {
-        for action in tx.actions() {
-            ctx.level_set(ACTION_CTX_LEVEL_TOP);
-            ctx.action_exec_from_set(ActExecFrom::TxLoop);
-            // Top-level tx loop intentionally ignores return gas; only AST nesting and VM ACTION consume it.
-            let (_ret_gas, _retv) = action.execute(ctx)?;
-        }
-        Ok(())
+        let exec_res: Rerr = (|| {
+            for action in tx.actions() {
+                ctx.exec_from_set(ExecFrom::Top);
+                // Top-level tx loop intentionally ignores return gas; only AST nesting and VM ACTION consume it.
+                let (_ret_gas, _retv) = action.execute(ctx)?;
+            }
+            Ok(())
     })();
 
     let mut settle_res: Rerr = Ok(());

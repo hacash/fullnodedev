@@ -65,7 +65,7 @@ impl<T: Context + ?Sized> VmHost for T {
     }
 
     fn action_call(&mut self, kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
-        // ctx.level was already set to the correct call level by setup_vm_run
+        // setup_vm_run already switched the context into CALL scope
         Context::action_call(self, kid, body)
     }
 

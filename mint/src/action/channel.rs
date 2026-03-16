@@ -3,12 +3,11 @@
 *
 */
 action_define!{ ChannelOpen, 2, 
-    ActLv::TopUnique, // level
-    false, // burn 90 fee
+    ActScope::TOP_UNIQUE, false, 
     [
         self.left_bill.address.into(),
         self.right_bill.address.into()
-    ], // need sign
+    ],
     {
         channel_id     : ChannelId
         left_bill      : AddrHac
@@ -130,9 +129,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
 
 
 action_define!{ ChannelClose, 3, 
-    ActLv::TopUnique, // level
-    false, // burn 90 fee
-    [], // need sign
+    ActScope::TOP_UNIQUE, false, [],
     {
         channel_id     : ChannelId 
     },

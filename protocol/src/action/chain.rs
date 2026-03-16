@@ -6,7 +6,7 @@ macro_rules! cids_to_str { ($cids:expr) => {
 }}
 
 action_define!{ ChainAllow, 0x0411, 
-    ActLv::Guard, false, [],
+    ActScope::GUARD, false, [],
     {
         chains: ChainIDList
     },
@@ -28,7 +28,7 @@ action_define!{ ChainAllow, 0x0411,
 *
 */
 action_define!{ HeightScope, 0x0412, 
-    ActLv::Guard, false, [],
+    ActScope::GUARD, false, [],
     {
         start: BlockHeight
         end:   BlockHeight
@@ -57,7 +57,7 @@ action_define!{ HeightScope, 0x0412,
 
 
 action_define!{ BalanceFloor, 0x0413,
-    ActLv::Guard, false, [],
+    ActScope::GUARD, false, [],
     {
         addr    : AddrOrPtr
         hacash  : Amount

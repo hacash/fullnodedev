@@ -3,9 +3,7 @@
 * simple hac to
 */
 action_define!{ HacToTrs, 1, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [], // need sign
+    ActScope::CALL, false, [],
     {
         to : AddrOrPtr
         hacash : Amount
@@ -31,9 +29,10 @@ impl HacToTrs {
 
 
 action_define!{ HacFromTrs, 13, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [self.from],
+    ActScope::CALL, false, 
+    [
+        self.from
+    ],
     {
         from   : AddrOrPtr
         hacash : Amount
@@ -61,9 +60,10 @@ impl HacFromTrs {
 
 
 action_define!{ HacFromToTrs, 14, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [self.from],
+    ActScope::CALL, false, 
+    [
+        self.from
+    ],
     {
         from   : AddrOrPtr
         to     : AddrOrPtr

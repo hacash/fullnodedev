@@ -1,7 +1,6 @@
 pub struct ContextInst<'a> {
     pub env: Env,
-    pub level: usize,
-    pub exec_from: ActExecFrom,
+    pub exec_from: ExecFrom,
     pub txr: &'a dyn TransactionRead,
     pub tex_ledger: TexLedger,
     gas: GasCounter,
@@ -25,8 +24,7 @@ impl<'a> ContextInst<'a> {
             sta,
             log,
             txr,
-            level: ACTION_CTX_LEVEL_TOP,
-            exec_from: ActExecFrom::TxLoop,
+            exec_from: ExecFrom::Top,
             check_sign_cache: HashMap::new(),
             psh: HashMap::new(),
             tex_ledger: TexLedger::default(),
@@ -114,8 +112,7 @@ impl<'a> ContextInst<'a> {
         self.check_sign_cache.clear();
         self.tex_ledger = TexLedger::default();
         self.gas.reset();
-        self.level = ACTION_CTX_LEVEL_TOP;
-        self.exec_from = ActExecFrom::TxLoop;
+        self.exec_from = ExecFrom::Top;
     }
 
     #[inline]
@@ -218,11 +215,11 @@ impl Context for ContextInst<'_> {
         ctx_action_call(self, k, b)
     }
 
-    fn action_exec_from(&self) -> ActExecFrom {
+    fn exec_from(&self) -> ExecFrom {
         self.exec_from
     }
 
-    fn action_exec_from_set(&mut self, src: ActExecFrom) {
+    fn exec_from_set(&mut self, src: ExecFrom) {
         self.exec_from = src;
     }
 
@@ -236,14 +233,6 @@ impl Context for ContextInst<'_> {
 
     fn check_sign(&mut self, adr: &Address) -> Rerr {
         self.check_sign_cached(adr)
-    }
-
-    fn level(&self) -> usize {
-        self.level
-    }
-
-    fn level_set(&mut self, level: usize) {
-        self.level = level;
     }
 
     fn tx(&self) -> &dyn TransactionRead {

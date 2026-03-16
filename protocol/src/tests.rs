@@ -93,8 +93,8 @@ impl Action for TestExtEnvReadOnly {
     fn kind(&self) -> u16 {
         *self.kind
     }
-    fn level(&self) -> ActLv {
-        ActLv::Any
+    fn scope(&self) -> ActScope {
+        ActScope::CALL_ONLY
     }
     fn req_sign(&self) -> Vec<AddrOrPtr> {
         vec![]
@@ -177,14 +177,14 @@ impl State for AstForkableState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TestLevelNoopAction {
     kind: Uint2,
-    level: ActLv,
+    scope: ActScope,
     desc: &'static str,
 }
 
 impl TestLevelNoopAction {
     const TOP_ONLY_WITH_GUARD_KIND: u16 = 0x07f2;
     const TOP_UNIQUE_KIND: u16 = 0x07f3;
-    const ANY_IN_CALL_KIND: u16 = 0x07f4;
+    const CALL_ONLY_KIND: u16 = 0x07f4;
     const AST_KIND: u16 = 0x07f5;
 
     fn top_only_with_guard() -> Self {
@@ -195,22 +195,22 @@ impl TestLevelNoopAction {
         Self::from_kind(Self::TOP_UNIQUE_KIND).unwrap()
     }
 
-    fn any_in_call() -> Self {
-        Self::from_kind(Self::ANY_IN_CALL_KIND).unwrap()
+    fn call_only() -> Self {
+        Self::from_kind(Self::CALL_ONLY_KIND).unwrap()
     }
 
     fn ast() -> Self {
         Self::from_kind(Self::AST_KIND).unwrap()
     }
 
-    fn meta(kind: u16) -> Ret<(ActLv, &'static str)> {
+    fn meta(kind: u16) -> Ret<(ActScope, &'static str)> {
         match kind {
             Self::TOP_ONLY_WITH_GUARD_KIND => {
-                Ok((ActLv::TopOnlyWithGuard, "Test top-only-with-guard"))
+                Ok((ActScope::TOP_ONLY_WITH_GUARD, "Test top-only-with-guard"))
             }
-            Self::TOP_UNIQUE_KIND => Ok((ActLv::TopUnique, "Test top-unique")),
-            Self::ANY_IN_CALL_KIND => Ok((ActLv::AnyInCall, "Test any-in-call")),
-            Self::AST_KIND => Ok((ActLv::Ast, "Test ast leaf")),
+            Self::TOP_UNIQUE_KIND => Ok((ActScope::TOP_UNIQUE, "Test top-unique")),
+            Self::CALL_ONLY_KIND => Ok((ActScope::CALL_ONLY, "Test call-only")),
+            Self::AST_KIND => Ok((ActScope::AST, "Test ast leaf")),
             _ => errf!("unknown test level noop action kind {}", kind),
         }
     }
@@ -219,14 +219,14 @@ impl TestLevelNoopAction {
         let (level, desc) = Self::meta(kind)?;
         Ok(Self {
             kind: Uint2::from(kind),
-            level,
+            scope: level,
             desc,
         })
     }
 
     fn refresh_meta(&mut self) -> Rerr {
         let (level, desc) = Self::meta(*self.kind)?;
-        self.level = level;
+        self.scope = level;
         self.desc = desc;
         Ok(())
     }
@@ -236,7 +236,7 @@ impl Default for TestLevelNoopAction {
     fn default() -> Self {
         Self {
             kind: Uint2::default(),
-            level: ActLv::Any,
+            scope: ActScope::CALL,
             desc: "",
         }
     }
@@ -293,7 +293,7 @@ impl Description for TestLevelNoopAction {
 impl ActExec for TestLevelNoopAction {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         if !ctx.env().chain.fast_sync {
-            check_action_level(ctx.level(), ctx.action_exec_from(), self).into_xret()?;
+            check_action_scope(ctx.exec_from(), self).into_xret()?;
         }
         Ok((0, vec![]))
     }
@@ -304,8 +304,8 @@ impl Action for TestLevelNoopAction {
         *self.kind
     }
 
-    fn level(&self) -> ActLv {
-        self.level
+    fn scope(&self) -> ActScope {
+        self.scope
     }
 
     fn req_sign(&self) -> Vec<AddrOrPtr> {
@@ -453,7 +453,7 @@ fn test_ctx_action_call_must_check_req_sign() {
 
     let mut ctx = ContextInst::new(
         env,
-        Box::new(crate::context::EmptyState {}),
+        Box::new(AstForkableState::default()),
         Box::new(EmptyLogs {}),
         &tx,
     );
@@ -489,7 +489,7 @@ fn test_tx_execute_must_verify_signature_before_actions() {
     env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
-        Box::new(crate::context::EmptyState {}),
+        Box::new(AstForkableState::default()),
         Box::new(EmptyLogs {}),
         &tx,
     );
@@ -522,7 +522,7 @@ fn test_tx_execute_must_reject_action_count_over_max() {
     env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
-        Box::new(crate::context::EmptyState {}),
+        Box::new(AstForkableState::default()),
         Box::new(EmptyLogs {}),
         &tx,
     );
@@ -629,11 +629,15 @@ fn test_analyze_tx_action_set_rejects_nested_top_only_with_guard_in_ast() {
 }
 
 #[test]
-fn test_analyze_tx_action_set_rejects_any_in_call_in_tx_tree() {
-    let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::any_in_call())];
+fn test_analyze_tx_action_set_rejects_call_only_in_tx_tree() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::call_only())];
 
     let err = analyze_tx_action_set(&actions).unwrap_err();
-    assert!(err.contains("ActionCall context"), "{}", err);
+    assert!(
+        err.contains("CALL_ONLY") && err.contains("tx top level"),
+        "{}",
+        err
+    );
 }
 
 #[test]
@@ -658,50 +662,25 @@ fn test_analyze_tx_action_set_allows_nested_ast_leaf_action() {
 
 #[test]
 fn test_guard_level_error_message_reports_top_and_ast_scope() {
-    let err = check_action_level(
-        ACTION_CTX_LEVEL_CALL_MAIN,
-        ActExecFrom::TxLoop,
-        &HeightScope::new(),
-    )
-    .unwrap_err();
-    assert!(err.contains("TOP + AST"), "{}", err);
-    assert!(err.contains("ctx <= 99"), "{}", err);
+    let err = check_action_scope(ExecFrom::Call, &HeightScope::new()).unwrap_err();
+    assert!(err.contains("GUARD") && err.contains("CALL"), "{}", err);
 }
 
 #[test]
-fn test_check_action_level_allows_any_in_call_from_action_call_at_top_ctx() {
-    check_action_level(
-        ACTION_CTX_LEVEL_TOP,
-        ActExecFrom::ActionCall,
-        &TestLevelNoopAction::any_in_call(),
-    )
-    .unwrap();
+fn test_check_action_scope_allows_call_only_from_action_call_at_top_ctx() {
+    check_action_scope(ExecFrom::Call, &TestLevelNoopAction::call_only()).unwrap();
 }
 
 #[test]
-fn test_check_action_level_rejects_any_in_call_without_action_call_origin() {
-    let err = check_action_level(
-        ACTION_CTX_LEVEL_CALL_CONTRACT,
-        ActExecFrom::TxLoop,
-        &TestLevelNoopAction::any_in_call(),
-    )
-    .unwrap_err();
-    assert!(err.contains("ActionCall context"), "{}", err);
+fn test_check_action_scope_rejects_call_only_without_action_call_origin() {
+    let err = check_action_scope(ExecFrom::Top, &TestLevelNoopAction::call_only()).unwrap_err();
+    assert!(err.contains("CALL_ONLY") && err.contains("TOP"), "{}", err);
 }
 
 #[test]
-fn test_check_action_level_rejects_guard_from_action_call() {
-    let err = check_action_level(
-        ACTION_CTX_LEVEL_TOP,
-        ActExecFrom::ActionCall,
-        &HeightScope::new(),
-    )
-    .unwrap_err();
-    assert!(
-        err.contains("Guard") && err.contains("ActionCall context"),
-        "{}",
-        err
-    );
+fn test_check_action_scope_rejects_guard_from_action_call() {
+    let err = check_action_scope(ExecFrom::Call, &HeightScope::new()).unwrap_err();
+    assert!(err.contains("GUARD") && err.contains("CALL"), "{}", err);
 }
 
 #[test]
@@ -722,7 +701,7 @@ fn test_tx_execute_fast_sync_ast_depth_precheck_rejects_7th_level() {
     env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
-        Box::new(crate::context::EmptyState {}),
+        Box::new(AstForkableState::default()),
         Box::new(EmptyLogs {}),
         &tx,
     );
@@ -745,7 +724,7 @@ fn test_ctx_action_call_rejects_ast_action_even_in_fast_sync() {
     env.tx = crate::transaction::create_tx_info(&tx);
     let mut ctx = ContextInst::new(
         env,
-        Box::new(crate::context::EmptyState {}),
+        Box::new(AstForkableState::default()),
         Box::new(EmptyLogs {}),
         &tx,
     );
@@ -754,11 +733,7 @@ fn test_ctx_action_call_rejects_ast_action_even_in_fast_sync() {
     let err = ctx
         .action_call(AstSelect::KIND, bytes[2..].to_vec())
         .unwrap_err();
-    assert!(
-        err.contains("AST") && err.contains("ActionCall context"),
-        "{}",
-        err
-    );
+    assert!(err.contains("AST") && err.contains("CALL"), "{}", err);
 }
 
 #[test]
@@ -779,6 +754,71 @@ fn test_tx_req_sign_must_be_privakey_address() {
     let signset = tx.req_sign().unwrap();
     assert!(signset.contains(&tx.main()));
     assert!(!signset.contains(&scriptmh_addr));
+}
+
+#[test]
+fn test_tx_execute_must_reject_nonzero_gas_max_on_type1() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType1;
+
+    let main_acc = Account::create_by("protocol-type1-gas-max-main").unwrap();
+    let main = Address::from(*main_acc.address());
+    let mut tx = TransactionType1::new_by(main, Amount::mei(1), 1730000000);
+    tx.gas_max = Uint1::from(1);
+
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
+    act.hacash = Amount::mei(1);
+    tx.actions.push(Box::new(act)).unwrap();
+    tx.push_sign(Sign::create_by(&main_acc, &tx.hash()))
+        .unwrap();
+
+    let mut env = Env::default();
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("gas_max must be zero"), "{}", err);
+}
+
+#[test]
+fn test_tx_execute_must_reject_nonzero_ano_mark_on_type2() {
+    init_test_registry();
+
+    use crate::context::ContextInst;
+    use crate::state::EmptyLogs;
+    use crate::transaction::TransactionType2;
+
+    let main_acc = Account::create_by("protocol-type2-ano-mark-main").unwrap();
+    let main = Address::from(*main_acc.address());
+    let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1730000000);
+    tx.ano_mark = Fixed1::from([1u8]);
+
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(field::ADDRESS_TWOX.clone());
+    act.hacash = Amount::mei(1);
+    tx.actions.push(Box::new(act)).unwrap();
+    tx.fill_sign(&main_acc).unwrap();
+
+    let mut env = Env::default();
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("ano_mark must be zero"), "{}", err);
 }
 
 #[test]
@@ -834,18 +874,9 @@ fn test_tx_req_sign_must_collect_nested_ast_child_actions() {
 }
 
 #[test]
-fn test_check_action_level_rejects_ast_leaf_from_action_call() {
-    let err = check_action_level(
-        ACTION_CTX_LEVEL_TOP,
-        ActExecFrom::ActionCall,
-        &TestLevelNoopAction::ast(),
-    )
-    .unwrap_err();
-    assert!(
-        err.contains("AST") && err.contains("ActionCall context"),
-        "{}",
-        err
-    );
+fn test_check_action_scope_rejects_ast_leaf_from_action_call() {
+    let err = check_action_scope(ExecFrom::Call, &TestLevelNoopAction::ast()).unwrap_err();
+    assert!(err.contains("AST") && err.contains("CALL"), "{}", err);
 }
 
 #[test]
@@ -927,7 +958,7 @@ fn test_ast_select_min_failure_is_revert() {
     bad_guard.start = BlockHeight::from(10);
     bad_guard.end = BlockHeight::from(20);
     let act = AstSelect::create_by(1, 1, vec![Box::new(bad_guard)]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.is_revert(), "{}", err);
     assert!(err.contains("must succeed at least"), "{}", err);
@@ -975,7 +1006,7 @@ fn test_ast_if_rethrow_preserves_revert_kind() {
     let br_else = AstSelect::create_by(1, 1, vec![Box::new(else_guard)]);
 
     let act = AstIf::create_by(cond, AstSelect::nop(), br_else);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.is_revert(), "{}", err);
 }
@@ -1049,9 +1080,7 @@ fn test_balance_floor_empty_and_duplicate_asset_rejected() {
 
     let mut empty = BalanceFloor::new();
     empty.addr = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
-    let err = ctx
-        .action_call(BalanceFloor::KIND, empty.serialize()[2..].to_vec())
-        .unwrap_err();
+    let err = empty.execute(&mut ctx).unwrap_err();
     assert!(err.contains("is empty"), "{}", err);
 
     let mut dup = BalanceFloor::new();
@@ -1063,9 +1092,7 @@ fn test_balance_floor_empty_and_duplicate_asset_rejected() {
     dup.assets
         .push(AssetAmt::from(9527u64, 2u64).unwrap())
         .unwrap();
-    let err = ctx
-        .action_call(BalanceFloor::KIND, dup.serialize()[2..].to_vec())
-        .unwrap_err();
+    let err = dup.execute(&mut ctx).unwrap_err();
     assert!(err.contains("duplicate"), "{}", err);
 }
 
@@ -1109,18 +1136,14 @@ fn test_balance_floor_success_and_insufficient() {
     ok.assets
         .push(AssetAmt::from(88u64, 7u64).unwrap())
         .unwrap();
-    let _ = ctx
-        .action_call(BalanceFloor::KIND, ok.serialize()[2..].to_vec())
-        .unwrap();
+    let _ = ok.execute(&mut ctx).unwrap();
 
     let mut bad = BalanceFloor::new();
     bad.addr = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
     bad.assets
         .push(AssetAmt::from(88u64, 10u64).unwrap())
         .unwrap();
-    let err = ctx
-        .action_call(BalanceFloor::KIND, bad.serialize()[2..].to_vec())
-        .unwrap_err();
+    let err = bad.execute(&mut ctx).unwrap_err();
     assert!(err.contains("lower than floor"), "{}", err);
 }
 

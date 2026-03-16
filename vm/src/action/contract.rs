@@ -7,9 +7,8 @@ macro_rules! vmsto {
     };
 }
 
-action_define! { ContractDeploy, 40,
-    ActLv::TopOnlyWithGuard,
-    false, [],
+action_define!{ ContractDeploy, 40,
+    ActScope::TOP_ONLY_WITH_GUARD, false, [],
     {
         protocol_cost: Amount
         nonce: Uint4
@@ -61,9 +60,8 @@ action_define! { ContractDeploy, 40,
     })
 }
 
-action_define! { ContractUpdate, 41,
-    ActLv::TopOnlyWithGuard, // level
-    false, [], // burn 90% fee
+action_define!{ ContractUpdate, 41,
+    ActScope::TOP_ONLY_WITH_GUARD, false, [],
     {
         protocol_cost: Amount
         address: Address // contract address

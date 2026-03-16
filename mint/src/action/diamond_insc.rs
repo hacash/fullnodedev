@@ -178,10 +178,8 @@ fn add_diamond_insc_burn_count(state: &mut CoreState, pfee: &Amount) -> Rerr {
 /*
 *
 */
-action_define! { DiaInscPush, 32,
-    ActLv::Top, // level
-    true, // burn 90 fee
-    [], // need sign
+action_define!{ DiaInscPush, 32,
+    ActScope::TOP, true, [], 
     {
         diamonds         : DiamondNameListMax200
         protocol_cost    : Amount
@@ -245,10 +243,8 @@ fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>
 
 /************************************ */
 
-action_define! { DiaInscClean, 33,
-    ActLv::Top, // level
-    true, // burn 90 fee
-    [], // need sign
+action_define!{ DiaInscClean, 33,
+    ActScope::TOP, true, [], 
     {
         diamonds      : DiamondNameListMax200
         protocol_cost : Amount
@@ -314,10 +310,8 @@ fn diamond_inscription_clean(
 */
 
 
-action_define! { DiaInscEdit, 34,
-    ActLv::MainCall, // level
-    true, // burn 90% fee
-    [], // need sign
+action_define!{ DiaInscEdit, 34,
+    ActScope::TOP, true, [], 
     {
         diamond           : DiamondName
         index             : Uint1
@@ -383,10 +377,8 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
 /************************************** */
 
 
-action_define! { DiaInscMove, 35,
-    ActLv::Ast, // level
-    true, // urn fee
-    [], // need sign
+action_define!{ DiaInscMove, 35,
+    ActScope::TOP, true, [], 
     {
         from_diamond    : DiamondName
         to_diamond      : DiamondName
@@ -475,10 +467,8 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
 
 /************************************ */
 
-action_define! { DiaInscDrop, 36,
-    ActLv::Top, // level
-    true, // burn 90 fee
-    [], // need sign
+action_define!{ DiaInscDrop, 36,
+    ActScope::TOP, true, [], 
     {
         diamond           : DiamondName
         index             : Uint1

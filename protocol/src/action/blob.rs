@@ -1,8 +1,7 @@
 
 
 action_define!{ TxMessage, 0x0401, 
-    ActLv::Guard, // level
-    false, [],
+    ActScope::GUARD, false, [],
     {
         data:    BytesW1
     },
@@ -14,8 +13,7 @@ action_define!{ TxMessage, 0x0401,
 
 
 action_define!{ TxBlob, 0x0402, 
-    ActLv::Guard, // level
-    false, [],
+    ActScope::GUARD, false, [],
     {
         data:    BytesW2
     },

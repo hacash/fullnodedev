@@ -1,8 +1,7 @@
 
 
-action_define!{ ContractMainCall, 45, 
-    ActLv::Ast, // level
-    false, [],
+action_define!{ ContractMainCall, 44, 
+    ActScope::AST, false, [],
     {
         marks: Fixed3
         codeconf: Uint1

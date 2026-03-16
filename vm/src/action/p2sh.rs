@@ -40,8 +40,7 @@ pub struct ScriptmhCalc {
 
 /* pay to script hash */
 action_define!{ P2SHScriptProve, 46, 
-    ActLv::Top, // level
-    false, [],
+    ActScope::TOP, false, [],
     {
         // calc hash: script + calibs
         argvkey: BytesW2 // unlock witness bytes (not executed)

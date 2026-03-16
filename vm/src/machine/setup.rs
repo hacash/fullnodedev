@@ -1,15 +1,3 @@
-fn with_vm_call_level<T>(
-    ctx: &mut dyn Context,
-    entry: EntryKind,
-    f: impl FnOnce(&mut dyn Context) -> T,
-) -> T {
-    let old_level = ctx.level();
-    ctx.level_set(entry.action_level());
-    let res = f(ctx);
-    ctx.level_set(old_level);
-    res
-}
-
 fn ensure_vm_run_ready(ctx: &dyn Context) -> Rerr {
     const TY3: u8 = TransactionType3::TYPE;
     let txty = ctx.env().tx.ty;
@@ -31,7 +19,7 @@ fn setup_vm_run_entry(
     param: Value,
 ) -> Ret<(i64, Value)> {
     ensure_vm_run_ready(ctx)?;
-    let res = with_vm_call_level(ctx, entry, |ctx| {
+    let res = with_exec_from(ctx, ExecFrom::Call, |ctx| {
         ctx.vm_call(entry as u8, target, payload, Box::new(param))
             .into_tret()
     });
@@ -46,19 +34,30 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
         Nil => None,
         Bool(false) => None,
         Bool(true) => Some("code 1".to_owned()),
-        U8(n)   => (*n != 0).then(|| format!("code {}", n)),
-        U16(n)  => (*n != 0).then(|| format!("code {}", n)),
-        U32(n)  => (*n != 0).then(|| format!("code {}", n)),
-        U64(n)  => (*n != 0).then(|| format!("code {}", n)),
+        U8(n) => (*n != 0).then(|| format!("code {}", n)),
+        U16(n) => (*n != 0).then(|| format!("code {}", n)),
+        U32(n) => (*n != 0).then(|| format!("code {}", n)),
+        U64(n) => (*n != 0).then(|| format!("code {}", n)),
         U128(n) => (*n != 0).then(|| format!("code {}", n)),
-        Bytes(buf) => maybe!(buf_is_empty_or_all_zero(buf), None, Some(match ascii_show_string(buf) {
-            Some(s) => format!("bytes {:?}", s),
-            None => format!("bytes 0x{}", buf.to_hex()),
-        })),
-        Value::Address(a) => maybe!(buf_is_empty_or_all_zero(a.as_bytes()), None, 
+        Bytes(buf) => maybe!(
+            buf_is_empty_or_all_zero(buf),
+            None,
+            Some(match ascii_show_string(buf) {
+                Some(s) => format!("bytes {:?}", s),
+                None => format!("bytes 0x{}", buf.to_hex()),
+            })
+        ),
+        Value::Address(a) => maybe!(
+            buf_is_empty_or_all_zero(a.as_bytes()),
+            None,
             Some(format!("address {}", a.to_readable()))
         ),
-        HeapSlice(_) => return Err(XError::fault(format!("{} return type HeapSlice is not supported", err_msg))),
+        HeapSlice(_) => {
+            return Err(XError::fault(format!(
+                "{} return type HeapSlice is not supported",
+                err_msg
+            )))
+        }
         Tuple(_) | Compo(_) => Some(format!("object {}", rv.to_json())),
     };
     match detail {

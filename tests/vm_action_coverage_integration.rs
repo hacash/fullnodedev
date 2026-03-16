@@ -2,7 +2,7 @@
 mod action_coverage {
     use std::sync::Once;
 
-    use basis::component::{ACTION_CTX_LEVEL_CALL_CONTRACT, ACTION_CTX_LEVEL_CALL_MAIN};
+    use basis::component::ExecFrom;
     use basis::interface::ActExec;
     use basis::interface::{
         Context, Logs, State, StateOperat, Transaction, TransactionRead, TxDriverContext,
@@ -103,11 +103,11 @@ mod action_coverage {
         ctx: &mut dyn TxDriverContext,
         codes: Vec<u8>,
     ) -> Ret<Value> {
-        // `Machine::main_call` itself does not mutate ctx.level; simulate protocol's call-level setup.
-        let old_level = ctx.level();
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+        // `Machine::main_call` itself does not mutate ctx.exec_from; simulate protocol CALL context.
+        let old_from = ctx.exec_from();
+        ctx.exec_from_set(ExecFrom::Call);
         let res = execute_main_bytecode(ctx, codes);
-        ctx.level_set(old_level);
+        ctx.exec_from_set(old_from);
         res
     }
 
@@ -280,7 +280,7 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+        ctx.exec_from_set(ExecFrom::Call);
 
         let err = TxBlob::new().execute(&mut ctx).unwrap_err();
         assert!(err.contains("GUARD"), "{err}");
@@ -430,11 +430,11 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+        ctx.exec_from_set(ExecFrom::Call);
 
         let act = ContractMainCall::from_bytecode(lang_to_bytecode("return 0").unwrap()).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("max ctx level"), "{err}");
+        assert!(err.contains("AST") && err.contains("CALL"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════
@@ -1103,9 +1103,9 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        // keep level as TOP and fast_sync=false
+        // keep exec_from as TOP and fast_sync=false
         let err = EnvMainAddr::new().execute(&mut ctx).unwrap_err();
-        assert!(err.contains("VM call context"), "{err}");
+        assert!(err.contains("CALL_ONLY") && err.contains("TOP"), "{err}");
     }
 
     #[test]
@@ -1120,14 +1120,14 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+        ctx.exec_from_set(ExecFrom::Call);
 
         let (_, res) = EnvMainAddr::new().execute(&mut ctx).unwrap();
         assert_eq!(res, main.to_vec());
     }
 
     #[test]
-    fn ctx_action_call_env_main_addr_rejects_top_level_when_not_fast_sync() {
+    fn ctx_action_call_env_main_addr_uses_call_context_when_not_fast_sync() {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
@@ -1140,8 +1140,8 @@ mod action_coverage {
             Box::new(MemLogs::default()),
         );
 
-        let err = ctx.action_call(EnvMainAddr::KIND, vec![]).unwrap_err();
-        assert!(err.contains("VM call context"), "{err}");
+        let (_, res) = ctx.action_call(EnvMainAddr::KIND, vec![]).unwrap();
+        assert_eq!(res, main.to_vec());
     }
 
     #[test]
@@ -1157,7 +1157,7 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+        ctx.exec_from_set(ExecFrom::Call);
 
         let (_, res) = ctx.action_call(EnvMainAddr::KIND, vec![]).unwrap();
         assert_eq!(res, main.to_vec());
@@ -1178,7 +1178,7 @@ mod action_coverage {
 
         let body = ContractDeploy::new().serialize()[2..].to_vec();
         let err = ctx.action_call(ContractDeploy::KIND, body).unwrap_err();
-        assert!(err.contains("tx action loop"), "{err}");
+        assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════
@@ -1281,7 +1281,7 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_CONTRACT);
+        ctx.exec_from_set(ExecFrom::Call);
 
         let (_, res) = EnvHeight::new().execute(&mut ctx).unwrap();
         assert_eq!(res, 55u64.to_be_bytes().to_vec());
@@ -1396,11 +1396,11 @@ mod action_coverage {
         let mut act = ViewCheckSign::new();
         act.addr = main;
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("VM call context"), "{err}");
+        assert!(err.contains("CALL_ONLY") && err.contains("TOP"), "{err}");
     }
 
     #[test]
-    fn ctx_action_call_view_check_sign_rejects_top_level_when_not_fast_sync() {
+    fn ctx_action_call_view_check_sign_uses_call_context_when_not_fast_sync() {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
@@ -1416,8 +1416,8 @@ mod action_coverage {
         let mut act = ViewCheckSign::new();
         act.addr = main;
         let body = act.serialize()[2..].to_vec();
-        let err = ctx.action_call(ViewCheckSign::KIND, body).unwrap_err();
-        assert!(err.contains("VM call context"), "{err}");
+        let (_, res) = ctx.action_call(ViewCheckSign::KIND, body).unwrap();
+        assert_eq!(res, vec![0]);
     }
 
     #[test]
@@ -1433,7 +1433,7 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+        ctx.exec_from_set(ExecFrom::Call);
 
         let mut act = ViewCheckSign::new();
         act.addr = main;
@@ -1742,7 +1742,7 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.level_set(ACTION_CTX_LEVEL_CALL_MAIN);
+        ctx.exec_from_set(ExecFrom::Call);
 
         let mut act = P2SHScriptProve::new();
         act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();

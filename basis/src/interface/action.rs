@@ -12,7 +12,7 @@ pub trait Description {
 
 pub trait Action : ActExec + Field + Description + Send + Sync + DynClone + std::fmt::Debug {
     fn kind(&self) -> u16 { never!() }
-    fn level(&self) -> ActLv { ActLv::Top }
+    fn scope(&self) -> ActScope { ActScope::TOP }
     fn burn_90(&self) -> bool { false } // is_burning_90_persent_fee
     fn req_sign(&self) -> Vec<AddrOrPtr> { vec![] } // request_need_sign_addresses
 

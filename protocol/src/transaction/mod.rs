@@ -19,9 +19,9 @@ include! {"store.rs"}
 /*
 * define
 */
-transaction_define! { TransactionType1, 1u8 }
-transaction_define! { TransactionType2, 2u8 }
-transaction_define! { TransactionType3, 3u8 }
+transaction_define!{ TransactionType1, 1u8 }
+transaction_define!{ TransactionType2, 2u8 }
+transaction_define!{ TransactionType3, 3u8 }
 
 /*
 * register

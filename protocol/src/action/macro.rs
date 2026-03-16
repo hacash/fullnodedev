@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! action_define {
-    ($class:ident, $kid:expr, $lv:expr, $burn90:expr, $reqsign:expr,
+    ($class:ident, $kid:expr, $scope:expr, $burn90:expr, $reqsign:expr,
         { $( $item:ident : $ty:ty )* },
         ($dself:ident, $desc:expr),
         ($pself:ident, $pctx:ident, $pgas:ident $exec:expr)
@@ -96,11 +96,7 @@ macro_rules! action_define {
             fn execute(&$pself, $pctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
                 use std::any::Any;
                 if !$pctx.env().chain.fast_sync {
-                    check_action_level(
-                        $pctx.level(),
-                        $pctx.action_exec_from(),
-                        $pself,
-                    ).into_xret()?;
+                    check_action_scope($pctx.exec_from(), $pself).into_xret()?;
                 }
                 // act size is base gas use
                 // NOTE: burn_90 gas multiplier is applied at gas-charge sites
@@ -122,7 +118,7 @@ macro_rules! action_define {
 
         impl Action for $class {
             fn kind(&self) -> u16 { *self.kind }
-            fn level(&self) -> ActLv { $lv }
+            fn scope(&self) -> ActScope { $scope }
             fn burn_90(&$pself) -> bool { $burn90 }
             fn req_sign(&$pself) -> Vec<AddrOrPtr> { $reqsign.to_vec() } // request_need_sign_addresses
             fn as_any(&self) -> &dyn Any { self }
@@ -142,12 +138,12 @@ macro_rules! action_define {
 
     };
 
-    ($class:ident, $kid:expr, $lv:expr, $burn90:expr, $reqsign:expr,
+    ($class:ident, $kid:expr, $scope:expr, $burn90:expr, $reqsign:expr,
         { $( $item:ident : $ty:ty )* },
         ($pself:ident, $pctx:ident, $pgas:ident $exec:expr)
     ) => {
         action_define!{
-            $class, $kid, $lv, $burn90, $reqsign, { $( $item : $ty )* },
+            $class, $kid, $scope, $burn90, $reqsign, { $( $item : $ty )* },
             (self, "".to_owned()),
             ($pself, $pctx, $pgas $exec)
         }
@@ -215,9 +211,9 @@ macro_rules! action_register {
 //////////////////// TEST  ////////////////////
 
 // test define action
-action_define! { Test63856464969364, 9527,
-    ActLv::MainCall, // level
-    false, // burn 90 fee
+action_define!{ Test63856464969364, 9527,
+    ActScope::CALL, // scope
+    false,
     [],
     {
         id: Uint1

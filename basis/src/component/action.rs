@@ -1,49 +1,102 @@
-
-pub const ACTION_CTX_LEVEL_TOP: usize = 0;
-pub const ACTION_CTX_LEVEL_CALL_BASE: usize = 100;
 pub const TX_ACTIONS_MAX: usize = 200;
-pub const ACTION_CTX_LEVEL_CALL_MAIN: usize = ACTION_CTX_LEVEL_CALL_BASE;
-pub const ACTION_CTX_LEVEL_CALL_CONTRACT: usize = ACTION_CTX_LEVEL_CALL_BASE + 1;
-pub const ACTION_CTX_LEVEL_AST_MAX: usize = ACTION_CTX_LEVEL_CALL_BASE - 1;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ActExecFrom {
-    TxLoop,
-    AstWrap,
-    ActionCall,
+pub enum ExecFrom {
+    Top,
+    Ast,
+    Call,
 }
 
-// Placement semantics: except AnyInCall, a level means the action may execute
-// on that layer or any shallower layer; Guard also cannot enter ActionCall.
-// All Top* variants are handled by dedicated branches in check_action_level
-// and never fall through to the generic max_ctx_level() path.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ActLv {
-    TopOnly,          // top, single action only
-    TopOnlyWithGuard, // top, single non-guard + guards
-    TopUnique,        // top, unique by kind
-    Top,              // must on top
-    Guard,            // env constraint, tx-loop or AST only (ctx <= 99), never ActionCall
-    Ast,              // AST and above (ctx <= 99)
-    MainCall,         // up to main call (ctx <= 100)
-    ContractCall,     // up to contract call (ctx <= 101)
-    AnyInCall,        // only from ActionCall, regardless of ctx_level
-    Any,              // any context
-}
-
-
-impl ActLv {
-
-    pub fn max_ctx_level(&self) -> Option<usize> {
-        use ActLv::*;
+impl ExecFrom {
+    pub const fn name(self) -> &'static str {
         match self {
-            // Top* variants are checked by dedicated branches; this arm is defensive only.
-            TopOnly | TopOnlyWithGuard | TopUnique | Top => Some(ACTION_CTX_LEVEL_TOP),
-            Guard | Ast => Some(ACTION_CTX_LEVEL_AST_MAX),
-            MainCall => Some(ACTION_CTX_LEVEL_CALL_MAIN),
-            ContractCall => Some(ACTION_CTX_LEVEL_CALL_CONTRACT),
-            AnyInCall => None, // checked by execution origin in check_action_level
-            Any => None, // truly unlimited
+            Self::Top => "TOP",
+            Self::Ast => "AST",
+            Self::Call => "CALL",
         }
+    }
+}
+
+impl core::fmt::Display for ExecFrom {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum TopRule {
+    None,
+    Only,
+    OnlyWithGuard,
+    Unique,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ActScope {
+    Top { rule: TopRule },
+    Ast,
+    Guard,
+    Call { only: bool },
+}
+
+impl ActScope {
+    pub const TOP: Self = Self::Top {
+        rule: TopRule::None,
+    };
+    pub const TOP_ONLY: Self = Self::Top {
+        rule: TopRule::Only,
+    };
+    pub const TOP_ONLY_WITH_GUARD: Self = Self::Top {
+        rule: TopRule::OnlyWithGuard,
+    };
+    pub const TOP_UNIQUE: Self = Self::Top {
+        rule: TopRule::Unique,
+    };
+    pub const AST: Self = Self::Ast;
+    pub const GUARD: Self = Self::Guard;
+    pub const CALL: Self = Self::Call { only: false };
+    pub const CALL_ONLY: Self = Self::Call { only: true };
+
+    pub const fn top_rule(self) -> Option<TopRule> {
+        match self {
+            Self::Top { rule } => Some(rule),
+            _ => None,
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Top {
+                rule: TopRule::None,
+            } => "TOP",
+            Self::Top {
+                rule: TopRule::Only,
+            } => "TOP_ONLY",
+            Self::Top {
+                rule: TopRule::OnlyWithGuard,
+            } => "TOP_ONLY_WITH_GUARD",
+            Self::Top {
+                rule: TopRule::Unique,
+            } => "TOP_UNIQUE",
+            Self::Ast => "AST",
+            Self::Guard => "GUARD",
+            Self::Call { only: false } => "CALL",
+            Self::Call { only: true } => "CALL_ONLY",
+        }
+    }
+
+    pub const fn allows(self, from: ExecFrom) -> bool {
+        match self {
+            Self::Top { .. } => matches!(from, ExecFrom::Top),
+            Self::Ast | Self::Guard => !matches!(from, ExecFrom::Call),
+            Self::Call { only: false } => true,
+            Self::Call { only: true } => matches!(from, ExecFrom::Call),
+        }
+    }
+}
+
+impl core::fmt::Display for ActScope {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.name())
     }
 }

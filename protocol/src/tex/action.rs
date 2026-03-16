@@ -3,9 +3,7 @@
 * simple hac to
 */
 action_define!{ TexCellAct, 22, 
-    ActLv::Top, // level
-    true, // burn 90 fee
-    [], // need sign
+    ActScope::TOP, true, [], 
     {
         addr  : Address
         cells : DnyTexCellW1

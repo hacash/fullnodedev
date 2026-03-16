@@ -1,5 +1,5 @@
-action_define! { AstSelect, 25,
-    ActLv::Ast, // level
+action_define!{ AstSelect, 25,
+    ActScope::AST,
     // burn 90 fee, check any sub child action
     self.actions.as_list().iter().any(|a|a.burn_90()),
     self.collect_req_sign(),

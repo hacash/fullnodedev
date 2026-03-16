@@ -24,6 +24,8 @@ pub trait TransactionRead : Serialize + TxExec + Send + Sync + DynClone + std::f
     fn fee_pay(&self) -> Amount { Amount::zero() }
     fn fee_got(&self) -> Amount { Amount::zero() }
     fn fee_extend(&self) -> Ret<u8> { err!("cannot get fee extension") }
+    fn raw_gas_max(&self) -> u8 { 0 }
+    fn raw_ano_mark(&self) -> u8 { 0 }
     fn fee_purity(&self) -> u64 { 0 }
     
     fn message(&self) -> &Fixed16 { Fixed16::zero_ref() }
@@ -64,4 +66,3 @@ pub trait Transaction : TransactionRead + Field + Send + Sync {
 
 clone_trait_object!(TransactionRead);
 clone_trait_object!(Transaction);
-

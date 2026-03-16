@@ -3,9 +3,7 @@
 *
 */
 action_define!{ SatToTrs, 10, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [], // need sign
+    ActScope::CALL, false, [],
     {
         to        : AddrOrPtr
         satoshi   : Satoshi 
@@ -31,9 +29,10 @@ impl SatToTrs {
 
 
 action_define!{ SatFromTrs, 11, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [self.from], // need sign
+    ActScope::CALL, false, 
+    [
+        self.from
+    ],
     {
         from      : AddrOrPtr
         satoshi   : Satoshi   
@@ -60,9 +59,10 @@ impl SatFromTrs {
 
 
 action_define!{ SatFromToTrs, 12, 
-    ActLv::MainCall, // level
-    false, // burn 90 fee
-    [self.from], // need sign
+    ActScope::CALL, false, 
+    [
+        self.from
+    ],
     {
         from      : AddrOrPtr
         to        : AddrOrPtr

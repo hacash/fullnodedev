@@ -86,12 +86,22 @@ pub fn validate_ast_select(min: usize, max: usize, num: usize) -> Ret<()> {
 }
 
 pub(crate) fn is_ast_container_action(act: &dyn Action) -> bool {
-    act.as_any().downcast_ref::<AstSelect>().is_some() || act.as_any().downcast_ref::<AstIf>().is_some()
+    act.as_any().downcast_ref::<AstSelect>().is_some()
+        || act.as_any().downcast_ref::<AstIf>().is_some()
 }
 
-pub(crate) fn get_action_childs<'a>(act: &'a dyn Action) -> Option<Vec<&'a dyn Action>> {
+pub(crate) fn get_action_level_inc_and_childs<'a>(
+    act: &'a dyn Action,
+) -> Option<(usize, Vec<&'a dyn Action>)> {
     if let Some(ast) = act.as_any().downcast_ref::<AstSelect>() {
-        return Some(ast.actions.as_list().iter().map(|sub| sub.as_ref()).collect());
+        return Some((
+            1,
+            ast.actions
+                .as_list()
+                .iter()
+                .map(|sub| sub.as_ref())
+                .collect(),
+        ));
     }
     if let Some(ast) = act.as_any().downcast_ref::<AstIf>() {
         let cond = ast.cond.actions.as_list();
@@ -101,27 +111,16 @@ pub(crate) fn get_action_childs<'a>(act: &'a dyn Action) -> Option<Vec<&'a dyn A
         childs.extend(cond.iter().map(|sub| sub.as_ref()));
         childs.extend(br_if.iter().map(|sub| sub.as_ref()));
         childs.extend(br_else.iter().map(|sub| sub.as_ref()));
-        return Some(childs);
+        // Weighted AST depth keeps AstIf aligned with current control-flow charging:
+        // one level for evaluating `cond`, one level for executing the selected branch.
+        return Some((2, childs));
     }
     None
 }
 
-/// Enter an AST branch node: increment level and set exec_from to AstWrap.
-/// Returns a guard that restores both level and exec_from on drop.
-pub fn ast_enter(ctx: &mut dyn Context) -> Ret<AstLevelGuard<'_>> {
-    let old_level = ctx.level();
-    let old_exec_from = ctx.action_exec_from();
-    let next = match old_level.checked_add(1) {
-        Some(v) => v,
-        None => return errf!("ast ctx level overflow"),
-    };
-    ctx.level_set(next);
-    ctx.action_exec_from_set(ActExecFrom::AstWrap);
-    Ok(AstLevelGuard {
-        ctx,
-        old_level,
-        old_exec_from,
-    })
+/// Enter an AST branch node and restore the previous execution context on drop.
+pub fn ast_enter(ctx: &mut dyn Context) -> Ret<ExecFromGuard<'_>> {
+    Ok(enter_exec_from(ctx, ExecFrom::Ast))
 }
 
 /// `Ok` => continue with value, `Revert` => skip (continue without value), `Fault` => rethrow.
@@ -130,25 +129,6 @@ pub fn ast_revert_continue<T>(out: XRet<T>) -> Ret<Option<T>> {
         Ok(v) => Ok(Some(v)),
         Err(XError::Revert(_)) => Ok(None),
         Err(e) => Err(e.into()), // XError → Error preserves fault semantics
-    }
-}
-
-pub struct AstLevelGuard<'a> {
-    ctx: &'a mut dyn Context,
-    old_level: usize,
-    old_exec_from: ActExecFrom,
-}
-
-impl AstLevelGuard<'_> {
-    pub fn ctx(&mut self) -> &mut dyn Context {
-        self.ctx
-    }
-}
-
-impl Drop for AstLevelGuard<'_> {
-    fn drop(&mut self) {
-        self.ctx.level_set(self.old_level);
-        self.ctx.action_exec_from_set(self.old_exec_from);
     }
 }
 

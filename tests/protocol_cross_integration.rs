@@ -137,8 +137,8 @@ impl Action for AstTestSet {
     fn kind(&self) -> u16 {
         65001
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -206,8 +206,8 @@ impl Action for AstTestGasOnly {
     fn kind(&self) -> u16 {
         65030
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -271,8 +271,8 @@ impl Action for AstTestFail {
     fn kind(&self) -> u16 {
         65002
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -297,7 +297,7 @@ fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
     let br_else = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(3, 33))]);
     let astif = AstIf::create_by(cond, br_if, br_else);
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 1), Some(11)); // cond committed
@@ -540,7 +540,7 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     ctx.state().set(vec![9], vec![99]); // parent baseline
 
     let old = ctx.state_fork(); // tx-level isolation
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = tx.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least"), "{}", err);
     ctx.state_recover(old); // tx-level rollback on failure
@@ -577,7 +577,7 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(54, 54))]),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     outer_if.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 50), Some(50)); // outer cond
@@ -612,7 +612,7 @@ fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
     bls.hacash = Amount::unit238(5_000_000_000);
     state.balance_set(&tx.main(), &bls);
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = tx.execute(&mut ctx).unwrap_err();
     assert!(err.contains("gas has run out"), "{}", err);
 }
@@ -645,7 +645,7 @@ fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
     let outer = AstSelect::create_list(vec![Box::new(inner_1), Box::new(inner_2)]);
 
     let before = ctx.gas_remaining();
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     outer.execute(&mut ctx).unwrap();
     let after = ctx.gas_remaining();
 
@@ -704,7 +704,7 @@ fn test_ast_tx_gas_settlement_charges_fee_plus_used_and_refunds_unused() {
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(5_000_000_000)).unwrap();
 
     let before = ast_hac_balance(&mut ctx, &main);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     tx.execute(&mut ctx).unwrap();
     let after = ast_hac_balance(&mut ctx, &main);
 
@@ -745,7 +745,7 @@ fn test_ast_nested_select_failure_does_not_leak_into_outer_select() {
         ],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     outer.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 60), Some(60));
@@ -785,7 +785,7 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     ctx.state().set(vec![79], vec![79]); // baseline
 
     let old = ctx.state_fork();
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = tx.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least"), "{}", err);
     ctx.state_recover(old);
@@ -831,7 +831,7 @@ fn test_ast_deep_4level_success_path_commits_expected_state() {
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(88, 88))]),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     lvl1_if.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 80), Some(80));
@@ -883,7 +883,7 @@ fn test_ast_deep_4level_failed_branch_isolated_by_outer_select() {
         ],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     lvl1_outer_select.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 90), Some(90));
@@ -974,8 +974,8 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
         fn kind(&self) -> u16 {
             65003
         }
-        fn level(&self) -> ActLv {
-            ActLv::Ast
+        fn scope(&self) -> ActScope {
+            ActScope::AST
         }
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -1006,7 +1006,7 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
         ],
     );
     let act = AstSelect::create_by(0, 1, vec![Box::new(inner)]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
     assert_eq!(ctx.tex_ledger().zhu, old_tex.zhu);
     assert_eq!(ctx.tex_ledger().sat, old_tex.sat);
@@ -1070,8 +1070,8 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
         fn kind(&self) -> u16 {
             65004
         }
-        fn level(&self) -> ActLv {
-            ActLv::Ast
+        fn scope(&self) -> ActScope {
+            ActScope::AST
         }
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -1099,7 +1099,7 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
             Box::new(AstTestFail::new()),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least"));
     assert!(ctx.p2sh(&new_adr).is_err());
@@ -1235,7 +1235,7 @@ fn test_tex_action_signature_rejects_payload_tamper() {
     act.add_cell(Box::new(CellCondHeightAtMost::new(100)))
         .unwrap();
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.contains("signature verification failed"));
 }
@@ -1295,8 +1295,8 @@ impl Action for AstTestLog {
     fn kind(&self) -> u16 {
         65005
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -1360,8 +1360,8 @@ impl Action for AstTestTexAdd {
     fn kind(&self) -> u16 {
         65006
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -1435,8 +1435,8 @@ impl Action for AstTestP2shSetN {
     fn kind(&self) -> u16 {
         65007
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -1511,8 +1511,8 @@ impl Action for AstTestCombo {
     fn kind(&self) -> u16 {
         65008
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -1569,7 +1569,7 @@ fn test_ast_if_branch_fail_recovers_whole_snap() {
         AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]),
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(202, 202))]),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = astif.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least") || err.contains("ast test forced fail"));
 
@@ -1598,7 +1598,7 @@ fn test_ast_if_else_branch_fail_recovers_whole_snap() {
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(210, 210))]),
         AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = astif.execute(&mut ctx).unwrap_err();
     assert!(err.contains("ast test forced fail") || err.contains("must succeed at least"));
     assert_eq!(ast_state_get_u8(&mut ctx, 210), None);
@@ -1621,7 +1621,7 @@ fn test_ast_select_validation_early_return_no_state_leak() {
 
     // min > max: invalid
     let bad = AstSelect::create_by(3, 1, vec![Box::new(AstTestSet::create_by(221, 221))]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = bad.execute(&mut ctx).unwrap_err();
     assert!(err.contains("max cannot be less than min"));
 
@@ -1657,7 +1657,7 @@ fn test_ast_select_logs_truncated_on_child_failure() {
             Box::new(AstTestFail::new()), // fails, its snap should recover logs
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     // Only child1's log should remain (child2 failed -> no log from it, but AstTestFail doesn't log)
@@ -1693,7 +1693,7 @@ fn test_ast_if_branch_fail_truncates_logs() {
         ),
         AstSelect::create_list(vec![Box::new(AstTestLog::create_by(12))]),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _err = astif.execute(&mut ctx).unwrap_err();
 
     // All logs from cond and br_if must be rolled back
@@ -1726,7 +1726,7 @@ fn test_ast_select_tex_ledger_restored_on_failure() {
             Box::new(AstTestFail::new()),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     // child1's tex change committed, child2 never modified tex (AstTestFail doesn't touch it)
@@ -1753,7 +1753,7 @@ fn test_ast_if_fail_rolls_back_tex_ledger() {
         AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _err = astif.execute(&mut ctx).unwrap_err();
 
     // whole_snap recover must restore tex_ledger
@@ -1793,7 +1793,7 @@ fn test_ast_select_p2sh_kept_on_success_removed_on_failure() {
             Box::new(inner_fail),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     let adr30 = Address::create_scriptmh([30u8; 20]);
@@ -1821,7 +1821,7 @@ fn test_ast_select_min_zero_all_fail_succeeds() {
         2,
         vec![Box::new(AstTestFail::new()), Box::new(AstTestFail::new())],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap(); // should succeed
 
     assert_eq!(ast_state_get_u8(&mut ctx, 230), Some(230)); // baseline intact
@@ -1851,7 +1851,7 @@ fn test_ast_combo_all_channels_restored_on_failure() {
             Box::new(AstTestFail::new()),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least"));
 
@@ -1890,7 +1890,7 @@ fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
             Box::new(AstTestCombo::create_by(252, 3)),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     // child1 and child3 committed, inner_if rolled back
@@ -1928,7 +1928,7 @@ fn test_ast_state_overwrite_in_failed_branch_does_not_leak() {
         ],
     );
     let act = AstSelect::create_by(0, 1, vec![Box::new(inner)]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     // Original value must be preserved
@@ -1963,7 +1963,7 @@ fn test_ast_if_else_with_nested_select_partial_success() {
             ],
         ),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 160), Some(160));
@@ -1995,7 +1995,7 @@ fn test_ast_all_channels_committed_on_success() {
         ]),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 170), Some(1));
@@ -2032,7 +2032,7 @@ fn test_ast_double_nested_if_inner_else_outer_if() {
         ]),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     outer_if.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 182), Some(182)); // outer cond
@@ -2064,7 +2064,7 @@ fn test_ast_select_stops_at_max() {
             Box::new(AstTestSet::create_by(193, 4)), // should not execute
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 190), Some(1));
@@ -2088,7 +2088,7 @@ fn test_ast_select_max_gt_num_rejected_no_leak() {
     ctx.state().set(vec![1], vec![1]);
 
     let bad = AstSelect::create_by(1, 5, vec![Box::new(AstTestSet::create_by(2, 2))]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = bad.execute(&mut ctx).unwrap_err();
     assert!(err.contains("max cannot exceed list num"));
 
@@ -2114,12 +2114,12 @@ fn test_ast_sequential_operations_on_same_context() {
 
     // Op 1: fails
     let fail_act = AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _ = fail_act.execute(&mut ctx);
 
     // Op 2: succeeds
     let ok_act = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(150, 150))]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     ok_act.execute(&mut ctx).unwrap();
     assert_eq!(ast_state_get_u8(&mut ctx, 150), Some(150));
 
@@ -2129,7 +2129,7 @@ fn test_ast_sequential_operations_on_same_context() {
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(152, 152))]),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     if_act.execute(&mut ctx).unwrap();
     assert_eq!(ast_state_get_u8(&mut ctx, 151), Some(151));
     assert_eq!(ast_state_get_u8(&mut ctx, 152), Some(152));
@@ -2154,7 +2154,7 @@ fn test_ast_p2sh_duplicate_address_rejected() {
 
     // Try to set same address inside AST -> should fail
     let act = AstSelect::create_list(vec![Box::new(AstTestP2shSetN::create_by(50))]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(
         err.contains("already proved") || err.contains("must succeed at least"),
@@ -2195,7 +2195,7 @@ fn test_ast_p2sh_rollback_allows_retry_in_next_child() {
             Box::new(AstTestP2shSetN::create_by(60)),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     let adr60 = Address::create_scriptmh([60u8; 20]);
@@ -2257,8 +2257,8 @@ impl Action for AstTestVMCall {
     fn kind(&self) -> u16 {
         65009
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -2395,8 +2395,8 @@ impl Action for AstTestVmInitReplace {
     fn kind(&self) -> u16 {
         65017
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -2549,8 +2549,8 @@ impl Action for AstTestDeepDelayVmInit {
     fn kind(&self) -> u16 {
         65019
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -2622,8 +2622,8 @@ impl Action for AstTestDeepDelayVmCall {
     fn kind(&self) -> u16 {
         65020
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -2765,8 +2765,8 @@ impl Action for AstTestBugVmCall {
     fn kind(&self) -> u16 {
         65016
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -2811,7 +2811,7 @@ fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
             Box::new(AstTestBugVmCall::ok(5)),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(remaining.load(std::sync::atomic::Ordering::SeqCst), 65);
@@ -2833,7 +2833,7 @@ fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
     ctx.test_set_vm(vm);
 
     let act = AstSelect::create_by(0, 1, vec![Box::new(AstTestBugVmCall::fail(20))]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(remaining.load(std::sync::atomic::Ordering::SeqCst), 80);
@@ -2862,7 +2862,7 @@ fn test_ast_bug_control_all_success_children_no_burn_gap() {
             Box::new(AstTestBugVmCall::ok(5)),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     let rem = remaining.load(std::sync::atomic::Ordering::SeqCst);
@@ -2887,7 +2887,7 @@ fn test_ast_bug_control_min_zero_success_child_charged() {
     ctx.test_set_vm(vm);
 
     let act = AstSelect::create_by(0, 1, vec![Box::new(AstTestBugVmCall::ok(20))]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     let rem = remaining.load(std::sync::atomic::Ordering::SeqCst);
@@ -2932,7 +2932,7 @@ fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
         ],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 2);
@@ -2991,7 +2991,7 @@ fn test_ast_vm_delay_init_deep_nested_revert_rollback_warmup_kept() {
         vec![Box::new(middle), Box::new(AstTestSet::create_by(167, 167))],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 165), None);
@@ -3049,7 +3049,7 @@ fn test_ast_vm_delay_init_deep_nested_success_commits_reverts() {
     );
     let act = AstSelect::create_list(vec![Box::new(middle)]);
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 168), Some(8));
@@ -3135,11 +3135,11 @@ fn test_ast_vm_delay_init_depth6_revert_and_fault_channels() {
     assert_eq!(ast_state_get_u8(&mut ctx, 232), None);
     assert_eq!(ast_state_get_u8(&mut ctx, 233), None);
 
-    // fault-like warmup channel remains monotonic
+    // precheck aborts before any VM path runs, so warmup state must stay untouched
     assert_eq!(volatile.load(std::sync::atomic::Ordering::SeqCst), 0);
-    assert!(warmup.load(std::sync::atomic::Ordering::SeqCst) > 0);
-    assert!(restore_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
-    assert!(clean_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+    assert_eq!(warmup.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(restore_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -3189,7 +3189,7 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
     let root = AstSelect::create_list(vec![Box::new(node1), Box::new(node2), Box::new(node3)]);
 
     let before = ctx.gas_remaining();
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     root.execute(&mut ctx).unwrap();
     let after = ctx.gas_remaining();
 
@@ -3261,7 +3261,7 @@ fn test_ast_layered_with_mid_vm_failure_revert_and_warmup_monotonic() {
     );
 
     let before = ctx.gas_remaining();
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     root.execute(&mut ctx).unwrap();
     let after = ctx.gas_remaining();
 
@@ -3325,7 +3325,7 @@ fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balanc
     );
 
     let _before = ast_hac_balance(&mut ctx, &main);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     tx.execute(&mut ctx).unwrap();
     let after = ast_hac_balance(&mut ctx, &main);
 
@@ -3366,7 +3366,7 @@ fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(5_000_000_000)).unwrap();
 
     let _before = ast_hac_balance(&mut ctx, &main);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = tx.execute(&mut ctx).unwrap_err();
     assert!(err.contains("must succeed at least") || err.contains("ast test forced fail"));
     let after = ast_hac_balance(&mut ctx, &main);
@@ -3442,8 +3442,8 @@ impl Action for AstTestMainSet {
     fn kind(&self) -> u16 {
         65011
     }
-    fn level(&self) -> ActLv {
-        ActLv::MainCall
+    fn scope(&self) -> ActScope {
+        ActScope::CALL
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -3508,8 +3508,8 @@ impl Action for AstTestMainP2shSetN {
     fn kind(&self) -> u16 {
         65012
     }
-    fn level(&self) -> ActLv {
-        ActLv::MainCall
+    fn scope(&self) -> ActScope {
+        ActScope::CALL
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -3572,8 +3572,8 @@ impl Action for AstTestMainVMCall {
     fn kind(&self) -> u16 {
         65013
     }
-    fn level(&self) -> ActLv {
-        ActLv::MainCall
+    fn scope(&self) -> ActScope {
+        ActScope::CALL
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -3635,8 +3635,8 @@ impl Action for AstTestRet {
     fn kind(&self) -> u16 {
         65014
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -3735,8 +3735,8 @@ impl Action for AstTestMutateAllFail {
     fn kind(&self) -> u16 {
         65015
     }
-    fn level(&self) -> ActLv {
-        ActLv::MainCall
+    fn scope(&self) -> ActScope {
+        ActScope::CALL
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -3783,7 +3783,7 @@ fn test_ast_vm_state_restored_on_select_child_failure() {
         2,
         vec![Box::new(AstTestVMCall::create_by(5)), Box::new(inner_fail)],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 5);
@@ -3818,7 +3818,7 @@ fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
         ),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _err = astif.execute(&mut ctx).unwrap_err();
 
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -3845,7 +3845,7 @@ fn test_ast_vm_state_committed_on_success() {
         AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(3))]),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 5);
@@ -3878,7 +3878,7 @@ fn test_ast_all_five_channels_restored_on_failure() {
         AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]), // force fail
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _err = astif.execute(&mut ctx).unwrap_err();
 
     // All five channels must be restored
@@ -3922,7 +3922,7 @@ fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
             Box::new(AstTestVMCall::create_by(30)),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 40);
@@ -3993,8 +3993,8 @@ impl Action for AstTestExtCall {
     fn kind(&self) -> u16 {
         65010
     }
-    fn level(&self) -> ActLv {
-        ActLv::Ast
+    fn scope(&self) -> ActScope {
+        ActScope::AST
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -4040,7 +4040,7 @@ fn test_ast_extcall_state_rolled_back_on_select_child_failure() {
             Box::new(inner_fail),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 120), Some(1));
@@ -4065,7 +4065,7 @@ fn test_ast_vm_sequential_accumulation() {
 
     // Op1: select(vm += 3) -> ok, counter = 3
     let act1 = AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(3))]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act1.execute(&mut ctx).unwrap();
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 3);
 
@@ -4078,7 +4078,7 @@ fn test_ast_vm_sequential_accumulation() {
             Box::new(AstTestFail::new()),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _ = act2.execute(&mut ctx);
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 3);
 
@@ -4088,7 +4088,7 @@ fn test_ast_vm_sequential_accumulation() {
         AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(4))]),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act3.execute(&mut ctx).unwrap();
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 9);
 }
@@ -4133,7 +4133,7 @@ fn test_ast_deep_3level_all_channels() {
         AstSelect::create_list(vec![Box::new(lvl2), Box::new(AstTestTexAdd::create_by(5))]),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     lvl1.execute(&mut ctx).unwrap();
 
     // Verify all channels
@@ -4157,7 +4157,7 @@ fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -4184,7 +4184,7 @@ fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
         ]),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 10), None); // cond write rolled back
@@ -4206,7 +4206,7 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -4239,7 +4239,7 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
         ],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     outer.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 20), None);
@@ -4260,7 +4260,7 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -4298,7 +4298,7 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
         AstSelect::nop(),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     lvl1.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 32), Some(32));
@@ -4328,7 +4328,7 @@ fn test_ast_select_num_over_tx_actions_max_rejected_no_leak() {
     }
     let over = AstSelect::create_by(0, 0, acts);
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = over.execute(&mut ctx).unwrap_err();
     assert!(err.contains("num cannot exceed"), "{}", err);
 
@@ -4363,7 +4363,7 @@ fn test_ast_select_max_zero_executes_no_children() {
         ],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let rv = act.execute(&mut ctx).unwrap();
     assert_eq!(rv.1, Vec::<u8>::new());
     assert_eq!(ast_state_get_u8(&mut ctx, 243), None);
@@ -4393,14 +4393,14 @@ fn test_ast_select_returns_last_success_result_bytes() {
             Box::new(AstTestRet::create_by(3)),
         ],
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let (_, rv) = act.execute(&mut ctx).unwrap();
     assert_eq!(rv, vec![3]);
 }
 
-// ---- Test 35: AstIf returns selected branch bytes and restores ctx level ----
+// ---- Test 35: AstIf returns selected branch bytes and restores exec_from ----
 #[test]
-fn test_ast_if_returns_selected_branch_result_and_restores_level() {
+fn test_ast_if_returns_selected_branch_result_and_restores_exec_from() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -4417,15 +4417,15 @@ fn test_ast_if_returns_selected_branch_result_and_restores_level() {
         AstSelect::create_list(vec![Box::new(AstTestRet::create_by(8))]),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let (_, rv) = astif.execute(&mut ctx).unwrap();
     assert_eq!(rv, vec![8]);
-    assert_eq!(ctx.level(), ACTION_CTX_LEVEL_TOP);
+    assert_eq!(ctx.exec_from(), ExecFrom::Top);
 }
 
-// ---- Test 36: AstIf branch error still restores ctx level by AstLevelGuard ----
+// ---- Test 36: AstIf branch error still restores exec_from by ExecFromGuard ----
 #[test]
-fn test_ast_if_error_restores_ctx_level() {
+fn test_ast_if_error_restores_exec_from() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -4448,10 +4448,10 @@ fn test_ast_if_error_restores_ctx_level() {
         ),
         AstSelect::nop(),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _ = astif.execute(&mut ctx).unwrap_err();
 
-    assert_eq!(ctx.level(), ACTION_CTX_LEVEL_TOP);
+    assert_eq!(ctx.exec_from(), ExecFrom::Top);
 }
 
 // ---- Test 37: Invalid cond AstSelect in AstIf falls through to else without cond side-effects ----
@@ -4465,7 +4465,7 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_init_tx(10000, 1).unwrap();
 
@@ -4476,7 +4476,7 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
         AstSelect::create_list(vec![Box::new(AstTestMainSet::create_by(248, 248))]),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = astif.execute(&mut ctx).unwrap_err();
     assert!(
         err.contains("action ast select max cannot be less than min"),
@@ -4500,7 +4500,7 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
@@ -4516,7 +4516,7 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
     let child_fail = AstTestMutateAllFail::create_by(250, 5, 98, 7); // all channels mutate then Err
     let act = AstSelect::create_by(1, 2, vec![Box::new(child_ok), Box::new(child_fail)]);
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 249), Some(2));
@@ -4539,7 +4539,7 @@ fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
@@ -4567,7 +4567,7 @@ fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
         AstSelect::nop(),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = astif.execute(&mut ctx).unwrap_err();
     assert!(
         err.contains("must succeed at least") || err.contains("mutate-all fail"),
@@ -4606,14 +4606,14 @@ fn test_ast_select_num_eq_tx_actions_max_allowed() {
     }
     let act = AstSelect::create_by(1, 1, acts); // should stop after first success
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     act.execute(&mut ctx).unwrap();
     assert_eq!(ast_state_get_u8(&mut ctx, 201), Some(1));
 }
 
-// ---- Test 41: AstSelect error still restores ctx level by AstLevelGuard ----
+// ---- Test 41: AstSelect error still restores exec_from by ExecFromGuard ----
 #[test]
-fn test_ast_select_error_restores_ctx_level() {
+fn test_ast_select_error_restores_exec_from() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -4625,10 +4625,10 @@ fn test_ast_select_error_restores_ctx_level() {
     ctx.gas_init_tx(10000, 1).unwrap();
 
     let bad = AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]);
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let _ = bad.execute(&mut ctx).unwrap_err();
 
-    assert_eq!(ctx.level(), ACTION_CTX_LEVEL_TOP);
+    assert_eq!(ctx.exec_from(), ExecFrom::Top);
 }
 
 // ---- Test 42: AstIf with cond=nop takes if-branch (cond success with 0-required select) ----
@@ -4649,7 +4649,7 @@ fn test_ast_if_cond_nop_takes_if_branch() {
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(202, 202))]),
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(203, 203))]),
     );
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 202), Some(202));
@@ -4676,7 +4676,7 @@ fn test_ast_tree_depth_exact_6_is_allowed() {
     let lvl2 = AstSelect::create_list(vec![Box::new(lvl3)]);
     let lvl1 = AstSelect::create_list(vec![Box::new(lvl2)]);
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     lvl1.execute(&mut ctx).unwrap();
     assert_eq!(ast_state_get_u8(&mut ctx, 204), Some(204));
 }
@@ -4692,7 +4692,7 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
@@ -4719,7 +4719,7 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
         ]),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     astif.execute(&mut ctx).unwrap();
 
     assert_eq!(ast_state_get_u8(&mut ctx, 214), Some(214)); // baseline
@@ -4745,7 +4745,7 @@ fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_level enabled
+    env.chain.fast_sync = false; // keep check_action_scope enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
@@ -4765,7 +4765,7 @@ fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
         AstSelect::nop(),
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = astif.execute(&mut ctx).unwrap_err();
     assert!(err.contains("max cannot be less than min"), "{}", err);
 
@@ -4800,7 +4800,7 @@ fn test_ast_select_nested_invalid_select_isolated() {
         ],
     );
 
-    ctx.level_set(ACTION_CTX_LEVEL_TOP);
+    ctx.exec_from_set(ExecFrom::Top);
     let err = outer.execute(&mut ctx).unwrap_err();
     assert!(
         err.contains("action ast select max cannot be less than min"),

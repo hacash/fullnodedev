@@ -12,12 +12,10 @@ fn check_alive_blk_hei(ctx: &mut dyn Context) -> Ret<(u64, u64)> {
     Ok((alive_hei, minsri))
 }
 
-
-action_define!{ AssetCreate, 16, 
-    ActLv::TopOnlyWithGuard, // level
-    false, // burn 90 fee
     // By design tx.main plus protocol fee authorizes asset creation, while metadata.issuer is only the initial allocation target and does not need to sign.
-    [], {
+action_define!{ AssetCreate, 16, 
+    ActScope::TOP_ONLY, false, [], 
+    {
         metadata: AssetSmelt
         protocol_fee: Amount
     },

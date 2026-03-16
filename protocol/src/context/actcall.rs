@@ -11,11 +11,8 @@ fn ctx_action_call(this: &mut dyn Context, k: u16, b: Vec<u8>) -> XRet<(u32, Vec
             body.len()
         );
     }
-    if action.level() == ActLv::Ast {
-        return xerrf!(
-            "action {} (AST) cannot execute from ActionCall context",
-            action.kind()
-        );
+    if this.env().chain.fast_sync {
+        action::check_action_scope(ExecFrom::Call, action.as_ref()).into_xret()?;
     }
     action::check_action_ast_tree_depth(action.as_ref()).into_xret()?;
     // ACTION payload actions are runtime-created and not part of tx.actions.
@@ -30,12 +27,8 @@ fn ctx_action_call(this: &mut dyn Context, k: u16, b: Vec<u8>) -> XRet<(u32, Vec
             this.check_sign(&adr).into_xret()?;
         }
     }
-    // Explicit call origin for level checks: this path is runtime ACTION.
-    let old_from = this.action_exec_from();
-    this.action_exec_from_set(ActExecFrom::ActionCall);
-    let exec_res = action.execute(this);
-    this.action_exec_from_set(old_from);
-    let (gas, res) = exec_res?;
+    // Runtime-created actions always execute in CALL context.
+    let (gas, res) = with_exec_from(this, ExecFrom::Call, |ctx| action.execute(ctx))?;
     let gas = apply_burn90_multiplier(this.tx().burn_90(), action.burn_90(), gas);
     Ok((gas, res))
 }

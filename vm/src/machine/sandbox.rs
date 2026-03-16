@@ -31,9 +31,9 @@ pub fn sandbox_call(ctx: &mut dyn TxDriverContext, contract: ContractAddress, fu
     verify_bytecodes(&codes)?;
 
     // do call
-    // Intentionally do not restore level: sandbox call is one-shot and its context
+    // Intentionally do not restore exec_from: sandbox call is one-shot and its context
     // state is discarded by the caller after return.
-    ctx.level_set(EntryKind::Main.action_level());
+    ctx.exec_from_set(ExecFrom::Call);
     let gas_before = ctx.gas_remaining();
     let mut vmb = global_machine_manager().assign(hei);
     let res = vmb.sandbox_main_call_raw(ctx, CodeType::Bytecode, codes.into());
