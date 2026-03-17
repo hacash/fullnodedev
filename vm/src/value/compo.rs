@@ -155,10 +155,15 @@ impl Compo {
         }
     }
 
-    fn append(&mut self, v: Value) -> VmrtErr {
+    fn append(&mut self, cap: &SpaceCap, v: Value) -> VmrtErr {
         v.check_scalar()?;
         match self {
-            Self::List(a) => a.push_back(v),
+            Self::List(a) => {
+                if a.len() >= cap.compo_length {
+                    return itr_err_code!(OutOfCompoLen);
+                }
+                a.push_back(v)
+            }
             _ => ret_invalid_compo_op! {},
         }
         Ok(())
@@ -183,16 +188,22 @@ impl Compo {
         Ok(())
     }
 
-    fn insert(&mut self, k: Value, v: Value) -> VmrtErr {
+    fn insert(&mut self, cap: &SpaceCap, k: Value, v: Value) -> VmrtErr {
         v.check_scalar()?;
         match self {
             Self::List(a) => {
                 let i = k.extract_u32()?;
                 checked_compo_op_len! {i, a};
+                if a.len() >= cap.compo_length {
+                    return itr_err_code!(OutOfCompoLen);
+                }
                 a.insert(i as usize, v);
             }
             Self::Map(b) => {
                 let k = k.extract_key_bytes()?;
+                if !b.contains_key(&k) && b.len() >= cap.compo_length {
+                    return itr_err_code!(OutOfCompoLen);
+                }
                 b.insert(k, v);
             }
         }
@@ -489,16 +500,6 @@ impl CompoItem {
     }
 }
 
-macro_rules! checked_compo_length {
-    ($compo: expr, $cap: expr) => {{
-        let n = $compo.len();
-        if n > $cap.compo_length {
-            return itr_err_code!(OutOfCompoLen);
-        }
-        n
-    }};
-}
-
 impl CompoItem {
     pub fn len(&self) -> usize {
         get_compo_inner_ref!(self).len()
@@ -526,9 +527,7 @@ impl CompoItem {
 
     pub fn insert(&mut self, cap: &SpaceCap, k: Value, v: Value) -> VmrtErr {
         let compo = get_compo_inner_mut!(self);
-        compo.insert(k, v)?;
-        checked_compo_length! {compo, cap};
-        Ok(())
+        compo.insert(cap, k, v)
     }
 
     pub fn clear(&mut self) {
@@ -538,9 +537,7 @@ impl CompoItem {
 
     pub fn append(&mut self, cap: &SpaceCap, v: Value) -> VmrtErr {
         let compo = get_compo_inner_mut!(self);
-        compo.append(v)?;
-        checked_compo_length! {compo, cap};
-        Ok(())
+        compo.append(cap, v)
     }
 
     pub fn itemget(&self, k: Value) -> VmrtRes<Value> {
@@ -623,9 +620,23 @@ mod compo_tests {
             .append(
                 &SpaceCap::new(1),
                 Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()),
-            )
-            .unwrap_err();
+        )
+        .unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+    }
+
+    #[test]
+    fn compo_append_overflow_keeps_list_unchanged() {
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let mut compo = CompoItem::new_list();
+        compo.append(&cap, Value::U8(1)).unwrap();
+        let err = compo.append(&cap, Value::U8(2)).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
+        assert_eq!(
+            compo.list_ref().unwrap().iter().cloned().collect::<Vec<_>>(),
+            vec![Value::U8(1)]
+        );
     }
 
     #[test]
@@ -636,9 +647,26 @@ mod compo_tests {
                 &SpaceCap::new(1),
                 Value::Bytes(vec![1]),
                 Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()),
-            )
-            .unwrap_err();
+        )
+        .unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+    }
+
+    #[test]
+    fn compo_insert_overflow_keeps_map_unchanged() {
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let mut compo = CompoItem::new_map();
+        let k1 = Value::Bytes(vec![1]);
+        let k2 = Value::Bytes(vec![2]);
+        compo.insert(&cap, k1.clone(), Value::U8(1)).unwrap();
+        compo.insert(&cap, k1.clone(), Value::U8(9)).unwrap();
+        let err = compo.insert(&cap, k2.clone(), Value::U8(2)).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
+        let map = compo.map_ref().unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get(&vec![1]).unwrap(), &Value::U8(9));
+        assert!(!map.contains_key(&vec![2]));
     }
 
     #[test]

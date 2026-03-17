@@ -1,197 +1,195 @@
-
 /* Bytecode define Add one bytecode */
-
 
 #[repr(u8)]
 #[derive(Default, PartialEq, Debug, Clone, Copy)]
 pub enum Bytecode {
     #[default]
-    ACTION              = 0x00, // *@  call action
-    ________________1   = 0x01,
-    ________________2   = 0x02,
-    ________________3   = 0x03,
-    ________________4   = 0x04,
-    ________________5   = 0x05,
-    ACTVIEW             = 0x06, // *@  call action view (read-only query)
-    ACTENV              = 0x07, // *+  call action env
-    NTENV               = 0x08, // *+  native env (VM state read)
-    NTFUNC              = 0x09, // *@  native pure function
-    ________________10  = 0x0a,
-    ________________11  = 0x0b,
-    ________________12  = 0x0c,
-    ________________13  = 0x0d,
-    CODECALL            = 0x0e, // *,****
-    CALL                = 0x0f, // **,****@
-    CALLEXT             = 0x10, // *,****@
-    CALLEXTVIEW         = 0x11, // *,****@
-    ________________18  = 0x12,
-    ________________19  = 0x13,
-    CALLUSEVIEW         = 0x14, // *,****@
-    CALLUSEPURE         = 0x15, // *,****@
-    ________________22  = 0x16,
-    ________________23  = 0x17,
-    CALLTHIS            = 0x18, //   ****@
-    CALLSELF            = 0x19, //   ****@
-    CALLSUPER           = 0x1a, //   ****@
-    CALLSELFVIEW        = 0x1b, //   ****@
-    CALLSELFPURE        = 0x1c, //   ****@
-    ________________29  = 0x1d,
-    ________________30  = 0x1e,
-    ________________31  = 0x1f, // *@  native call
-    PU8                 = 0x20, // *+     push u8
-    PU16                = 0x21, // **+    push u16
-    PBUF                = 0x22, // *+     push buf
-    PBUFL               = 0x23, // **+    push buf long  
-    P0                  = 0x24, // +      push u8 0
-    P1                  = 0x25, // +      push u8 1
-    P2                  = 0x26, // +      push u8 2
-    P3                  = 0x27, // +      push u8 3
-    PNIL                = 0x28, // +      push nil
-    PNBUF               = 0x29, // +      push buf empty
-    PTRUE               = 0x2a, // +      push true
-    PFALSE              = 0x2b, // +      push false
-    ________________44  = 0x2c,       
-    ________________45  = 0x2d,          
-    ________________46  = 0x2e,       
-    ________________47  = 0x2f,     
-    CU8                 = 0x30, // &      cast u8
-    CU16                = 0x31, // &      cast u16
-    CU32                = 0x32, // &      cast u32
-    CU64                = 0x33, // &      cast u64
-    CU128               = 0x34, // &      cast u128
-    ________________53  = 0x35,
-    CBUF                = 0x36, // &      cast buf
-    CTO                 = 0x37, // *&     cast to
-    TNIL                = 0x38, // &   is nil push Bool(true)
-    TLIST               = 0x39, // &   is compo list push Bool(true)
-    TMAP                = 0x3a, // &   is compo map  push Bool(true)
-    TIS                 = 0x3b, // *&  is type id
-    TID                 = 0x3c, // &   type id
-    ________________61  = 0x3d,
-    ________________62  = 0x3e,       
-    ________________63  = 0x3f,   
-    DUP                 = 0x40, // +      copy 0
-    DUPN                = 0x41, // *+     copy u8
-    POP                 = 0x42, // a      pop top
-    POPN                = 0x43, // *a...b pop n
-    ROLL0               = 0x44, // +      roll0 
-    ROLL                = 0x45, // *+     roll
-    SWAP                = 0x46, // a,b++  swap  b,a = a,b
-    REV                 = 0x47, // a...b  reverse u8
-    CAT                 = 0x48, // a,b+   buf: b + a
-    JOIN                = 0x49, // a...bn+
-    BYTE                = 0x4a, // a,b+   val[n] = u8
-    CUT                 = 0x4b, // a,b,c+ cut buf (v, ost, len)+
-    LEFT                = 0x4c, // *&     cut left  buf *
-    RIGHT               = 0x4d, // *&     cut right buf *
-    LDROP               = 0x4e, // *&     drop buf left *
-    RDROP               = 0x4f, // *&     drop buf right *
-    SIZE                = 0x50, // &      size (u16)
-    CHOOSE              = 0x51, // a,b,c+ (x ? a : b)
-    ________________82  = 0x52,
-    ________________83  = 0x53,
-    ________________84  = 0x54,
-    ________________85  = 0x55,
-    ________________86  = 0x56,
-    ________________87  = 0x57,
-    ________________88  = 0x58,
-    ________________89  = 0x59,
-    ________________90  = 0x5a,
-    ________________91  = 0x5b,
-    ________________92  = 0x5c,
-    ________________93  = 0x5d,
-    ________________94  = 0x5e,
-    ________________95  = 0x5f,
-    NEWLIST             = 0x60, // + new compo list
-    NEWMAP              = 0x61, // + new compo map
-    PACKLIST            = 0x62, // (v...,n)+ pack compo list
-    PACKMAP             = 0x63, // (v...,n)+ pack compo map
-    INSERT              = 0x64, // t,k,v+  compo insert
-    REMOVE              = 0x65, // t,k+    compo remove
-    CLEAR               = 0x66, // t+      compo clear
-    MERGE               = 0x67, // a,b+    compo merge
-    LENGTH              = 0x68, // t+      compo length
-    HASKEY              = 0x69, // t,k+    compo check has key
-    ITEMGET             = 0x6a, // t,k+    compo iten get
-    KEYS                = 0x6b, // &       compo keys
-    VALUES              = 0x6c, // &       compo values
-    HEAD                = 0x6d, // &       compo pick first
-    BACK                = 0x6e, // &       compo pick last
-    APPEND              = 0x6f, // &       compo append
-    CLONE               = 0x70, // a++     compo clone
-    UNPACK              = 0x71, // a       unpack sequence to local
-    PACKTUPLE           = 0x72, // (v...,n)+ pack tuple value
-    TUPLE2LIST          = 0x73, // &       tuple to list
-    _______________116  = 0x74,
-    _______________117  = 0x75,
-    _______________118  = 0x76,
-    _______________119  = 0x77,
-    _______________120  = 0x78,
-    _______________121  = 0x79,
-    _______________122  = 0x7a,
-    _______________123  = 0x7b,
-    _______________124  = 0x7c,
-    XLG                 = 0x7d, // *&    local logic
-    XOP                 = 0x7e, // *a    local operand
-    ALLOC               = 0x7f, // *     local allocQ 
-    PUTX                = 0x80, // v,i   local x put     
-    GETX                = 0x81, // &     local x get  
-    PUT                 = 0x82, // *a,b  local put       
-    GET                 = 0x83, // *+    local get  
-    GET0                = 0x84, // +     local get idx 0    
-    GET1                = 0x85, // +     local get idx 1     
-    GET2                = 0x86, // +     local get idx 2
-    GET3                = 0x87, // +     local get idx 3
-    HSLICE              = 0x88, // a,b+  create heap slice
-    HREADUL             = 0x89, // **+   heap read ul
-    HREADU              = 0x8a, // *+    heap read u
-    HWRITEXL            = 0x8b, // **a   heap write xl
-    HWRITEX             = 0x8c, // *a    heap write x
-    HREAD               = 0x8d, // a,b+  heap read
-    HWRITE              = 0x8e, // a,b   heap write
-    HGROW               = 0x8f, // *     heap grow
-    GGET                = 0x90, // &     global get
-    GPUT                = 0x91, // a,b   global put
-    MGET                = 0x92, // &     memory get
-    MPUT                = 0x93, // a,b   memory put
-    LOG1                = 0x94,
-    LOG2                = 0x95,
-    LOG3                = 0x96,
-    LOG4                = 0x97,
+    ACTION = 0x00, // *@  call action
+    ________________1 = 0x01,
+    ________________2 = 0x02,
+    ________________3 = 0x03,
+    ________________4 = 0x04,
+    ________________5 = 0x05,
+    ACTVIEW = 0x06, // *@  call action view (read-only query)
+    ACTENV = 0x07,  // *+  call action env
+    NTENV = 0x08,   // *+  native env (VM state read)
+    NTFUNC = 0x09,  // *@  native pure function
+    ________________10 = 0x0a,
+    ________________11 = 0x0b,
+    ________________12 = 0x0c,
+    ________________13 = 0x0d,
+    CODECALL = 0x0e,    // *,****
+    CALL = 0x0f,        // **,****@
+    CALLEXT = 0x10,     // *,****@
+    CALLEXTVIEW = 0x11, // *,****@
+    ________________18 = 0x12,
+    ________________19 = 0x13,
+    CALLUSEVIEW = 0x14, // *,****@
+    CALLUSEPURE = 0x15, // *,****@
+    ________________22 = 0x16,
+    ________________23 = 0x17,
+    CALLTHIS = 0x18,     //   ****@
+    CALLSELF = 0x19,     //   ****@
+    CALLSUPER = 0x1a,    //   ****@
+    CALLSELFVIEW = 0x1b, //   ****@
+    CALLSELFPURE = 0x1c, //   ****@
+    ________________29 = 0x1d,
+    ________________30 = 0x1e,
+    ________________31 = 0x1f, // *@  native call
+    PU8 = 0x20,                // *+     push u8
+    PU16 = 0x21,               // **+    push u16
+    PBUF = 0x22,               // *+     push buf
+    PBUFL = 0x23,              // **+    push buf long
+    P0 = 0x24,                 // +      push u8 0
+    P1 = 0x25,                 // +      push u8 1
+    P2 = 0x26,                 // +      push u8 2
+    P3 = 0x27,                 // +      push u8 3
+    PNIL = 0x28,               // +      push nil
+    PNBUF = 0x29,              // +      push buf empty
+    PTRUE = 0x2a,              // +      push true
+    PFALSE = 0x2b,             // +      push false
+    ________________44 = 0x2c,
+    ________________45 = 0x2d,
+    ________________46 = 0x2e,
+    ________________47 = 0x2f,
+    CU8 = 0x30,   // &      cast u8
+    CU16 = 0x31,  // &      cast u16
+    CU32 = 0x32,  // &      cast u32
+    CU64 = 0x33,  // &      cast u64
+    CU128 = 0x34, // &      cast u128
+    ________________53 = 0x35,
+    CBUF = 0x36,  // &      cast buf
+    CTO = 0x37,   // *&     cast to
+    TNIL = 0x38,  // &   is nil push Bool(true)
+    TLIST = 0x39, // &   is compo list push Bool(true)
+    TMAP = 0x3a,  // &   is compo map  push Bool(true)
+    TIS = 0x3b,   // *&  is type id
+    TID = 0x3c,   // &   type id
+    ________________61 = 0x3d,
+    ________________62 = 0x3e,
+    ________________63 = 0x3f,
+    DUP = 0x40,    // +      copy 0
+    DUPN = 0x41,   // *+     copy u8
+    POP = 0x42,    // a      pop top
+    POPN = 0x43,   // *a...b pop n
+    ROLL0 = 0x44,  // +      roll0
+    ROLL = 0x45,   // *+     roll
+    SWAP = 0x46,   // a,b++  swap  b,a = a,b
+    REV = 0x47,    // a...b  reverse u8
+    CAT = 0x48,    // a,b+   buf: b + a
+    JOIN = 0x49,   // a...bn+
+    BYTE = 0x4a,   // a,b+   val[n] = u8
+    CUT = 0x4b,    // a,b,c+ cut buf (v, ost, len)+
+    LEFT = 0x4c,   // *&     cut left  buf *
+    RIGHT = 0x4d,  // *&     cut right buf *
+    LDROP = 0x4e,  // *&     drop buf left *
+    RDROP = 0x4f,  // *&     drop buf right *
+    SIZE = 0x50,   // &      size (u16)
+    CHOOSE = 0x51, // a,b,c+ (x ? a : b)
+    ________________82 = 0x52,
+    ________________83 = 0x53,
+    ________________84 = 0x54,
+    ________________85 = 0x55,
+    ________________86 = 0x56,
+    ________________87 = 0x57,
+    ________________88 = 0x58,
+    ________________89 = 0x59,
+    ________________90 = 0x5a,
+    ________________91 = 0x5b,
+    ________________92 = 0x5c,
+    ________________93 = 0x5d,
+    ________________94 = 0x5e,
+    ________________95 = 0x5f,
+    NEWLIST = 0x60,    // + new compo list
+    NEWMAP = 0x61,     // + new compo map
+    PACKLIST = 0x62,   // (v...,n)+ pack compo list
+    PACKMAP = 0x63,    // (v...,n)+ pack compo map
+    INSERT = 0x64,     // t,k,v+  compo insert
+    REMOVE = 0x65,     // t,k+    compo remove
+    CLEAR = 0x66,      // t+      compo clear
+    MERGE = 0x67,      // a,b+    compo merge
+    LENGTH = 0x68,     // t+      compo length
+    HASKEY = 0x69,     // t,k+    compo check has key
+    ITEMGET = 0x6a,    // t,k+    compo iten get
+    KEYS = 0x6b,       // &       compo keys
+    VALUES = 0x6c,     // &       compo values
+    HEAD = 0x6d,       // &       compo pick first
+    BACK = 0x6e,       // &       compo pick last
+    APPEND = 0x6f,     // &       compo append
+    CLONE = 0x70,      // a++     compo clone
+    UNPACK = 0x71,     // a       unpack sequence to local
+    PACKTUPLE = 0x72,  // (v...,n)+ pack tuple value
+    TUPLE2LIST = 0x73, // &       tuple to list
+    _______________116 = 0x74,
+    _______________117 = 0x75,
+    _______________118 = 0x76,
+    _______________119 = 0x77,
+    _______________120 = 0x78,
+    _______________121 = 0x79,
+    _______________122 = 0x7a,
+    _______________123 = 0x7b,
+    _______________124 = 0x7c,
+    XLG = 0x7d,      // *&    local logic
+    XOP = 0x7e,      // *a    local operand
+    ALLOC = 0x7f,    // *     local allocQ
+    PUTX = 0x80,     // v,i   local x put
+    GETX = 0x81,     // &     local x get
+    PUT = 0x82,      // *a,b  local put
+    GET = 0x83,      // *+    local get
+    GET0 = 0x84,     // +     local get idx 0
+    GET1 = 0x85,     // +     local get idx 1
+    GET2 = 0x86,     // +     local get idx 2
+    GET3 = 0x87,     // +     local get idx 3
+    HSLICE = 0x88,   // a,b+  create heap slice
+    HREADUL = 0x89,  // **+   heap read ul
+    HREADU = 0x8a,   // *+    heap read u
+    HWRITEXL = 0x8b, // **a   heap write xl
+    HWRITEX = 0x8c,  // *a    heap write x
+    HREAD = 0x8d,    // a,b+  heap read
+    HWRITE = 0x8e,   // a,b   heap write
+    HGROW = 0x8f,    // *     heap grow
+    GGET = 0x90,     // &     global get
+    GPUT = 0x91,     // a,b   global put
+    MGET = 0x92,     // &     memory get
+    MPUT = 0x93,     // a,b   memory put
+    LOG1 = 0x94,
+    LOG2 = 0x95,
+    LOG3 = 0x96,
+    LOG4 = 0x97,
     ________________152 = 0x98,
     ________________153 = 0x99,
     ________________154 = 0x9a,
-    SREST               = 0x9b, // &     storage expire rest block
-    SLOAD               = 0x9c, // &     storage load
-    SDEL                = 0x9d, // a     storage delete
-    SSAVE               = 0x9e, // a,b   storage save
-    SRENT               = 0x9f, // a,b   storage time rent
-    AND                 = 0xa0, // a,b+   and
-    OR                  = 0xa1, // a,b+   or
-    EQ                  = 0xa2, // a,b+   equal
-    NEQ                 = 0xa3, // a,b+   not equal
-    LT                  = 0xa4, // a,b+   less than
-    GT                  = 0xa5, // a,b+   great than
-    LE                  = 0xa6, // a,b+   less and eq
-    GE                  = 0xa7, // a,b+   great and eq
-    NOT                 = 0xa8, // a+   not
+    SREST = 0x9b, // &     storage expire rest block
+    SLOAD = 0x9c, // &     storage load
+    SDEL = 0x9d,  // a     storage delete
+    SSAVE = 0x9e, // a,b   storage save
+    SRENT = 0x9f, // a,b   storage time rent
+    AND = 0xa0,   // a,b+   and
+    OR = 0xa1,    // a,b+   or
+    EQ = 0xa2,    // a,b+   equal
+    NEQ = 0xa3,   // a,b+   not equal
+    LT = 0xa4,    // a,b+   less than
+    GT = 0xa5,    // a,b+   great than
+    LE = 0xa6,    // a,b+   less and eq
+    GE = 0xa7,    // a,b+   great and eq
+    NOT = 0xa8,   // a+   not
     ________________169 = 0xa9,
     ________________170 = 0xaa,
-    BSHR                = 0xab, // a,b+   shr: >>
-    BSHL                = 0xac, // a,b+   shl: <<
-    BXOR                = 0xad, // a,b+   xor: ^
-    BOR                 = 0xae, // a,b+   or:  |
-    BAND                = 0xaf, // a,b+   and: &
-    ADD                 = 0xb0, // a,b+   +
-    SUB                 = 0xb1, // a,b+   -
-    MUL                 = 0xb2, // a,b+   *
-    DIV                 = 0xb3, // a,b+   /
-    MOD                 = 0xb4, // a,b+   mod
-    POW                 = 0xb5, // a,b+   pow
-    MAX                 = 0xb6, // a,b+   max
-    MIN                 = 0xb7, // a,b+   min
-    INC                 = 0xb8, // *&     += u8
-    DEC                 = 0xb9, // *&     -= u8
+    BSHR = 0xab,                // a,b+   shr: >>
+    BSHL = 0xac,                // a,b+   shl: <<
+    BXOR = 0xad,                // a,b+   xor: ^
+    BOR = 0xae,                 // a,b+   or:  |
+    BAND = 0xaf,                // a,b+   and: &
+    ADD = 0xb0,                 // a,b+   +
+    SUB = 0xb1,                 // a,b+   -
+    MUL = 0xb2,                 // a,b+   *
+    DIV = 0xb3,                 // a,b+   /
+    MOD = 0xb4,                 // a,b+   mod
+    POW = 0xb5,                 // a,b+   pow
+    MAX = 0xb6,                 // a,b+   max
+    MIN = 0xb7,                 // a,b+   min
+    INC = 0xb8,                 // *&     += u8
+    DEC = 0xb9,                 // *&     -= u8
     ________________186 = 0xba, // a,b,c+ x+y%z
     ________________187 = 0xbb, // a,b,c+ x*y%z
     ________________188 = 0xbc,
@@ -230,39 +228,39 @@ pub enum Bytecode {
     ________________221 = 0xdd,
     ________________222 = 0xde,
     ________________223 = 0xdf,
-    JMPL                = 0xe0, // **    jump long
-    JMPS                = 0xe1, // *     jump offset
-    JMPSL               = 0xe2, // **    jump offset long
-    BRL                 = 0xe3, // **a   branch long
-    BRS                 = 0xe4, // *a    branch offset
-    BRSL                = 0xe5, // **a   branch offset long not_zero
-    BRSLN               = 0xe6, // **a   branch offset long is_zero
-    ________________231 = 0xe7, 
+    JMPL = 0xe0,  // **    jump long
+    JMPS = 0xe1,  // *     jump offset
+    JMPSL = 0xe2, // **    jump offset long
+    BRL = 0xe3,   // **a   branch long
+    BRS = 0xe4,   // *a    branch offset
+    BRSL = 0xe5,  // **a   branch offset long not_zero
+    BRSLN = 0xe6, // **a   branch offset long is_zero
+    ________________231 = 0xe7,
     ________________232 = 0xe8,
     ________________233 = 0xe9,
-    PRT                 = 0xea, // s     print for debug
-    AST                 = 0xeb, // c     assert throw
-    ERR                 = 0xec, // a     throw (ERR)
-    ABT                 = 0xed, //       abord
-    RET                 = 0xee, // a     func return (DATA)
-    END                 = 0xef, //       func return nil
-    IRBYTECODE          = 0xf0, // <IR NODE>
-    IRLIST              = 0xf1, // <IR NODE>
-    IRBLOCK             = 0xf2, // <IR NODE>
-    IRBLOCKR            = 0xf3, // <IR NODE>
-    IRIF                = 0xf4, // <IR NODE>
-    IRIFR               = 0xf5, // <IR NODE>
-    IRWHILE             = 0xf6, // <IR NODE>
-    IRBREAK             = 0xf7, // <IR NODE>
-    IRCONTINUE          = 0xf8, // <IR NODE>
+    PRT = 0xea,        // s     print for debug
+    AST = 0xeb,        // c     assert throw
+    ERR = 0xec,        // a     throw (ERR)
+    ABT = 0xed,        //       abord
+    RET = 0xee,        // a     func return (DATA)
+    END = 0xef,        //       func return nil
+    IRBYTECODE = 0xf0, // <IR NODE>
+    IRLIST = 0xf1,     // <IR NODE>
+    IRBLOCK = 0xf2,    // <IR NODE>
+    IRBLOCKR = 0xf3,   // <IR NODE>
+    IRIF = 0xf4,       // <IR NODE>
+    IRIFR = 0xf5,      // <IR NODE>
+    IRWHILE = 0xf6,    // <IR NODE>
+    IRBREAK = 0xf7,    // <IR NODE>
+    IRCONTINUE = 0xf8, // <IR NODE>
     ________________249 = 0xf9,
     ________________250 = 0xfa,
     ________________251 = 0xfb,
     ________________252 = 0xfc,
-    BURN                = 0xfd, // **    burn gas
-    NOP                 = 0xfe, //       do nothing
-    NT                  = 0xff, //       panic: never touch
-} 
+    BURN = 0xfd, // **    burn gas
+    NOP = 0xfe,  //       do nothing
+    NT = 0xff,   //       panic: never touch
+}
 
 use Bytecode::*;
 
@@ -271,7 +269,6 @@ impl From<Bytecode> for u8 {
         val as u8
     }
 }
-
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct BytecodeMetadata {
@@ -307,20 +304,20 @@ impl Bytecode {
 
 }
 
+macro_rules! bytecode_intro_sig {
+    $(
+        ($s) => {
+            ($crate::rt::Bytecode::$inst, ($p) as usize, ($i) as usize, ($o) as usize)
+        };
+    )+
+}
+
     };
 }
 
-
-
-
-
-
-
-
-
 /* params, stack input, stack output */
-bytecode_metadata_define!{
-    ACTION  : 1, 1, 0,     action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
+bytecode_metadata_define! {
+    ACTION     : 1, 1, 0,     action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
     ACTVIEW    : 1, 1, 1,     actview
     ACTENV     : 1, 0, 1,     actenv
     NTFUNC     : 1, 1, 1,     native_func
@@ -404,17 +401,17 @@ bytecode_metadata_define!{
     TUPLE2LIST : 0, 1, 1,     tuple_to_list
     UNPACK     : 0, 2, 0,     unpack
 
-    XLG        : 1, 1, 1,     local_logic    
-    XOP        : 1, 1, 0,     local_operand         
-    ALLOC      : 1, 0, 0,     local_alloc       
-    PUTX       : 0, 2, 0,     local_x_put          
-    GETX       : 0, 1, 1,     local_x              
-    PUT        : 1, 1, 0,     local_put          
-    GET        : 1, 0, 1,     local          
-    GET0       : 0, 0, 1,     local_0        
-    GET1       : 0, 0, 1,     local_1        
-    GET2       : 0, 0, 1,     local_2   
-    GET3       : 0, 0, 1,     local_3    
+    XLG        : 1, 1, 1,     local_logic
+    XOP        : 1, 1, 0,     local_operand
+    ALLOC      : 1, 0, 0,     local_alloc
+    PUTX       : 0, 2, 0,     local_x_put
+    GETX       : 0, 1, 1,     local_x
+    PUT        : 1, 1, 0,     local_put
+    GET        : 1, 0, 1,     local
+    GET0       : 0, 0, 1,     local_0
+    GET1       : 0, 0, 1,     local_1
+    GET2       : 0, 0, 1,     local_2
+    GET3       : 0, 0, 1,     local_3
 
     HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
@@ -434,7 +431,7 @@ bytecode_metadata_define!{
     LOG2       : 0, 255, 0,   log_2
     LOG3       : 0, 255, 0,   log_3
     LOG4       : 0, 255, 0,   log_4
-        
+
     SREST      : 0, 1, 1,     storage_rest
     SLOAD      : 0, 1, 1,     storage_load
     SDEL       : 0, 1, 0,     storage_del
@@ -446,7 +443,7 @@ bytecode_metadata_define!{
     EQ         : 0, 2, 1,     equal
     NEQ        : 0, 2, 1,     not_equal
     LT         : 0, 2, 1,     less_than
-    GT         : 0, 2, 1,     greater_than  
+    GT         : 0, 2, 1,     greater_than
     LE         : 0, 2, 1,     less_equal
     GE         : 0, 2, 1,     greater_equal
     NOT        : 0, 1, 1,     not

@@ -108,6 +108,27 @@ impl Value {
     pub fn check_func_retv(&self) -> VmrtErr {
         check_func_boundary_ec(self, CastBeFnRetvFail)
     }
+
+    pub fn check_container_cap(&self, cap: &SpaceCap) -> VmrtErr {
+        match self {
+            Tuple(tuple) => {
+                if tuple.len() > cap.tuple_length {
+                    return itr_err_code!(OutOfCompoLen);
+                }
+                for item in tuple.as_slice() {
+                    item.check_container_cap(cap)?;
+                }
+                Ok(())
+            }
+            Compo(compo) => {
+                if compo.len() > cap.compo_length {
+                    return itr_err_code!(OutOfCompoLen);
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -162,5 +183,20 @@ mod canbe_tests {
                 .check_scalar()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn container_cap_rejects_oversize_compo_nested_in_tuple() {
+        let tuple = Value::Tuple(
+            TupleItem::new(vec![Value::Compo(
+                CompoItem::list(std::collections::VecDeque::from([Value::U8(1), Value::U8(2)]))
+                    .unwrap(),
+            )])
+            .unwrap(),
+        );
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let err = tuple.check_container_cap(&cap).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
     }
 }

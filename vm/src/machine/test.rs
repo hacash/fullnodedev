@@ -285,7 +285,7 @@ mod machine_file_test {
         protocol::operate::hac_add(&mut ctx, &base_addr, &Amount::unit238(1_000_000_000)).unwrap();
 
         let callres = sandbox_call(&mut ctx, SandboxSpec::new(contract, "probe")).unwrap();
-        assert_eq!(callres.return_value.to_debug_json(), r#"{"kind":"hnft","mint":1}"#);
+        assert_eq!(callres.ret_val.to_debug_json(), r#"{"kind":"hnft","mint":1}"#);
     }
 
     #[test]
@@ -1787,6 +1787,53 @@ end",
             )
             .expect_err("invalid abst argv must fail locally");
         assert!(err.contains("CastBeFnArgvFail"), "unexpected error: {err}");
+        assert!(!machine.r.contracts.contains_key(&contract_target));
+    }
+
+    #[test]
+    fn abst_call_oversize_compo_param_fails_before_loading_target_contract() {
+        use std::collections::VecDeque;
+
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 89);
+
+        let target_sto = Contract::new()
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
+        let mut machine = Machine::create(Resoure::create(1));
+
+        let over = machine.r.space_cap.compo_length + 1;
+        let list = CompoItem::list(VecDeque::from(vec![Value::U8(1); over])).unwrap();
+        let err = machine
+            .abst_call(
+                &mut host,
+                AbstCall::Construct,
+                contract_target.clone(),
+                Value::Compo(list),
+            )
+            .expect_err("oversize compo argv must fail locally");
+        assert!(err.contains("OutOfCompoLen"), "unexpected error: {err}");
         assert!(!machine.r.contracts.contains_key(&contract_target));
     }
 

@@ -207,7 +207,7 @@ operator_define! {
 /********************************/
 
 macro_rules! irfn_define {
-    ( $( $c:ident : $pl:expr, $args:expr, $rts:expr, $k:ident )+ ) => {
+    ( $( $k:ident )+ ) => {
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
@@ -217,15 +217,23 @@ pub enum IrFn {
 }
 
 
+pub fn pick_ir_func(s: &str) -> Option<(IrFn, Bytecode, usize, usize, usize)> {
+    Some(match s {
+        $(
+            stringify!($k) => {
+                let sig = bytecode_intro_sig!($k);
+                (IrFn::$k, sig.0, sig.1, sig.2, sig.3)
+            },
+        )+
+        _ => return None
+    })
+}
+
+
 impl IrFn {
 
     pub fn from_name(s: &str) -> Option<(IrFn, Bytecode, usize, usize, usize)> {
-        Some(match s {
-            $(
-                stringify!($k) => (IrFn::$k, $c, $pl, $args, $rts),
-            )+
-            _ => return None
-        })
+        pick_ir_func(s)
     }
 
 }
@@ -235,133 +243,71 @@ impl IrFn {
 
 irfn_define! {
 
-    ACTION  : 1, 1, 0,     action  // no return value
-    // ACTVIEW    : 1, 1, 1,     actview ACTENV     : 1, 0, 1,     actenv NTFUNC     : 1, 1, 1,     native_func NTENV      : 1, 0, 1,     native_env
+    // Direct IR calls only: keep source-level functions that are not already covered
+    // by dedicated syntax, action/native dispatch, or tuple/list literal sugar.
+    cast_to
+    type_is
+    type_id
 
-    // CALL plus the fixed shortcut call opcodes are exposed user-call instructions.
+    roll_0
+    roll
+    byte
+    buf_cut
+    buf_left
+    buf_right
+    buf_left_drop
+    buf_right_drop
+    size
+    choose
 
-    PU8        : 1, 0, 1,     push_u8
-    PU16       : 2, 0, 1,     push_u16
-    PBUF       : 1, 0, 1,     push_buf
-    PBUFL      : 2, 0, 1,     push_buf_long
-    P0         : 0, 0, 1,     push_0
-    P1         : 0, 0, 1,     push_1
-    P2         : 0, 0, 1,     push_2
-    P3         : 0, 0, 1,     push_3
-    PNBUF      : 0, 0, 1,     push_empty_buf
-    PNIL       : 0, 0, 1,     push_nil
-    PTRUE      : 0, 0, 1,     push_true
-    PFALSE     : 0, 0, 1,     push_false
+    new_list
+    new_map
+    tuple_to_list
+    insert
+    remove
+    clear
+    merge
+    length
+    has_key
+    item_get
+    keys
+    values
+    head
+    back
+    append
+    clone
+    unpack
 
-    CU8        : 0, 1, 1,     cast_u8
-    CU16       : 0, 1, 1,     cast_u16
-    CU32       : 0, 1, 1,     cast_u32
-    CU64       : 0, 1, 1,     cast_u64
-    CU128      : 0, 1, 1,     cast_u128
-    CBUF       : 0, 1, 1,     cast_bytes
-    CTO        : 1, 1, 1,     cast_to
-    TNIL       : 0, 1, 1,     type_is_nil
-    TLIST      : 0, 1, 1,     type_is_list
-    TMAP       : 0, 1, 1,     type_is_map
-    TIS        : 1, 1, 1,     type_is
-    TID        : 0, 1, 1,     type_id
+    // Keep frame-local helpers so sourcemap-free decompilation can still roundtrip.
+    local_alloc
+    local_x_put
+    local_x
 
-    DUP        : 0, 0, 1,     dump
-    DUPN       : 1, 0, 1,     dump_n
-    // POP        : 0, 255, 0,   pop POPN       : 1, 255, 0,   pop_n
-    ROLL0      : 0, 0, 1,     roll_0
-    ROLL       : 1, 0, 1,     roll
-    SWAP       : 0, 2, 2,     swap
-    // REV        : 1, 255, 255, reverse
-    CAT        : 0, 2, 1,     concat
-    // JOIN       : 1, 255, 1,   join
-    BYTE       : 0, 2, 1,     byte
-    CUT        : 0, 3, 1,     buf_cut
-    LEFT       : 1, 1, 1,     buf_left
-    RIGHT      : 1, 1, 1,     buf_right
-    LDROP      : 1, 1, 1,     buf_left_drop
-    RDROP      : 1, 1, 1,     buf_right_drop
-    SIZE       : 0, 1, 1,     size
-    CHOOSE     : 0, 3, 1,     choose
+    heap_slice
+    heap_read_uint_long
+    heap_read_uint
+    heap_write_xl
+    heap_write_x
+    heap_read
+    heap_write
+    heap_grow
 
-    NEWLIST    : 0, 0, 1,     new_list
-    NEWMAP     : 0, 0, 1,     new_map
-    PACKTUPLE  : 0, 0, 1,     pack_tuple
-    TUPLE2LIST : 0, 1, 1,     tuple_to_list
-    // PACKLIST   : 0, 255, 1,   pack_list PACKMAP    : 0, 255, 1,   pack_map
-    INSERT     : 0, 3, 1,     insert
-    REMOVE     : 0, 2, 1,     remove
-    CLEAR      : 0, 1, 1,     clear
-    MERGE      : 0, 2, 1,     merge
-    LENGTH     : 0, 1, 1,     length
-    HASKEY     : 0, 2, 1,     has_key
-    ITEMGET    : 0, 2, 1,     item_get
-    KEYS       : 0, 1, 1,     keys
-    VALUES     : 0, 1, 1,     values
-    HEAD       : 0, 1, 1,     head
-    BACK       : 0, 1, 1,     back
-    APPEND     : 0, 2, 1,     append
-    CLONE      : 0, 1, 1,     clone
-    UNPACK     : 0, 2, 0,     unpack
+    global_put
+    global_get
+    memory_put
+    memory_get
 
-    XLG        : 1, 1, 1,     local_logic
-    XOP        : 1, 1, 0,     local_operand
-    ALLOC      : 1, 0, 0,     local_alloc
-    PUTX       : 0, 2, 0,     local_x_put
-    GETX       : 0, 1, 1,     local_x
-    PUT        : 1, 1, 0,     local_put
-    GET        : 1, 0, 1,     local
-    GET0       : 0, 0, 1,     local_0
-    GET1       : 0, 0, 1,     local_1
-    GET2       : 0, 0, 1,     local_2
-    GET3       : 0, 0, 1,     local_3
+    storage_rest
+    storage_load
+    storage_del
+    storage_save
+    storage_rent
 
-    HSLICE     : 0, 2, 1,     heap_slice
-    HREADUL    : 2, 0, 1,     heap_read_uint_long
-    HREADU     : 1, 0, 1,     heap_read_uint
-    HWRITEXL   : 2, 1, 0,     heap_write_xl
-    HWRITEX    : 1, 1, 0,     heap_write_x
-    HREAD      : 0, 2, 1,     heap_read
-    HWRITE     : 0, 2, 0,     heap_write
-    HGROW      : 1, 0, 0,     heap_grow
-
-    GPUT       : 0, 2, 0,     global_put
-    GGET       : 0, 1, 1,     global_get
-    MPUT       : 0, 2, 0,     memory_put
-    MGET       : 0, 1, 1,     memory_get
-
-    // LOG1       : 0, 255, 0,     log_1 LOG2       : 0, 255, 0,     log_2 LOG3       : 0, 255, 0,     log_3 LOG4       : 0, 255, 0,     log_4
-
-    SREST      : 0, 1, 1,     storage_rest
-    SLOAD      : 0, 1, 1,     storage_load
-    SDEL       : 0, 1, 0,     storage_del
-    SSAVE      : 0, 2, 0,     storage_save
-    SRENT      : 0, 2, 0,     storage_rent
-
-    // AND        : 0, 2, 1,     and OR         : 0, 2, 1,     or EQ         : 0, 2, 1,     equal NEQ        : 0, 2, 1,     not_equal LT         : 0, 2, 1,     less_than GT         : 0, 2, 1,     greater_than LE         : 0, 2, 1,     less_equal GE         : 0, 2, 1,     greater_equal NOT        : 0, 1, 1,     not
-
-    BSHR       : 0, 2, 1,     bit_shr
-    BSHL       : 0, 2, 1,     bit_shl
-    BXOR       : 0, 2, 1,     bit_xor
-    BOR        : 0, 2, 1,     bit_or
-    BAND       : 0, 2, 1,     bit_and
-
-    // ADD        : 0, 2, 1,     add SUB        : 0, 2, 1,     sub MUL        : 0, 2, 1,     mul DIV        : 0, 2, 1,     div MOD        : 0, 2, 1,     mod POW        : 0, 2, 1,     pow
-    MAX        : 0, 2, 1,     max
-    MIN        : 0, 2, 1,     min
-    INC        : 1, 1, 1,     increase
-    DEC        : 1, 1, 1,     decrease
-
-    // JMPL       : 2, 0, 0,     jump_long JMPS       : 1, 0, 0,     jump_offset JMPSL      : 2, 0, 0,     jump_offset_long BRL        : 2, 1, 0,     branch_long BRS        : 1, 1, 0,     branch_offset BRSL       : 2, 1, 0,     branch_offset_long BRSLN      : 2, 1, 0,     branch_offset_long_not
-
-    // RET        : 0, 1, 0,     return END        : 0, 0, 0,     end AST        : 0, 1, 0,     assert ERR        : 0, 1, 0,     throw ABT        : 0, 0, 0,     abort PRT        : 0, 1, 0,     print
-
-    // IRBYTECODE : 2, 255, 0,   ir_bytecode IRLIST     : 2, 255, 1,   ir_list IRBLOCK    : 2, 255, 0,   ir_block IRBLOCKR   : 2, 255, 1,   ir_block_expr IRIF       : 0, 3, 0,     ir_if IRIFR      : 0, 3, 1,     ir_if_expr IRWHILE    : 0, 2, 0,     ir_while
-
-    // BURN       : 2, 0, 0,     gas_burn NOP        : 0, 0, 0,     nop NT         : 0, 0, 0,     never_touch
-
+    max
+    min
+    increase
+    decrease
 }
-
 /* ******************************* #[derive(Default, Eq, PartialEq)] #[repr(u8)] pub enum TokenType { #[default] Blank,  // \s\n\t\r Word,   // _a~zA~Z0~9 Number, // 0~9 x b . Str, StrEsc, Split,  // () {} [] Symbol, // +-* /|& } */
 
 /********************************/
@@ -376,4 +322,38 @@ pub enum Token {
     Character(u8),
     Bytes(Vec<u8>),
     Address(Address),
+}
+
+
+
+
+
+
+
+#[cfg(test)]
+mod irfn_tests {
+    use super::*;
+
+    #[test]
+    fn direct_ir_func_signatures_come_from_bytecode_metadata() {
+        let (_, inst, pms, args, outs) = pick_ir_func("storage_save").unwrap();
+        let meta = inst.metadata();
+        assert_eq!(inst, Bytecode::SSAVE);
+        assert_eq!(pms, meta.param as usize);
+        assert_eq!(args, meta.input as usize);
+        assert_eq!(outs, meta.otput as usize);
+    }
+
+    #[test]
+    fn pack_tuple_is_not_a_direct_ir_function() {
+        assert!(pick_ir_func("pack_tuple").is_none());
+        assert!(IrFn::from_name("pack_tuple").is_none());
+    }
+
+    #[test]
+    fn unpack_remains_a_direct_ir_function() {
+        let (_, inst, pms, args, outs) = pick_ir_func("unpack").unwrap();
+        assert_eq!(inst, Bytecode::UNPACK);
+        assert_eq!((pms, args, outs), (0, 2, 0));
+    }
 }

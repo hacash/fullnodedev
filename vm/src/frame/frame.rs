@@ -87,8 +87,9 @@ impl Frame {
         self.oprnds.push(v)
     }
 
-    pub fn check_output_type(&self, v: &mut Value) -> VmrtErr {
+    pub fn check_output_type(&self, v: &mut Value, cap: &SpaceCap) -> VmrtErr {
         v.check_func_retv()?;
+        v.check_container_cap(cap)?;
         match &self.types {
             Some(ty) => ty.check_output(v),
             None => Ok(()),
@@ -109,12 +110,14 @@ impl Frame {
         height: u64,
         mut argv: Value,
         have_param: bool,
+        cap: &SpaceCap,
     ) -> VmrtErr {
         self.clear_runtime_state();
         if have_param {
             if let Some(vtys) = &fnobj.agvty {
                 vtys.check_params(&mut argv)?;
             }
+            argv.check_container_cap(cap)?;
             self.oprnds.push(argv.clone())?;
         }
         self.bindings = bindings;
@@ -133,9 +136,10 @@ impl Frame {
         fnobj: &FnObj,
         height: u64,
         param: Value,
+        cap: &SpaceCap,
     ) -> VmrtErr {
         // Caller must validate argv shape before any contract planning/warmup.
-        self.prepare_common(exec, bindings, fnobj, height, param, true)
+        self.prepare_common(exec, bindings, fnobj, height, param, true, cap)
     }
 
     pub fn prepare(
@@ -145,13 +149,14 @@ impl Frame {
         fnobj: &FnObj,
         height: u64,
         param: Option<Value>,
+        cap: &SpaceCap,
     ) -> VmrtErr {
         let have_param = param.is_some();
         let argv = param.unwrap_or(Value::Nil);
         if have_param {
             argv.check_func_argv()?;
         }
-        self.prepare_common(exec, bindings, fnobj, height, argv, have_param)
+        self.prepare_common(exec, bindings, fnobj, height, argv, have_param, cap)
     }
 
     pub fn prepare_splice(
@@ -161,8 +166,10 @@ impl Frame {
         fnobj: &FnObj,
         height: u64,
         param: Value,
+        cap: &SpaceCap,
     ) -> VmrtErr {
         param.check_func_argv()?;
+        param.check_container_cap(cap)?;
         let caller_output = match &self.types {
             Some(types) => types
                 .output_type()
@@ -224,8 +231,21 @@ mod frame_boundary_tests {
     fn check_output_type_rejects_heapslice_without_declared_output_type() {
         let frame = Frame::default();
         let mut retv = Value::HeapSlice((0, 1));
-        let err = frame.check_output_type(&mut retv).unwrap_err();
+        let err = frame.check_output_type(&mut retv, &SpaceCap::new(1)).unwrap_err();
         assert!(matches!(err, ItrErr(CastBeFnRetvFail, _)));
+    }
+
+    #[test]
+    fn check_output_type_rejects_oversize_compo() {
+        let frame = Frame::default();
+        let mut retv = Value::Compo(
+            CompoItem::list(std::collections::VecDeque::from([Value::U8(1), Value::U8(2)]))
+                .unwrap(),
+        );
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let err = frame.check_output_type(&mut retv, &cap).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
     }
 }
 
@@ -256,7 +276,14 @@ mod splice_prepare_tests {
         let owner = mk_contract_addr(41);
         let bindings = mk_bindings(owner.clone());
         frame
-            .prepare_splice(ExecCtx::view(), bindings.clone(), &fnobj, 1, Value::U8(2))
+            .prepare_splice(
+                ExecCtx::view(),
+                bindings.clone(),
+                &fnobj,
+                1,
+                Value::U8(2),
+                &res.space_cap,
+            )
             .unwrap();
         assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);
         assert_eq!(frame.exec, ExecCtx::view());

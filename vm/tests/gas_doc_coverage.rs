@@ -17,6 +17,9 @@ fn doc_tracks_current_dynamic_metering_groups() {
         "stack_write_div",
         "CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP",
         "fixed: REV",
+        "EQ, NEQ, XLG (`==` / `!=` only)",
+        "stack_cmp_div",
+        "`Tuple`/`Compo` equality is pointer-identity only",
     ] {
         assert!(DOC.contains(key), "missing stack-copy coverage key: {key}");
     }

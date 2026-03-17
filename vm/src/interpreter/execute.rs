@@ -142,6 +142,7 @@ macro_rules! ostbranch {
 * BUG1/2/3 are not runtime bugs: param reads and jumps omit repeated checks,
 * and gas negativity is finalized after each instruction for throughput.
 * Callers must only execute bytecode already accepted by rt/verify.
+* Callers must also seed operand/local stacks with values already valid under SpaceCap.
 */
 
 pub fn execute_code<H: VmHost + ?Sized>(
@@ -297,6 +298,15 @@ pub fn execute_code<H: VmHost + ?Sized>(
             gas += gst.stack_op(outlen);
             v.$method($($arg),*)?;
         }}}
+
+        macro_rules! compare_gas {
+            () => {{
+                if ops.datas.len() >= 2 {
+                    let l = ops.datas.len();
+                    gas += gst.stack_cmp(lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1]));
+                }
+            }};
+        }
 
         macro_rules! push_buf_gas {
             ($v:expr) => {{
@@ -509,9 +519,13 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 }
                 TUPLE2LIST => {
                     let (list, len, bsz) = match ops.peek()? {
-                        Tuple(args) => args
-                            .to_list_with_stats()
-                            .map_err(|ItrErr(_, msg)| ItrErr::new(CastFail, &msg))?,
+                        Tuple(args) => match args.to_list_with_stats(cap) {
+                            Ok(v) => v,
+                            Err(ItrErr(CastBeValueFail, msg)) => {
+                                return Err(ItrErr::new(CastFail, &msg))
+                            }
+                            Err(e) => return Err(e),
+                        },
                         _ => return itr_err_code!(CastFail),
                     };
                     gas += gst.compo_items_copy(len);
@@ -633,7 +647,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 UNPACK => {
                     let i = ops.pop()?.extract_u8()?;
                     let items = ops.peek()?.clone_unpack_items()?;
-                    gas += unpack_seq(i, locals, items, gst)?;
+                    gas += unpack_seq(i, locals, items, gst, cap)?;
                     ops.pop()?; // pop argv wrapper after unpack
                 }
                 // heap
@@ -656,7 +670,16 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     *peek = heap.slice(p, peek)?;
                 }
                 // locals & heap & global_map & memory_map
-                XLG => local_logic(pu8!(), locals, ops.peek()?)?,
+                XLG => {
+                    let mark = pu8!();
+                    let (opt, idx) = decode_local_logic_mark(mark);
+                    if matches!(opt, LxLg::Eq | LxLg::Ne) {
+                        let base = locals.load(idx as usize)?;
+                        let top = ops.peek()?;
+                        gas += gst.stack_cmp(lgc_compare_fee(&base, top));
+                    }
+                    local_logic(mark, locals, ops.peek()?)?;
+                }
                 XOP => local_operand(pu8!(), locals, ops.pop()?)?,
                 ALLOC => gas += gst.local_one_alloc * locals.alloc(pu8!())? as i64,
                 GETX => {
@@ -731,8 +754,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // logic
                 AND => binop_btw(ops, lgc_and)?,
                 OR => binop_btw(ops, lgc_or)?,
-                EQ => binop_btw(ops, lgc_equal)?,
-                NEQ => binop_btw(ops, lgc_not_equal)?,
+                EQ => {
+                    compare_gas!();
+                    binop_btw(ops, lgc_equal)?
+                }
+                NEQ => {
+                    compare_gas!();
+                    binop_btw(ops, lgc_not_equal)?
+                }
                 LT => binop_btw(ops, lgc_less)?,
                 GT => binop_btw(ops, lgc_greater)?,
                 LE => binop_btw(ops, lgc_less_equal)?,

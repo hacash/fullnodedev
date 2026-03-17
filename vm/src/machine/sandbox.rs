@@ -8,6 +8,7 @@ pub struct SandboxSpec {
     pub args: Vec<Value>,
     pub caller: Option<Address>,
     pub gas_budget: Option<i64>,
+    pub gas_max_byte: Option<u8>,
 }
 
 impl SandboxSpec {
@@ -18,6 +19,7 @@ impl SandboxSpec {
             args: vec![],
             caller: None,
             gas_budget: None,
+            gas_max_byte: None,
         }
     }
 
@@ -35,12 +37,17 @@ impl SandboxSpec {
         self.gas_budget = Some(gas_budget);
         self
     }
+
+    pub fn gas_max_byte(mut self, gas_max_byte: u8) -> Self {
+        self.gas_max_byte = Some(gas_max_byte);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxResult {
-    pub gas_used: i64,
-    pub return_value: Value,
+    pub use_gas: i64,
+    pub ret_val: Value,
 }
 
 pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResult> {
@@ -49,12 +56,26 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
     let mut env = ctx.env().clone();
     let state = ctx.state().clone_state();
     let caller = spec.caller.unwrap_or_else(|| ctx.tx().main());
+    let gas_extra = GasExtra::new(env.block.height);
+    let (tx_gas_max, gas_budget) = match spec.gas_max_byte {
+        Some(0) => return errf!("sandbox gas_max byte invalid: 0"),
+        Some(gmx) => (gmx, decode_gas_budget(gmx)),
+        None => {
+            let budget_hint = spec
+                .gas_budget
+                .unwrap_or(gas_extra.max_gas_of_tx);
+            let tx_gas_max = encode_gas_budget(budget_hint.max(1));
+            let gas_budget = match spec.gas_budget {
+                Some(v) if v > 0 => v.min(gas_extra.max_gas_of_tx),
+                Some(v) => return errf!("sandbox gas budget invalid: {}", v),
+                None => gas_extra.max_gas_of_tx,
+            };
+            (tx_gas_max, gas_budget)
+        }
+    };
     let mut tx = TransactionType3::new_by(caller, Amount::unit238(SANDBOX_TX_FEE_238), env.block.height);
     tx.addrlist = AddrOrList::from_list(vec![caller, spec.contract.into_addr()])?;
-    let budget_hint = spec
-        .gas_budget
-        .unwrap_or_else(|| GasExtra::new(env.block.height).max_gas_of_tx);
-    tx.gas_max = Uint1::from(encode_gas_budget(budget_hint.max(1)));
+    tx.gas_max = Uint1::from(tx_gas_max);
     env.tx = create_tx_info(&tx);
     let mut temp_ctx = protocol::context::ContextInst::new(
         env,
@@ -63,12 +84,6 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
         &tx,
     );
     let hei = temp_ctx.env().block.height;
-    let gas_extra = GasExtra::new(hei);
-    let gas_budget = match spec.gas_budget {
-        Some(v) if v > 0 => v.min(gas_extra.max_gas_of_tx),
-        Some(v) => return errf!("sandbox gas budget invalid: {}", v),
-        None => gas_extra.max_gas_of_tx,
-    };
     let codes = build_call_codes(&spec.function, &spec.args)?;
     verify_bytecodes(&codes)?;
     let caller = temp_ctx.tx().main();
@@ -80,10 +95,10 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
     temp_ctx.gas_init_tx(gas_budget, gas_extra.gas_rate)?;
     let gas_before = Context::gas_remaining(&temp_ctx);
     let mut vmb = global_machine_manager().assign(hei);
-    let return_value = vmb.sandbox_main_call_raw(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
+    let ret_val = vmb.sandbox_main_call_raw(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
     Ok(SandboxResult {
-        gas_used: gas_before - Context::gas_remaining(&temp_ctx),
-        return_value,
+        use_gas: gas_before - Context::gas_remaining(&temp_ctx),
+        ret_val,
     })
 }
 
@@ -99,7 +114,7 @@ pub fn parse_sandbox_params(pms: &str) -> Ret<Vec<Value>> {
     Ok(values)
 }
 
-fn build_call_codes(funcname: &str, args: &[Value]) -> Ret<Vec<u8>> {
+pub fn build_call_codes(funcname: &str, args: &[Value]) -> Ret<Vec<u8>> {
     use rt::Bytecode::*;
 
     let mut codes = vec![];

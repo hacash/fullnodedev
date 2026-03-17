@@ -122,7 +122,7 @@ fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
         (Bytes(l), Bytes(r)) => Ok(l == r),
         (Address(l), Address(r)) => Ok(l == r),
         (HeapSlice(l), HeapSlice(r)) => Ok(l == r),
-        (Tuple(l), Tuple(r)) => Ok(l == r),
+        (Tuple(l), Tuple(r)) => Ok(l.ptr_eq(r)),
         (Compo(l), Compo(r)) => Ok(l.ptr_eq(r)),
         (U8(l), U8(r)) => Ok(l == r),
         (U16(l), U16(r)) => Ok(l == r),
@@ -131,6 +131,10 @@ fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
         (U128(l), U128(r)) => Ok(l == r),
         _ => itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", x, y),
     }
+}
+
+fn lgc_compare_fee(x: &Value, y: &Value) -> usize {
+    x.dup_size() + y.dup_size()
 }
 
 fn lgc_equal(x: &Value, y: &Value) -> VmrtRes<Value> {

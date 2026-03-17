@@ -36,6 +36,41 @@ pub fn encode_exec_error_to_text(err: ExecError) -> TextError {
     }
 }
 
+fn exec_error_kind_name(err: &ExecError) -> &'static str {
+    match err {
+        ExecError::Revert(_) => "revert",
+        ExecError::Fault(_) => "fault",
+    }
+}
+
+fn append_secondary_error(mut primary: String, secondary: ExecError) -> String {
+    if !primary.is_empty() {
+        primary.push_str("; ");
+    }
+    primary.push_str("secondary_");
+    primary.push_str(exec_error_kind_name(&secondary));
+    primary.push('=');
+    primary.push_str(secondary.as_str());
+    primary
+}
+
+pub fn merge_exec_errors(first: ExecError, second: ExecError) -> ExecError {
+    match (first, second) {
+        (ExecError::Revert(primary), ExecError::Revert(secondary)) => ExecError::Revert(
+            append_secondary_error(primary, ExecError::Revert(secondary)),
+        ),
+        (ExecError::Fault(primary), ExecError::Fault(secondary)) => {
+            ExecError::Fault(append_secondary_error(primary, ExecError::Fault(secondary)))
+        }
+        (ExecError::Fault(primary), ExecError::Revert(secondary)) => ExecError::Fault(
+            append_secondary_error(primary, ExecError::Revert(secondary)),
+        ),
+        (ExecError::Revert(secondary), ExecError::Fault(primary)) => ExecError::Fault(
+            append_secondary_error(primary, ExecError::Revert(secondary)),
+        ),
+    }
+}
+
 impl ExecError {
     pub fn revert(msg: impl Into<String>) -> Self {
         Self::Revert(msg.into())
@@ -155,6 +190,39 @@ impl<T> IntoTRet<T> for XRet<T> {
 impl<T> IntoTRet<T> for Ret<T> {
     fn into_tret(self) -> Ret<T> {
         self
+    }
+}
+
+#[cfg(test)]
+mod exec_error_merge_tests {
+    use super::*;
+
+    #[test]
+    fn merge_prefers_first_error_when_both_are_reverts() {
+        let merged = merge_exec_errors(ExecError::revert("first"), ExecError::revert("second"));
+        assert!(merged.is_revert());
+        assert_eq!(merged.as_str(), "first; secondary_revert=second");
+    }
+
+    #[test]
+    fn merge_prefers_first_error_when_both_are_faults() {
+        let merged = merge_exec_errors(ExecError::fault("first"), ExecError::fault("second"));
+        assert!(merged.is_fault());
+        assert_eq!(merged.as_str(), "first; secondary_fault=second");
+    }
+
+    #[test]
+    fn merge_promotes_fault_when_second_error_is_fault() {
+        let merged = merge_exec_errors(ExecError::revert("first"), ExecError::fault("second"));
+        assert!(merged.is_fault());
+        assert_eq!(merged.as_str(), "second; secondary_revert=first");
+    }
+
+    #[test]
+    fn merge_keeps_fault_primary_when_first_error_is_fault() {
+        let merged = merge_exec_errors(ExecError::fault("first"), ExecError::revert("second"));
+        assert!(merged.is_fault());
+        assert_eq!(merged.as_str(), "first; secondary_revert=second");
     }
 }
 

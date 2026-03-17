@@ -188,6 +188,18 @@ impl TransactionType3 {
     }
 }
 
+fn settle_type3_exec_and_refund(exec_res: Rerr, settle_res: Rerr) -> Rerr {
+    match (exec_res, settle_res) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(exec_err), Ok(())) => Err(exec_err),
+        (Ok(()), Err(settle_err)) => Err(settle_err),
+        (Err(exec_err), Err(settle_err)) => Err(encode_exec_error_to_text(merge_exec_errors(
+            decode_exec_error_from_text(exec_err),
+            decode_exec_error_from_text(settle_err),
+        ))),
+    }
+}
+
 fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn TxDriverContext) -> Rerr {
     let prep = prepare_tx_execute(tx, ctx)?;
     if tx.ano_mark[0] != 0 {
@@ -212,9 +224,61 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn TxDriverContext) -> 
         Ok(())
     })();
     let settle_res = ctx.gas_refund();
-    settle_res?;
-    exec_res?;
+    settle_type3_exec_and_refund(exec_res, settle_res)?;
     super::tex::do_settlement(ctx)?;
     operate::hac_sub(ctx, &prep.main, &prep.fee)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod type3_exec_merge_tests {
+    use super::*;
+
+    #[test]
+    fn settle_merge_keeps_revert_primary_when_both_are_reverts() {
+        let merged = settle_type3_exec_and_refund(
+            err!(encode_exec_error_to_text(XError::revert("exec"))),
+            err!(encode_exec_error_to_text(XError::revert("settle"))),
+        )
+        .unwrap_err();
+        let decoded = decode_exec_error_from_text(merged);
+        assert!(decoded.is_revert());
+        assert_eq!(decoded.as_str(), "exec; secondary_revert=settle");
+    }
+
+    #[test]
+    fn settle_merge_keeps_fault_primary_when_both_are_faults() {
+        let merged = settle_type3_exec_and_refund(
+            err!(encode_exec_error_to_text(XError::fault("exec"))),
+            err!(encode_exec_error_to_text(XError::fault("settle"))),
+        )
+        .unwrap_err();
+        let decoded = decode_exec_error_from_text(merged);
+        assert!(decoded.is_fault());
+        assert_eq!(decoded.as_str(), "exec; secondary_fault=settle");
+    }
+
+    #[test]
+    fn settle_merge_promotes_fault_over_revert() {
+        let merged = settle_type3_exec_and_refund(
+            err!(encode_exec_error_to_text(XError::revert("exec"))),
+            err!(encode_exec_error_to_text(XError::fault("settle"))),
+        )
+        .unwrap_err();
+        let decoded = decode_exec_error_from_text(merged);
+        assert!(decoded.is_fault());
+        assert_eq!(decoded.as_str(), "settle; secondary_revert=exec");
+    }
+
+    #[test]
+    fn settle_merge_preserves_first_fault_over_second_revert() {
+        let merged = settle_type3_exec_and_refund(
+            err!(encode_exec_error_to_text(XError::fault("exec"))),
+            err!(encode_exec_error_to_text(XError::revert("settle"))),
+        )
+        .unwrap_err();
+        let decoded = decode_exec_error_from_text(merged);
+        assert!(decoded.is_fault());
+        assert_eq!(decoded.as_str(), "exec; secondary_revert=settle");
+    }
 }

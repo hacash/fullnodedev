@@ -37,6 +37,12 @@ impl Syntax {
         let mut block_err = false;
         let mut closed = false;
         self.with_expect_retval(true, |s| {
+            let prev_check_op = s.mode.check_op;
+            // Argument lists rely on expression boundaries because the tokenizer
+            // drops commas. Nested arg expressions must therefore always parse
+            // operators normally, even when the caller is currently parsing the
+            // RHS of an outer binary expression.
+            s.mode.check_op = true;
             loop {
                 if s.idx >= end {
                     block_err = true;
@@ -58,6 +64,7 @@ impl Syntax {
                 };
                 subs.push(li);
             }
+            s.mode.check_op = prev_check_op;
             Ok::<(), Error>(())
         })?;
 

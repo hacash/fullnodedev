@@ -349,6 +349,9 @@ impl Machine {
         let exec = EntryKind::Abst.root_exec();
         exec.ensure_call_depth(&self.r.space_cap).map_err(XError::from)?;
         param.check_func_argv().map_err(XError::from)?;
+        param
+            .check_container_cap(&self.r.space_cap)
+            .map_err(XError::from)?;
         let adr = contract_addr.to_readable();
         let Some(hit) = self
             .r

@@ -22,6 +22,8 @@ impl TupleItem {
         if items.is_empty() {
             return itr_err_code!(CompoPackError);
         }
+        // Runtime tuple length is enforced at VM entry/opcode sites; this
+        // constructor stays cap-free for trusted rebuild paths.
         for item in &items {
             item.check_tuple_item()?;
         }
@@ -49,6 +51,10 @@ impl TupleItem {
         &self.items
     }
 
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.items, &other.items)
+    }
+
     pub fn to_vec(&self) -> Vec<Value> {
         self.items.to_vec()
     }
@@ -58,7 +64,11 @@ impl TupleItem {
     }
 
     pub fn length(&self, cap: &SpaceCap) -> VmrtRes<Value> {
-        self.read().length(cap)
+        let len = self.len();
+        if len > cap.tuple_length {
+            return itr_err_code!(OutOfCompoLen);
+        }
+        Ok(Value::U32(len as u32))
     }
 
     pub fn haskey(&self, k: Value) -> VmrtRes<Value> {
@@ -69,8 +79,11 @@ impl TupleItem {
         self.read().itemget(k)
     }
 
-    pub fn to_list_with_stats(&self) -> VmrtRes<(Value, usize, usize)> {
+    pub fn to_list_with_stats(&self, cap: &SpaceCap) -> VmrtRes<(Value, usize, usize)> {
         let len = self.items.len();
+        if len > cap.compo_length {
+            return itr_err_code!(OutOfCompoLen);
+        }
         let mut bsz = 0usize;
         let mut items = std::collections::VecDeque::with_capacity(len);
         for item in self.items.iter().cloned() {
@@ -127,14 +140,14 @@ mod tuple_tests {
     #[test]
     fn tuple_to_list_rejects_compo_item_under_non_nested_compo_rule() {
         let tuple = TupleItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_map())]).unwrap();
-        let err = tuple.to_list_with_stats().unwrap_err();
+        let err = tuple.to_list_with_stats(&SpaceCap::new(1)).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);
     }
 
     #[test]
     fn tuple_to_list_copies_plain_values_and_reports_stats() {
         let tuple = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
-        let (out, len, bsz) = tuple.to_list_with_stats().unwrap();
+        let (out, len, bsz) = tuple.to_list_with_stats(&SpaceCap::new(1)).unwrap();
         assert_eq!(len, 2);
         assert_eq!(
             bsz,
@@ -157,6 +170,15 @@ mod tuple_tests {
     }
 
     #[test]
+    fn tuple_ptr_eq_tracks_shared_storage_only() {
+        let tuple = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let cloned = tuple.clone();
+        let rebuilt = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        assert!(tuple.ptr_eq(&cloned));
+        assert!(!tuple.ptr_eq(&rebuilt));
+    }
+
+    #[test]
     fn tuple_list_reads_follow_list_semantics() {
         let tuple = TupleItem::new(vec![Value::U8(7), Value::Compo(CompoItem::new_map())]).unwrap();
         assert_eq!(tuple.length(&SpaceCap::new(2)).unwrap(), Value::U32(2));
@@ -169,11 +191,28 @@ mod tuple_tests {
     }
 
     #[test]
-    fn tuple_length_checks_compo_cap() {
+    fn tuple_length_ignores_compo_cap() {
         let tuple = TupleItem::new(vec![Value::U8(1), Value::U8(2)]).unwrap();
         let mut cap = SpaceCap::new(1);
         cap.compo_length = 1;
+        assert_eq!(tuple.length(&cap).unwrap(), Value::U32(2));
+    }
+
+    #[test]
+    fn tuple_length_checks_tuple_cap() {
+        let tuple = TupleItem::new(vec![Value::U8(1), Value::U8(2)]).unwrap();
+        let mut cap = SpaceCap::new(1);
+        cap.tuple_length = 1;
         let err = tuple.length(&cap).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
+    }
+
+    #[test]
+    fn tuple_to_list_checks_compo_cap() {
+        let tuple = TupleItem::new(vec![Value::U8(1), Value::U8(2)]).unwrap();
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let err = tuple.to_list_with_stats(&cap).unwrap_err();
         assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
     }
 

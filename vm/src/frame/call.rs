@@ -16,7 +16,7 @@ impl CallFrame {
 
         exec.ensure_call_depth(&r.space_cap)?;
         let mut root = self.increase(r)?;
-        root.prepare(exec, bindings, code, height, param)?;
+        root.prepare(exec, bindings, code, height, param, &r.space_cap)?;
         self.push(root);
 
         loop {
@@ -30,6 +30,7 @@ impl CallFrame {
                     // Validate local argv boundary before resolving/loading any callee so
                     // malformed input cannot warm caches via either Invoke or Splice.
                     curr_mut!().oprnds.peek()?.check_func_argv()?;
+                    curr_mut!().oprnds.peek()?.check_container_cap(&r.space_cap)?;
                     let plan = r.plan_user_call(host, &spec, &curr_bindings)?;
 
                     match spec {
@@ -45,6 +46,7 @@ impl CallFrame {
                                 plan.fnobj.as_ref(),
                                 height,
                                 param,
+                                &r.space_cap,
                             )?;
                             continue;
                         }
@@ -57,6 +59,7 @@ impl CallFrame {
                                 plan.fnobj.as_ref(),
                                 height,
                                 param,
+                                &r.space_cap,
                             )?;
                             self.push(next);
                         }
@@ -71,7 +74,7 @@ impl CallFrame {
                     if matches!(exit, Abort | Throw) {
                         return itr_err_fmt!(ThrowAbort, "VM return failed: {}", retv);
                     }
-                    curr!().check_output_type(&mut retv)?;
+                    curr!().check_output_type(&mut retv, &r.space_cap)?;
                     self.pop().unwrap().reclaim(r);
 
                     loop {
@@ -84,7 +87,7 @@ impl CallFrame {
                             break;
                         }
                         let tail = self.pop().unwrap();
-                        tail.check_output_type(&mut retv)?;
+                        tail.check_output_type(&mut retv, &r.space_cap)?;
                         tail.reclaim(r);
                     }
                 }

@@ -192,6 +192,29 @@ mod token_t {
     }
 
     #[test]
+    fn test_nested_call_arg_subexpression_on_binary_rhs_compiles() {
+        use super::lang_to_irnode;
+        let script = r#"
+            return 1 + byte("abc", 3 - 1)
+        "#;
+        let result = lang_to_irnode(script);
+        assert!(result.is_ok(), "nested call arg with subtraction on binary rhs must compile");
+    }
+
+    #[test]
+    fn test_nested_multi_arg_call_subexpressions_on_binary_rhs_compile() {
+        use super::lang_to_irnode;
+        let script = r#"
+            return 1 + size(buf_cut("abcd", 1 + 1, 4 - 2 - 1))
+        "#;
+        let result = lang_to_irnode(script);
+        assert!(
+            result.is_ok(),
+            "nested multi-arg call subexpressions on binary rhs must compile"
+        );
+    }
+
+    #[test]
     fn test_codecall_all_required_forms_are_valid() {
         use super::lang_to_irnode;
         let scripts = [

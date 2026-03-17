@@ -40,7 +40,7 @@ impl GasTable {
             CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
             POP, NOP, NT, END, RET, ABT, ERR, AST, PRT]);
         gst.set(2,  &[]); // all other bytecode
-        gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE]);
+        gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]);
         // "Medium" cost ops (includes some O(n) stack ops that were previously default-2).
         gst.set(4,  &[
             DUPN, POPN, ROLL,
@@ -111,6 +111,7 @@ pub struct GasExtra {
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
     stack_write_div: i64,
+    stack_cmp_div: i64,
     stack_op_div: i64,
     heap_read_div: i64,
     heap_write_div: i64,
@@ -206,7 +207,7 @@ pub fn encode_gas_budget(budget: i64) -> u8 {
 impl GasExtra {
     pub fn new(_hei: u64) -> Self {
         Self {
-            max_gas_of_tx:    16384, // L1 mainnet limit, can increase via hard fork
+            max_gas_of_tx:     8192, // 16384, // L1 mainnet limit, can increase via hard fork
             gas_rate:          1,    // mainnet: no discount (burn = cost*fee/txsz/gas_rate)
             local_one_alloc:          5, // 5 * num
             storege_value_base_size: 32,
@@ -221,7 +222,8 @@ impl GasExtra {
             storage_del_min:    16,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
-            stack_write_div:    24,
+            stack_write_div:    28,
+            stack_cmp_div:      24,
             stack_op_div:       20,
             heap_read_div:      16,
             heap_write_div:     12,
@@ -267,6 +269,11 @@ impl GasExtra {
     #[inline(always)]
     pub fn stack_write(&self, len: usize) -> i64 {
         Self::div_bytes(len, self.stack_write_div)
+    }
+
+    #[inline(always)]
+    pub fn stack_cmp(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.stack_cmp_div)
     }
 
     #[inline(always)]
@@ -393,7 +400,7 @@ mod gas_budget_codec_tests {
                 CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST,
                 POP, NOP, NT, END, RET, ABT, ERR, AST, PRT,
             ]),
-            (3, &[BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE]),
+            (3, &[BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]),
             (4, &[
                 DUPN, POPN, ROLL,
                 PBUF, PBUFL,
@@ -463,9 +470,10 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.stack_copy(32), 1);
         assert_eq!(gst.stack_copy(64), 2);
         assert_eq!(gst.stack_write(0), 0);
-        assert_eq!(gst.stack_write(23), 1);
-        assert_eq!(gst.stack_write(24), 1);
-        assert_eq!(gst.stack_write(49), 3);
+        assert_eq!(gst.stack_write(27), 1);
+        assert_eq!(gst.stack_write(28), 1);
+        assert_eq!(gst.stack_write(29), 2);
+        assert_eq!(gst.stack_write(57), 3);
         assert_eq!(gst.stack_op(0), 0);
         assert_eq!(gst.stack_op(15), 1);
         assert_eq!(gst.stack_op(20), 1);

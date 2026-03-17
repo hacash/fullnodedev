@@ -10,7 +10,7 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
     CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
     POP, NOP, NT, END, RET, ABT, ERR, AST, PRT
 - 2: `all other opcode`
-- 3: BRL, BRS, BRSL, BRSLN, XLG, PUT, CHOOSE
+- 3: BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE
 - 4: DUPN, POPN, ROLL,
     PBUF, PBUFL,
     MOD, MUL, DIV, XOP, 
@@ -116,6 +116,13 @@ For opcode that create/copy byte payload to stack values, or write value payload
   (`unpack` charges `stack_write(item.val_size())` for each written local slot)
 - byte/16: CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP (byte = output value `val_size()`)
 - fixed: REV (only reorders stack values, no real payload copy)
+
+#### Reference compare
+
+- byte/24: EQ, NEQ, XLG (`==` / `!=` only)
+  (runtime divisor: `stack_cmp_div`)
+  - byte = `left.dup_size() + right.dup_size()`
+  - `Tuple`/`Compo` equality is pointer-identity only
 
 #### Extend call handle
 

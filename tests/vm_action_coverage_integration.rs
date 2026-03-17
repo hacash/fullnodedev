@@ -2179,8 +2179,8 @@ mod action_coverage {
         // Call it via sandbox
         let callres =
             machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "greet")).unwrap();
-        assert!(callres.gas_used > 0);
-        assert_eq!(callres.return_value, vm::value::Value::U8(0));
+        assert!(callres.use_gas > 0);
+        assert_eq!(callres.ret_val, vm::value::Value::U8(0));
     }
 
     #[test]

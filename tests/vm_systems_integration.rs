@@ -503,8 +503,8 @@ fn sandbox_call_executes_and_reports_missing_function() {
         machine::SandboxSpec::new(caddr, "add1").args(vec![Value::U8(5)]),
     )
     .unwrap();
-    assert!(callres.gas_used > 0);
-    assert_eq!(callres.return_value, Value::U8(0));
+    assert!(callres.use_gas > 0);
+    assert_eq!(callres.ret_val, Value::U8(0));
 
     let err = machine::sandbox_call(
         &mut ctx,
@@ -512,4 +512,45 @@ fn sandbox_call_executes_and_reports_missing_function() {
     )
     .unwrap_err();
     assert!(err.contains("CallNotExist"), "{err}");
+}
+
+#[test]
+fn sandbox_call_respects_explicit_gas_max_byte() {
+    let _guard = test_guard();
+
+    let main = main_addr();
+    let caddr = contract_addr(&main, 3002);
+    let sto = make_external_contract(
+        "heavy",
+        r##"
+        var i = 0 as u64
+        var sum = 0 as u64
+        while i < 200 {
+            sum = sum + i
+            i = i + 1
+        }
+        return 0
+    "##,
+    );
+    let mut state = StateMem::default();
+    insert_contract(&mut state, &caddr, &sto);
+
+    let tx = make_tx(3, main, vec![], 17);
+    let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+    protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+
+    let err = machine::sandbox_call(
+        &mut ctx,
+        machine::SandboxSpec::new(caddr.clone(), "heavy").gas_max_byte(1),
+    )
+    .unwrap_err();
+    assert!(err.contains("gas has run out"), "{err}");
+
+    let callres = machine::sandbox_call(
+        &mut ctx,
+        machine::SandboxSpec::new(caddr, "heavy").gas_max_byte(64),
+    )
+    .unwrap();
+    assert!(callres.use_gas > 0);
+    assert_eq!(callres.ret_val, Value::U8(0));
 }

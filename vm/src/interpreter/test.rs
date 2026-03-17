@@ -6,7 +6,7 @@ mod bounds_tests {
     use crate::machine::VmHost;
     use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
-    use crate::value::{CompoItem, Value, ValueTy, RESERVED_U256_TYPE_ID};
+    use crate::value::{CompoItem, TupleItem, Value, ValueTy, REF_DUP_SIZE, RESERVED_U256_TYPE_ID};
     use crate::{ContractAddress, ContractEdition, ContractSto};
     use field::Address;
     use sys::{XError, XRet};
@@ -733,6 +733,132 @@ mod bounds_tests {
     }
 
     #[test]
+    fn eq_tuple_uses_pointer_identity_and_reference_compare_fee() {
+        use crate::rt::Bytecode;
+
+        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let distinct = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+
+        let shared_gas = run_with_setup(
+            vec![Bytecode::EQ as u8, Bytecode::END as u8],
+            DummyHost::default(),
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                ops.push(Value::Tuple(shared.clone())).unwrap();
+                ops.push(Value::Tuple(shared.clone())).unwrap();
+            },
+        );
+        let distinct_gas = run_with_setup(
+            vec![Bytecode::EQ as u8, Bytecode::END as u8],
+            DummyHost::default(),
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                ops.push(Value::Tuple(shared.clone())).unwrap();
+                ops.push(Value::Tuple(distinct.clone())).unwrap();
+            },
+        );
+        let gst = GasTable::new(1);
+        let gex = GasExtra::new(1);
+        let expected = gst.gas(Bytecode::EQ as u8)
+            + gst.gas(Bytecode::END as u8)
+            + gex.stack_cmp(REF_DUP_SIZE * 2);
+        assert_eq!(shared_gas, expected);
+        assert_eq!(distinct_gas, expected);
+
+        let run_result = |rhs: Value| -> Value {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            operands.push(Value::Tuple(shared.clone())).unwrap();
+            operands.push(rhs).unwrap();
+            execute_code(
+                &mut pc,
+                &[Bytecode::EQ as u8, Bytecode::END as u8],
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &gst,
+                &gex,
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap();
+            operands.pop().unwrap()
+        };
+
+        assert_eq!(run_result(Value::Tuple(shared.clone())), Value::Bool(true));
+        assert_eq!(run_result(Value::Tuple(distinct)), Value::Bool(false));
+    }
+
+    #[test]
+    fn xlg_eq_tuple_uses_pointer_identity_and_reference_compare_fee() {
+        use crate::rt::Bytecode;
+
+        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let distinct = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let mark = (2 << 5) | 0;
+
+        let run = |local_v: Value, stack_v: Value| -> (Value, i64) {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            locals.alloc(1).unwrap();
+            locals.save(0, local_v).unwrap();
+            operands.push(stack_v).unwrap();
+
+            execute_code(
+                &mut pc,
+                &[Bytecode::XLG as u8, mark, Bytecode::END as u8],
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap();
+
+            (operands.pop().unwrap(), 1000 - gas)
+        };
+
+        let gst = GasTable::new(1);
+        let gex = GasExtra::new(1);
+        let expected = gst.gas(Bytecode::XLG as u8)
+            + gst.gas(Bytecode::END as u8)
+            + gex.stack_cmp(REF_DUP_SIZE * 2);
+
+        let (out_shared, gas_shared) = run(Value::Tuple(shared.clone()), Value::Tuple(shared.clone()));
+        let (out_distinct, gas_distinct) = run(Value::Tuple(shared), Value::Tuple(distinct));
+        assert_eq!(out_shared, Value::Bool(true));
+        assert_eq!(out_distinct, Value::Bool(false));
+        assert_eq!(gas_shared, expected);
+        assert_eq!(gas_distinct, expected);
+    }
+
+    #[test]
     fn xop_marks_execute_with_assignment_semantics() {
         use crate::rt::Bytecode;
 
@@ -1373,9 +1499,9 @@ mod bounds_tests {
             )
         };
 
-        let gas_24 = run(Value::Bytes(vec![0u8; 24]));
-        let gas_25 = run(Value::Bytes(vec![0u8; 25]));
-        assert_eq!(gas_25, gas_24 + 1);
+        let gas_28 = run(Value::Bytes(vec![0u8; 28]));
+        let gas_29 = run(Value::Bytes(vec![0u8; 29]));
+        assert_eq!(gas_29, gas_28 + 1);
     }
 
     #[test]
@@ -1394,9 +1520,9 @@ mod bounds_tests {
             )
         };
 
-        let gas_24 = run(Value::Bytes(vec![0u8; 24]));
-        let gas_25 = run(Value::Bytes(vec![0u8; 25]));
-        assert_eq!(gas_25, gas_24 + 1);
+        let gas_28 = run(Value::Bytes(vec![0u8; 28]));
+        let gas_29 = run(Value::Bytes(vec![0u8; 29]));
+        assert_eq!(gas_29, gas_28 + 1);
     }
 
     #[test]
@@ -1420,9 +1546,9 @@ mod bounds_tests {
             )
         };
 
-        let gas_24 = run(Value::Bytes(vec![0u8; 24]));
-        let gas_25 = run(Value::Bytes(vec![0u8; 25]));
-        assert_eq!(gas_25, gas_24 + 1);
+        let gas_28 = run(Value::Bytes(vec![0u8; 28]));
+        let gas_29 = run(Value::Bytes(vec![0u8; 29]));
+        assert_eq!(gas_29, gas_28 + 1);
     }
 
     #[test]
@@ -1442,9 +1568,9 @@ mod bounds_tests {
             )
         };
 
-        let gas_24 = run(Value::Bytes(vec![0u8; 24]));
-        let gas_25 = run(Value::Bytes(vec![0u8; 25]));
-        assert_eq!(gas_25, gas_24 + 1);
+        let gas_28 = run(Value::Bytes(vec![0u8; 28]));
+        let gas_29 = run(Value::Bytes(vec![0u8; 29]));
+        assert_eq!(gas_29, gas_28 + 1);
     }
 
     #[test]
@@ -1505,7 +1631,7 @@ mod bounds_tests {
             )
         };
 
-        assert_eq!(run(25), run(24) + 1);
+        assert_eq!(run(29), run(28) + 1);
     }
 
     #[test]
@@ -1529,7 +1655,7 @@ mod bounds_tests {
             )
         };
 
-        assert_eq!(run(25), run(24) + 1);
+        assert_eq!(run(29), run(28) + 1);
     }
 
     #[test]
@@ -2096,11 +2222,11 @@ mod bounds_tests {
             )
         };
 
-        assert_eq!(run(25), run(24) + 2);
+        assert_eq!(run(29), run(28) + 2);
     }
 
     #[test]
-    fn uplist_accepts_oversize_value_without_spacecap_validation() {
+    fn unpack_rejects_oversize_list_value_by_spacecap() {
         use crate::rt::Bytecode;
         use std::collections::VecDeque;
 
@@ -2130,7 +2256,7 @@ mod bounds_tests {
         operands.push(Value::U8(0)).unwrap();
 
         let codes = vec![Bytecode::UNPACK as u8, Bytecode::END as u8];
-        let exit = execute_code(
+        let err = execute_code(
             &mut pc,
             &codes,
             ExecCtx::main(),
@@ -2147,11 +2273,9 @@ mod bounds_tests {
             &mut memory_map,
             &mut host,
         )
-        .unwrap();
+        .unwrap_err();
 
-        assert!(matches!(exit, crate::rt::CallExit::Finish));
-        assert_eq!(locals.load(0).unwrap(), Value::U8(1));
-        assert_eq!(locals.load(1).unwrap(), Value::Bytes(vec![0u8; 1281]));
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
     }
 
     #[test]
@@ -2200,6 +2324,52 @@ mod bounds_tests {
         assert!(matches!(exit, crate::rt::CallExit::Finish));
         assert!(matches!(locals.load(0).unwrap(), Value::Compo(_)));
         assert_eq!(locals.load(1).unwrap(), Value::U16(9));
+    }
+
+    #[test]
+    fn unpack_rejects_oversize_tuple_value_by_spacecap() {
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        let mut locals = Stack::new(256);
+        locals.alloc(2).unwrap();
+
+        let mut operands = Stack::new(256);
+        let args = Value::Tuple(
+            TupleItem::new(vec![Value::U8(1), Value::Bytes(vec![0u8; 1281])]).unwrap(),
+        );
+        operands.push(args).unwrap();
+        operands.push(Value::U8(0)).unwrap();
+
+        let codes = vec![Bytecode::UNPACK as u8, Bytecode::END as u8];
+        let err = execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
     }
 
     #[test]
@@ -2318,6 +2488,51 @@ mod bounds_tests {
         ))
         .unwrap();
         assert!(matches!(out, Value::Compo(_)));
+    }
+
+    #[test]
+    fn args2list_checks_compo_cap() {
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+
+        operands
+            .push(Value::Tuple(
+                TupleItem::new(vec![Value::U8(1), Value::U8(2)]).unwrap(),
+            ))
+            .unwrap();
+
+        let codes = vec![Bytecode::TUPLE2LIST as u8, Bytecode::END as u8];
+        let err = execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &cap,
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
     }
 
     #[test]
