@@ -229,7 +229,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 }
             }
             let (bgasu, cres) = host.action_call(kid, actbody).map_err(|e|
-                ItrErr::new(ActCallError, e.as_str()))?;
+                ItrErr::new(maybe!(e.is_revert(), ActCallRevert, ActCallError), e.as_str()))?;
             gas += bgasu as i64;
             if have_retv {
                 let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
@@ -794,8 +794,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
             Ok(Step::Continue)
         })();
 
-        // reduce gas for use after the instruction completes; out-of-gas overrides the instruction result.
-        // Out-of-gas is intentionally checked after execution, with upper layers expected to roll back state writes.
+        // reduce gas for use
         host.gas_charge(gas)?;
         match step {
             Ok(Step::Exit(exit)) => return Ok(exit),

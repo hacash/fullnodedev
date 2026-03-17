@@ -86,7 +86,7 @@ mod action_coverage {
     fn execute_main_bytecode(ctx: &mut dyn TxDriverContext, codes: Vec<u8>) -> Ret<Value> {
         let main = ctx.env().tx.main;
         let _ = protocol::operate::hac_add(ctx, &main, &Amount::unit238(1_000_000_000));
-        if let Ok(gas_max) = ctx.tx().fee_extend() {
+        if let Some(gas_max) = ctx.tx().gas_max_byte() {
             if gas_max > 0 {
                 let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(gas_max)?;
                 ctx.gas_init_tx(budget, gas_rate)?;
@@ -437,6 +437,24 @@ mod action_coverage {
         assert!(err.contains("AST") && err.contains("CALL"), "{err}");
     }
 
+    #[test]
+    fn maincall_rejects_low_tx_type() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(2, main, vec![], 0);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+
+        let act = ContractMainCall::from_bytecode(lang_to_bytecode("return 0").unwrap()).unwrap();
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(err.contains("requires tx type >= 3"), "{err}");
+    }
+
     // ═══════════════════════════════════════════════════
     // ContractDeploy tests
     // ═══════════════════════════════════════════════════
@@ -635,7 +653,8 @@ mod action_coverage {
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
-        let err = protocol::action::analyze_tx_action_set(tx.actions()).unwrap_err();
+        let err =
+            protocol::action::analyze_tx_action_set_for_tx(tx.ty(), tx.actions()).unwrap_err();
         assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
     }
 
@@ -742,7 +761,7 @@ mod action_coverage {
             .func(Func::new("f").unwrap().external().bytecode(codes).unwrap())
             .into_sto();
         let err = execute_deploy(&mut ctx, 1, sto).unwrap_err();
-        assert!(err.contains("libidx overflow"), "{err}");
+        assert!(err.contains("CallLibIdxOverflow"), "{err}");
     }
 
     #[test]
@@ -866,6 +885,28 @@ mod action_coverage {
         );
     }
 
+    #[test]
+    fn deploy_rejects_low_tx_type() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(2, main, vec![], 0);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+
+        let mut act = ContractDeploy::new();
+        act.nonce = Uint4::from(79u32);
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.contract = make_external_contract("f", "return 0");
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(err.contains("requires tx type >= 3"), "{err}");
+    }
+
     // ═══════════════════════════════════════════════════
     // ContractUpdate tests
     // ═══════════════════════════════════════════════════
@@ -889,6 +930,27 @@ mod action_coverage {
         act.protocol_cost = Amount::zero();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("does not exist"), "{err}");
+    }
+
+    #[test]
+    fn update_rejects_low_tx_type() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(2, main, vec![], 0);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+
+        let caddr = contract_addr(&main, 1);
+        let mut act = ContractUpdate::new();
+        act.address = caddr.to_addr();
+        act.protocol_cost = Amount::zero();
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(err.contains("requires tx type >= 3"), "{err}");
     }
 
     #[test]
@@ -1043,7 +1105,7 @@ mod action_coverage {
         act.protocol_cost = Amount::zero();
         act.edit = edit;
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("libidx overflow"), "{err}");
+        assert!(err.contains("CallLibIdxOverflow"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════
@@ -1237,8 +1299,9 @@ mod action_coverage {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
+        let height = protocol::upgrade::ONLINE_OPEN_HEIGHT;
         let mut ctx = make_ctx(
-            12345,
+            height,
             &tx,
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
@@ -1248,7 +1311,7 @@ mod action_coverage {
         let act = EnvHeight::new();
         let (gas, res) = act.execute(&mut ctx).unwrap();
         assert!(gas > 0);
-        assert_eq!(res, 12345u64.to_be_bytes().to_vec());
+        assert_eq!(res, height.to_be_bytes().to_vec());
     }
 
     #[test]
@@ -1581,7 +1644,7 @@ mod action_coverage {
     #[test]
     fn view_diamond_insc_num_serialize_roundtrip() {
         let mut act = ViewDiamondInscNum::new();
-        act.diamond = DiamondName::from_readable(b"ABCDEF").unwrap();
+        act.diamond = DiamondName::from_readable(b"WTYUIA").unwrap();
         let bytes = act.serialize();
         let mut act2 = ViewDiamondInscNum::new();
         act2.parse(&bytes).unwrap();
@@ -1601,7 +1664,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let diamond = DiamondName::from_readable(b"ABCDEF").unwrap();
+        let diamond = DiamondName::from_readable(b"WTYUIA").unwrap();
         let mut dia = DiamondSto::new();
         dia.address = main;
         dia.inscripts = Inscripts::from_list(vec![
@@ -1654,7 +1717,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let diamond = DiamondName::from_readable(b"FEDCBA").unwrap();
+        let diamond = DiamondName::from_readable(b"HYXYHY").unwrap();
         let mut dia = DiamondSto::new();
         dia.address = main;
         dia.inscripts = Inscripts::from_list(vec![
@@ -1684,7 +1747,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let diamond = DiamondName::from_readable(b"AABBCC").unwrap();
+        let diamond = DiamondName::from_readable(b"UETWNK").unwrap();
         let mut dia = DiamondSto::new();
         dia.address = main;
         dia.inscripts = Inscripts::from_list(vec![DiamondInscript::create_by(
@@ -1735,6 +1798,26 @@ mod action_coverage {
     }
 
     #[test]
+    fn unlock_script_prove_rejects_low_tx_type() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(2, main, vec![], 0);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+
+        let mut act = P2SHScriptProve::new();
+        act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
+        act.argvkey = BytesW2::from(vec![]).unwrap();
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(err.contains("requires tx type >= 3"), "{err}");
+    }
+
+    #[test]
     fn unlock_script_prove_ast_level_rejects_main_call_context_when_not_fast_sync() {
         let _guard = test_guard();
         let main = main_addr();
@@ -1752,7 +1835,7 @@ mod action_coverage {
         act.lockbox = BytesW2::from(vec![Bytecode::PU8 as u8, 1, Bytecode::END as u8]).unwrap();
         act.argvkey = BytesW2::from(vec![]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
-        assert!(err.contains("can only execute on TOP"), "{err}");
+        assert!(err.contains("scope TOP not allowed from CALL"), "{err}");
     }
 
     #[test]

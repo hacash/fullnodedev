@@ -9,7 +9,8 @@ const APPEND_TIER2_MAX_INSCRIPTIONS: usize = 100;
 
 #[inline]
 fn check_protocol_cost_4_long(pfee: &Amount) -> Rerr {
-    pfee.check_4_long().map_err(|_| "protocol cost amount size cannot exceed 4 bytes".to_string())
+    pfee.check_4_long()
+        .map_err(|_| "protocol cost amount size cannot exceed 4 bytes".to_string())
 }
 
 #[inline]
@@ -123,7 +124,11 @@ fn check_inscription_index(
         if role_prefix.is_empty() {
             return errf!("no inscriptions in diamond {}", diamond.to_readable());
         }
-        return errf!("no inscriptions in {} HACD {}", role_prefix, diamond.to_readable());
+        return errf!(
+            "no inscriptions in {} HACD {}",
+            role_prefix,
+            diamond.to_readable()
+        );
     }
     if idx >= insc_len {
         return errf!(
@@ -183,8 +188,8 @@ fn add_diamond_insc_burn_count(state: &mut CoreState, pfee: &Amount) -> Rerr {
 /*
 *
 */
-action_define!{ DiaInscPush, 32,
-    ActScope::TOP, true, [], 
+action_define! { DiaInscPush, 32,
+    ActScope::TOP, 2, true, [],
     {
         diamonds         : DiamondNameListMax200
         protocol_cost    : Amount
@@ -255,8 +260,8 @@ fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>
 
 /************************************ */
 
-action_define!{ DiaInscClean, 33,
-    ActScope::TOP, true, [], 
+action_define! { DiaInscClean, 33,
+    ActScope::TOP, 2, true, [],
     {
         diamonds      : DiamondNameListMax200
         protocol_cost : Amount
@@ -275,10 +280,7 @@ action_define!{ DiaInscClean, 33,
     })
 }
 
-fn diamond_inscription_clean(
-    this: &DiaInscClean,
-    ctx: &mut dyn Context,
-) -> Ret<Vec<u8>> {
+fn diamond_inscription_clean(this: &DiaInscClean, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -313,7 +315,6 @@ fn diamond_inscription_clean(
     Ok(vec![])
 }
 
-
 /************************************ */
 
 /*
@@ -321,9 +322,8 @@ fn diamond_inscription_clean(
 * Transfer / Per-entry Delete / Single-entry Update
 */
 
-
-action_define!{ DiaInscEdit, 34,
-    ActScope::CALL, true, [], 
+action_define! { DiaInscEdit, 34,
+    ActScope::CALL, 2, true, [],
     {
         diamond           : DiamondName
         index             : Uint1
@@ -358,8 +358,13 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
     let pdhei = env.block.height;
     // check diamond
     let mut state = CoreState::wrap(ctx.state());
-    let mut diasto =
-        load_owned_diamond_for_inscription_index(&mut state, &main_addr, &this.diamond, idx, pdhei)?;
+    let mut diasto = load_owned_diamond_for_inscription_index(
+        &mut state,
+        &main_addr,
+        &this.diamond,
+        idx,
+        pdhei,
+    )?;
     // protocol cost: average_bid_burn / 100
     let avg_bid_burn_mei = load_diamond_average_bid_burn_mei(&mut state, &this.diamond)?;
     let cost = calc_edit_inscription_protocol_cost(avg_bid_burn_mei);
@@ -371,12 +376,10 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
         );
     }
     // replace the inscription entry
-    diasto
-        .inscripts
-        .replace(
-            idx,
-            create_diamond_inscript(*this.engraved_type, &this.engraved_content),
-        )?;
+    diasto.inscripts.replace(
+        idx,
+        create_diamond_inscript(*this.engraved_type, &this.engraved_content),
+    )?;
     diasto.prev_engraved_height = BlockHeight::from(pdhei);
     state.diamond_set(&this.diamond, &diasto);
     // burn protocol cost
@@ -388,12 +391,10 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
     Ok(vec![])
 }
 
-
 /************************************** */
 
-
-action_define!{ DiaInscMove, 35,
-    ActScope::AST, true, [], 
+action_define! { DiaInscMove, 35,
+    ActScope::AST, 2, true, [],
     {
         from_diamond    : DiamondName
         to_diamond      : DiamondName
@@ -482,8 +483,8 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
 
 /************************************ */
 
-action_define!{ DiaInscDrop, 36,
-    ActScope::TOP, true, [], 
+action_define! { DiaInscDrop, 36,
+    ActScope::TOP, 2, true, [],
     {
         diamond           : DiamondName
         index             : Uint1
@@ -509,8 +510,13 @@ fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> Ret<Ve
     let pdhei = env.block.height;
     // check diamond
     let mut state = CoreState::wrap(ctx.state());
-    let mut diasto =
-        load_owned_diamond_for_inscription_index(&mut state, &main_addr, &this.diamond, idx, pdhei)?;
+    let mut diasto = load_owned_diamond_for_inscription_index(
+        &mut state,
+        &main_addr,
+        &this.diamond,
+        idx,
+        pdhei,
+    )?;
     // cost: average_bid_burn / 50
     let avg_bid_burn_mei = load_diamond_average_bid_burn_mei(&mut state, &this.diamond)?;
     let cost = calc_drop_inscription_protocol_cost(avg_bid_burn_mei);

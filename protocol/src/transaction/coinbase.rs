@@ -1,18 +1,16 @@
-
 // CoinbaseExtendDataV1
-combi_struct!{ CoinbaseExtendDataV1, 
-	miner_nonce   : Hash
-	witness_count : Uint1 // Number of voting witnesses
+combi_struct! { CoinbaseExtendDataV1,
+    miner_nonce   : Hash
+    witness_count : Uint1 // Number of voting witnesses
 }
 
 // CoinbaseExtend
-combi_optional!{ CoinbaseExtend, 
-    extend: CoinbaseExtendDataV1 
+combi_optional! { CoinbaseExtend,
+    extend: CoinbaseExtendDataV1
 }
 
-
 // coinbase
-combi_struct!{ TransactionCoinbase,
+combi_struct! { TransactionCoinbase,
     ty      : Uint1
     address : Address
     reward  : Amount
@@ -20,16 +18,13 @@ combi_struct!{ TransactionCoinbase,
     extend  : CoinbaseExtend
 }
 
-
-
 impl TransactionRead for TransactionCoinbase {
-
-    fn hash(&self) -> Hash { 
+    fn hash(&self) -> Hash {
         let stuff = self.serialize();
         let hx = sys::calculate_hash(stuff);
         Hash::must(&hx[..])
     }
-    
+
     fn hash_with_fee(&self) -> Hash {
         self.hash()
     }
@@ -42,8 +37,8 @@ impl TransactionRead for TransactionCoinbase {
         Amount::zero()
     }
 
-    fn fee_extend(&self) -> Ret<u8> {
-        errf!("cannot get fee extension on coinbase tx")
+    fn gas_max_byte(&self) -> Option<u8> {
+        None
     }
 
     fn ty(&self) -> u8 {
@@ -70,7 +65,6 @@ impl TransactionRead for TransactionCoinbase {
     fn verify_signature(&self) -> Rerr {
         errf!("cannot verify signature on coinbase tx")
     }
-    
 }
 
 impl Transaction for TransactionCoinbase {
@@ -78,7 +72,7 @@ impl Transaction for TransactionCoinbase {
         self
     }
 
-    fn set_nonce(&mut self, nonce: Hash) { 
+    fn set_nonce(&mut self, nonce: Hash) {
         match &mut self.extend.extend {
             Some(d) => d.miner_nonce = nonce,
             _ => (), // do nothing
@@ -86,21 +80,14 @@ impl Transaction for TransactionCoinbase {
     }
 }
 
-
-
-
-
 impl TxExec for TransactionCoinbase {
-    
     fn execute(&self, ctx: &mut dyn TxDriverContext) -> Rerr {
         let addr = self.main();
         let amt = self.reward();
         operate::hac_add(ctx, &addr, amt)?;
         Ok(())
     }
-
 }
-
 
 impl TransactionCoinbase {
     pub const TYPE: u8 = 0; // 0

@@ -119,6 +119,8 @@ impl Syntax {
         match params {
             0 if allow_zero => Ok(push_inst_noret(POP)),
             1 => Ok(push_single_p1(PUT, 0, push_inst(ROLL0))),
+            // `param { ... }` is just compiler sugar for unpacking the current value;
+            // it intentionally does not enforce Tuple-only ABI rules.
             2.. => Ok(push_double(UNPACK, ROLL0, P0)),
             _ => errf!("at least one param required"),
         }

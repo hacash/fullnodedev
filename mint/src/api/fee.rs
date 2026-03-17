@@ -1,19 +1,25 @@
 fn fee_average(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let unit = q_string(&req, "unit", "fin");
     let consumption = req.query_u64("consumption", 0);
-    let burn90 = q_bool(&req, "burn90", false);
+    let extra9 = q_bool(&req, "extra9", q_bool(&req, "burn90", false));
+    let txty = req.query_u64("tx_type", 2) as u8;
     let avgfeep = ctx.engine.average_fee_purity();
 
     let mut data = serde_json::Map::new();
     data.insert("purity".to_owned(), json!(avgfeep));
 
     if consumption > 0 {
-        let mut setfee = Amount::unit238(avgfeep * consumption);
-        if setfee.is_zero() {
-            setfee = Amount::zhu(1);
+        let mut base = Amount::unit238(avgfeep * consumption);
+        if base.is_zero() {
+            base = Amount::zhu(1);
         }
-        if burn90 {
-            if let Ok(f) = setfee.dist_mul(10) {
+        let mut setfee = base.clone();
+        if extra9 {
+            if txty < protocol::transaction::TransactionType3::TYPE {
+                if let Ok(f) = base.dist_mul(10) {
+                    setfee = f;
+                }
+            } else if let Ok(f) = base.dist_mul(9) {
                 setfee = f;
             }
         }
@@ -60,7 +66,10 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
 
     let old_fee = txb.fee();
     if fee < *old_fee {
-        return api_error(&format!("fee {} cannot be less than previous fee {}", fee, old_fee));
+        return api_error(&format!(
+            "fee {} cannot be less than previous fee {}",
+            fee, old_fee
+        ));
     }
     txb.set_fee(fee.clone());
     if txb.fill_sign(&acc).is_err() {
@@ -79,6 +88,9 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         ("hash".to_owned(), json!(txhash.to_hex())),
         ("hash_with_fee".to_owned(), json!(txhashwf.to_hex())),
         ("fee".to_owned(), json!(fee.to_fin_string())),
-        ("tx_body".to_owned(), json!(txpkg.objc().serialize().to_hex())),
+        (
+            "tx_body".to_owned(),
+            json!(txpkg.objc().serialize().to_hex()),
+        ),
     ]))
 }

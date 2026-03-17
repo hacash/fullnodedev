@@ -1,5 +1,7 @@
 use crate::action::*;
 use crate::block::*;
+use crate::context::ContextInst;
+use crate::state::EmptyLogs;
 use crate::transaction::*;
 use basis::component::*;
 use basis::interface::*;
@@ -308,6 +310,71 @@ impl Action for TestLevelNoopAction {
         self.scope
     }
 
+    fn min_tx_type(&self) -> u8 {
+        match *self.kind {
+            Self::AST_KIND => 3,
+            _ => 1,
+        }
+    }
+
+    fn req_sign(&self) -> Vec<AddrOrPtr> {
+        vec![]
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+field::combi_struct! { TestType3GasAction,
+    kind     : Uint2
+    gas_used : Uint1
+    burn     : Bool
+}
+
+impl TestType3GasAction {
+    const KIND: u16 = 0x07f6;
+    fn create_by(gas_used: u8, burn: bool) -> Self {
+        Self {
+            kind: Uint2::from(Self::KIND),
+            gas_used: Uint1::from(gas_used),
+            burn: Bool::new(burn),
+        }
+    }
+}
+
+impl Description for TestType3GasAction {
+    fn to_description(&self) -> String {
+        format!("Test type3 gas action {}", *self.gas_used)
+    }
+}
+
+impl ActExec for TestType3GasAction {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
+        if !ctx.env().chain.fast_sync {
+            check_action_scope(ctx.exec_from(), self).into_xret()?;
+        }
+        Ok((*self.gas_used as u32, vec![]))
+    }
+}
+
+impl Action for TestType3GasAction {
+    fn kind(&self) -> u16 {
+        *self.kind
+    }
+
+    fn scope(&self) -> ActScope {
+        ActScope::TOP
+    }
+
+    fn min_tx_type(&self) -> u8 {
+        3
+    }
+
+    fn extra9(&self) -> bool {
+        self.burn.check()
+    }
+
     fn req_sign(&self) -> Vec<AddrOrPtr> {
         vec![]
     }
@@ -581,7 +648,7 @@ fn test_analyze_tx_action_set_rejects_guard_only_ast_select() {
         HeightScope::new(),
     )]))];
 
-    let err = analyze_tx_action_set(&actions).unwrap_err();
+    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("all GUARD"), "{}", err);
 }
 
@@ -593,7 +660,7 @@ fn test_analyze_tx_action_set_rejects_guard_only_ast_if() {
         AstSelect::nop(),
     ))];
 
-    let err = analyze_tx_action_set(&actions).unwrap_err();
+    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("all GUARD"), "{}", err);
 }
 
@@ -604,7 +671,7 @@ fn test_analyze_tx_action_set_allows_mixed_guard_and_non_guard_leafs_in_ast() {
         Box::new(HacToTrs::new()),
     ]))];
 
-    analyze_tx_action_set(&actions).unwrap();
+    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
 }
 
 #[test]
@@ -614,7 +681,7 @@ fn test_analyze_tx_action_set_rejects_duplicate_top_unique() {
         Box::new(TestLevelNoopAction::top_unique()),
     ];
 
-    let err = analyze_tx_action_set(&actions).unwrap_err();
+    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("TOP_UNIQUE"), "{}", err);
 }
 
@@ -624,7 +691,7 @@ fn test_analyze_tx_action_set_rejects_nested_top_only_with_guard_in_ast() {
         TestLevelNoopAction::top_only_with_guard(),
     )]))];
 
-    let err = analyze_tx_action_set(&actions).unwrap_err();
+    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
 }
 
@@ -632,7 +699,7 @@ fn test_analyze_tx_action_set_rejects_nested_top_only_with_guard_in_ast() {
 fn test_analyze_tx_action_set_rejects_call_only_in_tx_tree() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::call_only())];
 
-    let err = analyze_tx_action_set(&actions).unwrap_err();
+    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(
         err.contains("CALL_ONLY") && err.contains("tx top level"),
         "{}",
@@ -647,17 +714,24 @@ fn test_check_action_ast_tree_depth_accepts_ast_leaf_action() {
 }
 
 #[test]
-fn test_analyze_tx_action_set_allows_top_level_ast_leaf_action() {
+fn test_analyze_tx_action_set_allows_top_level_ast_leaf_action_on_type3() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::ast())];
-    analyze_tx_action_set(&actions).unwrap();
+    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
 }
 
 #[test]
-fn test_analyze_tx_action_set_allows_nested_ast_leaf_action() {
+fn test_analyze_tx_action_set_for_tx_rejects_type2_top_level_ast_leaf_action() {
+    let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::ast())];
+    let err = analyze_tx_action_set_for_tx(TransactionType2::TYPE, &actions).unwrap_err();
+    assert!(err.contains("requires tx type >= 3"), "{}", err);
+}
+
+#[test]
+fn test_analyze_tx_action_set_allows_nested_ast_leaf_action_on_type3() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
         TestLevelNoopAction::ast(),
     )]))];
-    analyze_tx_action_set(&actions).unwrap();
+    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
 }
 
 #[test]
@@ -822,6 +896,101 @@ fn test_tx_execute_must_reject_nonzero_ano_mark_on_type2() {
 }
 
 #[test]
+fn test_tx_execute_must_reject_nonzero_ano_mark_on_type3() {
+    init_test_registry();
+
+    let main_acc = Account::create_by("protocol-type3-ano-mark-main").unwrap();
+    let main = Address::from(*main_acc.address());
+    let mut tx = TransactionType3::new_by(main, Amount::mei(1), 1730000000);
+    tx.gas_max = Uint1::from(1);
+    tx.ano_mark = Fixed1::from([1u8]);
+    tx.actions
+        .push(Box::new(TestType3GasAction::create_by(1, false)))
+        .unwrap();
+    tx.fill_sign(&main_acc).unwrap();
+
+    let mut env = Env::default();
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::mei(5);
+        state.balance_set(&main, &bls);
+    }
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("ano_mark must be zero"), "{}", err);
+}
+
+#[test]
+fn test_type3_fee_got_does_not_burn_from_action_mark() {
+    init_test_registry();
+
+    let mut tx = TransactionType3::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1_000_000),
+        1730000000,
+    );
+    tx.gas_max = Uint1::from(1);
+
+    tx.actions
+        .push(Box::new(TestType3GasAction::create_by(7, true)))
+        .unwrap();
+
+    assert_eq!(tx.fee_got(), tx.fee().clone());
+    assert_eq!(tx.fee_purity(), tx.gas_price_purity());
+}
+
+fn run_type3_top_level_gas_case(burn: bool) -> i64 {
+    let mut tx = TransactionType3::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1_000_000),
+        1730000000,
+    );
+    tx.gas_max = Uint1::from(1);
+
+    tx.actions
+        .push(Box::new(TestType3GasAction::create_by(7, burn)))
+        .unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&tx.main()).unwrap_or_default();
+        bls.hacash = Amount::unit238(5_000_000_000);
+        state.balance_set(&tx.main(), &bls);
+    }
+
+    tx.execute(&mut ctx).unwrap();
+    crate::context::decode_gas_budget(1) - ctx.gas_remaining()
+}
+
+#[test]
+fn test_type3_top_level_action_local_burn_factor_is_applied() {
+    init_test_registry();
+
+    let plain_used = run_type3_top_level_gas_case(false);
+    let burn_used = run_type3_top_level_gas_case(true);
+
+    assert_eq!(plain_used, 0);
+    assert_eq!(burn_used, 63);
+}
+
+#[test]
 fn test_ctx_action_call_actenv_does_not_require_tx_main_signature() {
     init_test_registry();
     init_action_env_test_registry();
@@ -920,7 +1089,7 @@ fn test_analyze_tx_action_set_allows_top_only_with_guard_plus_guard_only_ast_wra
         Box::new(TestLevelNoopAction::top_only_with_guard()),
         Box::new(AstSelect::create_list(vec![Box::new(HeightScope::new())])),
     ];
-    analyze_tx_action_set(&actions).unwrap();
+    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
 }
 
 #[test]
@@ -929,9 +1098,9 @@ fn test_ast_select_min_failure_is_revert() {
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
-    use crate::transaction::TransactionType2;
+    use crate::transaction::TransactionType3;
 
-    let tx = TransactionType2::new_by(
+    let tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
         Amount::unit238(1000),
         1730000000,
@@ -970,9 +1139,9 @@ fn test_ast_if_rethrow_preserves_revert_kind() {
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
-    use crate::transaction::TransactionType2;
+    use crate::transaction::TransactionType3;
 
-    let tx = TransactionType2::new_by(
+    let tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
         Amount::unit238(1000),
         1730000000,
@@ -1017,12 +1186,12 @@ fn test_analyze_tx_action_set_rejects_top_only_with_guard_plus_non_guard_ast_wra
         Box::new(TestLevelNoopAction::top_only_with_guard()),
         Box::new(AstSelect::create_list(vec![Box::new(HacToTrs::new())])),
     ];
-    let err = analyze_tx_action_set(&actions).unwrap_err();
+    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
 }
 
 #[test]
-fn test_tx_execute_allows_type2_ast_leaf_action() {
+fn test_tx_execute_rejects_type2_ast_leaf_action() {
     init_test_registry();
 
     use crate::context::ContextInst;
@@ -1052,7 +1221,8 @@ fn test_tx_execute_allows_type2_ast_leaf_action() {
         state.balance_set(&main, &bls);
     }
 
-    tx.execute(&mut ctx).unwrap();
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("requires tx type >= 3"), "{}", err);
 }
 
 #[test]

@@ -42,7 +42,7 @@ fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
 fn execute_main_bytecode(ctx: &mut dyn TxDriverContext, codes: Vec<u8>) -> Ret<Value> {
     let main = ctx.env().tx.main;
     let _ = protocol::operate::hac_add(ctx, &main, &Amount::unit238(1_000_000_000));
-    if let Ok(gas_max) = ctx.tx().fee_extend() {
+    if let Some(gas_max) = ctx.tx().gas_max_byte() {
         if gas_max > 0 {
             let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(gas_max)?;
             ctx.gas_init_tx(budget, gas_rate)?;
@@ -382,7 +382,7 @@ fn loader_enforces_max_loaded_contracts() {
         insert_contract(&mut state, &caddr, &sto);
     }
 
-    let tx = make_tx(3, main, addrs, 17);
+    let tx = make_tx(3, main, addrs, u8::MAX);
     let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
 
     let mut codes = Vec::new();
@@ -496,6 +496,7 @@ fn sandbox_call_executes_and_reports_missing_function() {
 
     let tx = make_tx(3, main, vec![], 17);
     let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+    protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
 
     let (gas, ret_json) =
         machine::sandbox_call(&mut ctx, caddr, "add1".to_owned(), "5:u8").unwrap();

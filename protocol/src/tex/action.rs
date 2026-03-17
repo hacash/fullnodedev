@@ -1,9 +1,8 @@
-
 /*
 * simple hac to
 */
-action_define!{ TexCellAct, 22, 
-    ActScope::TOP, true, [], 
+action_define! { TexCellAct, 22,
+    ActScope::TOP, 2, false, [],
     {
         addr  : Address
         cells : DnyTexCellW1
@@ -22,22 +21,20 @@ action_define!{ TexCellAct, 22,
     })
 }
 
-
 impl TexCellAct {
-
     fn get_sign_stuff(&self) -> Hash {
         // Intentionally signs only addr+cells so the same authorized TEX bundle stays reusable across transactions by design.
         let stf = vec![self.addr.serialize(), self.cells.serialize()].concat();
         Hash::from(sha3(&stf))
-    } 
+    }
 
-    pub fn create_by(addr: Address) ->  Self {
+    pub fn create_by(addr: Address) -> Self {
         Self {
             addr,
             ..Self::new()
         }
     }
-    
+
     pub fn do_sign(&mut self, acc: &Account) -> Rerr {
         acc.check_addr(self.addr.as_bytes())?;
         let thx = self.get_sign_stuff();
@@ -49,9 +46,4 @@ impl TexCellAct {
         self.cells.push(cell)?;
         Ok(())
     }
-
-
-
-
-
 }

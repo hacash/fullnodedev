@@ -7,8 +7,8 @@ macro_rules! vmsto {
     };
 }
 
-action_define!{ ContractDeploy, 40,
-    ActScope::TOP_ONLY_WITH_GUARD, false, [],
+action_define! { ContractDeploy, 40,
+    ActScope::TOP_ONLY_WITH_GUARD, 3, false, [],
     {
         protocol_cost: Amount
         nonce: Uint4
@@ -60,8 +60,8 @@ action_define!{ ContractDeploy, 40,
     })
 }
 
-action_define!{ ContractUpdate, 41,
-    ActScope::TOP_ONLY_WITH_GUARD, false, [],
+action_define! { ContractUpdate, 41,
+    ActScope::TOP_ONLY_WITH_GUARD, 3, false, [],
     {
         protocol_cost: Amount
         address: Address // contract address
@@ -280,6 +280,7 @@ fn resolve_lookup_anchor_for_check(
         .iter()
         .map(|a| a.to_addr())
         .collect();
+    // Static precheck binds `this` to the contract being stored, so `this.*` must not be purely virtual: a default implementation must already exist on self or an inherited parent.
     let anchor = call
         .resolve_anchor_from(Some(root_addr), Some(root_addr), &lib_addrs)
         .map_err(|e| format!("{}: {}", func_tag, e))?;
@@ -436,7 +437,7 @@ fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret
         return Ok(Amount::zero());
     }
     let periods = contract_store_perm_periods(ctx.env().block.height) as u128;
-    let fee_purity = ctx.tx().fee_purity() as u128; // unit-238 per tx byte
+    let fee_purity = ctx.tx().gas_price_purity() as u128; // unit-238 per tx byte
     if periods == 0 || fee_purity == 0 {
         return errf!(
             "contract protocol fee calculate failed: periods={} fee_purity={}",

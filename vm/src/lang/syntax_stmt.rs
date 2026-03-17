@@ -42,11 +42,7 @@ impl Syntax {
     }
 
     fn deal_call_args(&mut self) -> Ret<Box<dyn IRNode>> {
-        let (pms, mut subx) = self.must_get_func_argv(ArgvMode::Packed)?;
-        if 0 == pms {
-            // func() == func(nil)
-            subx = push_nil()
-        }
+        let (_, subx) = self.must_get_func_argv(ArgvMode::Packed)?;
         Ok(subx)
     }
 

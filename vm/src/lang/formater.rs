@@ -49,11 +49,17 @@ impl RecoveredLiteral {
 impl<'a> Formater<'a> {
     fn ensure_braced_block(&self, s: &str) -> String {
         let t = s.trim();
+        if t.starts_with("({") && t.ends_with(')') {
+            return t[1..t.len() - 1].trim().to_owned();
+        }
         maybe!(t.starts_with('{'), t.to_owned(), format!("{{ {} }}", t))
     }
 
     fn ensure_else_body(&self, s: &str) -> String {
         let t = s.trim();
+        if (t.starts_with("({") || t.starts_with("(if ")) && t.ends_with(')') {
+            return t[1..t.len() - 1].trim().to_owned();
+        }
         maybe!(
             t.starts_with('{') || t.starts_with("if "),
             t.to_owned(),
@@ -77,11 +83,15 @@ impl<'a> Formater<'a> {
     }
 
     fn slot_name_display(&self, slot: u8) -> String {
-        self.opt
-            .map
-            .and_then(|m| m.slot(slot))
-            .cloned()
-            .unwrap_or_else(|| format!("${}", slot))
+        if let Some(map) = self.opt.map {
+            let param_count = map.param_names().map(|v| v.len()).unwrap_or(0);
+            if slot as usize >= param_count || self.opt.trim_param_unpack {
+                if let Some(name) = map.slot(slot) {
+                    return name.clone();
+                }
+            }
+        }
+        format!("${}", slot)
     }
 
     fn resolve_func_name(&self, sig: &[u8]) -> Option<String> {
@@ -95,6 +105,9 @@ impl<'a> Formater<'a> {
     }
 
     fn resolve_lib_name(&self, idx: u8) -> Option<String> {
+        if !self.opt.emit_lib_prelude {
+            return None;
+        }
         let map = self.opt.map?;
         Some(map.lib(idx)?.name.clone())
     }
@@ -128,7 +141,9 @@ impl<'a> Formater<'a> {
             CallTarget::Self_ => "self".to_string(),
             CallTarget::Upper => "upper".to_string(),
             CallTarget::Super => "super".to_string(),
-            CallTarget::Ext(idx) => self.format_lib_chain_ref(idx),
+            CallTarget::Ext(idx) => self
+                .resolve_lib_name(idx)
+                .unwrap_or_else(|| format!("ext({})", idx)),
             CallTarget::Use(idx) => format!("use({})", idx),
         }
     }
@@ -163,10 +178,34 @@ impl<'a> Formater<'a> {
             CALLSUPER => format!("super.{}({})", sig, args),
             CALLSELFVIEW => format!("self:{}({})", sig, args),
             CALLSELFPURE => format!("self::{}({})", sig, args),
-            CALLEXT => format!("{}.{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLEXTVIEW => format!("{}:{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLUSEVIEW => format!("calluseview {}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
-            CALLUSEPURE => format!("{}::{}({})", self.format_lib_chain_ref(pss.para[0]), sig, args),
+            CALLEXT => format!(
+                "{}.{}({})",
+                self.resolve_lib_name(pss.para[0])
+                    .unwrap_or_else(|| format!("ext({})", pss.para[0])),
+                sig,
+                args
+            ),
+            CALLEXTVIEW => format!(
+                "{}:{}({})",
+                self.resolve_lib_name(pss.para[0])
+                    .unwrap_or_else(|| format!("ext({})", pss.para[0])),
+                sig,
+                args
+            ),
+            CALLUSEVIEW => format!(
+                "calluseview {}::{}({})",
+                self.resolve_lib_name(pss.para[0])
+                    .unwrap_or_else(|| pss.para[0].to_string()),
+                sig,
+                args
+            ),
+            CALLUSEPURE => format!(
+                "{}::{}({})",
+                self.resolve_lib_name(pss.para[0])
+                    .unwrap_or_else(|| format!("ext({})", pss.para[0])),
+                sig,
+                args
+            ),
             _ => return None,
         })
     }
@@ -261,11 +300,7 @@ impl<'a> Formater<'a> {
         if count % 2 != 0 {
             return None;
         }
-        // Historical IR variants exist:
-        // - newer encoding stores total item count (k + v count),
-        // - older encoding stores pair count.
-        // Accept both to keep decompilation stable across artifacts.
-        if expected != count && expected * 2 != count {
+        if expected != count {
             return None;
         }
         let mut pairs = Vec::with_capacity(count / 2);
@@ -573,7 +608,7 @@ impl<'a> Formater<'a> {
                     // If we are trimming the file-level root block but not trimming param-unpack,
                     // the decompiled code may still use SourceMap parameter names (e.g. `amt`),
                     // which would be unbound without a `param { ... }` statement.
-                    // Emit a lightweight slot-binding prelude: `var <name> $<i>` (no assignment).
+                    // Pre-mark param slots so later PUTs keep statement form stable.
                     let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
                     if is_file_level_irblock && self.opt.map.is_some() {
                         // alloc could be at index 0 or 1
@@ -586,15 +621,8 @@ impl<'a> Formater<'a> {
                         }
                         let param_idx = alloc_index.map(|ai| ai + 1).unwrap_or(0);
                         if let Some(names) = helper.infer_param_names(arr, param_idx) {
-                            for (i, name) in names.iter().enumerate() {
+                            for (i, _name) in names.iter().enumerate() {
                                 self.opt.mark_slot_put(i as u8);
-                                buf.push_str(&format!(
-                                    "{}var {} ${}",
-                                    self.opt.indent.repeat(self.opt.tab + 1),
-                                    name,
-                                    i
-                                ));
-                                buf.push('\n');
                             }
                         }
                     }
@@ -613,8 +641,8 @@ impl<'a> Formater<'a> {
         // Even when `trim_root_block` / `trim_param_unpack` are disabled, we still must keep
         // decompile->recompile closed.
         // IMPORTANT: when `trim_param_unpack == false`, we must NEVER emit `param { ... }`.
-        // Instead, we keep the raw `UNPACK(ROLL0,P0)` instruction in output, and (when SourceMap
-        // provides parameter names) we emit lightweight slot-binding lines: `var <name> $<i>`.
+        // Instead, we keep the raw `UNPACK(ROLL0,P0)` instruction in output and only pre-mark
+        // parameter slots so later PUTs do not synthesize fake declarations.
         let is_file_level_irblock = self.opt.tab == 0 && arr.inst == IRBLOCK;
         // If `trim_param_unpack=true`, we may rewrite the canonical UNPACK node into `param { ... }`.
         // If `trim_param_unpack=false`, we must never emit `param { ... }`.
@@ -654,17 +682,8 @@ impl<'a> Formater<'a> {
             buf.push('\n');
 
             if let Some(names) = file_level_param_names {
-                // Bind param names to their canonical slots without changing runtime semantics.
-                // Also pre-mark these slots so a later `PUT $i ...` does not print as a `var` declaration.
-                for (i, name) in names.iter().enumerate() {
+                for (i, _name) in names.iter().enumerate() {
                     self.opt.mark_slot_put(i as u8);
-                    buf.push_str(&format!(
-                        "{}var {} ${}",
-                        self.opt.indent.repeat(self.opt.tab + 1),
-                        name,
-                        i
-                    ));
-                    buf.push('\n');
                 }
             }
 
@@ -682,40 +701,66 @@ impl<'a> Formater<'a> {
             buf.push_str(&self.opt.indent.repeat(self.opt.tab));
         }
         buf.push('}');
-        Some(buf)
+        Some(maybe!(
+            arr.inst == IRBLOCKR && !self.opt.inline_mode,
+            format!("({})", buf),
+            buf
+        ))
     }
 
     fn format_call_instruction(&self, node: &dyn IRNode, code: Bytecode) -> Option<String> {
         use Bytecode::*;
         let pss = node.as_any().downcast_ref::<IRNodeParamsSingle>()?;
-        if code == CALL {
-            let call = decode_call_body(&pss.para).ok()?;
-            let CallSpec::Invoke {
-                target,
-                effect,
-                selector,
-            } = call else {
-                return None;
-            };
-            let pre = self.line_prefix();
-            let args = self.build_call_args(&*pss.subx, false, None);
-            let body = format!(
-                "call {} {}.{}({})",
-                self.format_call_effect(effect),
-                self.format_call_target_ref(target),
-                self.format_func_sig(&selector),
-                args
-            );
-            return Some(format!("{}{}", pre, body));
-        }
         if !matches!(
             code,
-            CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE
+            CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS
+                | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE
         ) {
             return None;
         }
         let pre = self.line_prefix();
         let args = self.build_call_args(&*pss.subx, false, None);
+        let use_short_syntax = self.opt.call_short_syntax && self.opt.trim_root_block;
+        if code == CODECALL && use_short_syntax {
+            let CallSpec::Splice { lib, selector } = decode_splice_body(&pss.para).ok()? else {
+                return None;
+            };
+            let target = self
+                .resolve_lib_name(lib)
+                .unwrap_or_else(|| format!("ext({})", lib));
+            let body = maybe!(
+                args.is_empty(),
+                format!("codecall {}.{}", target, self.format_func_sig(&selector)),
+                format!("codecall {}.{}({})", target, self.format_func_sig(&selector), args)
+            );
+            return Some(format!("{}{}", pre, body));
+        }
+        if code == CALL
+            || matches!(code, CODECALL | CALLSELFVIEW | CALLSELFPURE)
+            || !use_short_syntax
+        {
+            let call = decode_user_call_site(code, &pss.para).ok()?;
+            let body = match call {
+                CallSpec::Invoke {
+                    target,
+                    effect,
+                    selector,
+                } => format!(
+                    "call {} {}.{}({})",
+                    self.format_call_effect(effect),
+                    self.format_call_target_ref(target),
+                    self.format_func_sig(&selector),
+                    args
+                ),
+                CallSpec::Splice { lib, selector } => format!(
+                    "codecall ext({}).{}({})",
+                    lib,
+                    self.format_func_sig(&selector),
+                    args
+                ),
+            };
+            return Some(format!("{}{}", pre, body));
+        }
         let body = self.format_special_call_target(code, pss, &args)?;
         Some(format!("{}{}", pre, body))
     }
@@ -895,7 +940,14 @@ impl<'a> Formater<'a> {
                     let elsebody = self.ensure_else_body(&subzstr);
                     buf.push_str(&format!(" else {}", elsebody));
                 }
-                return Some(buf);
+                return Some(maybe!(
+                    t.inst == IRIFR && !self.opt.inline_mode,
+                    {
+                        let inner = buf.strip_prefix(&self.line_prefix()).unwrap_or(&buf);
+                        format!("{}({})", self.line_prefix(), inner)
+                    },
+                    buf
+                ));
             }
         }
         None
@@ -971,6 +1023,16 @@ impl<'a> Formater<'a> {
         if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
             use Bytecode::*;
             if single.inst == CTO && single.para == ValueTy::Address as u8 {
+                if let Some(params) = single.subx.as_any().downcast_ref::<IRNodeParams>() {
+                    if let Some(data) = self.params_to_bytes(params)
+                        && data.len() == FieldAddress::SIZE
+                    {
+                        let addr = FieldAddress::must_vec(data.to_vec());
+                        if addr.check_version().is_ok() {
+                            return Some(RecoveredLiteral::address(addr.to_readable()));
+                        }
+                    }
+                }
                 if let Some(literal) = self.literal_from_node(&*single.subx) {
                     if literal.ty == Some(ValueTy::Address) {
                         return Some(literal);
@@ -1035,12 +1097,6 @@ impl<'a> Formater<'a> {
                 "\"{}\"",
                 self.literals(text)
             )));
-        }
-        if data.len() == FieldAddress::SIZE {
-            let addr = FieldAddress::must_vec(data.to_vec());
-            if addr.check_version().is_ok() {
-                return Some(RecoveredLiteral::address(addr.to_readable()));
-            }
         }
         None
     }
@@ -1199,12 +1255,7 @@ impl<'a> Formater<'a> {
                 let Ok(ntfn) = NativeEnv::try_from_u8(node.para) else {
                     return format!("__unknown_native_env_{}()", node.para);
                 };
-                let args = maybe!(
-                    self.opt.hide_default_call_argv,
-                    String::new(),
-                    "\"\"".to_string()
-                );
-                format!("{}({})", ntfn.name(), args)
+                format!("{}()", ntfn.name())
             }
             _ => {
                 let substr = self.print_inline(&*node.subx);
@@ -1300,11 +1351,7 @@ impl<'a> Formater<'a> {
                         node.para
                     );
                 };
-                if self.opt.hide_default_call_argv {
-                    buf.push_str(&format!("{}()", ntfn.name()));
-                } else {
-                    buf.push_str(&format!("{}(\"\")", ntfn.name()));
-                }
+                buf.push_str(&format!("{}()", ntfn.name()));
             }
             _ => {
                 buf.push_str(&format!("{}({})", meta.intro, node.para));
@@ -1331,7 +1378,9 @@ impl<'a> Formater<'a> {
 
     fn format_data_bytes(&self, node: &IRNodeParams) -> String {
         if let Some(data) = self.params_to_bytes(node) {
-            if let Some(literal) = self.decode_bytes_literal(data) {
+            if self.opt.recover_literals
+                && let Some(literal) = self.decode_bytes_literal(data)
+            {
                 return literal.text;
             }
             return format!("0x{}", hex::encode(data));
@@ -1432,6 +1481,10 @@ impl<'a> Formater<'a> {
         {
             panic!("IRNodeTopStackValue is codegen-only and must not be decompiled/printed");
         }
+        let is_root_session = self.opt.begin_print_session();
+        if is_root_session {
+            self.opt.reset_runtime_state();
+        }
 
         // Emit file-level `lib ...` declarations once, at the top-level.
         // Do NOT rely on `tab == 0 && IRBLOCK` injection during block formatting, because
@@ -1469,7 +1522,7 @@ impl<'a> Formater<'a> {
         // Nested `print()` calls are used to render block items with indentation;
         // draining and emitting `const` there would change scoping/ordering and may
         // break roundtrip semantics.
-        if is_top_level {
+        let out = if is_top_level {
             let pending = self.opt.take_pending_consts();
             if !pending.is_empty() {
                 let mut defs = String::new();
@@ -1483,11 +1536,15 @@ impl<'a> Formater<'a> {
                         }
                     }
                 }
-                return format!("{}{}{}", prelude, defs, res);
+                format!("{}{}{}", prelude, defs, res)
+            } else {
+                format!("{}{}", prelude, res)
             }
-        }
-
-        format!("{}{}", prelude, res)
+        } else {
+            format!("{}{}", prelude, res)
+        };
+        self.opt.end_print_session();
+        out
     }
 
     fn print_inner(&self, node: &dyn IRNode) -> String {
@@ -1600,7 +1657,7 @@ impl<'a> Formater<'a> {
         // which can break parsing/semantics when used as an expression (e.g. call args).
         let mut opt = self.opt.with_tab(0);
         opt.trim_root_block = false;
-        opt.emit_lib_prelude = false;
+        opt.inline_mode = true;
         let inline = Self { opt };
         // IMPORTANT: inline printing must never emit file-level prelude or const
         // definitions. Those are handled by the outer/top-level `print()` only.

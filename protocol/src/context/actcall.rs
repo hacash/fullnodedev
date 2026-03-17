@@ -29,6 +29,6 @@ fn ctx_action_call(this: &mut dyn Context, k: u16, b: Vec<u8>) -> XRet<(u32, Vec
     }
     // Runtime-created actions always execute in CALL context.
     let (gas, res) = with_exec_from(this, ExecFrom::Call, |ctx| action.execute(ctx))?;
-    let gas = apply_burn90_multiplier(this.tx().burn_90(), action.burn_90(), gas);
+    let gas = apply_extra9_surcharge(action.extra9(), gas);
     Ok((gas, res))
 }

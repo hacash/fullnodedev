@@ -1,30 +1,23 @@
-
-
-
 /**************** env *****************/
 
-
-
-action_define!{ EnvHeight, 0x0701, 
-    ActScope::CALL_ONLY, false, [], {},
+action_define! { EnvHeight, 0x0701,
+    ActScope::CALL_ONLY, 3, false, [], {},
     (self, "Syscall: Get block height".to_owned()),
     (self, ctx, _gas {
         Ok(ctx.env().block.height.to_be_bytes().to_vec())
     })
 }
 
-
-action_define!{ EnvMainAddr, 0x0702, 
-    ActScope::CALL_ONLY, false, [], {},
+action_define! { EnvMainAddr, 0x0702,
+    ActScope::CALL_ONLY, 3, false, [], {},
     (self, "Syscall: Get main address".to_owned()),
     (self, ctx, _gas {
         Ok(ctx.env().tx.main.to_vec())
     })
 }
 
-
-action_define!{ EnvCoinbaseAddr, 0x0703, 
-    ActScope::CALL_ONLY, false, [], {},
+action_define! { EnvCoinbaseAddr, 0x0703,
+    ActScope::CALL_ONLY, 3, false, [], {},
     (self, "Syscall: Get coinbase address".to_owned()),
     (self, ctx, _gas {
         let cbadr = ctx.env().block.coinbase.clone();
@@ -32,14 +25,10 @@ action_define!{ EnvCoinbaseAddr, 0x0703,
     })
 }
 
-
-
 /**************** view *****************/
 
-
-
-action_define!{ ViewBalance, 0x0601, 
-    ActScope::CALL_ONLY, false, [], 
+action_define! { ViewBalance, 0x0601,
+    ActScope::CALL_ONLY, 3, false, [],
     {
         addr: Address
     },
@@ -59,9 +48,8 @@ action_define!{ ViewBalance, 0x0601,
     })
 }
 
-
-action_define!{ ViewCheckSign, 0x0602, 
-    ActScope::CALL_ONLY, false, [], 
+action_define! { ViewCheckSign, 0x0602,
+    ActScope::CALL_ONLY, 3, false, [],
     {
         addr: Address
     },
@@ -74,9 +62,8 @@ action_define!{ ViewCheckSign, 0x0602,
     })
 }
 
-
-action_define!{ ViewDiamondInscNum, 0x0603, 
-    ActScope::CALL_ONLY, false, [], 
+action_define! { ViewDiamondInscNum, 0x0603,
+    ActScope::CALL_ONLY, 3, false, [],
     {
         diamond: DiamondName
     },
@@ -94,9 +81,8 @@ action_define!{ ViewDiamondInscNum, 0x0603,
     })
 }
 
-
-action_define!{ ViewDiamondInscGet, 0x0604, 
-    ActScope::CALL_ONLY, false, [], 
+action_define! { ViewDiamondInscGet, 0x0604,
+    ActScope::CALL_ONLY, 3, false, [],
     {
         diamond: DiamondName
         inscidx: Uint1

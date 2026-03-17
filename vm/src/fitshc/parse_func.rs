@@ -169,6 +169,8 @@ pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
             KwTy::Address => Some(ValueTy::Address),
             KwTy::Bytes => Some(ValueTy::Bytes),
             KwTy::Bool => Some(ValueTy::Bool),
+            // Parsed here for syntax completeness; later function-input validation still
+            // rejects Tuple as a declared parameter type because it is an argv wrapper.
             KwTy::Tuple => Some(ValueTy::Tuple),
             KwTy::List | KwTy::Map => Some(ValueTy::Compo),
             _ => None,

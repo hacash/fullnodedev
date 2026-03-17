@@ -266,7 +266,7 @@ contract TestToken {
         print sha3("data")
         print sha2("data")
         print ripemd160("data")
-        print context_address("")
+        print context_address()
         print block_height()
 
         // --- log statement (2..=5 args) ---
@@ -400,4 +400,3 @@ contract TestToken {
 
 
 }
-

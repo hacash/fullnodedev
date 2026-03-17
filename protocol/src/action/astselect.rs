@@ -1,7 +1,5 @@
-action_define!{ AstSelect, 25,
-    ActScope::AST,
-    // burn 90 fee, check any sub child action
-    self.actions.as_list().iter().any(|a|a.burn_90()),
+action_define! { AstSelect, 25,
+    ActScope::AST, 3, false,
     self.collect_req_sign(),
     {
         exe_min: Uint1
@@ -96,18 +94,14 @@ impl AstSelect {
                 break; // reached max success limit
             }
             if let Some(ret) =
-                ast_revert_continue(ast_try_item!(ctx, act.execute(ctx), act.burn_90()))?
+                ast_revert_continue(ast_try_item!(ctx, act.execute(ctx), act.extra9()))?
             {
                 last_ok_ret = Some(ret);
                 ok += 1;
             }
         }
         if ok < slt_min {
-            return xerr_rf!(
-                "action ast select must succeed at least {} but only {}",
-                slt_min,
-                ok
-            );
+            return xerr_rf!("action ast select must succeed at least {} but only {}", slt_min, ok);
         }
         Ok(last_ok_ret.unwrap_or_default())
     }

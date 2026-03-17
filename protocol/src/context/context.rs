@@ -66,7 +66,7 @@ impl<'a> ContextInst<'a> {
 
     fn vm_unavailable_error(&self) -> String {
         let txty = self.env.tx.ty;
-        let gmx = self.txr.fee_extend().unwrap_or(0);
+        let gmx = self.txr.gas_max_byte().unwrap_or(0);
         format!(
             "vm not initialized for this tx (tx_type={}, gas_max_byte={})",
             txty, gmx
@@ -77,7 +77,10 @@ impl<'a> ContextInst<'a> {
         if self.vm.is_some() {
             return Ok(());
         }
-        let Some(assign) = crate::setup::get_registry().ok().and_then(|reg| reg.vm_assigner) else {
+        let Some(assign) = crate::setup::get_registry()
+            .ok()
+            .and_then(|reg| reg.vm_assigner)
+        else {
             return errf!("{}", self.vm_unavailable_error());
         };
         self.vm = Some(assign(self.env.block.height));
@@ -117,8 +120,9 @@ impl<'a> ContextInst<'a> {
 
     #[inline]
     fn bind_tx(&mut self, txr: &dyn TransactionRead) {
-        self.txr =
-            unsafe { std::mem::transmute::<&dyn TransactionRead, &'static dyn TransactionRead>(txr) };
+        self.txr = unsafe {
+            std::mem::transmute::<&dyn TransactionRead, &'static dyn TransactionRead>(txr)
+        };
         self.env.replace_tx(create_tx_info(txr));
         self.debug_assert_tx_bound_consistent();
     }

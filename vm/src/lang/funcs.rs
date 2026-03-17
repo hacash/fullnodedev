@@ -86,34 +86,35 @@ impl Syntax {
 
         // native env (VM context read, 0 args)
         if let Some(idx) = pick_native_env(&id) {
-            let (num, argvs) = self.must_get_func_argv(ArgvMode::Concat)?;
-            let allow_empty_placeholder = num == 1
-                && argvs
-                    .as_any()
-                    .downcast_ref::<IRNodeLeaf>()
-                    .is_some_and(|leaf| leaf.inst == Bytecode::PNBUF);
-            if num != 0 && !allow_empty_placeholder {
+            let (num, _) = self.must_get_func_argv(ArgvMode::Concat)?;
+            if num != 0 {
                 return errf!("native env '{}' takes no arguments but got {}", id, num)
             }
-            return Ok(push_single_p1_hr(true, Bytecode::NTENV, idx, push_empty()));
+            return Ok(Box::new(IRNodeParam1 {
+                hrtv: true,
+                inst: Bytecode::NTENV,
+                para: idx,
+                text: s!(""),
+            }));
         }
 
         // action
         if let Some((hrtv, inst, para, args_len)) = pick_action_func(&id) {
             let (num, argvres) = self.must_get_func_argv(ArgvMode::Concat)?;
-            let allow_empty_placeholder = args_len == 0
-                && num == 1
-                && argvres
-                    .as_any()
-                    .downcast_ref::<IRNodeLeaf>()
-                    .is_some_and(|leaf| leaf.inst == Bytecode::PNBUF);
-            if num != args_len && !allow_empty_placeholder {
+            if num != args_len {
                  return errf!("action function '{}' argv length must {} but got {}", 
                     id, args_len, num
                 )
             }
-            let subx = if inst.metadata().input == 0 { push_empty() } else { argvres };
-            return Ok(push_single_p1_hr(hrtv, inst, para, subx));
+            if inst.metadata().input == 0 {
+                return Ok(Box::new(IRNodeParam1 {
+                    hrtv,
+                    inst,
+                    para,
+                    text: s!(""),
+                }));
+            }
+            return Ok(push_single_p1_hr(hrtv, inst, para, argvres));
         }
 
         // not find

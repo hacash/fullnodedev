@@ -1,22 +1,18 @@
-
-
 #[derive(Clone)]
 pub struct Contract {
     argv: BytesW2,
-    ctrt: ContractSto
+    ctrt: ContractSto,
 }
 
-
 impl Contract {
-
     pub fn serialize(&self) -> Vec<u8> {
         self.ctrt.serialize()
     }
-    
+
     pub fn new() -> Self {
         Self {
             argv: BytesW2::new(),
-            ctrt: ContractSto::new()
+            ctrt: ContractSto::new(),
         }
     }
 
@@ -61,11 +57,15 @@ impl Contract {
         edit
     }
 
-    fn estimate_protocol_cost(txfee: &Amount, payload_bytes: usize, charged_bytes: usize) -> Amount {
+    fn estimate_protocol_cost(
+        txfee: &Amount,
+        payload_bytes: usize,
+        charged_bytes: usize,
+    ) -> Amount {
         if charged_bytes == 0 {
-            return Amount::zero()
+            return Amount::zero();
         }
-        // CLI print helper: conservative estimate to reduce "protocol_cost too small" rejection. Real validation still uses on-chain tx.fee_purity().
+        // CLI print helper: conservative estimate to reduce "protocol_cost too small" rejection. Real validation still uses on-chain tx.gas_price_purity().
         const TX_SIZE_ESTIMATE_BASE_BYTES: u128 = 220;
         const SAFETY_NUM: u128 = 120; // +20% headroom
         const SAFETY_DEN: u128 = 100;
@@ -96,11 +96,11 @@ impl Contract {
         act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes);
         // print
         curl_trs_2(vec![Box::new(act)], fee);
-    } 
+    }
 
     pub fn testnet_deploy_print(&self, fee: &str) {
         self.testnet_deploy_print_by_nonce(fee, 0)
-    } 
+    }
 
     pub fn testnet_update_print(&self, cadr: Address, fee: &str, expect_revision: u16) {
         let txfee = Amount::from(fee).unwrap();
@@ -112,7 +112,5 @@ impl Contract {
         act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes);
         // print
         curl_trs_2(vec![Box::new(act)], fee);
-    } 
-
-
+    }
 }

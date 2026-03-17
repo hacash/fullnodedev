@@ -11,6 +11,8 @@ use testkit::sim::context::make_ctx_with_state;
 use testkit::sim::integration::scoped_setup;
 use testkit::sim::state::ForkableMemState;
 
+const TEST_HEIGHT: u64 = protocol::upgrade::ONLINE_OPEN_HEIGHT;
+
 fn addr_of(acc: &Account) -> Address {
     Address::from(acc.address().clone())
 }
@@ -121,7 +123,7 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
     let cases = vec![9usize, 10usize, 40usize, 100usize];
     for cur_len in cases {
         let expect_cost = calc_append_inscription_protocol_cost(cur_len, 100);
-        let mut fail_ctx = make_ctx(10_000, tx.as_read());
+        let mut fail_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
         seed_balance(&mut fail_ctx, &main, 1_000_000);
         seed_diamond(&mut fail_ctx, diamond, main, cur_len, 0, 100);
         let mut fail_act = DiaInscPush::new();
@@ -142,7 +144,7 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
             );
         }
 
-        let mut ok_ctx = make_ctx(10_000, tx.as_read());
+        let mut ok_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
         seed_balance(&mut ok_ctx, &main, 1_000_000);
         seed_diamond(&mut ok_ctx, diamond, main, cur_len, 0, 100);
         let mut ok_act = DiaInscPush::new();
@@ -176,7 +178,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
     let raw_non_readable = BytesW1::from(vec![0xff, 0x00]).unwrap();
 
     // engraved_type <= 100 must be readable string.
-    let mut fail_ctx = make_ctx(10_000, tx.as_read());
+    let mut fail_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut fail_ctx, &main, 1_000_000);
     seed_diamond(&mut fail_ctx, diamond, main, 0, 0, 100);
     let mut fail_act = DiaInscPush::new();
@@ -188,7 +190,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
     assert!(err.contains("readable string"), "{}", err);
 
     // engraved_type > 100 can carry non-readable bytes.
-    let mut ok_ctx = make_ctx(10_000, tx.as_read());
+    let mut ok_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ok_ctx, &main, 1_000_000);
     seed_diamond(&mut ok_ctx, diamond, main, 0, 0, 100);
     let mut ok_act = DiaInscPush::new();
@@ -208,10 +210,10 @@ fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
     tx.fill_sign(&main_acc).unwrap();
 
     let diamond = DiamondName::from_readable(b"WTYUKB").unwrap();
-    let mut ctx = make_ctx(10_000, tx.as_read());
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ctx, &main, 1_000_000);
-    // prev_engraved_height=9_950, pending=10_000 -> cooldown not met for actions that enforce cooldown.
-    seed_diamond(&mut ctx, diamond, main, 2, 9_950, 123);
+    // prev_engraved_height=height-50, pending=height -> cooldown not met for actions that enforce cooldown.
+    seed_diamond(&mut ctx, diamond, main, 2, TEST_HEIGHT - 50, 123);
 
     let mut clear = DiaInscClean::new();
     clear.diamonds = DiamondNameListMax200::one(diamond);
@@ -233,7 +235,7 @@ fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
 
     let sto_after_append = CoreState::wrap(ctx.state()).diamond(&diamond).unwrap();
     assert_eq!(sto_after_append.inscripts.length(), 1);
-    assert_eq!(*sto_after_append.prev_engraved_height, 10_000);
+    assert_eq!(*sto_after_append.prev_engraved_height, TEST_HEIGHT);
 }
 
 #[test]
@@ -247,7 +249,7 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     let diamond = DiamondName::from_readable(b"HYXYHY").unwrap();
 
     // A=100 mei, edit should cost A/100 = 1 mei.
-    let mut fail_ctx = make_ctx(10_000, tx.as_read());
+    let mut fail_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut fail_ctx, &main, 1_000_000);
     seed_diamond(&mut fail_ctx, diamond, main, 1, 0, 100);
     let mut fail_act = DiaInscEdit::new();
@@ -259,7 +261,7 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
     let err = fail_act.execute(&mut fail_ctx).unwrap_err();
     assert!(err.contains("cost expected"), "{}", err);
 
-    let mut ok_ctx = make_ctx(10_000, tx.as_read());
+    let mut ok_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ok_ctx, &main, 1_000_000);
     seed_diamond(&mut ok_ctx, diamond, main, 1, 0, 100);
     let mut ok_act = DiaInscEdit::new();
@@ -299,7 +301,7 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
     let to_diamond = DiamondName::from_readable(b"WYUKKZ").unwrap();
 
     // target A=200 mei and len=10 -> move cost A/50 = 4 mei
-    let mut fail_ctx = make_ctx(10_000, tx.as_read());
+    let mut fail_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut fail_ctx, &from, 1_000_000);
     seed_diamond(&mut fail_ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut fail_ctx, to_diamond, to, 10, 0, 200);
@@ -311,7 +313,7 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
     let err = fail_act.execute(&mut fail_ctx).unwrap_err();
     assert!(err.contains("cost expected"), "{}", err);
 
-    let mut ok_ctx = make_ctx(10_000, tx.as_read());
+    let mut ok_ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ok_ctx, &from, 1_000_000);
     seed_diamond(&mut ok_ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ok_ctx, to_diamond, to, 10, 0, 200);
@@ -347,7 +349,7 @@ fn diamond_inscription_move_is_free_when_target_has_less_than_ten() {
     let to_diamond = DiamondName::from_readable(b"BSZNWT").unwrap();
 
     // target len=9 -> move cost 0
-    let mut ctx = make_ctx(10_000, tx.as_read());
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ctx, &from, 1_000_000);
     seed_diamond(&mut ctx, from_diamond, from, 1, 0, 300);
     seed_diamond(&mut ctx, to_diamond, to, 9, 0, 200);
@@ -370,7 +372,7 @@ fn diamond_inscription_rejects_non_privakey_owner() {
     let tx = TransactionType2::new_by(owner, Amount::mei(1), 1_730_000_004);
     let diamond = DiamondName::from_readable(b"VYHWEH").unwrap();
 
-    let mut ctx = make_ctx(10_000, tx.as_read());
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ctx, &owner, 1_000_000);
     seed_diamond(&mut ctx, diamond, owner, 0, 0, 100);
 
@@ -391,14 +393,14 @@ fn diamond_move_astselect_fault_child_aborts_whole_node() {
     let from = addr_of(&from_acc);
     let to = addr_of(&to_acc);
 
-    let mut tx = TransactionType2::new_by(from, Amount::mei(1), 1_730_000_020);
+    let mut tx = TransactionType3::new_by(from, Amount::mei(1), 1_730_000_020);
     tx.fill_sign(&from_acc).unwrap();
     tx.fill_sign(&to_acc).unwrap();
 
     let from_diamond = DiamondName::from_readable(b"AAEWTU").unwrap();
     let to_diamond = DiamondName::from_readable(b"AEYWTU").unwrap();
 
-    let mut ctx = make_ctx(10_000, tx.as_read());
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ctx, &from, 500_000_000_000);
     ctx.gas_init_tx(10000, 1).unwrap();
     let balance_after_gas = balance_mei(&mut ctx, &from);
@@ -437,14 +439,14 @@ fn diamond_move_astselect_rolls_back_whole_node_when_min_unmet() {
     let from = addr_of(&from_acc);
     let to = addr_of(&to_acc);
 
-    let mut tx = TransactionType2::new_by(from, Amount::mei(1), 1_730_000_021);
+    let mut tx = TransactionType3::new_by(from, Amount::mei(1), 1_730_000_021);
     tx.fill_sign(&from_acc).unwrap();
     tx.fill_sign(&to_acc).unwrap();
 
     let from_diamond = DiamondName::from_readable(b"ABEYWT").unwrap();
     let to_diamond = DiamondName::from_readable(b"AKYWTU").unwrap();
 
-    let mut ctx = make_ctx(10_000, tx.as_read());
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
     seed_balance(&mut ctx, &from, 500_000_000_000);
     ctx.gas_init_tx(10000, 1).unwrap();
     let balance_after_gas = balance_mei(&mut ctx, &from);

@@ -16,18 +16,17 @@ pub struct PrintOption<'a> {
     pub trim_root_block: bool,
     pub trim_head_alloc: bool,
     pub trim_param_unpack: bool,
-    /// When enabled, hides the compiler-injected "default" argument used to satisfy calling conventions.
-    /// - For contract/function-style calls (list argv), this is typically `nil`.
-    /// - For system calls (native/ext, concat argv), this is typically an empty bytes `""`.
+    /// When enabled, hides the compiler-injected `nil` placeholder used by packed call argv.
     ///
-    /// This is intentionally opt-in: unless explicitly enabled, decompilation preserves the placeholder
-    /// so callers can distinguish "no args" vs "default arg inserted".
+    /// This is intentionally opt-in because `foo()` and `foo(nil)` are not equivalent in packed-call
+    /// syntax once decompiled back to source.
     pub hide_default_call_argv: bool,
     pub call_short_syntax: bool,
     pub flatten_call_list: bool,
     pub flatten_array_list: bool,
     pub flatten_syscall_cat: bool,
     pub recover_literals: bool,
+    pub inline_mode: bool,
     /// When enabled, prints numeric literals with type suffix (e.g., `100u64`)
     /// instead of using `as` keyword (e.g., `100 as u64`).
     pub simplify_numeric_as_suffix: bool,
@@ -55,6 +54,7 @@ impl<'a> PrintOption<'a> {
             flatten_array_list: false,
             flatten_syscall_cat: false,
             recover_literals: false,
+            inline_mode: false,
             simplify_numeric_as_suffix: true,
             allocated: Rc::new(RefCell::new(PrintHashSet::new())),
             printed_consts: Rc::new(RefCell::new(PrintHashSet::new())),

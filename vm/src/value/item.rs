@@ -29,6 +29,28 @@ use std::usize;
 
 use Value::*;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CallArgsPack {
+    Nil,
+    Raw,
+    Tuple,
+}
+
+pub fn classify_call_args_len(len: usize) -> VmrtRes<CallArgsPack> {
+    if len > crate::MAX_FUNC_PARAM_LEN {
+        return itr_err_fmt!(
+            CastBeFnArgvFail,
+            "func argv length cannot more than {}",
+            crate::MAX_FUNC_PARAM_LEN
+        );
+    }
+    Ok(match len {
+        0 => CallArgsPack::Nil,
+        1 => CallArgsPack::Raw,
+        _ => CallArgsPack::Tuple,
+    })
+}
+
 impl Value {
 
     pub fn ty(&self) -> ValueTy {
@@ -177,6 +199,7 @@ impl Value {
     }
 
     pub fn clone_unpack_items(&self) -> VmrtRes<Vec<Value>> {
+        // UNPACK is a neutral sequence op: it can unpack Tuple or a plain Compo::List value.
         if let Some(tuple) = self.match_tuple() {
             return Ok(tuple.to_vec())
         }
@@ -191,17 +214,10 @@ impl Value {
         I: IntoIterator<Item = Value>,
     {
         let mut items: Vec<_> = items.into_iter().collect();
-        if items.len() > crate::MAX_FUNC_PARAM_LEN {
-            return itr_err_fmt!(
-                CastBeFnArgvFail,
-                "func argv length cannot more than {}",
-                crate::MAX_FUNC_PARAM_LEN
-            );
-        }
-        Ok(match items.len() {
-            0 => Self::Nil,
-            1 => items.pop().unwrap(),
-            _ => Self::Tuple(TupleItem::new(items)?),
+        Ok(match classify_call_args_len(items.len())? {
+            CallArgsPack::Nil => Self::Nil,
+            CallArgsPack::Raw => items.pop().unwrap(),
+            CallArgsPack::Tuple => Self::Tuple(TupleItem::new(items)?),
         })
     }
 

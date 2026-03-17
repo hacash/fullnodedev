@@ -57,11 +57,12 @@ fn parse_push_params(codes: &mut Vec<u8>, pms: &str) -> Rerr {
         parse_one_param(codes, t, v)?;
         pms_count += 1;
     }
-    match pms_count {
-        0      => { push!(PNIL); } // none argv
-        1      => { /* single param: push raw value; contract uses PUT 0 ROLL0, not UNPACK */ }
-        2..255 => { push!(PU8, pms_count, PACKTUPLE); }
-        255..  => return errf!("param count exceeds limit"),
+    match crate::value::classify_call_args_len(pms_count).map_err(|e| e.to_string())? {
+        crate::value::CallArgsPack::Nil => push!(PNIL),
+        crate::value::CallArgsPack::Raw => {}
+        crate::value::CallArgsPack::Tuple => {
+            push!(PU8, pms_count, PACKTUPLE);
+        }
     }
     Ok(())
 }
@@ -149,5 +150,16 @@ mod sandbox_parse_tests {
         let mut codes = vec![];
         let err = parse_push_params(&mut codes, "0xzz:bytes").unwrap_err();
         assert!(err.to_string().contains("invalid bytes argument"));
+    }
+
+    #[test]
+    fn parse_push_params_rejects_function_argv_over_limit() {
+        let mut codes = vec![];
+        let pms = (0..(crate::MAX_FUNC_PARAM_LEN + 1))
+            .map(|i| format!("{}:u8", i))
+            .collect::<Vec<_>>()
+            .join(",");
+        let err = parse_push_params(&mut codes, &pms).unwrap_err();
+        assert!(err.contains("func argv length cannot more than"));
     }
 }

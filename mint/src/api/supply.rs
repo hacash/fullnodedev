@@ -10,11 +10,11 @@ fn supply(ctx: &ApiExecCtx, _req: ApiRequest) -> ApiResponse {
     };
     let burned_diamond_bid = *supply.hacd_bid_burn_238;
     let burned_diamond_insc = *supply.diamond_insc_burn_238;
-    let burned_tx_fee_90 = *supply.tx_fee_burn90_238;
+    let burned_legacy_tx_extra9 = *supply.tx_fee_burn90_238;
     let burned_vm_ast_gas = *supply.ast_vm_gas_burn_238;
     let burned_asset_issue = *supply.asset_issue_burn_238;
-    // `burned_diamond_bid` is a subset of `burned_tx_fee_90`, so do not add it again.
-    let burn_fee = match burned_tx_fee_90
+    // `burned_diamond_bid` is a subset of legacy tx extra9 burn, so do not add it again.
+    let burn_fee = match burned_legacy_tx_extra9
         .checked_add(burned_diamond_insc)
         .and_then(|v| v.checked_add(burned_vm_ast_gas))
         .and_then(|v| v.checked_add(burned_asset_issue))
@@ -36,7 +36,7 @@ fn supply(ctx: &ApiExecCtx, _req: ApiRequest) -> ApiResponse {
         ("burned_fee", json!(z2m(burn_fee))),
         ("burned_diamond_bid", json!(z2m(burned_diamond_bid))),
         ("burned_diamond_insc", json!(z2m(burned_diamond_insc))),
-        ("burned_tx_fee_90", json!(z2m(burned_tx_fee_90))),
+        ("burned_legacy_tx_extra9_fee", json!(z2m(burned_legacy_tx_extra9))),
         ("burned_ast_vm_gas", json!(z2m(burned_vm_ast_gas))),
         ("burned_asset_issue", json!(z2m(burned_asset_issue))),
         ("channel_deposit", json!(z2m(*supply.channel_deposit_238))),

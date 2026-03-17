@@ -1,6 +1,5 @@
 use basis::interface::{TransactionRead, TxExec};
 use field::{Address, Amount, Hash};
-use sys::Ret;
 
 #[derive(Default, Clone, Debug)]
 pub struct DummyTx;
@@ -46,8 +45,8 @@ impl TransactionRead for DummyTx {
         1
     }
 
-    fn fee_extend(&self) -> Ret<u8> {
-        Ok(1)
+    fn gas_max_byte(&self) -> Option<u8> {
+        Some(1)
     }
 }
 
@@ -121,11 +120,11 @@ impl TransactionRead for StubTx {
         self.fee_purity
     }
 
-    fn fee_extend(&self) -> Ret<u8> {
+    fn gas_max_byte(&self) -> Option<u8> {
         if self.ty < 3 {
-            return Ok(0);
+            return None;
         }
-        Ok(self.gas_max)
+        Some(self.gas_max)
     }
 }
 

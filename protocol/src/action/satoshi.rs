@@ -1,72 +1,66 @@
-
 /*
 *
 */
-action_define!{ SatToTrs, 10, 
-    ActScope::CALL, false, [],
+action_define! { SatToTrs, 10,
+    ActScope::CALL, 2, false, [],
     {
         to        : AddrOrPtr
-        satoshi   : Satoshi 
+        satoshi   : Satoshi
     },
     (self, format!("Transfer {} SAT to {}", *self.satoshi, self.to.to_readable())),
     (self, ctx, _gas {
-        let from = ctx.env().tx.main; 
+        let from = ctx.env().tx.main;
         let to   = ctx.addr(&self.to)?;
         sat_transfer(ctx, &from, &to, &self.satoshi)
     })
 }
 
-
 impl SatToTrs {
     pub fn create_by(to: Address, satoshi: Satoshi) -> Self {
-        Self{
-            to: AddrOrPtr::from_addr(to), 
+        Self {
+            to: AddrOrPtr::from_addr(to),
             satoshi,
             ..Self::new()
         }
     }
 }
 
-
-action_define!{ SatFromTrs, 11, 
-    ActScope::CALL, false, 
+action_define! { SatFromTrs, 11,
+    ActScope::CALL, 2, false,
     [
         self.from
     ],
     {
         from      : AddrOrPtr
-        satoshi   : Satoshi   
+        satoshi   : Satoshi
     },
     (self, format!("Transfer {} SAT from {}", *self.satoshi, self.from.to_readable())),
     (self, ctx, _gas {
         let from = ctx.addr(&self.from)?;
-        let to   = ctx.env().tx.main; 
+        let to   = ctx.env().tx.main;
         sat_transfer(ctx, &from, &to, &self.satoshi)
     })
 }
 
-
-
 impl SatFromTrs {
     pub fn create_by(from: Address, satoshi: Satoshi) -> Self {
-        Self{
-            from: AddrOrPtr::from_addr(from), 
+        Self {
+            from: AddrOrPtr::from_addr(from),
             satoshi,
             ..Self::new()
         }
     }
 }
 
-
-action_define!{ SatFromToTrs, 12, 
-    ActScope::CALL, false, 
+action_define! { SatFromToTrs, 12,
+    ActScope::CALL, 2, false,
     [
         self.from
     ],
     {
         from      : AddrOrPtr
         to        : AddrOrPtr
-        satoshi   : Satoshi 
+        satoshi   : Satoshi
     },
     (self, format!("Transfer {} SAT from {} to {}", *self.satoshi, self.from.to_readable(), self.to.to_readable())),
     (self, ctx, _gas {

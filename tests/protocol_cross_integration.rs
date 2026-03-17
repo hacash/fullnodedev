@@ -18,11 +18,12 @@ use testkit::sim::state::ForkableMemState as AstTestState;
 use testkit::sim::vm::CounterMockVm as MockVM;
 
 fn build_ast_ctx_with_state<'a>(
-    env: Env,
+    mut env: Env,
     sta: Box<dyn State>,
     tx: &'a dyn TransactionRead,
 ) -> protocol::context::ContextInst<'a> {
     init_setup_once();
+    env.tx.ty = env.tx.ty.max(TransactionType3::TYPE);
     let mut ctx = testkit_make_ctx_with_state(env, sta, tx);
     let main = ctx.env().tx.main;
     let mut st = protocol::state::CoreState::wrap(ctx.state());
@@ -334,14 +335,13 @@ fn test_ast_nested_plain_actions_no_over_or_under_charge() {
         (ret_gas, before - after)
     };
 
-    // AST control-flow nodes return gas=0; child return-gas is charged via ctx.gas_consume.
+    // AST control-flow nodes return gas=0; ordinary child return-gas has no extra9 surcharge.
     let (ret0, shared0) = run_case((0, 0, 0));
     let (ret1, shared1) = run_case((7, 11, 5));
 
     assert_eq!(ret0, 0);
     assert_eq!(ret1, 0);
-    // Children report 7+11+5=23 as return-gas, all charged via ctx.gas_consume.
-    assert_eq!(shared1 - shared0, 23);
+    assert_eq!(shared1 - shared0, 0);
 }
 
 #[test]
@@ -383,10 +383,8 @@ fn test_ast_multilayer_nested_innermost_plain_return_gas_charged_once() {
     let used7 = run_case(7);
     let used19 = run_case(19);
 
-    // Only the innermost plain action return-gas changes between runs.
-    // If return-gas were charged twice, these deltas would be doubled.
-    assert_eq!(used7 - used0, 7);
-    assert_eq!(used19 - used7, 12);
+    assert_eq!(used7 - used0, 0);
+    assert_eq!(used19 - used7, 0);
 }
 
 #[test]
@@ -440,9 +438,7 @@ fn test_ast_multilayer_innermost_revert_does_not_charge_return_gas() {
     let used_success = run_success();
     let used_revert = run_revert();
 
-    // In success path, innermost AstTestGasOnly returns 17 gas and should be charged once.
-    // In revert path, innermost action has no successful return gas channel.
-    assert_eq!(used_success - used_revert, 17);
+    assert_eq!(used_success - used_revert, 0);
 }
 
 #[test]
@@ -502,13 +498,12 @@ fn test_ast_single_select_plain_reported_gas_propagates() {
         (ret_gas, before - after)
     };
 
-    // AST control-flow nodes return gas=0; child return-gas is charged via ctx.gas_consume.
+    // AST control-flow nodes return gas=0; ordinary child return-gas has no extra9 surcharge.
     let (ret0, shared0) = run_case(0, 0);
     let (ret1, shared1) = run_case(7, 11);
     assert_eq!(ret0, 0);
     assert_eq!(ret1, 0);
-    // Children report 7+11=18 as return-gas, all charged via ctx.gas_consume.
-    assert_eq!(shared1 - shared0, 18);
+    assert_eq!(shared1 - shared0, 0);
 }
 
 #[test]
@@ -518,6 +513,7 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType3::TYPE);
+    tx.gas_max = Uint1::from(17);
     tx.actions
         .push(Box::new(AstSelect::create_by(
             2,
@@ -588,7 +584,7 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
 }
 
 #[test]
-fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
+fn test_ast_tx_gasmax_zero_is_rejected_before_execution() {
     let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -614,7 +610,7 @@ fn test_ast_tx_gasmax_zero_fails_at_first_consume_point() {
 
     ctx.exec_from_set(ExecFrom::Top);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("gas has run out"), "{}", err);
+    assert!(err.contains("gas_max must be non-zero"), "{}", err);
 }
 
 #[test]
@@ -760,6 +756,7 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType3::TYPE);
+    tx.gas_max = Uint1::from(17);
 
     let act = AstIf::create_by(
         AstSelect::create_list(vec![Box::new(AstTestSet::create_by(70, 70))]), // cond=true and committed by AstIf
@@ -1106,10 +1103,11 @@ fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
 }
 
 fn build_tex_ctx_with_state(
-    env: Env,
+    mut env: Env,
     sta: Box<dyn State>,
 ) -> protocol::context::ContextInst<'static> {
     init_setup_once();
+    env.tx.ty = env.tx.ty.max(TransactionType3::TYPE);
     make_ctx_with_default_tx(env, sta)
 }
 
@@ -1529,12 +1527,13 @@ impl AstTestCombo {
 
 // --- Helper to build ctx with AstTestLogs ---
 fn build_ast_ctx_with_logs<'a>(
-    env: Env,
+    mut env: Env,
     sta: Box<dyn State>,
     log: Box<dyn Logs>,
     tx: &'a dyn TransactionRead,
 ) -> protocol::context::ContextInst<'a> {
     init_setup_once();
+    env.tx.ty = env.tx.ty.max(TransactionType3::TYPE);
     let mut ctx = testkit_make_ctx_with_logs(env, sta, log, tx);
     let main = ctx.env().tx.main;
     let mut st = protocol::state::CoreState::wrap(ctx.state());

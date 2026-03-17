@@ -3,7 +3,12 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let engcnf = ctx.engine.config();
     let staptr = ctx.engine.state();
     let substa = staptr.fork_sub(Arc::downgrade(&staptr));
-    let tx = TransactionType3::default();
+    let mut tx = TransactionType3::new_by(
+        engcnf.external_exec_coinbase(),
+        Amount::unit238(1_000_000),
+        height,
+    );
+    tx.gas_max = Uint1::from(17);
 
     let env = Env {
         chain: ChainInfo {

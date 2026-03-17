@@ -82,7 +82,10 @@ impl FromJSON for Address {
             *self = addr;
             return Ok(());
         }
-        // Fall back to generic binary (0x, b64:, b58:, plain)
+        if trimmed.len() >= 4 && (trimmed.starts_with("b58:") || trimmed.starts_with("B58:")) {
+            return errf!("Address JSON no longer accepts b58: prefix");
+        }
+        // Fall back to generic binary (0x, b64:, plain)
         let data = json_decode_binary(json)?;
         if data.len() != Self::SIZE {
             return errf!("Address size mismatch: expected {} but got {}", Self::SIZE, data.len());

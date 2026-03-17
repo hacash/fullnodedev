@@ -23,6 +23,19 @@ pub fn check_action_ast_tree_depth(act: &dyn Action) -> Rerr {
     check_depth(act, 0)
 }
 
+pub fn check_action_tx_type(tx_type: u8, act: &dyn Action) -> Rerr {
+    let min_tx_type = act.min_tx_type();
+    if tx_type < min_tx_type {
+        return errf!(
+            "action {} requires tx type >= {} but current tx type is {}",
+            act.kind(),
+            min_tx_type,
+            tx_type
+        );
+    }
+    Ok(())
+}
+
 pub fn check_tx_action_ast_tree_depth(actions: &Vec<Box<dyn Action>>) -> Rerr {
     for act in actions {
         check_action_ast_tree_depth(act.as_ref())?;
@@ -82,9 +95,15 @@ impl TxActionAnalyzeStats {
     }
 }
 
-fn scan_action_node(act: &dyn Action, stats: &mut TxActionAnalyzeStats, is_top: bool) -> Rerr {
+fn scan_action_node(
+    tx_type: u8,
+    act: &dyn Action,
+    stats: &mut TxActionAnalyzeStats,
+    is_top: bool,
+) -> Rerr {
     let kid = act.kind();
     let scope = act.scope();
+    check_action_tx_type(tx_type, act)?;
     let exec_from = maybe!(is_top, ExecFrom::Top, ExecFrom::Ast);
     if !scope.allows(exec_from) {
         return maybe!(
@@ -106,7 +125,7 @@ fn scan_action_node(act: &dyn Action, stats: &mut TxActionAnalyzeStats, is_top: 
     }
     if let Some((_, childs)) = get_action_level_inc_and_childs(act) {
         for sub in childs {
-            scan_action_node(sub, stats, false)?;
+            scan_action_node(tx_type, sub, stats, false)?;
         }
     } else {
         stats.record_leaf(scope);
@@ -114,7 +133,7 @@ fn scan_action_node(act: &dyn Action, stats: &mut TxActionAnalyzeStats, is_top: 
     Ok(())
 }
 
-pub fn analyze_tx_action_set(actions: &Vec<Box<dyn Action>>) -> Rerr {
+pub fn analyze_tx_action_set_for_tx(tx_type: u8, actions: &Vec<Box<dyn Action>>) -> Rerr {
     let actlen = actions.len();
     if actlen < 1 || actlen > TX_ACTIONS_MAX {
         return errf!(
@@ -125,7 +144,7 @@ pub fn analyze_tx_action_set(actions: &Vec<Box<dyn Action>>) -> Rerr {
     }
     let mut stats = TxActionAnalyzeStats::default();
     for act in actions {
-        scan_action_node(act.as_ref(), &mut stats, true)?;
+        scan_action_node(tx_type, act.as_ref(), &mut stats, true)?;
     }
     stats.check_not_all_guard()?;
     for act in actions {

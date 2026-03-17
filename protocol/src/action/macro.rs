@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! action_define {
-    ($class:ident, $kid:expr, $scope:expr, $burn90:expr, $reqsign:expr,
+    ($class:ident, $kid:expr, $scope:expr, $mintxty:expr, $extra9:expr, $reqsign:expr,
         { $( $item:ident : $ty:ty )* },
         ($dself:ident, $desc:expr),
         ($pself:ident, $pctx:ident, $pgas:ident $exec:expr)
@@ -97,18 +97,14 @@ macro_rules! action_define {
                 use std::any::Any;
                 $crate::upgrade::check_gated_action($pctx.env().block.height, $pself.kind())
                     .into_xret()?;
+                $crate::action::check_action_tx_type($pctx.env().tx.ty, $pself).into_xret()?;
                 if !$pctx.env().chain.fast_sync {
                     check_action_scope($pctx.exec_from(), $pself).into_xret()?;
                 }
-                // act size is base gas use
-                // NOTE: burn_90 gas multiplier is applied at gas-charge sites
-                // (ctx_action_call / ast_try_item), not in action.execute().
                 #[allow(unused_mut)]
                 let mut $pgas: u32 = $pself.size() as u32;
-                // execute action body
                 let res: Ret<Vec<u8>> = (|| -> Ret<Vec<u8>> { $exec })();
                 let res = res.into_xret()?;
-                // call action hook (post-hook: audit after state change)
                 do_action_hook($pself.kind(), $pself as &dyn Any, $pctx).into_xret()?;
                 Ok(($pgas, res))
             }
@@ -121,8 +117,9 @@ macro_rules! action_define {
         impl Action for $class {
             fn kind(&self) -> u16 { *self.kind }
             fn scope(&self) -> ActScope { $scope }
-            fn burn_90(&$pself) -> bool { $burn90 }
-            fn req_sign(&$pself) -> Vec<AddrOrPtr> { $reqsign.to_vec() } // request_need_sign_addresses
+            fn min_tx_type(&self) -> u8 { $mintxty }
+            fn extra9(&$pself) -> bool { $extra9 }
+            fn req_sign(&$pself) -> Vec<AddrOrPtr> { $reqsign.to_vec() }
             fn as_any(&self) -> &dyn Any { self }
         }
 
@@ -140,12 +137,25 @@ macro_rules! action_define {
 
     };
 
-    ($class:ident, $kid:expr, $scope:expr, $burn90:expr, $reqsign:expr,
+    ($class:ident, $kid:expr, $scope:expr, $mintxty:expr, $extra9:expr, $reqsign:expr,
+        { $( $item:ident : $ty:ty )* },
+        ($dself:ident, $desc:expr),
+        ($pself:ident, $pctx:ident, $pgas:ident $exec:expr)
+    ) => {
+        action_define!{
+            $class, $kid, $scope, $mintxty, $extra9, $reqsign,
+            { $( $item : $ty )* },
+            ($dself, $desc),
+            ($pself, $pctx, $pgas $exec)
+        }
+    };
+
+    ($class:ident, $kid:expr, $scope:expr, $mintxty:expr, $extra9:expr, $reqsign:expr,
         { $( $item:ident : $ty:ty )* },
         ($pself:ident, $pctx:ident, $pgas:ident $exec:expr)
     ) => {
         action_define!{
-            $class, $kid, $scope, $burn90, $reqsign, { $( $item : $ty )* },
+            $class, $kid, $scope, $mintxty, $extra9, $reqsign, { $( $item : $ty )* },
             (self, "".to_owned()),
             ($pself, $pctx, $pgas $exec)
         }
@@ -213,8 +223,9 @@ macro_rules! action_register {
 //////////////////// TEST  ////////////////////
 
 // test define action
-action_define!{ Test63856464969364, 9527,
+action_define! { Test63856464969364, 9527,
     ActScope::CALL, // scope
+    1,
     false,
     [],
     {

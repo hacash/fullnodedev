@@ -496,7 +496,7 @@ mod fitsh_compile_tests {
 
         assert_compile_err_contains!(
             dead_code_after_return: "return 1
-let x = 2", "unreachable code after terminal statement",
+        let x = 2", "unreachable code after terminal statement",
             dead_code_after_codecall: "lib C = 0
 codecall C.probe
 let x = 2", "unreachable code after terminal statement",
@@ -653,10 +653,10 @@ return C.0xabcdef01(1, 2)",
                 .join(", ");
             let code = format!("return tuple({})", argv);
             let err = lang_to_bytecode(&code).expect_err("tuple(33 items) must fail");
-            assert!(
-                err.to_string()
-                    .contains(&format!("tuple length cannot more than {}", crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH))
-            );
+            assert!(err.to_string().contains(&format!(
+                "tuple length cannot more than {}",
+                crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH
+            )));
         }
 
         #[test]
@@ -667,10 +667,10 @@ return C.0xabcdef01(1, 2)",
                 .join(", ");
             let code = format!("lib C = 1\nreturn C.0xabcdef01({})", argv);
             let err = lang_to_bytecode(&code).expect_err("call argv over limit must fail");
-            assert!(
-                err.to_string()
-                    .contains(&format!("function argv length cannot more than {}", crate::MAX_FUNC_PARAM_LEN))
-            );
+            assert!(err.to_string().contains(&format!(
+                "function argv length cannot more than {}",
+                crate::MAX_FUNC_PARAM_LEN
+            )));
         }
 
         #[test]
@@ -734,7 +734,10 @@ return C.0xabcdef01(1, 2)",
 
         fn execute_and_get_value(script: &str) -> u64 {
             use crate::machine::VmHost;
-            use crate::rt::{ExecCtx, FrameBindings, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
+            use crate::rt::{
+                ExecCtx, FrameBindings, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr,
+                VmrtRes,
+            };
             use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
             use crate::value::Value;
             use crate::{ContractAddress, ContractEdition, ContractSto};
@@ -742,8 +745,8 @@ return C.0xabcdef01(1, 2)",
             use field::Address;
             use protocol::context::ContextInst;
             use protocol::state::EmptyLogs;
-            use sys::XRet;
             use std::collections::HashMap;
+            use sys::XRet;
 
             #[derive(Default, Clone, Debug)]
             struct DummyTx;
@@ -778,8 +781,8 @@ return C.0xabcdef01(1, 2)",
                 fn fee_purity(&self) -> u64 {
                     1
                 }
-                fn fee_extend(&self) -> sys::Ret<u8> {
-                    Ok(1)
+                fn gas_max_byte(&self) -> Option<u8> {
+                    Some(1)
                 }
             }
 
@@ -822,7 +825,10 @@ return C.0xabcdef01(1, 2)",
 
                 fn gas_charge(&mut self, gas: i64) -> VmrtErr {
                     if gas < 0 {
-                        return Err(ItrErr::new(ItrErrCode::GasError, &format!("gas cost invalid: {}", gas)));
+                        return Err(ItrErr::new(
+                            ItrErrCode::GasError,
+                            &format!("gas cost invalid: {}", gas),
+                        ));
                     }
                     self.gas_remaining -= gas;
                     if self.gas_remaining < 0 {
@@ -864,12 +870,24 @@ return C.0xabcdef01(1, 2)",
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
-                fn ssave(&mut self, gst: &GasExtra, addr: &Address, key: Value, val: Value) -> VmrtRes<i64> {
+                fn ssave(
+                    &mut self,
+                    gst: &GasExtra,
+                    addr: &Address,
+                    key: Value,
+                    val: Value,
+                ) -> VmrtRes<i64> {
                     let _ = (gst, addr, key, val);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
-                fn srent(&mut self, gst: &GasExtra, addr: &Address, key: Value, period: Value) -> VmrtRes<i64> {
+                fn srent(
+                    &mut self,
+                    gst: &GasExtra,
+                    addr: &Address,
+                    key: Value,
+                    period: Value,
+                ) -> VmrtRes<i64> {
                     let _ = (gst, addr, key, period);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }

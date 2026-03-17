@@ -13,7 +13,8 @@ include! {"host.rs"}
 include! {"cachepool.rs"}
 include! {"manage.rs"}
 include! {"machine.rs"}
-include!("resource.rs");
+include! {"resource.rs"}
 include! {"loader.rs"}
 include! {"sandbox.rs"}
 include! {"setup.rs"}
+include! {"test.rs"}

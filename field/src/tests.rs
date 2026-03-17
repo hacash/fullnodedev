@@ -128,10 +128,10 @@ mod tests {
         addr.from_json(&format!(r#""{}""#, addr_str)).unwrap();
         assert_eq!(addr.to_hex(), hex_expected);
 
-        // Address also accepts b58: prefix (backward compatibility)
+        // Address rejects b58: prefix; use bare base58check instead.
         let mut addr2 = Address::default();
-        addr2.from_json(&format!(r#""b58:{}""#, addr_str)).unwrap();
-        assert_eq!(addr2.to_hex(), hex_expected);
+        let err = addr2.from_json(&format!(r#""b58:{}""#, addr_str)).unwrap_err();
+        assert!(err.contains("no longer accepts b58: prefix"), "{}", err);
 
         // Address ToJSON outputs bare base58check when Base58Check format (no prefix)
         let fmt_58 = JSONFormater {

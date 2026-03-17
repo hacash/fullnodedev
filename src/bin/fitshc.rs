@@ -44,7 +44,7 @@ fn estimate_protocol_cost_auto(
         tx.gas_max = Uint1::from(8);
         tx.fill_sign(&acc).unwrap();
 
-        let mut fee_purity = tx.fee_purity() as u128; // fee_got(:238) / tx_size
+        let mut fee_purity = tx.gas_price_purity() as u128; // base fee price(:238) / tx_size
         if fee238 > 0 && fee_purity == 0 {
             fee_purity = 1;
         }

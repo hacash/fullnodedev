@@ -67,6 +67,7 @@ impl GasTable {
             PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES
         ]);
         gst.set(16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]);
+        gst.set(20, &[LOG1]);
         gst.set(24, &[LOG2, GPUT, CALLEXTVIEW]);
         gst.set(28, &[LOG3, SDEL, ACTION]);
         gst.set(32, &[LOG4, SLOAD, SREST, CALLEXT, CALL]); // external-capable call
@@ -205,7 +206,7 @@ pub fn encode_gas_budget(budget: i64) -> u8 {
 impl GasExtra {
     pub fn new(_hei: u64) -> Self {
         Self {
-            max_gas_of_tx:     8192, // L1 mainnet limit, can increase via hard fork
+            max_gas_of_tx:    16384, // L1 mainnet limit, can increase via hard fork
             gas_rate:          1,    // mainnet: no discount (burn = cost*fee/txsz/gas_rate)
             local_one_alloc:          5, // 5 * num
             storege_value_base_size: 32,
@@ -405,6 +406,7 @@ mod gas_budget_codec_tests {
             (8, &[CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, MGET, JOIN, REV, NEWLIST, NEWMAP, NTFUNC]),
             (12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE, PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
             (16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]),
+            (20, &[LOG1]),
             (24, &[LOG2, GPUT, CALLEXTVIEW]),
             (28, &[LOG3, SDEL, ACTION]),
             (32, &[LOG4, SLOAD, SREST, CALLEXT, CALL]),

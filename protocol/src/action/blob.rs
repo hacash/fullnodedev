@@ -1,7 +1,5 @@
-
-
-action_define!{ TxMessage, 0x0401, 
-    ActScope::GUARD, false, [],
+action_define! { TxMessage, 0x0401,
+    ActScope::GUARD, 2, false, [],
     {
         data:    BytesW1
     },
@@ -11,9 +9,8 @@ action_define!{ TxMessage, 0x0401,
     })
 }
 
-
-action_define!{ TxBlob, 0x0402, 
-    ActScope::GUARD, false, [],
+action_define! { TxBlob, 0x0402,
+    ActScope::GUARD, 2, false, [],
     {
         data:    BytesW2
     },
@@ -22,7 +19,3 @@ action_define!{ TxBlob, 0x0402,
         Ok(vec![])
     })
 }
-
-
-
-

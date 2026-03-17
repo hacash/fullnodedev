@@ -150,7 +150,6 @@ fn callext_keyword_print() {
 
 #[test]
 fn decompile_system_calls_preserve_default_empty_arg_unless_opted_in() {
-    // Native call with 0 args (still consumes an argv buffer; compiler emits "" as placeholder).
     let script = r##"
         print context_address()
         print block_height()
@@ -159,8 +158,7 @@ fn decompile_system_calls_preserve_default_empty_arg_unless_opted_in() {
     let block = lang_to_irnode(script).unwrap();
     let plain = PrintOption::new("  ", 0);
     let printed_plain = Formater::new(&plain).print(&block);
-    assert!(printed_plain.contains("context_address(\"\")"));
-    // ACTENV(block_height) has metadata.input == 0; compiler emits no argv placeholder.
+    assert!(printed_plain.contains("context_address()"));
     assert!(printed_plain.contains("block_height()"));
 
     let mut pretty = PrintOption::new("  ", 0);
@@ -190,11 +188,11 @@ fn decompile_contract_calls_hide_default_nil_only_when_opted_in() {
 #[test]
 fn args_constructor_roundtrips_in_value_context() {
     let script = r##"
-        return args(7, map { "kind": "hnft" })
+        return tuple(7, map { "kind": "hnft" })
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(printed.contains("args(7, map"));
+    assert!(printed.contains("tuple(7, map"));
     let reparsed = lang_to_ircode(&printed).unwrap();
     assert_eq!(ircode, reparsed);
 }
@@ -202,11 +200,11 @@ fn args_constructor_roundtrips_in_value_context() {
 #[test]
 fn args_to_list_roundtrips_as_function_call() {
     let script = r##"
-        return args_to_list(args(1, 2))
+        return tuple_to_list(tuple(1, 2))
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(printed.contains("args_to_list(args(1, 2))"));
+    assert!(printed.contains("tuple_to_list(tuple(1, 2))"));
     assert!(!printed.contains(" as list"));
     let reparsed = lang_to_ircode(&printed).unwrap();
     assert_eq!(ircode, reparsed);
@@ -216,6 +214,21 @@ fn args_to_list_roundtrips_as_function_call() {
 fn pack_args_surface_syntax_is_rejected() {
     let err = lang_to_ircode("return pack_args(1, 2)").unwrap_err();
     assert!(err.contains("pack_args"), "unexpected error: {err}");
+}
+
+#[test]
+fn ntenv_placeholder_surface_syntax_is_rejected() {
+    let err = lang_to_ircode(r#"return context_address("")"#).unwrap_err();
+    assert!(err.contains("takes no arguments"), "unexpected error: {err}");
+}
+
+#[test]
+fn zero_arg_action_placeholder_surface_syntax_is_rejected() {
+    let err = lang_to_ircode(r#"return block_height("")"#).unwrap_err();
+    assert!(
+        err.contains("argv length must 0 but got 1"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -924,14 +937,14 @@ fn malformed_pbuf_try_print_returns_explicit_error() {
 fn print_options_on_off_preserve_ircode_bytes() {
     // This script intentionally hits multiple formatter options:
     // - has a cast opcode (so `recover_literals` must not drop it)
-    // - has default argv placeholders (so `hide_default_call_argv` must be lossless)
+    // - has packed-call nil placeholder handling (so `hide_default_call_argv` must be lossless)
     // - has list literal (so `flatten_array_list` must be lossless)
     // - has if/while blocks (so bracing must preserve container opcodes)
     let script = r##"
         param { amt }
         print amt as u8
         ext(1).0xabcdef01()
-        print context_address("")
+        print context_address()
         print [1, 2]
         if true { print 3 } else { print 4 }
         while false { print 5 }
@@ -977,7 +990,7 @@ fn flatten_call_list_preserves_container_values_in_call_args() {
     let cases = [
         ("return ext(1).0xabcdef01([1])", "[1]"),
         ("return ext(1).0xabcdef01([1, 2])", "[1, 2]"),
-        ("return ext(1).0xabcdef01(args(1))", "args(1)"),
+        ("return ext(1).0xabcdef01(tuple(1))", "tuple(1)"),
     ];
 
     for (script, expect) in cases {
@@ -1014,7 +1027,7 @@ fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
         param { amt }
         print amt as u8
         ext(1).0xabcdef01()
-        print context_address("")
+        print context_address()
         print [1, 2]
         if true { print 3 } else { print 4 }
         while false { print 5 }

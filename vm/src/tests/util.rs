@@ -117,8 +117,8 @@ impl TransactionRead for DummyTx {
     fn fee_purity(&self) -> u64 {
         1
     }
-    fn fee_extend(&self) -> Ret<u8> {
-        Ok(1)
+    fn gas_max_byte(&self) -> Option<u8> {
+        Some(1)
     }
 }
 
@@ -135,7 +135,7 @@ fn execute_test_with_argv(
 ) -> VmrtRes<VmTestExecRes> {
     let mut pc: usize = 0;
     let gas: i64 = gas_limit; // 2000
-                                  // let addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+    // let addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
     let cadr = ContractAddress::default();
 
     let tx = DummyTx::default();

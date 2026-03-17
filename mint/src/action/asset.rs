@@ -1,20 +1,17 @@
-
-
 pub const ASSET_ALIVE_HEIGHT: u64 = 700000;
-
 
 #[allow(unused)]
 fn check_alive_blk_hei(ctx: &mut dyn Context) -> Ret<(u64, u64)> {
     let chei = ctx.env().block.height;
-    let is_mainnet = ctx.env().chain.id==0 && chei >= ASSET_ALIVE_HEIGHT;
+    let is_mainnet = ctx.env().chain.id == 0 && chei >= ASSET_ALIVE_HEIGHT;
     let alive_hei: u64 = maybe!(is_mainnet, ASSET_ALIVE_HEIGHT, 0);
-    let minsri:    u64 = maybe!(is_mainnet, 1025, 5);
+    let minsri: u64 = maybe!(is_mainnet, 1025, 5);
     Ok((alive_hei, minsri))
 }
 
-    // By design tx.main plus protocol fee authorizes asset creation, while metadata.issuer is only the initial allocation target and does not need to sign.
-action_define!{ AssetCreate, 16, 
-    ActScope::TOP_ONLY, false, [], 
+// By design tx.main plus protocol fee authorizes asset creation, while metadata.issuer is only the initial allocation target and does not need to sign.
+action_define! { AssetCreate, 16,
+    ActScope::TOP_ONLY, 2, false, [],
     {
         metadata: AssetSmelt
         protocol_fee: Amount
@@ -64,8 +61,8 @@ action_define!{ AssetCreate, 16,
         if pfee != blkrw {
             return errf!("Protocol fee must be {} but got {}", blkrw, pfee)
         }
-	    // sub main addr balance for protocol fee
-        let main_addr = ctx.env().tx.main; 
+        // sub main addr balance for protocol fee
+        let main_addr = ctx.env().tx.main;
         hac_sub(ctx, &main_addr, &pfee)?;
         // state and check exists
         let mut sta = CoreState::wrap(ctx.state());

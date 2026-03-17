@@ -793,17 +793,18 @@ mod token_t {
         use super::PrintOption;
 
         let ir = lang_to_irnode("return context_address()").expect("Failed to compile");
+        let plain = Formater::new(&PrintOption::new("  ", 0)).print(&ir);
+        assert!(
+            plain.contains("context_address()"),
+            "NTENV should stay zero-arg without placeholder, got: {}",
+            plain
+        );
         let mut opt = PrintOption::new("  ", 0);
         opt.hide_default_call_argv = true;
         let decompiled = Formater::new(&opt).print(&ir);
         assert!(
             decompiled.contains("context_address()"),
             "NTENV should stay zero-arg when hide option enabled, got: {}",
-            decompiled
-        );
-        assert!(
-            !decompiled.contains("context_address(\"\")"),
-            "NTENV placeholder must be hidden, got: {}",
             decompiled
         );
     }

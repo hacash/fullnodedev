@@ -1,7 +1,5 @@
-action_define!{ AstIf, 26,
-    ActScope::AST,
-    // burn 90 fee , check child burn 90
-    self.cond.burn_90() || self.br_if.burn_90() || self.br_else.burn_90(),
+action_define! { AstIf, 26,
+    ActScope::AST, 3, false,
     self.collect_req_sign(),
     {
         cond:    AstSelect
@@ -39,9 +37,14 @@ impl AstIf {
     }
 
     fn execute_if_core(&self, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
-        let cond_ok = ast_revert_continue(ast_try_item!(ctx, self.cond.execute(ctx), self.cond.burn_90()))?.is_some();
+        let cond_ok = ast_revert_continue(ast_try_item!(
+            ctx,
+            self.cond.execute(ctx),
+            self.cond.extra9()
+        ))?
+        .is_some();
         let branch = maybe!(cond_ok, &self.br_if, &self.br_else);
-        let ret = ast_try_item!(ctx, branch.execute(ctx), branch.burn_90()).into_tret()?;
+        let ret = ast_try_item!(ctx, branch.execute(ctx), branch.extra9()).into_tret()?;
         Ok(ret)
     }
 }

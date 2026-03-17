@@ -33,17 +33,13 @@ impl AstNodeTxn {
 /// On success: charge child's return-gas (size gas) via ctx, then merge.
 /// On error: recover snapshot.
 macro_rules! ast_try_item {
-    ($ctx:expr, $exec:expr, $child_burn90:expr) => {{
-        let __child_burn90 = $child_burn90;
+    ($ctx:expr, $exec:expr, $child_extra9:expr) => {{
+        let __child_extra9 = $child_extra9;
         let __snap = CtxSnapshot::begin_ast_item($ctx)?;
         let __raw: XRet<(u32, Vec<u8>)> = $exec;
         let __out = match __raw {
             Ok((child_gas, ret)) => {
-                let charge_gas = crate::context::apply_burn90_multiplier(
-                    $ctx.tx().burn_90(),
-                    __child_burn90,
-                    child_gas,
-                );
+                let charge_gas = crate::context::apply_extra9_surcharge(__child_extra9, child_gas);
                 if let Err(gas_err) = $ctx.gas_charge(charge_gas as i64) {
                     if let Err(re) = __snap.rollback($ctx) {
                         return errf!(
@@ -67,9 +63,7 @@ macro_rules! ast_try_item {
         };
         __out
     }};
-    ($ctx:expr, $exec:expr) => {{
-        ast_try_item!($ctx, $exec, false)
-    }};
+    ($ctx:expr, $exec:expr) => {{ ast_try_item!($ctx, $exec, false) }};
 }
 
 pub fn validate_ast_select(min: usize, max: usize, num: usize) -> Ret<()> {
@@ -189,7 +183,7 @@ mod tests {
     }
 
     fn run_try_item_gas_fail(ctx: &mut dyn Context) -> Ret<XRet<Vec<u8>>> {
-        Ok(ast_try_item!(ctx, Ok((1u32, vec![1u8]))))
+        Ok(ast_try_item!(ctx, Ok((5u32, vec![1u8])), true))
     }
 
     #[test]

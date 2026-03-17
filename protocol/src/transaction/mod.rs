@@ -12,6 +12,7 @@ use super::*;
 
 include! {"util.rs"}
 include! {"macro.rs"}
+include! {"type3.rs"}
 include! {"coinbase.rs"}
 include! {"create.rs"}
 include! {"store.rs"}
@@ -19,9 +20,8 @@ include! {"store.rs"}
 /*
 * define
 */
-transaction_define! { TransactionType1, 1u8 }
-transaction_define! { TransactionType2, 2u8 }
-transaction_define! { TransactionType3, 3u8 }
+transaction_define_legacy! { TransactionType1, 1u8 }
+transaction_define_legacy! { TransactionType2, 2u8 }
 
 /*
 * register

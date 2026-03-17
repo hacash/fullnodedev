@@ -1,24 +1,22 @@
-
 /*
     if self.number.to_u32() > DIAMOND_ABOVE_NUMBER_OF_CREATE_BY_CUSTOM_MESSAGE {
         skn = self.custom_message.parse(buf, skn)?;
     }
 */
-combi_struct_field_more_than_condition!{ DiamondMintData, {
-    diamond              : DiamondName    
-    number               : DiamondNumber    
-    prev_hash            : Hash         
-    nonce                : Fixed8        
-    address              : Address   
+combi_struct_field_more_than_condition! { DiamondMintData, {
+    diamond              : DiamondName
+    number               : DiamondNumber
+    prev_hash            : Hash
+    nonce                : Fixed8
+    address              : Address
 }, custom_message, Hash, number, DIAMOND_ABOVE_NUMBER_OF_CREATE_BY_CUSTOM_MESSAGE
 }
-
 
 /*
 * simple hac to
 */
-action_define!{ DiamondMint, 4, 
-    ActScope::TOP_ONLY,
+action_define! { DiamondMint, 4,
+    ActScope::TOP_ONLY, 2,
     *self.d.number > DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES,
     [],
     {
@@ -26,17 +24,16 @@ action_define!{ DiamondMint, 4,
     },
     (self, format!("Mint diamond <{}> number {}", self.d.diamond.to_readable(), *self.d.number)),
     (self, ctx, _gas {
-        diamond_mint(self, ctx)      
+        diamond_mint(self, ctx)
     })
 }
 
-// 
+//
 impl DiamondMint {
-
     pub fn with(diamond: DiamondName, number: DiamondNumber) -> Self {
         Self {
             kind: Uint2::from(Self::KIND),
-            d: DiamondMintData{
+            d: DiamondMintData {
                 diamond,
                 number,
                 prev_hash: Hash::default(),
@@ -46,9 +43,7 @@ impl DiamondMint {
             },
         }
     }
-
 }
-
 
 /*
 
@@ -72,54 +67,71 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         custom_message = act.custom_message.serialize();
     }
     // check mine
-    let (sha3hx, mediumhx, diahx) = x16rs::mine_diamond(dianum, &prev_hash, &nonce, &address, &custom_message);
+    let (sha3hx, mediumhx, diahx) =
+        x16rs::mine_diamond(dianum, &prev_hash, &nonce, &address, &custom_message);
     let not_fast_sync = !env.chain.fast_sync;
     if not_fast_sync {
         // check
         if pending_hash.not_zero() && pending_height % 5 != 0 {
-            return errf!("diamond must be in a block height that is divisible by 5")
+            return errf!("diamond must be in a block height that is divisible by 5");
         }
         // number
         let latest_diamond = state.get_latest_diamond();
         let latestdianum = *latest_diamond.number;
         let neednextnumber = latestdianum + 1;
         if dianum != neednextnumber {
-            return errf!("diamond number expected {} but got {}", neednextnumber, dianum)
+            return errf!(
+                "diamond number expected {} but got {}",
+                neednextnumber,
+                dianum
+            );
         }
         // check prev hash
         if dianum > 1 && latest_diamond.born_hash != prev_hash {
-            return errf!("diamond prev hash expected {} but got {}", latest_diamond.born_hash, prev_hash)
+            return errf!(
+                "diamond prev hash expected {} but got {}",
+                latest_diamond.born_hash,
+                prev_hash
+            );
         }
         if dianum != 1 + latestdianum {
-            return errf!("latest diamond number expected {} but got {}", dianum - 1, latestdianum)
+            return errf!(
+                "latest diamond number expected {} but got {}",
+                dianum - 1,
+                latestdianum
+            );
         }
         // check difficulty
         let diffok = x16rs::check_diamond_difficulty(dianum, &sha3hx, &mediumhx);
-        if ! diffok {
-            return errf!("diamond difficulty does not match")
+        if !diffok {
+            return errf!("diamond difficulty does not match");
         }
         // name
         let dianame = x16rs::check_diamond_hash_result(diahx);
         let Some(dianame) = dianame else {
             let dhx = match String::from_utf8(diahx.to_vec()) {
                 Err(_) => hex::encode(diahx),
-                Ok(d) => d
+                Ok(d) => d,
             };
-            return errf!("diamond hash result {} is not a valid diamond name", dhx)
+            return errf!("diamond hash result {} is not a valid diamond name", dhx);
         };
         let dianame = Fixed6::from(dianame);
         if name != dianame {
-            return errf!("diamond name expected {} but got {}", dianame.to_readable(), namestr)
+            return errf!(
+                "diamond name expected {} but got {}",
+                dianame.to_readable(),
+                namestr
+            );
         }
         // exist
         let hav = state.diamond(&name);
         if let Some(_) = hav {
-            return errf!("diamond {} already exists", namestr)
+            return errf!("diamond {} already exists", namestr);
         }
     }
     // tx fee
     let tx_bid_fee = &env.tx.fee;
-    // total count 
+    // total count
     let mut ttcount = state.get_total_count();
     let minted = (*ttcount.minted_diamond as usize)
         .checked_add(1)
@@ -136,7 +148,8 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         ttcount.hacd_bid_burn_238 = Uint8::from(total_burn);
     }
     // gene
-    let (life_gene, _visual_gene) = calculate_diamond_gene(dianum, &mediumhx, &diahx, &pending_hash, &tx_bid_fee);
+    let (life_gene, _visual_gene) =
+        calculate_diamond_gene(dianum, &mediumhx, &diahx, &pending_hash, &tx_bid_fee);
     // The running average here uses cumulative burned bid fee that already
     // includes the current diamond update in ttcount.
     let average_bid_burn = calculate_diamond_average_bid_burn(dianum, *ttcount.hacd_bid_burn_238);
@@ -160,7 +173,7 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         status: DIAMOND_STATUS_NORMAL,
         address: act.address.clone(),
         prev_engraved_height: BlockHeight::default(), // 0
-        inscripts: Inscripts::default() // none
+        inscripts: Inscripts::default(),              // none
     };
     state.diamond_set(&name, &diaitem);
     state.diamond_name_set(&number, &name);
@@ -175,6 +188,3 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     // ok
     Ok(vec![])
 }
-
-
-

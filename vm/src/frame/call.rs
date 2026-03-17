@@ -27,9 +27,9 @@ impl CallFrame {
                     let curr_bindings = curr!().bindings.clone();
                     let next_effect = spec.callee_effect(curr_exec.effect);
                     let next_exec = curr_exec.enter_call(next_effect, &r.space_cap)?;
-                    if matches!(spec, CallSpec::Invoke { .. }) {
-                        curr_mut!().oprnds.peek()?.check_func_argv()?;
-                    }
+                    // Validate local argv boundary before resolving/loading any callee so
+                    // malformed input cannot warm caches via either Invoke or Splice.
+                    curr_mut!().oprnds.peek()?.check_func_argv()?;
                     let plan = r.plan_user_call(host, &spec, &curr_bindings)?;
 
                     match spec {

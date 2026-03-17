@@ -1,7 +1,5 @@
-
-
-action_define!{ ContractMainCall, 44, 
-    ActScope::AST, false, [],
+action_define! { ContractMainCall, 44,
+    ActScope::AST, 3, false, [],
     {
         marks: Fixed3
         codeconf: Uint1
@@ -21,7 +19,6 @@ action_define!{ ContractMainCall, 44,
         Ok(vec![])
     })
 }
-
 
 impl ContractMainCall {
     pub fn from_bytecode(codes: Vec<u8>) -> Ret<Self> {

@@ -93,7 +93,8 @@ impl FuncArgvTypes {
             0 => Ok(()),
             1 => v.cast_param(types[0]),
             _ => {
-                // Multi-parameter call boundaries only accept Tuple packing.
+                // Typed multi-parameter ABI accepts only Tuple packing; plain Compo values,
+                // including List, stay ordinary single values unless user code unpacks them.
                 let Value::Tuple(tuple) = v else {
                     return itr_err_code!(CallArgvTypeFail);
                 };
@@ -361,10 +362,30 @@ mod code_stuff_tests {
     }
 
     #[test]
+    fn check_params_single_compo_list_input_supported() {
+        let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo]).unwrap();
+        let mut argv = Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap());
+        types.check_params(&mut argv).unwrap();
+    }
+
+    #[test]
     fn check_params_multi_args_input_supports_compo_items() {
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo, ValueTy::U8]).unwrap();
         let mut args = Value::Tuple(
             TupleItem::new(vec![Value::Compo(CompoItem::new_map()), Value::U8(7)]).unwrap(),
+        );
+        types.check_params(&mut args).unwrap();
+    }
+
+    #[test]
+    fn check_params_multi_args_supports_compo_list_as_ordinary_item() {
+        let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo, ValueTy::U8]).unwrap();
+        let mut args = Value::Tuple(
+            TupleItem::new(vec![
+                Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap()),
+                Value::U8(7),
+            ])
+            .unwrap(),
         );
         types.check_params(&mut args).unwrap();
     }

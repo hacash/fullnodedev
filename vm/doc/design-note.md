@@ -76,7 +76,7 @@ VM Logs:
 Gas Calculation:
 
     - 1 gas = 1 byte
-    - gas price = fee purity = txfeegot / txsize (miner-received fee per byte)
+    - gas price = fee purity = txfee / txsize (base fee per byte on Type3)
     - tx gas budget comes from tx.gas_max (1-byte lookup-table decoded) and is clamped by chain cap max_gas_of_tx (= 8192 on current L1 mainnet)
     - each VM call consumes at least: main=48, p2sh=72, abst=96 gas (even if bytecode is smaller)
     - see `vm/src/rt/gas.rs` + `vm/doc/gas-cost.md` for the exact encoding/cost table

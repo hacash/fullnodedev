@@ -76,7 +76,7 @@ This section describes account-level gas charging/refund outside opcode executio
 
 Formula:
 
-- `burn_amount(cost) = ceil(cost * fee_got_238 / (tx_size * gas_rate))`
+- `burn_amount(cost) = ceil(cost * gas_price_purity_238 / gas_rate)`
 - `max_charge = burn_amount(initial_budget)`
 - `used_charge = burn_amount(initial_budget - gas_remaining)`
 - `refund = max_charge - used_charge`

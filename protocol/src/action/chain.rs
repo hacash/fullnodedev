@@ -1,12 +1,16 @@
+combi_list! { ChainIDList, Uint1, Uint4}
+macro_rules! cids_to_str {
+    ($cids:expr) => {
+        $cids
+            .iter()
+            .map(|c: &Uint4| c.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+}
 
-
-combi_list!{ ChainIDList, Uint1, Uint4}
-macro_rules! cids_to_str { ($cids:expr) => {
-    $cids.iter().map(|c: &Uint4|c.to_string()).collect::<Vec<_>>().join(",")
-}}
-
-action_define!{ ChainAllow, 0x0411, 
-    ActScope::GUARD, false, [],
+action_define! { ChainAllow, 0x0411,
+    ActScope::GUARD, 2, false, [],
     {
         chains: ChainIDList
     },
@@ -23,17 +27,16 @@ action_define!{ ChainAllow, 0x0411,
     })
 }
 
-
 /*
 *
 */
-action_define!{ HeightScope, 0x0412, 
-    ActScope::GUARD, false, [],
+action_define! { HeightScope, 0x0412,
+    ActScope::GUARD, 2, false, [],
     {
         start: BlockHeight
         end:   BlockHeight
     },
-    (self, format!("Limit height range ({}, {})", 
+    (self, format!("Limit height range ({}, {})",
         *self.start, if *self.end == 0 { "Unlimited".to_owned() } else { self.end.to_string() })),
     (self, ctx, _gas {
         let pdhei = ctx.env().block.height;
@@ -53,11 +56,8 @@ action_define!{ HeightScope, 0x0412,
     })
 }
 
-
-
-
-action_define!{ BalanceFloor, 0x0413,
-    ActScope::GUARD, false, [],
+action_define! { BalanceFloor, 0x0413,
+    ActScope::GUARD, 2, false, [],
     {
         addr    : AddrOrPtr
         hacash  : Amount
@@ -136,23 +136,20 @@ fn check_balance_floor_assets(assets: &AssetAmtW1) -> Rerr {
         return errf!(
             "balance floor assets item quantity cannot exceed {}",
             BALANCE_ASSET_MAX
-        )
+        );
     }
     let mut seen = std::collections::HashSet::new();
     for ast in assets.as_list() {
         let serial = ast.serial.uint();
         let amount = ast.amount.uint();
         if serial == 0 {
-            return errf!("balance floor asset serial cannot be zero")
+            return errf!("balance floor asset serial cannot be zero");
         }
         if amount == 0 {
-            return errf!(
-                "balance floor asset {} amount cannot be zero",
-                serial
-            )
+            return errf!("balance floor asset {} amount cannot be zero", serial);
         }
         if !seen.insert(serial) {
-            return errf!("balance floor asset serial {} is duplicated", serial)
+            return errf!("balance floor asset serial {} is duplicated", serial);
         }
     }
     Ok(())
