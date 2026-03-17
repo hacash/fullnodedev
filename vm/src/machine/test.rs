@@ -284,8 +284,8 @@ mod machine_file_test {
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         protocol::operate::hac_add(&mut ctx, &base_addr, &Amount::unit238(1_000_000_000)).unwrap();
 
-        let (_gas, rv) = sandbox_call(&mut ctx, contract, "probe".to_owned(), "").unwrap();
-        assert_eq!(rv, r#"{"kind":"hnft","mint":1}"#);
+        let callres = sandbox_call(&mut ctx, SandboxSpec::new(contract, "probe")).unwrap();
+        assert_eq!(callres.return_value.to_debug_json(), r#"{"kind":"hnft","mint":1}"#);
     }
 
     #[test]

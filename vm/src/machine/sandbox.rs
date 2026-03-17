@@ -1,137 +1,225 @@
+const SANDBOX_TX_FEE_238: u64 = 100_000;
+const SANDBOX_FUND_238: u64 = 1_000_000_000;
 
-
-/* return gasuse, retval */
-// Test/tooling helper only; non-production execution path.
-pub fn sandbox_call(ctx: &mut dyn TxDriverContext, contract: ContractAddress, funcname: String, params: &str) -> Ret<(i64, String)> {
-    use rt::Bytecode::*;
-    use rt::verify_bytecodes;
-
-    let hei = ctx.env().block.height;
-
-    let mainaddr = ctx.env().tx.main.clone();
-    let txinfo = &ctx.env().tx as *const TxInfo;
-    let txinfo = txinfo as *mut TxInfo;
-    unsafe {
-        (*txinfo).swap_addrs(&mut vec![mainaddr, contract.into_addr()]);
-    }
-
-    let gascp = GasExtra::new(hei);
-    let gas_limit = gascp.max_gas_of_tx;
-    ctx.gas_init_tx(gas_limit, gascp.gas_rate)?;
-
-    let mut codes: Vec<u8> = vec![];
-    parse_push_params(&mut codes, params)?;
-
-    // call contract
-    let fnsg = calc_func_sign(&funcname);
-    codes.push(CALLEXT as u8);
-    codes.push(1); // lib idx
-    codes.append(&mut fnsg.to_vec());
-    codes.push(RET as u8); // return the value
-    verify_bytecodes(&codes)?;
-
-    // do call
-    // Intentionally do not restore exec_from: sandbox call is one-shot and its context
-    // state is discarded by the caller after return.
-    ctx.exec_from_set(ExecFrom::Call);
-    let gas_before = ctx.gas_remaining();
-    let mut vmb = global_machine_manager().assign(hei);
-    let res = vmb.sandbox_main_call_raw(ctx, CodeType::Bytecode, codes.into());
-    res.map(|v|(
-        gas_before - ctx.gas_remaining(), v.to_debug_json()
-    ))
-
+#[derive(Debug, Clone)]
+pub struct SandboxSpec {
+    pub contract: ContractAddress,
+    pub function: String,
+    pub args: Vec<Value>,
+    pub caller: Option<Address>,
+    pub gas_budget: Option<i64>,
 }
 
+impl SandboxSpec {
+    pub fn new(contract: ContractAddress, function: impl Into<String>) -> Self {
+        Self {
+            contract,
+            function: function.into(),
+            args: vec![],
+            caller: None,
+            gas_budget: None,
+        }
+    }
 
+    pub fn args(mut self, args: Vec<Value>) -> Self {
+        self.args = args;
+        self
+    }
 
-fn parse_push_params(codes: &mut Vec<u8>, pms: &str) -> Rerr {
-    macro_rules! push { ( $( $a: expr ),+) => { $( codes.push($a as u8) );+ } }
-    use Bytecode::*;
-    let mut pms_count = 0usize;
+    pub fn caller(mut self, caller: Address) -> Self {
+        self.caller = Some(caller);
+        self
+    }
+
+    pub fn gas_budget(mut self, gas_budget: i64) -> Self {
+        self.gas_budget = Some(gas_budget);
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxResult {
+    pub gas_used: i64,
+    pub return_value: Value,
+}
+
+pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResult> {
+    use rt::verify_bytecodes;
+
+    let mut env = ctx.env().clone();
+    let state = ctx.state().clone_state();
+    let caller = spec.caller.unwrap_or_else(|| ctx.tx().main());
+    let mut tx = TransactionType3::new_by(caller, Amount::unit238(SANDBOX_TX_FEE_238), env.block.height);
+    tx.addrlist = AddrOrList::from_list(vec![caller, spec.contract.into_addr()])?;
+    let budget_hint = spec
+        .gas_budget
+        .unwrap_or_else(|| GasExtra::new(env.block.height).max_gas_of_tx);
+    tx.gas_max = Uint1::from(encode_gas_budget(budget_hint.max(1)));
+    env.tx = create_tx_info(&tx);
+    let mut temp_ctx = protocol::context::ContextInst::new(
+        env,
+        state,
+        Box::new(protocol::state::EmptyLogs {}),
+        &tx,
+    );
+    let hei = temp_ctx.env().block.height;
+    let gas_extra = GasExtra::new(hei);
+    let gas_budget = match spec.gas_budget {
+        Some(v) if v > 0 => v.min(gas_extra.max_gas_of_tx),
+        Some(v) => return errf!("sandbox gas budget invalid: {}", v),
+        None => gas_extra.max_gas_of_tx,
+    };
+    let codes = build_call_codes(&spec.function, &spec.args)?;
+    verify_bytecodes(&codes)?;
+    let caller = temp_ctx.tx().main();
+    protocol::operate::hac_add(
+        &mut temp_ctx,
+        &caller,
+        &Amount::unit238(SANDBOX_FUND_238),
+    )?;
+    temp_ctx.gas_init_tx(gas_budget, gas_extra.gas_rate)?;
+    let gas_before = Context::gas_remaining(&temp_ctx);
+    let mut vmb = global_machine_manager().assign(hei);
+    let return_value = vmb.sandbox_main_call_raw(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
+    Ok(SandboxResult {
+        gas_used: gas_before - Context::gas_remaining(&temp_ctx),
+        return_value,
+    })
+}
+
+pub fn parse_sandbox_params(pms: &str) -> Ret<Vec<Value>> {
+    let mut values = vec![];
     for part in pms.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         let (v, t) = match part.split_once(':') {
             Some((v, t)) => (v.trim(), t.trim()),
             None => (part, "nil"),
         };
-        parse_one_param(codes, t, v)?;
-        pms_count += 1;
+        values.push(parse_one_param(t, v)?);
     }
-    match crate::value::classify_call_args_len(pms_count).map_err(|e| e.to_string())? {
-        crate::value::CallArgsPack::Nil => push!(PNIL),
+    Ok(values)
+}
+
+fn build_call_codes(funcname: &str, args: &[Value]) -> Ret<Vec<u8>> {
+    use rt::Bytecode::*;
+
+    let mut codes = vec![];
+    for arg in args {
+        append_push_value_code(&mut codes, arg)?;
+    }
+    match crate::value::classify_call_args_len(args.len()).map_err(|e| e.to_string())? {
+        crate::value::CallArgsPack::Nil => codes.push(PNIL as u8),
         crate::value::CallArgsPack::Raw => {}
         crate::value::CallArgsPack::Tuple => {
-            push!(PU8, pms_count, PACKTUPLE);
+            codes.push(PU8 as u8);
+            codes.push(args.len() as u8);
+            codes.push(PACKTUPLE as u8);
+        }
+    }
+    let fnsg = calc_func_sign(funcname);
+    codes.push(CALLEXT as u8);
+    codes.push(1);
+    codes.extend_from_slice(&fnsg);
+    codes.push(RET as u8);
+    Ok(codes)
+}
+
+fn append_push_value_code(codes: &mut Vec<u8>, value: &Value) -> Rerr {
+    use Bytecode::*;
+    use Value::*;
+
+    match value {
+        Nil => codes.push(PNIL as u8),
+        Bool(true) => codes.push(PTRUE as u8),
+        Bool(false) => codes.push(PFALSE as u8),
+        U8(n) => {
+            codes.push(PU8 as u8);
+            codes.push(*n);
+        }
+        U16(n) => {
+            codes.push(PU16 as u8);
+            codes.extend_from_slice(&n.to_be_bytes());
+        }
+        U32(n) => {
+            append_push_bytes_code(codes, &n.to_be_bytes());
+            codes.push(CU32 as u8);
+        }
+        U64(n) => {
+            append_push_bytes_code(codes, &n.to_be_bytes());
+            codes.push(CU64 as u8);
+        }
+        U128(n) => {
+            append_push_bytes_code(codes, &n.to_be_bytes());
+            codes.push(CU128 as u8);
+        }
+        Bytes(buf) => append_push_bytes_code(codes, buf),
+        Address(addr) => {
+            append_push_bytes_code(codes, addr.as_bytes());
+            codes.push(CTO as u8);
+            codes.push(ValueTy::Address as u8);
+        }
+        HeapSlice(_) | Tuple(_) | Compo(_) => {
+            return errf!("sandbox argument type {:?} not supported", value.ty())
         }
     }
     Ok(())
 }
 
-
-fn parse_one_param(codes: &mut Vec<u8>, t: &str, v: &str) -> Rerr {
+fn append_push_bytes_code(codes: &mut Vec<u8>, bytes: &[u8]) {
     use Bytecode::*;
+
+    if bytes.len() <= u8::MAX as usize {
+        codes.push(PBUF as u8);
+        codes.push(bytes.len() as u8);
+    } else {
+        codes.push(PBUFL as u8);
+        codes.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+    }
+    codes.extend_from_slice(bytes);
+}
+
+fn parse_one_param(t: &str, v: &str) -> Ret<Value> {
     use ValueTy::*;
-    macro_rules! push { ( $( $a: expr ),+) => { $( codes.push($a as u8) );+ } }
     let ty = ValueTy::from_name(t).map_err(|_| format!("unsupported param type '{}'", t))?;
-    match ty {
-        Nil  => push!(PNIL),
+    Ok(match ty {
+        Nil => Value::Nil,
         Bool => match v {
-            "true" => push!(PTRUE),
-            "false" => push!(PFALSE),
+            "true" => Value::Bool(true),
+            "false" => Value::Bool(false),
             _ => return errf!("invalid bool argument '{}'", v),
         },
-        U8   => {
-            let n = v.parse::<u8>().map_err(|e| format!("invalid u8 argument '{}': {}", v, e))?;
-            push!(PU8, n);
-        },
-        U16   => {
-            let n = v
-                .parse::<u16>()
-                .map_err(|e| format!("invalid u16 argument '{}': {}", v, e))?;
-            push!(PU16);
-            codes.append(&mut Vec::from(n.to_be_bytes()));
-        },
-        U32   => {
-            let n = v
-                .parse::<u32>()
-                .map_err(|e| format!("invalid u32 argument '{}': {}", v, e))?;
-            push!(PBUF, 4);
-            codes.append(&mut Vec::from(n.to_be_bytes()));
-            push!(CU32);
-        },
-        U64   => {
-            let n = v
-                .parse::<u64>()
-                .map_err(|e| format!("invalid u64 argument '{}': {}", v, e))?;
-            push!(PBUF, 8);
-            codes.append(&mut Vec::from(n.to_be_bytes()));
-            push!(CU64);
-        },
-        U128   => {
-            let n = v
-                .parse::<u128>()
-                .map_err(|e| format!("invalid u128 argument '{}': {}", v, e))?;
-            push!(PBUF, 16);
-            codes.append(&mut Vec::from(n.to_be_bytes()));
-            push!(CU128);
-        },
-        Address => {
-            let adr = field::Address::from_readable(v)
-                .map_err(|e| format!("invalid address argument '{}': {}", v, e))?;
-            push!(PBUF, field::Address::SIZE);
-            codes.append(&mut adr.into_vec());
-            push!(CTO, ty);
-        },
+        U8 => Value::U8(
+            v.parse::<u8>()
+                .map_err(|e| format!("invalid u8 argument '{}': {}", v, e))?,
+        ),
+        U16 => Value::U16(
+            v.parse::<u16>()
+                .map_err(|e| format!("invalid u16 argument '{}': {}", v, e))?,
+        ),
+        U32 => Value::U32(
+            v.parse::<u32>()
+                .map_err(|e| format!("invalid u32 argument '{}': {}", v, e))?,
+        ),
+        U64 => Value::U64(
+            v.parse::<u64>()
+                .map_err(|e| format!("invalid u64 argument '{}': {}", v, e))?,
+        ),
+        U128 => Value::U128(
+            v.parse::<u128>()
+                .map_err(|e| format!("invalid u128 argument '{}': {}", v, e))?,
+        ),
+        Address => Value::Address(
+            field::Address::from_readable(v)
+                .map_err(|e| format!("invalid address argument '{}': {}", v, e))?,
+        ),
         Bytes => {
             let hex_body = v.strip_prefix("0x").unwrap_or(v);
-            let mut bts = hex::decode(hex_body)
-                .map_err(|e| format!("invalid bytes argument '{}': {}", v, e))?;
-            push!(PBUF, bts.len());
-            codes.append(&mut bts);
-        },
-        _ => return errf!("unsupported param type '{}'", t)
-    };
-    Ok(())
+            Value::Bytes(
+                hex::decode(hex_body)
+                    .map_err(|e| format!("invalid bytes argument '{}': {}", v, e))?,
+            )
+        }
+        _ => return errf!("unsupported param type '{}'", t),
+    })
 }
 
 #[cfg(test)]
@@ -139,27 +227,23 @@ mod sandbox_parse_tests {
     use super::*;
 
     #[test]
-    fn parse_push_params_accepts_bytes_with_0x_prefix() {
-        let mut codes = vec![];
-        parse_push_params(&mut codes, "0x57495657414b:bytes,0:u16").unwrap();
-        assert!(!codes.is_empty());
+    fn parse_sandbox_params_accepts_bytes_with_0x_prefix() {
+        let args = parse_sandbox_params("0x57495657414b:bytes,0:u16").unwrap();
+        assert_eq!(args, vec![Value::Bytes(b"WIVWAK".to_vec()), Value::U16(0)]);
     }
 
     #[test]
-    fn parse_push_params_reports_invalid_bytes() {
-        let mut codes = vec![];
-        let err = parse_push_params(&mut codes, "0xzz:bytes").unwrap_err();
+    fn parse_sandbox_params_reports_invalid_bytes() {
+        let err = parse_sandbox_params("0xzz:bytes").unwrap_err();
         assert!(err.to_string().contains("invalid bytes argument"));
     }
 
     #[test]
-    fn parse_push_params_rejects_function_argv_over_limit() {
-        let mut codes = vec![];
-        let pms = (0..(crate::MAX_FUNC_PARAM_LEN + 1))
-            .map(|i| format!("{}:u8", i))
-            .collect::<Vec<_>>()
-            .join(",");
-        let err = parse_push_params(&mut codes, &pms).unwrap_err();
+    fn sandbox_call_codes_reject_function_argv_over_limit() {
+        let args = (0..(crate::MAX_FUNC_PARAM_LEN + 1))
+            .map(|i| Value::U8(i as u8))
+            .collect::<Vec<_>>();
+        let err = build_call_codes("f", &args).unwrap_err();
         assert!(err.contains("func argv length cannot more than"));
     }
 }

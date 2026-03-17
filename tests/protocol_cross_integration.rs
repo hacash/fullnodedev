@@ -1,7 +1,6 @@
 use basis::component::*;
 use basis::interface::*;
 use field::*;
-use mint::action as mint_action;
 use protocol::action::*;
 use protocol::transaction::*;
 use std::sync::Once;
@@ -52,13 +51,10 @@ unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::Context
 fn init_setup_once() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let registry = protocol::setup::SetupBuilder::new()
-            .block_hasher(|_, stuff| sys::calculate_hash(stuff))
-            .action_register(protocol::action::register)
-            .action_register(mint_action::register)
-            .build()
-            .unwrap();
-        protocol::setup::install_once(registry).unwrap();
+        protocol::setup::install_builder(mint::setup::extend_standard_mint_stack(
+            protocol::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff)),
+        ))
+        .unwrap();
     });
 }
 

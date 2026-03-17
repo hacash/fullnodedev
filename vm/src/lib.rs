@@ -15,6 +15,7 @@ pub use lang::PrintOption;
 pub mod api;
 pub mod machine;
 pub mod native;
+pub mod setup;
 pub mod space;
 pub mod value;
 

@@ -29,12 +29,16 @@ impl TxPkg {
         }
     }
 
-    pub fn objc(&self) -> &dyn Transaction {
+    pub fn tx(&self) -> &dyn Transaction {
         self.objc.as_ref()
     }
 
-    pub fn objc_box(&self) -> &Box<dyn Transaction> {
-        &self.objc
+    pub fn tx_read(&self) -> &dyn TransactionRead {
+        self.objc.as_read()
+    }
+
+    pub fn tx_clone(&self) -> Box<dyn Transaction> {
+        self.objc.clone()
     }
 
     pub fn hash(&self) -> Hash {

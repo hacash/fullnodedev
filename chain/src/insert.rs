@@ -44,7 +44,7 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         return errf!("insert height must be between [{}, {}] but got {}", old_root_height + 1, tree.head_height() + 1, height);
     }
 
-    let prev_hash = blk.objc().prevhash();
+    let prev_hash = blk.block().prevhash();
     let parent = tree.quick_find(prev_hash).ok_or(format!("prev block <{}, {}> not found", height - 1, prev_hash))?;
     if parent.height() + 1 != height {
         return errf!("prev block <{}, {}> not found", height - 1, prev_hash);
@@ -56,8 +56,8 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();
-        eng.minter.blk_verify(blk.objc().as_read(), parent_blk, eng.store.as_ref())?;
-        block_verify(&eng.cnf, blk.objc().as_read(), blk.data().len(), parent_blk)?;
+        eng.minter.blk_verify(blk.block_read(), parent_blk, eng.store.as_ref())?;
+        block_verify(&eng.cnf, blk.block_read(), blk.data().len(), parent_blk)?;
     }
 
     let prev_state = parent.state();
@@ -70,7 +70,7 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
     };
 
     let logs = Box::new(eng.logs.next(maybe!(is_open_vmlog(eng, height), height, 0)));
-    let (new_state, new_logs) = blk.objc().execute(chain_info, sub_state, logs)?;
+    let (new_state, new_logs) = blk.block().execute(chain_info, sub_state, logs)?;
 
     if !fast_sync {
         blk.set_origin(orgi);
@@ -87,7 +87,7 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
     let new_logs: Arc<dyn Logs> = Arc::from(new_logs);
     let (root_change, head_change) = tree.insert_child(
         &parent,
-        blk.objc_arc(),
+        blk.block_clone(),
         Arc::new(new_state),
         new_logs,
         fast_sync,

@@ -3,7 +3,7 @@ impl TxGroup {
 
     fn insert(&mut self, txp: TxPkg) -> Rerr {
         let feep = txp.fpur(); // fee_purity
-        let fee = txp.objc().fee().clone();
+        let fee = txp.tx().fee().clone();
         let txh = txp.hash();
         if let Some((hid, hav)) = self.find(&txh) {
             let lsth = purity_or_fee!{ self, txp, <=, hav };

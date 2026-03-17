@@ -32,11 +32,15 @@ impl BlkPkg {
         Self::from(objc, Arc::new(data), 0, size)
     }
 
-    pub fn objc(&self) -> &dyn Block {
+    pub fn block(&self) -> &dyn Block {
         self.objc.as_ref()
     }
 
-    pub fn objc_arc(&self) -> Arc<dyn Block> {
+    pub fn block_read(&self) -> &dyn BlockRead {
+        self.objc.as_read()
+    }
+
+    pub fn block_clone(&self) -> Arc<dyn Block> {
         self.objc.clone()
     }
 

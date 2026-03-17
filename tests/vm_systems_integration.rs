@@ -498,17 +498,18 @@ fn sandbox_call_executes_and_reports_missing_function() {
     let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
 
-    let (gas, ret_json) =
-        machine::sandbox_call(&mut ctx, caddr, "add1".to_owned(), "5:u8").unwrap();
-    let ret: serde_json::Value = serde_json::from_str(&ret_json).unwrap();
-    assert!(gas > 0);
-    assert_eq!(ret.as_u64(), Some(0));
+    let callres = machine::sandbox_call(
+        &mut ctx,
+        machine::SandboxSpec::new(caddr, "add1").args(vec![Value::U8(5)]),
+    )
+    .unwrap();
+    assert!(callres.gas_used > 0);
+    assert_eq!(callres.return_value, Value::U8(0));
 
     let err = machine::sandbox_call(
         &mut ctx,
-        contract_addr(&main, 3001),
-        "missing".to_owned(),
-        "5:u8",
+        machine::SandboxSpec::new(contract_addr(&main, 3001), "missing")
+            .args(vec![Value::U8(5)]),
     )
     .unwrap_err();
     assert!(err.contains("CallNotExist"), "{err}");

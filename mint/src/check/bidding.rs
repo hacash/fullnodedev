@@ -33,7 +33,7 @@ impl BiddingProve {
     const PROVE_HOLD: usize = 5;  // latest 5 diamonds
 
     fn failure(&mut self, dianum: u32, blk: &BlkPkg) {
-        let coinbase = &blk.objc().transactions()[0];
+        let coinbase = &blk.block().transactions()[0];
         let fails = self.failures.entry(dianum).or_default();
         fails.insert(coinbase.main());
     }
@@ -51,8 +51,8 @@ impl BiddingProve {
             number: dianum,
             diamond: act.d.diamond,
             txhx: tx.hash(),
-            addr: tx.objc().main(),
-            fee: tx.objc().fee().clone(),
+            addr: tx.tx().main(),
+            fee: tx.tx().fee().clone(),
         };
 
         macro_rules! rcdshow { () => {

@@ -186,7 +186,7 @@ fn transaction_exist(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let txpool = ctx.hnoder.txpool();
     if let Some(txp) = txpool.find(&txhx) {
         let mut info = render_tx_info(
-            txp.objc().as_read(),
+            txp.tx_read(),
             None,
             lasthei,
             &unit,
@@ -207,7 +207,7 @@ fn transaction_exist(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok(blkpkg) = load_block_by_key(ctx, &txp.to_string()) else {
         return api_error("cannot find block by transaction ptr");
     };
-    let blkobj = blkpkg.objc();
+    let blkobj = blkpkg.block();
     let blktrs = blkobj.transactions();
 
     let tx = {

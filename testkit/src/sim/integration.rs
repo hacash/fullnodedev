@@ -1,7 +1,7 @@
 use basis::interface::{Logs, State, TransactionRead};
 use field::{Address, Amount};
 use protocol::context::ContextInst;
-use protocol::setup::{ScopedSetupGuard, SetupBuilder};
+use protocol::setup::ScopedSetupGuard;
 use protocol::transaction::create_tx_info;
 use std::cell::RefCell;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -55,15 +55,12 @@ thread_local! {
 fn build_basic_registry(
     vm_assigner: Option<protocol::setup::FnVmAssignFunc>,
 ) -> protocol::setup::SetupRegistry {
-    let mut builder = SetupBuilder::new()
-        .block_hasher(x16rs::block_hash)
-        .action_register(protocol::action::register)
-        .action_register(mint::action::register);
+    let mut builder =
+        mint::setup::extend_standard_mint_stack(protocol::setup::standard_protocol_builder(
+            x16rs::block_hash,
+        ));
     if let Some(assigner) = vm_assigner {
-        builder = builder
-            .action_register(vm::action::register)
-            .action_hooker(vm::hook::try_action_hook)
-            .vm_assigner(assigner);
+        builder = vm::setup::extend_standard_vm_stack(builder).vm_assigner(assigner);
     }
     builder
         .build()

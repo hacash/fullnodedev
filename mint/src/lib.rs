@@ -24,6 +24,7 @@ pub mod api;
 pub mod genesis;
 pub mod hook;
 pub mod oprate;
+pub mod setup;
 
 use action::*;
 

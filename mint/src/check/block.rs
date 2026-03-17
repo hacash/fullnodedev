@@ -117,10 +117,10 @@ fn append_valid_tx_pick_from_txpool(
 
     macro_rules! ok_push_one_tx {
         ($a: expr, $txsz: expr) => {
-            if trs.push($a.objc_box().clone()).is_err() {
+            if trs.push($a.tx_clone()).is_err() {
                 return false;
             }
-            trshxs.push($a.objc().as_read().hash_with_fee());
+            trshxs.push($a.tx_read().hash_with_fee());
             *trslen += 1;
             *txallsz += $txsz;
         };
@@ -128,12 +128,12 @@ fn append_valid_tx_pick_from_txpool(
 
     macro_rules! check_pick_one_tx {
         ($a: expr) => {
-            let txr = $a.objc().as_read();
+            let txr = $a.tx_read();
             if let Err(..) = engine.try_execute_tx_by(txr, pending_hei, &mut sub_state) {
                 invalidtxhxs.push(txr.hash());
                 return true; // execute fail, ignore, next
             };
-            let Ok(nf) = allfee.add_mode_u64(&$a.objc().fee_got()) else {
+            let Ok(nf) = allfee.add_mode_u64(&$a.tx().fee_got()) else {
                 invalidtxhxs.push(txr.hash());
                 return true; // fee size err, ignore, next
             };
@@ -293,9 +293,7 @@ mod tests {
     fn packing_merkle_root_uses_hash_with_fee() {
         // HacashMinter::create() validates genesis hash, so setup must provide block hasher.
         let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::SetupBuilder::new()
-                .block_hasher(x16rs::block_hash)
-                .action_register(protocol::action::register)
+            protocol::setup::standard_protocol_builder(x16rs::block_hash)
                 .build()
                 .unwrap(),
         );
@@ -433,7 +431,7 @@ fn clean_invalid_normal_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, blkhei: u
     let mut sub_state = eng.fork_sub_state();
     // already minted hacd number
     let _ = txpool.retain_at(TXGID_NORMAL, &mut |a: &TxPkg| {
-        let txr = a.objc().as_read();
+        let txr = a.tx_read();
         let exec = eng.try_execute_tx_by(txr, pdhei, &mut sub_state);
         exec.is_ok() // keep or delete
     });
@@ -451,6 +449,6 @@ fn clean_invalid_diamond_mint_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, _bl
     let nextdn = curdn + 1;
     let _ = txpool.retain_at(TXGID_DIAMINT, &mut |a: &TxPkg| {
         // must be next diamond number, or delete
-        nextdn == action::get_diamond_mint_number(a.objc().as_read())
+        nextdn == action::get_diamond_mint_number(a.tx_read())
     });
 }

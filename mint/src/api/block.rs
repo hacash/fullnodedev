@@ -39,7 +39,7 @@ fn block_intro(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok(blkpkg) = load_block_by_key(ctx, &key) else {
         return api_error("cannot find block");
     };
-    let blkobj = blkpkg.objc();
+    let blkobj = blkpkg.block();
     let cbtx = create_recent_block_info(blkobj.as_read());
 
     let txnum = blkobj.transaction_count().uint() as usize - 1;

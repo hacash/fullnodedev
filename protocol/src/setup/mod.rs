@@ -141,6 +141,21 @@ pub fn install_once(registry: SetupRegistry) -> Rerr {
     Ok(())
 }
 
+pub fn install_builder(builder: SetupBuilder) -> Rerr {
+    install_once(builder.build()?)
+}
+
+pub fn standard_protocol_builder(block_hasher: FnBlockHasherFunc) -> SetupBuilder {
+    SetupBuilder::new()
+        .block_hasher(block_hasher)
+        .action_register(crate::action::register)
+        .action_register(crate::tex::register)
+}
+
+pub fn install_standard_protocol_stack(block_hasher: FnBlockHasherFunc) -> Rerr {
+    install_builder(standard_protocol_builder(block_hasher))
+}
+
 pub fn install_scoped_for_test(registry: SetupRegistry) -> ScopedSetupGuard {
     let old = SCOPED_SETUP_REGISTRY.with(|cell| cell.replace(Some(registry)));
     ScopedSetupGuard { old }

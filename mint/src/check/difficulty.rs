@@ -141,9 +141,7 @@ mod difficulty_tests {
     #[test]
     fn req_cycle_block_reads_disk_once_after_cache_warmup() {
         let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::SetupBuilder::new()
-                .block_hasher(x16rs::block_hash)
-                .action_register(protocol::action::register)
+            protocol::setup::standard_protocol_builder(x16rs::block_hash)
                 .build()
                 .unwrap(),
         );

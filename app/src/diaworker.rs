@@ -378,7 +378,7 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
     // println!("mining next num: {} {}", &mining_num, &next_num);
     if next_num == 1 {
         // println!("get latest: next_num == 1");
-        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_ptr().objc().hash();
+        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_ptr().block().hash();
         MINING_DIAMOND_NUM.store(next_num, Relaxed);
         return; // first mining
     }

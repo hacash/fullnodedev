@@ -22,7 +22,7 @@ impl HacashMinter {
         Self {
             cnf: cnf,
             difficulty: dgnr,
-            genesis_block: genesis::genesis_block_pkg().objc_arc(),
+            genesis_block: genesis::genesis_block_pkg().block_clone(),
             bidding_prove: Mutex::default(),
         }
     }
@@ -85,7 +85,7 @@ impl Minter for HacashMinter {
 
     fn tx_pool_group(&self, tx: &TxPkg) -> usize {
         let mut group_id =  TXGID_NORMAL;
-        if let Some(..) = action::pickout_diamond_mint_action(tx.objc().as_read()) {
+        if let Some(..) = action::pickout_diamond_mint_action(tx.tx_read()) {
             group_id = TXGID_DIAMINT;
         }
         group_id

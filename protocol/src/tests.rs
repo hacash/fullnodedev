@@ -13,9 +13,7 @@ static INIT: Once = Once::new();
 
 fn init_test_registry() {
     INIT.call_once(|| {
-        let builder = crate::setup::SetupBuilder::new()
-            .block_hasher(|_, stuff| sys::calculate_hash(stuff))
-            .action_register(crate::action::register);
+        let builder = crate::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff));
         let registry = builder
             .register_codec(
                 &[TestExtEnvReadOnly::KIND],

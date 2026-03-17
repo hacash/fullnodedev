@@ -2,7 +2,7 @@
 
 
 fn impl_tx_submit(this: &HacashMinter, engine: &dyn EngineRead, txp: &TxPkg) -> Rerr {
-    let txr = txp.objc().as_read();
+    let txr = txp.tx_read();
     let curr_hei = engine.latest_block().height().uint();
     let next_hei = curr_hei + 1;
     let Some(diamintact) = action::pickout_diamond_mint_action(txr) else {
@@ -132,7 +132,7 @@ fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dy
     }
     // check diamond mint action
     // let is_discover = curblk.orgi == BlkOrigin::DISCOVER;
-    let block = curblk.objc().as_read();
+    let block = curblk.block_read();
     if let Some((tidx, txp, diamint)) = action::pickout_diamond_mint_action_from_block(block) {
         const CKN: u32 = DIAMOND_ABOVE_NUMBER_OF_MIN_FEE_AND_FORCE_CHECK_HIGHEST;
         if tidx != 1 && curhei > 600000 { // idx 0 is coinbase

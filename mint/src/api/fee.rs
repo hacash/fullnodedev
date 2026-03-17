@@ -90,7 +90,7 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         ("fee".to_owned(), json!(fee.to_fin_string())),
         (
             "tx_body".to_owned(),
-            json!(txpkg.objc().serialize().to_hex()),
+            json!(txpkg.tx().serialize().to_hex()),
         ),
     ]))
 }

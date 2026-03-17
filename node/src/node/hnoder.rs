@@ -9,7 +9,7 @@ impl HNoder for HacashNode {
 
 
     fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool, only_insert_txpool: bool) -> Rerr {
-        let txread = txpkg.objc().as_read();
+        let txread = txpkg.tx_read();
         self.engine.try_execute_tx(txread)?;
         if only_insert_txpool {
             // Direct insert to txpool, no channel, no broadcast

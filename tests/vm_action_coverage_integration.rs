@@ -36,15 +36,10 @@ mod action_coverage {
     fn init_action_registry() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            let registry = protocol::setup::SetupBuilder::new()
-                .block_hasher(|_, stuff| sys::calculate_hash(stuff))
-                .action_register(protocol::action::register)
-                .action_register(vm::action::register)
-                .action_hooker(vm::hook::try_action_hook)
-                .vm_assigner(|height| Box::new(vm::global_machine_manager().assign(height)))
-                .build()
-                .unwrap();
-            protocol::setup::install_once(registry).unwrap();
+            protocol::setup::install_builder(vm::setup::extend_standard_vm_stack(
+                protocol::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff)),
+            ))
+            .unwrap();
         });
     }
 
@@ -2182,11 +2177,10 @@ mod action_coverage {
         );
 
         // Call it via sandbox
-        let (gas, ret_json) =
-            machine::sandbox_call(&mut ctx, caddr, "greet".to_owned(), "").unwrap();
-        assert!(gas > 0);
-        let ret: serde_json::Value = serde_json::from_str(&ret_json).unwrap();
-        assert_eq!(ret.as_u64(), Some(0));
+        let callres = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "greet"))
+            .unwrap();
+        assert!(callres.gas_used > 0);
+        assert_eq!(callres.return_value, vm::value::Value::U8(0));
     }
 
     #[test]
@@ -2207,7 +2201,9 @@ mod action_coverage {
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         let caddr = contract_addr(&main, 1);
-        let err = machine::sandbox_call(&mut ctx, caddr, "nonexistent".to_owned(), "").unwrap_err();
+        let err =
+            machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "nonexistent"))
+                .unwrap_err();
         assert!(err.contains("CallNotExist"), "{err}");
     }
 

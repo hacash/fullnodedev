@@ -37,9 +37,19 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         return api_error("contract address version error");
     };
 
-    let callres = machine::sandbox_call(&mut ctxobj, ctrladdr, function, params);
-    let Ok((gasuse, retval)) = callres else {
+    let Ok(args) = machine::parse_sandbox_params(params) else {
+        return api_error("contract call params invalid");
+    };
+    let callres = machine::sandbox_call(
+        &mut ctxobj,
+        machine::SandboxSpec::new(ctrladdr, function).args(args),
+    );
+    let Ok(callres) = callres else {
         return api_error("contract call error");
     };
-    api_data_raw(format!(r#""gasuse":{},"return":{}"#, gasuse, retval))
+    api_data_raw(format!(
+        r#""gas_used":{},"return_value":{}"#,
+        callres.gas_used,
+        callres.return_value.to_debug_json()
+    ))
 }

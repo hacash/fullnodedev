@@ -27,13 +27,13 @@ fn diamondminer_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let bid_addr = Address::from(cnf.dmer_bid_account.address().clone());
     let mut bid_offer = cnf.dmer_bid_min.clone();
     if let Ok(Some(fbtx)) = ctx.hnoder.txpool().first_at(TXGID_DIAMINT) {
-        let hbfe = fbtx.objc().fee().clone();
+        let hbfe = fbtx.tx().fee().clone();
         let mmax = cnf.dmer_bid_max.clone();
         let step = cnf.dmer_bid_step.clone();
         if hbfe > mmax {
             bid_offer = mmax;
         } else if hbfe > bid_offer {
-            if fbtx.objc().main() == bid_addr {
+            if fbtx.tx().main() == bid_addr {
                 bid_offer = hbfe;
             } else if let Ok(new_bid) = hbfe.add_mode_u64(&step) {
                 bid_offer = new_bid;

@@ -96,7 +96,7 @@ fn scan_coin_transfer(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok(blkpkg) = load_block_by_key(ctx, &height.to_string()) else {
         return api_error("block not found");
     };
-    let blkobj = blkpkg.objc();
+    let blkobj = blkpkg.block();
     let trs = blkobj.transactions();
     if trs.is_empty() {
         return api_error("transaction length invalid");
