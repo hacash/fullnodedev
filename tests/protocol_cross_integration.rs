@@ -15,6 +15,10 @@ use testkit::sim::logs::MemLogs as AstTestLogs;
 use testkit::sim::state::FlatMemState as TestMemState;
 use testkit::sim::state::ForkableMemState as AstTestState;
 use testkit::sim::vm::CounterMockVm as MockVM;
+use vm::ContractAddressW1;
+use vm::action::{ContractMainCall, P2SHScriptProve, P2shLeafSpec, P2shTool};
+use vm::lang::lang_to_bytecode;
+use vm::rt::{CodeConf, CodeType};
 
 fn build_ast_ctx_with_state<'a>(
     mut env: Env,
@@ -42,6 +46,36 @@ fn ast_hac_balance(ctx: &mut dyn Context, addr: &Address) -> Amount {
         .balance(addr)
         .unwrap_or_default()
         .hacash
+}
+
+fn seeded_addr(seed: &str) -> Address {
+    Address::from_readable(Account::create_by(seed).unwrap().readable()).unwrap()
+}
+
+fn build_p2sh_unlock_prove(lockbox_script: &str) -> (Address, P2SHScriptProve) {
+    let tree = P2shTool::build_canonical_tree(vec![P2shLeafSpec {
+        adrlibs: ContractAddressW1::from_list(vec![]).unwrap(),
+        codeconf: CodeConf::from_type(CodeType::Bytecode),
+        lockbox: BytesW2::from(lang_to_bytecode(lockbox_script).unwrap()).unwrap(),
+    }])
+    .unwrap();
+    let (addr, act, _calc) = tree
+        .build_unlock_script_prove_checked(1, 0, BytesW2::from(vec![]).unwrap())
+        .unwrap();
+    (addr, act)
+}
+
+fn build_maincall_hac_transfer(to: &Address, mei: u64) -> ContractMainCall {
+    let script = format!(
+        r#"
+        let amt = mei_to_hac({})
+        transfer_hac_to({}, amt)
+        return 0
+    "#,
+        mei,
+        to.to_readable()
+    );
+    ContractMainCall::from_bytecode(lang_to_bytecode(&script).unwrap()).unwrap()
 }
 
 unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::ContextInst<'a> {
@@ -4301,6 +4335,106 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
     assert_eq!(ast_state_get_u8(&mut ctx, 30), None);
     assert!(ctx.p2sh(&Address::create_scriptmh([94u8; 20])).is_ok());
     assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 5); // 3 + 2, cond-failed +1 rolled back
+}
+
+// ---- Real built-ins: nested ContractMainCall + P2SH-backed HacFromTrs rollback is isolated ----
+#[test]
+fn test_ast_real_maincall_and_p2sh_transfer_failure_isolated_by_outer_select() {
+    let main = seeded_addr("ast-real-maincall-p2sh-main");
+    let vm_to = seeded_addr("ast-real-maincall-p2sh-vm-to");
+    let ok_to = seeded_addr("ast-real-maincall-p2sh-ok-to");
+
+    let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1_730_000_301);
+    tx.gas_max = Uint1::from(17);
+    let mut env = Env::default();
+    env.block.height = 1;
+    env.tx = create_tx_info(&tx);
+    env.chain.fast_sync = false;
+
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
+    let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
+    protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(11)).unwrap();
+
+    ctx.exec_from_set(ExecFrom::Top);
+    prove.execute(&mut ctx).unwrap();
+
+    let nested_fail = AstSelect::create_by(
+        3,
+        3,
+        vec![
+            Box::new(build_maincall_hac_transfer(&vm_to, 7)),
+            Box::new(HacFromTrs::create_by(scriptmh.clone(), Amount::mei(5))),
+            Box::new(AstTestFail::new()),
+        ],
+    );
+    let outer = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(nested_fail),
+            Box::new(HacToTrs::create_by(ok_to.clone(), Amount::mei(2))),
+        ],
+    );
+
+    ctx.exec_from_set(ExecFrom::Top);
+    outer.execute(&mut ctx).unwrap();
+
+    assert_eq!(ast_hac_balance(&mut ctx, &vm_to), Amount::zero());
+    assert_eq!(ast_hac_balance(&mut ctx, &ok_to), Amount::mei(2));
+    assert_eq!(ast_hac_balance(&mut ctx, &scriptmh), Amount::mei(11));
+    assert!(ctx.p2sh(&scriptmh).is_ok());
+}
+
+// ---- Real built-ins: deep AST success path commits ContractMainCall and P2SH transfer results ----
+#[test]
+fn test_ast_deep_real_maincall_and_p2sh_transfer_commit_expected_balances() {
+    let main = seeded_addr("ast-real-maincall-p2sh-deep-main");
+    let cond_to = seeded_addr("ast-real-maincall-p2sh-cond-to");
+    let branch_to = seeded_addr("ast-real-maincall-p2sh-branch-to");
+    let sibling_to = seeded_addr("ast-real-maincall-p2sh-sibling-to");
+
+    let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1_730_000_302);
+    tx.gas_max = Uint1::from(17);
+    let mut env = Env::default();
+    env.block.height = 1;
+    env.tx = create_tx_info(&tx);
+    env.chain.fast_sync = false;
+
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
+    let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
+    protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(9)).unwrap();
+
+    ctx.exec_from_set(ExecFrom::Top);
+    prove.execute(&mut ctx).unwrap();
+
+    let level3 = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(HacFromTrs::create_by(
+            scriptmh.clone(),
+            Amount::mei(4),
+        ))]),
+        AstSelect::create_list(vec![Box::new(build_maincall_hac_transfer(&branch_to, 3))]),
+        AstSelect::nop(),
+    );
+    let level2 = AstSelect::create_list(vec![
+        Box::new(HacToTrs::create_by(sibling_to.clone(), Amount::mei(2))),
+        Box::new(level3),
+    ]);
+    let level1 = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(build_maincall_hac_transfer(&cond_to, 1))]),
+        AstSelect::create_list(vec![Box::new(level2)]),
+        AstSelect::nop(),
+    );
+
+    ctx.exec_from_set(ExecFrom::Top);
+    level1.execute(&mut ctx).unwrap();
+
+    assert_eq!(ast_hac_balance(&mut ctx, &cond_to), Amount::mei(1));
+    assert_eq!(ast_hac_balance(&mut ctx, &sibling_to), Amount::mei(2));
+    assert_eq!(ast_hac_balance(&mut ctx, &branch_to), Amount::mei(3));
+    assert_eq!(ast_hac_balance(&mut ctx, &scriptmh), Amount::mei(5));
+    assert!(ctx.p2sh(&scriptmh).is_ok());
 }
 
 // ---- Test 32: AstSelect rejects actions len > TX_ACTIONS_MAX without leaking state context ----

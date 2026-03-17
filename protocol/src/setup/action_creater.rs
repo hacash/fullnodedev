@@ -16,7 +16,6 @@ pub struct ActionCodec {
 pub struct ActionRegisterItem {
     pub kinds: &'static [u16],
     pub codec: ActionCodec,
-    pub need_vm_runtime: bool,
 }
 
 impl ActionRegisterItem {
@@ -24,7 +23,6 @@ impl ActionRegisterItem {
         kinds: &'static [u16],
         create: ActCreateFun,
         json_decode: ActJSONDecodeFun,
-        need_vm_runtime: bool,
     ) -> Self {
         Self {
             kinds,
@@ -32,7 +30,6 @@ impl ActionRegisterItem {
                 create,
                 json_decode,
             },
-            need_vm_runtime,
         }
     }
 }

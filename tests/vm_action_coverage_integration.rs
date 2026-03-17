@@ -2177,8 +2177,8 @@ mod action_coverage {
         );
 
         // Call it via sandbox
-        let callres = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "greet"))
-            .unwrap();
+        let callres =
+            machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "greet")).unwrap();
         assert!(callres.gas_used > 0);
         assert_eq!(callres.return_value, vm::value::Value::U8(0));
     }
@@ -2201,9 +2201,8 @@ mod action_coverage {
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         let caddr = contract_addr(&main, 1);
-        let err =
-            machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "nonexistent"))
-                .unwrap_err();
+        let err = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "nonexistent"))
+            .unwrap_err();
         assert!(err.contains("CallNotExist"), "{err}");
     }
 

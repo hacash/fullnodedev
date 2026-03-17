@@ -25,8 +25,6 @@ include! {"p2sh_tool.rs"}
 
 /* action register */
 action_register! {
-    @vm
-
     ContractDeploy
     ContractUpdate
     ContractMainCall

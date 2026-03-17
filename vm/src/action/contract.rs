@@ -82,14 +82,20 @@ action_define! { ContractUpdate, 41,
         };
         // apply edit (in memory)
         let mut new_contract = contract.clone();
-        let (_did_append, did_change) = new_contract.apply_edit(&self.edit, hei)?;
+        let (_did_append, mut did_change) = new_contract.apply_edit(&self.edit, hei)?;
         precheck_contract_store(&caddr, &new_contract, ctx)?;
+        did_change |= effective_userfn_lookup_changed(
+            &mut vmsto!(ctx),
+            &caddr,
+            &contract,
+            &new_contract,
+        )?;
         // spend protocol fee only when storage grows
         let old_size = contract.size();
         let new_size = new_contract.size();
         let delta_bytes = new_size.saturating_sub(old_size);
         check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
-        // Design choice: `Change` intentionally dominates `Append`; any edit marked as changed (including abstcall edits) dispatches `Change`, and `Append` is reserved for append-only growth.
+        // Append is valid only when each newly exposed selector was absent from self and every inherited parent before the update; if any parent-visible selector is shadowed, it is Change.
         let sys = maybe!(did_change, Change, Append); // Change or Append
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
         let _ = setup_vm_run_abst(
@@ -215,6 +221,41 @@ fn contract_userfn_meta(contract: &ContractSto, sign: &FnSign) -> Option<UserfnM
     Some(UserfnMeta {
         is_external: f.fncnf[0] & ext_mark == ext_mark,
     })
+}
+
+fn collect_effective_userfn_owners(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+) -> Ret<std::collections::HashMap<FnSign, ContractAddress>> {
+    let mut owners = std::collections::HashMap::new();
+    for f in root_contract.userfuncs.as_list() {
+        owners.entry(f.sign.to_array()).or_insert(root_addr.clone());
+    }
+    for parent in root_contract.inherit.as_list() {
+        let sto = load_contract_for_check(vmsta, root_addr, root_contract, parent, "inherit")?;
+        for f in sto.userfuncs.as_list() {
+            owners.entry(f.sign.to_array()).or_insert(parent.clone());
+        }
+    }
+    Ok(owners)
+}
+
+fn effective_userfn_lookup_changed(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    old_contract: &ContractSto,
+    new_contract: &ContractSto,
+) -> Ret<bool> {
+    let old_table = collect_effective_userfn_owners(vmsta, root_addr, old_contract)?;
+    let new_table = collect_effective_userfn_owners(vmsta, root_addr, new_contract)?;
+    for (sign, old_owner) in old_table {
+        match new_table.get(&sign) {
+            Some(new_owner) if new_owner == &old_owner => {}
+            _ => return Ok(true),
+        }
+    }
+    Ok(false)
 }
 
 fn scan_call_sites(codes: &[u8], mut check: impl FnMut(Bytecode, &[u8]) -> Rerr) -> Rerr {
@@ -468,7 +509,7 @@ fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret
 #[cfg(test)]
 mod contract_test {
     use super::*;
-    use crate::contract::{Abst, Contract};
+    use crate::contract::{Abst, Contract, Func};
     use basis::component::Env;
     use basis::interface::ActExec;
     use field::{Address, Amount, Uint4};
@@ -541,6 +582,50 @@ mod contract_test {
         act.protocol_cost = Amount::unit238(10_000_000);
         act.construct_call = Bool::new(true);
         act.contract = deploy_contract;
+        let _ = act.execute(&mut ctx).into_tret()?;
+        Ok(())
+    }
+
+    fn run_update_with_preloaded(
+        target: ContractAddress,
+        preload: Vec<(ContractAddress, ContractSto)>,
+        edit: ContractEdit,
+    ) -> Ret<()> {
+        init_vm_assigner_once();
+        let main = test_main_addr();
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(1_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.chain.fast_sync = true;
+        env.tx.ty = tx.ty();
+        env.tx.main = tx.main();
+        env.tx.addrs = tx.addrs();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = VMState::wrap(&mut ext_state);
+            for (addr, sto) in preload {
+                vmsta.contract_set_sync_edition(&addr, &sto);
+            }
+        }
+
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000_000))?;
+        ctx.gas_init_tx(decode_gas_budget(17), 1)?;
+
+        let mut act = ContractUpdate::new();
+        act.address = target.to_addr();
+        act.protocol_cost = Amount::unit238(10_000_000);
+        act.edit = edit;
         let _ = act.execute(&mut ctx).into_tret()?;
         Ok(())
     }
@@ -620,5 +705,57 @@ mod contract_test {
             err.contains("Construct") && err.contains("not found"),
             "unexpected deploy error: {err}"
         );
+    }
+
+    #[test]
+    fn update_shadowing_parent_function_dispatches_change() {
+        let main = test_main_addr();
+        let parent_addr = test_contract(&main, 40);
+        let child_addr = test_contract(&main, 41);
+
+        let parent = Contract::new()
+            .func(Func::new("f1").unwrap().fitsh("return 1").unwrap())
+            .into_sto();
+        let child = Contract::new()
+            .inh(parent_addr.to_addr())
+            .syst(Abst::new(AbstCall::Append).fitsh("return 1").unwrap())
+            .syst(Abst::new(AbstCall::Change).fitsh("return 0").unwrap())
+            .into_sto();
+        let edit = Contract::new()
+            .func(Func::new("f1").unwrap().fitsh("return 2").unwrap())
+            .into_edit(1);
+
+        run_update_with_preloaded(
+            child_addr.clone(),
+            vec![(parent_addr, parent), (child_addr, child)],
+            edit,
+        )
+        .expect("shadowing parent selector should update successfully");
+    }
+
+    #[test]
+    fn update_new_local_function_without_parent_conflict_stays_append() {
+        let main = test_main_addr();
+        let parent_addr = test_contract(&main, 42);
+        let child_addr = test_contract(&main, 43);
+
+        let parent = Contract::new()
+            .func(Func::new("parent_only").unwrap().fitsh("return 1").unwrap())
+            .into_sto();
+        let child = Contract::new()
+            .inh(parent_addr.to_addr())
+            .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
+            .syst(Abst::new(AbstCall::Change).fitsh("return 1").unwrap())
+            .into_sto();
+        let edit = Contract::new()
+            .func(Func::new("child_only").unwrap().fitsh("return 2").unwrap())
+            .into_edit(1);
+
+        run_update_with_preloaded(
+            child_addr.clone(),
+            vec![(parent_addr, parent), (child_addr, child)],
+            edit,
+        )
+        .expect("new selector without parent conflict should update successfully");
     }
 }

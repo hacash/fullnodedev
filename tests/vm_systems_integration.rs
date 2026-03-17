@@ -508,8 +508,7 @@ fn sandbox_call_executes_and_reports_missing_function() {
 
     let err = machine::sandbox_call(
         &mut ctx,
-        machine::SandboxSpec::new(contract_addr(&main, 3001), "missing")
-            .args(vec![Value::U8(5)]),
+        machine::SandboxSpec::new(contract_addr(&main, 3001), "missing").args(vec![Value::U8(5)]),
     )
     .unwrap_err();
     assert!(err.contains("CallNotExist"), "{err}");

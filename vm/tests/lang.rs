@@ -219,7 +219,10 @@ fn pack_args_surface_syntax_is_rejected() {
 #[test]
 fn ntenv_placeholder_surface_syntax_is_rejected() {
     let err = lang_to_ircode(r#"return context_address("")"#).unwrap_err();
-    assert!(err.contains("takes no arguments"), "unexpected error: {err}");
+    assert!(
+        err.contains("takes no arguments"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

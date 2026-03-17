@@ -164,33 +164,6 @@ macro_rules! action_define {
 
 #[macro_export]
 macro_rules! action_register {
-    ( @vm $( $kty:ident )+ ) => {
-        pub const ACTION_CODEC_KINDS: &'static [u16] = &[
-            $(<$kty>::KIND,)+
-        ];
-        pub fn try_create(kind: u16, buf: &[u8]) -> Ret<Option<(Box<dyn Action>, usize)>> {
-            match kind {
-                $(<$kty>::KIND => {
-                    let (act, sk) = <$kty>::create(buf)?;
-                    Ok(Some((Box::new(act), sk)))
-                },)+
-                _ => Ok(None)
-            }
-        }
-        pub fn try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Action>>> {
-            match kind {
-                $(<$kty>::KIND => {
-                    let mut act = <$kty>::new();
-                    act.from_json(json)?;
-                    Ok(Some(Box::new(act)))
-                },)+
-                _ => Ok(None)
-            }
-        }
-        pub fn register(builder: SetupBuilder) -> SetupBuilder {
-            builder.register_codec(ACTION_CODEC_KINDS, try_create, try_json_decode, true)
-        }
-    };
     ( $( $kty:ident )+ ) => {
         pub const ACTION_CODEC_KINDS: &'static [u16] = &[
             $(<$kty>::KIND,)+
@@ -215,7 +188,7 @@ macro_rules! action_register {
             }
         }
         pub fn register(builder: SetupBuilder) -> SetupBuilder {
-            builder.register_codec(ACTION_CODEC_KINDS, try_create, try_json_decode, false)
+            builder.register_codec(ACTION_CODEC_KINDS, try_create, try_json_decode)
         }
     };
 }

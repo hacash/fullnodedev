@@ -13,13 +13,13 @@ static INIT: Once = Once::new();
 
 fn init_test_registry() {
     INIT.call_once(|| {
-        let builder = crate::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff));
+        let builder =
+            crate::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff));
         let registry = builder
             .register_codec(
                 &[TestExtEnvReadOnly::KIND],
                 action_env_try_create,
                 action_env_try_json_decode,
-                false,
             )
             .build()
             .unwrap();
@@ -123,6 +123,16 @@ fn action_env_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Actio
 
 fn init_action_env_test_registry() {
     init_test_registry();
+}
+
+#[test]
+fn test_setup_builder_uses_default_sha3_block_hasher() {
+    let registry = crate::setup::SetupBuilder::new().build().unwrap();
+    let _guard = crate::setup::install_scoped_for_test(registry);
+    assert_eq!(
+        crate::setup::do_block_hash(1, b"abc"),
+        sys::calculate_hash(b"abc")
+    );
 }
 
 #[derive(Default, Clone)]

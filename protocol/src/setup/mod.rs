@@ -57,14 +57,9 @@ impl SetupBuilder {
         kinds: &'static [u16],
         create: ActCreateFun,
         json_decode: ActJSONDecodeFun,
-        need_vm_runtime: bool,
     ) -> Self {
-        self.action_registers.push(ActionRegisterItem::new(
-            kinds,
-            create,
-            json_decode,
-            need_vm_runtime,
-        ));
+        self.action_registers
+            .push(ActionRegisterItem::new(kinds, create, json_decode));
         self
     }
 
@@ -74,30 +69,16 @@ impl SetupBuilder {
     }
 
     pub fn build(self) -> Ret<SetupRegistry> {
-        let Some(block_hasher) = self.block_hasher else {
-            return errf!("setup missing block_hasher");
-        };
+        let block_hasher = self.block_hasher.unwrap_or(default_block_hasher);
         let mut action_codecs = HashMap::<u16, ActionCodec>::new();
-        let mut vm_runtime_required = false;
         for (gid, reg) in self.action_registers.iter().enumerate() {
             if reg.kinds.is_empty() {
                 return errf!("action register {} has empty kind list", gid);
-            }
-            if reg.need_vm_runtime {
-                vm_runtime_required = true;
             }
             for kind in reg.kinds {
                 if action_codecs.insert(*kind, reg.codec).is_some() {
                     return errf!("action kind {} conflict in register {}", kind, gid);
                 }
-            }
-        }
-        if vm_runtime_required {
-            if self.vm_assigner.is_none() {
-                return errf!("vm runtime actions registered but vm_assigner missing");
-            }
-            if self.action_hooks.is_empty() {
-                return errf!("vm runtime actions registered but action_hooker missing");
             }
         }
         Ok(Arc::new(SetupRegistryData {

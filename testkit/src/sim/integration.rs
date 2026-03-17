@@ -55,10 +55,9 @@ thread_local! {
 fn build_basic_registry(
     vm_assigner: Option<protocol::setup::FnVmAssignFunc>,
 ) -> protocol::setup::SetupRegistry {
-    let mut builder =
-        mint::setup::extend_standard_mint_stack(protocol::setup::standard_protocol_builder(
-            x16rs::block_hash,
-        ));
+    let mut builder = mint::setup::extend_standard_mint_stack(
+        protocol::setup::standard_protocol_builder(x16rs::block_hash),
+    );
     if let Some(assigner) = vm_assigner {
         builder = vm::setup::extend_standard_vm_stack(builder).vm_assigner(assigner);
     }
