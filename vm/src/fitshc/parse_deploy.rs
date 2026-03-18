@@ -22,6 +22,7 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
     info.matches = true;
 
     loop {
+        state.skip_soft_separators();
         if let Some(Partition('}')) = state.current() {
             state.advance();
             break;
@@ -154,10 +155,7 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
             return errf!("unknown deploy field '{}'", key);
         }
 
-        // comma?
-        if let Some(Partition(',')) = state.current() {
-            state.advance();
-        }
+        state.skip_soft_separators();
     }
 
     Ok(info)

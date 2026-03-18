@@ -251,4 +251,35 @@ mod fitshc_compile_tests {
         "#;
         assert!(fitshc_compile(src).is_ok(), "fitshc compile should succeed");
     }
+
+    #[test]
+    fn accepts_soft_separators_in_contract_body_and_function_body() {
+        let src = r#"
+            contract demo {
+                const A = 1;;,;
+                function helper(a: u8,, b: u8) -> u8 {
+                    var s = a + b;;,,
+                    return s
+                },;,
+                function external run() -> u8 {
+                    return this.helper(1,,;2)
+                }
+            }
+        "#;
+        assert!(fitshc_compile(src).is_ok(), "fitshc compile should succeed");
+    }
+
+    #[test]
+    fn accepts_soft_separators_in_deploy_block() {
+        let src = r#"
+            contract demo {
+                deploy {
+                    nonce: 1,,;;
+                    call_construct: false,,;
+                }
+                function external run() -> u8 { return 1 }
+            }
+        "#;
+        assert!(fitshc_compile(src).is_ok(), "fitshc compile should succeed");
+    }
 }

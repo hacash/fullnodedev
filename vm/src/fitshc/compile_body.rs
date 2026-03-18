@@ -56,7 +56,6 @@ fn parse_const_value(value_str: &str) -> Ret<Box<dyn IRNode>> {
         let bytes = str_content.as_bytes().to_vec();
         return push_bytes(&bytes);
     }
-    // Try parsing as plain uint
     if let Ok(num) = value_str.parse::<u128>() {
         return Ok(push_num(num));
     }
@@ -91,16 +90,6 @@ mod compile_body_tests {
 }
 
 /// Compile function/abstract body tokens to IR or bytecode
-///
-/// # Arguments
-/// * `body_tokens` - The tokens of the function body
-/// * `args` - Parameter names and types
-/// * `libs` - Contract-level libraries (name, address)
-/// * `consts` - Contract-level constants (name, value_string)
-/// * `is_ircode` - Whether to compile to IR code or bytecode
-///
-/// # Returns
-/// * `Ok((IRNodeArray, CompiledCode, SourceMap))` - The IR nodes, compiled code, and source map
 pub fn compile_body(
     body_tokens: Vec<Token>,
     args: Vec<(String, ValueTy)>,
@@ -108,53 +97,39 @@ pub fn compile_body(
     consts: &[(String, String)],
     is_ircode: bool,
 ) -> Ret<(IRNodeArray, CompiledCode, SourceMap)> {
-    // Setup syntax parser
     let mut syntax = Syntax::new(body_tokens);
 
-    // Inject contract-level libs (0-based order)
     if !libs.is_empty() {
         if libs.len() > u8::MAX as usize {
             return Err(format!("too many contract libs: max {}", u8::MAX).into());
         }
         let mut lib_entries = Vec::with_capacity(libs.len());
         for (idx, (name, addr)) in libs.iter().enumerate() {
-            let idx = idx as u8;
-            lib_entries.push((name.clone(), idx, Some(addr.clone())));
+            lib_entries.push((name.clone(), idx as u8, Some(addr.clone())));
         }
         syntax = syntax.with_libs(lib_entries);
     }
 
-    // Inject contract-level constants
     if !consts.is_empty() {
-        let mut const_nodes = Vec::new();
+        let mut const_nodes = Vec::with_capacity(consts.len());
         for (name, value_str) in consts {
-            let node = parse_const_value(value_str)?;
-            const_nodes.push((name.clone(), node));
+            const_nodes.push((name.clone(), parse_const_value(value_str)?));
         }
         syntax = syntax.with_consts(const_nodes);
     }
 
-    // Inject params and set compilation mode
     syntax = syntax.with_params(args).with_ircode(is_ircode);
 
-    // Parse to IR nodes
     let (irnodes, source_map) = syntax.parse()?;
 
-    // Generate code based on mode
     let compiled = if is_ircode {
-        // IR mode: store raw block content (without IRBLOCK/IRBLOCKR wrapper)
         let ircodes = drop_irblock_wrap(irnodes.serialize())?;
-
-        // Verify by converting to bytecode. Failures (e.g. CodeNotWithEnd, JumpOverflow) are fitsh compile errors; they propagate via parse_function -> parse_top_level -> compile.
         let codes = convert_ir_to_bytecode(&ircodes).map_err(|e| e.to_string())?;
         verify_bytecodes(&codes).map_err(|e| e.to_string())?;
-
         CompiledCode::IrCode(ircodes)
     } else {
-        // Bytecode mode: direct codegen; verify failures propagate as compile errors
         let bts = irnodes.codegen().map_err(|e| e.to_string())?;
         verify_bytecodes(&bts).map_err(|e| e.to_string())?;
-
         CompiledCode::Bytecode(bts)
     };
 

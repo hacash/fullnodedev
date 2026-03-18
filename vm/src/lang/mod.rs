@@ -14,15 +14,11 @@ use super::native::*;
 include! {"print_option.rs"}
 include! {"decompilation_helper.rs"}
 
-pub enum ArgvMode {
-    Concat,
-    Packed,
-}
+pub mod syntax;
+pub use syntax::Syntax;
 
 include! {"interface.rs"}
 include! {"tokenizer.rs"}
-include! {"funcs.rs"}
-include! {"syntax.rs"}
 include! {"formater.rs"}
 include! {"test.rs"}
 

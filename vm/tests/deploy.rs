@@ -191,7 +191,7 @@ mod deploy {
             var adr $1 = 0
             var res $2 = 0
             assert type_id(pms) == 15
-            assert type_is_list(pms)
+            assert pms is list
             adr = item_get(pms, 0)
             adr = pms[3]
             // assert type_is(12, adr)

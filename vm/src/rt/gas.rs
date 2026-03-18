@@ -248,8 +248,9 @@ impl GasExtra {
         if div <= 0 || len == 0 {
             return 0
         }
-        // ceil
-        1 + ((len as i64 - 1) / div)
+        // The opcode base gas already covers the first bucket. Dynamic gas only
+        // charges additional buckets beyond the first one.
+        (len as i64 - 1) / div
     }
 
     #[inline(always)]
@@ -257,8 +258,8 @@ impl GasExtra {
         if div <= 0 || n == 0 {
             return 0
         }
-        // ceil
-        1 + ((n as i64 - 1) / div)
+        // First bucket is free; dynamic gas charges only extra buckets.
+        (n as i64 - 1) / div
     }
 
     #[inline(always)]
@@ -466,61 +467,61 @@ mod gas_budget_codec_tests {
         let gst = GasExtra::new(1);
 
         assert_eq!(gst.stack_copy(0), 0);
-        assert_eq!(gst.stack_copy(31), 1);
-        assert_eq!(gst.stack_copy(32), 1);
-        assert_eq!(gst.stack_copy(64), 2);
+        assert_eq!(gst.stack_copy(31), 0);
+        assert_eq!(gst.stack_copy(32), 0);
+        assert_eq!(gst.stack_copy(64), 1);
         assert_eq!(gst.stack_write(0), 0);
-        assert_eq!(gst.stack_write(27), 1);
-        assert_eq!(gst.stack_write(28), 1);
-        assert_eq!(gst.stack_write(29), 2);
-        assert_eq!(gst.stack_write(57), 3);
+        assert_eq!(gst.stack_write(27), 0);
+        assert_eq!(gst.stack_write(28), 0);
+        assert_eq!(gst.stack_write(29), 1);
+        assert_eq!(gst.stack_write(57), 2);
         assert_eq!(gst.stack_op(0), 0);
-        assert_eq!(gst.stack_op(15), 1);
-        assert_eq!(gst.stack_op(20), 1);
-        assert_eq!(gst.stack_op(32), 2);
+        assert_eq!(gst.stack_op(15), 0);
+        assert_eq!(gst.stack_op(20), 0);
+        assert_eq!(gst.stack_op(32), 1);
 
         assert_eq!(gst.ntfunc_bytes(0), 0);
-        assert_eq!(gst.ntfunc_bytes(15), 1);
-        assert_eq!(gst.ntfunc_bytes(16), 1);
-        assert_eq!(gst.actview_bytes(31), 2);
-        assert_eq!(gst.actview_bytes(32), 2);
+        assert_eq!(gst.ntfunc_bytes(15), 0);
+        assert_eq!(gst.ntfunc_bytes(16), 0);
+        assert_eq!(gst.actview_bytes(31), 1);
+        assert_eq!(gst.actview_bytes(32), 1);
         assert_eq!(gst.actenv_bytes(0), 0);
-        assert_eq!(gst.actenv_bytes(15), 1);
-        assert_eq!(gst.actenv_bytes(16), 1);
+        assert_eq!(gst.actenv_bytes(15), 0);
+        assert_eq!(gst.actenv_bytes(16), 0);
         assert_eq!(gst.action_bytes(0), 0);
-        assert_eq!(gst.action_bytes(9), 1);
-        assert_eq!(gst.action_bytes(10), 1);
+        assert_eq!(gst.action_bytes(9), 0);
+        assert_eq!(gst.action_bytes(10), 0);
 
         assert_eq!(gst.heap_read(0), 0);
-        assert_eq!(gst.heap_read(15), 1);
-        assert_eq!(gst.heap_read(16), 1);
+        assert_eq!(gst.heap_read(15), 0);
+        assert_eq!(gst.heap_read(16), 0);
         assert_eq!(gst.heap_write(0), 0);
-        assert_eq!(gst.heap_write(11), 1);
-        assert_eq!(gst.heap_write(12), 1);
+        assert_eq!(gst.heap_write(11), 0);
+        assert_eq!(gst.heap_write(12), 0);
 
         assert_eq!(gst.compo_items_read(0), 0);
-        assert_eq!(gst.compo_items_read(3), 1);
-        assert_eq!(gst.compo_items_read(4), 1);
-        assert_eq!(gst.compo_items_edit(5), 3);
-        assert_eq!(gst.compo_items_copy(5), 5);
+        assert_eq!(gst.compo_items_read(3), 0);
+        assert_eq!(gst.compo_items_read(4), 0);
+        assert_eq!(gst.compo_items_edit(5), 2);
+        assert_eq!(gst.compo_items_copy(5), 4);
         assert_eq!(gst.compo_bytes(0), 0);
-        assert_eq!(gst.compo_bytes(39), 1);
-        assert_eq!(gst.compo_bytes(40), 1);
-        assert_eq!(gst.compo_bytes(41), 2);
-        assert_eq!(gst.compo_bytes(80), 2);
+        assert_eq!(gst.compo_bytes(39), 0);
+        assert_eq!(gst.compo_bytes(40), 0);
+        assert_eq!(gst.compo_bytes(41), 1);
+        assert_eq!(gst.compo_bytes(80), 1);
 
         assert_eq!(gst.log_bytes(0), 0);
-        assert_eq!(gst.log_bytes(37), 37);
+        assert_eq!(gst.log_bytes(37), 36);
 
         assert_eq!(gst.storage_read(0), 0);
-        assert_eq!(gst.storage_read(7), 1);
-        assert_eq!(gst.storage_read(8), 1);
+        assert_eq!(gst.storage_read(7), 0);
+        assert_eq!(gst.storage_read(8), 0);
         assert_eq!(gst.storage_write(0), 0);
-        assert_eq!(gst.storage_write(5), 1);
-        assert_eq!(gst.storage_write(6), 1);
+        assert_eq!(gst.storage_write(5), 0);
+        assert_eq!(gst.storage_write(6), 0);
         assert_eq!(gst.compile_bytes(0), 0);
-        assert_eq!(gst.compile_bytes(15), 1);
-        assert_eq!(gst.compile_bytes(16), 1);
+        assert_eq!(gst.compile_bytes(15), 0);
+        assert_eq!(gst.compile_bytes(16), 0);
         assert_eq!(gst.storage_del(), 16);
     }
 }

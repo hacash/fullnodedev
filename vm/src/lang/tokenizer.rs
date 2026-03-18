@@ -290,11 +290,14 @@ impl Tokenizer<'_> {
                 '0'..='9' => self.parse_number(max, c)?,
                 'A'..='Z' | 'a'..='z' | '$' | '_' => self.parse_identifier(max, c)?,
                 '{' | '}' | '(' | ')' | '[' | ']' => self.tokens.push(Partition(c)),
+                // Comma is a soft separator token.
+                // Semicolon is normalized to comma at lexical stage.
+                ',' | ';' => self.tokens.push(Partition(',')),
                 '+' | '-' | '*' | '/' | '=' | '!' | '.' | ':' | '>' | '<' | '|' | '&' | '%'
                 | '^' => self.parse_symbol(max, c)?,
                 '"' => self.parse_bytes(max, c)?,
                 '\'' => self.parse_char(max, c)?,
-                ' ' | ',' | ';' | '\n' | '\r' | '\t' => {} // ignore
+                ' ' | '\n' | '\r' | '\t' => {} // ignore
                 _ => return errf!("unsupported char [{}]", c),
             }
         }

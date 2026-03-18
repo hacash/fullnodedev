@@ -10,8 +10,8 @@ action_define! { AstSelect, 25,
         *self.exe_min, *self.exe_max, self.actions.length())),
     (self, ctx, gas {
         gas = 0; // control-flow node: all gas consumed via ctx
-        let mut guard = ast_enter(ctx)?;
-        let ctx = guard.ctx();
+        let mut exec_from = enter_exec_from(ctx, ExecFrom::Ast);
+        let ctx = exec_from.ctx();
         let slt_min = *self.exe_min as usize;
         let slt_max = *self.exe_max as usize;
         let slt_num = self.actions.length();
@@ -19,9 +19,8 @@ action_define! { AstSelect, 25,
         // Empty-select semantics (e.g. `0/0` or `0/N`) are part of the AST design,
         // and are used by higher-level control flow/tests as a legal no-op success path.
         validate_ast_select(slt_min, slt_max, slt_num)?;
-        let node = AstNodeTxn::begin(ctx)?;
-        let res = self.execute_select_core(ctx, slt_min, slt_max);
-        node.finish(ctx, res)
+        // Failed AST nodes do not restore prior successful siblings here; upper execution layers own whole-tx rollback.
+        self.execute_select_core(ctx, slt_min, slt_max)
     })
 }
 
@@ -93,15 +92,21 @@ impl AstSelect {
             if ok >= slt_max {
                 break; // reached max success limit
             }
-            if let Some(ret) =
-                ast_revert_continue(ast_try_item!(ctx, act.execute(ctx), act.extra9()))?
-            {
-                last_ok_ret = Some(ret);
-                ok += 1;
+            match ast_exec_item(ctx, act.extra9(), |ctx| act.execute(ctx)) {
+                Ok(ret) => {
+                    last_ok_ret = Some(ret);
+                    ok += 1;
+                }
+                Err(XError::Revert(_)) => {}
+                Err(e) => return Err(e.into()),
             }
         }
         if ok < slt_min {
-            return xerr_rf!("action ast select must succeed at least {} but only {}", slt_min, ok);
+            return xerr_rf!(
+                "action ast select must succeed at least {} but only {}",
+                slt_min,
+                ok
+            );
         }
         Ok(last_ok_ret.unwrap_or_default())
     }

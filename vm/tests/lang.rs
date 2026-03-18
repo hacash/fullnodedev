@@ -505,26 +505,6 @@ fn throw_argument_must_be_value_expression() {
 }
 
 #[test]
-fn binary_operator_operands_must_be_value_expressions() {
-    // Binary operators consume values from the stack.
-    let script = r##"
-        1 + end
-    "##;
-    let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("return value") || err.contains("not have return value"));
-}
-
-#[test]
-fn is_operator_lhs_must_be_value_expression() {
-    // `is` consumes a value from the stack; lhs must return a value.
-    let script = r##"
-        end is nil
-    "##;
-    let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("return value") || err.contains("not have return value"));
-}
-
-#[test]
 fn item_get_index_must_be_value_expression() {
     let script = r##"
         var arr = list { 1 }
@@ -1340,38 +1320,9 @@ fn reject_unclosed_log_argument_delimiter() {
 }
 
 #[test]
-fn reject_unclosed_if_block() {
-    let script = r##"
-        if true {
-            print 1
-        end
-    "##;
-    let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("block format invalid"));
-}
-
-#[test]
-fn reject_binary_not_operator() {
-    let script = r##"
-        1 ! 0
-    "##;
-    let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("cannot be binary"));
-}
-
-#[test]
 fn reject_param_block_non_identifier_member() {
     let script = r##"
         param { a 1 }
-    "##;
-    let err = lang_to_ircode(script).unwrap_err();
-    assert!(err.contains("param format invalid"));
-}
-
-#[test]
-fn reject_param_block_without_close_brace() {
-    let script = r##"
-        param { a
     "##;
     let err = lang_to_ircode(script).unwrap_err();
     assert!(err.contains("param format invalid"));

@@ -29,6 +29,7 @@ fn ctx_action_call(this: &mut dyn Context, k: u16, b: Vec<u8>) -> XRet<(u32, Vec
     }
     // Runtime-created actions always execute in CALL context.
     let (gas, res) = with_exec_from(this, ExecFrom::Call, |ctx| action.execute(ctx))?;
+    // Runtime ACTION returned-gas also uses the delta-only extra9 rule; plain actions intentionally add no returned-gas charge in this path.
     let gas = apply_extra9_surcharge(action.extra9(), gas);
     Ok((gas, res))
 }

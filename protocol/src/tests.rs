@@ -392,6 +392,69 @@ impl Action for TestType3GasAction {
     }
 }
 
+field::combi_struct! { TestStateSetAction,
+    kind: Uint2
+    key: Uint1
+    val: Uint1
+    mode: Uint1
+}
+
+impl TestStateSetAction {
+    const KIND: u16 = 0x07f7;
+
+    fn create_by(key: u8, val: u8, mode: u8) -> Self {
+        Self {
+            kind: Uint2::from(Self::KIND),
+            key: Uint1::from(key),
+            val: Uint1::from(val),
+            mode: Uint1::from(mode),
+        }
+    }
+}
+
+impl Description for TestStateSetAction {
+    fn to_description(&self) -> String {
+        format!("Test state set {}={}", *self.key, *self.val)
+    }
+}
+
+impl ActExec for TestStateSetAction {
+    fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
+        if !ctx.env().chain.fast_sync {
+            check_action_scope(ctx.exec_from(), self).into_xret()?;
+        }
+        ctx.state().set(vec![*self.key], vec![*self.val]);
+        match *self.mode {
+            0 => Ok((0, vec![])),
+            1 => xerr_r!("test state set revert"),
+            2 => xerr!("test state set fault"),
+            _ => xerr!("test state set invalid mode"),
+        }
+    }
+}
+
+impl Action for TestStateSetAction {
+    fn kind(&self) -> u16 {
+        *self.kind
+    }
+
+    fn scope(&self) -> ActScope {
+        ActScope::CALL
+    }
+
+    fn min_tx_type(&self) -> u8 {
+        1
+    }
+
+    fn req_sign(&self) -> Vec<AddrOrPtr> {
+        vec![]
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 fn build_depth_7_ast_select() -> AstSelect {
     let lvl7 = AstSelect::create_list(vec![Box::new(HacToTrs::new())]);
     let lvl6 = AstSelect::create_list(vec![Box::new(lvl7)]);
@@ -987,6 +1050,33 @@ fn run_type3_top_level_gas_case(burn: bool) -> i64 {
     crate::context::decode_gas_budget(1) - ctx.gas_remaining()
 }
 
+fn build_type3_gas_ctx(budget: i64) -> (ContextInst<'static>, Address) {
+    let main = field::ADDRESS_ONEX.clone();
+    let tx = Box::new(TransactionType3::new_by(
+        main,
+        Amount::unit238(1_000_000),
+        1730000000,
+    ));
+    let tx: &'static TransactionType3 = Box::leak(tx);
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::unit238(5_000_000_000);
+        state.balance_set(&main, &bls);
+    }
+    ctx.gas_init_tx(budget, 1).unwrap();
+    (ctx, main)
+}
+
 #[test]
 fn test_type3_top_level_action_local_burn_factor_is_applied() {
     init_test_registry();
@@ -996,6 +1086,133 @@ fn test_type3_top_level_action_local_burn_factor_is_applied() {
 
     assert_eq!(plain_used, 0);
     assert_eq!(burn_used, 63);
+}
+
+#[test]
+fn test_ast_select_revert_restores_failed_child_only() {
+    init_test_registry();
+    let tx = TransactionType3::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut tx = tx;
+    tx.gas_max = Uint1::from(17);
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let main = field::ADDRESS_ONEX.clone();
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::unit238(1_000_000_000);
+        state.balance_set(&main, &bls);
+    }
+    ctx.gas_init_tx(10_000, 1).unwrap();
+
+    let act = AstSelect::create_by(
+        1,
+        2,
+        vec![
+            Box::new(TestStateSetAction::create_by(1, 11, 0)),
+            Box::new(TestStateSetAction::create_by(2, 22, 1)),
+        ],
+    );
+    ctx.exec_from_set(ExecFrom::Top);
+    let out = act.execute(&mut ctx).unwrap();
+    assert_eq!(out.0, 0);
+    assert_eq!(ctx.state().get(vec![1]), Some(vec![11]));
+    assert_eq!(ctx.state().get(vec![2]), None);
+}
+
+#[test]
+fn test_ast_if_fault_fast_fails_without_whole_node_recover() {
+    init_test_registry();
+    let tx = TransactionType3::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut tx = tx;
+    tx.gas_max = Uint1::from(17);
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let main = field::ADDRESS_ONEX.clone();
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::unit238(1_000_000_000);
+        state.balance_set(&main, &bls);
+    }
+    ctx.gas_init_tx(10_000, 1).unwrap();
+
+    let act = AstIf::create_by(
+        AstSelect::create_list(vec![Box::new(TestStateSetAction::create_by(1, 11, 0))]),
+        AstSelect::create_list(vec![Box::new(TestStateSetAction::create_by(2, 22, 2))]),
+        AstSelect::create_list(vec![Box::new(TestStateSetAction::create_by(3, 33, 0))]),
+    );
+    ctx.exec_from_set(ExecFrom::Top);
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(err.is_fault(), "{err}");
+}
+
+#[test]
+fn test_gas_refund_enters_settled_state_and_keeps_queries() {
+    let (mut ctx, _main) = build_type3_gas_ctx(1000);
+
+    ctx.gas_charge(25).unwrap();
+    let used_before = ctx.ctx_gas_used_charge().unwrap();
+    let max_before = ctx.ctx_gas_max_charge().unwrap();
+
+    ctx.gas_refund().unwrap();
+
+    assert_eq!(ctx.ctx_gas_used_charge().unwrap(), used_before);
+    assert_eq!(ctx.ctx_gas_max_charge().unwrap(), max_before);
+    assert!(ctx.gas_charge(1).unwrap_err().contains("already settled"));
+    assert!(ctx.gas_refund().unwrap_err().contains("already settled"));
+}
+
+#[test]
+fn test_gas_charge_out_of_gas_does_not_mutate_remaining() {
+    let (mut ctx, _main) = build_type3_gas_ctx(100);
+
+    assert_eq!(ctx.gas_remaining(), 100);
+    let err = ctx.gas_charge(101).unwrap_err();
+    assert!(err.contains("gas has run out"), "{err}");
+    assert_eq!(ctx.gas_remaining(), 100);
+}
+
+#[test]
+fn test_gas_init_after_settle_errors_without_reprecharge() {
+    let (mut ctx, main) = build_type3_gas_ctx(1000);
+
+    ctx.gas_charge(25).unwrap();
+    ctx.gas_refund().unwrap();
+
+    let after_refund = {
+        let state = crate::state::CoreState::wrap(ctx.state());
+        state.balance(&main).unwrap_or_default().hacash
+    };
+    let err = ctx.gas_init_tx(500, 1).unwrap_err();
+    assert!(err.contains("already settled"), "{err}");
+    let after_retry = {
+        let state = crate::state::CoreState::wrap(ctx.state());
+        state.balance(&main).unwrap_or_default().hacash
+    };
+    assert_eq!(after_retry, after_refund);
 }
 
 #[test]

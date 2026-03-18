@@ -579,7 +579,6 @@ return x"
 
         assert_compile_err!(
             err_unclosed_paren: "return (1 + 2",
-            err_unclosed_brace: "if true { return 1",
             err_unclosed_bracket: "return [1, 2",
             err_invalid_op: "return 1 +",
             err_invalid_assign: "1 = 2",

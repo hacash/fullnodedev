@@ -58,6 +58,12 @@ impl ParseState {
         self.idx += 1;
     }
 
+    pub fn skip_soft_separators(&mut self) {
+        while matches!(self.current(), Some(Partition(','))) {
+            self.advance();
+        }
+    }
+
     pub fn eat_partition(&mut self, char: char) -> Ret<()> {
         if self.idx >= self.max {
             return errf!("expected '{}' but got EOF", char);

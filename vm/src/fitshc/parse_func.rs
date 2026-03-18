@@ -79,6 +79,9 @@ pub fn parse_func_sig(
     if let Some(Partition('(')) = state.current() {
         state.advance();
         loop {
+            while let Some(Partition(',')) = state.current() {
+                state.advance();
+            }
             if let Some(Partition(')')) = state.current() {
                 state.advance();
                 break;

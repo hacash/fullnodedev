@@ -33,6 +33,8 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
         return errf!("expected pragma after 'use'");
     }
 
+    state.skip_soft_separators();
+
     // contract Name {
     if let Some(Keyword(KwTy::Contract)) = state.current() {
         state.advance();
@@ -43,6 +45,7 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
         state.eat_partition('{')?;
 
         loop {
+            state.skip_soft_separators();
             if let Some(Partition('}')) = state.current() {
                 state.advance();
                 break;
@@ -52,6 +55,10 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
     } else {
         // Fallback for files without contract wrapper
         while state.idx < state.max {
+            state.skip_soft_separators();
+            if state.idx >= state.max {
+                break;
+            }
             parse_contract_body_item(state)?;
         }
     }
@@ -112,6 +119,7 @@ fn parse_const_value(state: &mut ParseState) -> Ret<ConstValue> {
 }
 
 fn parse_contract_body_item(state: &mut ParseState) -> Ret<()> {
+    state.skip_soft_separators();
     match state.current() {
         Some(Keyword(KwTy::Const)) => {
             // Parse top-level const: const NAME = VALUE
@@ -277,6 +285,7 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, field::Address)>>
     state.eat_partition('[')?;
     let mut list = vec![];
     loop {
+        state.skip_soft_separators();
         if let Some(Partition(']')) = state.current() {
             state.advance();
             break;
@@ -310,9 +319,7 @@ fn parse_addr_list(state: &mut ParseState) -> Ret<Vec<(String, field::Address)>>
 
         list.push((name, addr));
 
-        if let Some(Partition(',')) = state.current() {
-            state.advance();
-        }
+        state.skip_soft_separators();
     }
     Ok(list)
 }

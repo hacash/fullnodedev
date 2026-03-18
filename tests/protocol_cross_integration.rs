@@ -1041,97 +1041,6 @@ fn test_ast_savepoint_recover_tex_and_p2sh() {
     assert!(ctx.p2sh(&new_adr).is_err());
 }
 
-#[test]
-fn test_ast_select_failure_rolls_back_p2sh_inside_node() {
-    #[derive(Default, Debug, Clone, PartialEq, Eq)]
-    struct AstTestP2shSetOnly;
-
-    impl Parse for AstTestP2shSetOnly {
-        fn parse(&mut self, _buf: &[u8]) -> Ret<usize> {
-            Ok(0)
-        }
-    }
-    impl Serialize for AstTestP2shSetOnly {
-        fn serialize(&self) -> Vec<u8> {
-            vec![]
-        }
-        fn size(&self) -> usize {
-            0
-        }
-    }
-    impl Field for AstTestP2shSetOnly {
-        fn new() -> Self {
-            Self::default()
-        }
-    }
-    impl ToJSON for AstTestP2shSetOnly {
-        fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-            "{}".to_owned()
-        }
-    }
-    impl FromJSON for AstTestP2shSetOnly {
-        fn from_json(&mut self, _json: &str) -> Ret<()> {
-            Ok(())
-        }
-    }
-
-    struct AstTestP2sh;
-    impl P2sh for AstTestP2sh {
-        fn code_stuff(&self) -> &[u8] {
-            b"x"
-        }
-        fn witness(&self) -> &[u8] {
-            b"y"
-        }
-    }
-
-    impl ActExec for AstTestP2shSetOnly {
-        fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
-            let adr = Address::create_scriptmh([8u8; 20]);
-            ctx.p2sh_set(adr, Box::new(AstTestP2sh))?;
-            Ok((0, vec![]))
-        }
-    }
-    impl Description for AstTestP2shSetOnly {}
-    impl Action for AstTestP2shSetOnly {
-        fn kind(&self) -> u16 {
-            65004
-        }
-        fn scope(&self) -> ActScope {
-            ActScope::AST
-        }
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-    }
-
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    env.tx.main = field::ADDRESS_ONEX.clone();
-    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-
-    let new_adr = Address::create_scriptmh([8u8; 20]);
-    let act = AstSelect::create_by(
-        2,
-        2,
-        vec![
-            Box::new(AstTestP2shSetOnly::new()),
-            Box::new(AstTestFail::new()),
-        ],
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("must succeed at least"));
-    assert!(ctx.p2sh(&new_adr).is_err());
-}
-
 fn build_tex_ctx_with_state(
     mut env: Env,
     sta: Box<dyn State>,
@@ -1579,35 +1488,6 @@ fn build_ast_ctx_with_logs<'a>(
 // ---- Test 1: AstIf branch failure triggers whole_snap recover ----
 // Validates the fix: without ctx_recover(ctx, whole_snap) on branch Err,
 // the state fork layer leaks.
-#[test]
-fn test_ast_if_branch_fail_recovers_whole_snap() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.state().set(vec![200], vec![200]); // baseline
-
-    // cond succeeds (writes state), but br_if fails
-    let astif = AstIf::create_by(
-        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(201, 201))]),
-        AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]),
-        AstSelect::create_list(vec![Box::new(AstTestSet::create_by(202, 202))]),
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let err = astif.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("must succeed at least") || err.contains("ast test forced fail"));
-
-    // whole_snap must have been recovered: cond side-effects rolled back
-    assert_eq!(ast_state_get_u8(&mut ctx, 200), Some(200)); // baseline intact
-    assert_eq!(ast_state_get_u8(&mut ctx, 201), None); // cond write rolled back
-    assert_eq!(ast_state_get_u8(&mut ctx, 202), None); // else never ran
-}
-
 // ---- Test 2: AstIf else branch failure also recovers whole_snap ----
 #[test]
 fn test_ast_if_else_branch_fail_recovers_whole_snap() {
@@ -1696,40 +1576,6 @@ fn test_ast_select_logs_truncated_on_child_failure() {
 }
 
 // ---- Test 5: Logs truncated on AstIf branch failure (whole_snap recover) ----
-#[test]
-fn test_ast_if_branch_fail_truncates_logs() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let logs = Box::new(AstTestLogs::new());
-    let logs_ptr = logs.as_ref() as *const AstTestLogs;
-    let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-
-    // cond logs + succeeds, br_if logs + fails -> whole_snap recover should truncate all
-    let astif = AstIf::create_by(
-        AstSelect::create_list(vec![Box::new(AstTestLog::create_by(10))]),
-        AstSelect::create_by(
-            2,
-            2,
-            vec![
-                Box::new(AstTestLog::create_by(11)),
-                Box::new(AstTestFail::new()),
-            ],
-        ),
-        AstSelect::create_list(vec![Box::new(AstTestLog::create_by(12))]),
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let _err = astif.execute(&mut ctx).unwrap_err();
-
-    // All logs from cond and br_if must be rolled back
-    let log_len = unsafe { &*logs_ptr }.len();
-    assert_eq!(log_len, 0);
-}
-
 // ---- Test 6: tex_ledger restored on nested AstSelect failure ----
 #[test]
 fn test_ast_select_tex_ledger_restored_on_failure() {
@@ -1763,32 +1609,6 @@ fn test_ast_select_tex_ledger_restored_on_failure() {
 }
 
 // ---- Test 7: tex_ledger fully rolled back when AstIf fails ----
-#[test]
-fn test_ast_if_fail_rolls_back_tex_ledger() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.tex_ledger().zhu = 50;
-
-    // cond adds 5 to zhu + succeeds, br_if fails
-    let astif = AstIf::create_by(
-        AstSelect::create_list(vec![Box::new(AstTestTexAdd::create_by(5))]),
-        AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]),
-        AstSelect::nop(),
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let _err = astif.execute(&mut ctx).unwrap_err();
-
-    // whole_snap recover must restore tex_ledger
-    assert_eq!(ctx.tex_ledger().zhu, 50);
-}
-
 // PLACEHOLDER_TESTS_PART3
 
 // ---- Test 8: P2SH set in successful branch kept, failed branch removed ----
@@ -1857,38 +1677,6 @@ fn test_ast_select_min_zero_all_fail_succeeds() {
 }
 
 // ---- Test 10: Combo action (state+tex+log) all restored on failure ----
-#[test]
-fn test_ast_combo_all_channels_restored_on_failure() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let logs = Box::new(AstTestLogs::new());
-    let logs_ptr = logs.as_ref() as *const AstTestLogs;
-    let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.tex_ledger().zhu = 10;
-
-    // combo writes state + tex + log, then fail forces rollback
-    let act = AstSelect::create_by(
-        2,
-        2,
-        vec![
-            Box::new(AstTestCombo::create_by(240, 5)),
-            Box::new(AstTestFail::new()),
-        ],
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("must succeed at least"));
-
-    assert_eq!(ast_state_get_u8(&mut ctx, 240), None); // state rolled back
-    assert_eq!(ctx.tex_ledger().zhu, 10); // tex rolled back
-    assert_eq!(unsafe { &*logs_ptr }.len(), 0); // logs rolled back
-}
-
 // ---- Test 11: Nested AstIf inside AstSelect — inner if fails, outer select recovers ----
 #[test]
 fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
@@ -2927,115 +2715,6 @@ fn test_ast_bug_control_min_zero_success_child_charged() {
 }
 
 #[test]
-fn test_ast_vm_recover_false_to_true_uses_restore_but_keep_warmup() {
-    let _guard = ast_test_globals_guard();
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-
-    let value = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
-    let restore_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let clean_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    set_ast_recover_track_handles(value.clone(), restore_count.clone(), clean_count.clone());
-
-    let inner_fail = AstSelect::create_by(
-        2,
-        2,
-        vec![
-            Box::new(AstTestVmInitReplace::create_by(9)),
-            Box::new(AstTestFail::new()),
-        ],
-    );
-    let act = AstSelect::create_by(
-        1,
-        2,
-        vec![
-            Box::new(inner_fail),
-            Box::new(AstTestSet::create_by(190, 190)),
-        ],
-    );
-
-    ctx.exec_from_set(ExecFrom::Top);
-    act.execute(&mut ctx).unwrap();
-
-    assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 2);
-    assert_eq!(restore_count.load(std::sync::atomic::Ordering::SeqCst), 2);
-    assert_eq!(value.load(std::sync::atomic::Ordering::SeqCst), 0);
-    assert_eq!(ast_state_get_u8(&mut ctx, 190), Some(190));
-}
-
-#[test]
-fn test_ast_vm_delay_init_deep_nested_revert_rollback_warmup_kept() {
-    let _guard = ast_test_globals_guard();
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let logs = Box::new(AstTestLogs::new());
-    let logs_ptr = logs.as_ref() as *const AstTestLogs;
-    let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.tex_ledger().zhu = 10;
-
-    let volatile = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
-    let warmup = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
-    let restore_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let clean_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    set_ast_deep_delay_vm_handles(
-        volatile.clone(),
-        warmup.clone(),
-        restore_count.clone(),
-        clean_count.clone(),
-    );
-
-    let inner_fail = AstSelect::create_by(
-        2,
-        2,
-        vec![
-            Box::new(AstTestCombo::create_by(166, 6)),
-            Box::new(AstTestDeepDelayVmCall::create_by(9, 3, 1)),
-        ],
-    );
-    let middle = AstIf::create_by(
-        AstSelect::create_list(vec![
-            Box::new(AstTestDeepDelayVmInit::new()),
-            Box::new(AstTestDeepDelayVmCall::create_by(5, 2, 0)),
-            Box::new(AstTestP2shSetN::create_by(116)),
-            Box::new(AstTestSet::create_by(165, 165)),
-        ]),
-        AstSelect::create_list(vec![Box::new(inner_fail)]),
-        AstSelect::nop(),
-    );
-    let act = AstSelect::create_by(
-        1,
-        2,
-        vec![Box::new(middle), Box::new(AstTestSet::create_by(167, 167))],
-    );
-
-    ctx.exec_from_set(ExecFrom::Top);
-    act.execute(&mut ctx).unwrap();
-
-    assert_eq!(ast_state_get_u8(&mut ctx, 165), None);
-    assert_eq!(ast_state_get_u8(&mut ctx, 166), None);
-    assert_eq!(ast_state_get_u8(&mut ctx, 167), Some(167));
-    assert_eq!(ctx.tex_ledger().zhu, 10);
-    assert_eq!(unsafe { &*logs_ptr }.len(), 0);
-    assert!(ctx.p2sh(&Address::create_scriptmh([116u8; 20])).is_err());
-    assert_eq!(volatile.load(std::sync::atomic::Ordering::SeqCst), 0);
-    assert_eq!(warmup.load(std::sync::atomic::Ordering::SeqCst), 5);
-    assert_eq!(restore_count.load(std::sync::atomic::Ordering::SeqCst), 5);
-    assert_eq!(clean_count.load(std::sync::atomic::Ordering::SeqCst), 2);
-}
-
-#[test]
 fn test_ast_vm_delay_init_deep_nested_success_commits_reverts() {
     let _guard = ast_test_globals_guard();
     let mut tx = TransactionType2::default();
@@ -3819,40 +3498,6 @@ fn test_ast_vm_state_restored_on_select_child_failure() {
 }
 
 // ---- Test 22: VM state fully rolled back when AstIf branch fails ----
-#[test]
-fn test_ast_vm_state_rolled_back_on_if_branch_failure() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let (mock_vm, counter) = MockVM::create();
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.test_set_vm(mock_vm);
-
-    // cond: vm += 3, succeed -> br_if: vm += 7, fail
-    // whole_snap recover should restore vm to 0
-    let astif = AstIf::create_by(
-        AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(3))]),
-        AstSelect::create_by(
-            2,
-            2,
-            vec![
-                Box::new(AstTestVMCall::create_by(7)),
-                Box::new(AstTestFail::new()),
-            ],
-        ),
-        AstSelect::nop(),
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let _err = astif.execute(&mut ctx).unwrap_err();
-
-    assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 0);
-}
-
 // ---- Test 23: VM state committed on successful AstIf path ----
 #[test]
 fn test_ast_vm_state_committed_on_success() {
@@ -3881,43 +3526,6 @@ fn test_ast_vm_state_committed_on_success() {
 }
 
 // ---- Test 24: VM + state + tex + logs + p2sh all restored together on failure ----
-#[test]
-fn test_ast_all_five_channels_restored_on_failure() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let logs = Box::new(AstTestLogs::new());
-    let logs_ptr = logs.as_ref() as *const AstTestLogs;
-    let (mock_vm, counter) = MockVM::create();
-    let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.test_set_vm(mock_vm);
-    ctx.tex_ledger().zhu = 100;
-
-    // All channels modified, then fail
-    let astif = AstIf::create_by(
-        AstSelect::create_list(vec![
-            Box::new(AstTestCombo::create_by(110, 10)), // state + tex + log
-            Box::new(AstTestVMCall::create_by(5)),      // vm
-            Box::new(AstTestP2shSetN::create_by(70)),   // p2sh
-        ]),
-        AstSelect::create_by(1, 1, vec![Box::new(AstTestFail::new())]), // force fail
-        AstSelect::nop(),
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let _err = astif.execute(&mut ctx).unwrap_err();
-
-    // All five channels must be restored
-    assert_eq!(ast_state_get_u8(&mut ctx, 110), None);
-    assert_eq!(ctx.tex_ledger().zhu, 100);
-    assert_eq!(unsafe { &*logs_ptr }.len(), 0);
-    assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 0);
-    assert!(ctx.p2sh(&Address::create_scriptmh([70u8; 20])).is_err());
-}
-
 // ---- Test 25: VM state in nested AstIf-inside-AstSelect: inner fail isolated ----
 #[test]
 fn test_ast_vm_nested_if_fail_isolated_by_outer_select() {
@@ -4078,50 +3686,6 @@ fn test_ast_extcall_state_rolled_back_on_select_child_failure() {
 }
 
 // ---- Test 27: Multiple sequential AST ops with VM — state accumulates correctly ----
-#[test]
-fn test_ast_vm_sequential_accumulation() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = true;
-    let (mock_vm, counter) = MockVM::create();
-    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_init_tx(10000, 1).unwrap();
-    ctx.test_set_vm(mock_vm);
-
-    // Op1: select(vm += 3) -> ok, counter = 3
-    let act1 = AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(3))]);
-    ctx.exec_from_set(ExecFrom::Top);
-    act1.execute(&mut ctx).unwrap();
-    assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 3);
-
-    // Op2: select(vm += 7, fail) -> fail, counter stays 3
-    let act2 = AstSelect::create_by(
-        2,
-        2,
-        vec![
-            Box::new(AstTestVMCall::create_by(7)),
-            Box::new(AstTestFail::new()),
-        ],
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    let _ = act2.execute(&mut ctx);
-    assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 3);
-
-    // Op3: if(cond: vm += 2, br_if: vm += 4) -> ok, counter = 3 + 2 + 4 = 9
-    let act3 = AstIf::create_by(
-        AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(2))]),
-        AstSelect::create_list(vec![Box::new(AstTestVMCall::create_by(4))]),
-        AstSelect::nop(),
-    );
-    ctx.exec_from_set(ExecFrom::Top);
-    act3.execute(&mut ctx).unwrap();
-    assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 9);
-}
-
 // ---- Test 28: Deep 3-level nesting with all channels ----
 // AstIf -> AstSelect -> AstIf, with VM + state + tex + logs + p2sh
 #[test]
@@ -4658,64 +4222,6 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
 }
 
 // ---- Test 39: AstIf branch mutate-then-fail triggers whole-snap recovery of all channels ----
-#[test]
-fn test_ast_if_branch_mutate_all_fail_recovers_whole_snap_all_channels() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.actions.push(Box::new(AstSelect::nop())).unwrap();
-
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
-    let logs = Box::new(AstTestLogs::new());
-    let logs_ptr = logs.as_ref() as *const AstTestLogs;
-    let (mock_vm, counter) = MockVM::create();
-    let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.test_set_vm(mock_vm);
-    ctx.tex_ledger().zhu = 20; // baseline
-    counter.store(4, std::sync::atomic::Ordering::SeqCst); // baseline vm
-    ctx.state().set(vec![253], vec![253]); // baseline state
-    let old_adr = Address::create_scriptmh([101u8; 20]);
-    ctx.p2sh_set(old_adr, Box::new(AstTestP2shImpl)).unwrap();
-    ctx.logs().push(&Uint1::from(1)); // baseline log
-
-    let astif = AstIf::create_by(
-        AstSelect::create_list(vec![
-            Box::new(AstTestMainSet::create_by(251, 251)),
-            Box::new(AstTestCombo::create_by(254, 3)),
-            Box::new(AstTestMainP2shSetN::create_by(102)),
-            Box::new(AstTestMainVMCall::create_by(2)),
-        ]),
-        AstSelect::create_by(
-            1,
-            1,
-            vec![Box::new(AstTestMutateAllFail::create_by(252, 6, 103, 10))],
-        ),
-        AstSelect::nop(),
-    );
-
-    ctx.exec_from_set(ExecFrom::Top);
-    let err = astif.execute(&mut ctx).unwrap_err();
-    assert!(
-        err.contains("must succeed at least") || err.contains("mutate-all fail"),
-        "{}",
-        err
-    );
-
-    assert_eq!(ast_state_get_u8(&mut ctx, 253), Some(253)); // baseline kept
-    assert_eq!(ast_state_get_u8(&mut ctx, 251), None); // cond rolled back
-    assert_eq!(ast_state_get_u8(&mut ctx, 252), None); // branch rolled back
-    assert_eq!(ast_state_get_u8(&mut ctx, 254), None); // cond rolled back
-    assert_eq!(ctx.tex_ledger().zhu, 20);
-    assert_eq!(unsafe { &*logs_ptr }.len(), 1); // baseline log only
-    assert!(ctx.p2sh(&Address::create_scriptmh([101u8; 20])).is_ok());
-    assert!(ctx.p2sh(&Address::create_scriptmh([102u8; 20])).is_err());
-    assert!(ctx.p2sh(&Address::create_scriptmh([103u8; 20])).is_err());
-    assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 4);
-}
-
 // ---- Test 40: AstSelect with actions len == TX_ACTIONS_MAX is allowed ----
 #[test]
 fn test_ast_select_num_eq_tx_actions_max_allowed() {
@@ -4864,48 +4370,6 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
 }
 
 // ---- Test 45: AstIf branch validation error recovers cond side-effects (whole-snap) ----
-#[test]
-fn test_ast_if_branch_validation_error_recovers_cond_all_channels() {
-    let mut tx = TransactionType2::default();
-    tx.fee = Amount::unit238(1000);
-    tx.addrlist =
-        AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
-    tx.actions.push(Box::new(AstSelect::nop())).unwrap();
-
-    let mut env = Env::default();
-    env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
-    let logs = Box::new(AstTestLogs::new());
-    let logs_ptr = logs.as_ref() as *const AstTestLogs;
-    let (mock_vm, counter) = MockVM::create();
-    let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
-    ctx.test_set_vm(mock_vm);
-    ctx.tex_ledger().zhu = 40;
-    counter.store(1, std::sync::atomic::Ordering::SeqCst);
-    ctx.logs().push(&Uint1::from(2)); // baseline
-
-    let astif = AstIf::create_by(
-        AstSelect::create_list(vec![
-            Box::new(AstTestCombo::create_by(215, 6)),
-            Box::new(AstTestMainP2shSetN::create_by(107)),
-            Box::new(AstTestMainVMCall::create_by(4)),
-        ]),
-        AstSelect::create_by(3, 1, vec![Box::new(AstTestMainSet::create_by(216, 216))]),
-        AstSelect::nop(),
-    );
-
-    ctx.exec_from_set(ExecFrom::Top);
-    let err = astif.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("max cannot be less than min"), "{}", err);
-
-    assert_eq!(ast_state_get_u8(&mut ctx, 215), None);
-    assert_eq!(ast_state_get_u8(&mut ctx, 216), None);
-    assert_eq!(ctx.tex_ledger().zhu, 40);
-    assert_eq!(unsafe { &*logs_ptr }.len(), 1); // baseline only
-    assert!(ctx.p2sh(&Address::create_scriptmh([107u8; 20])).is_err());
-    assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
-}
-
 // ---- Test 46: Nested invalid AstSelect is treated as failed child and isolated ----
 #[test]
 fn test_ast_select_nested_invalid_select_isolated() {

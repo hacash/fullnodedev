@@ -1,69 +1,34 @@
 pub const AST_TREE_DEPTH_MAX: usize = 6;
 
-pub struct AstNodeTxn {
-    snap: CtxSnapshot,
+#[inline]
+fn ast_charge_returned_gas(ctx: &mut dyn Context, child_extra9: bool, child_gas: u32) -> XRet<()> {
+    // AST child returned-gas follows the same delta-only extra9 rule as other returned-gas charge sites.
+    let charge_gas = crate::context::apply_extra9_surcharge(child_extra9, child_gas);
+    ctx.gas_charge(charge_gas as i64).into_xret()
 }
 
-impl AstNodeTxn {
-    pub fn begin(ctx: &mut dyn Context) -> Ret<Self> {
-        let snap = CtxSnapshot::begin(ctx)?;
-        Ok(Self { snap })
-    }
-
-    pub fn finish<T>(self, ctx: &mut dyn Context, res: Ret<T>) -> Ret<T> {
-        let snap = self.snap;
-        match res {
-            Ok(v) => {
-                snap.commit(ctx);
-                Ok(v)
-            }
-            Err(e) => match snap.rollback(ctx) {
-                Ok(()) => Err(e),
-                Err(recover_err) => errf!(
-                    "ast node recover failed: {}; original error: {}",
-                    recover_err,
-                    e
-                ),
-            },
+/// Execute one AST child inside an isolated snapshot.
+/// - success: charge returned-gas and commit the child snapshot
+/// - recoverable failure: rollback only this child snapshot
+/// - unrecoverable failure: return immediately and let upper layers own rollback
+pub fn ast_exec_item<T>(
+    ctx: &mut dyn Context,
+    child_extra9: bool,
+    exec: impl FnOnce(&mut dyn Context) -> XRet<(u32, T)>,
+) -> XRet<T> {
+    let snap = CtxSnapshot::begin_ast_item(ctx).into_xret()?;
+    match exec(ctx) {
+        Ok((child_gas, ret)) => {
+            ast_charge_returned_gas(ctx, child_extra9, child_gas)?;
+            snap.commit(ctx);
+            Ok(ret)
         }
+        Err(XError::Revert(msg)) => {
+            snap.rollback(ctx).into_xret()?;
+            Err(XError::revert(msg))
+        }
+        Err(e) => Err(e),
     }
-}
-
-/// Try executing a child action with an isolated snapshot.
-/// On success: charge child's return-gas (size gas) via ctx, then merge.
-/// On error: recover snapshot.
-macro_rules! ast_try_item {
-    ($ctx:expr, $exec:expr, $child_extra9:expr) => {{
-        let __child_extra9 = $child_extra9;
-        let __snap = CtxSnapshot::begin_ast_item($ctx)?;
-        let __raw: XRet<(u32, Vec<u8>)> = $exec;
-        let __out = match __raw {
-            Ok((child_gas, ret)) => {
-                let charge_gas = crate::context::apply_extra9_surcharge(__child_extra9, child_gas);
-                if let Err(gas_err) = $ctx.gas_charge(charge_gas as i64) {
-                    if let Err(re) = __snap.rollback($ctx) {
-                        return errf!(
-                            "ast item recover failed: {}; original error: {}",
-                            re,
-                            gas_err
-                        );
-                    }
-                    Err(gas_err.into())
-                } else {
-                    __snap.commit($ctx);
-                    Ok(ret)
-                }
-            }
-            Err(e) => {
-                if let Err(re) = __snap.rollback($ctx) {
-                    return errf!("ast item recovery failed: {}; original error: {}", re, e);
-                }
-                Err(e)
-            }
-        };
-        __out
-    }};
-    ($ctx:expr, $exec:expr) => {{ ast_try_item!($ctx, $exec, false) }};
 }
 
 pub fn validate_ast_select(min: usize, max: usize, num: usize) -> Ret<()> {
@@ -110,20 +75,6 @@ pub(crate) fn get_action_level_inc_and_childs<'a>(
         return Some((2, childs));
     }
     None
-}
-
-/// Enter an AST branch node and restore the previous execution context on drop.
-pub fn ast_enter(ctx: &mut dyn Context) -> Ret<ExecFromGuard<'_>> {
-    Ok(enter_exec_from(ctx, ExecFrom::Ast))
-}
-
-/// `Ok` => continue with value, `Revert` => skip (continue without value), `Fault` => rethrow.
-pub fn ast_revert_continue<T>(out: XRet<T>) -> Ret<Option<T>> {
-    match out {
-        Ok(v) => Ok(Some(v)),
-        Err(XError::Revert(_)) => Ok(None),
-        Err(e) => Err(e.into()), // XError → Error preserves fault semantics
-    }
 }
 
 #[cfg(test)]
@@ -183,11 +134,33 @@ mod tests {
     }
 
     fn run_try_item_gas_fail(ctx: &mut dyn Context) -> Ret<XRet<Vec<u8>>> {
-        Ok(ast_try_item!(ctx, Ok((5u32, vec![1u8])), true))
+        Ok(ast_exec_item(ctx, true, |_ctx| Ok((5u32, vec![1u8]))))
+    }
+
+    fn run_try_item_revert_after_write(
+        ctx: &mut dyn Context,
+        key: u8,
+        val: u8,
+    ) -> Ret<XRet<Vec<u8>>> {
+        Ok(ast_exec_item(ctx, false, |ctx| {
+            ctx.state().set(vec![key], vec![val]);
+            Err(XError::revert("ast test recoverable fail"))
+        }))
+    }
+
+    fn run_try_item_fault_after_write(
+        ctx: &mut dyn Context,
+        key: u8,
+        val: u8,
+    ) -> Ret<XRet<Vec<u8>>> {
+        Ok(ast_exec_item(ctx, false, |ctx| {
+            ctx.state().set(vec![key], vec![val]);
+            Err(XError::fault("ast test unrecoverable fail"))
+        }))
     }
 
     #[test]
-    fn test_ast_try_item_gas_fail_must_rollback_item_snapshot() {
+    fn test_ast_try_item_revert_recovers_only_child_snapshot() {
         let tx = TransactionType2::new_by(
             field::ADDRESS_ONEX.clone(),
             Amount::unit238(1000),
@@ -209,14 +182,46 @@ mod tests {
             bls.hacash = Amount::unit238(1_000_000_000);
             state.balance_set(&main, &bls);
         }
-        let key = b"parent-key".to_vec();
-        let val = b"parent-val".to_vec();
-        ctx.state().set(key.clone(), val.clone());
-        ctx.gas_init_tx(40, 1).unwrap();
-        let out = run_try_item_gas_fail(&mut ctx).unwrap();
-        let err = out.unwrap_err();
-        assert!(err.is_fault(), "{}", err);
-        assert!(err.contains("gas has run out"), "{}", err);
-        assert_eq!(ctx.state().get(key), Some(val));
+        ctx.gas_init_tx(1000, 1).unwrap();
+        ctx.state().set(vec![1], vec![1]);
+
+        let err = run_try_item_revert_after_write(&mut ctx, 2, 2)
+            .unwrap()
+            .unwrap_err();
+        assert!(err.is_revert(), "{err}");
+        assert_eq!(ctx.state().get(vec![1]), Some(vec![1]));
+        assert_eq!(ctx.state().get(vec![2]), None);
+    }
+
+    #[test]
+    fn test_ast_try_item_fault_fast_fails_without_child_recover() {
+        let tx = TransactionType2::new_by(
+            field::ADDRESS_ONEX.clone(),
+            Amount::unit238(1000),
+            1730000000,
+        );
+        let mut env = Env::default();
+        env.chain.fast_sync = true;
+        env.tx = crate::transaction::create_tx_info(&tx);
+        let mut ctx = ContextInst::new(
+            env,
+            Box::new(TestForkState::default()),
+            Box::new(EmptyLogs {}),
+            &tx,
+        );
+        {
+            let main = field::ADDRESS_ONEX.clone();
+            let mut state = crate::state::CoreState::wrap(ctx.state());
+            let mut bls = state.balance(&main).unwrap_or_default();
+            bls.hacash = Amount::unit238(1_000_000_000);
+            state.balance_set(&main, &bls);
+        }
+        ctx.gas_init_tx(1000, 1).unwrap();
+        ctx.state().set(vec![1], vec![1]);
+
+        let err = run_try_item_fault_after_write(&mut ctx, 2, 2)
+            .unwrap()
+            .unwrap_err();
+        assert!(err.is_fault(), "{err}");
     }
 }

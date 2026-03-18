@@ -9,13 +9,10 @@ action_define! { AstIf, 26,
     (self, "Asset if-else execute".to_owned()),
     (self, ctx, gas {
         gas = 0; // control-flow node: all gas consumed via ctx
-        let mut guard = ast_enter(ctx)?;
-        let ctx = guard.ctx();
-        // Whole-node savepoint: if branch execution fails, rollback both
-        // condition side effects and branch side effects.
-        let node = AstNodeTxn::begin(ctx)?;
-        let res = self.execute_if_core(ctx);
-        node.finish(ctx, res)
+        let mut exec_from = enter_exec_from(ctx, ExecFrom::Ast);
+        let ctx = exec_from.ctx();
+        // Failed branches bubble up directly; only recoverable child items roll back their own snapshots.
+        self.execute_if_core(ctx)
     })
 }
 
@@ -37,14 +34,13 @@ impl AstIf {
     }
 
     fn execute_if_core(&self, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
-        let cond_ok = ast_revert_continue(ast_try_item!(
-            ctx,
-            self.cond.execute(ctx),
-            self.cond.extra9()
-        ))?
-        .is_some();
+        let cond_ok = match ast_exec_item(ctx, self.cond.extra9(), |ctx| self.cond.execute(ctx)) {
+            Ok(_) => true,
+            Err(XError::Revert(_)) => false,
+            Err(e) => return Err(e.into()),
+        };
         let branch = maybe!(cond_ok, &self.br_if, &self.br_else);
-        let ret = ast_try_item!(ctx, branch.execute(ctx), branch.extra9()).into_tret()?;
+        let ret = ast_exec_item(ctx, branch.extra9(), |ctx| branch.execute(ctx)).into_tret()?;
         Ok(ret)
     }
 }

@@ -146,7 +146,7 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
     )
     .unwrap_err();
 
-    assert!(err.contains("gas has run out"), "{err}");
+    assert!(err.contains("gas not initialized"), "{err}");
 
     set_vm_assigner(None);
 }
