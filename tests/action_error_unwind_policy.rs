@@ -1,7 +1,3 @@
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-
 use basis::interface::{ActExec, Context, State, StateOperat, TransactionRead};
 use field::*;
 use mint::action::ChannelOpen;
@@ -11,7 +7,7 @@ use protocol::operate::{
     hac_sub, hacd_sub, hacd_transfer, sat_check, sat_sub, sat_transfer,
 };
 use protocol::state::CoreState;
-use sys::{Error, IntoXRet, Ret, XError, XRet, decode_exec_error_from_text};
+use sys::{Error, IntoXRet, XError, XRet, decode_exec_error_from_text};
 use testkit::sim::integration::{
     make_ctx_from_tx as make_ctx, make_stub_tx as make_tx, test_guard, vm_alt_addr as alt_addr,
     vm_main_addr as main_addr,
@@ -34,7 +30,7 @@ fn mk_ctx<'a>(
     ctx
 }
 
-fn expect_revert_ret<T>(ret: Ret<T>, msg: &str) -> XError {
+fn expect_revert_ret<T>(ret: impl IntoXRet<T>, msg: &str) -> XError {
     let err = match ret.into_xret() {
         Ok(_) => panic!("expect revert error but got Ok"),
         Err(err) => err,
@@ -70,7 +66,7 @@ fn expect_fault_bret<T>(ret: XRet<T>, msg: &str) -> XError {
     err
 }
 
-fn expect_fault_ret<T>(ret: Ret<T>, msg: &str) -> XError {
+fn expect_fault_ret<T>(ret: impl IntoXRet<T>, msg: &str) -> XError {
     let err = match ret.into_xret() {
         Ok(_) => panic!("expect fault error but got Ok"),
         Err(err) => err,
@@ -392,89 +388,6 @@ fn vm_itr_err_code_revert_mapping_is_strict() {
             "ItrErrCode::{:?} revert mismatch: {}",
             code,
             xerr
-        );
-    }
-}
-
-fn normalized(line: &str) -> String {
-    line.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn walk_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries =
-        fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {} failed: {}", dir.display(), e));
-    for entry in entries {
-        let entry =
-            entry.unwrap_or_else(|e| panic!("read_dir entry failed in {}: {}", dir.display(), e));
-        let path = entry.path();
-        if path.is_dir() {
-            walk_rs_files(&path, out);
-            continue;
-        }
-        if path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            out.push(path);
-        }
-    }
-}
-
-fn scan_lines_with_patterns(patterns: &[&str]) -> BTreeMap<String, usize> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut files = vec![];
-    for rel in ["protocol/src", "mint/src", "vm/src"] {
-        walk_rs_files(&root.join(rel), &mut files);
-    }
-    files.sort();
-
-    let mut found = BTreeMap::new();
-    for file in files {
-        let rel = file.strip_prefix(root).unwrap().display().to_string();
-        let src = fs::read_to_string(&file)
-            .unwrap_or_else(|e| panic!("read_to_string {} failed: {}", file.display(), e));
-        for line in src.lines() {
-            if patterns.iter().any(|pat| line.contains(pat)) {
-                let key = format!("{}:{}", rel, normalized(line));
-                *found.entry(key).or_insert(0) += 1;
-            }
-        }
-    }
-    found
-}
-
-fn expected_multiset(entries: &[&str]) -> BTreeMap<String, usize> {
-    let mut out = BTreeMap::new();
-    for e in entries {
-        *out.entry((*e).to_owned()).or_insert(0) += 1;
-    }
-    out
-}
-
-fn expect_multiset_eq(
-    label: &str,
-    actual: &BTreeMap<String, usize>,
-    expected: BTreeMap<String, usize>,
-) {
-    let mut missing = vec![];
-    let mut extra = vec![];
-    for (k, need) in &expected {
-        let got = *actual.get(k).unwrap_or(&0);
-        if got < *need {
-            missing.push(format!("{} x{}", k, need - got));
-        }
-    }
-    for (k, got) in actual {
-        let need = *expected.get(k).unwrap_or(&0);
-        if *got > need {
-            extra.push(format!("{} x{}", k, got - need));
-        }
-    }
-    if !missing.is_empty() || !extra.is_empty() {
-        panic!(
-            "{} mismatch\nmissing({}):\n{}\nextra({}):\n{}",
-            label,
-            missing.len(),
-            missing.join("\n"),
-            extra.len(),
-            extra.join("\n")
         );
     }
 }

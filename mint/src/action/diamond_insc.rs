@@ -63,7 +63,7 @@ fn check_diamond_status_for_inscription(
     state: &mut CoreState,
     owner: &Address,
     diamond: &DiamondName,
-) -> Ret<DiamondSto> {
+) -> XRet<DiamondSto> {
     check_inscription_owner_privakey(owner, diamond)?;
     let diasto = check_diamond_status(state, owner, diamond)?;
     Ok(diasto)
@@ -148,7 +148,7 @@ fn load_owned_diamond_for_inscription_index(
     diamond: &DiamondName,
     idx: usize,
     pending_height: u64,
-) -> Ret<DiamondSto> {
+) -> XRet<DiamondSto> {
     let diasto = check_diamond_status_for_inscription(state, owner, diamond)?;
     let insc_len = diasto.inscripts.length();
     check_inscription_index(diamond, idx, insc_len, "")?;
@@ -213,7 +213,7 @@ action_define! { DiaInscPush, 32,
     })
 }
 
-fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -241,7 +241,7 @@ fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> Ret<Vec<u8>
     }
     // check cost
     if pfee < &ttcost {
-        return errf!(
+        return xerrf!(
             "diamond inscription cost expected {:?} but got {:?}",
             ttcost,
             pfee
@@ -280,7 +280,7 @@ action_define! { DiaInscClean, 33,
     })
 }
 
-fn diamond_inscription_clean(this: &DiaInscClean, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription_clean(this: &DiaInscClean, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -300,7 +300,7 @@ fn diamond_inscription_clean(this: &DiaInscClean, ctx: &mut dyn Context) -> Ret<
     }
     // check cost
     if pfee < &ttcost {
-        return errf!(
+        return xerrf!(
             "diamond inscription cost expected {:?} but got {:?}",
             ttcost,
             pfee
@@ -346,7 +346,7 @@ action_define! { DiaInscEdit, 34,
     })
 }
 
-fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -369,7 +369,7 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> Ret<Ve
     let avg_bid_burn_mei = load_diamond_average_bid_burn_mei(&mut state, &this.diamond)?;
     let cost = calc_edit_inscription_protocol_cost(avg_bid_burn_mei);
     if pfee < &cost {
-        return errf!(
+        return xerrf!(
             "inscription edit cost expected {:?} but got {:?}",
             cost,
             pfee
@@ -416,7 +416,7 @@ action_define! { DiaInscMove, 35,
     })
 }
 
-fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -424,7 +424,7 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
     let idx = *this.index as usize;
     let pdhei = env.block.height;
     if this.from_diamond == this.to_diamond {
-        return errf!("source and target HACD cannot be the same");
+        return xerrf!("source and target HACD cannot be the same");
     }
     // validate source and target diamonds
     let (mut from_sto, mut to_sto, from_owner, to_owner, move_cost) = {
@@ -438,7 +438,7 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
         let to_owner = to_sto.address.clone();
         check_inscription_cooldown(*to_sto.prev_engraved_height, pdhei, &this.to_diamond)?;
         if to_sto.inscripts.length() >= INSCRIPTION_MAX_PER_DIAMOND {
-            return errf!(
+            return xerrf!(
                 "target HACD {} inscriptions full (max {})",
                 this.to_diamond.to_readable(),
                 INSCRIPTION_MAX_PER_DIAMOND
@@ -456,7 +456,7 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> Ret<Ve
     ctx.check_sign(&to_owner)?;
     // check protocol cost
     if pfee < &move_cost {
-        return errf!(
+        return xerrf!(
             "inscription move cost expected {:?} but got {:?}",
             move_cost,
             pfee
@@ -500,7 +500,7 @@ action_define! { DiaInscDrop, 36,
     })
 }
 
-fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
@@ -521,7 +521,7 @@ fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> Ret<Ve
     let avg_bid_burn_mei = load_diamond_average_bid_burn_mei(&mut state, &this.diamond)?;
     let cost = calc_drop_inscription_protocol_cost(avg_bid_burn_mei);
     if pfee < &cost {
-        return errf!(
+        return xerrf!(
             "inscription drop cost expected {:?} but got {:?}",
             cost,
             pfee

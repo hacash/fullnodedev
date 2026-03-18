@@ -22,19 +22,19 @@ action_define! { ContractDeploy, 40,
     }),
     (self, ctx, _gas {
         if self._marks_.not_zero() { // compatibility for future
-            return errf!("marks bytes invalid")
+            return xerrf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
         let maddr = ctx.env().tx.main;
         // check contract
         let caddr = ContractAddress::calculate(&maddr, &self.nonce);
         if vmsto!(ctx).contract_exist(&caddr) {
-            return errf!("contract {} already exists", (*caddr).to_readable())
+            return xerrf!("contract {} already exists", (*caddr).to_readable())
         }
         // check
         self.contract.check(hei)?;
         if self.contract.metas.revision.uint() != 0 {
-            return errf!("contract revision must be 0 on deploy")
+            return xerrf!("contract revision must be 0 on deploy")
         }
         precheck_contract_store(&caddr, &self.contract, ctx)?;
         let charge_bytes = self.contract.size();
@@ -44,14 +44,14 @@ action_define! { ContractDeploy, 40,
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
         let cargv = self.construct_argv.to_vec();
         if cargv.len() > SpaceCap::new(hei).value_size {
-            return errf!("construct argv size overflow")
+            return xerrf!("construct argv size overflow")
         }
         // call construct only when explicitly enabled by action flag
         if self.construct_call.check() {
             let _ = setup_vm_run_abst(
                 ctx,
                 AbstCall::Construct,
-                Arc::from(caddr.as_bytes()),
+                caddr.to_addr(),
                 Value::Bytes(cargv),
             )?;
         }
@@ -72,13 +72,13 @@ action_define! { ContractUpdate, 41,
     (self, ctx, _gas {
         use AbstCall::*;
         if self._marks_.not_zero() {
-            return errf!("marks bytes invalid")
+            return xerrf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
         // load old
         let caddr = ContractAddress::from_addr(self.address)?;
         let Some(contract) = vmsto!(ctx).contract(&caddr) else {
-            return errf!("contract {} does not exist", (*caddr).to_readable())
+            return xerrf!("contract {} does not exist", (*caddr).to_readable())
         };
         // apply edit (in memory)
         let mut new_contract = contract.clone();
@@ -101,7 +101,7 @@ action_define! { ContractUpdate, 41,
         let _ = setup_vm_run_abst(
             ctx,
             sys,
-            Arc::from(caddr.as_bytes()),
+            caddr.to_addr(),
             Value::Nil,
         )?;
         // save the new
@@ -478,7 +478,7 @@ fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret
         return Ok(Amount::zero());
     }
     let periods = contract_store_perm_periods(ctx.env().block.height) as u128;
-    let fee_purity = ctx.tx().gas_price_purity() as u128; // unit-238 per tx byte
+    let fee_purity = ctx.tx().fee_purity() as u128; // unit-238 per tx byte
     if periods == 0 || fee_purity == 0 {
         return errf!(
             "contract protocol fee calculate failed: periods={} fee_purity={}",
@@ -516,7 +516,6 @@ mod contract_test {
     use protocol::context::decode_gas_budget;
     use protocol::transaction::TransactionType3;
     use std::sync::Once;
-    use sys::IntoTRet;
     use testkit::sim::context::make_ctx_with_state;
     use testkit::sim::state::FlatMemState as StateMem;
     use testkit::sim::tx::StubTxBuilder;
@@ -575,14 +574,14 @@ mod contract_test {
 
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000_000))?;
-        ctx.gas_init_tx(decode_gas_budget(17), 1)?;
+        ctx.gas_initialize(decode_gas_budget(17))?;
 
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         act.protocol_cost = Amount::unit238(10_000_000);
         act.construct_call = Bool::new(true);
         act.contract = deploy_contract;
-        let _ = act.execute(&mut ctx).into_tret()?;
+        let _ = act.execute(&mut ctx)?;
         Ok(())
     }
 
@@ -620,13 +619,13 @@ mod contract_test {
 
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000_000))?;
-        ctx.gas_init_tx(decode_gas_budget(17), 1)?;
+        ctx.gas_initialize(decode_gas_budget(17))?;
 
         let mut act = ContractUpdate::new();
         act.address = target.to_addr();
         act.protocol_cost = Amount::unit238(10_000_000);
         act.edit = edit;
-        let _ = act.execute(&mut ctx).into_tret()?;
+        let _ = act.execute(&mut ctx)?;
         Ok(())
     }
 

@@ -1,6 +1,5 @@
 use std::any::*;
 use std::collections::*;
-use std::sync::Arc;
 
 use basis::interface::*;
 use field::*;

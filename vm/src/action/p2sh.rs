@@ -48,7 +48,7 @@ action_define! { P2SHScriptProve, 46,
     (self, "Prove P2SH unlock script".to_owned()),
     (self, ctx, _gas {
         if self._marks_.not_zero() {
-            return errf!("marks bytes format invalid")
+            return xerrf!("marks bytes format invalid")
         }
         let adr = self.get_merkel()?;
         let stuff = self.get_stuff_with_merkel(ctx, &adr)?;

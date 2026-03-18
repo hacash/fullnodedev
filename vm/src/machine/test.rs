@@ -142,7 +142,8 @@ mod machine_file_test {
         if raw {
             machine.main_call_raw(&mut host, CodeType::Bytecode, main_codes.into())
         } else {
-            machine.main_call(&mut host, CodeType::Bytecode, main_codes.into()).into_tret()
+            let rv = machine.main_call(&mut host, CodeType::Bytecode, main_codes.into())?;
+            Ok(rv)
         }
     }
 
@@ -190,14 +191,15 @@ mod machine_file_test {
 
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let mut machine = Machine::create(Resoure::create(1));
-        machine.p2sh_call(
+        let rv = machine.p2sh_call(
             &mut host,
             CodeType::Bytecode,
             p2sh_addr,
             tx_libs,
             p2sh_codes.into(),
             Value::Nil,
-        ).into_tret()
+        )?;
+        Ok(rv)
     }
 
     fn assert_err_contains(res: Ret<Value>, needle: &str) {
@@ -483,7 +485,8 @@ mod machine_file_test {
 
             let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
             let mut machine = Machine::create(Resoure::create(1));
-            machine.main_call(&mut host, CodeType::Bytecode, main_codes.into()).into_tret()
+            let rv = machine.main_call(&mut host, CodeType::Bytecode, main_codes.into())?;
+            Ok(rv)
         };
 
         // CALLEXT (External): should resolve inherited `probe` on parent.
@@ -1859,7 +1862,7 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         // END is a minimal "return nil" program; actual instruction gas is tiny.
@@ -1906,7 +1909,7 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let codes = vec![Bytecode::END as u8];
@@ -1970,7 +1973,7 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-        ctx.gas_init_tx(decode_gas_budget(1), 1).unwrap();
+        ctx.gas_initialize(decode_gas_budget(1)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let codes = vec![Bytecode::END as u8];
@@ -2010,7 +2013,7 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         // Invalid code type causes early return inside Main branch before previous manual leave() point.
@@ -2074,7 +2077,7 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-        ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
         let fail_codes = lang_to_bytecode("return 1").unwrap();
@@ -2126,7 +2129,7 @@ end",
                 .build();
             let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
             protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-            ctx.gas_init_tx(decode_gas_budget(17), 1).unwrap();
+            ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
             let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
             if run_failed_first {

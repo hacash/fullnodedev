@@ -48,7 +48,7 @@ impl DiamondMint {
 /*
 
 */
-fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let act = &this.d;
     act.address.must_privakey()?;
     let env = ctx.env().clone();
@@ -73,14 +73,14 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     if not_fast_sync {
         // check
         if pending_hash.not_zero() && pending_height % 5 != 0 {
-            return errf!("diamond must be in a block height that is divisible by 5");
+            return xerrf!("diamond must be in a block height that is divisible by 5");
         }
         // number
         let latest_diamond = state.get_latest_diamond();
         let latestdianum = *latest_diamond.number;
         let neednextnumber = latestdianum + 1;
         if dianum != neednextnumber {
-            return errf!(
+            return xerrf!(
                 "diamond number expected {} but got {}",
                 neednextnumber,
                 dianum
@@ -88,14 +88,14 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         }
         // check prev hash
         if dianum > 1 && latest_diamond.born_hash != prev_hash {
-            return errf!(
+            return xerrf!(
                 "diamond prev hash expected {} but got {}",
                 latest_diamond.born_hash,
                 prev_hash
             );
         }
         if dianum != 1 + latestdianum {
-            return errf!(
+            return xerrf!(
                 "latest diamond number expected {} but got {}",
                 dianum - 1,
                 latestdianum
@@ -104,7 +104,7 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         // check difficulty
         let diffok = x16rs::check_diamond_difficulty(dianum, &sha3hx, &mediumhx);
         if !diffok {
-            return errf!("diamond difficulty does not match");
+            return xerrf!("diamond difficulty does not match");
         }
         // name
         let dianame = x16rs::check_diamond_hash_result(diahx);
@@ -113,11 +113,11 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
                 Err(_) => hex::encode(diahx),
                 Ok(d) => d,
             };
-            return errf!("diamond hash result {} is not a valid diamond name", dhx);
+            return xerrf!("diamond hash result {} is not a valid diamond name", dhx);
         };
         let dianame = Fixed6::from(dianame);
         if name != dianame {
-            return errf!(
+            return xerrf!(
                 "diamond name expected {} but got {}",
                 dianame.to_readable(),
                 namestr
@@ -126,7 +126,7 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         // exist
         let hav = state.diamond(&name);
         if let Some(_) = hav {
-            return errf!("diamond {} already exists", namestr);
+            return xerrf!("diamond {} already exists", namestr);
         }
     }
     // tx fee

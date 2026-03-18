@@ -1795,7 +1795,7 @@ mod bounds_tests {
 
         assert!(matches!(res, Err(ItrErr(ItrErrCode::ActCallRevert, _))));
         let used = 1000 - gas;
-        let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.action_bytes(21);
+        let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.act_bytes(21);
         assert_eq!(used, expected);
     }
 
@@ -1818,7 +1818,7 @@ mod bounds_tests {
         operands.push(Value::Bytes(vec![7u8; 21])).unwrap();
         let gas_table = GasTable::new(1);
         let gas_extra = GasExtra::new(1);
-        let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.action_bytes(21);
+        let expected = gas_table.gas(Bytecode::ACTION as u8) + gas_extra.act_bytes(21);
         let mut gas = expected - 1;
 
         let res = execute_code(

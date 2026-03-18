@@ -3,10 +3,10 @@
 macro_rules! satoshi_operate_define {
     ($func_name: ident, $addr:ident, $sat:ident, $oldsat:ident,  $newsatblock:block) => (
 
-        pub fn $func_name(ctx: &mut dyn Context, $addr: &Address, $sat: &Satoshi) -> Ret<Satoshi> {
+        pub fn $func_name(ctx: &mut dyn Context, $addr: &Address, $sat: &Satoshi) -> XRet<Satoshi> {
             $addr.check_version()?;
             if $sat.uint() == 0 {
-                return errf!("satoshi value cannot be zero")
+                return xerrf!("satoshi value cannot be zero")
             }    
             let mut state = CoreState::wrap(ctx.state());
             let mut userbls = state.balance( $addr ).unwrap_or_default();
@@ -28,7 +28,7 @@ macro_rules! satoshi_operate_define {
 
 satoshi_operate_define!(sat_add, addr, sat, oldsat, {
     let Some(sum) = oldsat.uint().checked_add(sat.uint()) else {
-        return errf!("address {} satoshi add overflow: {} + {}", addr, oldsat, sat)
+        return xerrf!("address {} satoshi add overflow: {} + {}", addr, oldsat, sat)
     };
     Satoshi::from(sum)
 });
@@ -49,9 +49,9 @@ satoshi_operate_define!(sat_sub, addr, sat, oldsat, {
 
 
 pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &Satoshi
-) -> Ret<Vec<u8>> {
+) -> XRet<Vec<u8>> {
     if from == to {
-		return errf!("cannot transfer to self")
+		return xerrf!("cannot transfer to self")
     }
     // do transfer
     sat_sub(ctx, from, sat)?;
@@ -63,10 +63,10 @@ pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &S
 }
 
 
-pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Satoshi> {
+pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> XRet<Satoshi> {
     addr.check_version()?;
     if sat.uint() == 0 {
-        return errf!("satoshi check amount cannot be empty")
+        return xerrf!("satoshi check amount cannot be empty")
     }
     let state = CoreState::wrap(ctx.state());
     if let Some(bls) = state.balance( addr ) {
@@ -77,4 +77,3 @@ pub fn sat_check(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> Ret<Sa
     }
     xerr_rf!("address {} satoshi is insufficient", addr)
 }
-

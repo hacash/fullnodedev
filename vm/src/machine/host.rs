@@ -50,9 +50,6 @@ impl<T: Context + ?Sized> VmHost for T {
 
     fn gas_charge(&mut self, gas: i64) -> VmrtErr {
         use crate::rt::ItrErrCode::*;
-        if gas < 0 {
-            return itr_err_fmt!(GasError, "gas cost invalid: {}", gas);
-        }
         Context::gas_charge(self, gas).map_err(|e| ItrErr::new(OutOfGas, &e))
     }
 

@@ -58,10 +58,6 @@ impl TransactionRead for TransactionType3 {
         self.fee.to_238_u64().unwrap_or(0) / txsz
     }
 
-    fn gas_price_purity(&self) -> u64 {
-        self.fee_purity()
-    }
-
     fn action_count(&self) -> usize {
         self.actions.length()
     }
@@ -122,7 +118,7 @@ impl Transaction for TransactionType3 {
 }
 
 impl TxExec for TransactionType3 {
-    fn execute(&self, ctx: &mut dyn TxDriverContext) -> Rerr {
+    fn execute(&self, ctx: &mut dyn Context) -> Rerr {
         do_tx_execute_type3(self, ctx)
     }
 }
@@ -188,34 +184,40 @@ impl TransactionType3 {
     }
 }
 
-fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn TxDriverContext) -> Rerr {
+fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
     let prep = prepare_tx_execute(tx, ctx)?;
     if tx.ano_mark[0] != 0 {
         return errf!("tx type {} ano_mark must be zero", prep.txty);
     }
-    let Some(gas_max_byte) = tx.gas_max_byte() else {
-        return errf!("tx type {} gas_max must exist", prep.txty);
-    };
-    if gas_max_byte == 0 {
-        return errf!("tx type {} gas_max must be non-zero", prep.txty);
-    }
     mark_tx_exist(ctx, &prep.hx, prep.blkhei);
-    let (budget, gas_rate) = crate::context::tx_gas_params_from_byte(gas_max_byte)?;
-    ctx.gas_init_tx(budget, gas_rate)?;
-    let exec_res: Rerr = (|| {
-        for action in tx.actions() {
-            ctx.exec_from_set(ExecFrom::Top);
-            let (ret_gas, _retv) = action.execute(ctx)?;
-            // Top-level type3 execution intentionally ignores ordinary returned-gas and only applies the extra9 delta through this path.
-            let charge_gas = crate::context::apply_extra9_surcharge(action.extra9(), ret_gas);
-            ctx.gas_charge(charge_gas as i64)?;
-        }
-        Ok(())
-    })();
-    exec_res?;
+    tx_gas_initialize(ctx)?;
+    for action in tx.actions() {
+        ctx.exec_from_set(ExecFrom::Top);
+        let (ret_gas, _retv) = action.execute(ctx)?;
+        ctx.gas_charge(extra9_surcharge(action.extra9(), ret_gas) as i64)?;
+    }
     // Upper layers roll back failed transaction state, so refund is only executed on success and cannot leave inconsistent state behind.
     ctx.gas_refund()?;
     super::tex::do_settlement(ctx)?;
     operate::hac_sub(ctx, &prep.main, &prep.fee)?;
     Ok(())
+}
+
+
+
+// init gas
+pub fn tx_gas_initialize(ctx: &mut dyn Context) -> Rerr {
+    let tx = ctx.tx();
+    let txty = tx.ty();
+    let Some(gas_max_byte) = tx.gas_max_byte() else {
+        return errf!("tx type {} gas_max must exist", txty);
+    };
+    if gas_max_byte == 0 {
+        return errf!("tx type {} gas_max must be non-zero", txty);
+    }
+    let budget = decode_gas_budget(gas_max_byte.min(TX_GAS_BUDGET_CAP_BYTE));
+    if budget <= 0 {
+        return errf!("gas budget invalid");
+    }
+    ctx.gas_initialize(budget)
 }

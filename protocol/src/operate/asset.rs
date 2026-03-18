@@ -3,9 +3,9 @@
 macro_rules! asset_operate_define {
     ($func_name: ident, $addr:ident, $amt:ident, $oldamt:ident,  $newsatblock:block) => (
 
-        pub fn $func_name(state: &mut CoreState, $addr: &Address, $amt: &AssetAmt) -> Ret<AssetAmt> {
+        pub fn $func_name(state: &mut CoreState, $addr: &Address, $amt: &AssetAmt) -> XRet<AssetAmt> {
             if *$amt.amount == 0 {
-                return errf!("Asset operate amount cannot be zero")
+                return xerrf!("Asset operate amount cannot be zero")
             }
             $addr.check_version()?;
             let mut userbls = state.balance( $addr ).unwrap_or_default();
@@ -46,9 +46,9 @@ asset_operate_define!(asset_sub, addr, asset, oldasset, {
 
 
 pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset: &AssetAmt
-) -> Ret<Vec<u8>> {
+) -> XRet<Vec<u8>> {
     if from == to {
-		return errf!("cannot transfer to self")
+		return xerrf!("cannot transfer to self")
     }
     // do transfer
     let state = &mut CoreState::wrap(ctx.state());
@@ -60,9 +60,9 @@ pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset
 }
 
 
-pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> Ret<AssetAmt> {
+pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> XRet<AssetAmt> {
     if *ast.amount == 0 {
-        return errf!("asset check amount cannot be empty")
+        return xerrf!("asset check amount cannot be empty")
     }
     addr.check_version()?;
     let state = CoreState::wrap(ctx.state());
@@ -75,5 +75,4 @@ pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> Ret
     }
     xerr_rf!("address {} asset is insufficient, at least {}", addr, ast)
 }
-
 

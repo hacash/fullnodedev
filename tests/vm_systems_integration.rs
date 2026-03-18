@@ -1,9 +1,7 @@
-use std::sync::Arc;
-
 use basis::interface::ActExec;
-use basis::interface::{Context, State, TxDriverContext};
+use basis::interface::{Context, State};
 use field::{Address, Amount, Field, Uint4};
-use sys::{IntoTRet, Ret, XRet};
+use sys::{Ret, XRet};
 use testkit::sim::integration::{
     make_ctx_from_tx as make_ctx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
     vm_main_addr as main_addr,
@@ -39,20 +37,21 @@ fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
         .into_sto()
 }
 
-fn execute_main_bytecode(ctx: &mut dyn TxDriverContext, codes: Vec<u8>) -> Ret<Value> {
+fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
     let main = ctx.env().tx.main;
     let _ = protocol::operate::hac_add(ctx, &main, &Amount::unit238(1_000_000_000));
     if let Some(gas_max) = ctx.tx().gas_max_byte() {
         if gas_max > 0 {
-            let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(gas_max)?;
-            ctx.gas_init_tx(budget, gas_rate)?;
+            let budget = protocol::context::decode_gas_budget(
+                gas_max.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+            );
+            ctx.gas_initialize(budget)?;
         }
     }
     let height = ctx.env().block.height;
     let mut machine = Machine::create(Resoure::create(height));
-    machine
-        .main_call(ctx, CodeType::Bytecode, codes.into())
-        .into_tret()
+    let rv = machine.main_call(ctx, CodeType::Bytecode, codes.into())?;
+    Ok(rv)
 }
 
 fn single_call_codes(lib_idx: u8, sig: FnSign) -> Vec<u8> {
@@ -92,7 +91,7 @@ fn setup_vm_run_rejects_low_tx_type() {
     let err = machine::setup_vm_run_main(
         &mut ctx,
         CodeType::Bytecode as u8,
-        Arc::from(vec![Bytecode::END as u8]),
+        vec![Bytecode::END as u8],
     )
     .unwrap_err();
 
@@ -116,7 +115,7 @@ fn setup_vm_run_requires_registered_assigner() {
     let err = machine::setup_vm_run_main(
         &mut ctx,
         CodeType::Bytecode as u8,
-        Arc::from(vec![Bytecode::END as u8]),
+        vec![Bytecode::END as u8],
     )
     .unwrap_err();
 
@@ -142,7 +141,7 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
     let err = machine::setup_vm_run_main(
         &mut ctx,
         CodeType::Bytecode as u8,
-        Arc::from(vec![Bytecode::END as u8]),
+        vec![Bytecode::END as u8],
     )
     .unwrap_err();
 
@@ -167,13 +166,14 @@ fn setup_vm_run_executes_after_assigner_registered() {
         Box::new(MemLogs::default()),
     );
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-    let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(17).unwrap();
-    ctx.gas_init_tx(budget, gas_rate).unwrap();
+    let budget =
+        protocol::context::decode_gas_budget(17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE));
+    ctx.gas_initialize(budget).unwrap();
 
     let (gas_used, rv) = machine::setup_vm_run_main(
         &mut ctx,
         CodeType::Bytecode as u8,
-        Arc::from(vec![Bytecode::END as u8]),
+        vec![Bytecode::END as u8],
     )
     .unwrap();
 

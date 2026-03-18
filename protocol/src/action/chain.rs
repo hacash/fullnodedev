@@ -46,7 +46,7 @@ action_define! { HeightScope, 0x0412,
             h => h,
         };
         if left > right {
-            return errf!("left height {} cannot exceed right height {}", left, right)
+            return xerrf!("left height {} cannot exceed right height {}", left, right)
         }
         if pdhei < left || pdhei > right {
             return xerr_rf!("transaction must be submitted in height between {} and {}", left, right)
@@ -75,7 +75,7 @@ action_define! { BalanceFloor, 0x0413,
     )),
     (self, ctx, _gas {
         if self.hacash.is_negative() {
-            return errf!("balance floor hacash {} cannot be negative", self.hacash)
+            return xerrf!("balance floor hacash {} cannot be negative", self.hacash)
         }
         check_balance_floor_assets(&self.assets)?;
         let check_hac = !self.hacash.is_zero();
@@ -83,7 +83,7 @@ action_define! { BalanceFloor, 0x0413,
         let check_dia = self.diamond.uint() > 0;
         let check_assets = self.assets.length() > 0;
         if !(check_hac || check_sat || check_dia || check_assets) {
-            return errf!("balance floor is empty")
+            return xerrf!("balance floor is empty")
         }
         let adr = ctx.addr(&self.addr)?;
         let bls = CoreState::wrap(ctx.state()).balance(&adr).unwrap_or_default();

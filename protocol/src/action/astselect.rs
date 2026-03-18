@@ -85,7 +85,7 @@ impl AstSelect {
         ctx: &mut dyn Context,
         slt_min: usize,
         slt_max: usize,
-    ) -> Ret<Vec<u8>> {
+    ) -> XRet<Vec<u8>> {
         let mut ok = 0usize;
         let mut last_ok_ret: Option<Vec<u8>> = None;
         for act in self.actions.as_list() {
@@ -98,7 +98,7 @@ impl AstSelect {
                     ok += 1;
                 }
                 Err(XError::Revert(_)) => {}
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(e),
             }
         }
         if ok < slt_min {

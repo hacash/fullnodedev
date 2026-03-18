@@ -20,6 +20,7 @@ impl<'a> ContextInst<'a> {
         txr: &'a dyn TransactionRead,
     ) -> ContextInst<'a> {
         Self {
+            gas: GasCounter::new(),
             env,
             sta,
             log,
@@ -28,7 +29,6 @@ impl<'a> ContextInst<'a> {
             check_sign_cache: HashMap::new(),
             psh: HashMap::new(),
             tex_ledger: TexLedger::default(),
-            gas: GasCounter::default(),
             vm: None,
         }
     }
@@ -44,20 +44,13 @@ impl<'a> ContextInst<'a> {
         self.reset_vm_slot();
     }
 
-    pub fn gas_init_tx(&mut self, budget: i64, gas_rate: i64) -> Rerr {
-        self.gas_init_tx_inner(budget, gas_rate)
-    }
-
-    pub fn gas_refund(&mut self) -> Rerr {
-        self.gas_refund_inner()
-    }
-
-    pub fn ctx_gas_max_charge(&self) -> Ret<Amount> {
+    pub fn gas_max_charge(&self) -> Ret<Amount> {
         self.gas.max_charge()
     }
 
-    pub fn ctx_gas_used_charge(&self) -> Ret<Amount> {
-        self.gas.used_charge()
+    pub fn gas_used_charge(&self) -> Ret<Amount> {
+        let price = GasPrice::from_tx(self.txr)?;
+        self.gas.used_charge(&price)
     }
 
     pub fn test_set_vm(&mut self, vm: Box<dyn VM>) {
@@ -173,27 +166,6 @@ impl<'a> ContextInst<'a> {
         Ok(())
     }
 
-    fn state_fork_inner(&mut self) -> Arc<Box<dyn State>> {
-        let nil = Box::new(EmptyState {});
-        let old: Arc<Box<dyn State>> = std::mem::replace(&mut self.sta, nil).into();
-        let sub = old.fork_sub(Arc::downgrade(&old));
-        self.sta = sub;
-        old
-    }
-
-    fn state_merge_inner(&mut self, old: Arc<Box<dyn State>>) {
-        let nil = Box::new(EmptyState {});
-        let mut sub = std::mem::replace(&mut self.sta, nil);
-        sub.detach();
-        let mut old = ctx_state_into_box(old);
-        old.merge_sub(sub);
-        self.sta = old;
-    }
-
-    fn state_recover_inner(&mut self, old: Arc<Box<dyn State>>) {
-        self.sta.detach();
-        self.sta = ctx_state_into_box(old);
-    }
 }
 
 impl StateOperat for ContextInst<'_> {
@@ -202,15 +174,25 @@ impl StateOperat for ContextInst<'_> {
     }
 
     fn state_fork(&mut self) -> Arc<Box<dyn State>> {
-        self.state_fork_inner()
+        let nil = Box::new(EmptyState {});
+        let old: Arc<Box<dyn State>> = std::mem::replace(&mut self.sta, nil).into();
+        let sub = old.fork_sub(Arc::downgrade(&old));
+        self.sta = sub;
+        old
     }
 
     fn state_merge(&mut self, old: Arc<Box<dyn State>>) {
-        self.state_merge_inner(old)
+        let nil = Box::new(EmptyState {});
+        let mut sub = std::mem::replace(&mut self.sta, nil);
+        sub.detach();
+        let mut old = ctx_state_into_box(old);
+        old.merge_sub(sub);
+        self.sta = old;
     }
 
     fn state_recover(&mut self, old: Arc<Box<dyn State>>) {
-        self.state_recover_inner(old)
+        self.sta.detach();
+        self.sta = ctx_state_into_box(old);
     }
 }
 
@@ -250,7 +232,7 @@ impl Context for ContextInst<'_> {
         payload: Arc<[u8]>,
         param: Box<dyn Any>,
     ) -> XRet<(i64, Vec<u8>)> {
-        self.ensure_vm_assigned().into_xret()?;
+        self.ensure_vm_assigned()?;
         unsafe {
             let ctx = self as *mut Self;
             let Some(vm) = (*ctx).vm.as_deref_mut() else {
@@ -284,11 +266,19 @@ impl Context for ContextInst<'_> {
     }
 
     fn gas_remaining(&self) -> i64 {
-        self.gas_remaining_inner()
+        self.gas.remaining()
     }
 
     fn gas_charge(&mut self, gas: i64) -> Rerr {
-        self.gas_charge_inner(gas)
+        self.gas.charge(gas)
+    }
+
+    fn gas_initialize(&mut self, budget: i64) -> Rerr {
+        ContextInst::gas_initialize(self, budget)
+    }
+
+    fn gas_refund(&mut self) -> Rerr {
+        ContextInst::gas_refund(self)
     }
 
     fn snapshot_volatile(&self) -> Box<dyn Any> {
@@ -313,15 +303,5 @@ impl Context for ContextInst<'_> {
 
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
         self.p2sh_insert(adr, p2sh)
-    }
-}
-
-impl TxDriverContext for ContextInst<'_> {
-    fn gas_init_tx(&mut self, budget: i64, gas_rate: i64) -> Rerr {
-        ContextInst::gas_init_tx(self, budget, gas_rate)
-    }
-
-    fn gas_refund(&mut self) -> Rerr {
-        ContextInst::gas_refund(self)
     }
 }

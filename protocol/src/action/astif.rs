@@ -33,14 +33,14 @@ impl AstIf {
         req
     }
 
-    fn execute_if_core(&self, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+    fn execute_if_core(&self, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
         let cond_ok = match ast_exec_item(ctx, self.cond.extra9(), |ctx| self.cond.execute(ctx)) {
             Ok(_) => true,
             Err(XError::Revert(_)) => false,
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(e),
         };
         let branch = maybe!(cond_ok, &self.br_if, &self.br_else);
-        let ret = ast_exec_item(ctx, branch.extra9(), |ctx| branch.execute(ctx)).into_tret()?;
+        let ret = ast_exec_item(ctx, branch.extra9(), |ctx| branch.execute(ctx))?;
         Ok(ret)
     }
 }

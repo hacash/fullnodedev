@@ -125,7 +125,7 @@ macro_rules! transaction_define_legacy {
         }
 
         impl TxExec for $class {
-            fn execute(&self, ctx: &mut dyn TxDriverContext) -> Rerr {
+            fn execute(&self, ctx: &mut dyn Context) -> Rerr {
                 do_tx_execute_legacy(self, ctx)
             }
         }
@@ -224,7 +224,7 @@ struct TxExecutePrep {
     has_ast_control: bool,
 }
 
-fn prepare_tx_execute(tx: &dyn Transaction, ctx: &mut dyn TxDriverContext) -> Ret<TxExecutePrep> {
+fn prepare_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Ret<TxExecutePrep> {
     const TXTY1: u8 = TransactionType1::TYPE;
     let env = ctx.env();
     let blkhei = env.block.height;
@@ -276,13 +276,13 @@ fn prepare_tx_execute(tx: &dyn Transaction, ctx: &mut dyn TxDriverContext) -> Re
     })
 }
 
-fn mark_tx_exist(ctx: &mut dyn TxDriverContext, hx: &Hash, blkhei: u64) {
+fn mark_tx_exist(ctx: &mut dyn Context, hx: &Hash, blkhei: u64) {
     let mut state = CoreState::wrap(ctx.state());
     state.tx_exist_set(hx, &BlockHeight::from(blkhei));
 }
 
 fn record_legacy_extra9_burn_fee(
-    ctx: &mut dyn TxDriverContext,
+    ctx: &mut dyn Context,
     fee: &Amount,
     fee_got: &Amount,
 ) -> Rerr {
@@ -304,7 +304,7 @@ fn record_legacy_extra9_burn_fee(
 
 fn do_tx_execute_legacy<T: Transaction + LegacyTransactionRead>(
     tx: &T,
-    ctx: &mut dyn TxDriverContext,
+    ctx: &mut dyn Context,
 ) -> Rerr {
     const TXTY3: u8 = TransactionType3::TYPE;
     let prep = prepare_tx_execute(tx, ctx)?;

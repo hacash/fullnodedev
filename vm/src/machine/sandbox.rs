@@ -56,20 +56,20 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
     let mut env = ctx.env().clone();
     let state = ctx.state().clone_state();
     let caller = spec.caller.unwrap_or_else(|| ctx.tx().main());
-    let gas_extra = GasExtra::new(env.block.height);
+    let tx_budget_cap_byte = protocol::context::TX_GAS_BUDGET_CAP_BYTE;
     let (tx_gas_max, gas_budget) = match spec.gas_max_byte {
         Some(0) => return errf!("sandbox gas_max byte invalid: 0"),
-        Some(gmx) => (gmx, decode_gas_budget(gmx)),
+        Some(gmx) => {
+            let capped = gmx.min(tx_budget_cap_byte);
+            (gmx, decode_gas_budget(capped))
+        }
         None => {
-            let budget_hint = spec
-                .gas_budget
-                .unwrap_or(gas_extra.max_gas_of_tx);
-            let tx_gas_max = encode_gas_budget(budget_hint.max(1));
-            let gas_budget = match spec.gas_budget {
-                Some(v) if v > 0 => v.min(gas_extra.max_gas_of_tx),
+            let tx_gas_max = match spec.gas_budget {
+                Some(v) if v > 0 => encode_gas_budget(v).min(tx_budget_cap_byte),
                 Some(v) => return errf!("sandbox gas budget invalid: {}", v),
-                None => gas_extra.max_gas_of_tx,
+                None => tx_budget_cap_byte,
             };
+            let gas_budget = decode_gas_budget(tx_gas_max);
             (tx_gas_max, gas_budget)
         }
     };
@@ -92,7 +92,7 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
         &caller,
         &Amount::unit238(SANDBOX_FUND_238),
     )?;
-    temp_ctx.gas_init_tx(gas_budget, gas_extra.gas_rate)?;
+    temp_ctx.gas_initialize(gas_budget)?;
     let gas_before = Context::gas_remaining(&temp_ctx);
     let mut vmb = global_machine_manager().assign(hei);
     let ret_val = vmb.sandbox_main_call_raw(&mut temp_ctx, CodeType::Bytecode, codes.into())?;

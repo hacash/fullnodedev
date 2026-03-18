@@ -100,6 +100,27 @@ impl Resoure {
     }
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #[cfg(test)]
 mod resource_tests {
     use super::*;

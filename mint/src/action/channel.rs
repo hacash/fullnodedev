@@ -18,7 +18,7 @@ action_define! { ChannelOpen, 2,
     })
 }
 
-fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     this.left_bill.address.must_privakey()?;
     this.right_bill.address.must_privakey()?;
 
@@ -36,7 +36,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     check_valid_store_item_key("channel", &cid, ChannelId::SIZE)?;
     // check format
     if left_addr == right_addr {
-        return errf!("left address cannot be equal to right address");
+        return xerrf!("left address cannot be equal to right address");
     }
     left_amt
         .check_6_long()
@@ -48,7 +48,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
         || right_amt.is_negative()
         || (left_amt.is_zero() && right_amt.is_zero())
     {
-        return errf!("left or right amount must be positive, or both are empty");
+        return xerrf!("left or right amount must be positive, or both are empty");
     }
     // sub balance
     if left_amt.not_zero() {
@@ -74,7 +74,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
                 *left_addr == chan.left_bill.address && *right_addr == chan.right_bill.address;
             if !samebothaddr || CHANNEL_STATUS_AGREEMENT_CLOSED != chan_stat {
                 // exist or cannot reuse
-                return errf!("channel {} is opening or cannot be reused", cid);
+                return xerrf!("channel {} is opening or cannot be reused", cid);
             }
             reuse_version = chan.reuse_version.clone();
             let nv = (*reuse_version)
@@ -139,7 +139,7 @@ action_define! { ChannelClose, 3,
     })
 }
 
-fn channel_close(this: &ChannelClose, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
+fn channel_close(this: &ChannelClose, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let cid = &this.channel_id;
     check_valid_store_item_key("channel", cid, ChannelId::SIZE)?;
 
@@ -147,7 +147,9 @@ fn channel_close(this: &ChannelClose, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     let state = MintState::wrap(ctx.state());
 
     // query
-    let chan = must_have!("channel", state.channel(cid));
+    let Some(chan) = state.channel(cid) else {
+        return xerrf!("channel not found");
+    };
     chan.left_bill.address.must_privakey()?;
     chan.right_bill.address.must_privakey()?;
 
@@ -156,5 +158,5 @@ fn channel_close(this: &ChannelClose, ctx: &mut dyn Context) -> Ret<Vec<u8>> {
     ctx.check_sign(&chan.right_bill.address)?;
 
     // do close
-    close_channel_default(pending_height, ctx, cid, &chan)
+    Ok(close_channel_default(pending_height, ctx, cid, &chan)?)
 }

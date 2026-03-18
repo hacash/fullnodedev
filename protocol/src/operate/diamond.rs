@@ -4,7 +4,7 @@
 macro_rules! diamond_operate_define {
     ($func_name: ident, $addr:ident, $hacd:ident, $oldhacd:ident, $newhacdblock:block) => (
 
-pub fn $func_name(state: &mut CoreState, $addr: &Address, $hacd: &DiamondNumber) -> Ret<DiamondNumber> {
+pub fn $func_name(state: &mut CoreState, $addr: &Address, $hacd: &DiamondNumber) -> XRet<DiamondNumber> {
     $addr.check_version()?;
     let mut userbls = state.balance( $addr ).unwrap_or_default();
     let oldhacd_val = userbls.diamond.to_diamond()
@@ -27,7 +27,7 @@ pub fn $func_name(state: &mut CoreState, $addr: &Address, $hacd: &DiamondNumber)
 
 diamond_operate_define!(hacd_add, addr, hacd, oldhacd, {
     let Some(sum) = oldhacd.uint().checked_add(hacd.uint()) else {
-        return errf!("address {} diamond add overflow: {} + {}", addr, oldhacd, hacd)
+        return xerrf!("address {} diamond add overflow: {} + {}", addr, oldhacd, hacd)
     };
     DiamondNumber::from_usize(sum as usize)?
 });
@@ -49,9 +49,9 @@ diamond_operate_define!(hacd_sub, addr, hacd, oldhacd, {
 
 pub fn hacd_transfer(state: &mut CoreState,
     from: &Address, to: &Address, hacd: &DiamondNumber, _dlist: &DiamondNameListMax200
-) -> Ret<Vec<u8>> {
+) -> XRet<Vec<u8>> {
     if from == to {
-		return errf!("cannot transfer to self")
+		return xerrf!("cannot transfer to self")
     }
     // do transfer
     hacd_sub(state, from, hacd)?;
@@ -65,11 +65,11 @@ pub fn hacd_transfer(state: &mut CoreState,
 /*********************************** */
 
 
-pub fn hacd_move_one_diamond(state: &mut CoreState, addr_from: &Address, addr_to: &Address, hacd_name: &DiamondName) -> Rerr {
+pub fn hacd_move_one_diamond(state: &mut CoreState, addr_from: &Address, addr_to: &Address, hacd_name: &DiamondName) -> XRerr {
     addr_from.check_version()?;
     addr_to.check_version()?;
     if addr_from == addr_to {
-		return errf!("cannot transfer to self")
+		return xerrf!("cannot transfer to self")
     }
     // query
     let mut diaitem = check_diamond_status(state, addr_from, hacd_name)?;
@@ -81,12 +81,12 @@ pub fn hacd_move_one_diamond(state: &mut CoreState, addr_from: &Address, addr_to
 }
 
 
-pub fn check_diamond_status(state: &mut CoreState, addr_from: &Address, hacd_name: &DiamondName) -> Ret<DiamondSto> {
+pub fn check_diamond_status(state: &mut CoreState, addr_from: &Address, hacd_name: &DiamondName) -> XRet<DiamondSto> {
     addr_from.check_version()?;
     // query
-    let diaitem = must_have!(
-        format!("diamond status {}", hacd_name.to_readable()),
-        state.diamond(hacd_name));
+    let Some(diaitem) = state.diamond(hacd_name) else {
+        return xerrf!("diamond status {} not found", hacd_name.to_readable());
+    };
     if diaitem.status != DIAMOND_STATUS_NORMAL {
         return xerr_rf!("diamond {} has been mortgaged and cannot be transferred", hacd_name.to_readable())
     }
@@ -120,14 +120,14 @@ pub fn diamond_owned_append(state: &mut CoreState, address: &Address, list: Diam
 }
 
 
-pub fn diamond_owned_move(state: &mut CoreState, from: &Address, to: &Address, list: &DiamondNameListMax200) -> Rerr {
+pub fn diamond_owned_move(state: &mut CoreState, from: &Address, to: &Address, list: &DiamondNameListMax200) -> XRerr {
     if from == to {
-        return errf!("cannot transfer to self")
+        return xerrf!("cannot transfer to self")
     }
     // do drop
     let from_owned = state.diamond_owned(from);
     if let None = from_owned {
-        return errf!("diamond owner record not found")
+        return xerrf!("diamond owner record not found")
     }
     let mut from_owned = from_owned.unwrap();
     let _blsnum = from_owned.drop(list)?;

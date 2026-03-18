@@ -95,17 +95,16 @@ macro_rules! action_define {
         impl ActExec for $class {
             fn execute(&$pself, $pctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
                 use std::any::Any;
-                $crate::upgrade::check_gated_action($pctx.env().block.height, $pself.kind())
-                    .into_xret()?;
-                $crate::action::check_action_tx_type($pctx.env().tx.ty, $pself).into_xret()?;
+                $crate::upgrade::check_gated_action($pctx.env().block.height, $pself.kind())?;
+                $crate::action::check_action_tx_type($pctx.env().tx.ty, $pself)?;
                 if !$pctx.env().chain.fast_sync {
-                    check_action_scope($pctx.exec_from(), $pself).into_xret()?;
+                    check_action_scope($pctx.exec_from(), $pself)?;
                 }
                 #[allow(unused_mut)]
                 let mut $pgas: u32 = $pself.size() as u32;
-                let res: Ret<Vec<u8>> = (|| -> Ret<Vec<u8>> { $exec })();
-                let res = res.into_xret()?;
-                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx).into_xret()?;
+                let res: XRet<Vec<u8>> = (|| -> XRet<Vec<u8>> { $exec })();
+                let res = res?;
+                do_action_hook($pself.kind(), $pself as &dyn Any, $pctx)?;
                 Ok(($pgas, res))
             }
         }
@@ -207,7 +206,7 @@ action_define! { Test63856464969364, 9527,
     },
     (self, "Test action".to_owned()),
     (self, _ctx, gas {
-        errf!("never call")
+        xerrf!("never call")
         // Ok(vec![])
     })
 }

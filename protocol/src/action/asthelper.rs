@@ -1,12 +1,5 @@
 pub const AST_TREE_DEPTH_MAX: usize = 6;
 
-#[inline]
-fn ast_charge_returned_gas(ctx: &mut dyn Context, child_extra9: bool, child_gas: u32) -> XRet<()> {
-    // AST child returned-gas follows the same delta-only extra9 rule as other returned-gas charge sites.
-    let charge_gas = crate::context::apply_extra9_surcharge(child_extra9, child_gas);
-    ctx.gas_charge(charge_gas as i64).into_xret()
-}
-
 /// Execute one AST child inside an isolated snapshot.
 /// - success: charge returned-gas and commit the child snapshot
 /// - recoverable failure: rollback only this child snapshot
@@ -16,15 +9,16 @@ pub fn ast_exec_item<T>(
     child_extra9: bool,
     exec: impl FnOnce(&mut dyn Context) -> XRet<(u32, T)>,
 ) -> XRet<T> {
-    let snap = CtxSnapshot::begin_ast_item(ctx).into_xret()?;
+    let snap = CtxSnapshot::begin_ast_item(ctx)?;
     match exec(ctx) {
         Ok((child_gas, ret)) => {
-            ast_charge_returned_gas(ctx, child_extra9, child_gas)?;
+            // AST child returned-gas follows the same delta-only extra9 rule as other returned-gas charge sites.
+            ctx.gas_charge(extra9_surcharge(child_extra9, child_gas) as i64)?;
             snap.commit(ctx);
             Ok(ret)
         }
         Err(XError::Revert(msg)) => {
-            snap.rollback(ctx).into_xret()?;
+            snap.rollback(ctx)?;
             Err(XError::revert(msg))
         }
         Err(e) => Err(e),
@@ -133,10 +127,6 @@ mod tests {
         }
     }
 
-    fn run_try_item_gas_fail(ctx: &mut dyn Context) -> Ret<XRet<Vec<u8>>> {
-        Ok(ast_exec_item(ctx, true, |_ctx| Ok((5u32, vec![1u8]))))
-    }
-
     fn run_try_item_revert_after_write(
         ctx: &mut dyn Context,
         key: u8,
@@ -182,7 +172,7 @@ mod tests {
             bls.hacash = Amount::unit238(1_000_000_000);
             state.balance_set(&main, &bls);
         }
-        ctx.gas_init_tx(1000, 1).unwrap();
+        ctx.gas_initialize(1000).unwrap();
         ctx.state().set(vec![1], vec![1]);
 
         let err = run_try_item_revert_after_write(&mut ctx, 2, 2)
@@ -216,7 +206,7 @@ mod tests {
             bls.hacash = Amount::unit238(1_000_000_000);
             state.balance_set(&main, &bls);
         }
-        ctx.gas_init_tx(1000, 1).unwrap();
+        ctx.gas_initialize(1000).unwrap();
         ctx.state().set(vec![1], vec![1]);
 
         let err = run_try_item_fault_after_write(&mut ctx, 2, 2)

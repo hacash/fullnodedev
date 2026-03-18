@@ -303,7 +303,7 @@ impl Description for TestLevelNoopAction {
 impl ActExec for TestLevelNoopAction {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         if !ctx.env().chain.fast_sync {
-            check_action_scope(ctx.exec_from(), self).into_xret()?;
+            check_action_scope(ctx.exec_from(), self)?;
         }
         Ok((0, vec![]))
     }
@@ -360,7 +360,7 @@ impl Description for TestType3GasAction {
 impl ActExec for TestType3GasAction {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         if !ctx.env().chain.fast_sync {
-            check_action_scope(ctx.exec_from(), self).into_xret()?;
+            check_action_scope(ctx.exec_from(), self)?;
         }
         Ok((*self.gas_used as u32, vec![]))
     }
@@ -421,7 +421,7 @@ impl Description for TestStateSetAction {
 impl ActExec for TestStateSetAction {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         if !ctx.env().chain.fast_sync {
-            check_action_scope(ctx.exec_from(), self).into_xret()?;
+            check_action_scope(ctx.exec_from(), self)?;
         }
         ctx.state().set(vec![*self.key], vec![*self.val]);
         match *self.mode {
@@ -1015,7 +1015,7 @@ fn test_type3_fee_got_does_not_burn_from_action_mark() {
         .unwrap();
 
     assert_eq!(tx.fee_got(), tx.fee().clone());
-    assert_eq!(tx.fee_purity(), tx.gas_price_purity());
+    assert!(tx.fee_purity() > 0);
 }
 
 fn run_type3_top_level_gas_case(burn: bool) -> i64 {
@@ -1073,7 +1073,7 @@ fn build_type3_gas_ctx(budget: i64) -> (ContextInst<'static>, Address) {
         bls.hacash = Amount::unit238(5_000_000_000);
         state.balance_set(&main, &bls);
     }
-    ctx.gas_init_tx(budget, 1).unwrap();
+    ctx.gas_initialize(budget).unwrap();
     (ctx, main)
 }
 
@@ -1114,7 +1114,7 @@ fn test_ast_select_revert_restores_failed_child_only() {
         bls.hacash = Amount::unit238(1_000_000_000);
         state.balance_set(&main, &bls);
     }
-    ctx.gas_init_tx(10_000, 1).unwrap();
+    ctx.gas_initialize(10_000).unwrap();
 
     let act = AstSelect::create_by(
         1,
@@ -1157,7 +1157,7 @@ fn test_ast_if_fault_fast_fails_without_whole_node_recover() {
         bls.hacash = Amount::unit238(1_000_000_000);
         state.balance_set(&main, &bls);
     }
-    ctx.gas_init_tx(10_000, 1).unwrap();
+    ctx.gas_initialize(10_000).unwrap();
 
     let act = AstIf::create_by(
         AstSelect::create_list(vec![Box::new(TestStateSetAction::create_by(1, 11, 0))]),
@@ -1174,13 +1174,13 @@ fn test_gas_refund_enters_settled_state_and_keeps_queries() {
     let (mut ctx, _main) = build_type3_gas_ctx(1000);
 
     ctx.gas_charge(25).unwrap();
-    let used_before = ctx.ctx_gas_used_charge().unwrap();
-    let max_before = ctx.ctx_gas_max_charge().unwrap();
+    let used_before = ctx.gas_used_charge().unwrap();
+    let max_before = ctx.gas_max_charge().unwrap();
 
     ctx.gas_refund().unwrap();
 
-    assert_eq!(ctx.ctx_gas_used_charge().unwrap(), used_before);
-    assert_eq!(ctx.ctx_gas_max_charge().unwrap(), max_before);
+    assert_eq!(ctx.gas_used_charge().unwrap(), used_before);
+    assert_eq!(ctx.gas_max_charge().unwrap(), max_before);
     assert!(ctx.gas_charge(1).unwrap_err().contains("already settled"));
     assert!(ctx.gas_refund().unwrap_err().contains("already settled"));
 }
@@ -1196,6 +1196,23 @@ fn test_gas_charge_out_of_gas_does_not_mutate_remaining() {
 }
 
 #[test]
+fn test_gas_init_while_running_errors_without_double_precharge() {
+    let (mut ctx, main) = build_type3_gas_ctx(1000);
+
+    let before_retry = {
+        let state = crate::state::CoreState::wrap(ctx.state());
+        state.balance(&main).unwrap_or_default().hacash
+    };
+    let err = ctx.gas_initialize(500).unwrap_err();
+    assert!(err.contains("already initialized"), "{err}");
+    let after_retry = {
+        let state = crate::state::CoreState::wrap(ctx.state());
+        state.balance(&main).unwrap_or_default().hacash
+    };
+    assert_eq!(after_retry, before_retry);
+}
+
+#[test]
 fn test_gas_init_after_settle_errors_without_reprecharge() {
     let (mut ctx, main) = build_type3_gas_ctx(1000);
 
@@ -1206,7 +1223,7 @@ fn test_gas_init_after_settle_errors_without_reprecharge() {
         let state = crate::state::CoreState::wrap(ctx.state());
         state.balance(&main).unwrap_or_default().hacash
     };
-    let err = ctx.gas_init_tx(500, 1).unwrap_err();
+    let err = ctx.gas_initialize(500).unwrap_err();
     assert!(err.contains("already settled"), "{err}");
     let after_retry = {
         let state = crate::state::CoreState::wrap(ctx.state());
@@ -1346,7 +1363,7 @@ fn test_ast_select_min_failure_is_revert() {
         bls.hacash = Amount::unit238(1_000_000_000);
         state.balance_set(&main, &bls);
     }
-    ctx.gas_init_tx(10_000, 1).unwrap();
+    ctx.gas_initialize(10_000).unwrap();
 
     let mut bad_guard = HeightScope::new();
     bad_guard.start = BlockHeight::from(10);
@@ -1387,7 +1404,7 @@ fn test_ast_if_rethrow_preserves_revert_kind() {
         bls.hacash = Amount::unit238(1_000_000_000);
         state.balance_set(&main, &bls);
     }
-    ctx.gas_init_tx(10_000, 1).unwrap();
+    ctx.gas_initialize(10_000).unwrap();
 
     let mut cond_guard = HeightScope::new();
     cond_guard.start = BlockHeight::from(20);

@@ -2,7 +2,7 @@ static TX_NIL_SIGNS: OnceLock<Vec<Sign>> = OnceLock::new();
 static TX_NIL_ACTIS: OnceLock<Vec<Box<dyn Action>>> = OnceLock::new();
 
 pub trait TxExec {
-    fn execute(&self, _: &mut dyn TxDriverContext) -> Rerr {
+    fn execute(&self, _: &mut dyn Context) -> Rerr {
         never!()
     }
 }
@@ -38,9 +38,6 @@ pub trait TransactionRead: Serialize + TxExec + Send + Sync + DynClone + std::fm
     }
     fn fee_purity(&self) -> u64 {
         0
-    }
-    fn gas_price_purity(&self) -> u64 {
-        self.fee_purity()
     }
 
     fn message(&self) -> &Fixed16 {

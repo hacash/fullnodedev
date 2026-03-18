@@ -223,22 +223,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
             if pass_body {
                 let mut bdv = ops.peek()?.extract_call_data(heap)?;
                 actbody.append(&mut bdv);
-                match act_kind {
-                    ACTION => gas += gst.action_bytes(actbody.len()),
-                    ACTVIEW => gas += gst.actview_bytes(actbody.len()),
-                    _ => {}
-                }
+                gas += gst.act_bytes(actbody.len());
             }
             let (bgasu, cres) = host.action_call(kid, actbody).map_err(|e|
                 ItrErr::new(maybe!(e.is_revert(), ActCallRevert, ActCallError), e.as_str()))?;
             gas += bgasu as i64;
             if have_retv {
                 let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
-                match act_kind {
-                    ACTVIEW => gas += gst.actview_bytes(resv.val_size()),
-                    ACTENV => gas += gst.actenv_bytes(resv.val_size()),
-                    _ => {}
-                }
+                gas += gst.act_bytes(resv.val_size());
                 if pass_body {
                     *ops.peek()? = resv;
                 } else {
@@ -824,7 +816,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         })();
 
         // reduce gas for use
-        host.gas_charge(gas)?;
+        host.gas_charge(gas / gst.gas_rate)?;
         match step {
             Ok(Step::Exit(exit)) => return Ok(exit),
             Ok(Step::Continue) => {}

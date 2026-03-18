@@ -44,7 +44,7 @@ fn estimate_protocol_cost_auto(
         tx.gas_max = Uint1::from(8);
         tx.fill_sign(&acc).unwrap();
 
-        let mut fee_purity = tx.gas_price_purity() as u128; // base fee price(:238) / tx_size
+        let mut fee_purity = tx.fee_purity() as u128; // base fee price(:238) / tx_size
         if fee238 > 0 && fee_purity == 0 {
             fee_purity = 1;
         }
@@ -178,9 +178,9 @@ fn main() {
     action.construct_argv = argv;
     action.contract = sto;
 
-    let action_bytes = action.serialize();
+    let action_body_bytes = action.serialize();
     let deploy_json = json!({
-        "action": hex::encode(&action_bytes)
+        "action": hex::encode(&action_body_bytes)
     });
 
     let deploy_file = parent.join(format!("{}.deploy.json", stem));

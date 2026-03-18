@@ -11,22 +11,6 @@ fn ensure_vm_run_ready(ctx: &dyn Context) -> Rerr {
     Ok(())
 }
 
-fn setup_vm_run_entry(
-    ctx: &mut dyn Context,
-    entry: EntryKind,
-    target: u8,
-    payload: std::sync::Arc<[u8]>,
-    param: Value,
-) -> Ret<(i64, Value)> {
-    ensure_vm_run_ready(ctx)?;
-    let res = with_exec_from(ctx, ExecFrom::Call, |ctx| {
-        ctx.vm_call(entry as u8, target, payload, Box::new(param))
-            .into_tret()
-    });
-    let (cost, rv) = res?;
-    Ok((cost, Value::bytes(rv)))
-}
-
 /// Falsy return => success. Non-falsy or object return => recoverable (XError::revert). HeapSlice => unrecoverable (XError::fault).
 pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
     use Value::*;
@@ -66,30 +50,69 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
     }
 }
 
+
+/*****************************************************/
+
+
+fn setup_vm_run_entry(
+    ctx: &mut dyn Context,
+    entry: EntryKind,
+    target: u8,
+    payload: Arc<[u8]>,
+    param: Value,
+) -> Ret<(i64, Value)> {
+    ensure_vm_run_ready(ctx)?;
+    let res = with_exec_from(ctx, ExecFrom::Call, |ctx| {
+        ctx.vm_call(entry as u8, target, payload, Box::new(param))
+    });
+    let (cost, rv) = res?;
+    Ok((cost, Value::bytes(rv)))
+}
+
+
+
 pub fn setup_vm_run_main(
     ctx: &mut dyn Context,
     codeconf: u8,
-    payload: std::sync::Arc<[u8]>,
+    payload: Vec<u8>,
 ) -> Ret<(i64, Value)> {
     // Bytecode verification is intentionally handled by upper-layer action validators before calling setup_vm_run_main.
-    setup_vm_run_entry(ctx, EntryKind::Main, codeconf, payload, Value::Nil)
+    setup_vm_run_entry(
+        ctx,
+        EntryKind::Main,
+        codeconf,
+        Arc::from(payload),
+        Value::Nil,
+    )
 }
 
 pub fn setup_vm_run_p2sh(
     ctx: &mut dyn Context,
     codeconf: u8,
-    payload: std::sync::Arc<[u8]>,
+    payload: Vec<u8>,
     param: Value,
 ) -> Ret<(i64, Value)> {
     // Lock script verification is intentionally handled by upper-layer action validators before calling setup_vm_run_p2sh.
-    setup_vm_run_entry(ctx, EntryKind::P2sh, codeconf, payload, param)
+    setup_vm_run_entry(
+        ctx,
+        EntryKind::P2sh,
+        codeconf,
+        Arc::from(payload),
+        param,
+    )
 }
 
 pub fn setup_vm_run_abst(
     ctx: &mut dyn Context,
     target: AbstCall,
-    payload: std::sync::Arc<[u8]>,
+    payload: Address,
     param: Value,
 ) -> Ret<(i64, Value)> {
-    setup_vm_run_entry(ctx, EntryKind::Abst, target as u8, payload, param)
+    setup_vm_run_entry(
+        ctx,
+        EntryKind::Abst,
+        target as u8,
+        Arc::from(payload.as_bytes()),
+        param,
+    )
 }

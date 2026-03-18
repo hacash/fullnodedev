@@ -24,42 +24,42 @@ action_define! { AssetCreate, 16,
         let chei = ctx.env().block.height;
         let (alive_hei, minsri) = check_alive_blk_hei(ctx)?;
         if alive_hei > chei {
-            return err!("The asset issuance has not yet begun")
+            return xerr!("The asset issuance has not yet begun")
         }
         if serial < minsri {
-            return errf!("serial cannot be less than {}", minsri)
+            return xerrf!("serial cannot be less than {}", minsri)
         }
         let serial_limit = chei - alive_hei;
         if serial > serial_limit {
-            return err!("asset serial overflow")
+            return xerr!("asset serial overflow")
         }
         // check meta
         amd.issuer.check_version()?;
         let tl = amd.ticket.length();
         let nl = amd.name.length();
         if tl < 1 || tl > 8 {
-            return err!("ticket length must be 1 ~ 8")
+            return xerr!("ticket length must be 1 ~ 8")
         }
         if nl < 1 || nl > 32 {
-            return err!("name length must be 1 ~ 32")
+            return xerr!("name length must be 1 ~ 32")
         }
         if !check_readable_string(&amd.ticket) {
-            return err!("ticket must be ascii2 readable string")
+            return xerr!("ticket must be ascii2 readable string")
         }
         if !check_readable_string(&amd.name) {
-            return err!("name must be ascii2 readable string")
+            return xerr!("name must be ascii2 readable string")
         }
         if *amd.decimal > 16 {
-            return err!("decimal cannot exceed 16")
+            return xerr!("decimal cannot exceed 16")
         }
         if amd.supply.is_zero() {
-            return err!("supply must be greater than zero")
+            return xerr!("supply must be greater than zero")
         }
         // check fee and burn
         let blkrw = super::genesis::block_reward(chei);
         let pfee = self.protocol_fee.clone();
         if pfee != blkrw {
-            return errf!("Protocol fee must be {} but got {}", blkrw, pfee)
+            return xerrf!("Protocol fee must be {} but got {}", blkrw, pfee)
         }
         // sub main addr balance for protocol fee
         let main_addr = ctx.env().tx.main;
@@ -67,7 +67,7 @@ action_define! { AssetCreate, 16,
         // state and check exists
         let mut sta = CoreState::wrap(ctx.state());
         if let Some(..) = sta.asset(&amd.serial) {
-            return errf!("Asset serial {} already exists", serial)
+            return xerrf!("Asset serial {} already exists", serial)
         }
         sta.asset_set(&amd.serial, &amd); // store asset object
         // total count update

@@ -81,7 +81,7 @@ pub fn do_diamonds_transfer(
     from: &Address,
     to: &Address,
     ctx: &mut dyn Context,
-) -> Ret<Vec<u8>> {
+) -> XRet<Vec<u8>> {
     // check
     let dianum = diamonds.check()?;
     let isdf = ctx.env().chain.diamond_form;

@@ -8,14 +8,14 @@ action_define! { ContractMainCall, 44,
     (self, format!("Run main codes with conf {}", *self.codeconf)),
     (self, ctx, _gas {
         if self.marks.not_zero() {
-            return errf!("marks bytes format invalid")
+            return xerrf!("marks bytes format invalid")
         }
         // check codes
         let hei = ctx.env().block.height;
         let cap = SpaceCap::new(hei);
         let codeconf = CodeConf::parse(self.codeconf.to_uint())?;
         convert_and_check(&cap, codeconf.code_type(), &self.codes, hei)?;
-        let _ = setup_vm_run_main(ctx, codeconf.raw(), self.codes.as_vec().clone().into())?;
+        let _ = setup_vm_run_main(ctx, codeconf.raw(), self.codes.as_vec().clone())?;
         Ok(vec![])
     })
 }

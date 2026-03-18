@@ -1,10 +1,14 @@
-const TX_GAS_BUDGET_CAP: i64 = 8192;
 
+// Returned-gas charging in this channel intentionally accounts only for the extra9 delta; 
+// plain actions add no returned-gas charge here by design.
 #[inline(always)]
-pub(crate) fn apply_extra9_surcharge(extra9: bool, gas: u32) -> u32 {
-    // Returned-gas charging in this channel intentionally accounts only for the extra9 delta; plain actions add no returned-gas charge here by design.
-    if extra9 { gas.saturating_mul(9) } else { 0 }
+pub(crate) fn extra9_surcharge(extra9: bool, gas: u32) -> u32 {
+    maybe!( extra9,
+        gas.saturating_mul(9), 
+        0
+    )
 }
+
 
 /// - `table[i] = floor(138 * 1.07^i)`, `i in 0..=255`.
 /// - `table[255] = 4,292,817,207` (fits in `u32`).
@@ -43,256 +47,200 @@ pub fn decode_gas_budget(b: u8) -> i64 {
     GAS_BUDGET_LOOKUP_1P07_FROM_138[b as usize] as i64
 }
 
-pub fn tx_gas_params_from_byte(gas_max_byte: u8) -> Ret<(i64, i64)> {
-    let decoded = decode_gas_budget(gas_max_byte);
-    let budget = decoded.min(TX_GAS_BUDGET_CAP);
-    if budget <= 0 {
-        return errf!(
-            "gas budget invalid after clamp: gas_max_byte={} decoded={} chain_cap={}",
-            gas_max_byte,
-            decoded,
-            TX_GAS_BUDGET_CAP
-        );
-    }
-    Ok((budget, 1))
-}
+pub const TX_GAS_BUDGET_CAP_BYTE: u8 = 64; // decode_gas_budget(64) == 10481
 
-#[derive(Clone)]
-struct GasSession {
-    remaining: i64,
-    initial_budget: i64,
+#[derive(Clone, Copy)]
+struct GasPrice {
     purity_fee: i128,
     purity_size: i128,
-    gas_rate: i64,
+}
+
+impl GasPrice {
+    fn from_tx(tx: &dyn TransactionRead) -> Ret<Self> {
+        let purity_fee = tx.fee_purity() as i128;
+        let purity_size = 1i128;
+        if purity_fee <= 0 || purity_size <= 0 {
+            return errf!("tx gas price invalid");
+        }
+        Ok(Self {
+            purity_fee,
+            purity_size,
+        })
+    }
 }
 
 #[derive(Clone)]
-struct SettledGas {
+struct GasCounter {
+    running: bool,
     remaining: i64,
+    used: i64,
     max_charge: Amount,
-    used_charge: Amount,
 }
 
-#[derive(Clone, Default)]
-enum GasCounter {
-    #[default]
-    Inactive,
-    Active(GasSession),
-    Settled(SettledGas),
-}
-
-impl Default for GasSession {
+impl Default for GasCounter {
     fn default() -> Self {
-        Self {
-            remaining: 0,
-            initial_budget: 0,
-            purity_fee: 0,
-            purity_size: 0,
-            gas_rate: 1,
-        }
-    }
-}
-
-impl GasSession {
-    fn calc_burn_amount(
-        cost: i64,
-        purity_fee: i128,
-        purity_size: i128,
-        gas_rate: i64,
-    ) -> Ret<Amount> {
-        if cost <= 0 {
-            return errf!("gas cost invalid: {}", cost);
-        }
-        let gas_rate = gas_rate.max(1) as i128;
-        let num = (cost as i128)
-            .checked_mul(purity_fee)
-            .ok_or_else(|| format!("gas burn overflow: cost={} purity_fee={}", cost, purity_fee))?;
-        let den = purity_size.checked_mul(gas_rate).ok_or_else(|| {
-            format!(
-                "gas rate overflow: purity_size={} rate={}",
-                purity_size, gas_rate
-            )
-        })?;
-        if den <= 0 {
-            return errf!(
-                "gas settle denominator invalid: purity_size={} rate={}",
-                purity_size,
-                gas_rate
-            );
-        }
-        let burn = (num + den - 1) / den;
-        if burn <= 0 {
-            return errf!(
-                "gas burn underflow: cost={} purity_fee={} purity_size={} rate={}",
-                cost,
-                purity_fee,
-                purity_size,
-                gas_rate
-            );
-        }
-        if burn > u64::MAX as i128 {
-            return errf!("gas burn overflow: {}", burn);
-        }
-        Ok(Amount::unit238(burn as u64))
-    }
-
-    fn burn_amount(&self, cost: i64) -> Ret<Amount> {
-        Self::calc_burn_amount(cost, self.purity_fee, self.purity_size, self.gas_rate)
-    }
-
-    fn max_charge(&self) -> Ret<Amount> {
-        self.burn_amount(self.initial_budget)
-    }
-
-    fn used_charge(&self) -> Ret<Amount> {
-        let used = self.initial_budget.saturating_sub(self.remaining);
-        if used <= 0 {
-            return Ok(Amount::zero());
-        }
-        self.burn_amount(used)
+        Self::new()
     }
 }
 
 impl GasCounter {
+    fn new() -> Self {
+        Self {
+            running: false,
+            remaining: 0,
+            used: 0,
+            max_charge: Amount::zero(),
+        }
+    }
+
+    fn calc_burn_amount(cost: i64, price: &GasPrice) -> Ret<Amount> {
+        if cost <= 0 {
+            return errf!("gas cost invalid");
+        }
+        let num = (cost as i128)
+            .checked_mul(price.purity_fee)
+            .ok_or_else(|| "gas burn overflow".to_owned())?;
+        let den = price.purity_size;
+        if den <= 0 {
+            return errf!("gas settle denominator invalid");
+        }
+        let burn = (num + den - 1) / den;
+        if burn <= 0 {
+            return errf!("gas burn underflow");
+        }
+        if burn > u64::MAX as i128 {
+            return errf!("gas burn overflow");
+        }
+        Ok(Amount::unit238(burn as u64))
+    }
+
     fn reset(&mut self) {
-        *self = Self::Inactive;
+        *self = Self::new();
     }
 
     fn remaining(&self) -> i64 {
-        match self {
-            Self::Inactive => 0,
-            Self::Active(gas) => gas.remaining,
-            Self::Settled(gas) => gas.remaining,
-        }
+        self.remaining
     }
 
     fn max_charge(&self) -> Ret<Amount> {
-        match self {
-            Self::Inactive => errf!("gas not initialized"),
-            Self::Active(gas) => gas.max_charge(),
-            Self::Settled(gas) => Ok(gas.max_charge.clone()),
+        if !self.max_charge.is_positive() {
+            return errf!("gas not initialized");
         }
+        Ok(self.max_charge.clone())
     }
 
-    fn used_charge(&self) -> Ret<Amount> {
-        match self {
-            Self::Inactive => errf!("gas not initialized"),
-            Self::Active(gas) => gas.used_charge(),
-            Self::Settled(gas) => Ok(gas.used_charge.clone()),
+    fn used_charge(&self, price: &GasPrice) -> Ret<Amount> {
+        if !self.max_charge.is_positive() {
+            return errf!("gas not initialized");
         }
+        if self.used <= 0 {
+            return Ok(Amount::zero());
+        }
+        Self::calc_burn_amount(self.used, price)
     }
 
-    fn begin(&mut self, budget: i64, gas_rate: i64, purity_fee: i128, purity_size: i128) -> Rerr {
-        match self {
-            Self::Inactive => {
-                *self = Self::Active(GasSession {
-                    remaining: budget,
-                    initial_budget: budget,
-                    purity_fee,
-                    purity_size,
-                    gas_rate: gas_rate.max(1),
-                });
-                Ok(())
+    fn begin(&mut self, budget: i64, max_charge: Amount) -> Rerr {
+        if budget <= 0 {
+            return errf!("gas budget invalid");
+        }
+        if self.running {
+            return errf!("gas already initialized");
+        }
+        if self.max_charge.is_positive() {
+            return errf!("gas already settled");
+        }
+        self.running = true;
+        self.remaining = budget;
+        self.used = 0;
+        self.max_charge = max_charge;
+        Ok(())
+    }
+
+    fn finalize(&mut self, price: &GasPrice) -> Ret<(Amount, Amount)> {
+        if !self.running {
+            if self.max_charge.is_positive() {
+                return errf!("gas already settled");
             }
-            Self::Active(_) => Ok(()),
-            Self::Settled(_) => errf!("gas already settled"),
+            return errf!("gas not initialized");
         }
-    }
-
-    fn settle(&mut self) -> Ret<(Amount, Amount)> {
-        let Self::Active(gas) = self else {
-            return match self {
-                Self::Inactive => errf!("gas not initialized"),
-                Self::Settled(_) => errf!("gas already settled"),
-                Self::Active(_) => unreachable!(),
-            };
-        };
-        let max_charge = gas.max_charge()?;
-        let used_charge = gas.used_charge()?;
-        let remaining = gas.remaining;
-        *self = Self::Settled(SettledGas {
-            remaining,
-            max_charge: max_charge.clone(),
-            used_charge: used_charge.clone(),
-        });
-        Ok((max_charge, used_charge))
+        let used_charge = self.used_charge(price)?;
+        let refund = self.max_charge.sub_mode_u128(&used_charge)?;
+        self.running = false;
+        Ok((refund, used_charge))
     }
 
     fn charge(&mut self, gas: i64) -> Rerr {
         if gas < 0 {
-            return errf!("gas cost invalid: {}", gas);
+            return errf!("gas cost invalid");
         }
-        match self {
-            Self::Inactive => errf!("gas not initialized"),
-            Self::Settled(_) => errf!("gas already settled"),
-            Self::Active(state) => {
-                let Some(next) = state.remaining.checked_sub(gas) else {
-                    return errf!("gas has run out");
-                };
-                if next < 0 {
-                    return errf!("gas has run out");
-                }
-                state.remaining = next;
-                Ok(())
-            }
+        if !self.running {
+            return maybe!(self.max_charge.is_positive(),
+                errf!("gas already settled"),
+                errf!("gas not initialized")
+            );
         }
+        if gas == 0 {
+            return Ok(()); // do nothing
+        }
+        let Some(next) = self.remaining.checked_sub(gas) else {
+            return errf!("gas has run out");
+        };
+        if next < 0 {
+            return errf!("gas has run out");
+        }
+        self.remaining = next;
+        self.used = self
+            .used
+            .checked_add(gas)
+            .ok_or_else(|| "gas has run out".to_owned())?;
+        Ok(())
     }
 }
 
 impl ContextInst<'_> {
-    fn gas_init_tx_inner(&mut self, budget: i64, gas_rate: i64) -> Rerr {
-        match &self.gas {
-            GasCounter::Inactive => {}
-            GasCounter::Active(_) => return Ok(()),
-            GasCounter::Settled(_) => return errf!("gas already settled"),
+    fn gas_initialize(&mut self, budget: i64) -> Rerr {
+        if self.gas.running {
+            return errf!("gas already initialized");
+        }
+        if self.gas.max_charge.is_positive() {
+            return errf!("gas already settled");
         }
         if budget <= 0 {
-            return errf!("gas budget invalid: {}", budget);
+            return errf!("gas budget invalid");
         }
-        let tx = self.tx();
-        let purity_fee = tx.gas_price_purity() as i128;
-        let purity_size = 1i128;
-        if purity_fee <= 0 || purity_size <= 0 {
-            return errf!(
-                "tx gas price invalid for gas: purity_fee={} purity_size={}",
-                purity_fee,
-                purity_size
-            );
-        }
-        let max_burn_amt = GasSession::calc_burn_amount(budget, purity_fee, purity_size, gas_rate)?;
+        let price = GasPrice::from_tx(self.tx())?;
+        let cap = decode_gas_budget(TX_GAS_BUDGET_CAP_BYTE);
+        let budget = budget.min(cap);
+        let max_burn_amt = GasCounter::calc_burn_amount(budget, &price)?;
         let main = self.env().tx.main;
-        crate::operate::hac_check(self, &main, &max_burn_amt)?;
         crate::operate::hac_sub(self, &main, &max_burn_amt)?;
-        self.gas.begin(budget, gas_rate, purity_fee, purity_size)
+        self.gas.begin(budget, max_burn_amt)
     }
 
-    fn gas_refund_inner(&mut self) -> Rerr {
-        let (max_charge, used_charge) = self.gas.settle()?;
-        let refund = max_charge.sub_mode_u128(&used_charge)?;
+    pub fn gas_refund(&mut self) -> Rerr {
+        let price = GasPrice::from_tx(self.tx())?;
+        let (refund, used_charge) = self.gas.finalize(&price)?;
         if refund.is_positive() {
+            // do refund
             let main = self.env().tx.main;
             crate::operate::hac_add(self, &main, &refund)?;
         }
-        if used_charge.is_positive() {
-            let used_238 = used_charge.to_238_u64()?;
-            if used_238 > 0 {
-                let mut state = crate::state::CoreState::wrap(self.state());
-                let mut ttcount = state.get_total_count();
-                let next_burn = (*ttcount.ast_vm_gas_burn_238)
-                    .checked_add(used_238)
-                    .ok_or_else(|| "ast_vm_gas_burn_238 overflow".to_string())?;
-                ttcount.ast_vm_gas_burn_238 = Uint8::from(next_burn);
-                state.set_total_count(&ttcount);
-            }
+        if !used_charge.is_positive() {
+            return Ok(());
         }
+        let used_238 = used_charge.to_238_u64()?;
+        if used_238 == 0 {
+            return Ok(());
+        }
+        // add count
+        let mut state = crate::state::CoreState::wrap(self.state());
+        let mut ttcount = state.get_total_count();
+        // u64 cap in unit238 is about 1,844,674,407 HAC, so this overflow is practically unreachable.
+        let next_burn = (*ttcount.ast_vm_gas_burn_238)
+            .checked_add(used_238)
+            .ok_or_else(|| "ast_vm_gas_burn_238 overflow".to_string())?;
+        ttcount.ast_vm_gas_burn_238 = Uint8::from(next_burn);
+        state.set_total_count(&ttcount);
         Ok(())
-    }
-
-    fn gas_remaining_inner(&self) -> i64 {
-        self.gas.remaining()
-    }
-
-    fn gas_charge_inner(&mut self, gas: i64) -> Rerr {
-        self.gas.charge(gas)
     }
 }

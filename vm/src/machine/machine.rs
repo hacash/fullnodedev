@@ -130,49 +130,6 @@ impl VmCallDispatch {
     }
 }
 
-fn reject_call_below_min_cost(
-    ctx: &mut dyn Context,
-    gas_before: i64,
-    min_cost: i64,
-    entry: EntryKind,
-) -> XRet<()> {
-    if gas_before >= min_cost {
-        return Ok(());
-    }
-    if ctx.gas_charge(0).is_err() {
-        ctx.gas_charge(min_cost).into_xret()?;
-    } else {
-        let _ = ctx.gas_charge(min_cost);
-    }
-    xerrf!(
-        "gas budget too low: remaining={} < min_call_cost={} (mode={:?})",
-        gas_before,
-        min_cost,
-        entry
-    )
-}
-
-fn settle_min_call_cost(ctx: &mut dyn Context, gas_before: i64, min_cost: i64) -> XRet<i64> {
-    let gas_after = ctx.gas_remaining();
-    let actual = gas_before - gas_after;
-    if actual >= min_cost {
-        return Ok(actual);
-    }
-    let shortfall = min_cost - actual;
-    let _ = ctx.gas_charge(shortfall);
-    let remaining = ctx.gas_remaining();
-    if remaining < 0 {
-        return xerrf!(
-            "gas has run out after min cost enforcement: remaining={} (before={} min_call_cost={} actual_cost={})",
-            remaining,
-            gas_before,
-            min_cost,
-            actual
-        );
-    }
-    Ok(min_cost)
-}
-
 /*********************************/
 
 #[allow(dead_code)]
@@ -272,20 +229,25 @@ impl VM for MachineBox {
             return xerrf!("machine runtime missing");
         };
         let max_reentry = machine.r.space_cap.reentry_level;
-        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry).into_xret()?;
+        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)?;
         let dispatch = VmCallDispatch::parse(entry, target, payload, param)?;
-        let entry_kind = dispatch.entry_kind();
         let Some(machine) = self.machine.as_ref() else {
             return xerrf!("machine runtime missing");
         };
         let min_cost = dispatch.min_call_cost(&machine.r.gas_extra);
         let gas_before = ctx.gas_remaining();
-        reject_call_below_min_cost(ctx, gas_before, min_cost, entry_kind)?;
         let Some(machine) = self.machine.as_mut() else {
             return xerrf!("machine runtime missing");
         };
         let result = dispatch.execute(machine, ctx);
-        let cost = settle_min_call_cost(ctx, gas_before, min_cost)?;
+        let gas_after = ctx.gas_remaining();
+        let actual = gas_before - gas_after;
+        let cost = if actual >= min_cost {
+            actual
+        } else {
+            ctx.gas_charge(min_cost - actual)?;
+            min_cost
+        };
         let resv = result.map(|a| a.raw())?;
         if cost <= 0 {
             return xerrf!("gas cost invalid: {}", cost);
@@ -334,7 +296,7 @@ impl Machine {
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> XRet<Value> {
-        let rv = self.main_call_raw(host, ctype, codes).into_xret()?;
+        let rv = self.main_call_raw(host, ctype, codes)?;
         check_vm_return_value(&rv, "main call")?;
         Ok(rv)
     }

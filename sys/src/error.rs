@@ -78,7 +78,7 @@ impl std::error::Error for ExecError {}
 
 impl From<TextError> for ExecError {
     fn from(v: TextError) -> Self {
-        Self::fault(v)
+        decode_exec_error_from_text(v)
     }
 }
 

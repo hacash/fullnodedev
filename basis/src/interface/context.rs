@@ -34,6 +34,12 @@ pub trait Context: StateOperat {
     fn gas_charge(&mut self, _: i64) -> Rerr {
         Ok(())
     }
+    fn gas_initialize(&mut self, _: i64) -> Rerr {
+        errf!("context gas init not supported")
+    }
+    fn gas_refund(&mut self) -> Rerr {
+        errf!("context gas refund not supported")
+    }
     fn snapshot_volatile(&self) -> Box<dyn Any> {
         Box::new(())
     }
@@ -48,15 +54,6 @@ pub trait Context: StateOperat {
     }
     fn p2sh_set(&mut self, _: Address, _: Box<dyn P2sh>) -> Rerr {
         Ok(())
-    }
-}
-
-pub trait TxDriverContext: Context {
-    fn gas_init_tx(&mut self, _: i64, _: i64) -> Rerr {
-        errf!("context gas init not supported")
-    }
-    fn gas_refund(&mut self) -> Rerr {
-        errf!("context gas refund not supported")
     }
 }
 

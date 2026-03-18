@@ -119,7 +119,7 @@ fn coin_asset_transfer_call(
             }
         }
         let param = Value::pack_call_args(params)?;
-        let _ = setup_vm_run_p2sh(ctx, codeconf, codes.into(), param)?;
+        let _ = setup_vm_run_p2sh(ctx, codeconf, codes, param)?;
         // return value checked inside p2sh_call
     }
 
@@ -128,7 +128,7 @@ fn coin_asset_transfer_call(
         let mut argvs = argvs.clone();
         argvs.push_front(Value::Address(to));
         let param = Value::pack_call_args(argvs)?;
-        let _ = setup_vm_run_abst(ctx, abstfrom, Arc::from(from.as_bytes()), param)?;
+        let _ = setup_vm_run_abst(ctx, abstfrom, from, param)?;
         // return value checked inside abst_call
     }
 
@@ -136,7 +136,7 @@ fn coin_asset_transfer_call(
     if tc {
         argvs.push_front(Value::Address(from));
         let param = Value::pack_call_args(argvs)?;
-        let _ = setup_vm_run_abst(ctx, abstto, Arc::from(to.as_bytes()), param)?;
+        let _ = setup_vm_run_abst(ctx, abstto, to, param)?;
         // return value checked inside abst_call
     }
 

@@ -4,9 +4,7 @@ mod action_coverage {
 
     use basis::component::ExecFrom;
     use basis::interface::ActExec;
-    use basis::interface::{
-        Context, Logs, State, StateOperat, Transaction, TransactionRead, TxDriverContext,
-    };
+    use basis::interface::{Context, Logs, State, StateOperat, Transaction, TransactionRead};
     use field::{
         Address, Amount, BytesW1, BytesW2, DiamondInscript, DiamondName, DiamondSto, Field, Hash,
         Inscripts, Parse, Readable, Serialize, Uint1, Uint2, Uint4,
@@ -14,7 +12,7 @@ mod action_coverage {
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
     use protocol::transaction::TransactionType3;
-    use sys::{Account, IntoTRet, Ret, XRet};
+    use sys::{Account, Ret, XRet};
     use testkit::sim::integration::{
         make_ctx_from_tx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
         vm_alt_addr as alt_addr, vm_main_addr as main_addr,
@@ -78,26 +76,24 @@ mod action_coverage {
             .into_sto()
     }
 
-    fn execute_main_bytecode(ctx: &mut dyn TxDriverContext, codes: Vec<u8>) -> Ret<Value> {
+    fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
         let main = ctx.env().tx.main;
         let _ = protocol::operate::hac_add(ctx, &main, &Amount::unit238(1_000_000_000));
         if let Some(gas_max) = ctx.tx().gas_max_byte() {
             if gas_max > 0 {
-                let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(gas_max)?;
-                ctx.gas_init_tx(budget, gas_rate)?;
+                let budget = protocol::context::decode_gas_budget(
+                    gas_max.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+                );
+                ctx.gas_initialize(budget)?;
             }
         }
         let height = ctx.env().block.height;
         let mut machine = Machine::create(Resoure::create(height));
-        machine
-            .main_call(ctx, CodeType::Bytecode, codes.into())
-            .into_tret()
+        let rv = machine.main_call(ctx, CodeType::Bytecode, codes.into())?;
+        Ok(rv)
     }
 
-    fn execute_main_bytecode_as_call_ctx(
-        ctx: &mut dyn TxDriverContext,
-        codes: Vec<u8>,
-    ) -> Ret<Value> {
+    fn execute_main_bytecode_as_call_ctx(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
         // `Machine::main_call` itself does not mutate ctx.exec_from; simulate protocol CALL context.
         let old_from = ctx.exec_from();
         ctx.exec_from_set(ExecFrom::Call);
@@ -613,8 +609,10 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
-        let (budget, gas_rate) = protocol::context::tx_gas_params_from_byte(17).unwrap();
-        ctx.gas_init_tx(budget, gas_rate).unwrap();
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
 
         let sto = Contract::new()
             .syst(

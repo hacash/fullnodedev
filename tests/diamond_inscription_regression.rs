@@ -2,7 +2,6 @@ use basis::component::Env;
 use basis::interface::*;
 use field::*;
 use mint::action::*;
-use protocol::action::AstSelect;
 use protocol::context::ContextInst;
 use protocol::state::CoreState;
 use protocol::transaction::*;

@@ -3,7 +3,7 @@ use std::vec;
 macro_rules! check_amount_is_positive {
     ($amt:expr) => {
         if ! $amt.is_positive() {
-            return errf!("amount {} value is not positive", $amt)
+            return xerrf!("amount {} value is not positive", $amt)
         }
     };
 }
@@ -12,7 +12,7 @@ macro_rules! check_amount_is_positive {
 macro_rules! amount_op_func_define {
     ($fn:ident, $hac:ident, $addr:ident, $amt:ident, $exec:block) => (
 
-        fn $fn(ctx: &mut dyn Context, $addr: &Address, $amt: &Amount) -> Ret<Amount> {
+        fn $fn(ctx: &mut dyn Context, $addr: &Address, $amt: &Amount) -> XRet<Amount> {
             $addr.check_version()?;
             let state = &mut CoreState::wrap(ctx.state());
             let mut bls = state.balance( $addr ).unwrap_or_default();
@@ -41,11 +41,11 @@ amount_op_func_define!{do_hac_add, hac, addr, amt, {
 }}
 
 
-pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &Amount) -> Ret<Vec<u8>> {
+pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &Amount) -> XRet<Vec<u8>> {
     // is to self
     if from == to {
         if !from.is_privakey() {
-            return errf!("non-privakey address cannot transfer HAC to self")
+            return xerrf!("non-privakey address cannot transfer HAC to self")
         }
         // historical compatibility: legacy blocks (<200000) allow self-transfer fast path
         if ctx.env().block.height >= 20_0000 {
@@ -70,7 +70,7 @@ pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &A
 
 
 
-pub fn hac_check(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Amount> {
+pub fn hac_check(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> XRet<Amount> {
     check_amount_is_positive!(amt);
     addr.check_version()?;
     let state = CoreState::wrap(ctx.state());
@@ -84,14 +84,14 @@ pub fn hac_check(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Amo
 }
 
 
-pub fn hac_add(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Vec<u8>> {
+pub fn hac_add(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> XRet<Vec<u8>> {
     check_amount_is_positive!(amt);
     do_hac_add(ctx, addr, amt)?;
     Ok(vec![])
 }
 
 
-pub fn hac_sub(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> Ret<Vec<u8>> {
+pub fn hac_sub(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> XRet<Vec<u8>> {
     check_amount_is_positive!(amt);
     do_hac_sub(ctx, addr, amt)?;
     Ok(vec![])

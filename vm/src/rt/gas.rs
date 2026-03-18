@@ -41,7 +41,6 @@ impl GasTable {
             POP, NOP, NT, END, RET, ABT, ERR, AST, PRT]);
         gst.set(2,  &[]); // all other bytecode
         gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]);
-        // "Medium" cost ops (includes some O(n) stack ops that were previously default-2).
         gst.set(4,  &[
             DUPN, POPN, ROLL,
             PBUF, PBUFL,
@@ -49,23 +48,11 @@ impl GasTable {
             HREAD, HREADU, HREADUL, HSLICE, HGROW,
             ITEMGET, HEAD, BACK, HASKEY, LENGTH
         ]);
-        gst.set(5,  &[POW]);
-        gst.set(6,  &[HWRITE, HWRITEX, HWRITEXL, 
-            INSERT, REMOVE, CLEAR, APPEND, 
-            NTENV
-        ]);
-        // "Heavy" ops that commonly allocate/copy buffers (previously default-2).
-        gst.set(8,  &[
-            // bytes operations (often allocate/copy; current implementation clones full buffers)
-            CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP,
-            MGET, JOIN, REV, 
-            NEWLIST, NEWMAP,
-            NTFUNC
-        ]);
-        gst.set(12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE,
-            // O(n) compo merge (can touch many items); avoid default-2.
-            PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES
-        ]);
+        gst.set(5,  &[POW, CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP]);
+        gst.set(6,  &[NTENV, HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND]);
+        gst.set(8,  &[NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP]);
+        gst.set(10, &[PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]);
+        gst.set(12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE,]);
         gst.set(16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]);
         gst.set(20, &[LOG1]);
         gst.set(24, &[LOG2, GPUT, CALLEXTVIEW]);
@@ -95,7 +82,6 @@ impl GasTable {
 
 #[derive(Default)]
 pub struct GasExtra {
-    pub max_gas_of_tx: i64,
     pub gas_rate: i64, // gas burn discount denominator (mainnet=1, L2 sidechain can be e.g. 10 or 32)
     pub local_one_alloc: i64,
     pub storege_value_base_size: i64,
@@ -124,10 +110,155 @@ pub struct GasExtra {
     compo_item_edit_div: i64,
     compo_item_copy_div: i64,
     ntfunc_div: i64,
-    actview_div: i64,
-    action_div: i64,
-    actenv_div: i64,
+    act_div: i64,
 }
+
+impl GasExtra {
+    pub fn new(_hei: u64) -> Self {
+        Self {
+            gas_rate:             2, // mainnet discount 50% (burn = cost*fee/txsz/gas_rate)
+            local_one_alloc:          5, // 5 * num
+            storege_value_base_size: 32,
+            load_new_contract:  32, // base gas for loading a new contract
+            main_call_min:      24*2, // 48
+            p2sh_call_min:      24*3, // 72
+            abst_call_min:      24*4, // 96
+            // Space alloc
+            memory_key_cost:    20,
+            global_key_cost:    32,
+            storage_key_cost:   256,
+            storage_del_min:    16,
+            // Dynamic divisors (byte/N, item/N)
+            stack_copy_div:     32,
+            stack_write_div:    28,
+            stack_cmp_div:      24,
+            stack_op_div:       20,
+            heap_read_div:      16,
+            heap_write_div:     12,
+            log_div:             1,
+            storage_read_div:    8,
+            storage_write_div:   6,
+            compile_div:        16,
+            ntfunc_div:         16,
+            act_div:         12,
+            // Compo
+            compo_byte_div:     40,
+            compo_item_read_div: 4,
+            compo_item_edit_div: 2,
+            compo_item_copy_div: 1,
+        }
+    }
+
+    #[inline(always)]
+    fn div_bytes(len: usize, div: i64) -> i64 {
+        if div <= 0 || len == 0 {
+            return 0
+        }
+        // The opcode base gas already covers the first bucket. Dynamic gas only
+        // charges additional buckets beyond the first one.
+        (len as i64 - 1) / div
+    }
+
+    #[inline(always)]
+    fn div_items(n: usize, div: i64) -> i64 {
+        if div <= 0 || n == 0 {
+            return 0
+        }
+        // First bucket is free; dynamic gas charges only extra buckets.
+        (n as i64 - 1) / div
+    }
+
+    #[inline(always)]
+    pub fn stack_copy(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.stack_copy_div)
+    }
+
+    #[inline(always)]
+    pub fn stack_write(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.stack_write_div)
+    }
+
+    #[inline(always)]
+    pub fn stack_cmp(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.stack_cmp_div)
+    }
+
+    #[inline(always)]
+    pub fn stack_op(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.stack_op_div)
+    }
+
+    #[inline(always)]
+    pub fn ntfunc_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.ntfunc_div)
+    }
+
+    #[inline(always)]
+    pub fn act_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.act_div)
+    }
+
+    #[inline(always)]
+    pub fn heap_read(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.heap_read_div)
+    }
+
+    #[inline(always)]
+    pub fn heap_write(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.heap_write_div)
+    }
+
+    #[inline(always)]
+    pub fn log_bytes(&self, total_bytes: usize) -> i64 {
+        Self::div_bytes(total_bytes, self.log_div)
+    }
+
+    #[inline(always)]
+    pub fn storage_read(&self, val_len: usize) -> i64 {
+        Self::div_bytes(val_len, self.storage_read_div)
+    }
+
+    #[inline(always)]
+    pub fn storage_write(&self, val_len: usize) -> i64 {
+        Self::div_bytes(val_len, self.storage_write_div)
+    }
+
+    #[inline(always)]
+    pub fn compile_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.compile_div)
+    }
+
+    #[inline(always)]
+    pub fn storage_del(&self) -> i64 {
+        self.storage_del_min
+    }
+
+    #[inline(always)]
+    pub fn compo_items_read(&self, n: usize) -> i64 {
+        Self::div_items(n, self.compo_item_read_div)
+    }
+
+    #[inline(always)]
+    pub fn compo_items_edit(&self, n: usize) -> i64 {
+        Self::div_items(n, self.compo_item_edit_div)
+    }
+
+    #[inline(always)]
+    pub fn compo_items_copy(&self, n: usize) -> i64 {
+        Self::div_items(n, self.compo_item_copy_div)
+    }
+
+    #[inline(always)]
+    pub fn compo_bytes(&self, len: usize) -> i64 {
+        Self::div_bytes(len, self.compo_byte_div)
+    }
+}
+
+
+
+
+
+
 
 /// Gas budget lookup table for tx `gas_max` byte.
 ///
@@ -204,159 +335,15 @@ pub fn encode_gas_budget(budget: i64) -> u8 {
     lo as u8
 }
 
-impl GasExtra {
-    pub fn new(_hei: u64) -> Self {
-        Self {
-            max_gas_of_tx:     8192, // 16384, // L1 mainnet limit, can increase via hard fork
-            gas_rate:          1,    // mainnet: no discount (burn = cost*fee/txsz/gas_rate)
-            local_one_alloc:          5, // 5 * num
-            storege_value_base_size: 32,
-            load_new_contract:  32, // base gas for loading a new contract
-            main_call_min:      24*2, // 48
-            p2sh_call_min:      24*3, // 72
-            abst_call_min:      24*4, // 96
-            // Space alloc
-            memory_key_cost:    20,
-            global_key_cost:    32,
-            storage_key_cost:   256,
-            storage_del_min:    16,
-            // Dynamic divisors (byte/N, item/N)
-            stack_copy_div:     32,
-            stack_write_div:    28,
-            stack_cmp_div:      24,
-            stack_op_div:       20,
-            heap_read_div:      16,
-            heap_write_div:     12,
-            log_div:             1,
-            storage_read_div:    8,
-            storage_write_div:   6,
-            compile_div:        16,
-            ntfunc_div:         16,
-            actview_div:        16,
-            action_div:      10,
-            actenv_div:         16,
-            // Compo
-            compo_byte_div:     40,
-            compo_item_read_div: 4,
-            compo_item_edit_div: 2,
-            compo_item_copy_div: 1,
-        }
-    }
 
-    #[inline(always)]
-    fn div_bytes(len: usize, div: i64) -> i64 {
-        if div <= 0 || len == 0 {
-            return 0
-        }
-        // The opcode base gas already covers the first bucket. Dynamic gas only
-        // charges additional buckets beyond the first one.
-        (len as i64 - 1) / div
-    }
 
-    #[inline(always)]
-    fn div_items(n: usize, div: i64) -> i64 {
-        if div <= 0 || n == 0 {
-            return 0
-        }
-        // First bucket is free; dynamic gas charges only extra buckets.
-        (n as i64 - 1) / div
-    }
 
-    #[inline(always)]
-    pub fn stack_copy(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_copy_div)
-    }
 
-    #[inline(always)]
-    pub fn stack_write(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_write_div)
-    }
 
-    #[inline(always)]
-    pub fn stack_cmp(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_cmp_div)
-    }
 
-    #[inline(always)]
-    pub fn stack_op(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_op_div)
-    }
+/***************************************/
 
-    #[inline(always)]
-    pub fn ntfunc_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.ntfunc_div)
-    }
 
-    #[inline(always)]
-    pub fn actview_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.actview_div)
-    }
-
-    #[inline(always)]
-    pub fn action_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.action_div)
-    }
-
-    #[inline(always)]
-    pub fn actenv_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.actenv_div)
-    }
-
-    #[inline(always)]
-    pub fn heap_read(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.heap_read_div)
-    }
-
-    #[inline(always)]
-    pub fn heap_write(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.heap_write_div)
-    }
-
-    #[inline(always)]
-    pub fn log_bytes(&self, total_bytes: usize) -> i64 {
-        Self::div_bytes(total_bytes, self.log_div)
-    }
-
-    #[inline(always)]
-    pub fn storage_read(&self, val_len: usize) -> i64 {
-        Self::div_bytes(val_len, self.storage_read_div)
-    }
-
-    #[inline(always)]
-    pub fn storage_write(&self, val_len: usize) -> i64 {
-        Self::div_bytes(val_len, self.storage_write_div)
-    }
-
-    #[inline(always)]
-    pub fn compile_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.compile_div)
-    }
-
-    #[inline(always)]
-    pub fn storage_del(&self) -> i64 {
-        self.storage_del_min
-    }
-
-    #[inline(always)]
-    pub fn compo_items_read(&self, n: usize) -> i64 {
-        Self::div_items(n, self.compo_item_read_div)
-    }
-
-    #[inline(always)]
-    pub fn compo_items_edit(&self, n: usize) -> i64 {
-        Self::div_items(n, self.compo_item_edit_div)
-    }
-
-    #[inline(always)]
-    pub fn compo_items_copy(&self, n: usize) -> i64 {
-        Self::div_items(n, self.compo_item_copy_div)
-    }
-
-    #[inline(always)]
-    pub fn compo_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.compo_byte_div)
-    }
-}
 
 
 #[cfg(test)]
@@ -448,7 +435,6 @@ mod gas_budget_codec_tests {
     #[test]
     fn gas_extra_constants_match_doc() {
         let gst = GasExtra::new(1);
-        assert_eq!(gst.max_gas_of_tx, 8192);
         assert_eq!(gst.main_call_min, 48);
         assert_eq!(gst.p2sh_call_min, 72);
         assert_eq!(gst.abst_call_min, 96);
@@ -488,9 +474,9 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.actenv_bytes(0), 0);
         assert_eq!(gst.actenv_bytes(15), 0);
         assert_eq!(gst.actenv_bytes(16), 0);
-        assert_eq!(gst.action_bytes(0), 0);
-        assert_eq!(gst.action_bytes(9), 0);
-        assert_eq!(gst.action_bytes(10), 0);
+        assert_eq!(gst.act_bytes(0), 0);
+        assert_eq!(gst.act_bytes(9), 0);
+        assert_eq!(gst.act_bytes(10), 0);
 
         assert_eq!(gst.heap_read(0), 0);
         assert_eq!(gst.heap_read(15), 0);
