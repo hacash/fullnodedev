@@ -673,7 +673,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     local_logic(mark, locals, ops.peek()?)?;
                 }
                 XOP => local_operand(pu8!(), locals, ops.pop()?)?,
-                ALLOC => gas += gst.local_one_alloc * locals.alloc(pu8!())? as i64,
+                ALLOC => gas += gst.one_local_alloc * locals.alloc(pu8!())? as i64,
                 GETX => {
                     let v = locals.load(ops_peek_to_u16!() as usize)?.valid(cap)?;
                     gas += gst.stack_copy(v.dup_size());

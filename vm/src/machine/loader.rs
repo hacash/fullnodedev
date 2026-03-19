@@ -341,8 +341,7 @@ mod loader_tests {
             gas_remaining: 10_000,
         };
         let mut res = Resoure::create(1);
-        let one_cold_fee = res.gas_extra.load_new_contract + (cbytes as i64 / 64);
-
+        let one_cold_fee = res.gas_extra.new_contract_load + (cbytes as i64 / 64);
         {
             let _ = res.load_contract(&mut host, &caddr).unwrap();
         }

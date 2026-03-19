@@ -83,15 +83,15 @@ impl GasTable {
 #[derive(Default)]
 pub struct GasExtra {
     pub gas_rate: i64, // gas burn discount denominator (mainnet=1, L2 sidechain can be e.g. 10 or 32)
-    pub local_one_alloc: i64,
-    pub storege_value_base_size: i64,
-    pub load_new_contract: i64,
+    pub one_local_alloc: i64,
+    pub new_contract_load: i64,
     pub main_call_min: i64,
     pub p2sh_call_min: i64,
     pub abst_call_min: i64,
     // Space alloc
     pub memory_key_cost: i64,
     pub global_key_cost: i64,
+    pub storege_value_base_size: i64,
     pub storage_key_cost: i64,
     pub storage_del_min: i64,
     // Dynamic, resource-based gas parameters.
@@ -116,17 +116,18 @@ pub struct GasExtra {
 impl GasExtra {
     pub fn new(_hei: u64) -> Self {
         Self {
-            gas_rate:             2, // mainnet discount 50% (burn = cost*fee/txsz/gas_rate)
-            local_one_alloc:          5, // 5 * num
-            storege_value_base_size: 32,
-            load_new_contract:  32, // base gas for loading a new contract
-            main_call_min:      24*2, // 48
-            p2sh_call_min:      24*3, // 72
-            abst_call_min:      24*4, // 96
+            gas_rate:            2, // mainnet discount 50% (burn = cost*fee/txsz/gas_rate)
+            // Load or alloc 
+            one_local_alloc:     5, // 5 * num
+            new_contract_load:  32, // base gas for loading a new contract
+            main_call_min:    2*24, // 48
+            p2sh_call_min:    3*24, // 72
+            abst_call_min:    4*24, // 96
             // Space alloc
             memory_key_cost:    20,
             global_key_cost:    32,
-            storage_key_cost:   256,
+            storege_value_base_size: 32,
+            storage_key_cost:  256,
             storage_del_min:    16,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
@@ -138,9 +139,9 @@ impl GasExtra {
             log_div:             1,
             storage_read_div:    8,
             storage_write_div:   6,
-            compile_div:        16,
+            compile_div:         8,
             ntfunc_div:         16,
-            act_div:         12,
+            act_div:            12,
             // Compo
             compo_byte_div:     40,
             compo_item_read_div: 4,
@@ -150,7 +151,7 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    fn div_bytes(len: usize, div: i64) -> i64 {
+    fn div_op(len: usize, div: i64) -> i64 {
         if div <= 0 || len == 0 {
             return 0
         }
@@ -160,72 +161,63 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    fn div_items(n: usize, div: i64) -> i64 {
-        if div <= 0 || n == 0 {
-            return 0
-        }
-        // First bucket is free; dynamic gas charges only extra buckets.
-        (n as i64 - 1) / div
-    }
-
-    #[inline(always)]
     pub fn stack_copy(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_copy_div)
+        Self::div_op(len, self.stack_copy_div)
     }
 
     #[inline(always)]
     pub fn stack_write(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_write_div)
+        Self::div_op(len, self.stack_write_div)
     }
 
     #[inline(always)]
     pub fn stack_cmp(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_cmp_div)
+        Self::div_op(len, self.stack_cmp_div)
     }
 
     #[inline(always)]
     pub fn stack_op(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.stack_op_div)
+        Self::div_op(len, self.stack_op_div)
     }
 
     #[inline(always)]
     pub fn ntfunc_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.ntfunc_div)
+        Self::div_op(len, self.ntfunc_div)
     }
 
     #[inline(always)]
     pub fn act_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.act_div)
+        Self::div_op(len, self.act_div)
     }
 
     #[inline(always)]
     pub fn heap_read(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.heap_read_div)
+        Self::div_op(len, self.heap_read_div)
     }
 
     #[inline(always)]
     pub fn heap_write(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.heap_write_div)
+        Self::div_op(len, self.heap_write_div)
     }
 
     #[inline(always)]
     pub fn log_bytes(&self, total_bytes: usize) -> i64 {
-        Self::div_bytes(total_bytes, self.log_div)
+        Self::div_op(total_bytes, self.log_div)
     }
 
     #[inline(always)]
     pub fn storage_read(&self, val_len: usize) -> i64 {
-        Self::div_bytes(val_len, self.storage_read_div)
+        Self::div_op(val_len, self.storage_read_div)
     }
 
     #[inline(always)]
     pub fn storage_write(&self, val_len: usize) -> i64 {
-        Self::div_bytes(val_len, self.storage_write_div)
+        Self::div_op(val_len, self.storage_write_div)
     }
 
     #[inline(always)]
     pub fn compile_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.compile_div)
+        Self::div_op(len, self.compile_div)
     }
 
     #[inline(always)]
@@ -235,22 +227,22 @@ impl GasExtra {
 
     #[inline(always)]
     pub fn compo_items_read(&self, n: usize) -> i64 {
-        Self::div_items(n, self.compo_item_read_div)
+        Self::div_op(n, self.compo_item_read_div)
     }
 
     #[inline(always)]
     pub fn compo_items_edit(&self, n: usize) -> i64 {
-        Self::div_items(n, self.compo_item_edit_div)
+        Self::div_op(n, self.compo_item_edit_div)
     }
 
     #[inline(always)]
     pub fn compo_items_copy(&self, n: usize) -> i64 {
-        Self::div_items(n, self.compo_item_copy_div)
+        Self::div_op(n, self.compo_item_copy_div)
     }
 
     #[inline(always)]
     pub fn compo_bytes(&self, len: usize) -> i64 {
-        Self::div_bytes(len, self.compo_byte_div)
+        Self::div_op(len, self.compo_byte_div)
     }
 }
 
@@ -439,10 +431,10 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.p2sh_call_min, 72);
         assert_eq!(gst.abst_call_min, 96);
 
-        assert_eq!(gst.local_one_alloc, 5);
+        assert_eq!(gst.one_local_alloc, 5);
         assert_eq!(gst.memory_key_cost, 20);
         assert_eq!(gst.global_key_cost, 32);
-        assert_eq!(gst.load_new_contract, 32);
+        assert_eq!(gst.new_contract_load, 32);
         assert_eq!(gst.storage_key_cost, 256);
         assert_eq!(gst.storage_del_min, 16);
         assert_eq!(gst.storege_value_base_size, 32);

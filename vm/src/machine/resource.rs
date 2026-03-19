@@ -67,7 +67,7 @@ impl Resoure {
         host: &mut H,
         bytes: usize,
     ) -> VmrtErr {
-        host.gas_charge(self.gas_extra.load_new_contract + (bytes as i64 / 64))
+        host.gas_charge(self.gas_extra.new_contract_load + (bytes as i64 / 64))
     }
 
     pub fn stack_allocat(&mut self) -> Stack {
@@ -194,7 +194,7 @@ mod resource_tests {
     #[test]
     fn settle_new_contract_load_gas_charges_base_plus_bytes_div_64() {
         let mut r = Resoure::create(1);
-        let base = r.gas_extra.load_new_contract;
+        let base = r.gas_extra.new_contract_load;
         let mut host = GasHost { remaining: 1000 };
         r.settle_new_contract_load_gas(&mut host, 129).unwrap();
         assert_eq!(host.remaining, 1000 - base - 2);
