@@ -225,22 +225,21 @@ impl Context for ContextInst<'_> {
         self.txr
     }
 
-    fn vm_call(
-        &mut self,
-        entry: u8,
-        target: u8,
-        payload: Arc<[u8]>,
-        param: Box<dyn Any>,
-    ) -> XRet<(i64, Vec<u8>)> {
+    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(i64, Box<dyn Any>)> {
         self.ensure_vm_assigned()?;
-        unsafe {
+        let old = self.exec_from;
+        self.exec_from = ExecFrom::Call;
+        let ret = unsafe {
             let ctx = self as *mut Self;
             let Some(vm) = (*ctx).vm.as_deref_mut() else {
-                return xerrf!("vm state invalid after assign");
+                self.exec_from = old;
+                return xerrf!("vm state invalid after assign")
             };
             // Re-entry must observe the same VM instance while also passing the same context as host.
-            vm.call(&mut *ctx as &mut dyn Context, entry, target, payload, param)
-        }
+            vm.call(&mut *ctx as &mut dyn Context, req)
+        };
+        self.exec_from = old;
+        ret
     }
 
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> {

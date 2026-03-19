@@ -1870,10 +1870,10 @@ end",
 
         vm.call(
             &mut ctx,
-            EntryKind::Main as u8,
-            CodeType::Bytecode as u8,
-            codes.clone().into(),
-            Box::new(Value::Nil),
+            Box::new(VmCallReq::Main {
+                code_type: CodeType::Bytecode,
+                codes: codes.clone().into(),
+            }),
         )
         .unwrap();
 
@@ -1915,10 +1915,10 @@ end",
         let codes = vec![Bytecode::END as u8];
         vm.call(
             &mut ctx,
-            EntryKind::Main as u8,
-            CodeType::Bytecode as u8,
-            codes.clone().into(),
-            Box::new(Value::Nil),
+            Box::new(VmCallReq::Main {
+                code_type: CodeType::Bytecode,
+                codes: codes.clone().into(),
+            }),
         )
         .unwrap();
 
@@ -1981,10 +1981,10 @@ end",
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             vm.call(
                 &mut ctx,
-                EntryKind::Main as u8,
-                CodeType::Bytecode as u8,
-                codes.clone().into(),
-                Box::new(Value::Nil),
+                Box::new(VmCallReq::Main {
+                    code_type: CodeType::Bytecode,
+                    codes: codes.clone().into(),
+                }),
             )
         }));
         assert!(res.is_ok(), "settle must not panic");
@@ -2016,15 +2016,9 @@ end",
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
         let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
-        // Invalid code type causes early return inside Main branch before previous manual leave() point.
-        let early = vm.call(
-            &mut ctx,
-            EntryKind::Main as u8,
-            255,
-            Arc::from(vec![]),
-            Box::new(Value::Nil),
-        );
-        assert!(early.is_err(), "invalid code type must fail");
+        // Invalid request type should still unwind the re-entry guard.
+        let early = vm.call(&mut ctx, Box::new(()));
+        assert!(early.is_err(), "invalid request type must fail");
         assert_eq!(
             vm.call_state.reentry_level,
             0,
@@ -2035,10 +2029,10 @@ end",
         let codes = vec![Bytecode::END as u8];
         let ok = vm.call(
             &mut ctx,
-            EntryKind::Main as u8,
-            CodeType::Bytecode as u8,
-            codes.into(),
-            Box::new(Value::Nil),
+            Box::new(VmCallReq::Main {
+                code_type: CodeType::Bytecode,
+                codes: codes.into(),
+            }),
         );
         assert!(
             ok.is_ok(),
@@ -2085,10 +2079,10 @@ end",
         let bal_before = read_hac_balance(&mut ctx, &main);
         let call = vm.call(
             &mut ctx,
-            EntryKind::Main as u8,
-            CodeType::Bytecode as u8,
-            fail_codes.into(),
-            Box::new(Value::Nil),
+            Box::new(VmCallReq::Main {
+                code_type: CodeType::Bytecode,
+                codes: fail_codes.into(),
+            }),
         );
         let bal_after = read_hac_balance(&mut ctx, &main);
 
@@ -2135,20 +2129,20 @@ end",
             if run_failed_first {
                 let failed = vm.call(
                     &mut ctx,
-                    EntryKind::Main as u8,
-                    CodeType::Bytecode as u8,
-                    fail_codes.clone().into(),
-                    Box::new(Value::Nil),
+                    Box::new(VmCallReq::Main {
+                        code_type: CodeType::Bytecode,
+                        codes: fail_codes.clone().into(),
+                    }),
                 );
                 assert!(failed.is_err(), "prelude failed call must fail");
             }
 
             let ok = vm.call(
                 &mut ctx,
-                EntryKind::Main as u8,
-                CodeType::Bytecode as u8,
-                ok_codes.clone().into(),
-                Box::new(Value::Nil),
+                Box::new(VmCallReq::Main {
+                    code_type: CodeType::Bytecode,
+                    codes: ok_codes.clone().into(),
+                }),
             );
             assert!(ok.is_ok(), "final success call must succeed");
 

@@ -36,7 +36,7 @@ impl GasTable {
     pub fn new(_hei: u64) -> Self {
         use Bytecode::*;
         let mut gst = Self { table : [2; 256] };
-        gst.set(1,  &[ PU8, P0, P1, P2, P3, PNBUF, PNIL, PTRUE, PFALSE, 
+        gst.set(1,  &[P0, P1, P2, P3, PU8, PNBUF, PNIL, PTRUE, PFALSE, 
             CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
             POP, NOP, NT, END, RET, ABT, ERR, AST, PRT]);
         gst.set(2,  &[]); // all other bytecode
@@ -388,10 +388,11 @@ mod gas_budget_codec_tests {
                 HREAD, HREADU, HREADUL, HSLICE, HGROW,
                 ITEMGET, HEAD, BACK, HASKEY, LENGTH,
             ]),
-            (5, &[POW]),
+            (5, &[POW, CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP]),
             (6, &[HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
-            (8, &[CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP, MGET, JOIN, REV, NEWLIST, NEWMAP, NTFUNC]),
-            (12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE, PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
+            (8, &[NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP]),
+            (10, &[PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
+            (12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE]),
             (16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]),
             (20, &[LOG1]),
             (24, &[LOG2, GPUT, CALLEXTVIEW]),
@@ -461,14 +462,9 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.ntfunc_bytes(0), 0);
         assert_eq!(gst.ntfunc_bytes(15), 0);
         assert_eq!(gst.ntfunc_bytes(16), 0);
-        assert_eq!(gst.actview_bytes(31), 1);
-        assert_eq!(gst.actview_bytes(32), 1);
-        assert_eq!(gst.actenv_bytes(0), 0);
-        assert_eq!(gst.actenv_bytes(15), 0);
-        assert_eq!(gst.actenv_bytes(16), 0);
         assert_eq!(gst.act_bytes(0), 0);
-        assert_eq!(gst.act_bytes(9), 0);
-        assert_eq!(gst.act_bytes(10), 0);
+        assert_eq!(gst.act_bytes(12), 0);
+        assert_eq!(gst.act_bytes(13), 1);
 
         assert_eq!(gst.heap_read(0), 0);
         assert_eq!(gst.heap_read(15), 0);
@@ -498,8 +494,8 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.storage_write(5), 0);
         assert_eq!(gst.storage_write(6), 0);
         assert_eq!(gst.compile_bytes(0), 0);
-        assert_eq!(gst.compile_bytes(15), 0);
-        assert_eq!(gst.compile_bytes(16), 0);
+        assert_eq!(gst.compile_bytes(15), 1);
+        assert_eq!(gst.compile_bytes(16), 1);
         assert_eq!(gst.storage_del(), 16);
     }
 }

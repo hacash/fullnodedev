@@ -1,4 +1,3 @@
-use basis::component::*;
 use basis::interface::*;
 use protocol::transaction::*;
 use std::cell::UnsafeCell;

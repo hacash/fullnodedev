@@ -33,7 +33,6 @@ fn build_ast_ctx_with_state<'a>(
     let mut bls = st.balance(&main).unwrap_or_default();
     bls.hacash = Amount::unit238(10_000_000_000_000);
     st.balance_set(&main, &bls);
-    let _ = ctx.gas_initialize(10000);
     ctx
 }
 
@@ -321,7 +320,6 @@ fn test_ast_if_cond_true_commits_cond_and_if_branch_state() {
     env.chain.fast_sync = true; // keep focus on AST semantics
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_initialize(10000).unwrap();
-    ctx.gas_initialize(10000).unwrap();
 
     let cond = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(1, 11))]);
     let br_if = AstSelect::create_list(vec![Box::new(AstTestSet::create_by(2, 22))]);
@@ -561,8 +559,6 @@ fn test_ast_select_partial_write_is_reverted_by_tx_level_rollback() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
-    ctx.gas_initialize(10000).unwrap();
     ctx.state().set(vec![9], vec![99]); // parent baseline
 
     let old = ctx.state_fork(); // tx-level isolation
@@ -585,7 +581,6 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.chain.fast_sync = true;
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     ctx.gas_initialize(10000).unwrap();
 
     let inner_if = AstIf::create_by(
@@ -656,7 +651,6 @@ fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
 
     protocol::operate::hac_add(
         &mut ctx,
@@ -726,7 +720,6 @@ fn test_ast_tx_gas_settlement_charges_fee_plus_used_and_refunds_unused() {
     env.tx.main = main;
     env.tx.addrs = vec![main];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(5_000_000_000)).unwrap();
 
     let before = ast_hac_balance(&mut ctx, &main);
@@ -808,7 +801,6 @@ fn test_ast_nested_partial_commits_are_cleared_by_tx_level_rollback() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     ctx.state().set(vec![79], vec![79]); // baseline
 
     let old = ctx.state_fork();
@@ -1479,7 +1471,6 @@ fn build_ast_ctx_with_logs<'a>(
     let mut bls = st.balance(&main).unwrap_or_default();
     bls.hacash = Amount::unit238(10_000_000_000_000);
     st.balance_set(&main, &bls);
-    let _ = ctx.gas_initialize(10000);
     ctx
 }
 
@@ -1555,6 +1546,7 @@ fn test_ast_select_logs_truncated_on_child_failure() {
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
+    ctx.gas_initialize(10000).unwrap();
 
     // child 1: log + succeed, child 2: log + fail
     // AstSelect(min=1, max=2): child1 ok, child2 fail -> ok with 1
@@ -1690,6 +1682,7 @@ fn test_ast_nested_if_fail_inside_select_recovers_all_channels() {
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
+    ctx.gas_initialize(10000).unwrap();
 
     // inner_if: cond=combo(250,1) succeeds, br_if=fail -> whole AstIf fails
     let inner_if = AstIf::create_by(
@@ -2118,12 +2111,12 @@ impl VM for AstDeepDelayVm {
     fn call(
         &mut self,
         _: &mut dyn Context,
-        _: u8,
-        _target: u8,
-        payload: std::sync::Arc<[u8]>,
-        _: Box<dyn std::any::Any>,
-    ) -> XRet<(i64, Vec<u8>)> {
-        let data = payload.as_ref();
+        req: Box<dyn std::any::Any>,
+    ) -> XRet<(i64, Box<dyn std::any::Any>)> {
+        let Ok(data) = req.downcast::<Vec<u8>>() else {
+            return xerrf!("deep delay vm payload type mismatch");
+        };
+        let data = *data;
         if data.len() < 3 {
             return xerrf!("deep delay vm payload too short");
         }
@@ -2137,7 +2130,7 @@ impl VM for AstDeepDelayVm {
         if should_fail {
             return xerr_rf!("deep delay vm forced fail");
         }
-        Ok((0, vec![]))
+        Ok((0, Box::new(Vec::<u8>::new())))
     }
 }
 
@@ -2287,10 +2280,13 @@ impl FromJSON for AstTestDeepDelayVmCall {
 impl ActExec for AstTestDeepDelayVmCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.vol_add, *self.warm_add, *self.fail];
-        let (_gas, rv) = ctx.vm_call(0, 0, payload.into(), Box::new(()))?;
+        let (_gas, rv) = ctx.vm_call(Box::new(payload))?;
+        let Ok(rv) = rv.downcast::<Vec<u8>>() else {
+            return xerrf!("deep delay vm return type mismatch");
+        };
         // VM dynamic gas is charged through shared ctx remaining inside VM runtime.
         // Keep action return-gas channel as size-only (0 here for this custom test action).
-        Ok((0, rv))
+        Ok((0, *rv))
     }
 }
 
@@ -2361,12 +2357,12 @@ impl VM for AstBugAssumeVm {
     fn call(
         &mut self,
         _: &mut dyn Context,
-        _: u8,
-        _target: u8,
-        payload: std::sync::Arc<[u8]>,
-        _: Box<dyn std::any::Any>,
-    ) -> XRet<(i64, Vec<u8>)> {
-        let data = payload.as_ref();
+        req: Box<dyn std::any::Any>,
+    ) -> XRet<(i64, Box<dyn std::any::Any>)> {
+        let Ok(data) = req.downcast::<Vec<u8>>() else {
+            return xerrf!("ast bug assume vm payload type mismatch");
+        };
+        let data = *data;
         if data.len() < 2 {
             return xerrf!("ast bug assume vm payload too short");
         }
@@ -2381,7 +2377,7 @@ impl VM for AstBugAssumeVm {
         }
         self.burned
             .fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
-        Ok((gas_cost, vec![]))
+        Ok((gas_cost, Box::new(Vec::<u8>::new())))
     }
 }
 
@@ -2430,10 +2426,13 @@ impl FromJSON for AstTestBugVmCall {
 impl ActExec for AstTestBugVmCall {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         let payload = vec![*self.fail, *self.cost];
-        let (_gas, rv) = ctx.vm_call(0, 0, payload.into(), Box::new(()))?;
+        let (_gas, rv) = ctx.vm_call(Box::new(payload))?;
+        let Ok(rv) = rv.downcast::<Vec<u8>>() else {
+            return xerrf!("ast bug assume vm return type mismatch");
+        };
         // VM dynamic gas is charged through shared ctx remaining inside VM runtime.
         // Keep action return-gas channel as size-only (0 here for this custom test action).
-        Ok((0, rv))
+        Ok((0, *rv))
     }
 }
 
@@ -2588,6 +2587,7 @@ fn test_ast_vm_delay_init_deep_nested_success_commits_reverts() {
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
+    ctx.gas_initialize(10000).unwrap();
 
     let volatile = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
     let warmup = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
@@ -2646,7 +2646,6 @@ fn test_ast_vm_delay_init_depth6_revert_and_fault_channels() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     protocol::operate::hac_add(
         &mut ctx,
         &field::ADDRESS_ONEX,
@@ -2725,7 +2724,6 @@ fn test_ast_layered_composition_mixed_vm_calls_snapshot_gas_exact() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     protocol::operate::hac_add(
         &mut ctx,
         &field::ADDRESS_ONEX,
@@ -2787,7 +2785,6 @@ fn test_ast_layered_with_mid_vm_failure_revert_and_warmup_monotonic() {
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     protocol::operate::hac_add(
         &mut ctx,
         &field::ADDRESS_ONEX,
@@ -2879,7 +2876,6 @@ fn test_tx_multiple_top_ast_with_internal_vm_calls_gas_settlement_matches_balanc
     env.tx.main = main;
     env.tx.addrs = vec![main];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(5_000_000_000)).unwrap();
 
     let volatile = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
@@ -2931,7 +2927,6 @@ fn test_tx_failed_ast_charges_used_gas_but_not_fee() {
     env.tx.main = main;
     env.tx.addrs = vec![main];
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
-    ctx.gas_initialize(10000).unwrap();
     protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(5_000_000_000)).unwrap();
 
     let _before = ast_hac_balance(&mut ctx, &main);
@@ -3562,6 +3557,7 @@ fn test_ast_deep_3level_all_channels() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
+    ctx.gas_initialize(10000).unwrap();
     ctx.test_set_vm(mock_vm);
 
     // Level 3: AstIf(cond: fail -> else: set(130,130) + vm+=1 + log)
@@ -3777,6 +3773,7 @@ fn test_ast_real_maincall_and_p2sh_transfer_failure_isolated_by_outer_select() {
     env.chain.fast_sync = false;
 
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.gas_initialize(10000).unwrap();
     ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
     let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
     protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(11)).unwrap();
@@ -3827,6 +3824,7 @@ fn test_ast_deep_real_maincall_and_p2sh_transfer_commit_expected_balances() {
     env.chain.fast_sync = false;
 
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.gas_initialize(10000).unwrap();
     ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
     let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
     protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(9)).unwrap();
@@ -4059,6 +4057,7 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
+    ctx.gas_initialize(10000).unwrap();
     ctx.test_set_vm(mock_vm);
     ctx.tex_ledger().zhu = 10;
 
@@ -4193,6 +4192,7 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_logs(env, Box::new(AstTestState::default()), logs, &tx);
+    ctx.gas_initialize(10000).unwrap();
     ctx.test_set_vm(mock_vm);
     ctx.tex_ledger().zhu = 30;
     counter.store(2, std::sync::atomic::Ordering::SeqCst);

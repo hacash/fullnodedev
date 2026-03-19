@@ -42,7 +42,7 @@ impl VmCallState {
     }
 }
 
-enum VmCallDispatch {
+pub(crate) enum VmCallReq {
     Main {
         code_type: CodeType,
         codes: Arc<[u8]>,
@@ -61,44 +61,7 @@ enum VmCallDispatch {
     },
 }
 
-impl VmCallDispatch {
-    fn parse(entry: u8, target: u8, payload: Arc<[u8]>, param: Box<dyn Any>) -> XRet<Self> {
-        use EntryKind::*;
-        let entry = EntryKind::try_from_u8(entry).map_err(XError::from)?;
-        match entry {
-            Main => Ok(Self::Main {
-                code_type: CodeConf::parse(target)?.code_type(),
-                codes: payload,
-            }),
-            P2sh => {
-                let payload = ByteView::from_arc(payload);
-                let payload_ref = payload.as_slice();
-                let (state_addr, mv1) = Address::create(payload_ref).map_err(XError::fault)?;
-                let (libs, mv2) =
-                    ContractAddressW1::create(&payload_ref[mv1..]).map_err(XError::fault)?;
-                let mv = mv1 + mv2;
-                let Ok(param) = param.downcast::<Value>() else {
-                    return xerrf!("p2sh argv type mismatch");
-                };
-                Ok(Self::P2sh {
-                    code_type: CodeConf::parse(target)?.code_type(),
-                    state_addr,
-                    libs: libs.into_list(),
-                    codes: payload.slice(mv, payload.len()).map_err(XError::fault)?,
-                    param: *param,
-                })
-            }
-            Abst => Ok(Self::Abst {
-                kind: AbstCall::try_from_u8(target).map_err(XError::from)?,
-                contract_addr: ContractAddress::parse(payload.as_ref()).map_err(XError::fault)?,
-                param: match param.downcast::<Value>() {
-                    Ok(param) => *param,
-                    Err(_) => return xerrf!("abst argv type mismatch"),
-                },
-            }),
-        }
-    }
-
+impl VmCallReq {
     fn entry_kind(&self) -> EntryKind {
         match self {
             Self::Main { .. } => EntryKind::Main,
@@ -220,26 +183,26 @@ impl VM for MachineBox {
     fn call(
         &mut self,
         ctx: &mut dyn Context,
-        entry: u8,
-        target: u8,
-        payload: Arc<[u8]>,
-        param: Box<dyn Any>,
-    ) -> XRet<(i64, Vec<u8>)> {
+        req: Box<dyn Any>,
+    ) -> XRet<(i64, Box<dyn Any>)> {
         let Some(machine) = self.machine.as_ref() else {
             return xerrf!("machine runtime missing");
         };
         let max_reentry = machine.r.space_cap.reentry_level;
         let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)?;
-        let dispatch = VmCallDispatch::parse(entry, target, payload, param)?;
+        let Ok(req) = req.downcast::<VmCallReq>() else {
+            return xerrf!("vm call request type mismatch");
+        };
+        let req = *req;
         let Some(machine) = self.machine.as_ref() else {
             return xerrf!("machine runtime missing");
         };
-        let min_cost = dispatch.min_call_cost(&machine.r.gas_extra);
+        let min_cost = req.min_call_cost(&machine.r.gas_extra);
         let gas_before = ctx.gas_remaining();
         let Some(machine) = self.machine.as_mut() else {
             return xerrf!("machine runtime missing");
         };
-        let result = dispatch.execute(machine, ctx);
+        let result = req.execute(machine, ctx);
         let gas_after = ctx.gas_remaining();
         let actual = gas_before - gas_after;
         let cost = if actual >= min_cost {
@@ -248,11 +211,11 @@ impl VM for MachineBox {
             ctx.gas_charge(min_cost - actual)?;
             min_cost
         };
-        let resv = result.map(|a| a.raw())?;
+        let resv = result?;
         if cost <= 0 {
             return xerrf!("gas cost invalid: {}", cost);
         }
-        Ok((cost, resv))
+        Ok((cost, Box::new(resv)))
     }
 }
 

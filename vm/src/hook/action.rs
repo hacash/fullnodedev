@@ -240,7 +240,7 @@ mod hook_arg_tests {
         tex: TexLedger,
         p2sh_addr: Address,
         p2sh_box: Box<dyn P2sh>,
-        calls: Vec<(u8, u8, Value)>,
+        calls: Vec<Value>,
         exec_from: ExecFrom,
     }
 
@@ -250,6 +250,8 @@ mod hook_arg_tests {
                 main,
                 addrs: vec![main, p2sh_addr],
             };
+            let mut p2sh_code = Address::default().as_bytes().to_vec();
+            p2sh_code.push(0); // empty ContractAddressW1 list
             let mut env = Env::default();
             env.tx.ty = 3;
             env.tx.main = main;
@@ -263,8 +265,8 @@ mod hook_arg_tests {
                 p2sh_addr,
                 p2sh_box: Box::new(DummyP2sh {
                     conf: crate::CodeConf::from_type(crate::CodeType::Bytecode).raw(),
-                    code: vec![],
-                    witness: vec![1, 2, 3],
+                    code: p2sh_code,
+                    witness: vec![0; 21],
                 }),
                 calls: vec![],
                 exec_from: ExecFrom::Top,
@@ -305,18 +307,17 @@ mod hook_arg_tests {
         fn tx(&self) -> &dyn TransactionRead {
             &self.tx
         }
-        fn vm_call(
-            &mut self,
-            entry: u8,
-            target: u8,
-            _payload: Arc<[u8]>,
-            param: Box<dyn Any>,
-        ) -> XRet<(i64, Vec<u8>)> {
-            let Ok(param) = param.downcast::<Value>() else {
-                return Err(XError::fault("param type mismatch".to_owned()));
+        fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(i64, Box<dyn Any>)> {
+            let Ok(req) = req.downcast::<crate::machine::VmCallReq>() else {
+                return Err(XError::fault("vm call req type mismatch".to_owned()));
             };
-            self.calls.push((entry, target, *param));
-            Ok((1, vec![]))
+            let param = match *req {
+                crate::machine::VmCallReq::Main { .. } => Value::Nil,
+                crate::machine::VmCallReq::P2sh { param, .. }
+                | crate::machine::VmCallReq::Abst { param, .. } => param,
+            };
+            self.calls.push(param);
+            Ok((1, Box::new(Value::Nil)))
         }
         fn tex_ledger(&mut self) -> &mut TexLedger {
             &mut self.tex
@@ -343,7 +344,7 @@ mod hook_arg_tests {
 
         try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
         assert_eq!(ctx.calls.len(), 1);
-        let (_, _, param) = &ctx.calls[0];
+        let param = &ctx.calls[0];
         assert!(matches!(param, Value::Tuple(_)));
     }
 
@@ -357,7 +358,7 @@ mod hook_arg_tests {
 
         try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
         assert_eq!(ctx.calls.len(), 1);
-        let (_, _, param) = &ctx.calls[0];
+        let param = &ctx.calls[0];
         assert!(matches!(param, Value::Tuple(_)));
     }
 }

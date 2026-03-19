@@ -1,13 +1,6 @@
 pub trait VM {
-    fn call(
-        &mut self,
-        ctx: &mut dyn Context,
-        entry: u8,
-        target: u8,
-        payload: Arc<[u8]>,
-        param: Box<dyn Any>,
-    ) -> XRet<(i64, Vec<u8>)> {
-        let _ = (ctx, entry, target, payload, param);
+    fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(i64, Box<dyn Any>)> {
+        let _ = (ctx, req);
         never!()
     }
     /// Snapshot volatile VM state for AstSelect/AstIf recover paths.

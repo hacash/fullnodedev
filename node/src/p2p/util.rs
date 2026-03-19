@@ -49,9 +49,28 @@ fn stable_nodes_path_from_conf(cnf: &NodeConf) -> PathBuf {
     join_path(&cnf.data_dir, "stable.nodes")
 }
 
+const STABLE_NODES_CACHE_EXPIRE_SECS: u64 = 24 * 60 * 60;
+
+fn stable_nodes_cache_expired(path: &PathBuf) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    let Ok(modified) = meta.modified() else {
+        return false;
+    };
+    let Ok(elapsed) = SystemTime::now().duration_since(modified) else {
+        return false;
+    };
+    elapsed.as_secs() >= STABLE_NODES_CACHE_EXPIRE_SECS
+}
+
 
 fn read_stable_nodes_file(path: &PathBuf, max: usize) -> Vec<SocketAddr> {
     if max == 0 {
+        return vec![];
+    }
+    if stable_nodes_cache_expired(path) {
+        let _ = std::fs::remove_file(path);
         return vec![];
     }
     let Ok(content) = std::fs::read_to_string(path) else {

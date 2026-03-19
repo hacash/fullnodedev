@@ -52,38 +52,21 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
 
 
 /*****************************************************/
-
-
-fn setup_vm_run_entry(
-    ctx: &mut dyn Context,
-    entry: EntryKind,
-    target: u8,
-    payload: Arc<[u8]>,
-    param: Value,
-) -> Ret<(i64, Value)> {
-    ensure_vm_run_ready(ctx)?;
-    let res = with_exec_from(ctx, ExecFrom::Call, |ctx| {
-        ctx.vm_call(entry as u8, target, payload, Box::new(param))
-    });
-    let (cost, rv) = res?;
-    Ok((cost, Value::bytes(rv)))
-}
-
-
-
 pub fn setup_vm_run_main(
     ctx: &mut dyn Context,
     codeconf: u8,
     payload: Vec<u8>,
 ) -> Ret<(i64, Value)> {
     // Bytecode verification is intentionally handled by upper-layer action validators before calling setup_vm_run_main.
-    setup_vm_run_entry(
-        ctx,
-        EntryKind::Main,
-        codeconf,
-        Arc::from(payload),
-        Value::Nil,
-    )
+    ensure_vm_run_ready(ctx)?;
+    let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::Main {
+        code_type: CodeConf::parse(codeconf)?.code_type(),
+        codes: Arc::from(payload),
+    }))?;
+    let Ok(rv) = rv.downcast::<Value>() else {
+        return errf!("vm call return type mismatch");
+    };
+    Ok((cost, *rv))
 }
 
 pub fn setup_vm_run_p2sh(
@@ -93,13 +76,23 @@ pub fn setup_vm_run_p2sh(
     param: Value,
 ) -> Ret<(i64, Value)> {
     // Lock script verification is intentionally handled by upper-layer action validators before calling setup_vm_run_p2sh.
-    setup_vm_run_entry(
-        ctx,
-        EntryKind::P2sh,
-        codeconf,
-        Arc::from(payload),
+    ensure_vm_run_ready(ctx)?;
+    let payload = ByteView::from_arc(Arc::from(payload));
+    let payload_ref = payload.as_slice();
+    let (state_addr, mv1) = Address::create(payload_ref)?;
+    let (libs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
+    let mv = mv1 + mv2;
+    let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::P2sh {
+        code_type: CodeConf::parse(codeconf)?.code_type(),
+        state_addr,
+        libs: libs.into_list(),
+        codes: payload.slice(mv, payload.len())?,
         param,
-    )
+    }))?;
+    let Ok(rv) = rv.downcast::<Value>() else {
+        return errf!("vm call return type mismatch");
+    };
+    Ok((cost, *rv))
 }
 
 pub fn setup_vm_run_abst(
@@ -108,11 +101,14 @@ pub fn setup_vm_run_abst(
     payload: Address,
     param: Value,
 ) -> Ret<(i64, Value)> {
-    setup_vm_run_entry(
-        ctx,
-        EntryKind::Abst,
-        target as u8,
-        Arc::from(payload.as_bytes()),
+    ensure_vm_run_ready(ctx)?;
+    let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::Abst {
+        kind: target,
+        contract_addr: ContractAddress::from_addr(payload)?,
         param,
-    )
+    }))?;
+    let Ok(rv) = rv.downcast::<Value>() else {
+        return errf!("vm call return type mismatch");
+    };
+    Ok((cost, *rv))
 }

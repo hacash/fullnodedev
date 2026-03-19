@@ -285,8 +285,6 @@ impl std::ops::DivAssign for Fold64 {
 #[cfg(test)]
 mod fold64_tests {
     use super::*;
-    use std::hint::black_box;
-    use std::time::Instant;
 
     /* 
     #[test]
@@ -594,86 +592,6 @@ mod fold64_tests {
         assert_eq!(p2.uint(), 8192);
     }
 
-    #[test]
-    #[ignore]
-    fn bench_fold64_vs_leb128() {
-        // Run with: cargo test -p field fold64_tests::bench_fold64_vs_leb128 -- --ignored --nocapture
-        let samples = [
-            0u64,
-            1u64,
-            31u64,
-            32u64,
-            8191u64,
-            8192u64,
-            2_097_151u64,
-            2_097_152u64,
-            5_368_709_11u64,
-            5_368_709_12u64,
-            1_374_389_534_71u64,
-            1_374_389_534_72u64,
-            351_843_720_888_31u64,
-            351_843_720_888_32u64,
-            90_071_992_547_409_91u64,
-            90_071_992_547_409_92u64,
-            Fold64::MAX,
-        ];
-
-        let mut fold_bytes = Vec::with_capacity(samples.len());
-        let mut leb_bytes = Vec::with_capacity(samples.len());
-        for v in samples.iter() {
-            fold_bytes.push(Fold64::from(*v).unwrap().serialize());
-            leb_bytes.push(leb128_encode_u64(*v));
-        }
-
-        let loops = 200_000usize;
-
-        let now = Instant::now();
-        let mut acc = 0u64;
-        for i in 0..loops {
-            let idx = i % samples.len();
-            let mut f = Fold64::default();
-            let len = f.parse(black_box(&fold_bytes[idx])).unwrap();
-            acc = acc.wrapping_add(f.uint() ^ (len as u64));
-        }
-        let fold_decode = now.elapsed();
-
-        let now = Instant::now();
-        let mut acc2 = 0u64;
-        for i in 0..loops {
-            let idx = i % samples.len();
-            let (v, len) = leb128_decode_u64(black_box(&leb_bytes[idx])).unwrap();
-            acc2 = acc2.wrapping_add(v ^ (len as u64));
-        }
-        let leb_decode = now.elapsed();
-
-        let now = Instant::now();
-        let mut acc3 = 0usize;
-        for i in 0..loops {
-            let idx = i % samples.len();
-            let data = Fold64::from(samples[idx]).unwrap().serialize();
-            acc3 ^= data.len();
-        }
-        let fold_encode = now.elapsed();
-
-        let now = Instant::now();
-        let mut acc4 = 0usize;
-        for i in 0..loops {
-            let idx = i % samples.len();
-            let data = leb128_encode_u64(samples[idx]);
-            acc4 ^= data.len();
-        }
-        let leb_encode = now.elapsed();
-
-        println!(
-            "fold64 decode {:?} encode {:?} (acc {} {})",
-            fold_decode, fold_encode, acc, acc3
-        );
-        println!(
-            "leb128 decode {:?} encode {:?} (acc {} {})",
-            leb_decode, leb_encode, acc2, acc4
-        );
-    }
-
     fn do_t_one(n: u64) {
         let fu = Fold64::from(n).unwrap();
         let mut fu2 = Fold64::from(0).unwrap();
@@ -684,39 +602,6 @@ mod fold64_tests {
         assert_eq!(fu.serialize(), fu2.serialize());
         println!("{} {} {}", n, fu.serialize().to_hex(), fu2.size())
     }
-    
-    fn leb128_encode_u64(mut v: u64) -> Vec<u8> {
-        let mut out = Vec::new();
-        loop {
-            let byte = (v & 0x7f) as u8;
-            v >>= 7;
-            if v == 0 {
-                out.push(byte);
-                break;
-            } else {
-                out.push(byte | 0x80);
-            }
-        }
-        out
-    }
-
-    fn leb128_decode_u64(buf: &[u8]) -> Ret<(u64, usize)> {
-        let mut result = 0u64;
-        let mut shift = 0u32;
-        for (i, b) in buf.iter().enumerate() {
-            let byte = *b as u64;
-            result |= (byte & 0x7f) << shift;
-            if byte & 0x80 == 0 {
-                return Ok((result, i + 1))
-            }
-            shift += 7;
-            if shift >= 64 {
-                return errf!("leb128 overflow")
-            }
-        }
-        errf!("leb128 sequence is unterminated")
-    }
 }
-
 
 
