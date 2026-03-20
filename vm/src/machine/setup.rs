@@ -56,7 +56,7 @@ pub fn setup_vm_run_main(
     ctx: &mut dyn Context,
     codeconf: u8,
     payload: Vec<u8>,
-) -> Ret<(i64, Value)> {
+) -> Ret<(GasUse, Value)> {
     // Bytecode verification is intentionally handled by upper-layer action validators before calling setup_vm_run_main.
     ensure_vm_run_ready(ctx)?;
     let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::Main {
@@ -74,7 +74,7 @@ pub fn setup_vm_run_p2sh(
     codeconf: u8,
     payload: Vec<u8>,
     param: Value,
-) -> Ret<(i64, Value)> {
+) -> Ret<(GasUse, Value)> {
     // Lock script verification is intentionally handled by upper-layer action validators before calling setup_vm_run_p2sh.
     ensure_vm_run_ready(ctx)?;
     let payload = ByteView::from_arc(Arc::from(payload));
@@ -100,7 +100,7 @@ pub fn setup_vm_run_abst(
     target: AbstCall,
     payload: Address,
     param: Value,
-) -> Ret<(i64, Value)> {
+) -> Ret<(GasUse, Value)> {
     ensure_vm_run_ready(ctx)?;
     let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::Abst {
         kind: target,

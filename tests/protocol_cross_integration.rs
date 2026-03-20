@@ -2112,7 +2112,7 @@ impl VM for AstDeepDelayVm {
         &mut self,
         _: &mut dyn Context,
         req: Box<dyn std::any::Any>,
-    ) -> XRet<(i64, Box<dyn std::any::Any>)> {
+    ) -> XRet<(GasUse, Box<dyn std::any::Any>)> {
         let Ok(data) = req.downcast::<Vec<u8>>() else {
             return xerrf!("deep delay vm payload type mismatch");
         };
@@ -2130,7 +2130,7 @@ impl VM for AstDeepDelayVm {
         if should_fail {
             return xerr_rf!("deep delay vm forced fail");
         }
-        Ok((0, Box::new(Vec::<u8>::new())))
+        Ok((GasUse::default(), Box::new(Vec::<u8>::new())))
     }
 }
 
@@ -2358,7 +2358,7 @@ impl VM for AstBugAssumeVm {
         &mut self,
         _: &mut dyn Context,
         req: Box<dyn std::any::Any>,
-    ) -> XRet<(i64, Box<dyn std::any::Any>)> {
+    ) -> XRet<(GasUse, Box<dyn std::any::Any>)> {
         let Ok(data) = req.downcast::<Vec<u8>>() else {
             return xerrf!("ast bug assume vm payload type mismatch");
         };
@@ -2377,7 +2377,13 @@ impl VM for AstBugAssumeVm {
         }
         self.burned
             .fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
-        Ok((gas_cost, Box::new(Vec::<u8>::new())))
+        Ok((
+            GasUse {
+                compute: gas_cost,
+                ..GasUse::default()
+            },
+            Box::new(Vec::<u8>::new()),
+        ))
     }
 }
 

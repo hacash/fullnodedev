@@ -296,6 +296,7 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         ctx,
         gas_remaining: gas,
     };
+    let mut gas_use = basis::interface::GasUse::default();
 
     execute_code(
         &mut pc,
@@ -309,6 +310,7 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         &GasTable::new(1),
         &GasExtra::new(1),
         &SpaceCap::new(1),
+        &mut gas_use,
         &mut GKVMap::new(20),
         &mut CtcKVMap::new(12),
         &mut host,

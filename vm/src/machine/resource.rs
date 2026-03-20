@@ -15,7 +15,7 @@ pub struct Resoure {
     pub global_map: GKVMap,
     pub memory_map: CtcKVMap,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
-    // stack heap
+    pub gas_use: GasUse,
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
 }
@@ -38,9 +38,11 @@ impl Resoure {
         self.global_map.clear();
         self.memory_map.clear();
         self.contracts.clear();
+        self.gas_use = GasUse::default();
     }
 
     pub fn reset(&mut self, height: u64) {
+        self.gas_use = GasUse::default();
         // Rebuild config when height rolls back below current cfg_height, or crosses next upgrade.
         if height >= self.cfg_height && height < self.next_upgrade {
             return; // same protocol version, skip config rebuild
@@ -59,6 +61,90 @@ impl Resoure {
         self.space_cap = cap;
         self.gas_extra = GasExtra::new(height);
         self.gas_table = GasTable::new(height);
+        self.gas_use = GasUse::default();
+    }
+
+    #[inline(always)]
+    pub fn reset_call_gas_use(&mut self) {
+        self.gas_use = GasUse::default();
+    }
+
+    #[inline(always)]
+    pub fn gas_use(&self) -> GasUse {
+        self.gas_use
+    }
+
+    #[inline(always)]
+    pub fn next_compute_used(&self, add: i64) -> VmrtRes<i64> {
+        if add < 0 {
+            return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", add);
+        }
+        let next = self
+            .gas_use
+            .compute
+            .checked_add(add)
+            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "compute gas overflow"))?;
+        let limit = self.gas_extra.compute_limit;
+        if limit > 0 && next > limit {
+            return itr_err_fmt!(
+                ItrErrCode::OutOfGas,
+                "compute gas limit exceeded: used {} > limit {}",
+                next,
+                limit
+            );
+        }
+        Ok(next)
+    }
+
+    #[inline(always)]
+    pub fn next_resource_used(&self, add: i64) -> VmrtRes<i64> {
+        if add < 0 {
+            return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", add);
+        }
+        let next = self
+            .gas_use
+            .resource
+            .checked_add(add)
+            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "resource gas overflow"))?;
+        let limit = self.gas_extra.resource_limit;
+        if limit > 0 && next > limit {
+            return itr_err_fmt!(
+                ItrErrCode::OutOfGas,
+                "resource gas limit exceeded: used {} > limit {}",
+                next,
+                limit
+            );
+        }
+        Ok(next)
+    }
+
+    #[inline(always)]
+    pub fn next_storage_used(&self, add: i64) -> VmrtRes<i64> {
+        if add < 0 {
+            return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", add);
+        }
+        let next = self
+            .gas_use
+            .storage
+            .checked_add(add)
+            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "storage gas overflow"))?;
+        let limit = self.gas_extra.storage_limit;
+        if limit > 0 && next > limit {
+            return itr_err_fmt!(
+                ItrErrCode::OutOfGas,
+                "storage gas limit exceeded: used {} > limit {}",
+                next,
+                limit
+            );
+        }
+        Ok(next)
+    }
+
+    #[inline(always)]
+    pub fn commit_gas_use(&mut self, compute: i64, resource: i64, storage: i64) {
+        self.gas_use.compute = compute;
+        self.gas_use.resource = resource;
+        self.gas_use.storage = storage;
     }
 
     // Charge one cold contract load with per-load bytes fee.
@@ -67,7 +153,11 @@ impl Resoure {
         host: &mut H,
         bytes: usize,
     ) -> VmrtErr {
-        host.gas_charge(self.gas_extra.new_contract_load + (bytes as i64 / 64))
+        let gas = self.gas_extra.new_contract_load + (bytes as i64 / 64);
+        let next_resource = self.next_resource_used(gas)?;
+        host.gas_charge(gas)?;
+        self.gas_use.resource = next_resource;
+        Ok(())
     }
 
     pub fn stack_allocat(&mut self) -> Stack {

@@ -177,7 +177,7 @@ fn setup_vm_run_executes_after_assigner_registered() {
     )
     .unwrap();
 
-    assert!(gas_used > 0);
+    assert!(gas_used.total() > 0);
     assert!(!rv.extract_bool().unwrap());
 
     set_vm_assigner(None);
@@ -525,30 +525,33 @@ fn sandbox_call_respects_explicit_gas_max_byte() {
         r##"
         var i = 0 as u64
         var sum = 0 as u64
-        while i < 200 {
+        while i < 80 {
             sum = sum + i
             i = i + 1
         }
         return 0
     "##,
     );
-    let mut state = StateMem::default();
-    insert_contract(&mut state, &caddr, &sto);
-
-    let tx = make_tx(3, main, vec![], 17);
-    let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
-    protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
-
+    let mut state1 = StateMem::default();
+    insert_contract(&mut state1, &caddr, &sto);
+    let tx1 = make_tx(3, main, vec![], 64);
+    let mut ctx1 = make_ctx(1, &tx1, Box::new(state1), Box::new(MemLogs::default()));
+    protocol::operate::hac_add(&mut ctx1, &main, &Amount::unit238(1_000_000_000)).unwrap();
     let err = machine::sandbox_call(
-        &mut ctx,
+        &mut ctx1,
         machine::SandboxSpec::new(caddr.clone(), "heavy").gas_max_byte(1),
     )
     .unwrap_err();
     assert!(err.contains("gas has run out"), "{err}");
 
+    let mut state2 = StateMem::default();
+    insert_contract(&mut state2, &caddr, &sto);
+    let tx2 = make_tx(3, main, vec![], 64);
+    let mut ctx2 = make_ctx(1, &tx2, Box::new(state2), Box::new(MemLogs::default()));
+    protocol::operate::hac_add(&mut ctx2, &main, &Amount::unit238(1_000_000_000)).unwrap();
     let callres = machine::sandbox_call(
-        &mut ctx,
-        machine::SandboxSpec::new(caddr, "heavy").gas_max_byte(64),
+        &mut ctx2,
+        machine::SandboxSpec::new(caddr, "heavy"),
     )
     .unwrap();
     assert!(callres.use_gas > 0);

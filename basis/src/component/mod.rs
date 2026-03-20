@@ -10,6 +10,7 @@ include! {"tex.rs"}
 include! {"env.rs"}
 include! {"memkv.rs"}
 include! {"origin.rs"}
+include! {"gas.rs"}
 include! {"action.rs"}
 include! {"transaction.rs"}
 include! {"block.rs"}

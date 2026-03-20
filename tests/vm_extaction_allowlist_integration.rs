@@ -128,6 +128,7 @@ mod tests {
         let mut ops = Stack::new(16);
         let mut locals = Stack::new(16);
         let mut heap = Heap::new(16);
+        let mut gas_use = basis::interface::GasUse::default();
 
         let mut host = TestVmHost {
             ctx,
@@ -145,6 +146,7 @@ mod tests {
             &GasTable::new(1),
             &GasExtra::new(1),
             &SpaceCap::new(1),
+            &mut gas_use,
             &mut GKVMap::new(4),
             &mut CtcKVMap::new(4),
             &mut host,

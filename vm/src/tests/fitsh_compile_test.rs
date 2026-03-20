@@ -914,6 +914,7 @@ return C.0xabcdef01(1, 2)",
                 ctx,
                 gas_remaining: gas,
             };
+            let mut gas_use = basis::interface::GasUse::default();
 
             crate::interpreter::execute_code(
                 &mut pc,
@@ -927,6 +928,7 @@ return C.0xabcdef01(1, 2)",
                 &GasTable::new(1),
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
+                &mut gas_use,
                 &mut GKVMap::new(20),
                 &mut CtcKVMap::new(12),
                 &mut host,

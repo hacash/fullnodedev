@@ -10,6 +10,9 @@ pub enum RetBlkFound {
     Reject,
 }
 
+/// Returned when low-bid shadow storage is full; discover must not broadcast this block.
+pub const LOW_BID_CACHE_FULL_ERR: &str = "mint.low_bid.cache_full";
+
 
 pub trait Minter : Send + Sync {
     // fn config(&self) -> &MintConf;

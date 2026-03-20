@@ -9,6 +9,7 @@ use sys::*;
 
 use super::component::*;
 use super::config::*;
+pub use super::component::GasUse;
 
 include! {"peer.rs"}
 include! {"txpool.rs"}

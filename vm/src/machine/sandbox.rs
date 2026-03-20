@@ -64,13 +64,13 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
             (gmx, decode_gas_budget(capped))
         }
         None => {
-            let tx_gas_max = match spec.gas_budget {
-                Some(v) if v > 0 => encode_gas_budget(v).min(tx_budget_cap_byte),
+            let cap_budget = decode_gas_budget(tx_budget_cap_byte);
+            let gas_budget = match spec.gas_budget {
+                Some(v) if v > 0 => v.min(cap_budget),
                 Some(v) => return errf!("sandbox gas budget invalid: {}", v),
-                None => tx_budget_cap_byte,
+                None => cap_budget,
             };
-            let gas_budget = decode_gas_budget(tx_gas_max);
-            (tx_gas_max, gas_budget)
+            (tx_budget_cap_byte, gas_budget)
         }
     };
     let mut tx = TransactionType3::new_by(caller, Amount::unit238(SANDBOX_TX_FEE_238), env.block.height);

@@ -184,12 +184,13 @@ impl VM for MachineBox {
         &mut self,
         ctx: &mut dyn Context,
         req: Box<dyn Any>,
-    ) -> XRet<(i64, Box<dyn Any>)> {
+    ) -> XRet<(GasUse, Box<dyn Any>)> {
         let Some(machine) = self.machine.as_ref() else {
             return xerrf!("machine runtime missing");
         };
         let max_reentry = machine.r.space_cap.reentry_level;
         let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)?;
+        let call_level = _guard.call_state.reentry_level;
         let Ok(req) = req.downcast::<VmCallReq>() else {
             return xerrf!("vm call request type mismatch");
         };
@@ -202,18 +203,28 @@ impl VM for MachineBox {
         let Some(machine) = self.machine.as_mut() else {
             return xerrf!("machine runtime missing");
         };
+        let call_base = if call_level <= 1 {
+            machine.r.reset_call_gas_use();
+            GasUse::default()
+        } else {
+            machine.r.gas_use()
+        };
         let result = req.execute(machine, ctx);
         let gas_after = ctx.gas_remaining();
         let actual = gas_before - gas_after;
-        let cost = if actual >= min_cost {
-            actual
-        } else {
-            ctx.gas_charge(min_cost - actual)?;
-            min_cost
+        if actual < min_cost {
+            let delta = min_cost - actual;
+            let next_compute = machine.r.next_compute_used(delta)?;
+            ctx.gas_charge(delta)?;
+            machine.r.gas_use.compute = next_compute;
+        }
+        let total_cost = machine.r.gas_use();
+        let Some(cost) = total_cost.checked_sub(call_base) else {
+            return xerrf!("gas cost underflow: total={:?}, base={:?}", total_cost, call_base);
         };
         let resv = result?;
-        if cost <= 0 {
-            return xerrf!("gas cost invalid: {}", cost);
+        if cost.total() <= 0 {
+            return xerrf!("gas cost invalid: {}", cost.total());
         }
         Ok((cost, Box::new(resv)))
     }

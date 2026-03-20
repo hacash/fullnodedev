@@ -159,6 +159,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
     gas_table: &GasTable,
     gas_extra: &GasExtra,
     space_cap: &SpaceCap,
+    gas_use: &mut GasUse,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
     host: &mut H,
@@ -208,9 +209,28 @@ pub fn execute_code<H: VmHost + ?Sized>(
         *pc += 1; // next
 
         // debug_print_stack(ops, locals, pc, instruction);
+        
+        
+        // gas
+        let base_gas = gas_table.gas(instbyte);
+        let mut step_gas_use = GasUse {
+            compute: base_gas,
+            ..GasUse::default()
+        };
 
-        // do execute
-        let mut gas = gas_table.gas(instbyte);
+        macro_rules! gas_add {
+            ($kind:ident, raw, $n:expr) => {{
+                step_gas_use.$kind += ($n) as i64;
+            }};
+            ($kind:ident, $f:ident $(, $arg:expr)* $(,)?) => {{
+                step_gas_use.$kind += gst.$f($($arg),*);
+            }};
+        }
+        macro_rules! gas_resource {
+            ($f:ident $(, $arg:expr)* $(,)?) => {{
+                gas_add!(resource, $f $(, $arg)*);
+            }};
+        }
 
         macro_rules! actcall { ($act_kind: expr) => {{
             let act_kind = $act_kind;
@@ -223,14 +243,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
             if pass_body {
                 let mut bdv = ops.peek()?.extract_call_data(heap)?;
                 actbody.append(&mut bdv);
-                gas += gst.act_bytes(actbody.len());
+                gas_resource!(act_bytes, actbody.len());
             }
             let (bgasu, cres) = host.action_call(kid, actbody).map_err(|e|
                 ItrErr::new(maybe!(e.is_revert(), ActCallRevert, ActCallError), e.as_str()))?;
-            gas += bgasu as i64;
+            gas_add!(resource, raw, bgasu);
             if have_retv {
                 let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
-                gas += gst.act_bytes(resv.val_size());
+                gas_resource!(act_bytes, resv.val_size());
                 if pass_body {
                     *ops.peek()? = resv;
                 } else {
@@ -246,11 +266,11 @@ pub fn execute_code<H: VmHost + ?Sized>(
             (func, $idx: expr) => {{
                 let nt_idx = $idx;
                 let argv = ops.pop()?.extract_call_data(heap)?;
-                gas += gst.ntfunc_bytes(argv.len());
+                gas_resource!(ntfunc_bytes, argv.len());
                 let (r, g) = NativeFunc::call(hei, nt_idx, &argv)?;
                 let r = r.valid(cap)?;
-                gas += gst.ntfunc_bytes(r.val_size());
-                gas += g;
+                gas_resource!(ntfunc_bytes, r.val_size());
+                gas_add!(resource, raw, g);
                 ops.push(r)?;
             }};
             (env, $idx: expr) => {{
@@ -262,8 +282,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 };
                 let g = NativeEnv::gas(nt_idx)?;
                 let r = r.valid(cap)?;
-                gas += gst.ntfunc_bytes(r.val_size());
-                gas += g;
+                gas_resource!(ntfunc_bytes, r.val_size());
+                gas_add!(resource, raw, g);
                 ops.push(r)?;
             }};
         }
@@ -271,7 +291,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         macro_rules! local_get {
             ($idx: expr) => {{
                 let v = locals.load($idx as usize)?.valid(cap)?;
-                gas += gst.stack_copy(v.dup_size());
+                gas_resource!(stack_copy, v.dup_size());
                 ops.push(v)?;
             }};
         }
@@ -280,14 +300,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
             ($itn: expr) => {{
                 nsw!();
                 let items = ops.popn($itn)?;
-                gas += gst.log_bytes(items.iter().map(|v| v.val_size()).sum());
+                gas_add!(storage, log_bytes, items.iter().map(|v| v.val_size()).sum());
                 host.log_push(context_addr, items)?;
             }};
         }
 
         macro_rules! peek_op_gas { ($method:ident($($arg:expr),*)) => {{
             let (v, outlen) = ops.peek_with_size()?;
-            gas += gst.stack_op(outlen);
+            gas_resource!(stack_op, outlen);
             v.$method($($arg),*)?;
         }}}
 
@@ -295,7 +315,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
             () => {{
                 if ops.datas.len() >= 2 {
                     let l = ops.datas.len();
-                    gas += gst.stack_cmp(lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1]));
+                    gas_resource!(stack_cmp, lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1]));
                 }
             }};
         }
@@ -304,7 +324,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
             ($v:expr) => {{
                 let v = $v.valid(cap)?;
                 if let Some(b) = v.match_bytes() {
-                    gas += gst.stack_copy(b.len());
+                    gas_resource!(stack_copy, b.len());
                 }
                 ops.push(v)?;
             }};
@@ -313,7 +333,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         macro_rules! hwrite {
             ($idx:expr) => {{
                 let v = ops.pop()?;
-                gas += gst.heap_write(v.val_size());
+                gas_resource!(heap_write, v.val_size());
                 heap.write($idx, v)?;
             }};
         }
@@ -321,7 +341,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         macro_rules! hread_push {
             ($v:expr) => {{
                 let v = $v;
-                gas += gst.heap_read(v.val_size());
+                gas_resource!(heap_read, v.val_size());
                 ops.push(v)?;
             }};
         }
@@ -333,10 +353,10 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 let k = ops.pop()?;
                 let klen = k.extract_key_bytes()?.len();
                 let is_new = !$store.contains_key(&k)?;
-                gas += gst.stack_write(klen);
-                gas += gst.stack_write(vlen);
+                gas_resource!(stack_write, klen);
+                gas_resource!(stack_write, vlen);
                 if is_new {
-                    gas += $key_cost;
+                    gas_add!(resource, raw, $key_cost);
                 }
                 $store.put(k, v)?;
             }};
@@ -357,7 +377,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     $lookup
                 }
                 .valid(cap)?;
-                gas += gst.stack_copy(v.dup_size());
+                gas_resource!(stack_copy, v.dup_size());
                 *ops.peek()? = v;
             }};
         }
@@ -365,14 +385,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
         macro_rules! compo_edit_gas {
             () => {{
                 let len = ops.compo()?.len();
-                gas += gst.compo_items_edit(len);
+                gas_resource!(compo_items_edit, len);
             }};
         }
 
         macro_rules! compo_read_gas {
             () => {{
                 let len = ops.peek()?.container_len()?;
-                gas += gst.compo_items_read(len);
+                gas_resource!(compo_items_read, len);
             }};
         }
 
@@ -381,8 +401,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 let mut compo_val = ops.pop()?;
                 let len = compo_val.compo()?.len();
                 let v = compo_val.compo()?.$method()?.valid(cap)?;
-                gas += gst.compo_items_edit(len);
-                gas += gst.compo_bytes(v.val_size());
+                gas_resource!(compo_items_edit, len);
+                gas_resource!(compo_bytes, v.val_size());
                 ops.push(v)?;
             }};
         }
@@ -427,7 +447,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // stack & buffer
                 DUP => {
                     let bsz = ops.datas.last().map(Value::dup_size).unwrap_or(0);
-                    gas += gst.stack_copy(bsz);
+                    gas_resource!(stack_copy, bsz);
                     ops.push(ops.last()?)?;
                 }
                 DUPN => {
@@ -440,7 +460,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                             bsz += v.dup_size();
                         }
                     }
-                    gas += gst.stack_copy(bsz);
+                    gas_resource!(stack_copy, bsz);
                     ops.dupn(n)?;
                 }
                 POP => {
@@ -467,7 +487,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         l if l >= 2 => (ops.datas[l - 2].val_size(), ops.datas[l - 1].val_size()),
                         _ => (0, 0),
                     };
-                    gas += gst.stack_op(xlen + ylen);
+                    gas_resource!(stack_op, xlen + ylen);
                     ops.cat(cap)?;
                 }
                 JOIN => {
@@ -481,19 +501,19 @@ pub fn execute_code<H: VmHost + ?Sized>(
                             ops.datas[l - n..].iter().map(|v| v.val_size()).sum()
                         }
                     };
-                    gas += gst.stack_op(total);
+                    gas_resource!(stack_op, total);
                     ops.join(n, cap)?;
                 }
                 BYTE => {
                     let outlen = ops.peek()?.val_size();
-                    gas += gst.stack_op(outlen);
+                    gas_resource!(stack_op, outlen);
                     let i = ops_pop_to_u16!();
                     ops.peek()?.cutbyte(i)?;
                 }
                 CUT => {
                     let (l, o) = (ops.pop()?, ops.pop()?);
                     let outlen = ops.peek()?.val_size();
-                    gas += gst.stack_op(outlen);
+                    gas_resource!(stack_op, outlen);
                     ops.peek()?.cutout(l, o)?;
                 }
                 LEFT  => peek_op_gas!(cutleft(pu8_as_u16!())),
@@ -506,7 +526,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 NEWMAP => ops.push(Compo(CompoItem::new_map()))?,
                 PACKTUPLE => {
                     let (a, len) = TupleItem::pack(cap, ops)?;
-                    gas += gst.compo_items_edit(len);
+                    gas_resource!(compo_items_edit, len);
                     ops.push(a)?;
                 }
                 TUPLE2LIST => {
@@ -520,18 +540,18 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         },
                         _ => return itr_err_code!(CastFail),
                     };
-                    gas += gst.compo_items_copy(len);
-                    gas += gst.compo_bytes(bsz);
+                    gas_resource!(compo_items_copy, len);
+                    gas_resource!(compo_bytes, bsz);
                     *ops.peek()? = list;
                 }
                 PACKLIST => {
                     let (l, len) = CompoItem::pack_list(cap, ops)?;
-                    gas += gst.compo_items_edit(len);
+                    gas_resource!(compo_items_edit, len);
                     ops.push(l)?;
                 }
                 PACKMAP => {
                     let (m, len) = CompoItem::pack_map(cap, ops)?;
-                    gas += gst.compo_items_edit(len);
+                    gas_resource!(compo_items_edit, len);
                     ops.push(m)?;
                 }
                 INSERT => {
@@ -542,8 +562,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         maybe!(c.is_map(), k.extract_key_bytes()?.len(), 0)
                     };
                     compo_edit_gas!();
-                    gas += gst.compo_bytes(ksz);
-                    gas += gst.compo_bytes(v.val_size());
+                    gas_resource!(compo_bytes, ksz);
+                    gas_resource!(compo_bytes, v.val_size());
                     ops.compo()?.insert(cap, k, v)?;
                 }
                 REMOVE => {
@@ -556,8 +576,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         let c = ops.compo()?;
                         (c.len(), c.val_size())
                     };
-                    gas += gst.compo_items_edit(len);
-                    gas += gst.compo_bytes(bsz);
+                    gas_resource!(compo_items_edit, len);
+                    gas_resource!(compo_bytes, bsz);
                     ops.compo()?.clear();
                 }
                 MERGE => {
@@ -577,8 +597,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         }
                         None => (0, 0),
                     };
-                    gas += gst.compo_items_copy(src_len);
-                    gas += gst.compo_bytes(src_bsz);
+                    gas_resource!(compo_items_copy, src_len);
+                    gas_resource!(compo_bytes, src_bsz);
                     ops.compo()?.merge(cap, a.take_compo()?)?;
                 }
                 LENGTH => {
@@ -595,19 +615,19 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     let k = ops.pop()?;
                     let v = ops.peek()?.itemget(k)?.valid(cap)?;
                     compo_read_gas!();
-                    gas += gst.compo_bytes(v.val_size());
+                    gas_resource!(compo_bytes, v.val_size());
                     *ops.peek()? = v;
                 }
                 KEYS => {
                     let (v, len, bsz) = ops.compo()?.keys_with_stats()?;
-                    gas += gst.compo_items_read(len);
-                    gas += gst.compo_bytes(bsz);
+                    gas_resource!(compo_items_read, len);
+                    gas_resource!(compo_bytes, bsz);
                     *ops.peek()? = v;
                 }
                 VALUES => {
                     let (v, len, bsz) = ops.compo()?.values_with_stats()?;
-                    gas += gst.compo_items_read(len);
-                    gas += gst.compo_bytes(bsz);
+                    gas_resource!(compo_items_read, len);
+                    gas_resource!(compo_bytes, bsz);
                     *ops.peek()? = v;
                 }
                 HEAD => compo_pop_one!(head),
@@ -615,7 +635,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 APPEND => {
                     let v = ops.pop()?;
                     compo_edit_gas!();
-                    gas += gst.compo_bytes(v.val_size());
+                    gas_resource!(compo_bytes, v.val_size());
                     ops.compo()?.append(cap, v)?;
                 }
                 CLONE => {
@@ -632,23 +652,23 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         };
                         (len, bsz, compo.copy())
                     };
-                    gas += gst.compo_items_copy(len);
-                    gas += gst.compo_bytes(bsz);
+                    gas_resource!(compo_items_copy, len);
+                    gas_resource!(compo_bytes, bsz);
                     *ops.peek()? = Compo(c);
                 }
                 UNPACK => {
                     let i = ops.pop()?.extract_u8()?;
                     let items = ops.peek()?.clone_unpack_items()?;
-                    gas += unpack_seq(i, locals, items, gst, cap)?;
+                    gas_add!(resource, raw, unpack_seq(i, locals, items, gst, cap)?);
                     ops.pop()?; // pop argv wrapper after unpack
                 }
                 // heap
-                HGROW => gas += heap.grow(pu8!())?,
+                HGROW => gas_add!(resource, raw, heap.grow(pu8!())?),
                 HWRITE => hwrite!(ops_pop_to_u16!()),
                 HREAD => {
                     let n = ops.pop()?;
                     let len = n.extract_u16()? as usize;
-                    gas += gst.heap_read(len);
+                    gas_resource!(heap_read, len);
                     let peek = ops.peek()?;
                     *peek = heap.read(peek, n)?.valid(cap)?;
                 }
@@ -668,27 +688,27 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     if matches!(opt, LxLg::Eq | LxLg::Ne) {
                         let base = locals.load(idx as usize)?;
                         let top = ops.peek()?;
-                        gas += gst.stack_cmp(lgc_compare_fee(&base, top));
+                        gas_resource!(stack_cmp, lgc_compare_fee(&base, top));
                     }
                     local_logic(mark, locals, ops.peek()?)?;
                 }
                 XOP => local_operand(pu8!(), locals, ops.pop()?)?,
-                ALLOC => gas += gst.one_local_alloc * locals.alloc(pu8!())? as i64,
+                ALLOC => gas_add!(resource, raw, gst.one_local_alloc * locals.alloc(pu8!())? as i64),
                 GETX => {
                     let v = locals.load(ops_peek_to_u16!() as usize)?.valid(cap)?;
-                    gas += gst.stack_copy(v.dup_size());
+                    gas_resource!(stack_copy, v.dup_size());
                     *ops.peek()? = v;
                 }
                 PUTX => {
                     let v = ops.pop()?.valid(cap)?;
                     let vlen = v.val_size();
-                    gas += gst.stack_write(vlen);
+                    gas_resource!(stack_write, vlen);
                     locals.save(ops_pop_to_u16!(), v)?;
                 }
                 PUT => {
                     let v = ops.pop()?.valid(cap)?;
                     let vlen = v.val_size();
-                    gas += gst.stack_write(vlen);
+                    gas_resource!(stack_write, vlen);
                     locals.save(pu8_as_u16!(), v)?;
                 }
                 GET => local_get!(pu8!()),
@@ -711,26 +731,26 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     }
                     .valid(cap)?;
                     let vlen = v.val_size();
-                    gas += gst.storage_read(vlen);
+                    gas_add!(storage, storage_read, vlen);
                     *ops.peek()? = v;
                 }
                 SDEL => {
                     nsw!();
                     let k = ops.pop()?;
-                    gas += gst.storage_del();
+                    gas_add!(storage, storage_del);
                     host.sdel(context_addr, k)?;
                 }
                 SSAVE => {
                     nsw!();
                     let v = ops.pop()?.valid(cap)?;
                     let k = ops.pop()?;
-                    gas += host.ssave(gst, context_addr, k, v)?;
+                    gas_add!(storage, raw, host.ssave(gst, context_addr, k, v)?);
                 }
                 SRENT => {
                     nsw!();
                     let t = ops.pop()?;
                     let k = ops.pop()?;
-                    gas += host.srent(gst, context_addr, k, t)?;
+                    gas_add!(storage, raw, host.srent(gst, context_addr, k, t)?);
                 }
                 // global_map & memory_map
                 GPUT => kvput!(global_map, gst.global_key_cost),
@@ -787,7 +807,9 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // other
                 NT => return itr_err_code!(InstNeverTouch), // never touch
                 NOP => {}                                   // do nothing
-                BURN => gas += pu16!() as i64,
+                BURN => {
+                    gas_add!(resource, raw, pu16!());
+                }
                 // exit
                 RET => return Ok(Step::Exit(Return)), // func return <DATA>
                 END => return Ok(Step::Exit(Finish)), // func end
@@ -816,7 +838,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
         })();
 
         // reduce gas for use
-        host.gas_charge(gas / gst.gas_rate)?;
+        let step_total = check_add_gas_use(gas_use, &step_gas_use, gst)?;
+        host.gas_charge(step_total)?;
         match step {
             Ok(Step::Exit(exit)) => return Ok(exit),
             Ok(Step::Continue) => {}
@@ -826,6 +849,62 @@ pub fn execute_code<H: VmHost + ?Sized>(
     }
 }
 
+
+#[inline(always)]
+fn check_add_gas_use(
+    gas_use: &mut GasUse,
+    step_gas_use: &GasUse,
+    gst: &GasExtra,
+) -> VmrtRes<i64> {
+    if step_gas_use.compute < 0 || step_gas_use.resource < 0 || step_gas_use.storage < 0 {
+        return itr_err_fmt!(
+            ItrErrCode::GasError,
+            "gas cost invalid: compute={}, resource={}, storage={}",
+            step_gas_use.compute,
+            step_gas_use.resource,
+            step_gas_use.storage
+        );
+    }
+    let step_total = step_gas_use
+        .checked_total()
+        .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "gas overflow"))?;
+    let next_gas_use = gas_use
+        .checked_add(step_gas_use)
+        .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "gas use overflow"))?;
+    let check_limit = |name: &str, used: i64, limit: i64| -> VmrtErr {
+        if limit > 0 && used > limit {
+            return itr_err_fmt!(
+                ItrErrCode::OutOfGas,
+                "{} gas limit exceeded: used {} > limit {}",
+                name,
+                used,
+                limit
+            );
+        }
+        Ok(())
+    };
+    check_limit("compute",  next_gas_use.compute,  gst.compute_limit)?;
+    check_limit("resource", next_gas_use.resource, gst.resource_limit)?;
+    check_limit("storage",  next_gas_use.storage,  gst.storage_limit)?;
+    *gas_use = next_gas_use;
+    Ok(step_total)
+}
+
+#[allow(unused)]
+fn debug_print_stack(ops: &Stack, lcs: &Stack, pc: &usize, inst: Bytecode) {
+    println!(
+        "operds({})={}\nlocals({})={}\n-------- pc = {}, nbt = {:?}",
+        ops.len(),
+        &ops.print_stack(),
+        lcs.len(),
+        &lcs.print_stack(),
+        *pc,
+        inst
+    );
+}
+
+
+#[allow(unused)]
 fn debug_print_value(
     _ctx: &field::Address,
     _cur: &field::Address,
@@ -839,18 +918,5 @@ fn debug_print_value(
         _exec.call_depth,
         _exec,
         _val
-    );
-}
-
-#[allow(unused)]
-fn debug_print_stack(ops: &Stack, lcs: &Stack, pc: &usize, inst: Bytecode) {
-    println!(
-        "operds({})={}\nlocals({})={}\n-------- pc = {}, nbt = {:?}",
-        ops.len(),
-        &ops.print_stack(),
-        lcs.len(),
-        &lcs.print_stack(),
-        *pc,
-        inst
     );
 }

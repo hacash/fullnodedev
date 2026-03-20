@@ -1,19 +1,3 @@
-
-
-
-#[derive(Default)]
-pub struct GasUse {
-    pub compute: i64,
-    pub storage: i64,
-}
-
-impl GasUse {
-    pub fn total(&self) -> i64 {
-        self.compute + self.storage
-    }
-}
-
-
 /***********************************/
 
 
@@ -34,6 +18,28 @@ impl Default for GasTable {
 impl GasTable {
 
     pub fn new(_hei: u64) -> Self {
+        let mut gst = Self { table : [1; 256] };
+        gst.set(2,  &[ADD, SUB, MAX, MIN, INC, DEC,
+            AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
+        gst.set(3,  &[BSHR, BSHL, BXOR, BOR, BAND]);
+        gst.set(4,  &[MUL, DIV, MOD]);
+        gst.set(5,  &[MGET, GGET, NEWLIST, NEWMAP]);
+        gst.set(6,  &[POW]);
+        gst.set(8,  &[PACKLIST, PACKMAP, PACKTUPLE]);
+        gst.set(10,  &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
+        gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE]);
+        gst.set(16,  &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
+        gst.set(20,  &[LOG1, NTENV, CALLEXTVIEW]);
+        gst.set(24,  &[LOG2, CALLEXT, CALL]);
+        gst.set(28,  &[LOG3, ACTENV, SDEL]);
+        gst.set(32,  &[LOG4, ACTVIEW, SLOAD, SREST]);
+        gst.set(48,  &[ACTION]);
+        gst.set(64,  &[SSAVE, SRENT]);
+        gst
+    }
+
+    /*
+    pub fn new_bnk(_hei: u64) -> Self {
         use Bytecode::*;
         let mut gst = Self { table : [2; 256] };
         gst.set(1,  &[P0, P1, P2, P3, PU8, PNBUF, PNIL, PTRUE, PFALSE, 
@@ -61,6 +67,8 @@ impl GasTable {
         gst.set(64, &[SSAVE, SRENT]);
         gst
     }
+    */
+
 
     fn set(&mut self, gas: u8, btcds: &[Bytecode]) {
         for cd in btcds {
@@ -82,7 +90,9 @@ impl GasTable {
 
 #[derive(Default)]
 pub struct GasExtra {
-    pub gas_rate: i64, // gas burn discount denominator (mainnet=1, L2 sidechain can be e.g. 10 or 32)
+    pub compute_limit: i64,  // <=0 means disabled
+    pub resource_limit: i64, // <=0 means disabled
+    pub storage_limit: i64,  // <=0 means disabled
     pub one_local_alloc: i64,
     pub new_contract_load: i64,
     pub main_call_min: i64,
@@ -115,8 +125,15 @@ pub struct GasExtra {
 
 impl GasExtra {
     pub fn new(_hei: u64) -> Self {
+        use protocol::context::*;
         Self {
-            gas_rate:            2, // mainnet discount 50% (burn = cost*fee/txsz/gas_rate)
+            compute_limit:   decode_gas_budget(64), // 10481
+            resource_limit:  decode_gas_budget(48), // 3550
+            storage_limit:   decode_gas_budget(96), // 91352
+            // // debug test
+            // compute_limit:   91352, 
+            // resource_limit:  91352,
+            // storage_limit:   91352,
             // Load or alloc 
             one_local_alloc:     5, // 5 * num
             new_contract_load:  32, // base gas for loading a new contract
@@ -126,7 +143,7 @@ impl GasExtra {
             // Space alloc
             memory_key_cost:    20,
             global_key_cost:    32,
-            storege_value_base_size: 32,
+            storege_value_base_size: 16,
             storage_key_cost:  256,
             storage_del_min:    16,
             // Dynamic divisors (byte/N, item/N)
@@ -137,8 +154,8 @@ impl GasExtra {
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
-            storage_read_div:    8,
-            storage_write_div:   6,
+            storage_read_div:    1,
+            storage_write_div:   1,
             compile_div:         8,
             ntfunc_div:         16,
             act_div:            12,
@@ -155,9 +172,7 @@ impl GasExtra {
         if div <= 0 || len == 0 {
             return 0
         }
-        // The opcode base gas already covers the first bucket. Dynamic gas only
-        // charges additional buckets beyond the first one.
-        (len as i64 - 1) / div
+        (len as i64 - 1) / div + 1
     }
 
     #[inline(always)]
@@ -251,88 +266,6 @@ impl GasExtra {
 
 
 
-
-/// Gas budget lookup table for tx `gas_max` byte.
-///
-/// Generation rule:
-/// - `table[i] = floor(138 * 1.07^i)`, `i in 0..=255`.
-/// - `table[255] = 4,292,817,207` (fits in `u32`).
-/// start from 138 but set it 0
-/// Runtime decoding keeps `gas_max=0` as a reserved "no VM gas" value.
-/// Therefore `decode_gas_budget(0)=0`, while non-zero bytes use the lookup table.
-pub const GAS_BUDGET_LOOKUP_1P07_FROM_138: [u32; 256] = [
-    0,   147, 157, 169, 180, 193, 207, 221, 237, 253,
-    271, 290, 310, 332, 355, 380, 407, 435, 466, 499,
-    534, 571, 611, 654, 699, 748, 801, 857, 917, 981,
-    1050, 1124, 1202, 1286, 1376, 1473, 1576, 1686, 1804, 1931,
-    2066, 2211, 2365, 2531, 2708, 2898, 3101, 3318, 3550, 3799,
-    4065, 4349, 4654, 4979, 5328, 5701, 6100, 6527, 6984, 7473,
-    7996, 8556, 9155, 9796, 10481, 11215, 12000, 12840, 13739, 14701,
-    15730, 16831, 18009, 19270, 20619, 22062, 23607, 25259, 27027, 28919,
-    30944, 33110, 35428, 37908, 40561, 43401, 46439, 49689, 53168, 56889,
-    60872, 65133, 69692, 74571, 79791, 85376, 91352, 97747, 104589, 111911,
-    119744, 128126, 137095, 146692, 156961, 167948, 179704, 192284, 205743, 220146,
-    235556, 252045, 269688, 288566, 308766, 330379, 353506, 378251, 404729, 433060,
-    463374, 495811, 530517, 567654, 607389, 649907, 695400, 744078, 796164, 851895,
-    911528, 975335, 1043608, 1116661, 1194827, 1278465, 1367958, 1463715, 1566175, 1675807,
-    1793114, 1918632, 2052936, 2196642, 2350407, 2514935, 2690980, 2879349, 3080904, 3296567,
-    3527327, 3774240, 4038436, 4321127, 4623606, 4947258, 5293566, 5664116, 6060604, 6484847,
-    6938786, 7424501, 7944216, 8500311, 9095333, 9732006, 10413247, 11142174, 11922126, 12756675,
-    13649643, 14605118, 15627476, 16721399, 17891897, 19144330, 20484433, 21918343, 23452627, 25094311,
-    26850913, 28730477, 30741611, 32893523, 35196070, 37659795, 40295981, 43116699, 46134868, 49364309,
-    52819811, 56517198, 60473402, 64706540, 69235998, 74082517, 79268294, 84817074, 90754270, 97107068,
-    103904563, 111177883, 118960335, 127287558, 136197687, 145731525, 155932732, 166848023, 178527385, 191024302,
-    204396003, 218703723, 234012984, 250393893, 267921466, 286675968, 306743286, 328215316, 351190388, 375773715,
-    402077876, 430223327, 460338960, 492562687, 527042075, 563935020, 603410472, 645649205, 690844649, 739203775,
-    790948039, 846314402, 905556410, 968945359, 1036771534, 1109345541, 1186999729, 1270089710, 1358995990, 1454125710,
-    1555914509, 1664828525, 1781366522, 1906062178, 2039486531, 2182250588, 2335008129, 2498458698, 2673350807, 2860485364,
-    3060719339, 3274969693, 3504217571, 3749512802, 4011978698, 4292817207,
-];
-
-/// Decode gas budget from a 1-byte `gas_max` field using a fixed lookup table.
-///
-/// - `0`: no gas (non-contract tx / VM disabled)
-/// - `1..=255`: lookup at `GAS_BUDGET_LOOKUP_1P07_FROM_138[b]`
-#[inline(always)]
-pub fn decode_gas_budget(b: u8) -> i64 {
-    GAS_BUDGET_LOOKUP_1P07_FROM_138[b as usize] as i64
-}
-
-/// Encode an absolute gas budget into the 1-byte `gas_max` lookup field.
-///
-/// Policy:
-/// - `budget <= 0` → `0` (means "no VM gas", used by non-contract tx)
-/// - Otherwise, returns the smallest byte `b` such that `decode_gas_budget(b) >= budget`.
-/// - Saturates to `255` if `budget` exceeds the encoding range.
-pub fn encode_gas_budget(budget: i64) -> u8 {
-    if budget <= 0 {
-        return 0
-    }
-    let max = decode_gas_budget(u8::MAX);
-    if budget >= max {
-        return u8::MAX
-    }
-    // `decode_gas_budget()` is strictly increasing for b in 1..=255.
-    let mut lo: u16 = 1;
-    let mut hi: u16 = u8::MAX as u16;
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        let v = decode_gas_budget(mid as u8);
-        if v >= budget {
-            hi = mid;
-        } else {
-            lo = mid + 1;
-        }
-    }
-    lo as u8
-}
-
-
-
-
-
-
-
 /***************************************/
 
 
@@ -342,13 +275,29 @@ pub fn encode_gas_budget(budget: i64) -> u8 {
 mod gas_budget_codec_tests {
     use super::*;
 
+    fn encode_gas_budget(gas: i64) -> u8 {
+        if gas <= 0 {
+            return 0;
+        }
+        match protocol::context::GAS_BUDGET_LOOKUP_1P07_FROM_138.binary_search(&(gas as u32)) {
+            Ok(i) => i as u8,
+            Err(i) => {
+                if i >= protocol::context::GAS_BUDGET_LOOKUP_1P07_FROM_138.len() {
+                    u8::MAX
+                } else {
+                    i as u8
+                }
+            }
+        }
+    }
+
     #[test]
     fn decode_is_strictly_increasing_for_nonzero_bytes() {
-        assert_eq!(decode_gas_budget(0), 0);
-        assert_eq!(decode_gas_budget(255), 4_292_817_207);
-        let mut prev = decode_gas_budget(0);
+        assert_eq!(protocol::context::decode_gas_budget(0), 0);
+        assert_eq!(protocol::context::decode_gas_budget(255), 4_292_817_207);
+        let mut prev = protocol::context::decode_gas_budget(0);
         for b in 1u8..=u8::MAX {
-            let cur = decode_gas_budget(b);
+            let cur = protocol::context::decode_gas_budget(b);
             assert!(cur > prev, "decode_gas_budget({})={} not > {}", b, cur, prev);
             prev = cur;
         }
@@ -357,7 +306,7 @@ mod gas_budget_codec_tests {
     #[test]
     fn encode_decode_roundtrip_on_all_bytes() {
         for b in 0u8..=u8::MAX {
-            let gas = decode_gas_budget(b);
+            let gas = protocol::context::decode_gas_budget(b);
             let enc = encode_gas_budget(gas);
             assert_eq!(enc, b, "b={} gas={} enc={}", b, gas, enc);
         }
@@ -365,7 +314,7 @@ mod gas_budget_codec_tests {
 
     #[test]
     fn encode_saturates_to_u8_max_for_out_of_range_budgets() {
-        let max = decode_gas_budget(u8::MAX);
+        let max = protocol::context::decode_gas_budget(u8::MAX);
         assert_eq!(encode_gas_budget(max + 1), u8::MAX);
         assert_eq!(encode_gas_budget(i64::MAX), u8::MAX);
     }

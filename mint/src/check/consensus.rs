@@ -145,7 +145,9 @@ fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dy
                             rhbf,
                         );
                     } else {
-                        bidrecord.add_low_bid_root(dianum, curblk.clone(), bidfee.clone());
+                        if !bidrecord.add_low_bid_root(dianum, curblk.clone(), bidfee.clone()) {
+                            return errf!("{}", LOW_BID_CACHE_FULL_ERR);
+                        }
                         println!(
                             "[MintLowBid] low root detected height={} hash={} diamond={} fee={} fence={}",
                             curhei,

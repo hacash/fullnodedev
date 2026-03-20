@@ -216,6 +216,7 @@ impl Frame {
             &r.gas_table,
             &r.gas_extra,
             &r.space_cap,
+            &mut r.gas_use,
             &mut r.global_map,
             &mut r.memory_map,
             host,

@@ -100,7 +100,7 @@ impl LowBidGroup {
                 self.branches.len(),
                 max_branches,
             );
-            return true;
+            return false;
         }
         self.branches.push(LowBidBranch::create(root, root_fee));
         true
@@ -137,7 +137,7 @@ impl LowBidGroup {
                     next_len,
                     max_len,
                 );
-                return true;
+                return false;
             }
             if parent_idx + 1 == self.branches[idx].len() {
                 self.branches[idx].push_child(blk);
@@ -152,7 +152,7 @@ impl LowBidGroup {
                         self.branches.len(),
                         max_branches,
                     );
-                    return true;
+                    return false;
                 }
                 let fork = self.branches[idx].fork_from_parent(parent_idx, blk);
                 self.branches.push(fork);
@@ -286,13 +286,15 @@ impl BiddingProve {
         None
     }
 
-    fn add_low_bid_root(&mut self, dianum: u32, blk: BlkPkg, root_fee: Amount) {
+    fn add_low_bid_root(&mut self, dianum: u32, blk: BlkPkg, root_fee: Amount) -> bool {
         let height = blk.hein();
         let hash = blk.hash();
         match self.low_bid_groups.entry(height) {
             std::collections::hash_map::Entry::Occupied(mut ent) => {
                 let group = ent.get_mut();
-                group.add_root(blk, root_fee.clone(), self.max_group_branches);
+                if !group.add_root(blk, root_fee.clone(), self.max_group_branches) {
+                    return false;
+                }
                 println!(
                     "[MintLowBid] root grouped height={} hash={} diamond={} branches={} release_in={}s fee={}",
                     height,
@@ -302,6 +304,7 @@ impl BiddingProve {
                     Self::LOW_BID_KEEP_SECS.saturating_sub(group.started_at.elapsed().as_secs()),
                     root_fee,
                 );
+                true
             }
             std::collections::hash_map::Entry::Vacant(ent) => {
                 let started_at = Instant::now();
@@ -314,6 +317,7 @@ impl BiddingProve {
                     Self::LOW_BID_KEEP_SECS,
                     root_fee,
                 );
+                true
             }
         }
     }
