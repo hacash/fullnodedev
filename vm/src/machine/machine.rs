@@ -138,7 +138,26 @@ impl MachineBox {
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> Ret<Value> {
-        self.machine_mut()?.main_call_raw(ctx, ctype, codes)
+        let (_, ret_val) = self.sandbox_main_call_raw_with_gas(ctx, ctype, codes)?;
+        Ok(ret_val)
+    }
+
+    pub fn sandbox_main_call_raw_with_gas(
+        &mut self,
+        ctx: &mut dyn Context,
+        ctype: CodeType,
+        codes: Arc<[u8]>,
+    ) -> Ret<(GasUse, Value)> {
+        let (gas_use, ret_any) = self.call(ctx,
+            Box::new(VmCallReq::Main {
+                code_type: ctype,
+                codes,
+            }),
+        ).map_err(|e| e.to_string())?;
+        let Ok(ret_val) = ret_any.downcast::<Value>() else {
+            return errf!("vm call return type mismatch");
+        };
+        Ok((gas_use, *ret_val))
     }
 }
 

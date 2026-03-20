@@ -127,13 +127,13 @@ impl GasExtra {
     pub fn new(_hei: u64) -> Self {
         use protocol::context::*;
         Self {
-            compute_limit:   decode_gas_budget(64), // 10481
-            resource_limit:  decode_gas_budget(48), // 3550
-            storage_limit:   decode_gas_budget(96), // 91352
+            compute_limit:   decode_gas_budget(72), // 18009
+            resource_limit:  decode_gas_budget(56), // 6100
+            storage_limit:   decode_gas_budget(99), // 111911
             // // debug test
-            // compute_limit:   91352, 
-            // resource_limit:  91352,
-            // storage_limit:   91352,
+            // compute_limit:   0, 
+            // resource_limit:  0,
+            // storage_limit:   0,
             // Load or alloc 
             one_local_alloc:     5, // 5 * num
             new_contract_load:  32, // base gas for loading a new contract

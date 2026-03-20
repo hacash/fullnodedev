@@ -48,8 +48,11 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         return api_error("contract call error");
     };
     api_data_raw(format!(
-        r#""use_gas":{},"ret_val":{}"#,
+        r#""use_gas":{},"gas_use":{{"compute":{},"resource":{},"storage":{}}},"ret_val":{}"#,
         callres.use_gas,
+        callres.gas_use.compute,
+        callres.gas_use.resource,
+        callres.gas_use.storage,
         callres.ret_val.to_debug_json()
     ))
 }

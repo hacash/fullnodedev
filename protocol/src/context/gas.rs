@@ -39,7 +39,7 @@ pub const fn decode_gas_budget(b: u8) -> i64 {
     GAS_BUDGET_LOOKUP_1P07_FROM_138[b as usize] as i64
 }
 
-pub const TX_GAS_BUDGET_CAP_BYTE: u8 = 100; // decode_gas_budget(64) == 119744
+pub const TX_GAS_BUDGET_CAP_BYTE: u8 = 99; // decode_gas_budget(99) == 111911
 
 #[derive(Clone, Copy)]
 struct GasPrice {
@@ -49,8 +49,14 @@ struct GasPrice {
 
 impl GasPrice {
     fn from_tx(tx: &dyn TransactionRead) -> Ret<Self> {
-        let purity_fee = tx.fee_purity() as i128;
-        let purity_size = 1i128;
+        // Preserve the raw fee/size fraction so gas settle does not lose price precision.
+        let purity_fee = tx.fee_got().to_238_u128().unwrap_or(0);
+        let purity_size = tx.size() as u128;
+        if purity_fee > i128::MAX as u128 || purity_size > i128::MAX as u128 {
+            return errf!("tx gas price invalid");
+        }
+        let purity_fee = purity_fee as i128;
+        let purity_size = purity_size as i128;
         if purity_fee <= 0 || purity_size <= 0 {
             return errf!("tx gas price invalid");
         }

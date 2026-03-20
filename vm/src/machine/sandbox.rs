@@ -47,6 +47,7 @@ impl SandboxSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxResult {
     pub use_gas: i64,
+    pub gas_use: GasUse,
     pub ret_val: Value,
 }
 
@@ -93,11 +94,12 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
         &Amount::unit238(SANDBOX_FUND_238),
     )?;
     temp_ctx.gas_initialize(gas_budget)?;
-    let gas_before = Context::gas_remaining(&temp_ctx);
     let mut vmb = global_machine_manager().assign(hei);
-    let ret_val = vmb.sandbox_main_call_raw(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
+    let (gas_use, ret_val) =
+        vmb.sandbox_main_call_raw_with_gas(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
     Ok(SandboxResult {
-        use_gas: gas_before - Context::gas_remaining(&temp_ctx),
+        use_gas: gas_use.total(),
+        gas_use,
         ret_val,
     })
 }
