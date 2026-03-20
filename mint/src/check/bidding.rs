@@ -1,158 +1,506 @@
+const LOW_BID_PENDING_ERR: &str = "mint.low_bid.pending";
 
-
-#[allow(dead_code)]
+#[derive(Clone)]
 struct BiddingRecord {
-    usable: bool, // can use must in txpool
-    tarhei: u64, // for check 5 block hei
+    usable: bool,
+    tarhei: u64,
     time: u64,
-    number: u32,
-    diamond: DiamondName,
     txhx: Hash,
     addr: Address,
     fee: Amount,
 }
 
-#[allow(dead_code)]
-#[derive(Default)]
-struct BiddingProve {
-    // dia number => bidding info
-    latest: u32,
-    failures: HashMap<u32, HashSet<Address>>, // The address of the broadcast invalid block
-    biddings: HashMap<u32, VecDeque<BiddingRecord>>,
+struct BiddingBook {
+    uniq_top: Vec<BiddingRecord>,
 }
 
+#[derive(Clone)]
+struct LowBidBranch {
+    root_fee: Amount,
+    blocks: Vec<BlkPkg>,
+}
 
+impl LowBidBranch {
+    fn create(root: BlkPkg, root_fee: Amount) -> Self {
+        Self {
+            root_fee,
+            blocks: vec![root],
+        }
+    }
 
+    fn len(&self) -> usize {
+        self.blocks.len()
+    }
 
+    fn root_hash(&self) -> Hash {
+        self.blocks[0].hash()
+    }
 
-#[allow(dead_code)]
+    fn tip_hash(&self) -> Hash {
+        self.blocks.last().unwrap().hash()
+    }
+
+    fn contains(&self, hash: &Hash) -> bool {
+        self.blocks.iter().any(|blk| blk.hash() == *hash)
+    }
+
+    fn parent_index(&self, prev: &Hash) -> Option<usize> {
+        self.blocks.iter().position(|blk| blk.hash() == *prev)
+    }
+
+    fn push_child(&mut self, blk: BlkPkg) {
+        self.blocks.push(blk);
+    }
+
+    fn fork_from_parent(&self, parent_idx: usize, blk: BlkPkg) -> Self {
+        let mut blocks = self.blocks[..=parent_idx].to_vec();
+        blocks.push(blk);
+        Self {
+            root_fee: self.root_fee.clone(),
+            blocks,
+        }
+    }
+}
+
+struct LowBidGroup {
+    dianum: u32,
+    height: u64,
+    started_at: Instant,
+    branches: Vec<LowBidBranch>,
+}
+
+impl LowBidGroup {
+    fn create(dianum: u32, root: BlkPkg, root_fee: Amount, started_at: Instant) -> Self {
+        Self {
+            dianum,
+            height: root.hein(),
+            started_at,
+            branches: vec![LowBidBranch::create(root, root_fee)],
+        }
+    }
+
+    fn branch_num(&self) -> usize {
+        self.branches.len()
+    }
+
+    fn has_hash(&self, hash: &Hash) -> bool {
+        self.branches.iter().any(|branch| branch.contains(hash))
+    }
+
+    fn add_root(&mut self, root: BlkPkg, root_fee: Amount, max_branches: usize) -> bool {
+        let hash = root.hash();
+        if self.has_hash(&hash) {
+            return true;
+        }
+        if self.branches.len() >= max_branches {
+            println!(
+                "[MintLowBid] group root full height={} diamond={} branches={} max_branches={}",
+                self.height,
+                self.dianum,
+                self.branches.len(),
+                max_branches,
+            );
+            return true;
+        }
+        self.branches.push(LowBidBranch::create(root, root_fee));
+        true
+    }
+
+    fn matches_tip(&self, prev: &Hash) -> bool {
+        self.branches.iter().any(|branch| branch.tip_hash() == *prev)
+    }
+
+    fn try_cache_child(&mut self, blk: BlkPkg, max_len: usize, max_branches: usize) -> bool {
+        let hash = blk.hash();
+        if self.has_hash(&hash) {
+            println!(
+                "[MintLowBid] child already cached height={} hash={} group_height={}",
+                blk.hein(),
+                hash.half(),
+                self.height,
+            );
+            return true;
+        }
+        let prev = *blk.block().prevhash();
+        for idx in 0..self.branches.len() {
+            let Some(parent_idx) = self.branches[idx].parent_index(&prev) else {
+                continue;
+            };
+            let next_len = parent_idx + 2;
+            if next_len > max_len {
+                println!(
+                    "[MintLowBid] child over limit group_height={} height={} hash={} prev={} next_len={} max_len={}",
+                    self.height,
+                    blk.hein(),
+                    hash.half(),
+                    prev.half(),
+                    next_len,
+                    max_len,
+                );
+                return true;
+            }
+            if parent_idx + 1 == self.branches[idx].len() {
+                self.branches[idx].push_child(blk);
+            } else {
+                if self.branches.len() >= max_branches {
+                    println!(
+                        "[MintLowBid] group branch full group_height={} height={} hash={} prev={} branches={} max_branches={}",
+                        self.height,
+                        blk.hein(),
+                        hash.half(),
+                        prev.half(),
+                        self.branches.len(),
+                        max_branches,
+                    );
+                    return true;
+                }
+                let fork = self.branches[idx].fork_from_parent(parent_idx, blk);
+                self.branches.push(fork);
+            }
+            println!(
+                "[MintLowBid] child cached group_height={} diamond={} height={} hash={} prev={} branches={}",
+                self.height,
+                self.dianum,
+                self.branches[idx.min(self.branches.len() - 1)].blocks.last().unwrap().hein(),
+                hash.half(),
+                prev.half(),
+                self.branches.len(),
+            );
+            return true;
+        }
+        false
+    }
+
+    fn replay_branches(&self) -> Vec<LowBidBranch> {
+        let mut branches = self.branches.clone();
+        branches.sort_by(|a, b| {
+            b.len()
+                .cmp(&a.len())
+                .then_with(|| b.root_fee.cmp(&a.root_fee))
+                .then_with(|| a.root_hash().as_bytes().cmp(b.root_hash().as_bytes()))
+        });
+        branches
+    }
+}
+
+struct BiddingProve {
+    latest: u32,
+    books: HashMap<u32, BiddingBook>,
+    low_bid_groups: HashMap<u64, LowBidGroup>,
+    replay_allow: HashSet<Hash>,
+    engine: Option<Weak<dyn Engine>>,
+    max_shadow_len: usize,
+    max_group_branches: usize,
+    loop_started: bool,
+    stop: bool,
+}
+
 impl BiddingProve {
+    fn new(max_shadow_len: usize) -> Self {
+        Self {
+            latest: 0,
+            books: HashMap::new(),
+            low_bid_groups: HashMap::new(),
+            replay_allow: HashSet::new(),
+            engine: None,
+            max_shadow_len,
+            max_group_branches: max_shadow_len,
+            loop_started: false,
+            stop: false,
+        }
+    }
+}
 
-    const DELAY_SECS: usize = 15; 
-    const RECORD_NUM: usize = 10; 
-    const PROVE_HOLD: usize = 5;  // latest 5 diamonds
+impl BiddingProve {
+    const DELAY_SECS: usize = 10;
+    const HACD_KEEP: usize = 10;
+    const UNIQ_TOP_MAX: usize = 50;
+    const LOW_BID_KEEP_SECS: u64 = 3600;
+    const LOW_BID_LOOP_SECS: u64 = 10;
 
-    fn failure(&mut self, dianum: u32, blk: &BlkPkg) {
-        let coinbase = &blk.block().transactions()[0];
-        let fails = self.failures.entry(dianum).or_default();
-        fails.insert(coinbase.main());
+    fn bind_engine(&mut self, eng: Arc<dyn Engine>) {
+        let max_len = eng.config().unstable_block.saturating_mul(10) as usize;
+        self.max_shadow_len = max_len.max(1);
+        self.max_group_branches = self.max_shadow_len;
+        self.engine = Some(Arc::downgrade(&eng));
+    }
+
+    fn start_loop(&mut self) -> bool {
+        if self.loop_started || self.engine.is_none() {
+            return false;
+        }
+        self.loop_started = true;
+        true
     }
 
     fn record(&mut self, curr_hei: u64, tx: &TxPkg, act: &action::DiamondMint) {
         let dianum = *act.d.number;
         if dianum > self.latest {
-            self.latest = dianum; // update
+            self.latest = dianum;
         }
-        let tnow = curtimes();
         let record = BiddingRecord {
             usable: true,
-            tarhei: curr_hei / 5 * 5 + 5, // target height
-            time: tnow,
-            number: dianum,
-            diamond: act.d.diamond,
+            tarhei: curr_hei / 5 * 5 + 5,
+            time: curtimes(),
             txhx: tx.hash(),
             addr: tx.tx().main(),
             fee: tx.tx().fee().clone(),
         };
-
-        macro_rules! rcdshow { () => {
-            // println!("- devtest record bidding {} {}", &record.addr.to_readable(), &record.fee);  
-            // flush!("{}({}) ", &record.addr.to_readable()[0..7], &record.fee);
-        }}
-        let bids = self.biddings.entry(dianum).or_default();
-        // push
-        if bids.is_empty() {
-            rcdshow!();
-            bids.push_front(record); // push at first
-            return
+        let book = self.books.entry(dianum).or_insert_with(|| BiddingBook {
+            uniq_top: Vec::new(),
+        });
+        let mut updated = false;
+        for item in book.uniq_top.iter_mut() {
+            if item.addr != record.addr {
+                continue;
+            }
+            if record.fee >= item.fee {
+                *item = record.clone();
+            }
+            updated = true;
+            break;
         }
-        if record.fee <= bids[0].fee {
-            return // no need to record lowwer
+        if !updated {
+            book.uniq_top.push(record);
         }
-        rcdshow!();
-        if bids[0].time == record.time {
-            bids[0] = record; // replace in same second
-            return 
-        }
-        bids.push_front(record); // push at first
-        let max = Self::DELAY_SECS + Self::RECORD_NUM;
-        bids.truncate(max);
-        // ok
-
-    }
-
-    fn check_fail(&self, dianum: u32, fee: Amount) -> Amount {
-        let Some(fails) = self.failures.get(&dianum) else {
-            return fee // no fail
-        };
-        let fsub = |x|fee.sub(&Amount::small(x, 247), AmtMode::U64).unwrap_or_default(); // -= 0.x
-        match fails.len() {
-            0..3 => fee,
-            3 => fsub(5), // -= 0.5
-            4 => fsub(9), // -= 0.9
-            5.. => Amount::zero() // do not check
-        }
+        book.uniq_top.sort_by(|a, b| b.fee.cmp(&a.fee).then_with(|| b.time.cmp(&a.time)));
+        book.uniq_top.truncate(Self::UNIQ_TOP_MAX);
+        self.trim_books();
     }
 
     fn highest(&self, curhei: u64, dianum: u32, sta: &dyn State, fblkt: u64) -> Option<Amount> {
-        let Some(bids) = self.biddings.get(&dianum) else {
-            return None
-        };  
+        let Some(book) = self.books.get(&dianum) else {
+            return None;
+        };
         let coresta = CoreStateRead::wrap(sta);
-        let ttx = fblkt - Self::DELAY_SECS as u64;
-        for r in bids.iter() {
+        let ttx = fblkt.saturating_sub(Self::DELAY_SECS as u64);
+        for r in book.uniq_top.iter() {
             let isusa = curhei <= r.tarhei || r.usable;
-            // println!("---- highest {} {} {}", curhei, r.tarhei, r.usable);
-            if r.number == dianum && r.time < ttx && isusa {
+            if r.time < ttx && isusa {
                 let hacbls = coresta.balance(&r.addr).unwrap_or_default();
                 if hacbls.hacash >= r.fee {
-                    let rfe = self.check_fail(dianum, r.fee.clone());
-                    return Some(rfe); // highest valid bid
+                    return Some(r.fee.clone());
                 }
             }
         }
-        // not find
         None
     }
 
-    fn remove_tx(&mut self, dianum: u32, hx: Hash) {
-        let bids = self.biddings.entry(dianum).or_default();
-        bids.retain_mut(|a|{
-            if a.txhx == hx {            
-                // println!("---- remove_tx fee: {}, hx: {}", a.fee, a.txhx.to_hex());
-                a.usable = false; // not usable may be not in txpool
+    fn add_low_bid_root(&mut self, dianum: u32, blk: BlkPkg, root_fee: Amount) {
+        let height = blk.hein();
+        let hash = blk.hash();
+        match self.low_bid_groups.entry(height) {
+            std::collections::hash_map::Entry::Occupied(mut ent) => {
+                let group = ent.get_mut();
+                group.add_root(blk, root_fee.clone(), self.max_group_branches);
+                println!(
+                    "[MintLowBid] root grouped height={} hash={} diamond={} branches={} release_in={}s fee={}",
+                    height,
+                    hash.half(),
+                    dianum,
+                    group.branch_num(),
+                    Self::LOW_BID_KEEP_SECS.saturating_sub(group.started_at.elapsed().as_secs()),
+                    root_fee,
+                );
             }
-            true // keep all
-        });
-    }
-
-    fn print(&self, dianum: u32) -> String {
-        let mut items = String::new();
-        items.push_str(&format!("MinterRecordBiddingList {} (\n", dianum));
-        if let Some(bids) = self.biddings.get(&dianum) {
-            for r in bids.iter() {
-                let mut adr = r.addr.to_readable();
-                let _ = adr.split_off(9);
-                items.push_str(&format!("    {} {} {}... {}\n", 
-                    timeshow(r.time).split_off(11), r.diamond.to_readable(), adr, r.fee));
+            std::collections::hash_map::Entry::Vacant(ent) => {
+                let started_at = Instant::now();
+                ent.insert(LowBidGroup::create(dianum, blk, root_fee.clone(), started_at));
+                println!(
+                    "[MintLowBid] root pending height={} hash={} diamond={} branches=1 release_in={}s fee={}",
+                    height,
+                    hash.half(),
+                    dianum,
+                    Self::LOW_BID_KEEP_SECS,
+                    root_fee,
+                );
             }
         }
-        items.push_str(")");
-        items
     }
 
-    fn print_all(&self, _: u32) -> String {
-        let strs: Vec<_> = self.biddings.keys().map(|a|self.print(*a)).collect();
-        strs.join("\n")
+    fn matches_low_bid_tip(&self, prev: &Hash) -> bool {
+        self.low_bid_groups.values().any(|group| group.matches_tip(prev))
+    }
+
+    fn cache_low_bid_child(&mut self, blk: BlkPkg) -> bool {
+        let prev = *blk.block().prevhash();
+        for group in self.low_bid_groups.values_mut() {
+            if !group.matches_tip(&prev) {
+                continue;
+            }
+            return group.try_cache_child(blk, self.max_shadow_len, self.max_group_branches);
+        }
+        false
+    }
+
+    fn take_replay_groups(&mut self, root_min: u64, head_max: u64) -> Vec<LowBidGroup> {
+        self.low_bid_groups.retain(|_, group| {
+            let keep = group.height >= root_min && group.height <= head_max;
+            if !keep {
+                println!(
+                    "[MintLowBid] group dropped height={} diamond={} branches={} root_window=[{}, {}]",
+                    group.height,
+                    group.dianum,
+                    group.branch_num(),
+                    root_min,
+                    head_max,
+                );
+            }
+            keep
+        });
+        let mut heights = Vec::new();
+        for (height, group) in self.low_bid_groups.iter() {
+            if group.started_at.elapsed().as_secs() >= Self::LOW_BID_KEEP_SECS {
+                heights.push(*height);
+            }
+        }
+        heights.sort_unstable();
+        let mut groups = Vec::with_capacity(heights.len());
+        for height in heights {
+            if let Some(group) = self.low_bid_groups.remove(&height) {
+                groups.push(group);
+            }
+        }
+        groups
+    }
+
+    fn allow_replay_chain(&mut self, chain: &[BlkPkg]) {
+        for blk in chain.iter() {
+            self.replay_allow.insert(blk.hash());
+        }
+    }
+
+    fn clear_replay_chain(&mut self, hashes: &[Hash]) {
+        for hash in hashes.iter() {
+            self.replay_allow.remove(hash);
+        }
+    }
+
+    fn is_replay_allowed(&self, hash: &Hash) -> bool {
+        self.replay_allow.contains(hash)
+    }
+
+    fn remove_tx(&mut self, dianum: u32, hx: Hash) {
+        let Some(book) = self.books.get_mut(&dianum) else {
+            return;
+        };
+        for item in book.uniq_top.iter_mut() {
+            if item.txhx == hx {
+                item.usable = false;
+            }
+        }
     }
 
     fn roll(&mut self, dianum: u32) {
-        let ph = Self::PROVE_HOLD as u32;
-        if dianum <= ph {
-            return
+        if dianum > self.latest {
+            self.latest = dianum;
         }
-        let expired = dianum - ph;
-        self.failures.remove(&expired);
-        self.biddings.remove(&expired);
+        self.trim_books();
+    }
+
+    fn trim_books(&mut self) {
+        let keep_from = self.latest.saturating_sub(Self::HACD_KEEP as u32 - 1);
+        self.books.retain(|num, _| *num >= keep_from);
+    }
+}
+
+fn low_bid_replay_loop(prove: Arc<Mutex<BiddingProve>>, mut worker: Worker) {
+    loop {
+        if worker.quit() {
+            return;
+        }
+        std::thread::sleep(Duration::from_secs(BiddingProve::LOW_BID_LOOP_SECS));
+        let (engine, groups) = {
+            let mut bidding = prove.lock().unwrap();
+            if bidding.stop {
+                return;
+            }
+            let Some(engine) = bidding.engine.as_ref().and_then(|it| it.upgrade()) else {
+                continue;
+            };
+            let status = engine.store().status();
+            let root_min = status.root_height.uint() + 1;
+            let head_max = status.last_height.uint() + 1;
+            let groups = bidding.take_replay_groups(root_min, head_max);
+            (engine, groups)
+        };
+        for group in groups.into_iter() {
+            replay_low_bid_group(prove.clone(), engine.clone(), group);
+        }
+    }
+}
+
+fn replay_low_bid_group(
+    prove: Arc<Mutex<BiddingProve>>,
+    engine: Arc<dyn Engine>,
+    group: LowBidGroup,
+) {
+    let branches = group.replay_branches();
+    if branches.is_empty() {
+        return;
+    }
+    println!(
+        "[MintLowBid] replay begin height={} diamond={} branches={}",
+        group.height,
+        group.dianum,
+        group.branch_num(),
+    );
+    for branch in branches.into_iter() {
+        let chain = branch.blocks;
+        let hashes: Vec<Hash> = chain.iter().map(|blk| blk.hash()).collect();
+        {
+            let mut bidding = prove.lock().unwrap();
+            if bidding.stop {
+                return;
+            }
+            bidding.allow_replay_chain(&chain);
+        }
+        println!(
+            "[MintLowBid] replay try height={} diamond={} selected_len={} root_hash={} root_fee={}",
+            group.height,
+            group.dianum,
+            chain.len(),
+            hashes[0].half(),
+            branch.root_fee,
+        );
+        let store = engine.store();
+        let mut inserted = 0usize;
+        let mut success = true;
+        for blk in chain.iter() {
+            let hash = blk.hash();
+            if store.block_data(&hash).is_some() {
+                inserted += 1;
+                continue;
+            }
+            match engine.discover(blk.clone()) {
+                Ok(_) => {
+                    inserted += 1;
+                }
+                Err(e) => {
+                    println!(
+                        "[MintLowBid] replay failed height={} hash={} inserted={} err={}",
+                        blk.hein(),
+                        hash.half(),
+                        inserted,
+                        e,
+                    );
+                    success = false;
+                    break;
+                }
+            }
+        }
+        let mut bidding = prove.lock().unwrap();
+        bidding.clear_replay_chain(&hashes);
+        println!(
+            "[MintLowBid] replay finish height={} diamond={} selected_len={} inserted={} success={}",
+            group.height,
+            group.dianum,
+            chain.len(),
+            inserted,
+            success,
+        );
+        if success {
+            return;
+        }
     }
 }

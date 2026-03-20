@@ -8,7 +8,6 @@ use basis::config::*;
 use basis::interface::*;
 use field::*;
 use protocol;
-use protocol::block::*;
 use sys::*;
 
 // use mint::*;

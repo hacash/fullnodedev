@@ -9,7 +9,7 @@ pub struct HacashMinter {
     difficulty: DifficultyGnr,
     genesis_block: Arc<dyn Block>,
     // check highest bidding
-    bidding_prove: Mutex<BiddingProve>,
+    bidding_prove: Arc<Mutex<BiddingProve>>,
 }
 
 impl HacashMinter {
@@ -23,7 +23,7 @@ impl HacashMinter {
             cnf: cnf,
             difficulty: dgnr,
             genesis_block: genesis::genesis_block_pkg().block_clone(),
-            bidding_prove: Mutex::default(),
+            bidding_prove: Arc::new(Mutex::new(BiddingProve::new(usize::MAX))),
         }
     }
 
@@ -31,6 +31,18 @@ impl HacashMinter {
 
 
 impl Minter for HacashMinter {
+
+    fn start(&self, worker: Worker) {
+        let start_loop = {
+            let mut biddings = self.bidding_prove.lock().unwrap();
+            biddings.start_loop()
+        };
+        if !start_loop {
+            return;
+        }
+        let prove = self.bidding_prove.clone();
+        low_bid_replay_loop(prove, worker);
+    }
 
     fn config(&self) -> Box<dyn Any> {
         Box::new(self.cnf.clone())
@@ -40,8 +52,8 @@ impl Minter for HacashMinter {
         impl_tx_submit(self, eng, tx)
     }
 
-    fn blk_found(&self, curblk: &dyn BlockRead, sto: &dyn Store ) -> Rerr {
-        impl_blk_found(self, curblk, sto)
+    fn blk_found(&self, curblk: &dyn BlockRead, body: &Vec<u8>, sto: &dyn Store ) -> RetBlkFound {
+        impl_blk_found(self, curblk, body, sto)
     }
 
     fn blk_verify(&self, curblk: &dyn BlockRead, prevblk: &dyn BlockRead, sto: &dyn Store) -> Rerr {
@@ -63,6 +75,11 @@ impl Minter for HacashMinter {
     // <dyn Block> == BlockV1
     fn packing_next_block(&self, eng: &dyn EngineRead, tp: &dyn TxPool) -> Box<dyn Any> {
         impl_packing_next_block(self, eng, tp)
+    }
+
+    fn bind_engine(&self, eng: Arc<dyn Engine>) {
+        let mut biddings = self.bidding_prove.lock().unwrap();
+        biddings.bind_engine(eng)
     }
 
     fn p2p_on_connect(&self, peer: Arc<dyn NPeer>, _: Arc<dyn Engine>, txpool: Arc<dyn TxPool>) -> Rerr {
@@ -96,7 +113,8 @@ impl Minter for HacashMinter {
         impl_tx_pool_refresh(self, eng, txp, txs, blkhei)
     }
 
-
-
-
+    fn exit(&self) {
+        let mut biddings = self.bidding_prove.lock().unwrap();
+        biddings.stop = true;
+    }
 }

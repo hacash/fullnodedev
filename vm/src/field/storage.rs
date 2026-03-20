@@ -153,9 +153,9 @@ impl ValueSto {
         let add_blocks = period
             .checked_mul(STORAGE_PERIOD)
             .ok_or_else(|| ItrErr::new(StorageError, "rent period overflow"))?;
-        let exp = self
-            .expire
-            .uint()
+        // Renewal starts from current height once expired, otherwise from current expire.
+        let renew_from = self.expire.uint().max(chei);
+        let exp = renew_from
             .checked_add(add_blocks)
             .ok_or_else(|| ItrErr::new(StorageError, "rent expire overflow"))?;
         if exp > self.max_expire() {
@@ -168,8 +168,9 @@ impl ValueSto {
         }
         self.expire = BlockHeight::from(exp);
         // gas
-        let vbasesz = gst.storege_value_base_size;
-        let gas = (self.data.can_get_size().unwrap_or(0) as i64 + vbasesz) * period as i64;
+        let vbasesz = gst.storege_value_base_size.max(0);
+        let unit = (self.data.can_get_size().unwrap_or(0) as i64).saturating_add(vbasesz);
+        let gas = unit.saturating_mul(period as i64);
         Ok(gas)
     }
 }
@@ -513,9 +514,10 @@ impl VMState<'_> {
 
         let k = Self::skey(cadr, &k)?;
         let mut extra_gas = gst.storage_write(val_len);
-        let one_period_rent = (val_len as i64) + gst.storege_value_base_size;
+        let base_size = gst.storege_value_base_size.max(0);
+        let one_period_rent = (val_len as i64).saturating_add(base_size);
         // Key creation fee is charged only when (re)creating a key.
-        let key_create_fee = gst.storage_key_cost;
+        let key_create_fee = gst.storage_key_cost.max(0);
 
         let mut old_valid = false;
         let old = match self.ctrtkvdb(&k) {
@@ -538,7 +540,9 @@ impl VMState<'_> {
 
         if !old_valid {
             // (Re)create: charge one period rent + key creation fee.
-            extra_gas += one_period_rent + key_create_fee;
+            extra_gas = extra_gas
+                .saturating_add(one_period_rent)
+                .saturating_add(key_create_fee);
         }
 
         let mut vobj = match old {
@@ -561,7 +565,7 @@ impl VMState<'_> {
                         want
                     );
                 }
-                extra_gas += one_period_rent;
+                extra_gas = extra_gas.saturating_add(one_period_rent);
                 vobj.expire = BlockHeight::from(want);
             }
         }

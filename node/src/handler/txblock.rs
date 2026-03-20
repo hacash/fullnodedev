@@ -46,16 +46,27 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
     if body.len() > engcnf.max_block_size {
         return // block size overflow
     }
-    // println!("222222222222 handle_txblock_arrive Block len={}",  body.clone().len());
-    let mut blkhead = BlockIntro::default();
-    if let Err(_) = blkhead.parse(&body) {
-        return // parse tx error
+    let mut blkhead = protocol::block::BlockIntro::default();
+    if let Err(..) = blkhead.parse(&body) {
+        return // parse error
     }
     let blkhei = blkhead.height().uint();
     let blkhx = blkhead.hash();
     let (already, knowkey) = check_know(&this.knows, &blkhx, peer.clone());
     if already {
         return  // alreay know it
+    }
+    let mintckr = eng.minter();
+    let sto = eng.store();
+    match mintckr.blk_found(&blkhead, &body, sto.as_ref()) {
+        RetBlkFound::Reject => return,
+        RetBlkFound::PendingCached => {
+            let p2p = this.p2pmng.lock().unwrap();
+            let p2p = p2p.as_ref().unwrap();
+            p2p.broadcast_message(0/*not delay*/, knowkey, MSG_BLOCK_DISCOVER, body);
+            return
+        }
+        RetBlkFound::Normal => {}
     }
     // check height and difficulty (mint consensus)
     let heispan = engcnf.unstable_block;
@@ -64,50 +75,39 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
     if blkhei > heispan && blkhei < lathei - heispan {
         return // height too late
     }
-    let mintckr = eng.minter();
-    let sto = eng.store();
-    // may insert
-    if blkhei <= lathei + 1 {
-        // check block found
-        if let Err(_) = mintckr.blk_found(&blkhead, sto.as_ref()) {
-            return  // difficulty check fail
-        }
-        // do insert  ◆ ◇ ⊙ ■ □ △ ▽ ❏ ❐ ❑ ❒  ▐ ░ ▒ ▓ ▔ ▕ ■ □ ▢ ▣ ▤ ▥ ▦ ▧ ▨ ▩ ▪ ▫    
-        let hxstrt = &blkhx.as_bytes()[4..12];
-        let hxtail = &blkhx.as_bytes()[30..];
-        let txs = blkhead.transaction_count().uint() - 1;
-        let _blkts = &timeshow(blkhead.timestamp().uint())[14..];
-        // lock to inserting
-        let isrlk = this.inserting.lock().unwrap();
-        print!("❏ block {} …{}…{} txs{:2} insert at {} ", 
-            blkhei, hex::encode(hxstrt), hex::encode(hxtail), txs, &ctshow()[11..]);
-        let bodycp = body.clone();
-        let engptr = eng.clone();
-        let txpool = this.txpool.clone();
-        // create block
-        let blkpkg =protocol::block::build_block_package(bodycp);
-        if let Err(..) = blkpkg {
-            return // parse error
-        }
-        let mut blkp = blkpkg.unwrap();
-        blkp.set_origin( BlkOrigin::Discover );
-        may_show_miner_detail(engcnf, &blkp);
-        let thsx = blkp.block().transaction_hash_list(false); // hash no fee
-        if let Err(e) = engptr.discover(blkp) {
-            println!("Error: {}", e);
-            // println!("- error block data hex: {}", body.to_hex());
-        }else{
-            println!("ok.");
-            mintckr.tx_pool_refresh(engptr.as_ref().as_read(), txpool.as_ref(), thsx, blkhei);
-        }
-        drop(isrlk); // close lock
-    }else{
+    if blkhei > lathei + 1 {
         // req sync
         if let Some(ref pr) = peer {
             send_req_block_hash_msg(pr.clone(), (heispan+1) as u8, lathei).await;
         }
         return // not broadcast
     }
+    let blkpkg = protocol::block::build_block_package(body.clone());
+    if let Err(..) = blkpkg {
+        return // parse error
+    }
+    let mut blkp = blkpkg.unwrap();
+    blkp.set_origin( BlkOrigin::Discover );
+    // do insert  ◆ ◇ ⊙ ■ □ △ ▽ ❏ ❐ ❑ ❒  ▐ ░ ▒ ▓ ▔ ▕ ■ □ ▢ ▣ ▤ ▥ ▦ ▧ ▨ ▩ ▪ ▫
+    let hxstrt = &blkhx.as_bytes()[4..12];
+    let hxtail = &blkhx.as_bytes()[30..];
+    let txs = blkp.block().transaction_count().uint() - 1;
+    let _blkts = &timeshow(blkp.block().timestamp().uint())[14..];
+    let isrlk = this.inserting.lock().unwrap();
+    print!("❏ block {} …{}…{} txs{:2} insert at {} ",
+        blkhei, hex::encode(hxstrt), hex::encode(hxtail), txs, &ctshow()[11..]);
+    let engptr = eng.clone();
+    let txpool = this.txpool.clone();
+    may_show_miner_detail(engcnf, &blkp);
+    let thsx = blkp.block().transaction_hash_list(false); // hash no fee
+    if let Err(e) = engptr.discover(blkp) {
+        println!("Error: {}", e);
+        // println!("- error block data hex: {}", body.to_hex());
+    }else{
+        println!("ok.");
+        mintckr.tx_pool_refresh(engptr.as_ref().as_read(), txpool.as_ref(), thsx, blkhei);
+    }
+    drop(isrlk); // close lock
     // broadcast new block
     let p2p = this.p2pmng.lock().unwrap();
     let p2p = p2p.as_ref().unwrap();

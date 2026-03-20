@@ -2,6 +2,7 @@ use std::any::*;
 use std::collections::*;
 use std::ops::*;
 use std::sync::*;
+use std::time::{Duration, Instant};
 
 use num_bigint::*;
 

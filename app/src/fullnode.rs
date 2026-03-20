@@ -33,6 +33,7 @@ impl Scaner for NilScaner {}
 
 pub struct FullnodeRuntime {
     exiter: Exiter,
+    minter: Arc<dyn Minter>,
     scaner: Arc<dyn Scaner>,
     hnoder: Arc<dyn HNoder>,
     server: Arc<dyn Server>,
@@ -48,6 +49,8 @@ impl FullnodeRuntime {
             tasks.push(spawn(move || run(worker)));
         };
 
+        let minter = self.minter.clone();
+        spawn_task(Box::new(move |worker| minter.start(worker)));
         let server = self.server.clone();
         spawn_task(Box::new(move |worker| server.start(worker)));
         let scanr1 = self.scaner.clone();
@@ -246,9 +249,10 @@ impl FullnodeBuilder {
             .map_err(|e| errb("txpool", e))?
             .into();
         let minter: Arc<dyn Minter> = minter(&self.cnfini).map_err(|e| errb("minter", e))?.into();
-        let engine: Arc<dyn Engine> = engine(diskdb, self.engcnf.clone(), minter, scaner.clone())
+        let engine: Arc<dyn Engine> = engine(diskdb, self.engcnf.clone(), minter.clone(), scaner.clone())
             .map_err(|e| errb("engine", e))?
             .into();
+        minter.bind_engine(engine.clone());
         let hnoder: Arc<dyn HNoder> = hnoder(&self.cnfini, txpool, engine)
             .map_err(|e| errb("hnoder", e))?
             .into();
@@ -258,6 +262,7 @@ impl FullnodeBuilder {
 
         Ok(FullnodeRuntime {
             exiter: self.exiter,
+            minter,
             scaner,
             hnoder,
             server,

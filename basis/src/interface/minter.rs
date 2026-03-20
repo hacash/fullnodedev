@@ -3,6 +3,13 @@
 
 /*******************************************************/
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetBlkFound {
+    Normal,
+    PendingCached,
+    Reject,
+}
+
 
 pub trait Minter : Send + Sync {
     // fn config(&self) -> &MintConf;
@@ -23,7 +30,7 @@ pub trait Minter : Send + Sync {
     // check
     fn initialize(&self, _: &mut dyn State) -> Rerr { Ok(()) }
     fn tx_submit(&self, _: &dyn EngineRead, _: &TxPkg) -> Rerr { Ok(()) }
-    fn blk_found(&self, _: &dyn BlockRead, _: &dyn Store) -> Rerr { Ok(()) }
+    fn blk_found(&self, _: &dyn BlockRead, _: &Vec<u8>, _: &dyn Store) -> RetBlkFound { RetBlkFound::Normal }
     fn blk_verify(&self, _: &dyn BlockRead, _prev: &dyn BlockRead, _: &dyn Store) -> Rerr { Ok(()) }
     fn blk_insert(&self, _: &BlkPkg, _sub: &dyn State, _prev: &dyn State) -> Rerr { Ok(()) }
     // 
@@ -34,12 +41,11 @@ pub trait Minter : Send + Sync {
     fn tx_pool_refresh(&self, _: &dyn EngineRead, _: &dyn TxPool, _txs: Vec<Hash>, _blkhei: u64) {}
     
     // p2p
+    fn start(&self, _: Worker) {}
+    fn bind_engine(&self, _: Arc<dyn Engine>) {}
     fn p2p_on_connect(&self, _: Arc<dyn NPeer>, _: Arc<dyn Engine>, _: Arc<dyn TxPool>) -> Rerr { Ok(()) }
     
     // close exit
     fn exit(&self) {}
 
 }
-
-
-
