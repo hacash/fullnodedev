@@ -794,6 +794,29 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 POW => binop_arithmetic(ops, pow_checked)?,
                 MAX => binop_arithmetic(ops, max_checked)?,
                 MIN => binop_arithmetic(ops, min_checked)?,
+                ADDMOD => triop_arithmetic(ops, addmod_checked)?,
+                MULMOD => triop_arithmetic(ops, mulmod_checked)?,
+                MULDIV => triop_arithmetic(ops, muldiv_checked)?,
+                MULADD => triop_arithmetic(ops, muladd_checked)?,
+                MULDIVUP => triop_arithmetic(ops, muldivup_checked)?,
+                MULSHR => triop_arithmetic(ops, mulshr_checked)?,
+                MULSHRUP => triop_arithmetic(ops, mulshrup_checked)?,
+                RPOW => {
+                    let exp_bits = match ops.len().checked_sub(2).and_then(|i| ops.datas.get(i)) {
+                        Some(v) => {
+                            let exp = v.to_uint()?.extract_u128()?;
+                            if exp == 0 {
+                                0
+                            } else {
+                                (u128::BITS - exp.leading_zeros()) as i64
+                            }
+                        }
+                        None => 0,
+                    };
+                    gas_add!(compute, raw, exp_bits * 2 + 1);
+                    triop_arithmetic(ops, rpow_checked)?
+                }
+                CLAMP => triop_arithmetic(ops, clamp_checked)?,
                 INC => unary_inc(ops.peek()?, pu8!())?,
                 DEC => unary_dec(ops.peek()?, pu8!())?,
                 // workflow control

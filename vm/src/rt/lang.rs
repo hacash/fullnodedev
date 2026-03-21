@@ -303,6 +303,15 @@ irfn_define! {
     storage_save
     storage_rent
 
+    add_mod
+    mul_mod
+    mul_div
+    mul_add
+    mul_div_up
+    mul_shr
+    mul_shr_up
+    rpow
+    clamp
     max
     min
     increase

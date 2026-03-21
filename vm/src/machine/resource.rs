@@ -118,6 +118,28 @@ impl Resoure {
         Ok(next)
     }
 
+    #[cfg(feature = "calcfunc")]
+    #[inline(always)]
+    pub fn calc_resource_gas_limit<H: VmHost + ?Sized>(&self, host: &H) -> VmrtRes<i64> {
+        let host_limit = host.gas_remaining();
+        if host_limit < 0 {
+            return itr_err_code!(ItrErrCode::OutOfGas);
+        }
+        let bucket_limit = self.gas_extra.resource_limit;
+        if bucket_limit <= 0 {
+            return Ok(host_limit);
+        }
+        if self.gas_use.resource > bucket_limit {
+            return itr_err_fmt!(
+                ItrErrCode::OutOfGas,
+                "resource gas limit exceeded: used {} > limit {}",
+                self.gas_use.resource,
+                bucket_limit
+            );
+        }
+        Ok(host_limit.min(bucket_limit - self.gas_use.resource))
+    }
+
     #[inline(always)]
     pub fn next_storage_used(&self, add: i64) -> VmrtRes<i64> {
         if add < 0 {
@@ -154,6 +176,18 @@ impl Resoure {
         bytes: usize,
     ) -> VmrtErr {
         let gas = self.gas_extra.new_contract_load + (bytes as i64 / 64);
+        let next_resource = self.next_resource_used(gas)?;
+        host.gas_charge(gas)?;
+        self.gas_use.resource = next_resource;
+        Ok(())
+    }
+
+    #[cfg(feature = "calcfunc")]
+    pub fn settle_calc_resource_gas<H: VmHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        gas: i64,
+    ) -> VmrtErr {
         let next_resource = self.next_resource_used(gas)?;
         host.gas_charge(gas)?;
         self.gas_use.resource = next_resource;

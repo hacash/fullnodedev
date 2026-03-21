@@ -181,27 +181,27 @@ pub enum Bytecode {
     BSHR = 0xab,                // a,b+   shr: >>
     BSHL = 0xac,                // a,b+   shl: <<
     BXOR = 0xad,                // a,b+   xor: ^
-    BOR = 0xae,                 // a,b+   or:  |
+    BOR  = 0xae,                // a,b+   or:  |
     BAND = 0xaf,                // a,b+   and: &
-    ADD = 0xb0,                 // a,b+   +
-    SUB = 0xb1,                 // a,b+   -
-    MUL = 0xb2,                 // a,b+   *
-    DIV = 0xb3,                 // a,b+   /
-    MOD = 0xb4,                 // a,b+   mod
-    POW = 0xb5,                 // a,b+   pow
-    MAX = 0xb6,                 // a,b+   max
-    MIN = 0xb7,                 // a,b+   min
-    INC = 0xb8,                 // *&     += u8
-    DEC = 0xb9,                 // *&     -= u8
-    ________________186 = 0xba, // a,b,c+ x+y%z
-    ________________187 = 0xbb, // a,b,c+ x*y%z
-    ________________188 = 0xbc,
-    ________________189 = 0xbd,
-    ________________190 = 0xbe,
-    ________________191 = 0xbf,
-    ________________192 = 0xc0,
-    ________________193 = 0xc1,
-    ________________194 = 0xc2,
+    ADD  = 0xb0,                // a,b+   +
+    SUB  = 0xb1,                // a,b+   -
+    MUL  = 0xb2,                // a,b+   *
+    DIV  = 0xb3,                // a,b+   /
+    MOD  = 0xb4,                // a,b+   mod
+    POW  = 0xb5,                // a,b+   pow
+    MAX  = 0xb6,                // a,b+   max
+    MIN  = 0xb7,                // a,b+   min
+    INC  = 0xb8,                // *&     += u8
+    DEC  = 0xb9,                // *&     -= u8
+    ADDMOD   = 0xba,            // a,b,c+ (x+y)%z
+    MULMOD   = 0xbb,            // a,b,c+ (x*y)%z
+    MULADD   = 0xbc,            // a,b,c+ (x*y)+z
+    MULDIV   = 0xbd,            // a,b,c+ (x*y)/z
+    MULDIVUP = 0xbe,            // a,b,c+ ceil((x*y)/z)
+    MULSHR   = 0xbf,            // a,b,c+ (x*y)>>z
+    MULSHRUP = 0xc0,            // a,b,c+ ceil((x*y)/2^z)
+    RPOW     = 0xc1,            // a,b,c+ fixed-point pow
+    CLAMP    = 0xc2,            // a,b,c+ clamp(x, lo, hi)
     ________________195 = 0xc3,
     ________________196 = 0xc4,
     ________________197 = 0xc5,
@@ -481,6 +481,15 @@ bytecode_metadata_define! {
     MIN        : 0, 2, 1,     min
     INC        : 1, 1, 1,     increase
     DEC        : 1, 1, 1,     decrease
+    ADDMOD     : 0, 3, 1,     add_mod
+    MULMOD     : 0, 3, 1,     mul_mod
+    MULADD     : 0, 3, 1,     mul_add
+    MULDIV     : 0, 3, 1,     mul_div
+    MULDIVUP   : 0, 3, 1,     mul_div_up
+    MULSHR     : 0, 3, 1,     mul_shr
+    MULSHRUP   : 0, 3, 1,     mul_shr_up
+    RPOW       : 0, 3, 1,     rpow
+    CLAMP      : 0, 3, 1,     clamp
 
     JMPL       : 2, 0, 0,     jump_long
     JMPS       : 1, 0, 0,     jump_offset

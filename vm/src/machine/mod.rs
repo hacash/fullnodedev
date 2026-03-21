@@ -1,6 +1,6 @@
 use basis::interface::*;
-use protocol::transaction::*;
 use protocol::context::*;
+use protocol::transaction::*;
 use std::cell::UnsafeCell;
 
 use sys::*;

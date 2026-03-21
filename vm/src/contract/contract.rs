@@ -38,6 +38,12 @@ impl Contract {
         self
     }
 
+    pub fn calcfunc(mut self, a: CalcFunc) -> Self {
+        self.ctrt.calcfuncs.push(a.func).unwrap();
+        self.ctrt.morextend = Uint8::from(1);
+        self
+    }
+
     pub fn argv(mut self, a: Vec<u8>) -> Self {
         self.argv = BytesW2::from(a).unwrap();
         self
@@ -54,6 +60,7 @@ impl Contract {
         edit.library_add = self.ctrt.library;
         edit.abstcalls = self.ctrt.abstcalls;
         edit.userfuncs = self.ctrt.userfuncs;
+        edit.calcfuncs = self.ctrt.calcfuncs;
         edit
     }
 

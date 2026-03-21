@@ -85,12 +85,49 @@ pub fn cast_arithmetic(x: &mut Value, y: &mut Value) -> VmrtErr {
     Ok(())
 }
 
+pub fn cast_arithmetic3(x: &mut Value, y: &mut Value, z: &mut Value) -> VmrtErr {
+    let (Some(xb), Some(yb), Some(zb)) =
+        (arith_uint_bits(x), arith_uint_bits(y), arith_uint_bits(z))
+    else {
+        return itr_err_fmt!(
+            CastFail,
+            "cannot do arithmetic cast between type {:?}, {:?} and {:?}",
+            x,
+            y,
+            z
+        );
+    };
+    let tb = xb.max(yb).max(zb);
+    if xb < tb {
+        x.cast_to_uint_width(tb)?;
+    }
+    if yb < tb {
+        y.cast_to_uint_width(tb)?;
+    }
+    if zb < tb {
+        z.cast_to_uint_width(tb)?;
+    }
+    Ok(())
+}
+
 impl Value {
     pub(crate) fn normalize_arithmetic_pair(x: &Value, y: &Value) -> VmrtRes<(Value, Value)> {
         let mut lx = x.to_uint()?;
         let mut ry = y.to_uint()?;
         cast_arithmetic(&mut lx, &mut ry)?;
         Ok((lx, ry))
+    }
+
+    pub(crate) fn normalize_arithmetic_triple(
+        x: &Value,
+        y: &Value,
+        z: &Value,
+    ) -> VmrtRes<(Value, Value, Value)> {
+        let mut lx = x.to_uint()?;
+        let mut my = y.to_uint()?;
+        let mut rz = z.to_uint()?;
+        cast_arithmetic3(&mut lx, &mut my, &mut rz)?;
+        Ok((lx, my, rz))
     }
 
     pub fn cast_bool(&mut self) -> VmrtErr {

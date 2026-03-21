@@ -19,8 +19,9 @@ pub trait VmHost {
         selector: FnSign,
         calcfn: &CalcFnObj,
         input: Vec<u8>,
-    ) -> VmrtRes<Vec<u8>> {
-        let _ = (owner, selector, calcfn, input);
+        gas_limit: i64,
+    ) -> VmrtRes<(i64, Vec<u8>)> {
+        let _ = (owner, selector, calcfn, input, gas_limit);
         itr_err_fmt!(InstDisabled, "calcfunc executor not configured")
     }
 

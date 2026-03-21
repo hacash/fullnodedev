@@ -78,7 +78,18 @@ impl CallFrame {
                         let param = frame.pop_value()?;
                         param.extract_call_data(&frame.heap)?
                     };
-                    let output = host.calc_call(&owner, selector, calcfn.as_ref(), input)?;
+                    let gas_limit = r.calc_resource_gas_limit(host)?;
+                    let (gas_used, output) =
+                        host.calc_call(&owner, selector, calcfn.as_ref(), input, gas_limit)?;
+                    if gas_used > gas_limit {
+                        return itr_err_fmt!(
+                            OutOfGas,
+                            "calc resource gas {} exceeds limit {}",
+                            gas_used,
+                            gas_limit
+                        );
+                    }
+                    r.settle_calc_resource_gas(host, gas_used)?;
                     curr_mut!().push_value(Value::Bytes(output).valid(&r.space_cap)?)?;
                     continue;
                 }

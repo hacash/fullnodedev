@@ -8,8 +8,7 @@ pub struct GasTable {
 impl Default for GasTable {
     fn default() -> Self {
         Self {
-            // Keep Default aligned with `new()` baseline: unspecified opcodes cost 2.
-            table: [2; 256]
+            table: [1; 256]
         }
     }
 }
@@ -24,19 +23,19 @@ impl GasTable {
         gst.set(3,  &[BSHR, BSHL, BXOR, BOR, BAND]);
         gst.set(4,  &[MUL, DIV, MOD]);
         gst.set(5,  &[MGET, GGET, NEWLIST, NEWMAP]);
-        gst.set(6,  &[POW]);
-        gst.set(8,  &[PACKLIST, PACKMAP, PACKTUPLE]);
-        gst.set(10,  &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
-        gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE]);
+        gst.set(6,  &[POW, ADDMOD, CLAMP]);
+        gst.set(8,  &[PACKLIST, PACKMAP, PACKTUPLE, MULADD]);
+        gst.set(10,  &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR]);
+        gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULSHRUP]);
         gst.set(16,  &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
-        #[cfg(feature = "calcfunc")]
-        gst.set(16, &[CALCCALL]);
         gst.set(20,  &[LOG1, NTENV, CALLEXTVIEW]);
         gst.set(24,  &[LOG2, CALLEXT, CALL]);
         gst.set(28,  &[LOG3, ACTENV, SDEL]);
-        gst.set(32,  &[LOG4, ACTVIEW, SLOAD, SREST]);
+        gst.set(32,  &[LOG4, ACTVIEW, SLOAD, SREST, RPOW]);
         gst.set(48,  &[ACTION]);
         gst.set(64,  &[SSAVE, SRENT]);
+        #[cfg(feature = "calcfunc")]
+        gst.set(128, &[CALCCALL]);
         gst
     }
 
@@ -331,6 +330,7 @@ mod gas_budget_codec_tests {
                 CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST,
                 POP, NOP, NT, END, RET, ABT, ERR, AST, PRT,
             ]),
+            (2, vec![CLAMP]),
             (3, vec![BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]),
             (4, vec![
                 DUPN, POPN, ROLL,
@@ -340,15 +340,15 @@ mod gas_budget_codec_tests {
                 ITEMGET, HEAD, BACK, HASKEY, LENGTH,
             ]),
             (5, vec![POW, CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP]),
-            (6, vec![HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
-            (8, vec![NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP]),
-            (10, vec![PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
-            (12, vec![ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE]),
+            (6, vec![HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV, ADDMOD]),
+            (8, vec![NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP, MULADD]),
+            (10, vec![PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES, MULMOD, MULSHR]),
+            (12, vec![ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE, MULDIV, MULDIVUP, MULSHRUP]),
             (16, vec![ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]),
             (20, vec![LOG1]),
             (24, vec![LOG2, GPUT, CALLEXTVIEW]),
             (28, vec![LOG3, SDEL, ACTION]),
-            (32, vec![LOG4, SLOAD, SREST, CALLEXT, CALL]),
+            (32, vec![LOG4, SLOAD, SREST, CALLEXT, CALL, RPOW]),
             (64, vec![SSAVE, SRENT]),
         ];
         #[cfg(feature = "calcfunc")]

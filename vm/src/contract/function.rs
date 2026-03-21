@@ -99,3 +99,29 @@ impl Func {
 
 
 }
+
+#[allow(dead_code)]
+pub struct CalcFunc {
+    func: ContractCalcFunc
+}
+
+#[allow(dead_code)]
+impl CalcFunc {
+    pub fn new(fname: &str) -> Ret<Self> {
+        let Some(c0) = fname.as_bytes().first().copied() else {
+            return errf!("calcfunc name cannot be empty")
+        };
+        if c0.is_ascii_uppercase() {
+            return errf!("calcfunc name '{}' cannot start with uppercase", fname)
+        }
+        let mut func = ContractCalcFunc::new();
+        func.sign = Fixed4::from(calc_func_sign(fname));
+        Ok(Self { func })
+    }
+
+    pub fn raw(mut self, conf: u8, data: Vec<u8>) -> Ret<Self> {
+        self.func.code_stuff.conf = Uint1::from(conf);
+        self.func.code_stuff.data = BytesW2::from(data)?;
+        Ok(self)
+    }
+}

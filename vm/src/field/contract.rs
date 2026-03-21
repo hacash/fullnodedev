@@ -75,6 +75,7 @@ combi_struct!{ ContractEdit,
 	library_replace_at: ContractAddrReplaceAtList
 	abstcalls: ContractAbstCallList
 	userfuncs: ContractUserFuncList
+	calcfuncs: ContractCalcFuncList
 }
 
 
@@ -241,9 +242,14 @@ impl ContractSto {
 			&& edit.library_add.length() == 0
 			&& edit.library_replace_at.length() == 0
 			&& edit.abstcalls.length() == 0
-			&& edit.userfuncs.length() == 0;
+			&& edit.userfuncs.length() == 0
+			&& edit.calcfuncs.length() == 0;
 		if edit_empty {
 			return itr_err_fmt!(ContractError, "contract edit is empty");
+		}
+		#[cfg(not(feature = "calcfunc"))]
+		if edit.calcfuncs.length() > 0 {
+			return itr_err_fmt!(ContractError, "calcfunc feature disabled");
 		}
 
 		let mut did_append = false;
@@ -352,6 +358,28 @@ impl ContractSto {
 				verify_code_stuff(&cap, &a.code_stuff, hei)?;
 			}
 			let replaced = self.userfuncs.check_merge(&edit.userfuncs)?;
+			if replaced {
+				did_change = true;
+			} else {
+				did_append = true;
+			}
+		}
+		if edit.calcfuncs.length() > 0 {
+			{
+				let mut seen = HashSet::new();
+				for a in edit.calcfuncs.as_list() {
+					let key = a.sign.to_array();
+					if !seen.insert(key) {
+						return itr_err_fmt!(ContractUpgradeErr, "calcfunc sign already exists in edit");
+					}
+				}
+			}
+			for a in edit.calcfuncs.as_list() {
+				a.check(hei)?;
+				verify_calc_code_stuff(&cap, &a.code_stuff, hei)?;
+			}
+			let replaced = self.calcfuncs.check_merge(&edit.calcfuncs)?;
+			self.morextend = Uint8::from(1);
 			if replaced {
 				did_change = true;
 			} else {
