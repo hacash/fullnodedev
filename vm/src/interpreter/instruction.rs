@@ -40,6 +40,27 @@ where
     locop_arithmetic3(x, &mut y, &mut z, f)
 }
 
+fn locop_arithmetic4<F>(x: &mut Value, y: &mut Value, z: &mut Value, w: &mut Value, f: F) -> VmrtErr
+where
+    F: FnOnce(&Value, &Value, &Value, &Value) -> VmrtRes<Value>,
+{
+    let (lx, my, rz, qw) = Value::normalize_arithmetic_quad(x, y, z, w)?;
+    let v = f(&lx, &my, &rz, &qw)?;
+    *x = v;
+    Ok(())
+}
+
+fn quadop_arithmetic<F>(operand_stack: &mut Stack, f: F) -> VmrtErr
+where
+    F: FnOnce(&Value, &Value, &Value, &Value) -> VmrtRes<Value>,
+{
+    let mut w = operand_stack.pop()?;
+    let mut z = operand_stack.pop()?;
+    let mut y = operand_stack.pop()?;
+    let x = operand_stack.peek()?;
+    locop_arithmetic4(x, &mut y, &mut z, &mut w, f)
+}
+
 /* * *   binop_between *   such as: v = x && y */
 
 fn locop_btw<F>(x: &mut Value, y: &mut Value, f: F) -> VmrtErr
@@ -110,6 +131,13 @@ fn check_failed_tip3(op: &str, x: &Value, y: &Value, z: &Value) -> String {
     format!(
         "arithmetic {} check failed with {:?}, {:?} and {:?}",
         op, x, y, z
+    )
+}
+
+fn check_failed_tip4(op: &str, x: &Value, y: &Value, z: &Value, w: &Value) -> String {
+    format!(
+        "arithmetic {} check failed with {:?}, {:?}, {:?} and {:?}",
+        op, x, y, z, w
     )
 }
 
@@ -340,6 +368,22 @@ fn add_u256_u128(hi: u128, lo: u128, add: u128) -> Option<(u128, u128)> {
     Some((hi.checked_add(carry as u128)?, lo))
 }
 
+fn add_u256(ahi: u128, alo: u128, bhi: u128, blo: u128) -> Option<(u128, u128)> {
+    let (lo, carry) = alo.overflowing_add(blo);
+    let hi = ahi.checked_add(bhi)?.checked_add(carry as u128)?;
+    Some((hi, lo))
+}
+
+fn sub_u256(ahi: u128, alo: u128, bhi: u128, blo: u128) -> Option<(u128, u128)> {
+    let (lo, borrow) = alo.overflowing_sub(blo);
+    let hi = ahi.checked_sub(bhi)?.checked_sub(borrow as u128)?;
+    Some((hi, lo))
+}
+
+fn sub_u256_u128(hi: u128, lo: u128, sub: u128) -> Option<(u128, u128)> {
+    sub_u256(hi, lo, 0, sub)
+}
+
 fn div_u256_by_u128_to_u128(hi: u128, lo: u128, d: u128) -> Option<(u128, u128)> {
     if d == 0 || hi >= d {
         return None;
@@ -385,8 +429,54 @@ fn shr_u256_to_u128(hi: u128, lo: u128, shift: u32) -> Option<(u128, bool)> {
     }
 }
 
+fn mul_u256_u128_to_u256_checked(hi: u128, lo: u128, mul: u128) -> Option<(u128, u128)> {
+    let (lo_hi, lo_lo) = mul_wide_u128(lo, mul);
+    let (hi_hi, hi_lo) = mul_wide_u128(hi, mul);
+    if hi_hi != 0 {
+        return None;
+    }
+    let out_hi = hi_lo.checked_add(lo_hi)?;
+    Some((out_hi, lo_lo))
+}
+
+fn cmp_u256(ahi: u128, alo: u128, bhi: u128, blo: u128) -> std::cmp::Ordering {
+    ahi.cmp(&bhi).then(alo.cmp(&blo))
+}
+
 fn cast_uint_like(tpl: &Value, out: u128, op: &str, x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let err = || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z));
+    Ok(match tpl {
+        U8(..) => Value::U8(u8::try_from(out).map_err(|_| err())?),
+        U16(..) => Value::U16(u16::try_from(out).map_err(|_| err())?),
+        U32(..) => Value::U32(u32::try_from(out).map_err(|_| err())?),
+        U64(..) => Value::U64(u64::try_from(out).map_err(|_| err())?),
+        U128(..) => Value::U128(out),
+        _ => return Err(err()),
+    })
+}
+
+fn cast_uint_like2(tpl: &Value, out: u128, op: &str, x: &Value, y: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip(op, x, y));
+    Ok(match tpl {
+        U8(..) => Value::U8(u8::try_from(out).map_err(|_| err())?),
+        U16(..) => Value::U16(u16::try_from(out).map_err(|_| err())?),
+        U32(..) => Value::U32(u32::try_from(out).map_err(|_| err())?),
+        U64(..) => Value::U64(u64::try_from(out).map_err(|_| err())?),
+        U128(..) => Value::U128(out),
+        _ => return Err(err()),
+    })
+}
+
+fn cast_uint_like4(
+    tpl: &Value,
+    out: u128,
+    op: &str,
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    w: &Value,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w));
     Ok(match tpl {
         U8(..) => Value::U8(u8::try_from(out).map_err(|_| err())?),
         U16(..) => Value::U16(u16::try_from(out).map_err(|_| err())?),
@@ -426,6 +516,60 @@ fn mul_div_half_up(
 ) -> VmrtRes<u128> {
     let (hi, lo) = mul_wide_u128(lhs, rhs);
     round_half_up_div_u256_by_u128(hi, lo, d, op, x, y, z)
+}
+
+fn saturating_uint_add(x: &Value, y: &Value) -> VmrtRes<Value> {
+    Ok(match (x, y) {
+        (U8(l), U8(r)) => Value::U8(l.saturating_add(*r)),
+        (U16(l), U16(r)) => Value::U16(l.saturating_add(*r)),
+        (U32(l), U32(r)) => Value::U32(l.saturating_add(*r)),
+        (U64(l), U64(r)) => Value::U64(l.saturating_add(*r)),
+        (U128(l), U128(r)) => Value::U128(l.saturating_add(*r)),
+        (_, _) => {
+            return itr_err_fmt!(
+                Arithmetic,
+                "cannot do arithmetic between {:?} and {:?}",
+                x,
+                y
+            )
+        }
+    })
+}
+
+fn saturating_uint_sub(x: &Value, y: &Value) -> VmrtRes<Value> {
+    Ok(match (x, y) {
+        (U8(l), U8(r)) => Value::U8(l.saturating_sub(*r)),
+        (U16(l), U16(r)) => Value::U16(l.saturating_sub(*r)),
+        (U32(l), U32(r)) => Value::U32(l.saturating_sub(*r)),
+        (U64(l), U64(r)) => Value::U64(l.saturating_sub(*r)),
+        (U128(l), U128(r)) => Value::U128(l.saturating_sub(*r)),
+        (_, _) => {
+            return itr_err_fmt!(
+                Arithmetic,
+                "cannot do arithmetic between {:?} and {:?}",
+                x,
+                y
+            )
+        }
+    })
+}
+
+fn absdiff_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
+    Ok(match (x, y) {
+        (U8(l), U8(r)) => Value::U8(l.abs_diff(*r)),
+        (U16(l), U16(r)) => Value::U16(l.abs_diff(*r)),
+        (U32(l), U32(r)) => Value::U32(l.abs_diff(*r)),
+        (U64(l), U64(r)) => Value::U64(l.abs_diff(*r)),
+        (U128(l), U128(r)) => Value::U128(l.abs_diff(*r)),
+        (_, _) => {
+            return itr_err_fmt!(
+                Arithmetic,
+                "cannot do arithmetic between {:?} and {:?}",
+                x,
+                y
+            )
+        }
+    })
 }
 
 fn addmod_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -544,6 +688,157 @@ fn clamp_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     }
     let out = xv.clamp(lo, hi);
     cast_uint_like(x, out, "clamp", x, y, z)
+}
+
+fn satadd_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
+    saturating_uint_add(x, y)
+}
+
+fn satsub_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
+    saturating_uint_sub(x, y)
+}
+
+fn divup_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip("div_up", x, y));
+    let div = y.extract_u128()?;
+    if div == 0 {
+        return Err(err());
+    }
+    let num = x.extract_u128()?;
+    let mut quo = num / div;
+    if num % div != 0 {
+        quo = quo.checked_add(1).ok_or_else(err)?;
+    }
+    cast_uint_like2(x, quo, "div_up", x, y)
+}
+
+fn divround_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip("div_round", x, y));
+    let div = y.extract_u128()?;
+    if div == 0 {
+        return Err(err());
+    }
+    let num = x.extract_u128()?;
+    let mut quo = num / div;
+    let rem = num % div;
+    let threshold = div - div / 2;
+    if rem >= threshold {
+        quo = quo.checked_add(1).ok_or_else(err)?;
+    }
+    cast_uint_like2(x, quo, "div_round", x, y)
+}
+
+fn mulsub_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("mul_sub", x, y, z));
+    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
+    let (hi, lo) = sub_u256_u128(hi, lo, z.extract_u128()?).ok_or_else(err)?;
+    if hi != 0 {
+        return Err(err());
+    }
+    cast_uint_like(x, lo, "mul_sub", x, y, z)
+}
+
+fn muldivround_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("mul_div_round", x, y, z));
+    let div = z.extract_u128()?;
+    if div == 0 {
+        return Err(err());
+    }
+    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
+    let quo = round_half_up_div_u256_by_u128(hi, lo, div, "mul_div_round", x, y, z)
+        .map_err(|_| err())?;
+    cast_uint_like(x, quo, "mul_div_round", x, y, z)
+}
+
+fn muladddiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("mul_add_div", x, y, z, w));
+    let div = w.extract_u128()?;
+    if div == 0 {
+        return Err(err());
+    }
+    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
+    let (hi, lo) = add_u256_u128(hi, lo, z.extract_u128()?).ok_or_else(err)?;
+    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
+    cast_uint_like4(x, quo, "mul_add_div", x, y, z, w)
+}
+
+fn mulsubdiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("mul_sub_div", x, y, z, w));
+    let div = w.extract_u128()?;
+    if div == 0 {
+        return Err(err());
+    }
+    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
+    let (hi, lo) = sub_u256_u128(hi, lo, z.extract_u128()?).ok_or_else(err)?;
+    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
+    cast_uint_like4(x, quo, "mul_sub_div", x, y, z, w)
+}
+
+fn mul3div_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("mul3_div", x, y, z, w));
+    let div = w.extract_u128()?;
+    if div == 0 {
+        return Err(err());
+    }
+    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
+    let (hi, lo) = mul_u256_u128_to_u256_checked(hi, lo, z.extract_u128()?).ok_or_else(err)?;
+    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
+    cast_uint_like4(x, quo, "mul3_div", x, y, z, w)
+}
+
+fn devscaled_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("dev_scaled", x, y, z));
+    let xv = x.extract_u128()?;
+    let reference = y.extract_u128()?;
+    if reference == 0 {
+        return maybe!(xv == 0, cast_uint_like(x, 0, "dev_scaled", x, y, z), Err(err()));
+    }
+    let diff = xv.abs_diff(reference);
+    let (hi, lo) = mul_wide_u128(diff, z.extract_u128()?);
+    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, reference).ok_or_else(err)?;
+    cast_uint_like(x, quo, "dev_scaled", x, y, z)
+}
+
+fn withinbps_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    let diff = x.extract_u128()?.abs_diff(y.extract_u128()?);
+    let (lhs_hi, lhs_lo) = mul_wide_u128(diff, w.extract_u128()?);
+    let (rhs_hi, rhs_lo) = mul_wide_u128(y.extract_u128()?, z.extract_u128()?);
+    Ok(Value::bool(cmp_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).is_le()))
+}
+
+fn wavg2_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("wavg2", x, y, z, w));
+    let wx = y.extract_u128()?;
+    let wy = w.extract_u128()?;
+    let denom = wx.checked_add(wy).ok_or_else(err)?;
+    if denom == 0 {
+        return Err(err());
+    }
+    let (lhs_hi, lhs_lo) = mul_wide_u128(x.extract_u128()?, wx);
+    let (rhs_hi, rhs_lo) = mul_wide_u128(z.extract_u128()?, wy);
+    let (num_hi, num_lo) = add_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).ok_or_else(err)?;
+    let (quo, _) = div_u256_by_u128_to_u128(num_hi, num_lo, denom).ok_or_else(err)?;
+    cast_uint_like4(x, quo, "wavg2", x, y, z, w)
+}
+
+fn lerp_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("lerp", x, y, z, w));
+    let start = x.extract_u128()?;
+    let end = y.extract_u128()?;
+    let weight = z.extract_u128()?;
+    let base = w.extract_u128()?;
+    if base == 0 || weight > base {
+        return Err(err());
+    }
+    let delta = end.abs_diff(start);
+    let (hi, lo) = mul_wide_u128(delta, weight);
+    let (part, _) = div_u256_by_u128_to_u128(hi, lo, base).ok_or_else(err)?;
+    let out = if end >= start {
+        start.checked_add(part).ok_or_else(err)?
+    } else {
+        start.checked_sub(part).ok_or_else(err)?
+    };
+    cast_uint_like4(x, out, "lerp", x, y, z, w)
 }
 
 // the value is must within u32
@@ -762,5 +1057,120 @@ mod shift_u64_tests {
         );
         assert!(lgc_equal(&Value::Compo(copied.clone()), &Value::Nil).is_err());
         assert!(lgc_not_equal(&Value::Compo(copied), &Value::Nil).is_err());
+    }
+
+    #[test]
+    fn finance_rounding_and_saturating_ops_work() {
+        assert_eq!(
+            divup_checked(&Value::U64(10), &Value::U64(3)).unwrap(),
+            Value::U64(4)
+        );
+        assert_eq!(
+            divround_checked(&Value::U64(10), &Value::U64(6)).unwrap(),
+            Value::U64(2)
+        );
+        assert_eq!(
+            satadd_checked(&Value::U8(u8::MAX), &Value::U8(1)).unwrap(),
+            Value::U8(u8::MAX)
+        );
+        assert_eq!(
+            satsub_checked(&Value::U16(0), &Value::U16(7)).unwrap(),
+            Value::U16(0)
+        );
+        assert_eq!(
+            absdiff_checked(&Value::U64(3), &Value::U64(11)).unwrap(),
+            Value::U64(8)
+        );
+    }
+
+    #[test]
+    fn finance_mul_variants_work() {
+        assert_eq!(
+            mulsub_checked(&Value::U64(9), &Value::U64(8), &Value::U64(6)).unwrap(),
+            Value::U64(66)
+        );
+        assert_eq!(
+            muldivround_checked(&Value::U64(5), &Value::U64(10), &Value::U64(6)).unwrap(),
+            Value::U64(8)
+        );
+        assert_eq!(
+            muladddiv_checked(
+                &Value::U64(2),
+                &Value::U64(3),
+                &Value::U64(4),
+                &Value::U64(5),
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+        assert_eq!(
+            mulsubdiv_checked(
+                &Value::U64(9),
+                &Value::U64(8),
+                &Value::U64(6),
+                &Value::U64(3),
+            )
+            .unwrap(),
+            Value::U64(22)
+        );
+        assert_eq!(
+            mul3div_checked(
+                &Value::U64(3),
+                &Value::U64(4),
+                &Value::U64(5),
+                &Value::U64(6),
+            )
+            .unwrap(),
+            Value::U64(10)
+        );
+    }
+
+    #[test]
+    fn finance_guard_and_curve_ops_work() {
+        assert_eq!(
+            devscaled_checked(&Value::U64(10100), &Value::U64(10000), &Value::U64(10000))
+                .unwrap(),
+            Value::U64(100)
+        );
+        assert_eq!(
+            withinbps_checked(
+                &Value::U64(10050),
+                &Value::U64(10000),
+                &Value::U64(60),
+                &Value::U64(10000),
+            )
+            .unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            wavg2_checked(
+                &Value::U64(100),
+                &Value::U64(1),
+                &Value::U64(300),
+                &Value::U64(3),
+            )
+            .unwrap(),
+            Value::U64(250)
+        );
+        assert_eq!(
+            lerp_checked(
+                &Value::U64(100),
+                &Value::U64(200),
+                &Value::U64(1),
+                &Value::U64(4),
+            )
+            .unwrap(),
+            Value::U64(125)
+        );
+        assert_eq!(
+            lerp_checked(
+                &Value::U64(200),
+                &Value::U64(100),
+                &Value::U64(1),
+                &Value::U64(4),
+            )
+            .unwrap(),
+            Value::U64(175)
+        );
     }
 }

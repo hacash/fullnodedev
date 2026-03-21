@@ -1469,6 +1469,16 @@ impl<'a> Formater<'a> {
             let subz = self.print_inline(&*triple.subz);
             return format!("{}{}({}, {}, {})", prefix, meta.intro, subx, suby, subz);
         }
+        if let Some(quad) = node.as_any().downcast_ref::<IRNodeQuad>() {
+            let subx = self.print_inline(&*quad.subx);
+            let suby = self.print_inline(&*quad.suby);
+            let subz = self.print_inline(&*quad.subz);
+            let subw = self.print_inline(&*quad.subw);
+            return format!(
+                "{}{}({}, {}, {}, {})",
+                prefix, meta.intro, subx, suby, subz, subw
+            );
+        }
         format!("{}{}", prefix, meta.intro)
     }
 

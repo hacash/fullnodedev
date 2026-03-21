@@ -178,6 +178,20 @@ mod fitsh_compile_tests {
             op_div: "return 6 / 2",
             op_mod: "return 7 % 3",
             op_pow: "return 2 ** 3",
+            op_div_up: "return div_up(10, 3)",
+            op_div_round: "return div_round(10, 6)",
+            op_sat_add: "return sat_add(255u8, 1u8)",
+            op_sat_sub: "return sat_sub(0u64, 1u64)",
+            op_abs_diff: "return abs_diff(1, 9)",
+            op_mul_sub: "return mul_sub(5, 4, 6)",
+            op_mul_div_round: "return mul_div_round(5, 10, 6)",
+            op_dev_scaled: "return dev_scaled(10100, 10000, 10000)",
+            op_mul_add_div: "return mul_add_div(2, 3, 4, 5)",
+            op_mul_sub_div: "return mul_sub_div(9, 8, 6, 3)",
+            op_mul3_div: "return mul3_div(3, 4, 5, 6)",
+            op_within_bps: "return within_bps(10050, 10000, 60, 10000)",
+            op_wavg2: "return wavg2(100, 1, 300, 3)",
+            op_lerp: "return lerp(100, 200, 1, 4)",
             op_shl: "return 1 << 4",
             op_shr: "return 16 >> 2",
             op_and: "return 5 & 3",
@@ -209,6 +223,7 @@ mod fitsh_compile_tests {
             rt_arith: "return 1 + 2 * 3",
             rt_logical: "return true && false || true",
             rt_concat: "return \"a\" ++ \"b\"",
+            rt_quad_finance: "return mul_add_div(2, 3, 4, 5)",
         );
     }
 

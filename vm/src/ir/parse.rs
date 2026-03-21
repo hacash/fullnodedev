@@ -190,6 +190,14 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
                 (0, 1) => Box::new(IRNodeSingle{hrtv, inst, subx: submust!()}),
                 (0, 2) => Box::new(IRNodeDouble{hrtv, inst, subx: submust!(), suby: submust!()}),
                 (0, 3) => Box::new(IRNodeTriple{hrtv, inst, subx: submust!(), suby: submust!(), subz: submust!()}),
+                (0, 4) => Box::new(IRNodeQuad{
+                    hrtv,
+                    inst,
+                    subx: submust!(),
+                    suby: submust!(),
+                    subz: submust!(),
+                    subw: submust!(),
+                }),
                 (0, 0|255) => Box::new(IRNodeLeaf::notext(hrtv, inst)), // leaf
                 (1, 0|255) => Box::new(IRNodeParam1{hrtv, inst, para: itrp1!(), text:s!("")}), // params one
                 (2, 0|255) => Box::new(IRNodeParam2{hrtv, inst, para: itrp2!()}), // params two

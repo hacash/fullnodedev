@@ -307,11 +307,25 @@ irfn_define! {
     mul_mod
     mul_div
     mul_add
+    mul_sub
     mul_div_up
+    mul_div_round
     mul_shr
     mul_shr_up
     rpow
     clamp
+    dev_scaled
+    div_up
+    div_round
+    sat_add
+    sat_sub
+    abs_diff
+    mul_add_div
+    mul_sub_div
+    mul3_div
+    within_bps
+    wavg2
+    lerp
     max
     min
     increase

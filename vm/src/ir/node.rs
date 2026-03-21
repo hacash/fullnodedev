@@ -396,6 +396,52 @@ impl IRNode for IRNodeTriple {
 /*************************************/
 
 #[derive(Debug, Clone)]
+pub struct IRNodeQuad {
+    pub hrtv: bool,
+    pub inst: Bytecode,
+    pub subx: Box<dyn IRNode>,
+    pub suby: Box<dyn IRNode>,
+    pub subz: Box<dyn IRNode>,
+    pub subw: Box<dyn IRNode>,
+}
+
+impl IRNode for IRNodeQuad {
+    fn as_any(&self) -> &dyn Any { self }
+    fn subs(&self) -> usize { 4 }
+    fn hasretval(&self) -> bool { self.hrtv }
+    fn bytecode(&self) -> u8 { self.inst as u8 }
+    fn codegen_into(&self, buf: &mut Vec<u8>) -> VmrtRes<()> {
+        self.subx.codegen_into(buf)?;
+        self.suby.codegen_into(buf)?;
+        self.subz.codegen_into(buf)?;
+        self.subw.codegen_into(buf)?;
+        buf.push(self.bytecode());
+        Ok(())
+    }
+    fn serialize(&self) -> Vec<u8> {
+        iter::once(self.bytecode())
+            .chain(self.subx.serialize())
+            .chain(self.suby.serialize())
+            .chain(self.subz.serialize())
+            .chain(self.subw.serialize())
+            .collect()
+    }
+    fn print(&self) -> String {
+        let subxstr = self.subx.print();
+        let subystr = self.suby.print();
+        let subzstr = self.subz.print();
+        let subwstr = self.subw.print();
+        format!(
+            "{:?} {} {} {} {}",
+            self.inst, subxstr, subystr, subzstr, subwstr
+        )
+    }
+}
+
+
+/*************************************/
+
+#[derive(Debug, Clone)]
 pub struct IRNodeParam1Single {
     pub hrtv: bool, 
     pub inst: Bytecode,

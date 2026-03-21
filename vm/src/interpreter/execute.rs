@@ -794,11 +794,18 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 POW => binop_arithmetic(ops, pow_checked)?,
                 MAX => binop_arithmetic(ops, max_checked)?,
                 MIN => binop_arithmetic(ops, min_checked)?,
+                DIVUP => binop_arithmetic(ops, divup_checked)?,
+                DIVROUND => binop_arithmetic(ops, divround_checked)?,
+                SATADD => binop_arithmetic(ops, satadd_checked)?,
+                SATSUB => binop_arithmetic(ops, satsub_checked)?,
+                ABSDIFF => binop_arithmetic(ops, absdiff_checked)?,
                 ADDMOD => triop_arithmetic(ops, addmod_checked)?,
                 MULMOD => triop_arithmetic(ops, mulmod_checked)?,
                 MULDIV => triop_arithmetic(ops, muldiv_checked)?,
                 MULADD => triop_arithmetic(ops, muladd_checked)?,
+                MULSUB => triop_arithmetic(ops, mulsub_checked)?,
                 MULDIVUP => triop_arithmetic(ops, muldivup_checked)?,
+                MULDIVROUND => triop_arithmetic(ops, muldivround_checked)?,
                 MULSHR => triop_arithmetic(ops, mulshr_checked)?,
                 MULSHRUP => triop_arithmetic(ops, mulshrup_checked)?,
                 RPOW => {
@@ -817,6 +824,13 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     triop_arithmetic(ops, rpow_checked)?
                 }
                 CLAMP => triop_arithmetic(ops, clamp_checked)?,
+                DEVSCALED => triop_arithmetic(ops, devscaled_checked)?,
+                MULADDDIV => quadop_arithmetic(ops, muladddiv_checked)?,
+                MULSUBDIV => quadop_arithmetic(ops, mulsubdiv_checked)?,
+                MUL3DIV => quadop_arithmetic(ops, mul3div_checked)?,
+                WITHINBPS => quadop_arithmetic(ops, withinbps_checked)?,
+                WAVG2 => quadop_arithmetic(ops, wavg2_checked)?,
+                LERP => quadop_arithmetic(ops, lerp_checked)?,
                 INC => unary_inc(ops.peek()?, pu8!())?,
                 DEC => unary_dec(ops.peek()?, pu8!())?,
                 // workflow control

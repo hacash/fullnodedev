@@ -501,6 +501,14 @@ fn build_ir_func_v2(
                 suby: take(&mut argvs),
                 subz: take(&mut argvs),
             }),
+            4 => Box::new(IRNodeQuad {
+                hrtv,
+                inst,
+                subx: take(&mut argvs),
+                suby: take(&mut argvs),
+                subz: take(&mut argvs),
+                subw: take(&mut argvs),
+            }),
             _ => return errf!("cannot match ir call type: params({}), args({})", pms, args),
         });
     }

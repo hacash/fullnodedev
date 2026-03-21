@@ -82,6 +82,24 @@ fn mk_2(
     })
 }
 
+fn mk_4(
+    hrtv: bool,
+    inst: Bytecode,
+    subx: Box<dyn IRNode>,
+    suby: Box<dyn IRNode>,
+    subz: Box<dyn IRNode>,
+    subw: Box<dyn IRNode>,
+) -> Box<dyn IRNode> {
+    Box::new(IRNodeQuad {
+        hrtv,
+        inst,
+        subx,
+        suby,
+        subz,
+        subw,
+    })
+}
+
 pub fn push_inst_noret(inst: Bytecode) -> Box<dyn IRNode> {
     mk_leaf(false, inst, s!(""))
 }
@@ -121,6 +139,16 @@ pub fn push_double_box(
     suby: Box<dyn IRNode>,
 ) -> Box<dyn IRNode> {
     mk_2(false, inst, subx, suby)
+}
+
+pub fn push_quad_box(
+    inst: Bytecode,
+    subx: Box<dyn IRNode>,
+    suby: Box<dyn IRNode>,
+    subz: Box<dyn IRNode>,
+    subw: Box<dyn IRNode>,
+) -> Box<dyn IRNode> {
+    mk_4(false, inst, subx, suby, subz, subw)
 }
 
 pub fn push_local_get(i: u8, text: String) -> Box<dyn IRNode> {

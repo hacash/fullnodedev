@@ -202,20 +202,20 @@ pub enum Bytecode {
     MULSHRUP = 0xc0,            // a,b,c+ ceil((x*y)/2^z)
     RPOW     = 0xc1,            // a,b,c+ fixed-point pow
     CLAMP    = 0xc2,            // a,b,c+ clamp(x, lo, hi)
-    ________________195 = 0xc3,
-    ________________196 = 0xc4,
-    ________________197 = 0xc5,
-    ________________198 = 0xc6,
-    ________________199 = 0xc7,
-    ________________200 = 0xc8,
-    ________________201 = 0xc9,
-    ________________202 = 0xca,
-    ________________203 = 0xcb,
-    ________________204 = 0xcc,
-    ________________205 = 0xcd,
-    ________________206 = 0xce,
-    ________________207 = 0xcf,
-    ________________208 = 0xd0,
+    DIVUP       = 0xc3,         // a,b+   ceil(x/y)
+    DIVROUND    = 0xc4,         // a,b+   round_half_up(x/y)
+    SATADD      = 0xc5,         // a,b+   saturating add
+    SATSUB      = 0xc6,         // a,b+   saturating sub
+    ABSDIFF     = 0xc7,         // a,b+   abs(x-y)
+    MULSUB      = 0xc8,         // a,b,c+ (x*y)-z
+    MULDIVROUND = 0xc9,         // a,b,c+ round_half_up((x*y)/z)
+    DEVSCALED   = 0xca,         // a,b,c+ abs(x-b)*c/b
+    MULADDDIV   = 0xcb,         // a,b,c,d+ ((x*y)+z)/d
+    MULSUBDIV   = 0xcc,         // a,b,c,d+ ((x*y)-z)/d
+    MUL3DIV     = 0xcd,         // a,b,c,d+ (a*b*c)/d
+    WITHINBPS   = 0xce,         // a,b,c,d+ abs(a-b)*d <= b*c
+    WAVG2       = 0xcf,         // a,b,c,d+ (a*b+c*d)/(b+d)
+    LERP        = 0xd0,         // a,b,c,d+ linear interpolation
     ________________209 = 0xd1,
     ________________210 = 0xd2,
     ________________211 = 0xd3,
@@ -484,12 +484,26 @@ bytecode_metadata_define! {
     ADDMOD     : 0, 3, 1,     add_mod
     MULMOD     : 0, 3, 1,     mul_mod
     MULADD     : 0, 3, 1,     mul_add
+    MULSUB     : 0, 3, 1,     mul_sub
     MULDIV     : 0, 3, 1,     mul_div
     MULDIVUP   : 0, 3, 1,     mul_div_up
+    MULDIVROUND: 0, 3, 1,     mul_div_round
     MULSHR     : 0, 3, 1,     mul_shr
     MULSHRUP   : 0, 3, 1,     mul_shr_up
     RPOW       : 0, 3, 1,     rpow
     CLAMP      : 0, 3, 1,     clamp
+    DEVSCALED  : 0, 3, 1,     dev_scaled
+    DIVUP      : 0, 2, 1,     div_up
+    DIVROUND   : 0, 2, 1,     div_round
+    SATADD     : 0, 2, 1,     sat_add
+    SATSUB     : 0, 2, 1,     sat_sub
+    ABSDIFF    : 0, 2, 1,     abs_diff
+    MULADDDIV  : 0, 4, 1,     mul_add_div
+    MULSUBDIV  : 0, 4, 1,     mul_sub_div
+    MUL3DIV    : 0, 4, 1,     mul3_div
+    WITHINBPS  : 0, 4, 1,     within_bps
+    WAVG2      : 0, 4, 1,     wavg2
+    LERP       : 0, 4, 1,     lerp
 
     JMPL       : 2, 0, 0,     jump_long
     JMPS       : 1, 0, 0,     jump_offset

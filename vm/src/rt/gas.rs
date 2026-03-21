@@ -21,13 +21,14 @@ impl GasTable {
         gst.set(2,  &[ADD, SUB, MAX, MIN, INC, DEC,
             AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
         gst.set(3,  &[BSHR, BSHL, BXOR, BOR, BAND]);
-        gst.set(4,  &[MUL, DIV, MOD]);
+        gst.set(4,  &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
         gst.set(5,  &[MGET, GGET, NEWLIST, NEWMAP]);
         gst.set(6,  &[POW, ADDMOD, CLAMP]);
-        gst.set(8,  &[PACKLIST, PACKMAP, PACKTUPLE, MULADD]);
+        gst.set(8,  &[PACKLIST, PACKMAP, PACKTUPLE, MULADD, MULSUB]);
         gst.set(10,  &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR]);
-        gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULSHRUP]);
-        gst.set(16,  &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
+        gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED]);
+        gst.set(14,  &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
+        gst.set(16,  &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV]);
         gst.set(20,  &[LOG1, NTENV, CALLEXTVIEW]);
         gst.set(24,  &[LOG2, CALLEXT, CALL]);
         gst.set(28,  &[LOG3, ACTENV, SDEL]);
@@ -321,34 +322,29 @@ mod gas_budget_codec_tests {
     }
 
     #[test]
-    fn base_gas_table_matches_doc_and_default_is_2() {
+    fn base_gas_table_matches_impl_and_default_is_1() {
         let gst = GasTable::new(1);
         let mut configured = [false; 256];
         let groups: Vec<(i64, Vec<Bytecode>)> = vec![
-            (1, vec![
-                PU8, P0, P1, P2, P3, PNBUF, PNIL, PTRUE, PFALSE,
-                CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST,
-                POP, NOP, NT, END, RET, ABT, ERR, AST, PRT,
+            (2, vec![
+                ADD, SUB, MAX, MIN, INC, DEC, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT,
             ]),
-            (2, vec![CLAMP]),
-            (3, vec![BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]),
-            (4, vec![
-                DUPN, POPN, ROLL,
-                PBUF, PBUFL,
-                MOD, MUL, DIV, XOP,
-                HREAD, HREADU, HREADUL, HSLICE, HGROW,
-                ITEMGET, HEAD, BACK, HASKEY, LENGTH,
+            (3, vec![BSHR, BSHL, BXOR, BOR, BAND]),
+            (4, vec![MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]),
+            (5, vec![MGET, GGET, NEWLIST, NEWMAP]),
+            (6, vec![POW, ADDMOD, CLAMP]),
+            (8, vec![PACKLIST, PACKMAP, PACKTUPLE, MULADD, MULSUB]),
+            (10, vec![MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR]),
+            (12, vec![
+                CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED,
             ]),
-            (5, vec![POW, CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP]),
-            (6, vec![HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV, ADDMOD]),
-            (8, vec![NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP, MULADD]),
-            (10, vec![PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES, MULMOD, MULSHR]),
-            (12, vec![ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE, MULDIV, MULDIVUP, MULSHRUP]),
-            (16, vec![ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]),
-            (20, vec![LOG1]),
-            (24, vec![LOG2, GPUT, CALLEXTVIEW]),
-            (28, vec![LOG3, SDEL, ACTION]),
-            (32, vec![LOG4, SLOAD, SREST, CALLEXT, CALL, RPOW]),
+            (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
+            (16, vec![NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV]),
+            (20, vec![LOG1, NTENV, CALLEXTVIEW]),
+            (24, vec![LOG2, CALLEXT, CALL]),
+            (28, vec![LOG3, ACTENV, SDEL]),
+            (32, vec![LOG4, ACTVIEW, SLOAD, SREST, RPOW]),
+            (48, vec![ACTION]),
             (64, vec![SSAVE, SRENT]),
         ];
         #[cfg(feature = "calcfunc")]
@@ -372,8 +368,8 @@ mod gas_budget_codec_tests {
             if !configured[code as usize] {
                 assert_eq!(
                     gst.gas(code),
-                    2,
-                    "opcode 0x{:02x} not listed in doc should default to gas=2",
+                    1,
+                    "opcode 0x{:02x} not listed in impl should default to gas=1",
                     code
                 );
             }
@@ -393,7 +389,7 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.new_contract_load, 32);
         assert_eq!(gst.storage_key_cost, 256);
         assert_eq!(gst.storage_del_min, 16);
-        assert_eq!(gst.storege_value_base_size, 32);
+        assert_eq!(gst.storege_value_base_size, 16);
     }
 
     #[test]
@@ -401,56 +397,56 @@ mod gas_budget_codec_tests {
         let gst = GasExtra::new(1);
 
         assert_eq!(gst.stack_copy(0), 0);
-        assert_eq!(gst.stack_copy(31), 0);
-        assert_eq!(gst.stack_copy(32), 0);
-        assert_eq!(gst.stack_copy(64), 1);
+        assert_eq!(gst.stack_copy(31), 1);
+        assert_eq!(gst.stack_copy(32), 1);
+        assert_eq!(gst.stack_copy(64), 2);
         assert_eq!(gst.stack_write(0), 0);
-        assert_eq!(gst.stack_write(27), 0);
-        assert_eq!(gst.stack_write(28), 0);
-        assert_eq!(gst.stack_write(29), 1);
-        assert_eq!(gst.stack_write(57), 2);
+        assert_eq!(gst.stack_write(27), 1);
+        assert_eq!(gst.stack_write(28), 1);
+        assert_eq!(gst.stack_write(29), 2);
+        assert_eq!(gst.stack_write(57), 3);
         assert_eq!(gst.stack_op(0), 0);
-        assert_eq!(gst.stack_op(15), 0);
-        assert_eq!(gst.stack_op(20), 0);
-        assert_eq!(gst.stack_op(32), 1);
+        assert_eq!(gst.stack_op(15), 1);
+        assert_eq!(gst.stack_op(20), 1);
+        assert_eq!(gst.stack_op(32), 2);
 
         assert_eq!(gst.ntfunc_bytes(0), 0);
-        assert_eq!(gst.ntfunc_bytes(15), 0);
-        assert_eq!(gst.ntfunc_bytes(16), 0);
+        assert_eq!(gst.ntfunc_bytes(15), 1);
+        assert_eq!(gst.ntfunc_bytes(16), 1);
         assert_eq!(gst.act_bytes(0), 0);
-        assert_eq!(gst.act_bytes(12), 0);
-        assert_eq!(gst.act_bytes(13), 1);
+        assert_eq!(gst.act_bytes(12), 1);
+        assert_eq!(gst.act_bytes(13), 2);
 
         assert_eq!(gst.heap_read(0), 0);
-        assert_eq!(gst.heap_read(15), 0);
-        assert_eq!(gst.heap_read(16), 0);
+        assert_eq!(gst.heap_read(15), 1);
+        assert_eq!(gst.heap_read(16), 1);
         assert_eq!(gst.heap_write(0), 0);
-        assert_eq!(gst.heap_write(11), 0);
-        assert_eq!(gst.heap_write(12), 0);
+        assert_eq!(gst.heap_write(11), 1);
+        assert_eq!(gst.heap_write(12), 1);
 
         assert_eq!(gst.compo_items_read(0), 0);
-        assert_eq!(gst.compo_items_read(3), 0);
-        assert_eq!(gst.compo_items_read(4), 0);
-        assert_eq!(gst.compo_items_edit(5), 2);
-        assert_eq!(gst.compo_items_copy(5), 4);
+        assert_eq!(gst.compo_items_read(3), 1);
+        assert_eq!(gst.compo_items_read(4), 1);
+        assert_eq!(gst.compo_items_edit(5), 3);
+        assert_eq!(gst.compo_items_copy(5), 5);
         assert_eq!(gst.compo_bytes(0), 0);
-        assert_eq!(gst.compo_bytes(39), 0);
-        assert_eq!(gst.compo_bytes(40), 0);
-        assert_eq!(gst.compo_bytes(41), 1);
-        assert_eq!(gst.compo_bytes(80), 1);
+        assert_eq!(gst.compo_bytes(39), 1);
+        assert_eq!(gst.compo_bytes(40), 1);
+        assert_eq!(gst.compo_bytes(41), 2);
+        assert_eq!(gst.compo_bytes(80), 2);
 
         assert_eq!(gst.log_bytes(0), 0);
-        assert_eq!(gst.log_bytes(37), 36);
+        assert_eq!(gst.log_bytes(37), 37);
 
         assert_eq!(gst.storage_read(0), 0);
-        assert_eq!(gst.storage_read(7), 0);
-        assert_eq!(gst.storage_read(8), 0);
+        assert_eq!(gst.storage_read(7), 7);
+        assert_eq!(gst.storage_read(8), 8);
         assert_eq!(gst.storage_write(0), 0);
-        assert_eq!(gst.storage_write(5), 0);
-        assert_eq!(gst.storage_write(6), 0);
+        assert_eq!(gst.storage_write(5), 5);
+        assert_eq!(gst.storage_write(6), 6);
         assert_eq!(gst.compile_bytes(0), 0);
-        assert_eq!(gst.compile_bytes(15), 1);
-        assert_eq!(gst.compile_bytes(16), 1);
+        assert_eq!(gst.compile_bytes(15), 2);
+        assert_eq!(gst.compile_bytes(16), 2);
         assert_eq!(gst.storage_del(), 16);
     }
 }

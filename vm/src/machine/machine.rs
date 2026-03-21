@@ -148,16 +148,52 @@ impl MachineBox {
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> Ret<(GasUse, Value)> {
-        let (gas_use, ret_any) = self.call(ctx,
-            Box::new(VmCallReq::Main {
-                code_type: ctype,
-                codes,
-            }),
-        ).map_err(|e| e.to_string())?;
-        let Ok(ret_val) = ret_any.downcast::<Value>() else {
-            return errf!("vm call return type mismatch");
+        let Some(machine) = self.machine.as_ref() else {
+            return errf!("machine runtime missing");
         };
-        Ok((gas_use, *ret_val))
+        let max_reentry = machine.r.space_cap.reentry_level;
+        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)
+            .map_err(|e| e.to_string())?;
+        let call_level = _guard.call_state.reentry_level;
+        let min_cost = EntryKind::Main.min_call_cost(&machine.r.gas_extra);
+        let gas_before = ctx.gas_remaining();
+        let call_base = {
+            let Some(machine) = self.machine.as_mut() else {
+                return errf!("machine runtime missing");
+            };
+            if call_level <= 1 {
+                machine.r.reset_call_gas_use();
+                GasUse::default()
+            } else {
+                machine.r.gas_use()
+            }
+        };
+        let result = {
+            let Some(machine) = self.machine.as_mut() else {
+                return errf!("machine runtime missing");
+            };
+            machine.main_call_raw(ctx, ctype, codes)
+        };
+        let gas_after = ctx.gas_remaining();
+        let actual = gas_before - gas_after;
+        let Some(machine) = self.machine.as_mut() else {
+            return errf!("machine runtime missing");
+        };
+        if actual < min_cost {
+            let delta = min_cost - actual;
+            let next_compute = machine.r.next_compute_used(delta).map_err(|e| e.to_string())?;
+            ctx.gas_charge(delta)?;
+            machine.r.gas_use.compute = next_compute;
+        }
+        let total_cost = machine.r.gas_use();
+        let Some(cost) = total_cost.checked_sub(call_base) else {
+            return errf!("gas cost underflow: total={:?}, base={:?}", total_cost, call_base);
+        };
+        let ret_val = result?;
+        if cost.total() <= 0 {
+            return errf!("gas cost invalid: {}", cost.total());
+        }
+        Ok((cost, ret_val))
     }
 }
 

@@ -384,6 +384,7 @@ fn loader_enforces_max_loaded_contracts() {
 
     let tx = make_tx(3, main, addrs, u8::MAX);
     let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+    protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000)).unwrap();
 
     let mut codes = Vec::new();
     for idx in 0..21u8 {
