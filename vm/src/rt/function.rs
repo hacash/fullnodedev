@@ -90,6 +90,21 @@ impl FnObj {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CalcFnObj {
+    pub confs: u8,
+    pub codes: ByteView,
+}
+
+impl CalcFnObj {
+    pub fn create(fncnf: u8, pkg: CodePkg) -> VmrtRes<Self> {
+        Ok(Self {
+            confs: fncnf,
+            codes: ByteView::from_vec(pkg.data),
+        })
+    }
+}
+
 #[cfg(test)]
 mod function_tests {
     use super::*;

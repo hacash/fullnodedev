@@ -65,6 +65,23 @@ impl CallFrame {
                         }
                     }
                 }
+                #[cfg(feature = "calcfunc")]
+                CalcCall(selector) => {
+                    let owner = curr!()
+                        .bindings
+                        .code_owner
+                        .clone()
+                        .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid))?;
+                    let calcfn = r.resolve_local_calcfn(host, &owner, selector)?;
+                    let input = {
+                        let frame = curr_mut!();
+                        let param = frame.pop_value()?;
+                        param.extract_call_data(&frame.heap)?
+                    };
+                    let output = host.calc_call(&owner, selector, calcfn.as_ref(), input)?;
+                    curr_mut!().push_value(Value::Bytes(output).valid(&r.space_cap)?)?;
+                    continue;
+                }
 
                 Abort | Throw | Finish | Return => {
                     let mut retv = Value::Nil;

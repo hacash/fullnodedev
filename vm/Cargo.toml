@@ -3,6 +3,10 @@ name = "vm"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+calcfunc = []
+
 [dependencies]
 sys            = {path = "../sys"}
 field          = {path = "../field"}

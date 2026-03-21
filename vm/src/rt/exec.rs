@@ -36,6 +36,8 @@ pub enum CallExit {
     Finish,
     Return,
     Call(CallSpec),
+    #[cfg(feature = "calcfunc")]
+    CalcCall(FnSign),
 }
 
 impl EntryKind {

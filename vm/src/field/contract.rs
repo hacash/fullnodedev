@@ -27,6 +27,13 @@ combi_struct!{ ContractUserFunc,
     code_stuff: CodeStuff
 }
 
+combi_struct!{ ContractCalcFunc,
+	sign: Fixed4
+	mark: Fixed1
+	fncnf: Fixed1
+	code_stuff: CodeStuff
+}
+
 // Contract address list
 combi_list!(ContractAddrListW1, Uint1, ContractAddress);
 
@@ -39,6 +46,7 @@ impl ContractAddrListW1 {
 // Func List
 combi_list!(ContractAbstCallList, Uint1, ContractAbstCall);
 combi_list!(ContractUserFuncList, Uint2, ContractUserFunc);
+combi_list!(ContractCalcFuncList, Uint2, ContractCalcFunc);
 
 
 // Replace At
@@ -114,9 +122,38 @@ impl ContractUserFunc {
 	}
 }
 
+impl ContractCalcFunc {
+
+	fn check(&self, _hei: u64) -> VmrtErr {
+		let e = itr_err_fmt!(ContractError, "contract ContractCalcFunc format invalid");
+		if self.mark.not_zero() {
+			return e
+		}
+		if self.fncnf.not_zero() {
+			return e
+		}
+		Ok(())
+	}
+}
+
 fn verify_code_stuff(cap: &SpaceCap, code_stuff: &CodeStuff, hei: u64) -> VmrtErr {
 	let code_pkg = CodePkg::try_from(code_stuff)?;
 	convert_and_check(cap, code_pkg.code_type()?, &code_pkg.data, hei)?;
+	Ok(())
+}
+
+fn verify_calc_code_stuff(cap: &SpaceCap, code_stuff: &CodeStuff, _hei: u64) -> VmrtErr {
+	let code_pkg = CodePkg {
+		conf: code_stuff.conf.uint(),
+		data: code_stuff.data.to_vec(),
+	};
+	let cdlen = code_pkg.data.len();
+	if cdlen <= 0 {
+		return itr_err_code!(CodeEmpty)
+	}
+	if cdlen > cap.function_size {
+		return itr_err_code!(CodeTooLong)
+	}
 	Ok(())
 }
 
@@ -158,14 +195,19 @@ impl ContractUserFuncList {
 	func_list_merge_define!{ ContractUserFunc }
 }
 
+impl ContractCalcFuncList {
+	func_list_merge_define!{ ContractCalcFunc }
+}
+
 // Contract
-combi_struct!{ ContractSto, 
+combi_struct!{ ContractSto,
 	metas: ContractMeta
 	inherit:  ContractAddrListW1
-    library:  ContractAddrListW1
+	library:  ContractAddrListW1
 	abstcalls: ContractAbstCallList
 	userfuncs: ContractUserFuncList
-    morextend: Uint8
+	calcfuncs: ContractCalcFuncList
+	morextend: Uint8
 }
 
 
@@ -359,29 +401,39 @@ impl ContractSto {
 		// merge abstcall & usrfun 
 		let edit1 = self.abstcalls.check_merge(&src.abstcalls)?;
 		let edit2 = self.userfuncs.check_merge(&src.userfuncs)?;
+		let edit3 = self.calcfuncs.check_merge(&src.calcfuncs)?;
+		if src.morextend.uint() > 0 {
+			self.morextend = Uint8::from(1);
+		}
 		// check size
 		if self.size() > cap.contract_size {
 			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
 		}
 		// ok
-		Ok(edit1 || edit2)
+		Ok(edit1 || edit2 || edit3)
 	}
 
 	pub fn check(&self, hei: u64) -> VmrtErr {
 		self.metas.check(hei)?;
 		use ItrErrCode::*;
-		let e = itr_err_fmt!(ContractError, "contract format invalid");
 		let cap = SpaceCap::new(hei);
-		// check
-		if self.morextend.uint() > 0 {
-			return e
+		if self.morextend.uint() > 1 {
+			return itr_err_fmt!(ContractError, "contract format invalid")
 		}
 		// check size
 		if self.size() > cap.contract_size {
 			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
 		}
-		if 0 != *self.morextend {
+		let extn = self.morextend.uint();
+		if extn == 0 && self.calcfuncs.length() > 0 {
+			return itr_err_fmt!(ContractError, "calcfunc extension not enabled")
+		}
+		if extn == 1 && self.calcfuncs.length() == 0 {
 			return itr_err_fmt!(ContractError, "extend data format invalid")
+		}
+		#[cfg(not(feature = "calcfunc"))]
+		if extn == 1 {
+			return itr_err_fmt!(ContractError, "calcfunc feature disabled")
 		}
 		// inherit and library
 		if self.inherit.length() > cap.inherit {
@@ -435,6 +487,19 @@ impl ContractSto {
 			a.check(hei)?;
 			verify_code_stuff(&cap, &a.code_stuff, hei)?; // check compile
 		}
+		{
+			let mut seen = HashSet::new();
+			for a in self.calcfuncs.as_list() {
+				let key = a.sign.to_array();
+				if !seen.insert(key) {
+					return itr_err_fmt!(ContractError, "calcfunc sign already exists")
+				}
+			}
+		}
+		for a in self.calcfuncs.as_list() {
+			a.check(hei)?;
+			verify_calc_code_stuff(&cap, &a.code_stuff, hei)?;
+		}
 		// ok
 		Ok(())
 	}
@@ -451,6 +516,7 @@ pub struct ContractObj {
 	pub sto: ContractSto,
 	pub abstfns: HashMap<AbstCall, Arc<FnObj>>,
 	pub userfns: HashMap<FnSign, Arc<FnObj>>,
+	pub calcfns: HashMap<FnSign, Arc<CalcFnObj>>,
 	pub edition: ContractEdition,
 }
 
@@ -474,10 +540,31 @@ impl ContractSto {
 			let cty = a.sign.to_array();
 			userfns.insert(cty, code.into());
 		}
+		let calcfns_cap = self.calcfuncs.length();
+		#[cfg(not(feature = "calcfunc"))]
+		if self.calcfuncs.length() > 0 {
+			return itr_err_fmt!(ContractError, "calcfunc feature disabled")
+		}
+		#[cfg(not(feature = "calcfunc"))]
+		let calcfns = HashMap::with_capacity(calcfns_cap);
+		#[cfg(feature = "calcfunc")]
+		let mut calcfns = HashMap::with_capacity(calcfns_cap);
+		#[cfg(feature = "calcfunc")]
+		for a in self.calcfuncs.as_mut() {
+			let code_stuff = std::mem::take(&mut a.code_stuff);
+			let code_pkg = CodePkg {
+				conf: code_stuff.conf.uint(),
+				data: code_stuff.data.into_vec(),
+			};
+			let code = CalcFnObj::create(a.fncnf[0], code_pkg)?;
+			let cty = a.sign.to_array();
+			calcfns.insert(cty, code.into());
+		}
 		Ok(ContractObj {
 			sto: self,
 			abstfns,
 			userfns,
+			calcfns,
 			edition,
 		})
 	}

@@ -29,6 +29,8 @@ impl GasTable {
         gst.set(10,  &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
         gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE]);
         gst.set(16,  &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
+        #[cfg(feature = "calcfunc")]
+        gst.set(16, &[CALCCALL]);
         gst.set(20,  &[LOG1, NTENV, CALLEXTVIEW]);
         gst.set(24,  &[LOG2, CALLEXT, CALL]);
         gst.set(28,  &[LOG3, ACTENV, SDEL]);
@@ -323,34 +325,38 @@ mod gas_budget_codec_tests {
     fn base_gas_table_matches_doc_and_default_is_2() {
         let gst = GasTable::new(1);
         let mut configured = [false; 256];
-        let groups: &[(i64, &[Bytecode])] = &[
-            (1, &[
+        let groups: Vec<(i64, Vec<Bytecode>)> = vec![
+            (1, vec![
                 PU8, P0, P1, P2, P3, PNBUF, PNIL, PTRUE, PFALSE,
                 CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST,
                 POP, NOP, NT, END, RET, ABT, ERR, AST, PRT,
             ]),
-            (3, &[BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]),
-            (4, &[
+            (3, vec![BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]),
+            (4, vec![
                 DUPN, POPN, ROLL,
                 PBUF, PBUFL,
                 MOD, MUL, DIV, XOP,
                 HREAD, HREADU, HREADUL, HSLICE, HGROW,
                 ITEMGET, HEAD, BACK, HASKEY, LENGTH,
             ]),
-            (5, &[POW, CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP]),
-            (6, &[HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
-            (8, &[NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP]),
-            (10, &[PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
-            (12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE]),
-            (16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]),
-            (20, &[LOG1]),
-            (24, &[LOG2, GPUT, CALLEXTVIEW]),
-            (28, &[LOG3, SDEL, ACTION]),
-            (32, &[LOG4, SLOAD, SREST, CALLEXT, CALL]),
-            (64, &[SSAVE, SRENT]),
+            (5, vec![POW, CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP]),
+            (6, vec![HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND, NTENV]),
+            (8, vec![NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP]),
+            (10, vec![PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]),
+            (12, vec![ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE]),
+            (16, vec![ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]),
+            (20, vec![LOG1]),
+            (24, vec![LOG2, GPUT, CALLEXTVIEW]),
+            (28, vec![LOG3, SDEL, ACTION]),
+            (32, vec![LOG4, SLOAD, SREST, CALLEXT, CALL]),
+            (64, vec![SSAVE, SRENT]),
         ];
-        for (gas, items) in groups {
-            for op in *items {
+        #[cfg(feature = "calcfunc")]
+        let mut groups = groups;
+        #[cfg(feature = "calcfunc")]
+        groups.push((16, vec![CALCCALL]));
+        for (gas, items) in &groups {
+            for op in items {
                 let code = *op as u8;
                 configured[code as usize] = true;
                 assert_eq!(

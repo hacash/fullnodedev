@@ -197,6 +197,20 @@ impl Resoure {
         Ok((anchor, Self::require_resolved(found)?))
     }
 
+    #[cfg(feature = "calcfunc")]
+    pub fn resolve_local_calcfn<H: VmHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        owner: &ContractAddress,
+        selector: FnSign,
+    ) -> VmrtRes<Arc<CalcFnObj>> {
+        let csto = self.resolve_contract(host, owner)?;
+        csto.calcfns
+            .get(&selector)
+            .cloned()
+            .ok_or_else(|| ItrErr::code(ItrErrCode::CallNotExist))
+    }
+
     pub fn plan_user_call<H: VmHost + ?Sized>(
         &mut self,
         host: &mut H,

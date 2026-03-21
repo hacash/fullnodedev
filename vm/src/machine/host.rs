@@ -12,6 +12,18 @@ pub trait VmHost {
     fn contract(&mut self, addr: &ContractAddress) -> Option<ContractSto>;
     fn action_call(&mut self, kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)>;
 
+    #[cfg(feature = "calcfunc")]
+    fn calc_call(
+        &mut self,
+        owner: &ContractAddress,
+        selector: FnSign,
+        calcfn: &CalcFnObj,
+        input: Vec<u8>,
+    ) -> VmrtRes<Vec<u8>> {
+        let _ = (owner, selector, calcfn, input);
+        itr_err_fmt!(InstDisabled, "calcfunc executor not configured")
+    }
+
     // Logs
     fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr;
 
