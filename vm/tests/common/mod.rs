@@ -9,6 +9,7 @@ use testkit::sim::tx::DummyTx;
 use vm::ContractAddress;
 use vm::IRNode;
 use vm::interpreter::execute_code;
+use vm::machine::DeferCallbacks;
 use vm::ir::{convert_ir_to_bytecode, parse_ir_block};
 use vm::lang::*;
 use vm::machine::VmHost;
@@ -297,6 +298,7 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         gas_remaining: gas,
     };
     let mut gas_use = basis::interface::GasUse::default();
+    let mut defer_callbacks = DeferCallbacks::default();
 
     execute_code(
         &mut pc,
@@ -313,6 +315,7 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         &mut gas_use,
         &mut GKVMap::new(20),
         &mut CtcKVMap::new(12),
+        &mut defer_callbacks,
         &mut host,
     )?;
 

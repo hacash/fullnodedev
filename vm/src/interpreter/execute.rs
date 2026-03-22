@@ -1,7 +1,8 @@
 /**
 * parse bytecode params
 */
-use crate::machine::VmHost;
+use crate::machine::{DeferredRegistry, VmHost};
+use crate::ContractAddress;
 
 #[inline(always)]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -162,6 +163,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
     gas_use: &mut GasUse,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
+    deferred_registry: &mut DeferredRegistry,
     host: &mut H,
 ) -> VmrtRes<CallExit> {
 
@@ -268,6 +270,40 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 let argv = ops.pop()?.extract_call_data(heap)?;
                 gas_resource!(ntfunc_bytes, argv.len());
                 let (r, g) = NativeFunc::call(hei, nt_idx, &argv)?;
+                let r = r.valid(cap)?;
+                gas_resource!(ntfunc_bytes, r.val_size());
+                gas_add!(resource, raw, g);
+                ops.push(r)?;
+            }};
+            (ctl, $idx: expr) => {{
+                let nt_idx = $idx;
+                let (r, g) = NativeCtl::call(hei, nt_idx, &[])?;
+                match nt_idx {
+                    NativeCtl::idx_defer => {
+                        if exec.effect != EffectMode::Edit {
+                            return itr_err_fmt!(
+                                DeferredError,
+                                "defer not allowed in non-edit mode"
+                            );
+                        }
+                        if exec.call_depth == 0 {
+                            return itr_err_fmt!(
+                                DeferredError,
+                                "defer not allowed at top-level entry"
+                            );
+                        }
+                        let caddr = ContractAddress::from_addr(*context_addr).map_err(|e| {
+                            ItrErr::new(
+                                DeferredError,
+                                &format!("defer requires concrete contract frame: {}", e),
+                            )
+                        })?;
+                        deferred_registry.register(caddr)?;
+                    }
+                    _ => {
+                        return itr_err_fmt!(NativeCtlError, "native ctl idx {} not found", nt_idx)
+                    }
+                }
                 let r = r.valid(cap)?;
                 gas_resource!(ntfunc_bytes, r.val_size());
                 gas_add!(resource, raw, g);
@@ -411,6 +447,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
             match instruction {
                 // action
                 ACTION | ACTENV | ACTVIEW => actcall!(instruction),
+                // native runtime control (VM-local side effects)
+                NTCTL => ntcall!(ctl, pu8!()),
                 // native func (pure computation, always allowed)
                 NTFUNC => ntcall!(func, pu8!()),
                 // native env (VM context read, forbidden in Pure mode)

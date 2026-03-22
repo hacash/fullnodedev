@@ -1,4 +1,4 @@
-use crate::machine::VmHost;
+use crate::machine::{DeferredRegistry, VmHost};
 use basis::component::Env;
 use basis::interface::{Context, TransactionRead};
 use field::{Address, Amount, Hash};
@@ -162,6 +162,7 @@ fn execute_test_with_argv(
         gas_remaining: gas,
     };
     let mut gas_use = basis::interface::GasUse::default();
+    let mut deferred_registry = DeferredRegistry::default();
     super::interpreter::execute_code(
         &mut pc,
         &codes,
@@ -177,6 +178,7 @@ fn execute_test_with_argv(
         &mut gas_use,
         &mut GKVMap::new(20),
         &mut CtcKVMap::new(12),
+        &mut deferred_registry,
         &mut host,
     )
     .map(|r| (r, gas_limit - host.gas_remaining, ops.release(), heap))

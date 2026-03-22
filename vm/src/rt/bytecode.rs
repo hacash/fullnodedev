@@ -13,8 +13,8 @@ pub enum Bytecode {
     ACTVIEW = 0x06, // *@  call action view (read-only query)
     ACTENV = 0x07,  // *+  call action env
     NTENV = 0x08,   // *+  native env (VM state read)
-    NTFUNC = 0x09,  // *@  native pure function
-    ________________10 = 0x0a,
+    NTCTL = 0x09,   // *@  native runtime control (modify VM tx-local state)
+    NTFUNC = 0x0a,  // *@  native pure function
     ________________11 = 0x0b,
     ________________12 = 0x0c,
     #[cfg(feature = "calcfunc")]
@@ -340,8 +340,9 @@ bytecode_metadata_define! {
     ACTION     : 1, 1, 0,     action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
     ACTVIEW    : 1, 1, 1,     actview
     ACTENV     : 1, 0, 1,     actenv
-    NTFUNC     : 1, 1, 1,     native_func
     NTENV      : 1, 0, 1,     native_env
+    NTCTL      : 1, 0, 1,     native_ctl
+    NTFUNC     : 1, 1, 1,     native_func
 
     CODECALL     : 1+4, 1, 0,   code_call
     CALL         :   6, 1, 1,   call

@@ -22,6 +22,20 @@ macro_rules! native_dispatch_method {
             }
         }
     };
+    (ctl, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
+        pub fn call(hei: u64, idx: u8, v: &[u8]) -> VmrtRes<(Value, i64)> {
+            let cty = Self::try_from_u8(idx)?;
+            match cty {
+                $(
+                    Self::$name => $name(hei, v).map(|r| {
+                        assert_eq!($rty, r.ty());
+                        (r, $gas)
+                    }),
+                )+
+                _ => unreachable!(),
+            }
+        }
+    };
     (env, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
         pub fn gas(idx: u8) -> VmrtRes<i64> {
             match idx {

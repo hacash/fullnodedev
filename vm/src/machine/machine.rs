@@ -195,24 +195,89 @@ impl MachineBox {
         }
         Ok((cost, ret_val))
     }
+
+    fn execute_req_internal(
+        &mut self,
+        ctx: &mut dyn Context,
+        req: VmCallReq,
+    ) -> XRet<(GasUse, Value)> {
+        let Some(machine) = self.machine.as_ref() else {
+            return xerrf!("machine runtime missing");
+        };
+        let max_reentry = machine.r.space_cap.reentry_level;
+        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)?;
+        let call_level = _guard.call_state.reentry_level;
+        let min_cost = req.min_call_cost(&machine.r.gas_extra);
+        let gas_before = ctx.gas_remaining();
+        let old_exec_from = ctx.exec_from();
+        ctx.exec_from_set(basis::component::ExecFrom::Call);
+        let (call_base, result) = {
+            let Some(machine) = self.machine.as_mut() else {
+                ctx.exec_from_set(old_exec_from);
+                return xerrf!("machine runtime missing");
+            };
+            let call_base = if call_level <= 1 {
+                machine.r.reset_call_gas_use();
+                GasUse::default()
+            } else {
+                machine.r.gas_use()
+            };
+            let result = req.execute(machine, ctx);
+            (call_base, result)
+        };
+        ctx.exec_from_set(old_exec_from);
+        let gas_after = ctx.gas_remaining();
+        let actual = gas_before - gas_after;
+        let Some(machine) = self.machine.as_mut() else {
+            return xerrf!("machine runtime missing");
+        };
+        if actual < min_cost {
+            let delta = min_cost - actual;
+            let next_compute = machine.r.next_compute_used(delta)?;
+            ctx.gas_charge(delta)?;
+            machine.r.gas_use.compute = next_compute;
+        }
+        let total_cost = machine.r.gas_use();
+        let Some(cost) = total_cost.checked_sub(call_base) else {
+            return xerrf!(
+                "gas cost underflow: total={:?}, base={:?}",
+                total_cost,
+                call_base
+            );
+        };
+        let resv = result?;
+        if cost.total() <= 0 {
+            return xerrf!("gas cost invalid: {}", cost.total());
+        }
+        Ok((cost, resv))
+    }
 }
 
 impl VM for MachineBox {
     fn snapshot_volatile(&mut self) -> Box<dyn Any> {
         match self.machine_ref() {
-            Ok(m) => Box::new((m.r.global_map.clone(), m.r.memory_map.clone())),
-            Err(_) => Box::new((GKVMap::default(), CtcKVMap::default())),
+            Ok(m) => Box::new((
+                m.r.global_map.clone(),
+                m.r.memory_map.clone(),
+                m.r.deferred_registry.clone(),
+            )),
+            Err(_) => Box::new((
+                GKVMap::default(),
+                CtcKVMap::default(),
+                DeferredRegistry::default(),
+            )),
         }
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap)>() else {
+        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap, DeferredRegistry)>() else {
             return;
         };
-        let (global_map, memory_map) = *snap;
+        let (global_map, memory_map, deferred_registry) = *snap;
         if let Ok(m) = self.machine_mut() {
             m.r.global_map = global_map;
             m.r.memory_map = memory_map;
+            m.r.deferred_registry = deferred_registry;
         }
     }
 
@@ -220,6 +285,7 @@ impl VM for MachineBox {
         if let Ok(m) = self.machine_mut() {
             m.r.global_map.clear();
             m.r.memory_map.clear();
+            m.r.deferred_registry.clear();
         }
     }
 
@@ -235,52 +301,31 @@ impl VM for MachineBox {
             .remove_addr(&caddr);
     }
 
-    fn call(
-        &mut self,
-        ctx: &mut dyn Context,
-        req: Box<dyn Any>,
-    ) -> XRet<(GasUse, Box<dyn Any>)> {
-        let Some(machine) = self.machine.as_ref() else {
-            return xerrf!("machine runtime missing");
+    fn drain_deferred(&mut self, ctx: &mut dyn Context) -> Rerr {
+        let callbacks = {
+            let m = self.machine_mut().map_err(|e| e.to_string())?;
+            m.r.deferred_registry.drain_lifo()
         };
-        let max_reentry = machine.r.space_cap.reentry_level;
-        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)?;
-        let call_level = _guard.call_state.reentry_level;
+        for caddr in callbacks {
+            let _ = self
+                .execute_req_internal(
+                    ctx,
+                    VmCallReq::Abst {
+                        kind: AbstCall::Deferred,
+                        contract_addr: caddr,
+                        param: Value::Nil,
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
         let Ok(req) = req.downcast::<VmCallReq>() else {
             return xerrf!("vm call request type mismatch");
         };
-        let req = *req;
-        let Some(machine) = self.machine.as_ref() else {
-            return xerrf!("machine runtime missing");
-        };
-        let min_cost = req.min_call_cost(&machine.r.gas_extra);
-        let gas_before = ctx.gas_remaining();
-        let Some(machine) = self.machine.as_mut() else {
-            return xerrf!("machine runtime missing");
-        };
-        let call_base = if call_level <= 1 {
-            machine.r.reset_call_gas_use();
-            GasUse::default()
-        } else {
-            machine.r.gas_use()
-        };
-        let result = req.execute(machine, ctx);
-        let gas_after = ctx.gas_remaining();
-        let actual = gas_before - gas_after;
-        if actual < min_cost {
-            let delta = min_cost - actual;
-            let next_compute = machine.r.next_compute_used(delta)?;
-            ctx.gas_charge(delta)?;
-            machine.r.gas_use.compute = next_compute;
-        }
-        let total_cost = machine.r.gas_use();
-        let Some(cost) = total_cost.checked_sub(call_base) else {
-            return xerrf!("gas cost underflow: total={:?}, base={:?}", total_cost, call_base);
-        };
-        let resv = result?;
-        if cost.total() <= 0 {
-            return xerrf!("gas cost invalid: {}", cost.total());
-        }
+        let (cost, resv) = self.execute_req_internal(ctx, *req)?;
         Ok((cost, Box::new(resv)))
     }
 }

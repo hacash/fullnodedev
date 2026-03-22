@@ -5,6 +5,55 @@ const UPGRADE_HEIGHTS: &[u64] = &[
     // 200000,  // example: v1 adjustments
 ];
 
+#[derive(Clone, Debug)]
+pub struct DeferredRegistry {
+    active: bool,
+    addrs: Vec<ContractAddress>,
+    seen: HashSet<ContractAddress>,
+}
+
+impl Default for DeferredRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DeferredRegistry {
+    pub fn new() -> Self {
+        Self {
+            active: true,
+            addrs: Vec::new(),
+            seen: HashSet::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.active = true;
+        self.addrs.clear();
+        self.seen.clear();
+    }
+
+    pub fn register(&mut self, addr: ContractAddress) -> VmrtErr {
+        if !self.active {
+            return itr_err_fmt!(
+                ItrErrCode::DeferredError,
+                "defer is closed during deferred dispatch"
+            );
+        }
+        if self.seen.insert(addr.clone()) {
+            self.addrs.push(addr);
+        }
+        Ok(())
+    }
+
+    pub fn drain_lifo(&mut self) -> Vec<ContractAddress> {
+        self.active = false;
+        self.addrs.drain(..).rev().collect()
+    }
+}
+
+pub type DeferCallbacks = DeferredRegistry;
+
 #[derive(Default)]
 pub struct Resoure {
     cfg_height: u64,   // height used to build current config
@@ -18,6 +67,7 @@ pub struct Resoure {
     pub gas_use: GasUse,
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
+    pub deferred_registry: DeferredRegistry,
 }
 
 impl Resoure {
@@ -31,14 +81,16 @@ impl Resoure {
             space_cap: cap,
             gas_extra: GasExtra::new(height),
             gas_table: GasTable::new(height),
+            deferred_registry: DeferredRegistry::new(),
             ..Default::default()
         }
     }
+
     pub fn reclaim(&mut self) {
         self.global_map.clear();
         self.memory_map.clear();
         self.contracts.clear();
-        self.gas_use = GasUse::default();
+        self.deferred_registry.clear();
     }
 
     pub fn reset(&mut self, height: u64) {
@@ -330,5 +382,17 @@ mod resource_tests {
         assert_eq!(r.cfg_height, 200);
         r.reset(100);
         assert_eq!(r.cfg_height, 100);
+    }
+
+    #[test]
+    fn defer_callbacks_are_deduped_and_drained_lifo() {
+        let mut callbacks = DeferCallbacks::new();
+        let a = ContractAddress::from_unchecked(Address::create_contract([1u8; 20]));
+        let b = ContractAddress::from_unchecked(Address::create_contract([2u8; 20]));
+        callbacks.register(a.clone()).unwrap();
+        callbacks.register(a.clone()).unwrap();
+        callbacks.register(b.clone()).unwrap();
+        let drained = callbacks.drain_lifo();
+        assert_eq!(drained, vec![b, a]);
     }
 }

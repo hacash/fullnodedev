@@ -7,6 +7,7 @@ mod tests {
     use testkit::sim::state::FlatMemState as MemState;
     use vm::ContractAddress;
     use vm::interpreter::execute_code;
+    use vm::machine::DeferCallbacks;
     use vm::machine::VmHost;
     use vm::rt::FrameBindings;
     use vm::rt::{Bytecode, ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes};
@@ -134,6 +135,7 @@ mod tests {
             ctx,
             gas_remaining: gas,
         };
+        let mut defer_callbacks = DeferCallbacks::default();
         let res = execute_code(
             &mut pc,
             &codes,
@@ -149,6 +151,7 @@ mod tests {
             &mut gas_use,
             &mut GKVMap::new(4),
             &mut CtcKVMap::new(4),
+            &mut defer_callbacks,
             &mut host,
         );
 

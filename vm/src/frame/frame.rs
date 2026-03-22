@@ -219,6 +219,7 @@ impl Frame {
             &mut r.gas_use,
             &mut r.global_map,
             &mut r.memory_map,
+            &mut r.deferred_registry,
             host,
         )
     }

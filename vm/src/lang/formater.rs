@@ -1243,6 +1243,12 @@ impl<'a> Formater<'a> {
             ACTENV => self.format_action_call(node, &ACTION_ENV_DEFS),
             ACTVIEW => self.format_action_call(node, &ACTION_VIEW_DEFS),
             ACTION => self.format_action_call(node, &ACTION_DEFS),
+            NTCTL => {
+                let Ok(ntfn) = NativeCtl::try_from_u8(node.para) else {
+                    return format!("__unknown_native_ctl_{}()", node.para);
+                };
+                format!("{}()", ntfn.name())
+            }
             NTFUNC => {
                 let expect = NativeFunc::argv_len(node.para).map(|n| n as usize);
                 let argv = self.build_call_args(&*node.subx, true, expect);
@@ -1342,6 +1348,16 @@ impl<'a> Formater<'a> {
                 let ary = ACTION_ENV_DEFS;
                 let f = search_act_name_by_id(node.para, &ary);
                 buf.push_str(&format!("{}()", f));
+            }
+            NTCTL => {
+                let Ok(ntfn) = NativeCtl::try_from_u8(node.para) else {
+                    return format!(
+                        "{}__unknown_native_ctl_{}()",
+                        self.opt.indent.repeat(self.opt.tab),
+                        node.para
+                    );
+                };
+                buf.push_str(&format!("{}()", ntfn.name()));
             }
             NTENV => {
                 let Ok(ntfn) = NativeEnv::try_from_u8(node.para) else {

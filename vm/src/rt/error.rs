@@ -83,9 +83,10 @@ pub enum ItrErrCode {
     BytesHandle = 91,
     NativeFuncError = 92,
     NativeEnvError = 93,
-    ActCallError = 94,   // unrecoverable action call failure
-    ActCallRevert = 95,  // recoverable action call failure
-    ItemNoSize = 96,
+    NativeCtlError = 94,
+    ActCallError = 95,   // unrecoverable action call failure
+    ActCallRevert = 96,  // recoverable action call failure
+    ItemNoSize = 97,
 
     StorageKeyInvalid = 101,
     StorageKeyNotFind = 102,
@@ -96,6 +97,7 @@ pub enum ItrErrCode {
     StorageRestoreNotMatch = 107,
 
     ThrowAbort = 111, // user code call
+    DeferredError = 120, // defer callback error
 
     #[default]
     NeverError = 255,

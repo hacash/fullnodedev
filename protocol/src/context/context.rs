@@ -303,4 +303,16 @@ impl Context for ContextInst<'_> {
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
         self.p2sh_insert(adr, p2sh)
     }
+
+    fn run_deferred_phase(&mut self) -> Rerr {
+        if self.vm.is_some() {
+            unsafe {
+                let ctx = self as *mut Self;
+                let vm = (*ctx).vm.as_mut().unwrap();
+                vm.drain_deferred(&mut *ctx)
+            }
+        } else {
+            Ok(())
+        }
+    }
 }

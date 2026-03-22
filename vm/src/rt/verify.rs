@@ -1,5 +1,5 @@
 
-use crate::native::{NativeFunc, NativeEnv};
+use crate::native::{NativeFunc, NativeEnv, NativeCtl};
 use crate::value::{parse_cto_target_ty_param, parse_value_ty_param};
 
 /*
@@ -99,6 +99,12 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
         macro_rules! adddest { ($jt:expr) => {{
             jumpdest.push($jt)
         }}}
+        macro_rules! check_native_idx { ($native:ident, $err:ident, $kind:expr) => {{
+            let idx = pu8!();
+            if !$native::has_idx(idx) {
+                return itr_err_fmt!($err, "native {} idx {} not found", $kind, idx)
+            }
+        }}}
         match inst {
             // push buf
             PBUF  => {
@@ -117,18 +123,9 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
             }
             // ext/native
             ACTION | ACTENV | ACTVIEW => ensure_act_id(inst, pu8!())?,
-            NTFUNC => {
-                let idx = pu8!();
-                if !NativeFunc::has_idx(idx) {
-                    return itr_err_fmt!(NativeFuncError, "native func idx {} not found", idx)
-                }
-            }
-            NTENV => {
-                let idx = pu8!();
-                if !NativeEnv::has_idx(idx) {
-                    return itr_err_fmt!(NativeEnvError, "native env idx {} not found", idx)
-                }
-            }
+            NTFUNC => check_native_idx!(NativeFunc, NativeFuncError, "func"),
+            NTCTL => check_native_idx!(NativeCtl, NativeCtlError, "ctl"),
+            NTENV => check_native_idx!(NativeEnv, NativeEnvError, "env"),
             CTO => {
                 let _ = parse_cto_target_ty_param(pu8!())?;
             }

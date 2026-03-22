@@ -9,6 +9,7 @@ include!("types.rs");
 include!("amount.rs");
 include!("address.rs");
 include!("ascii.rs");
+include!("defer.rs");
 
 use ValueTy::*;
 
@@ -36,6 +37,14 @@ native_func_env_define! { func, NativeFunc, NativeFuncError,
     ascii_u128_dec_unit = 122, 2,      24,    Tuple
     ascii_hex_lower    = 123, 1,       20,    Tuple
     ascii_base58_validate_or_echo = 124, 1, 20, Tuple
+}
+
+/*
+    Native ctl define (VM runtime control, modify tx-local state)
+*/
+native_func_env_define! { ctl, NativeCtl, NativeCtlError,
+    // idx, argv_len, gas, ValueType
+    defer              = 150,   0,        8,    Nil
 }
 
 /*

@@ -3,7 +3,7 @@ mod bounds_tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::machine::VmHost;
+    use crate::machine::{DeferCallbacks, VmHost};
     use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
     use crate::value::{CompoItem, TupleItem, Value, ValueTy, REF_DUP_SIZE, RESERVED_U256_TYPE_ID};
@@ -35,6 +35,7 @@ mod bounds_tests {
     ) -> VmrtRes<CallExit> {
         host.set_test_gas(*gas_usable);
         let mut gas_use = basis::interface::GasUse::default();
+        let mut defer_callbacks = DeferCallbacks::default();
         let res = super::execute_code(
             pc,
             codes,
@@ -50,6 +51,7 @@ mod bounds_tests {
             &mut gas_use,
             global_map,
             memory_map,
+            &mut defer_callbacks,
             host,
         );
         *gas_usable = host.test_gas();
@@ -165,7 +167,10 @@ mod bounds_tests {
     fn run_call_opcode_gas(exec: ExecCtx, codes: Vec<u8>) -> i64 {
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
-        let mut host = DummyHost::default();
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
@@ -246,7 +251,10 @@ mod bounds_tests {
 
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
-        let mut host = DummyHost::default();
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
 
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
@@ -1087,7 +1095,10 @@ mod bounds_tests {
 
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
-        let mut host = DummyHost::default();
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
 
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
@@ -1125,6 +1136,98 @@ mod bounds_tests {
             + gas_extra.ntfunc_bytes(Address::SIZE)
             + gas_table.gas(Bytecode::END as u8);
         assert_eq!(1000 - gas, expect);
+    }
+
+    #[test]
+    fn ntreg_defer_registers_current_contract() {
+        use crate::machine::DeferCallbacks;
+        use crate::native::NativeCtl;
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
+
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let mut defer_callbacks = DeferCallbacks::default();
+        let mut gas_use = basis::interface::GasUse::default();
+
+        let cadr = ContractAddress::from_unchecked(Address::create_contract([7u8; 20]));
+        let codes = vec![Bytecode::NTCTL as u8, NativeCtl::idx_defer, Bytecode::END as u8];
+
+        super::execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::external(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr.to_addr(),
+            &cadr.to_addr(),
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut gas_use,
+            &mut global_map,
+            &mut memory_map,
+            &mut defer_callbacks,
+            &mut host,
+        )
+        .unwrap();
+
+        assert_eq!(defer_callbacks.drain_lifo(), vec![cadr]);
+    }
+
+    #[test]
+    fn ntreg_defer_rejects_top_level_main() {
+        use crate::machine::DeferCallbacks;
+        use crate::native::NativeCtl;
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
+
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let mut defer_callbacks = DeferCallbacks::default();
+        let mut gas_use = basis::interface::GasUse::default();
+
+        let main = Address::create_privakey([3u8; 20]);
+        let codes = vec![Bytecode::NTCTL as u8, NativeCtl::idx_defer, Bytecode::END as u8];
+
+        let err = super::execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &main,
+            &main,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut gas_use,
+            &mut global_map,
+            &mut memory_map,
+            &mut defer_callbacks,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::DeferredError);
     }
 
     #[test]

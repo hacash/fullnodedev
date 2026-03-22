@@ -53,8 +53,8 @@ impl GasTable {
         gst.set(8, &[PACKLIST, PACKMAP, PACKTUPLE]);
         gst.set(10, &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
         gst.set(12, &[CALLUSEVIEW, CALLUSEPURE]);
-        gst.set(16, &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
-        gst.set(20, &[LOG1, NTENV, CALLEXTVIEW]);
+        gst.set(16, &[NTENV, NTCTL, NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
+        gst.set(20, &[LOG1, CALLEXTVIEW]);
         gst.set(24, &[LOG2, CALLEXT, CALL]);
         gst.set(28, &[LOG3, ACTENV, SDEL]);
         gst.set(32, &[LOG4, ACTVIEW, SLOAD, SREST]);
@@ -381,7 +381,7 @@ mod gas_budget_codec_tests {
             (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
             (
                 16,
-                vec![NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV],
+                vec![NTFUNC, NTCTL, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV],
             ),
             (20, vec![LOG1, NTENV, CALLEXTVIEW]),
             (24, vec![LOG2, CALLEXT, CALL]),

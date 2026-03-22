@@ -44,6 +44,7 @@ abst_call_type_define! {
     Construct    : 0u8 , [ Bytes ]
     Change       : 1   , [ ]
     Append       : 2   , [ ]
+    Deferred     : 10  , [ ]
 
     PermitHAC    : 15  , [ Address, Bytes ]
     PermitSAT    : 16  , [ Address, U64 ]

@@ -196,9 +196,10 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
         let (ret_gas, _retv) = action.execute(ctx)?;
         ctx.gas_charge(extra9_surcharge(action.extra9(), ret_gas) as i64)?;
     }
+    super::tex::do_settlement(ctx)?;
+    ctx.run_deferred_phase()?;
     // Upper layers roll back failed transaction state, so refund is only executed on success and cannot leave inconsistent state behind.
     ctx.gas_refund()?;
-    super::tex::do_settlement(ctx)?;
     operate::hac_sub(ctx, &prep.main, &prep.fee)?;
     Ok(())
 }

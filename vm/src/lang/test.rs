@@ -833,6 +833,29 @@ mod token_t {
     }
 
     #[test]
+    fn test_hide_default_call_argv_applies_to_ntreg() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("defer()\nreturn 0").expect("Failed to compile");
+        let plain = Formater::new(&PrintOption::new("  ", 0)).print(&ir);
+        assert!(
+            plain.contains("defer()"),
+            "NTREG should stay zero-arg without placeholder, got: {}",
+            plain
+        );
+        let mut opt = PrintOption::new("  ", 0);
+        opt.hide_default_call_argv = true;
+        let decompiled = Formater::new(&opt).print(&ir);
+        assert!(
+            decompiled.contains("defer()"),
+            "NTREG should stay zero-arg when hide option enabled, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
     fn test_syscall_single_arg_cat_not_split() {
         use super::lang_to_irnode;
         use super::Formater;
