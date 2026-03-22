@@ -1,5 +1,21 @@
 /***********************************/
 
+// Per-opcode base gas units (`GasTable::gas`). The interpreter may add dynamic metering
+// on top (e.g. `RPOW` exponent bits, compare on wide integers).
+//
+// Arithmetic ladder (see `GasTable::new` grouping):
+// - 2: add/sub/min/max/inc/dec - single-step integer ops on stack slots.
+// - 4: mul/div/mod, div variants, saturating add/sub, abs diff - widening or division.
+// - 6: POW, ADDMOD, CLAMP - extra branches or triple operands without full mul-div path.
+// - 8: MULADD, MULSUB - one multiply plus add/sub.
+// - 10: MULMOD, MULSHR - multiply then mod or shift.
+// - 12: MULDIV*, MULSHRUP, DEVSCALED - multiply then divide/round.
+// - 14: MULADDDIV, MULSUBDIV, WITHINBPS, LERP - four operands, one divide.
+// - 16: WAVG2, MUL3DIV - four operands with extra multiply or sum path.
+// - 32: RPOW - high base like storage reads; extra per exponent in execute.
+//
+// Unrelated opcodes may share a tier when base interpreter cost is similar.
+// Reserved bytecode bytes stay at default 1.
 
 pub struct GasTable {
     table: [u8; 256]
@@ -17,24 +33,33 @@ impl Default for GasTable {
 impl GasTable {
 
     pub fn new(_hei: u64) -> Self {
-        let mut gst = Self { table : [1; 256] };
-        gst.set(2,  &[ADD, SUB, MAX, MIN, INC, DEC,
-            AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
-        gst.set(3,  &[BSHR, BSHL, BXOR, BOR, BAND]);
-        gst.set(4,  &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
-        gst.set(5,  &[MGET, GGET, NEWLIST, NEWMAP]);
-        gst.set(6,  &[POW, ADDMOD, CLAMP]);
-        gst.set(8,  &[PACKLIST, PACKMAP, PACKTUPLE, MULADD, MULSUB]);
-        gst.set(10,  &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR]);
-        gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED]);
-        gst.set(14,  &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
-        gst.set(16,  &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV]);
-        gst.set(20,  &[LOG1, NTENV, CALLEXTVIEW]);
-        gst.set(24,  &[LOG2, CALLEXT, CALL]);
-        gst.set(28,  &[LOG3, ACTENV, SDEL]);
-        gst.set(32,  &[LOG4, ACTVIEW, SLOAD, SREST, RPOW]);
-        gst.set(48,  &[ACTION]);
-        gst.set(64,  &[SSAVE, SRENT]);
+        let mut gst = Self { table: [1; 256] };
+        gst.set(2, &[AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
+        gst.set(3, &[BSHR, BSHL, BXOR, BOR, BAND]);
+        // Arithmetic: binary (see module doc ladder)
+        gst.set(2, &[ADD, SUB, MAX, MIN, INC, DEC]);
+        gst.set(4, &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
+        gst.set(6, &[POW, ADDMOD, CLAMP, SQRT, SQRTUP]);
+        gst.set(32, &[RPOW]);
+        // Arithmetic: triple-operand mul pipeline
+        gst.set(8, &[MULADD, MULSUB]);
+        gst.set(10, &[MULMOD, MULSHR]);
+        gst.set(12, &[MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED]);
+        // Arithmetic: four-operand
+        gst.set(14, &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
+        gst.set(16, &[WAVG2, MUL3DIV]);
+        // Other
+        gst.set(5, &[MGET, GGET, NEWLIST, NEWMAP]);
+        gst.set(8, &[PACKLIST, PACKMAP, PACKTUPLE]);
+        gst.set(10, &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
+        gst.set(12, &[CALLUSEVIEW, CALLUSEPURE]);
+        gst.set(16, &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
+        gst.set(20, &[LOG1, NTENV, CALLEXTVIEW]);
+        gst.set(24, &[LOG2, CALLEXT, CALL]);
+        gst.set(28, &[LOG3, ACTENV, SDEL]);
+        gst.set(32, &[LOG4, ACTVIEW, SLOAD, SREST]);
+        gst.set(48, &[ACTION]);
+        gst.set(64, &[SSAVE, SRENT]);
         #[cfg(feature = "calcfunc")]
         gst.set(128, &[CALCCALL]);
         gst
@@ -326,20 +351,38 @@ mod gas_budget_codec_tests {
         let gst = GasTable::new(1);
         let mut configured = [false; 256];
         let groups: Vec<(i64, Vec<Bytecode>)> = vec![
-            (2, vec![
-                ADD, SUB, MAX, MIN, INC, DEC, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT,
-            ]),
+            (
+                2,
+                vec![
+                    AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD, SUB, MAX, MIN, INC, DEC,
+                ],
+            ),
             (3, vec![BSHR, BSHL, BXOR, BOR, BAND]),
             (4, vec![MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]),
             (5, vec![MGET, GGET, NEWLIST, NEWMAP]),
-            (6, vec![POW, ADDMOD, CLAMP]),
-            (8, vec![PACKLIST, PACKMAP, PACKTUPLE, MULADD, MULSUB]),
-            (10, vec![MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR]),
-            (12, vec![
-                CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED,
-            ]),
+            (6, vec![POW, ADDMOD, CLAMP, SQRT, SQRTUP]),
+            (
+                8,
+                vec![MULADD, MULSUB, PACKLIST, PACKMAP, PACKTUPLE],
+            ),
+            (
+                10,
+                vec![
+                    MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR,
+                ],
+            ),
+            (
+                12,
+                vec![
+                    CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP,
+                    DEVSCALED,
+                ],
+            ),
             (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
-            (16, vec![NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV]),
+            (
+                16,
+                vec![NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV],
+            ),
             (20, vec![LOG1, NTENV, CALLEXTVIEW]),
             (24, vec![LOG2, CALLEXT, CALL]),
             (28, vec![LOG3, ACTENV, SDEL]),
@@ -350,7 +393,7 @@ mod gas_budget_codec_tests {
         #[cfg(feature = "calcfunc")]
         let mut groups = groups;
         #[cfg(feature = "calcfunc")]
-        groups.push((16, vec![CALCCALL]));
+        groups.push((128, vec![CALCCALL]));
         for (gas, items) in &groups {
             for op in items {
                 let code = *op as u8;
