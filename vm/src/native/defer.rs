@@ -1,20 +1,28 @@
 // NTCTL.defer: Defer callback registration native function
 
-/// Register current concrete contract for Defer callback
-/// This is a VM-level primitive (NTCTL), not a protocol-level action
-///
-/// Parameters: none
-///
-/// Returns:
-/// - nil: successfully registered or already registered
-///
-/// Errors:
-/// - DeferredError: not in concrete contract context or not in collecting phase
-pub fn defer(_hei: u64, v: &[u8]) -> VmrtRes<Value> {
-    if !v.is_empty() {
-        return itr_err_fmt!(NativeCtlError, "defer takes no parameters");
+pub fn call_defer(
+    exec: ExecCtx,
+    context_addr: &field::Address,
+    deferred_registry: &mut crate::machine::DeferredRegistry,
+) -> VmrtRes<(Value, i64)> {
+    if exec.effect != EffectMode::Edit {
+        return itr_err_fmt!(
+            DeferredError,
+            "defer not allowed in non-edit mode"
+        );
     }
-    // Return nil to indicate success.
-    // Context checks and registry mutation are handled by the interpreter.
-    Ok(Value::Nil)
+    if exec.call_depth == 0 {
+        return itr_err_fmt!(
+            DeferredError,
+            "defer not allowed at top-level entry"
+        );
+    }
+    let caddr = crate::ContractAddress::from_addr(*context_addr).map_err(|e| {
+        ItrErr::new(
+            DeferredError,
+            &format!("defer requires concrete contract frame: {}", e),
+        )
+    })?;
+    deferred_registry.register(caddr)?;
+    Ok((Value::Nil, NativeCtl::defer.gas_of()))
 }

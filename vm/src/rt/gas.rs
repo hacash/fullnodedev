@@ -223,7 +223,7 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    pub fn ntfunc_bytes(&self, len: usize) -> i64 {
+    pub fn nt_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.ntfunc_div)
     }
 
@@ -453,9 +453,9 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.stack_op(20), 1);
         assert_eq!(gst.stack_op(32), 2);
 
-        assert_eq!(gst.ntfunc_bytes(0), 0);
-        assert_eq!(gst.ntfunc_bytes(15), 1);
-        assert_eq!(gst.ntfunc_bytes(16), 1);
+        assert_eq!(gst.nt_bytes(0), 0);
+        assert_eq!(gst.nt_bytes(15), 1);
+        assert_eq!(gst.nt_bytes(16), 1);
         assert_eq!(gst.act_bytes(0), 0);
         assert_eq!(gst.act_bytes(12), 1);
         assert_eq!(gst.act_bytes(13), 2);

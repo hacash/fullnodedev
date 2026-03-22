@@ -1133,7 +1133,7 @@ mod bounds_tests {
 
         let expect = gas_table.gas(Bytecode::NTENV as u8)
             + NativeEnv::gas(idx).unwrap()
-            + gas_extra.ntfunc_bytes(Address::SIZE)
+            + gas_extra.nt_bytes(Address::SIZE)
             + gas_table.gas(Bytecode::END as u8);
         assert_eq!(1000 - gas, expect);
     }

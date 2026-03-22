@@ -54,3 +54,5 @@ native_func_env_define! { env, NativeEnv, NativeEnvError,
     // idx, argv_len, gas, ValueType
     context_address    = 1,    0,        6,    Address
 }
+
+include!("call.rs");

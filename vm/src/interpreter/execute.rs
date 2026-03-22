@@ -2,7 +2,6 @@
 * parse bytecode params
 */
 use crate::machine::{DeferredRegistry, VmHost};
-use crate::ContractAddress;
 
 #[inline(always)]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -10,6 +9,22 @@ unsafe fn read_arr<const N: usize>(codes: &[u8], pc: usize) -> [u8; N] {
     let mut out = [0u8; N];
     std::ptr::copy_nonoverlapping(codes.as_ptr().add(pc), out.as_mut_ptr(), N);
     out
+}
+
+#[inline(always)]
+fn finish_ntcall(
+    cap: &SpaceCap,
+    gst: &GasExtra,
+    step_gas_use: &mut GasUse,
+    ops: &mut Stack,
+    r: Value,
+    g: i64,
+) -> VmrtRes<()> {
+    let r = r.valid(cap)?;
+    step_gas_use.resource += gst.nt_bytes(r.val_size());
+    step_gas_use.resource += g;
+    ops.push(r)?;
+    Ok(())
 }
 
 macro_rules! itrparam {
@@ -263,67 +278,6 @@ pub fn execute_code<H: VmHost + ?Sized>(
             }
         }}}
 
-        // NTFUNC: pure native function (has args, stack 1→1, allowed in Pure mode)
-        macro_rules! ntcall {
-            (func, $idx: expr) => {{
-                let nt_idx = $idx;
-                let argv = ops.pop()?.extract_call_data(heap)?;
-                gas_resource!(ntfunc_bytes, argv.len());
-                let (r, g) = NativeFunc::call(hei, nt_idx, &argv)?;
-                let r = r.valid(cap)?;
-                gas_resource!(ntfunc_bytes, r.val_size());
-                gas_add!(resource, raw, g);
-                ops.push(r)?;
-            }};
-            (ctl, $idx: expr) => {{
-                let nt_idx = $idx;
-                let (r, g) = NativeCtl::call(hei, nt_idx, &[])?;
-                match nt_idx {
-                    NativeCtl::idx_defer => {
-                        if exec.effect != EffectMode::Edit {
-                            return itr_err_fmt!(
-                                DeferredError,
-                                "defer not allowed in non-edit mode"
-                            );
-                        }
-                        if exec.call_depth == 0 {
-                            return itr_err_fmt!(
-                                DeferredError,
-                                "defer not allowed at top-level entry"
-                            );
-                        }
-                        let caddr = ContractAddress::from_addr(*context_addr).map_err(|e| {
-                            ItrErr::new(
-                                DeferredError,
-                                &format!("defer requires concrete contract frame: {}", e),
-                            )
-                        })?;
-                        deferred_registry.register(caddr)?;
-                    }
-                    _ => {
-                        return itr_err_fmt!(NativeCtlError, "native ctl idx {} not found", nt_idx)
-                    }
-                }
-                let r = r.valid(cap)?;
-                gas_resource!(ntfunc_bytes, r.val_size());
-                gas_add!(resource, raw, g);
-                ops.push(r)?;
-            }};
-            (env, $idx: expr) => {{
-                let nt_idx = $idx;
-                nsr!();
-                let r = match nt_idx {
-                    NativeEnv::idx_context_address => Value::Address(*context_addr),
-                    _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not find", nt_idx),
-                };
-                let g = NativeEnv::gas(nt_idx)?;
-                let r = r.valid(cap)?;
-                gas_resource!(ntfunc_bytes, r.val_size());
-                gas_add!(resource, raw, g);
-                ops.push(r)?;
-            }};
-        }
-
         macro_rules! local_get {
             ($idx: expr) => {{
                 let v = locals.load($idx as usize)?.valid(cap)?;
@@ -448,11 +402,25 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // action
                 ACTION | ACTENV | ACTVIEW => actcall!(instruction),
                 // native runtime control (VM-local side effects)
-                NTCTL => ntcall!(ctl, pu8!()),
+                NTCTL => {
+                    let nt_idx = pu8!();
+                    let (r, g) = call_ntctl(exec, context_addr, deferred_registry, nt_idx)?;
+                    finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
+                }
                 // native func (pure computation, always allowed)
-                NTFUNC => ntcall!(func, pu8!()),
+                NTFUNC => {
+                    let nt_idx = pu8!();
+                    let argv = ops.pop()?.extract_call_data(heap)?;
+                    gas_resource!(nt_bytes, argv.len());
+                    let (r, g) = call_ntfunc(hei, nt_idx, &argv)?;
+                    finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
+                }
                 // native env (VM context read, forbidden in Pure mode)
-                NTENV  => ntcall!(env, pu8!()),
+                NTENV  => {
+                    let nt_idx = pu8!();
+                    let (r, g) = call_ntenv(exec, context_addr, nt_idx)?;
+                    finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
+                }
                 // constant
                 PU8 => ops.push(U8(pu8!()))?,
                 PU16 => ops.push(U16(pu16!()))?,
