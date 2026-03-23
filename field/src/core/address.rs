@@ -61,15 +61,10 @@ impl Serialize for Address {
 impl_field_only_new!{Address}
 
 impl ToJSON for Address {
-    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
-        match fmt.binary {
-            JSONBinaryFormat::Base58Check => {
-                let version = self.0[0];
-                let data = &self.0.as_ref()[1..];
-                format!("\"{}\"", data.to_base58check(version))
-            }
-            _ => self.0.to_json_fmt(fmt),
-        }
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        let version = self.0[0];
+        let data = &self.0.as_ref()[1..];
+        format!("\"{}\"", data.to_base58check(version))
     }
 }
 
