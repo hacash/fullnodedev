@@ -6,7 +6,7 @@ fn serialize_public_nodes(peerlist: &Vec<Arc<Peer>>, _max: usize) -> (usize, Vec
     let mut listbts = vec![];
     let mut count = 0usize;
     for p in peerlist {
-        if !p.is_public || !p.addr.is_ipv4() {
+        if !p.is_public || p.addr.ip().is_loopback() || !p.addr.is_ipv4() {
             continue
         }
         let ipbts = match p.addr.ip() {
@@ -36,8 +36,12 @@ fn parse_public_nodes(bts: &[u8]) -> Vec<(PeerKey, SocketAddr)> {
         let ip: [u8;4] = one[0..4].try_into().unwrap();
         let port: [u8;2] = one[4..6].try_into().unwrap() ;
         let key: [u8;16] = one[6..22].try_into().unwrap() ;
+        let ipaddr = IpAddr::from(ip);
+        if ipaddr.is_loopback() {
+            continue
+        }
         addr.push((key, SocketAddr::new(
-            IpAddr::from(ip), 
+            ipaddr, 
             u16::from_be_bytes(port)
         )));
     }
@@ -86,6 +90,9 @@ fn read_stable_nodes_file(path: &PathBuf, max: usize) -> Vec<SocketAddr> {
         let Ok(addr) = line.parse::<SocketAddr>() else {
             continue;
         };
+        if addr.ip().is_loopback() {
+            continue;
+        }
         if seen.insert(addr) {
             res.push(addr);
             if res.len() >= max {
@@ -106,7 +113,7 @@ fn persist_stable_nodes_file(path: &PathBuf, peers: &PeerList, max: usize) {
             if count >= max {
                 break;
             }
-            if !p.is_public {
+            if !p.is_public || p.addr.ip().is_loopback() {
                 continue;
             }
             out.push_str(&format!("{}\n", p.addr));

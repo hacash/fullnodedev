@@ -84,7 +84,7 @@ pacman -S mingw-w64-x86_64-toolchain
 
 rustup target add x86_64-pc-windows-gnu
 rustup toolchain install stable-x86_64-pc-windows-gnu
-set RUSTFLAGS='-C target-feature=+crt-static'; set RUST_BACKTRACE='full'; cargo build --release --target x86_64-pc-windows-gnu;
+$env:RUSTFLAGS="-C target-feature=+crt-static"; $env:RUST_BACKTRACE="full"; cargo build --release --target x86_64-pc-windows-gnu;
 cp target/x86_64-pc-windows-gnu/release/fullnode.exe   ./hacash_fullnode_windows.exe
 cp target/x86_64-pc-windows-gnu/release/poworker.exe   ./hacash_poworker_windows.exe
 cp target/x86_64-pc-windows-gnu/release/diaworker.exe ./hacash_diaworker_windows.exe
@@ -92,7 +92,8 @@ cp target/x86_64-pc-windows-gnu/release/diaworker.exe ./hacash_diaworker_windows
 ## or msvc
 rustup target add x86_64-pc-windows-msvc
 rustup toolchain install stable-x86_64-pc-windows-msvc
-set RUSTFLAGS='-C target-feature=+crt-static'; set RUST_BACKTRACE='full'; cargo build --release --target x86_64-pc-windows-msvc --no-default-features --features "db-leveldb-sys";
+# Before building on Windows MSVC, manually change db/Cargo.toml leveldb-sys from =2.0.4 to =2.0.9.
+$env:RUSTFLAGS="-C target-feature=+crt-static"; $env:RUST_BACKTRACE="full"; cargo build --release --target x86_64-pc-windows-msvc --no-default-features --features "db-leveldb-sys";
 cp target/x86_64-pc-windows-msvc/release/fullnode.exe   ./hacash_fullnode_windows.exe
 cp target/x86_64-pc-windows-msvc/release/poworker.exe   ./hacash_poworker_windows.exe
 cp target/x86_64-pc-windows-msvc/release/diaworker.exe ./hacash_diaworker_windows.exe
@@ -149,4 +150,3 @@ cp ./hacash.config.ini ./target/release/ && RUST_BACKTRACE=1 cargo run --release
 4. chain engine
 5. minter
 6. scaner
-

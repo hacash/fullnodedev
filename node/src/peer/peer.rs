@@ -72,7 +72,7 @@ impl Peer {
             oginport = u16::from_be_bytes( bufcut!(msg, 2, 4) );
             idnamebts = &msg[4..];
         }else if MSG_ANSWER_PEER == ty {
-            is_public = true; // connect to public
+            is_public = !addr.ip().is_loopback(); // connect to public
             idnamebts = &msg[..];
         }else{
             // unsupport msg ty
@@ -96,7 +96,7 @@ impl Peer {
                 let mut pubaddr = addr.clone();
                 pubaddr.set_port(oginport);
                 if let Ok(pb) = tcp_dial_to_check_is_public_id(pubaddr, &peerkey, 3).await {
-                    if pb {
+                    if pb && !addr.ip().is_loopback() {
                         is_public = true; // public connect to me
                         addr.set_port(oginport);
                         // println!("&&&& public connect to me!!!")

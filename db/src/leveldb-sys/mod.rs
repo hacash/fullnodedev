@@ -8,4 +8,3 @@ include!{"error.rs"}
 include!{"bytes.rs"}
 // include!{"batch.rs"}
 include!{"db.rs"}
-

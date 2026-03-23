@@ -5,6 +5,7 @@ vscode-*/
 .cursor*
 */tests/*.md
 *.bnk/
+vendor/
 
 dist/
 

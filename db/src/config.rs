@@ -17,6 +17,7 @@ fn db_sync_enabled() -> bool {
     *DB_SYNC.get_or_init(|| db_env_enable("HACASH_DB_SYNC"))
 }
 
+#[allow(unused)]
 fn db_sled_small_machine_enabled() -> bool {
     static DB_SLED_SMALL_MACHINE: OnceLock<bool> = OnceLock::new();
     *DB_SLED_SMALL_MACHINE.get_or_init(|| 

@@ -10,6 +10,7 @@ basis          = {path = "../basis"}
 sled = { version = "0.34.7", optional = true }
 rusty-leveldb = { version = "3.0.2", optional = true }
 libc = { version = "0.2.4", optional = true }
+# For Windows MSVC builds, switch this manually from =2.0.4 to =2.0.9.
 leveldb-sys = { version = "=2.0.4", optional = true }
 rocksdb = { version = "=0.24.0", optional = true }
 
