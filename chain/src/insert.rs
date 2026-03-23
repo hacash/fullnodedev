@@ -155,12 +155,10 @@ fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     Ok(())
 }
 
-fn record_recent(eng: &ChainEngine, block: &dyn BlockRead) {
-    let chei = block.height().uint() as i128;
-    let deln = (eng.cnf.unstable_block * 2) as i128; // retain unstable * 2
-    let deln = chei - deln;
+fn record_recent(eng: &ChainEngine, block: &dyn BlockRead, root_height: u64) {
+    let deln = root_height.saturating_sub(eng.cnf.unstable_block);
     let mut rcts = eng.recent_blocks.lock().unwrap();
-    rcts.retain(|x| x.height as i128 > deln);
+    rcts.retain(|x| x.height >= deln);
     rcts.push_front(Arc::new(create_recent_block_info(block)));
 }
 

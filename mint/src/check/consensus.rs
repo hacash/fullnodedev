@@ -27,6 +27,7 @@ fn impl_blk_found(
 ) -> RetBlkFound {
     let curhei = curblkhead.height().uint();
     let curdifnum = curblkhead.difficulty().uint();
+    let cblkhx = curblkhead.hash();
     let blkspan = this.cnf.difficulty_adjust_blocks;
     let is_low_bid_child = {
         let biddings = this.bidding_prove.lock().unwrap();
@@ -42,21 +43,24 @@ fn impl_blk_found(
         };
         blkp.set_origin(BlkOrigin::Discover);
         let mut biddings = this.bidding_prove.lock().unwrap();
-        return maybe!(
-            biddings.cache_low_bid_child(blkp),
-            RetBlkFound::PendingCached,
-            RetBlkFound::Reject
-        )
+        if biddings.cache_low_bid_child(blkp) {
+            biddings.mark_block_arrival(curhei, cblkhx);
+            return RetBlkFound::PendingCached
+        }
+        return RetBlkFound::Reject
     }
 
     if curhei <= blkspan {
+        let mut biddings = this.bidding_prove.lock().unwrap();
+        biddings.mark_block_arrival(curhei, cblkhx);
         return RetBlkFound::Normal
     }
     if curhei < blkspan*200 && this.cnf.is_mainnet() {
+        let mut biddings = this.bidding_prove.lock().unwrap();
+        biddings.mark_block_arrival(curhei, cblkhx);
         return RetBlkFound::Normal
     }
 
-    let cblkhx = curblkhead.hash();
     if curhei % blkspan == 0 {
         let (_, difnum, _) = this.difficulty.req_cycle_block(curhei - 1, sto);
         let bign = u32_to_biguint(difnum).mul(4usize); // max is 4 times
@@ -64,6 +68,8 @@ fn impl_blk_found(
         if hash_bigger_than(cblkhx.as_ref(), &mindiffhx) {
             return RetBlkFound::Reject
         }
+        let mut biddings = this.bidding_prove.lock().unwrap();
+        biddings.mark_block_arrival(curhei, cblkhx);
         return RetBlkFound::Normal
     }
     let (_, difnum, diffhx) = this.difficulty.req_cycle_block(curhei, sto);
@@ -73,6 +79,8 @@ fn impl_blk_found(
     if hash_bigger_than(cblkhx.as_ref(), &diffhx) {
         return RetBlkFound::Reject
     }
+    let mut biddings = this.bidding_prove.lock().unwrap();
+    biddings.mark_block_arrival(curhei, cblkhx);
     RetBlkFound::Normal
 }
 
@@ -132,32 +140,32 @@ fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dy
         let bidfee  = txp.fee().clone();
         check_diamond_mint_minimum_bidding_fee(curhei, txp.as_read(), &diamint)?;
         let mut bidrecord = this.bidding_prove.lock().unwrap();
-        if let Some(rhbf) = bidrecord.highest(curhei, dianum, prevsta, block.timestamp().uint()) {
-            if bidfee < rhbf {
-                if dianum > CKN {
-                    if bidrecord.is_replay_allowed(&curblk.hash()) {
-                        println!(
-                            "[MintLowBid] replay low bid accepted height={} hash={} diamond={} fee={} fence={}",
-                            curhei,
-                            curblk.hash().half(),
-                            dianum,
-                            bidfee,
-                            rhbf,
-                        );
-                    } else {
-                        if !bidrecord.add_low_bid_root(dianum, curblk.clone(), bidfee.clone()) {
-                            return errf!("{}", LOW_BID_CACHE_FULL_ERR);
-                        }
-                        println!(
-                            "[MintLowBid] low root detected height={} hash={} diamond={} fee={} fence={}",
-                            curhei,
-                            curblk.hash().half(),
-                            dianum,
-                            bidfee,
-                            rhbf,
-                        );
-                        return errf!("{}", LOW_BID_PENDING_ERR)
+        let t4blkt = bidrecord.prev_block_arrive_time(block.prevhash());
+        let rhbf = bidrecord.highest(curhei, dianum, prevsta, t4blkt);
+        if bidfee < rhbf {
+            if dianum > CKN {
+                if bidrecord.is_replay_allowed(&curblk.hash()) {
+                    println!(
+                        "[MintLowBid] replay low bid accepted height={} hash={} diamond={} fee={} fence={}",
+                        curhei,
+                        curblk.hash().half(),
+                        dianum,
+                        bidfee,
+                        rhbf,
+                    );
+                } else {
+                    if !bidrecord.add_low_bid_root(dianum, curblk.clone(), bidfee.clone()) {
+                        return errf!("{}", LOW_BID_CACHE_FULL_ERR);
                     }
+                    println!(
+                        "[MintLowBid] low root detected height={} hash={} diamond={} fee={} fence={}",
+                        curhei,
+                        curblk.hash().half(),
+                        dianum,
+                        bidfee,
+                        rhbf,
+                    );
+                    return errf!("{}", LOW_BID_PENDING_ERR)
                 }
             }
         }

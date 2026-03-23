@@ -188,6 +188,8 @@ struct BiddingProve {
     books: HashMap<u32, BiddingBook>,
     low_bid_groups: HashMap<u64, LowBidGroup>,
     replay_allow: HashSet<Hash>,
+    block_arrive_time: HashMap<Hash, u64>,
+    block_arrive_order: VecDeque<Hash>,
     engine: Option<Weak<dyn Engine>>,
     max_shadow_len: usize,
     max_group_branches: usize,
@@ -202,6 +204,8 @@ impl BiddingProve {
             books: HashMap::new(),
             low_bid_groups: HashMap::new(),
             replay_allow: HashSet::new(),
+            block_arrive_time: HashMap::new(),
+            block_arrive_order: VecDeque::new(),
             engine: None,
             max_shadow_len,
             max_group_branches: max_shadow_len,
@@ -217,6 +221,7 @@ impl BiddingProve {
     const UNIQ_TOP_MAX: usize = 50;
     const LOW_BID_KEEP_SECS: u64 = 2400; // 40 min
     const LOW_BID_LOOP_SECS: u64 = 10;
+    const BLOCK_ARRIVE_KEEP: usize = 50;
 
     fn bind_engine(&mut self, eng: Arc<dyn Engine>) {
         let max_len = eng.config().unstable_block.saturating_mul(10) as usize;
@@ -268,9 +273,12 @@ impl BiddingProve {
         self.trim_books();
     }
 
-    fn highest(&self, curhei: u64, dianum: u32, sta: &dyn State, fblkt: u64) -> Option<Amount> {
+    fn highest(&self, curhei: u64, dianum: u32, sta: &dyn State, fblkt: u64) -> Amount {
+        if fblkt == 0 {
+            return Amount::zero();
+        }
         let Some(book) = self.books.get(&dianum) else {
-            return None;
+            return Amount::zero();
         };
         let coresta = CoreStateRead::wrap(sta);
         let ttx = fblkt.saturating_sub(Self::DELAY_SECS as u64);
@@ -279,11 +287,35 @@ impl BiddingProve {
             if r.time < ttx && isusa {
                 let hacbls = coresta.balance(&r.addr).unwrap_or_default();
                 if hacbls.hacash >= r.fee {
-                    return Some(r.fee.clone());
+                    return r.fee.clone();
                 }
             }
         }
-        None
+        Amount::zero()
+    }
+
+    fn mark_block_arrival(&mut self, hei: u64, hash: Hash) {
+        if hei % 5 != 4 {
+            return;
+        }
+        if self.block_arrive_time.contains_key(&hash) {
+            return;
+        }
+        self.block_arrive_time.insert(hash, curtimes());
+        self.block_arrive_order.push_back(hash);
+        while self.block_arrive_order.len() > Self::BLOCK_ARRIVE_KEEP {
+            let Some(hx) = self.block_arrive_order.pop_front() else {
+                break;
+            };
+            self.block_arrive_time.remove(&hx);
+        }
+    }
+
+    fn prev_block_arrive_time(&self, prevhx: &Hash) -> u64 {
+        self.block_arrive_time
+            .get(prevhx)
+            .copied()
+            .unwrap_or(0)
     }
 
     fn add_low_bid_root(&mut self, dianum: u32, blk: BlkPkg, root_fee: Amount) -> bool {
