@@ -215,7 +215,7 @@ impl BiddingProve {
     const DELAY_SECS: usize = 10;
     const HACD_KEEP: usize = 10;
     const UNIQ_TOP_MAX: usize = 50;
-    const LOW_BID_KEEP_SECS: u64 = 3600;
+    const LOW_BID_KEEP_SECS: u64 = 2400; // 40 min
     const LOW_BID_LOOP_SECS: u64 = 10;
 
     fn bind_engine(&mut self, eng: Arc<dyn Engine>) {

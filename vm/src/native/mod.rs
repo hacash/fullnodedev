@@ -5,6 +5,7 @@ use super::rt::*;
 use super::value::*;
 
 include!("hash.rs");
+include!("signature.rs");
 include!("types.rs");
 include!("amount.rs");
 include!("address.rs");
@@ -32,6 +33,7 @@ native_func_env_define! { func, NativeFunc, NativeFuncError,
     sha2               = 101, 1,       32,    Bytes
     sha3               = 102, 1,       32,    Bytes
     ripemd160          = 103, 1,       20,    Bytes
+    verify_signature   = 104, 3,       96,    Bool
     ascii_parse_flat_kv = 120, 2,      64,    Tuple
     ascii_validate_transform = 121, 2, 24,    Tuple
     ascii_u128_dec_unit = 122, 2,      24,    Tuple

@@ -172,7 +172,8 @@ fn current_low_bid_min_pow_hash(this: &HacashMinter, sto: &dyn Store) -> [u8; 32
     let diffnum = if latest == 0 {
         this.genesis_block.difficulty().uint()
     } else if let Some((_, blkdts)) = sto.block_data_by_height(&BlockHeight::from(latest)) {
-        BlockIntro::must(&blkdts).difficulty().uint()
+        let intro = BlockIntro::build(&blkdts).unwrap();
+        intro.difficulty().uint()
     } else {
         this.genesis_block.difficulty().uint()
     };

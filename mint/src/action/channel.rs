@@ -2,7 +2,7 @@
 *
 */
 action_define! { ChannelOpen, 2,
-    ActScope::TOP_UNIQUE, 2, false,
+    ActScope::TOP, 2, false,
     [
         self.left_bill.address.into(),
         self.right_bill.address.into()
@@ -129,7 +129,7 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
 /*******************************************/
 
 action_define! { ChannelClose, 3,
-    ActScope::TOP_UNIQUE, 2, false, [],
+    ActScope::TOP, 2, false, [],
     {
         channel_id     : ChannelId
     },

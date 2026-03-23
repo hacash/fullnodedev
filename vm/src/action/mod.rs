@@ -36,6 +36,9 @@ action_register! {
 
     ViewCheckSign
     ViewBalance
-    ViewDiamondInscNum
-    ViewDiamondInscGet
+    ViewDiaInscNum
+    ViewDiaInscGet
+    ViewDiaNameList
+    ViewAssetBalance
+    ViewDiaOwnerAddrs
 }

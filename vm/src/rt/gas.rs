@@ -381,9 +381,9 @@ mod gas_budget_codec_tests {
             (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
             (
                 16,
-                vec![NTFUNC, NTCTL, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV],
+                vec![NTENV, NTFUNC, NTCTL, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV],
             ),
-            (20, vec![LOG1, NTENV, CALLEXTVIEW]),
+            (20, vec![LOG1, CALLEXTVIEW]),
             (24, vec![LOG2, CALLEXT, CALL]),
             (28, vec![LOG3, ACTENV, SDEL]),
             (32, vec![LOG4, ACTVIEW, SLOAD, SREST, RPOW]),

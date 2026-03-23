@@ -1612,7 +1612,7 @@ mod action_coverage {
     }
 
     // ═══════════════════════════════════════════════════
-    // ViewDiamondInscNum tests
+    // ViewDiaInscNum tests
     // ═══════════════════════════════════════════════════
 
     #[test]
@@ -1628,7 +1628,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let mut act = ViewDiamondInscNum::new();
+        let mut act = ViewDiaInscNum::new();
         act.diamond = DiamondName::from_readable(b"AAAAAA").unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("not found"), "{err}");
@@ -1636,10 +1636,10 @@ mod action_coverage {
 
     #[test]
     fn view_diamond_insc_num_serialize_roundtrip() {
-        let mut act = ViewDiamondInscNum::new();
+        let mut act = ViewDiaInscNum::new();
         act.diamond = DiamondName::from_readable(b"WTYUIA").unwrap();
         let bytes = act.serialize();
-        let mut act2 = ViewDiamondInscNum::new();
+        let mut act2 = ViewDiaInscNum::new();
         act2.parse(&bytes).unwrap();
         assert_eq!(act, act2);
     }
@@ -1667,14 +1667,14 @@ mod action_coverage {
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
-        let mut act = ViewDiamondInscNum::new();
+        let mut act = ViewDiaInscNum::new();
         act.diamond = diamond;
         let (_, res) = act.execute(&mut ctx).unwrap();
         assert_eq!(res, vec![2]);
     }
 
     // ═══════════════════════════════════════════════════
-    // ViewDiamondInscGet tests
+    // ViewDiaInscGet tests
     // ═══════════════════════════════════════════════════
 
     #[test]
@@ -1690,7 +1690,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let mut act = ViewDiamondInscGet::new();
+        let mut act = ViewDiaInscGet::new();
         act.diamond = DiamondName::from_readable(b"AAAAAA").unwrap();
         act.inscidx = Uint1::from(0);
         let err = act.execute(&mut ctx).unwrap_err();
@@ -1720,7 +1720,7 @@ mod action_coverage {
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
-        let mut act = ViewDiamondInscGet::new();
+        let mut act = ViewDiaInscGet::new();
         act.diamond = diamond;
         act.inscidx = Uint1::from(1);
         let (_, res) = act.execute(&mut ctx).unwrap();
@@ -1750,7 +1750,7 @@ mod action_coverage {
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
-        let mut act = ViewDiamondInscGet::new();
+        let mut act = ViewDiaInscGet::new();
         act.diamond = diamond;
         act.inscidx = Uint1::from(1); // overflow: only idx 0 exists
         let err = act.execute(&mut ctx).unwrap_err();

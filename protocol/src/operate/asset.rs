@@ -47,6 +47,7 @@ asset_operate_define!(asset_sub, addr, asset, oldasset, {
 
 pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset: &AssetAmt
 ) -> XRet<Vec<u8>> {
+    crate::upgrade::check_transfer_addr_online_open(ctx.env().block.height, from, to)?;
     if from == to {
 		return xerrf!("cannot transfer to self")
     }
@@ -75,4 +76,3 @@ pub fn asset_check(ctx: &mut dyn Context, addr: &Address, ast: &AssetAmt) -> XRe
     }
     xerr_rf!("address {} asset is insufficient, at least {}", addr, ast)
 }
-

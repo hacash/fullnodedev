@@ -22,16 +22,19 @@ pub const ACTION_DEFS: [ActionDefTy; 13] = [
 ];
 
 pub const ACTION_ENV_DEFS: [ActionDefTy; 3] = [
-    (EnvHeight::IDX,       "block_height",           ValueTy::U64,      0),
-    (EnvCoinbaseAddr::IDX, "block_coinbase_address", ValueTy::Address, 0),
-    (EnvMainAddr::IDX,     "tx_main_address",        ValueTy::Address, 0),
+    (EnvHeight::IDX,       "block_height",          ValueTy::U64,     0),
+    (EnvCoinbaseAddr::IDX, "block_coinbase_addr",   ValueTy::Address, 0),
+    (EnvMainAddr::IDX,     "tx_main_addr",          ValueTy::Address, 0),
 ];
 
-pub const ACTION_VIEW_DEFS: [ActionDefTy; 4] = [
-    (ViewCheckSign::IDX,      "check_signature",   ValueTy::Bool,  1),
-    (ViewBalance::IDX,        "balance",           ValueTy::Bytes, 1),
-    (ViewDiamondInscNum::IDX, "diamond_insc_num",  ValueTy::U8,    1),
-    (ViewDiamondInscGet::IDX, "diamond_insc_get",  ValueTy::Bytes, 2),
+pub const ACTION_VIEW_DEFS: [ActionDefTy; 7] = [
+    (ViewBalance::IDX,         "balance",           ValueTy::Bytes, 1),
+    (ViewAssetBalance::IDX,    "asset_balance",     ValueTy::U64,   2),
+    (ViewCheckSign::IDX,       "check_signature",   ValueTy::Bool,  1),
+    (ViewDiaInscNum::IDX,      "hacd_insc_num",     ValueTy::U8,    1),
+    (ViewDiaInscGet::IDX,      "hacd_insc_get",     ValueTy::Bytes, 2),
+    (ViewDiaNameList::IDX,     "hacd_name_list",    ValueTy::Bytes, 3),
+    (ViewDiaOwnerAddrs::IDX,   "hacd_owner_addrs",  ValueTy::Bytes, 1),
 ];
 
 pub fn search_act_by_id<'a>(id: u8, exts: &'a[ActionDefTy]) -> Option<&'a ActionDefTy> {

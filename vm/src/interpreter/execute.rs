@@ -839,6 +839,20 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 LERP => quadop_arithmetic(ops, lerp_checked)?,
                 INC => unary_inc(ops.peek()?, pu8!())?,
                 DEC => unary_dec(ops.peek()?, pu8!())?,
+                SQRT => {
+                    let v = {
+                        let x = ops.peek()?;
+                        sqrt_floor_checked(x)?
+                    };
+                    *ops.peek()? = v;
+                }
+                SQRTUP => {
+                    let v = {
+                        let x = ops.peek()?;
+                        sqrt_up_checked(x)?
+                    };
+                    *ops.peek()? = v;
+                }
                 // workflow control
                 JMPL  => jump!(codes, *pc, 2),
                 JMPS  => ostjump!(codes, *pc, 1),

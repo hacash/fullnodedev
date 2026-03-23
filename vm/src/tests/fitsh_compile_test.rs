@@ -421,6 +421,7 @@ mod fitsh_compile_tests {
             func_sha2: "return sha2(\"hello\")",
             func_sha3: "return sha3(\"hello\")",
             func_ripemd160: "return ripemd160(\"hello\")",
+            func_verify_signature: "return verify_signature(sha2(\"hello\"), emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS, 0x1234)",
             func_hac_to_mei: "return hac_to_mei(100)",
             func_hac_to_zhu: "return hac_to_zhu(100)",
             func_mei_to_hac: "return mei_to_hac(100)",

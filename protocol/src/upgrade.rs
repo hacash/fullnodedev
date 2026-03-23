@@ -1,10 +1,11 @@
 use sys::*;
+use field::*;
 
 // Local development is allowed from genesis to this height.
-pub const DEV_OPEN_MAX_HEIGHT: u64 = 8_000;
+pub const DEV_OPEN_MAX_HEIGHT: u64 = 65_432;
 
 // Set the real mainnet activation height before rollout.
-pub const ONLINE_OPEN_HEIGHT: u64 = 800_000;
+pub const ONLINE_OPEN_HEIGHT: u64 = 765_432;
 
 // One-time pre-upgrade allowlist.
 // In the middle closed interval only legacy tx/action kinds below are allowed.
@@ -60,6 +61,26 @@ pub fn check_gated_action(height: u64, kind: u16) -> Rerr {
         DEV_OPEN_MAX_HEIGHT,
         ONLINE_OPEN_HEIGHT
     )
+}
+
+#[inline]
+pub fn check_transfer_addr_online_open(height: u64, from: &Address, to: &Address) -> Rerr {
+    if height >= ONLINE_OPEN_HEIGHT {
+        return Ok(());
+    }
+    if from.is_scriptmh() {
+        return errf!(
+            "transfer from scriptmh address is not enabled before height {}",
+            ONLINE_OPEN_HEIGHT
+        );
+    }
+    if from.is_contract() || to.is_contract() {
+        return errf!(
+            "contract transfer in/out is not enabled before height {}",
+            ONLINE_OPEN_HEIGHT
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]

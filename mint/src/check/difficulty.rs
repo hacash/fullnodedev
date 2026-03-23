@@ -35,7 +35,7 @@ impl DifficultyGnr {
         let (_, blkdts) = sto
             .block_data_by_height(&BlockHeight::from(cylhei))
             .unwrap();
-        let intro = BlockIntro::must(&blkdts);
+        let intro = BlockIntro::build(&blkdts).unwrap();
         // get time
         let cyltime = intro.timestamp().uint();
         let diffcty = intro.difficulty().uint();
