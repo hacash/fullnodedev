@@ -16,7 +16,7 @@ mod hrc20 {
     #[test]
     fn test1() {
         let sss = r##"
-            var addr = tx_main_address()
+            var addr = tx_main_addr()
             var cur_hei = block_height()
             // check time
             var phk = "phk"
@@ -28,8 +28,17 @@ mod hrc20 {
             // release tokens
             var bls = self.balance_of(addr)
             bind bk = "b_" ++ addr
-            storage_save(bk, bls + 1000000000) // give 10 token
-            storage_save(phk, cur_hei)
+            var bk_old = storage_load(bk)
+            if bk_old is nil {
+                storage_new(bk, bls + 1000000000, 100)
+            } else {
+                storage_edit(bk, bls + 1000000000) // give 10 token
+            }
+            if prev_hei == 0 {
+                storage_new(phk, cur_hei, 100)
+            } else {
+                storage_edit(phk, cur_hei)
+            }
             return 0
         "##;
         println!("{:?}", Tokenizer::new(sss.as_bytes()).parse())
@@ -108,7 +117,7 @@ mod hrc20 {
                     .fitsh(
                         r##"
             param { addr_to, amount }
-            var addr_from = tx_main_address()
+            var addr_from = tx_main_addr()
             // print addr_from
             return self.do_transfer(addr_from, addr_to, amount)
         "##,
@@ -125,11 +134,10 @@ mod hrc20 {
             param{ period }
             assert period is u64
             
-            bind addr = tx_main_address()
+            bind addr = tx_main_addr()
             bind bk = "b_" ++ addr
-            bind bkr = storage_rest(bk)
-            assert bkr is not nil
-            var new_bkr = bkr + period * 300
+            bind bks = storage_stat(bk)
+            assert bks is not nil
             storage_rent(bk, period)
             bind tk = "total"
             storage_rent(tk, period)
@@ -144,7 +152,7 @@ mod hrc20 {
                     .external()
                     .fitsh(
                         r##"
-            var addr = tx_main_address()
+            var addr = tx_main_addr()
             var cur_hei = block_height()
             // check time
             var phk = "phk"
@@ -156,8 +164,17 @@ mod hrc20 {
             // release tokens
             var bls = self.balance_of(addr)
             bind bk = "b_" ++ addr
-            storage_save(bk, bls + 1000000000) // give 10 token
-            storage_save(phk, cur_hei)
+            var bk_old = storage_load(bk)
+            if bk_old is nil {
+                storage_new(bk, bls + 1000000000, 100)
+            } else {
+                storage_edit(bk, bls + 1000000000) // give 10 token
+            }
+            if prev_hei == 0 {
+                storage_new(phk, cur_hei, 100)
+            } else {
+                storage_edit(phk, cur_hei)
+            }
             end
         "##,
                     )
@@ -187,7 +204,7 @@ mod hrc20 {
             bls_from -= amount
             var bk_from = "b_" ++ addr_from
             if bls_from > 0 {
-                storage_save(bk_from, bls_from)
+                storage_edit(bk_from, bls_from)
             } else {
                 storage_del(bk_from)
             }
@@ -197,7 +214,12 @@ mod hrc20 {
             bls_to += amount
             var bk_to = "b_" ++ addr_to
             if bls_to > 0 {
-                storage_save(bk_to, bls_to)
+                var bk_to_old = storage_load(bk_to)
+                if bk_to_old is nil {
+                    storage_new(bk_to, bls_to, 100)
+                } else {
+                    storage_edit(bk_to, bls_to)
+                }
             } else {
                 storage_del(bk_to)
             }

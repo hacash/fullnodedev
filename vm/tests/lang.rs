@@ -422,7 +422,7 @@ fn log_arguments_parse_in_value_context() {
         log(if true { 1 } else { 2 }, 0)
     "##;
 
-    let ircodes = common::checked_compile_fitsh_to_ir(script);
+    let ircodes = lang_to_ircode(script).unwrap();
     assert!(
         ircodes.iter().any(|b| *b == Bytecode::IRIFR as u8),
         "expected IRIFR for `if` used as log argument"

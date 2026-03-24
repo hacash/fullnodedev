@@ -434,10 +434,12 @@ mod fitsh_compile_tests {
             func_context_address: "return context_address()",
             func_block_height: "return block_height()",
             func_storage_load: "return storage_load(\"key\")",
-            func_storage_save: "storage_save(\"key\", \"value\")\nreturn 1",
+            func_storage_new: "storage_new(\"key\", \"value\", 100)\nreturn 1",
+            func_storage_edit: "storage_edit(\"key\", \"value\")\nreturn 1",
             func_storage_del: "storage_del(\"key\")\nreturn 1",
-            func_storage_rest: "return storage_rest(\"key\")",
+            func_storage_stat: "return storage_stat(\"key\")",
             func_storage_rent: "storage_rent(\"key\", 100)\nreturn 1",
+            func_storage_recv: "storage_recv(\"key\", 100)\nreturn 1",
             func_memory_put: "memory_put(\"key\", \"value\")\nreturn 1",
             func_memory_get: "return memory_get(\"key\")",
             func_global_put: "global_put(\"key\", \"value\")\nreturn 1",
@@ -541,9 +543,10 @@ return x"
                 bind bk = "b_" ++ to
                 var bal = storage_load(bk)
                 if bal is nil {
-                    bal = 0 as u64
+                    storage_new(bk, amount, 100)
+                } else {
+                    storage_edit(bk, bal + amount)
                 }
-                storage_save(bk, bal + amount)
                 return 1
             "#,
             complex_calc: r#"
@@ -853,6 +856,11 @@ return C.0xabcdef01(1, 2)",
                     Ok(())
                 }
 
+                fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+                    let _ = gas;
+                    Ok(())
+                }
+
                 fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
                     crate::VMState::wrap(self.ctx.state()).contract_edition(addr)
                 }
@@ -871,7 +879,7 @@ return C.0xabcdef01(1, 2)",
                     Ok(())
                 }
 
-                fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+                fn sinfo(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
                     let _ = (addr, key);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
@@ -881,12 +889,24 @@ return C.0xabcdef01(1, 2)",
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
-                fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
+                fn sdel(&mut self, addr: &Address, key: Value) -> VmrtRes<i64> {
                     let _ = (addr, key);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
-                fn ssave(
+                fn snew(
+                    &mut self,
+                    gst: &GasExtra,
+                    addr: &Address,
+                    key: Value,
+                    val: Value,
+                    period: Value,
+                ) -> VmrtRes<i64> {
+                    let _ = (gst, addr, key, val, period);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
+                }
+
+                fn sedit(
                     &mut self,
                     gst: &GasExtra,
                     addr: &Address,
@@ -898,6 +918,17 @@ return C.0xabcdef01(1, 2)",
                 }
 
                 fn srent(
+                    &mut self,
+                    gst: &GasExtra,
+                    addr: &Address,
+                    key: Value,
+                    period: Value,
+                ) -> VmrtRes<i64> {
+                    let _ = (gst, addr, key, period);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
+                }
+
+                fn srecv(
                     &mut self,
                     gst: &GasExtra,
                     addr: &Address,

@@ -272,6 +272,10 @@ impl Context for ContextInst<'_> {
         self.gas.charge(gas)
     }
 
+    fn gas_rebate(&mut self, gas: i64) -> Rerr {
+        self.gas.rebate(gas)
+    }
+
     fn gas_initialize(&mut self, budget: i64) -> Rerr {
         ContextInst::gas_initialize(self, budget)
     }

@@ -58,6 +58,11 @@ mod machine_file_test {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
             crate::VMState::wrap(self.ctx.state()).contract_edition(addr)
         }
@@ -76,9 +81,9 @@ mod machine_file_test {
             Ok(())
         }
 
-        fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+        fn sinfo(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
             let hei = self.ctx.env().block.height;
-            crate::VMState::wrap(self.ctx.state()).srest(hei, addr, key)
+            crate::VMState::wrap(self.ctx.state()).sinfo(hei, addr, key)
         }
 
         fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
@@ -86,11 +91,24 @@ mod machine_file_test {
             crate::VMState::wrap(self.ctx.state()).sload(hei, addr, key)
         }
 
-        fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
-            crate::VMState::wrap(self.ctx.state()).sdel(addr, key)
+        fn sdel(&mut self, addr: &Address, key: Value) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).sdel(hei, addr, key)
         }
 
-        fn ssave(
+        fn snew(
+            &mut self,
+            gst: &GasExtra,
+            addr: &Address,
+            key: Value,
+            val: Value,
+            period: Value,
+        ) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).snew(gst, hei, addr, key, val, period)
+        }
+
+        fn sedit(
             &mut self,
             gst: &GasExtra,
             addr: &Address,
@@ -98,7 +116,7 @@ mod machine_file_test {
             val: Value,
         ) -> VmrtRes<i64> {
             let hei = self.ctx.env().block.height;
-            crate::VMState::wrap(self.ctx.state()).ssave(gst, hei, addr, key, val)
+            crate::VMState::wrap(self.ctx.state()).sedit(gst, hei, addr, key, val)
         }
 
         fn srent(
@@ -110,6 +128,17 @@ mod machine_file_test {
         ) -> VmrtRes<i64> {
             let hei = self.ctx.env().block.height;
             crate::VMState::wrap(self.ctx.state()).srent(gst, hei, addr, key, period)
+        }
+
+        fn srecv(
+            &mut self,
+            gst: &GasExtra,
+            addr: &Address,
+            key: Value,
+            period: Value,
+        ) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).srecv(gst, hei, addr, key, period)
         }
     }
 

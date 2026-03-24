@@ -296,11 +296,14 @@ irfn_define! {
     global_get
     memory_put
     memory_get
+    memory_take
 
-    storage_rest
+    storage_new
+    storage_recv
+    storage_stat
     storage_load
     storage_del
-    storage_save
+    storage_edit
     storage_rent
 
     add_mod
@@ -359,9 +362,9 @@ mod irfn_tests {
 
     #[test]
     fn direct_ir_func_signatures_come_from_bytecode_metadata() {
-        let (_, inst, pms, args, outs) = pick_ir_func("storage_save").unwrap();
+        let (_, inst, pms, args, outs) = pick_ir_func("storage_edit").unwrap();
         let meta = inst.metadata();
-        assert_eq!(inst, Bytecode::SSAVE);
+        assert_eq!(inst, Bytecode::SEDIT);
         assert_eq!(pms, meta.param as usize);
         assert_eq!(args, meta.input as usize);
         assert_eq!(outs, meta.otput as usize);

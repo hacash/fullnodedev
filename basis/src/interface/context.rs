@@ -20,6 +20,7 @@ pub trait Context: StateOperat {
     fn vm_invalidate_contract_cache(&mut self, _: &Address) {}
     fn gas_remaining(&self) -> i64 { 0  }
     fn gas_charge(&mut self, _: i64) -> Rerr { Ok(()) }
+    fn gas_rebate(&mut self, _: i64) -> Rerr { Ok(()) }
     fn gas_initialize(&mut self, _: i64) -> Rerr {
         errf!("context gas init not supported")
     }

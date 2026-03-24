@@ -1363,9 +1363,9 @@ mod action_coverage {
             r#"
             var h = block_height()
             assert h == 777
-            var m = tx_main_address()
+            var m = tx_main_addr()
             assert m == {main}
-            var cb = block_coinbase_address()
+            var cb = block_coinbase_addr()
             assert cb == {coinbase}
             return 0
             "#,

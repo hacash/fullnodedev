@@ -8,6 +8,7 @@ pub trait VmHost {
     fn main_entry_bindings(&self) -> FrameBindings;
     fn gas_remaining(&self) -> i64;
     fn gas_charge(&mut self, gas: i64) -> VmrtErr;
+    fn gas_rebate(&mut self, gas: i64) -> VmrtErr;
     fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition>;
     fn contract(&mut self, addr: &ContractAddress) -> Option<ContractSto>;
     fn action_call(&mut self, kid: u16, body: Vec<u8>) -> XRet<(u32, Vec<u8>)>;
@@ -29,10 +30,18 @@ pub trait VmHost {
     fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr;
 
     // Storage
-    fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value>;
+    fn sinfo(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value>;
     fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value>;
-    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr;
-    fn ssave(
+    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtRes<i64>;
+    fn snew(
+        &mut self,
+        gst: &GasExtra,
+        addr: &Address,
+        key: Value,
+        val: Value,
+        period: Value,
+    ) -> VmrtRes<i64>;
+    fn sedit(
         &mut self,
         gst: &GasExtra,
         addr: &Address,
@@ -40,6 +49,13 @@ pub trait VmHost {
         val: Value,
     ) -> VmrtRes<i64>;
     fn srent(
+        &mut self,
+        gst: &GasExtra,
+        addr: &Address,
+        key: Value,
+        period: Value,
+    ) -> VmrtRes<i64>;
+    fn srecv(
         &mut self,
         gst: &GasExtra,
         addr: &Address,
@@ -66,6 +82,11 @@ impl<T: Context + ?Sized> VmHost for T {
         Context::gas_charge(self, gas).map_err(|e| ItrErr::new(OutOfGas, &e))
     }
 
+    fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+        use crate::rt::ItrErrCode::*;
+        Context::gas_rebate(self, gas).map_err(|e| ItrErr::new(GasError, &e))
+    }
+
     fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
         crate::VMState::wrap(self.state()).contract_edition(addr)
     }
@@ -85,9 +106,9 @@ impl<T: Context + ?Sized> VmHost for T {
         Ok(())
     }
 
-    fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+    fn sinfo(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).srest(hei, addr, key)
+        crate::VMState::wrap(self.state()).sinfo(hei, addr, key)
     }
 
     fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
@@ -95,11 +116,24 @@ impl<T: Context + ?Sized> VmHost for T {
         crate::VMState::wrap(self.state()).sload(hei, addr, key)
     }
 
-    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
-        crate::VMState::wrap(self.state()).sdel(addr, key)
+    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtRes<i64> {
+        let hei = self.env().block.height;
+        crate::VMState::wrap(self.state()).sdel(hei, addr, key)
     }
 
-    fn ssave(
+    fn snew(
+        &mut self,
+        gst: &GasExtra,
+        addr: &Address,
+        key: Value,
+        val: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
+        let hei = self.env().block.height;
+        crate::VMState::wrap(self.state()).snew(gst, hei, addr, key, val, period)
+    }
+
+    fn sedit(
         &mut self,
         gst: &GasExtra,
         addr: &Address,
@@ -107,7 +141,7 @@ impl<T: Context + ?Sized> VmHost for T {
         val: Value,
     ) -> VmrtRes<i64> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).ssave(gst, hei, addr, key, val)
+        crate::VMState::wrap(self.state()).sedit(gst, hei, addr, key, val)
     }
 
     fn srent(
@@ -119,5 +153,16 @@ impl<T: Context + ?Sized> VmHost for T {
     ) -> VmrtRes<i64> {
         let hei = self.env().block.height;
         crate::VMState::wrap(self.state()).srent(gst, hei, addr, key, period)
+    }
+
+    fn srecv(
+        &mut self,
+        gst: &GasExtra,
+        addr: &Address,
+        key: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
+        let hei = self.env().block.height;
+        crate::VMState::wrap(self.state()).srecv(gst, hei, addr, key, period)
     }
 }

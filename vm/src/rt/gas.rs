@@ -52,14 +52,14 @@ impl GasTable {
         gst.set(5, &[MGET, GGET, NEWLIST, NEWMAP]);
         gst.set(8, &[PACKLIST, PACKMAP, PACKTUPLE]);
         gst.set(10, &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
-        gst.set(12, &[CALLUSEVIEW, CALLUSEPURE]);
+        gst.set(12, &[MTAKE, CALLUSEVIEW, CALLUSEPURE]);
         gst.set(16, &[NTENV, NTCTL, NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
         gst.set(20, &[LOG1, CALLEXTVIEW]);
         gst.set(24, &[LOG2, CALLEXT, CALL]);
         gst.set(28, &[LOG3, ACTENV, SDEL]);
-        gst.set(32, &[LOG4, ACTVIEW, SLOAD, SREST]);
+        gst.set(32, &[LOG4, ACTVIEW, SLOAD, SSTAT]);
         gst.set(48, &[ACTION]);
-        gst.set(64, &[SSAVE, SRENT]);
+        gst.set(64, &[SNEW, SEDIT, SRENT, SRECV]);
         #[cfg(feature = "calcfunc")]
         gst.set(128, &[CALCCALL]);
         gst
@@ -139,8 +139,6 @@ pub struct GasExtra {
     heap_read_div: i64,
     heap_write_div: i64,
     log_div: i64,
-    storage_read_div: i64,
-    storage_write_div: i64,
     compile_div: i64,
     compo_byte_div: i64,
     compo_item_read_div: i64,
@@ -171,7 +169,7 @@ impl GasExtra {
             memory_key_cost:    20,
             global_key_cost:    32,
             storege_value_base_size: 16,
-            storage_key_cost:  256,
+            storage_key_cost:  2048,
             storage_del_min:    16,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
@@ -181,8 +179,6 @@ impl GasExtra {
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
-            storage_read_div:    1,
-            storage_write_div:   1,
             compile_div:         8,
             ntfunc_div:         16,
             act_div:            12,
@@ -249,22 +245,17 @@ impl GasExtra {
 
     #[inline(always)]
     pub fn storage_read(&self, val_len: usize) -> i64 {
-        Self::div_op(val_len, self.storage_read_div)
+        (val_len as i64).saturating_add(self.storege_value_base_size.max(0))
     }
 
     #[inline(always)]
     pub fn storage_write(&self, val_len: usize) -> i64 {
-        Self::div_op(val_len, self.storage_write_div)
+        self.storage_read(val_len).saturating_mul(2)
     }
 
     #[inline(always)]
     pub fn compile_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.compile_div)
-    }
-
-    #[inline(always)]
-    pub fn storage_del(&self) -> i64 {
-        self.storage_del_min
     }
 
     #[inline(always)]
@@ -374,8 +365,8 @@ mod gas_budget_codec_tests {
             (
                 12,
                 vec![
-                    CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP,
-                    DEVSCALED,
+                    MTAKE, CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND,
+                    MULSHRUP, DEVSCALED,
                 ],
             ),
             (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
@@ -386,9 +377,9 @@ mod gas_budget_codec_tests {
             (20, vec![LOG1, CALLEXTVIEW]),
             (24, vec![LOG2, CALLEXT, CALL]),
             (28, vec![LOG3, ACTENV, SDEL]),
-            (32, vec![LOG4, ACTVIEW, SLOAD, SREST, RPOW]),
+            (32, vec![LOG4, ACTVIEW, SLOAD, SSTAT, RPOW]),
             (48, vec![ACTION]),
-            (64, vec![SSAVE, SRENT]),
+            (64, vec![SNEW, SEDIT, SRENT, SRECV]),
         ];
         #[cfg(feature = "calcfunc")]
         let mut groups = groups;
@@ -430,7 +421,7 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.memory_key_cost, 20);
         assert_eq!(gst.global_key_cost, 32);
         assert_eq!(gst.new_contract_load, 32);
-        assert_eq!(gst.storage_key_cost, 256);
+        assert_eq!(gst.storage_key_cost, 2048);
         assert_eq!(gst.storage_del_min, 16);
         assert_eq!(gst.storege_value_base_size, 16);
     }
@@ -481,15 +472,14 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.log_bytes(0), 0);
         assert_eq!(gst.log_bytes(37), 37);
 
-        assert_eq!(gst.storage_read(0), 0);
-        assert_eq!(gst.storage_read(7), 7);
-        assert_eq!(gst.storage_read(8), 8);
-        assert_eq!(gst.storage_write(0), 0);
-        assert_eq!(gst.storage_write(5), 5);
-        assert_eq!(gst.storage_write(6), 6);
+        assert_eq!(gst.storage_read(0), 16);
+        assert_eq!(gst.storage_read(7), 23);
+        assert_eq!(gst.storage_read(8), 24);
+        assert_eq!(gst.storage_write(0), 32);
+        assert_eq!(gst.storage_write(5), 42);
+        assert_eq!(gst.storage_write(6), 44);
         assert_eq!(gst.compile_bytes(0), 0);
         assert_eq!(gst.compile_bytes(15), 2);
         assert_eq!(gst.compile_bytes(16), 2);
-        assert_eq!(gst.storage_del(), 16);
     }
 }

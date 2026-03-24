@@ -128,21 +128,21 @@ pub enum Bytecode {
     _______________118 = 0x76,
     _______________119 = 0x77,
     _______________120 = 0x78,
-    _______________121 = 0x79,
-    _______________122 = 0x7a,
-    _______________123 = 0x7b,
-    _______________124 = 0x7c,
-    XLG = 0x7d,      // *&    local logic
-    XOP = 0x7e,      // *a    local operand
+    XLG = 0x79,      // *&    local logic
+    XOP = 0x7a,      // *a    local operand
+    GET = 0x7b,      // *+    local get
+    PUT = 0x7c,      // *a,b  local put
+    GETX = 0x7d,     // &     local x get
+    PUTX = 0x7e,     // v,i   local x put
     ALLOC = 0x7f,    // *     local allocQ
-    PUTX = 0x80,     // v,i   local x put
-    GETX = 0x81,     // &     local x get
-    PUT = 0x82,      // *a,b  local put
-    GET = 0x83,      // *+    local get
-    GET0 = 0x84,     // +     local get idx 0
-    GET1 = 0x85,     // +     local get idx 1
-    GET2 = 0x86,     // +     local get idx 2
-    GET3 = 0x87,     // +     local get idx 3
+    GET0 = 0x80,     // +     local get idx 0
+    GET1 = 0x81,     // +     local get idx 1
+    GET2 = 0x82,     // +     local get idx 2
+    GET3 = 0x83,     // +     local get idx 3
+    LOG1 = 0x84,
+    LOG2 = 0x85,
+    LOG3 = 0x86,
+    LOG4 = 0x87,
     HSLICE = 0x88,   // a,b+  create heap slice
     HREADUL = 0x89,  // **+   heap read ul
     HREADU = 0x8a,   // *+    heap read u
@@ -155,17 +155,14 @@ pub enum Bytecode {
     GPUT = 0x91,     // a,b   global put
     MGET = 0x92,     // &     memory get
     MPUT = 0x93,     // a,b   memory put
-    LOG1 = 0x94,
-    LOG2 = 0x95,
-    LOG3 = 0x96,
-    LOG4 = 0x97,
+    MTAKE = 0x94,    // &     memory take
     ________________152 = 0x98,
-    ________________153 = 0x99,
-    ________________154 = 0x9a,
-    SREST = 0x9b, // &     storage expire rest block
-    SLOAD = 0x9c, // &     storage load
-    SDEL = 0x9d,  // a     storage delete
-    SSAVE = 0x9e, // a,b   storage save
+    SSTAT = 0x99, // &       storage info
+    SLOAD = 0x9a, // &       storage load
+    SEDIT = 0x9b, // a,b     storage edit
+    SDEL = 0x9c,  // a       storage delete
+    SNEW = 0x9d,  // a,b,c   storage create
+    SRECV = 0x9e, // a,b     storage recover rent
     SRENT = 0x9f, // a,b   storage time rent
     AND = 0xa0,   // a,b+   and
     OR = 0xa1,    // a,b+   or
@@ -424,15 +421,20 @@ bytecode_metadata_define! {
 
     XLG        : 1, 1, 1,     local_logic
     XOP        : 1, 1, 0,     local_operand
-    ALLOC      : 1, 0, 0,     local_alloc
-    PUTX       : 0, 2, 0,     local_x_put
-    GETX       : 0, 1, 1,     local_x
-    PUT        : 1, 1, 0,     local_put
     GET        : 1, 0, 1,     local
+    PUT        : 1, 1, 0,     local_put
+    GETX       : 0, 1, 1,     local_x
+    PUTX       : 0, 2, 0,     local_x_put
+    ALLOC      : 1, 0, 0,     local_alloc
     GET0       : 0, 0, 1,     local_0
     GET1       : 0, 0, 1,     local_1
     GET2       : 0, 0, 1,     local_2
     GET3       : 0, 0, 1,     local_3
+
+    LOG1       : 0, 1, 0,     log_1
+    LOG2       : 0, 2, 0,     log_2
+    LOG3       : 0, 3, 0,     log_3
+    LOG4       : 0, 4, 0,     log_4
 
     HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
@@ -447,16 +449,14 @@ bytecode_metadata_define! {
     GGET       : 0, 1, 1,     global_get
     MPUT       : 0, 2, 0,     memory_put
     MGET       : 0, 1, 1,     memory_get
+    MTAKE      : 0, 1, 1,     memory_take
 
-    LOG1       : 0, 255, 0,   log_1
-    LOG2       : 0, 255, 0,   log_2
-    LOG3       : 0, 255, 0,   log_3
-    LOG4       : 0, 255, 0,   log_4
-
-    SREST      : 0, 1, 1,     storage_rest
+    SSTAT      : 0, 1, 1,     storage_stat
     SLOAD      : 0, 1, 1,     storage_load
+    SEDIT      : 0, 2, 0,     storage_edit
     SDEL       : 0, 1, 0,     storage_del
-    SSAVE      : 0, 2, 0,     storage_save
+    SNEW       : 0, 3, 0,     storage_new
+    SRECV      : 0, 2, 0,     storage_recv
     SRENT      : 0, 2, 0,     storage_rent
 
     AND        : 0, 2, 1,     and

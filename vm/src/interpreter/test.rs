@@ -104,6 +104,11 @@ mod bounds_tests {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, _addr: &ContractAddress) -> Option<ContractEdition> {
             None
         }
@@ -125,7 +130,7 @@ mod bounds_tests {
             Ok(())
         }
 
-        fn srest(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+        fn sinfo(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.srest_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
@@ -139,11 +144,22 @@ mod bounds_tests {
             }
         }
 
-        fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtErr {
+        fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtRes<i64> {
             itr_err_code!(ItrErrCode::StorageError)
         }
 
-        fn ssave(
+        fn snew(
+            &mut self,
+            _gst: &GasExtra,
+            _cadr: &Address,
+            _key: Value,
+            _val: Value,
+            _period: Value,
+        ) -> VmrtRes<i64> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn sedit(
             &mut self,
             _gst: &GasExtra,
             _cadr: &Address,
@@ -154,6 +170,16 @@ mod bounds_tests {
         }
 
         fn srent(
+            &mut self,
+            _gst: &GasExtra,
+            _cadr: &Address,
+            _key: Value,
+            _period: Value,
+        ) -> VmrtRes<i64> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn srecv(
             &mut self,
             _gst: &GasExtra,
             _cadr: &Address,
@@ -1053,7 +1079,7 @@ mod bounds_tests {
             let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
-            let codes = vec![Bytecode::SREST as u8, Bytecode::END as u8];
+            let codes = vec![Bytecode::SSTAT as u8, Bytecode::END as u8];
 
             execute_code(
                 &mut pc,
@@ -1084,7 +1110,7 @@ mod bounds_tests {
         );
 
         let gst = GasTable::new(1);
-        let expect = gst.gas(Bytecode::SREST as u8) + gst.gas(Bytecode::END as u8);
+        let expect = gst.gas(Bytecode::SSTAT as u8) + gst.gas(Bytecode::END as u8);
         assert_eq!(gas_u8, expect);
     }
 
@@ -2120,122 +2146,6 @@ mod bounds_tests {
         assert_eq!(gas_9, gas_8 + 1);
     }
 
-    #[test]
-    fn sdel_charges_storage_delete_min_dynamic_gas() {
-        use crate::rt::Bytecode;
-
-        struct SdelOkHost {
-            gas_remaining: i64,
-        }
-        impl TestGasHost for SdelOkHost {
-            fn set_test_gas(&mut self, gas: i64) {
-                self.gas_remaining = gas;
-            }
-            fn test_gas(&self) -> i64 {
-                self.gas_remaining
-            }
-        }
-        impl VmHost for SdelOkHost {
-            fn height(&self) -> u64 {
-                1
-            }
-            fn main_entry_bindings(&self) -> FrameBindings {
-                FrameBindings::root(Address::default(), Arc::<[Address]>::from(vec![]))
-            }
-            fn gas_remaining(&self) -> i64 {
-                self.gas_remaining
-            }
-            fn gas_charge(&mut self, gas: i64) -> VmrtErr {
-                if gas < 0 {
-                    return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", gas);
-                }
-                self.gas_remaining -= gas;
-                if self.gas_remaining < 0 {
-                    return itr_err_code!(ItrErrCode::OutOfGas);
-                }
-                Ok(())
-            }
-            fn contract_edition(&mut self, _addr: &ContractAddress) -> Option<ContractEdition> {
-                None
-            }
-            fn contract(&mut self, _addr: &ContractAddress) -> Option<ContractSto> {
-                None
-            }
-            fn action_call(&mut self, _kid: u16, _body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
-                unreachable!()
-            }
-            fn log_push(&mut self, _cadr: &Address, _items: Vec<Value>) -> VmrtErr {
-                unreachable!()
-            }
-            fn srest(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
-                unreachable!()
-            }
-            fn sload(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
-                unreachable!()
-            }
-            fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtErr {
-                Ok(())
-            }
-            fn ssave(
-                &mut self,
-                _gst: &GasExtra,
-                _cadr: &Address,
-                _key: Value,
-                _val: Value,
-            ) -> VmrtRes<i64> {
-                unreachable!()
-            }
-            fn srent(
-                &mut self,
-                _gst: &GasExtra,
-                _cadr: &Address,
-                _key: Value,
-                _period: Value,
-            ) -> VmrtRes<i64> {
-                unreachable!()
-            }
-        }
-
-        let mut pc: usize = 0;
-        let mut gas: i64 = 1000;
-        let gas_table = GasTable::new(1);
-        let gas_extra = GasExtra::new(1);
-        let mut host = SdelOkHost { gas_remaining: 0 };
-
-        let mut operands = Stack::new(256);
-        operands.push(Value::Bytes(vec![1u8])).unwrap();
-        let mut locals = Stack::new(256);
-        let mut heap = Heap::new(64);
-        let mut global_map = GKVMap::new(20);
-        let mut memory_map = CtcKVMap::new(12);
-        let cadr = ContractAddress::default();
-        let codes = vec![Bytecode::SDEL as u8, Bytecode::END as u8];
-
-        execute_code(
-            &mut pc,
-            &codes,
-            ExecCtx::main(),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &cadr,
-            &cadr,
-            &mut gas,
-            &gas_table,
-            &gas_extra,
-            &SpaceCap::new(1),
-            &mut global_map,
-            &mut memory_map,
-            &mut host,
-        )
-        .unwrap();
-
-        let expect = gas_table.gas(Bytecode::SDEL as u8)
-            + gas_table.gas(Bytecode::END as u8)
-            + gas_extra.storage_del();
-        assert_eq!(1000 - gas, expect);
-        assert_eq!(gas_extra.storage_del(), 16);
-    }
 
     #[test]
     fn keys_and_clone_compo_bytes_include_map_key_bytes() {

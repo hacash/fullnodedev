@@ -185,7 +185,12 @@ contract TestToken {
 
         // --- storage/memory/global/heap operations (runtime ops) ---
         var st_key = mkkey
-        storage_save(st_key, a8)
+        var st_old = storage_load(st_key)
+        if st_old is nil {
+            storage_new(st_key, a8, 100)
+        } else {
+            storage_edit(st_key, a8)
+        }
         var st_val = storage_load(st_key)
         assert st_val is not nil
         memory_put(0, a7)
@@ -322,7 +327,7 @@ contract TestToken {
         bls_from -= amount
         var bk_from = "b_" ++ addr_from
         if bls_from > 0 {
-            storage_save(bk_from, bls_from)
+            storage_edit(bk_from, bls_from)
         } else {
             storage_del(bk_from)
         }
@@ -331,7 +336,12 @@ contract TestToken {
         bls_to += amount
         var bk_to = "b_" ++ addr_to
         if bls_to > 0 {
-            storage_save(bk_to, bls_to)
+            var bk_to_old = storage_load(bk_to)
+            if bk_to_old is nil {
+                storage_new(bk_to, bls_to, 100)
+            } else {
+                storage_edit(bk_to, bls_to)
+            }
         } else {
             storage_del(bk_to)
         }

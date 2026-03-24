@@ -3774,7 +3774,7 @@ fn test_ast_real_maincall_and_p2sh_transfer_failure_isolated_by_outer_select() {
     let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1_730_000_301);
     tx.gas_max = Uint1::from(17);
     let mut env = Env::default();
-    env.block.height = 1;
+    env.block.height = protocol::upgrade::ONLINE_OPEN_HEIGHT;
     env.tx = create_tx_info(&tx);
     env.chain.fast_sync = false;
 
@@ -3825,7 +3825,7 @@ fn test_ast_deep_real_maincall_and_p2sh_transfer_commit_expected_balances() {
     let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1_730_000_302);
     tx.gas_max = Uint1::from(17);
     let mut env = Env::default();
-    env.block.height = 1;
+    env.block.height = protocol::upgrade::ONLINE_OPEN_HEIGHT;
     env.tx = create_tx_info(&tx);
     env.chain.fast_sync = false;
 

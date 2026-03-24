@@ -223,14 +223,14 @@ mod tests {
 
     #[test]
     fn irlist_allows_noret_when_not_required() {
-        // IRLIST: [P0, P0, LOG1] is a valid statement sequence (LOG1 consumes args and returns no value).
+        // IRLIST: [P0, LOG1(P0)] is a valid statement sequence (LOG1 consumes args and returns no value).
         let bytes: Vec<u8> = vec![
             IRLIST as u8,
             0x00,
-            0x03,
-            P0 as u8,
+            0x02,
             P0 as u8,
             LOG1 as u8,
+            P0 as u8,
         ];
         let mut seek = 0usize;
         let node = parse_ir_node_one(&bytes, &mut seek).expect("parse IRLIST");
@@ -240,15 +240,14 @@ mod tests {
 
     #[test]
     fn irlist_must_return_value_in_value_context() {
-        // RET requires its child to produce a value. If we put an IRLIST that ends with LOG1 (no retval) there, parsing must fail.
+        // RET requires its child to produce a value. If we put an IRLIST that ends with LOG1(P0) (no retval), parsing must fail.
         let bytes: Vec<u8> = vec![
             RET as u8,
             IRLIST as u8,
             0x00,
-            0x03,
-            P0 as u8,
-            P0 as u8,
+            0x01,
             LOG1 as u8,
+            P0 as u8,
         ];
         let mut seek = 0usize;
         assert!(parse_ir_node_one(&bytes, &mut seek).is_err());

@@ -283,6 +283,11 @@ mod loader_tests {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
             VMState::wrap(&mut self.state).contract_edition(addr)
         }
@@ -299,7 +304,7 @@ mod loader_tests {
             unreachable!()
         }
 
-        fn srest(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+        fn sinfo(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
 
@@ -307,15 +312,30 @@ mod loader_tests {
             unreachable!()
         }
 
-        fn sdel(&mut self, _: &Address, _: Value) -> VmrtErr {
+        fn sdel(&mut self, _: &Address, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
-        fn ssave(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn snew(
+            &mut self,
+            _: &GasExtra,
+            _: &Address,
+            _: Value,
+            _: Value,
+            _: Value,
+        ) -> VmrtRes<i64> {
+            unreachable!()
+        }
+
+        fn sedit(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
         fn srent(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+            unreachable!()
+        }
+
+        fn srecv(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
     }

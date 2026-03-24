@@ -19,8 +19,13 @@ mod storage {
             param { rent, num }
             assert num is not nil
             var k = "num"
-            storage_save(k, num)
-            storage_rent(k, rent)
+            var old = storage_load(k)
+            if old is nil {
+                storage_new(k, num, rent)
+            } else {
+                storage_edit(k, num)
+                storage_rent(k, rent)
+            }
             end
         "##;
 
@@ -28,22 +33,18 @@ mod storage {
             // get total
             var tt_k = "total_shares"
             var total = storage_load(tt_k)
-            if total is nil {
-                var exp = storage_rest(tt_k)
-                if exp is not nil {
-                    if exp < block_height() {
-                        throw "storage expire"
-                    }
-                }
-            }
             var tt_shares = 0 as u64
             if 8 == size(total) {
                 tt_shares = total as u64
             }
-            var ctxadr = buf_left_drop(4, balance(tx_main_address()))
+            var ctxadr = buf_left_drop(4, balance(tx_main_addr()))
             bind tt_sat = buf_left(8, ctxadr) as u64
             bind tt_zhu = hac_to_zhu(buf_left_drop(8, ctxadr))
-            storage_save(tt_k,   2000000)
+            if total is nil {
+                storage_new(tt_k, 2000000, 100)
+            } else {
+                storage_edit(tt_k, 2000000)
+            }
             return [tt_shares + 1000000, tt_sat + 100000000, tt_zhu + 10000000000]
         "##;
 
@@ -58,7 +59,7 @@ mod storage {
             var my_shares = storage_load(lq_k)
             if  my_shares is nil {
                 my_shares = 50000 as u64
-                storage_save(lq_k, my_shares)
+                storage_new(lq_k, my_shares, 100)
             }
             assert shares <= my_shares
             assert tt_shares>0 && my_shares <= tt_shares
@@ -79,14 +80,14 @@ mod storage {
             tt_shares -= shares
             var tt_k = "total_shares"
             if tt_shares > 0 {
-                storage_save(tt_k, tt_shares as u64)
+                storage_edit(tt_k, tt_shares as u64)
             } else {
                 storage_del(tt_k)
             }
             // update my shares
             my_shares -= shares
             if my_shares > 0 {
-                storage_save(lq_k, my_shares as u64)
+                storage_edit(lq_k, my_shares as u64)
             } else {
                 storage_del(lq_k)
             }

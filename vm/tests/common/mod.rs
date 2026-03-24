@@ -55,6 +55,11 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
+    fn gas_rebate(&mut self, gas: i64) -> VmrtRes<()> {
+        let _ = gas;
+        Ok(())
+    }
+
     fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
         vm::VMState::wrap(self.ctx.state()).contract_edition(addr)
     }
@@ -73,7 +78,7 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
-    fn srest(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+    fn sinfo(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
         let _ = (addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
@@ -83,12 +88,24 @@ impl VmHost for TestVmHost<'_> {
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn sdel(&mut self, addr: &FieldAddress, key: Value) -> VmrtRes<()> {
+    fn sdel(&mut self, addr: &FieldAddress, key: Value) -> VmrtRes<i64> {
         let _ = (addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn ssave(
+    fn snew(
+        &mut self,
+        gst: &GasExtra,
+        addr: &FieldAddress,
+        key: Value,
+        val: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
+        let _ = (gst, addr, key, val, period);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn sedit(
         &mut self,
         gst: &GasExtra,
         addr: &FieldAddress,
@@ -100,6 +117,17 @@ impl VmHost for TestVmHost<'_> {
     }
 
     fn srent(
+        &mut self,
+        gst: &GasExtra,
+        addr: &FieldAddress,
+        key: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
+        let _ = (gst, addr, key, period);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn srecv(
         &mut self,
         gst: &GasExtra,
         addr: &FieldAddress,

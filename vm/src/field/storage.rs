@@ -1,417 +1,145 @@
-/// Storage rent period, in blocks.
-///
-/// 300 blocks is treated as ~24h in this chain design note, so:
-/// - 100 blocks ~= 8h (work shift)
-/// - 3 shifts ~= 1 day
+/// One storage period in blocks.
 pub const STORAGE_PERIOD: u64 = 100;
-/// Maximum rent periods that a storage entry can hold.
-///
-/// With `STORAGE_PERIOD=100 blocks ~= 8h`, 30,000 periods ~= 10,000 days ~= 27.4 years (365-day year).
-pub const STORAGE_PERIOD_MAX: u64 = 30000;
-pub const STORAGE_SAVE_MAX: u64 = STORAGE_PERIOD * STORAGE_PERIOD_MAX;
-
-pub const STORAGE_RETAIN_MIN_PERIODS: u64 = 1;
-pub const STORAGE_RETAIN_MAX_PERIODS: u64 = 300; // 300 * 8h = 100 days
+pub const STORAGE_LIVE_MAX_PERIODS: u64 = 30000;
+pub const STORAGE_RECV_MAX_PERIODS: u64 = 3000;
+pub const STORAGE_LIVE_MAX_BLOCKS: u64 = STORAGE_PERIOD * STORAGE_LIVE_MAX_PERIODS;
+pub const STORAGE_RECV_MAX_BLOCKS: u64 = STORAGE_PERIOD * STORAGE_RECV_MAX_PERIODS;
+pub const STORAGE_UNIT_BASE_BYTES: u64 = 16;
+pub const STORAGE_NEW_SLOT_FEE: i64 = 2048;
 
 /// Maximum bytes allowed for a storage key (excluding address prefix).
-///
-/// This bounds per-op hashing/copy work even when key-hash is not separately metered.
 pub const STORAGE_KEY_MAX_BYTES: usize = 256;
 
-// Storage value with a bounded lease + grace window. NOTE: No backward-compat parsing is provided here; the serialized layout is consensus-critical.
 combi_struct! { ValueSto,
-    born: BlockHeight
-    expire: BlockHeight
+    charge: BlockHeight
+    live_credit: Uint8
+    recover_credit: Uint8
     data: Value
 }
 
 impl ValueSto {
-    #[inline(always)]
-    fn lease_due(base: u64, blocks: u64) -> u64 {
-        base.saturating_add(blocks).min(BlockHeight::MAX)
-    }
-
-    fn new(chei: u64, v: Value) -> Self {
+    fn new(chei: u64, data: Value, live_credit: u64, recover_credit: u64) -> Self {
         Self {
-            born: BlockHeight::from(chei),
-            expire: BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD)),
-            data: v,
+            charge: BlockHeight::from(chei),
+            live_credit: Uint8::from(live_credit),
+            recover_credit: Uint8::from(recover_credit),
+            data,
         }
     }
 
-    fn lifetime_periods(&self) -> u64 {
-        let born = self.born.uint();
-        let exp = self.expire.uint();
-        let life_blocks = exp.saturating_sub(born);
-        let mut periods = life_blocks / STORAGE_PERIOD;
-        if periods < 1 {
-            periods = 1;
-        }
-        periods
+    #[inline(always)]
+    fn unit_for(v: &Value) -> VmrtRes<u64> {
+        Ok(v.can_get_size()? as u64 + STORAGE_UNIT_BASE_BYTES)
     }
 
-    fn retain_periods(&self) -> u64 {
-        let lp = self.lifetime_periods();
-        let mut rp = lp / 3;
-        if rp < STORAGE_RETAIN_MIN_PERIODS {
-            rp = STORAGE_RETAIN_MIN_PERIODS;
-        }
-        if rp > STORAGE_RETAIN_MAX_PERIODS {
-            rp = STORAGE_RETAIN_MAX_PERIODS;
-        }
-        rp
+    #[inline(always)]
+    fn unit(&self) -> VmrtRes<u64> {
+        Self::unit_for(&self.data)
     }
 
-    fn max_expire(&self) -> u64 {
-        Self::lease_due(self.born.uint(), STORAGE_SAVE_MAX)
+    #[inline(always)]
+    fn is_active(&self) -> bool {
+        self.live_credit.uint() > 0
     }
 
-    // return (is_expire, is_delete, expire_height) Boundary semantics are strict: - `chei == expire` -> NOT expired yet (still readable/writable; rest=0) - `chei == expire + retain_blocks` -> NOT deleted yet
-    fn check(&self, chei: u64) -> (bool, bool, u64) {
-        let due = self.expire.uint();
-        let isexp = chei > due;
-        let retain_blocks = self.retain_periods().saturating_mul(STORAGE_PERIOD);
-        let isdel = chei > due.saturating_add(retain_blocks);
-        (isexp, isdel, due)
+    #[inline(always)]
+    fn is_recoverable(&self) -> bool {
+        self.live_credit.uint() == 0 && self.recover_credit.uint() > 0
     }
 
-    fn update(mut self, chei: u64, v: Value, vbasesz: i64) -> Self {
-        let (is_expire, _, due) = self.check(chei);
-        // expired entry is treated as a fresh save (new born + minimum lease)
-        if is_expire {
-            self.data = v;
-            self.born = BlockHeight::from(chei);
-            self.expire = BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD));
-            return self;
-        }
-        // update
-        let (new_len, old_len) = (v.can_get_size(), self.data.can_get_size());
-        let (new_len, old_len) = match (new_len, old_len) {
-            (Ok(new_len), Ok(old_len)) => (new_len as u64, old_len as u64),
-            _ => {
-                // should not happen for storable values, but keep consensus safe
-                self.data = v;
-                self.born = BlockHeight::from(chei);
-                self.expire = BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD));
-                return self;
-            }
-        };
-        let vbasesz = vbasesz.max(0) as u64;
-        let old_total = old_len.saturating_add(vbasesz);
-        let new_total = new_len.saturating_add(vbasesz);
-        if old_total == 0 || new_total == 0 {
-            // avoid divide-by-zero; treat as fresh save with minimum lease
-            self.data = v;
-            self.born = BlockHeight::from(chei);
-            self.expire = BlockHeight::from(Self::lease_due(chei, STORAGE_PERIOD));
-            return self;
-        }
-        if new_total != old_total {
-            // Maintain "prepaid rent" proportionality: remaining_time_new = remaining_time_old * old_total_size / new_total_size
-            let rest = due.saturating_sub(chei) as u128;
-            let old_total = old_total as u128;
-            let new_total = new_total as u128;
-            let mut new_rest = (rest.saturating_mul(old_total) / new_total) as u64;
-            if new_rest > STORAGE_SAVE_MAX {
-                new_rest = STORAGE_SAVE_MAX;
-            }
-            let exp = Self::lease_due(chei, new_rest).min(self.max_expire());
-            self.expire = BlockHeight::from(exp);
-        }
-        self.data = v;
-        self
+    #[inline(always)]
+    fn is_absent(&self) -> bool {
+        self.live_credit.uint() == 0 && self.recover_credit.uint() == 0
     }
 
-    // return gas cost
-    fn rent(&mut self, gst: &GasExtra, chei: u64, v: Value) -> VmrtRes<i64> {
-        let (_, is_delete, _) = self.check(chei);
-        if is_delete {
-            return itr_err_fmt!(StorageError, "renewal failed, data invalid");
+    fn settle(&mut self, curhei: u64) -> VmrtErr {
+        let unit = self.unit()?;
+        if unit == 0 {
+            self.charge = BlockHeight::from(curhei);
+            return Ok(());
         }
-        let period = v.extract_u128().map_err(|_| {
-            ItrErr::new(
-                StorageError,
-                &format!("period value {:?} is not uint type", v),
-            )
-        })?;
-        if period < 1 {
-            return itr_err_fmt!(StorageError, "period min is 1");
+        let old = self.charge.uint();
+        if curhei <= old {
+            return Ok(());
         }
-        if period > u16::MAX as u128 {
-            return itr_err_fmt!(StorageError, "period value overflow");
+        let elapsed = (curhei - old) as u128;
+        let unit = unit as u128;
+        let mut burn = elapsed.saturating_mul(unit);
+
+        let mut live = self.live_credit.uint() as u128;
+        if burn >= live {
+            burn -= live;
+            live = 0;
+        } else {
+            live -= burn;
+            burn = 0;
         }
-        let period = period as u64;
-        if period > STORAGE_PERIOD_MAX {
-            return itr_err_fmt!(
-                StorageError,
-                "period value max is {} but got {}",
-                STORAGE_PERIOD_MAX,
-                period
-            );
+
+        let mut recover = self.recover_credit.uint() as u128;
+        if burn >= recover {
+            recover = 0;
+        } else {
+            recover -= burn;
         }
-        // save (cap by max lease time from born)
-        let add_blocks = period
-            .checked_mul(STORAGE_PERIOD)
-            .ok_or_else(|| ItrErr::new(StorageError, "rent period overflow"))?;
-        // Renewal starts from current height once expired, otherwise from current expire.
-        let renew_from = self.expire.uint().max(chei);
-        let exp = renew_from
-            .checked_add(add_blocks)
-            .ok_or_else(|| ItrErr::new(StorageError, "rent expire overflow"))?;
-        if exp > self.max_expire() {
-            return itr_err_fmt!(
-                StorageError,
-                "rent overflow, max expire {} but got {}",
-                self.max_expire(),
-                exp
-            );
-        }
-        self.expire = BlockHeight::from(exp);
-        // gas
-        let vbasesz = gst.storege_value_base_size.max(0);
-        let unit = (self.data.can_get_size().unwrap_or(0) as i64).saturating_add(vbasesz);
-        let gas = unit.saturating_mul(period as i64);
-        Ok(gas)
+
+        self.live_credit = Uint8::from(live.min(u64::MAX as u128) as u64);
+        self.recover_credit = Uint8::from(recover.min(u64::MAX as u128) as u64);
+        self.charge = BlockHeight::from(curhei);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn live_rest_blocks(&self) -> VmrtRes<u64> {
+        let unit = self.unit()?;
+        Ok(self.live_credit.uint() / unit)
+    }
+
+    #[inline(always)]
+    fn recover_rest_blocks(&self) -> VmrtRes<u64> {
+        let unit = self.unit()?;
+        Ok(self.recover_credit.uint() / unit)
     }
 }
 
-#[cfg(test)]
-mod storage_param_tests {
-    use super::*;
-    use testkit::sim::state::FlatMemState as StateMem;
-
-    fn test_contract() -> ContractAddress {
-        let base = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
-        ContractAddress::calculate(&base, &Uint4::from(1))
+#[inline(always)]
+fn parse_period(v: Value, max_period: u64) -> VmrtRes<u64> {
+    let period = v.extract_u128().map_err(|_| {
+        ItrErr::new(
+            StorageError,
+            &format!("period value {:?} is not uint type", v),
+        )
+    })?;
+    if period < 1 {
+        return itr_err_fmt!(StoragePeriodErr, "period min is 1");
     }
-
-    #[test]
-    fn period_is_8_hours_and_max_is_bounded() {
-        assert_eq!(STORAGE_PERIOD, 100);
-        assert_eq!(STORAGE_PERIOD_MAX, 30000);
-        assert_eq!(STORAGE_SAVE_MAX, STORAGE_PERIOD * STORAGE_PERIOD_MAX);
-        assert_eq!(STORAGE_RETAIN_MAX_PERIODS, 300);
-    }
-
-    #[test]
-    fn retain_periods_is_lifetime_div_3_clamped() {
-        let mut v = ValueSto::new(0, Value::Nil);
-        // lifetime=1 period -> retain clamped to 1
-        assert_eq!(v.lifetime_periods(), 1);
-        assert_eq!(v.retain_periods(), 1);
-
-        // lifetime=3 periods -> retain=1
-        v.born = BlockHeight::from(0);
-        v.expire = BlockHeight::from(3 * STORAGE_PERIOD);
-        assert_eq!(v.lifetime_periods(), 3);
-        assert_eq!(v.retain_periods(), 1);
-
-        // lifetime=30 periods -> retain=10
-        v.expire = BlockHeight::from(30 * STORAGE_PERIOD);
-        assert_eq!(v.retain_periods(), 10);
-
-        // lifetime >= 1 year (~1095 periods) -> retain capped at 300 (=100 days)
-        v.expire = BlockHeight::from(1095 * STORAGE_PERIOD);
-        assert_eq!(v.retain_periods(), 300);
-    }
-
-    #[test]
-    fn rent_cannot_exceed_max_lease() {
-        let gst = GasExtra::new(1);
-        let mut v = ValueSto::new(0, Value::Nil);
-        // rent to exactly the max `ValueSto::new` already includes the minimum 1-period lease, so we can only add `STORAGE_PERIOD_MAX - 1` more periods to reach the maximum.
-        let p = Value::U64((STORAGE_PERIOD_MAX - 1) as u64);
-        v.rent(&gst, 0, p).unwrap();
-        assert_eq!(v.expire.uint(), STORAGE_SAVE_MAX);
-
-        // one more period must fail
-        let err = v.rent(&gst, 0, Value::U64(1)).unwrap_err().to_string();
-        assert!(err.contains("rent overflow"));
-    }
-
-    #[test]
-    fn lease_due_near_blockheight_max_saturates_instead_of_wrapping() {
-        let near = BlockHeight::MAX - 3;
-
-        let fresh = ValueSto::new(near, Value::U8(1));
-        assert_eq!(fresh.expire.uint(), BlockHeight::MAX);
-
-        let mut expired = ValueSto::new(0, Value::U8(1));
-        expired.expire = BlockHeight::from(0);
-        let refreshed = expired.update(near, Value::U8(2), 0);
-        assert_eq!(refreshed.expire.uint(), BlockHeight::MAX);
-
-        let mut scaled = ValueSto::new(BlockHeight::MAX - 100, Value::Bytes(vec![1, 2, 3, 4]));
-        scaled.expire = BlockHeight::from(BlockHeight::MAX - 1);
-        let scaled = scaled.update(BlockHeight::MAX - 2, Value::Bytes(vec![1]), 0);
-        assert!(scaled.expire.uint() >= BlockHeight::MAX - 2);
-    }
-
-    #[test]
-    fn expire_and_delete_boundary_is_strictly_greater() {
-        let v = ValueSto::new(0, Value::Nil);
-        // new value: due=100, retain=1 period=100 blocks
-        let (is_expire, is_delete, due) = v.check(STORAGE_PERIOD);
-        assert_eq!(due, STORAGE_PERIOD);
-        assert!(!is_expire);
-        assert!(!is_delete);
-
-        let (is_expire, is_delete, _) = v.check(STORAGE_PERIOD + 1);
-        assert!(is_expire);
-        assert!(!is_delete);
-
-        let (is_expire, is_delete, _) = v.check(STORAGE_PERIOD * 2);
-        assert!(is_expire);
-        assert!(!is_delete);
-
-        let (_, is_delete, _) = v.check(STORAGE_PERIOD * 2 + 1);
-        assert!(is_delete);
-    }
-
-    #[test]
-    fn srest_returns_zero_at_due_boundary_then_nil_after_expire() {
-        let gst = GasExtra::new(1);
-        let cadr = test_contract();
-        let mut sta = StateMem::default();
-        let mut st = crate::VMState::wrap(&mut sta);
-
-        let k = Value::Bytes(vec![1u8; 1]);
-        st.ssave(&gst, 0, &cadr, k.clone(), Value::U8(7)).unwrap();
-
-        let rest_due = st.srest(STORAGE_PERIOD, &cadr, &k).unwrap();
-        assert_eq!(rest_due, Value::U64(0));
-
-        let rest_expired = st.srest(STORAGE_PERIOD + 1, &cadr, &k).unwrap();
-        assert_eq!(rest_expired, Value::Nil);
-    }
-
-    #[test]
-    fn srent_reclaims_deleted_entry() {
-        let gst = GasExtra::new(1);
-        let cadr = test_contract();
-        let mut sta = StateMem::default();
-        let mut st = crate::VMState::wrap(&mut sta);
-
-        let k = Value::Bytes(vec![3u8; 1]);
-        st.ssave(&gst, 0, &cadr, k.clone(), Value::U8(9)).unwrap();
-        let sk = crate::VMState::skey(&cadr, &k).unwrap();
-        assert!(st.ctrtkvdb(&sk).is_some());
-
-        let err = st
-            .srent(&gst, STORAGE_PERIOD * 2 + 1, &cadr, k, Value::U8(1))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("StorageExpired"));
-        assert!(
-            st.ctrtkvdb(&sk).is_none(),
-            "deleted key should be reclaimed"
+    if period > max_period as u128 {
+        return itr_err_fmt!(
+            StoragePeriodErr,
+            "period value max is {} but got {}",
+            max_period,
+            period
         );
     }
+    Ok(period as u64)
+}
 
-    #[test]
-    fn ssave_rejects_value_larger_than_spacecap() {
-        let gst = GasExtra::new(1);
-        let cadr = test_contract();
-        let mut sta = StateMem::default();
-        let mut st = crate::VMState::wrap(&mut sta);
-
-        let max = SpaceCap::new(1).value_size;
-        let oversized = Value::Bytes(vec![0u8; max + 1]);
-        let err = st
-            .ssave(&gst, 1, &cadr, Value::Bytes(vec![2u8]), oversized)
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("StorageValSizeErr"));
+#[inline(always)]
+fn period_credit(unit: u64, period: u64) -> VmrtRes<u64> {
+    let blocks = period
+        .checked_mul(STORAGE_PERIOD)
+        .ok_or_else(|| ItrErr::new(StorageError, "period blocks overflow"))?;
+    let credit = (unit as u128)
+        .checked_mul(blocks as u128)
+        .ok_or_else(|| ItrErr::new(StorageError, "credit overflow"))?;
+    if credit > u64::MAX as u128 {
+        return itr_err_fmt!(StorageError, "credit overflow");
     }
+    Ok(credit as u64)
+}
 
-    #[test]
-    fn ssave_charges_key_create_fee_once_and_treats_expired_as_new() {
-        let gst = GasExtra::new(1);
-        let cadr = test_contract();
-        let mut sta = StateMem::default();
-        let mut st = crate::VMState::wrap(&mut sta);
-
-        // force key hashing (addr+key > 32 bytes => sha3)
-        let k = Value::Bytes(vec![7u8; 20]);
-        let v = Value::Bytes(vec![0u8; 10]);
-        let g1 = st.ssave(&gst, 0, &cadr, k.clone(), v.clone()).unwrap();
-        let g2 = st.ssave(&gst, 1, &cadr, k.clone(), v.clone()).unwrap();
-        assert!(g1 > g2, "first write should include key-create fee");
-
-        // Expire it, then write again: should be treated as (re)create and charge key-create fee.
-        {
-            let sk = crate::VMState::skey(&cadr, &k).unwrap();
-            let mut obj = st.ctrtkvdb(&sk).unwrap();
-            obj.expire = BlockHeight::from(0);
-            st.ctrtkvdb_set(&sk, &obj);
-        }
-        let g3 = st.ssave(&gst, 2, &cadr, k, v).unwrap();
-        assert!(g3 >= g1, "expired write should be priced as create");
-    }
-
-    #[test]
-    fn ssave_pricing_components_match_doc_formula() {
-        let gst = GasExtra::new(1);
-        let cadr = test_contract();
-        let mut sta = StateMem::default();
-        let mut st = crate::VMState::wrap(&mut sta);
-
-        let key = Value::Bytes(vec![0x11u8]);
-        let val = Value::Bytes(vec![0x22u8; 80]);
-        let one_period_rent = gst.storege_value_base_size + 80i64;
-        let write_gas = gst.storage_write(80);
-
-        // New key: write + one-period rent + key create fee.
-        let g_new = st.ssave(&gst, 0, &cadr, key.clone(), val.clone()).unwrap();
-        assert_eq!(g_new, write_gas + one_period_rent + gst.storage_key_cost);
-
-        // Existing key at due boundary rest=1 period -> no auto-renew.
-        let g_exist_no_renew = st.ssave(&gst, 0, &cadr, key.clone(), val.clone()).unwrap();
-        assert_eq!(g_exist_no_renew, write_gas);
-
-        // Existing key with remaining lease < 1 period -> auto-renew adds one-period rent.
-        let g_exist_with_renew = st.ssave(&gst, 1, &cadr, key.clone(), val.clone()).unwrap();
-        assert_eq!(g_exist_with_renew, write_gas + one_period_rent);
-
-        // Expired key is treated as recreate.
-        let g_expired = st.ssave(&gst, STORAGE_PERIOD + 2, &cadr, key, val).unwrap();
-        assert_eq!(
-            g_expired,
-            write_gas + one_period_rent + gst.storage_key_cost
-        );
-    }
-
-    #[test]
-    fn srent_gas_matches_period_formula() {
-        let gst = GasExtra::new(1);
-        let cadr = test_contract();
-        let mut sta = StateMem::default();
-        let mut st = crate::VMState::wrap(&mut sta);
-
-        let key = Value::Bytes(vec![0x44u8]);
-        let val = Value::Bytes(vec![0x55u8; 40]);
-        st.ssave(&gst, 0, &cadr, key.clone(), val).unwrap();
-
-        let gas = st.srent(&gst, 0, &cadr, key, Value::U8(3)).unwrap();
-        assert_eq!(gas, (gst.storege_value_base_size + 40i64) * 3);
-    }
-
-    #[test]
-    fn srent_period_requires_strict_uint_type() {
-        let gst = GasExtra::new(1);
-        let cadr = test_contract();
-        let mut sta = StateMem::default();
-        let mut st = crate::VMState::wrap(&mut sta);
-
-        let key = Value::Bytes(vec![0x66u8]);
-        st.ssave(&gst, 0, &cadr, key.clone(), Value::U8(1)).unwrap();
-
-        let err = st
-            .srent(&gst, 0, &cadr, key, Value::Bool(true))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("not uint type"));
-    }
+#[inline(always)]
+fn u64_to_i64_sat(v: u64) -> i64 {
+    v.min(i64::MAX as u64) as i64
 }
 
 /* * */
@@ -450,57 +178,58 @@ impl VMState<'_> {
         }
         let mut k = vec![cadr.to_vec(), k].concat();
         if k.len() > Hash::SIZE {
-            // This sha3 cost is hidden from users and is not linked to the user-facing gas model.
             k = sys::sha3(k).to_vec();
         }
         Ok(ValueKey::from(k))
     }
 
-    /* if not find return Nil */
-    fn sread(&mut self, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Option<ValueSto>> {
-        let k = Self::skey(cadr, k)?;
-        let Some(v) = self.ctrtkvdb(&k) else {
-            return Ok(None); // not find
+    fn sfetch(&mut self, curhei: u64, sk: &ValueKey) -> VmrtRes<Option<ValueSto>> {
+        let Some(mut v) = self.ctrtkvdb(sk) else {
+            return Ok(None);
         };
-        let (is_expire, is_delete, _) = v.check(curhei);
-        if is_delete {
-            // Maintenance-only cleanup for over-retention keys; no external billing side effects.
-            // This is internal state housekeeping and is not tied to user gas charges.
-            self.ctrtkvdb_del(&k);
-            return Ok(None); // over delete
+        v.settle(curhei)?;
+        if v.is_absent() {
+            self.ctrtkvdb_del(sk);
+            return Ok(None);
         }
-        if is_expire {
-            return Ok(None); // time expire
-        }
+        self.ctrtkvdb_set(sk, &v);
         Ok(Some(v))
     }
 
-    /* if not find return Nil */
-    fn sload(&mut self, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
-        let Some(v) = self.sread(curhei, cadr, k)? else {
+    fn sinfo(&mut self, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
+        let sk = Self::skey(cadr, k)?;
+        let Some(v) = self.sfetch(curhei, &sk)? else {
             return Ok(Value::Nil);
         };
+        let live = v.live_rest_blocks()?;
+        let recover = v.recover_rest_blocks()?;
+        Value::pack_call_args([Value::U64(live), Value::U64(recover)])
+    }
+
+    fn sload(&mut self, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
+        let sk = Self::skey(cadr, k)?;
+        let Some(v) = self.sfetch(curhei, &sk)? else {
+            return Ok(Value::Nil);
+        };
+        if v.is_recoverable() {
+            return itr_err_code!(StorageRecoverable);
+        }
         Ok(v.data)
     }
 
-    /* if not find or expire return Nil. note: at exact due height rest=0 (not expired yet), expiration starts at due+1. */
-    fn srest(&mut self, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
-        let Some(v) = self.sread(curhei, cadr, k)? else {
-            return Ok(Value::Nil);
-        };
-        Ok(Value::U64(v.expire.uint() - curhei))
-    }
-
-    /* read old value */
-    fn ssave(
+    fn snew(
         &mut self,
-        gst: &GasExtra,
+        _gst: &GasExtra,
         curhei: u64,
         cadr: &Address,
         k: Value,
         v: Value,
+        p: Value,
     ) -> VmrtRes<i64> {
-        v.check_scalar()?; // check can store
+        if matches!(v, Value::Nil) {
+            return itr_err_code!(StorageNilNotAllowed);
+        }
+        v.check_scalar()?;
         let val_len = v.can_get_size()? as usize;
         let max_val = SpaceCap::new(curhei).value_size;
         if val_len > max_val {
@@ -511,94 +240,147 @@ impl VMState<'_> {
                 val_len
             );
         }
-
-        let k = Self::skey(cadr, &k)?;
-        let mut extra_gas = gst.storage_write(val_len);
-        let base_size = gst.storege_value_base_size.max(0);
-        let one_period_rent = (val_len as i64).saturating_add(base_size);
-        // Key creation fee is charged only when (re)creating a key.
-        let key_create_fee = gst.storage_key_cost.max(0);
-
-        let mut old_valid = false;
-        let old = match self.ctrtkvdb(&k) {
-            Some(vold) => {
-                let (is_expire, is_delete, _) = vold.check(curhei);
-                if is_delete {
-                    // over grace window: treat as non-existent (and reclaim space eagerly)
-                    self.ctrtkvdb_del(&k);
-                    None
-                } else if is_expire {
-                    // expired is treated as non-existent for SSAVE pricing semantics
-                    None
-                } else {
-                    old_valid = true;
-                    Some(vold)
-                }
-            }
-            None => None,
-        };
-
-        if !old_valid {
-            // (Re)create: charge one period rent + key creation fee.
-            extra_gas = extra_gas
-                .saturating_add(one_period_rent)
-                .saturating_add(key_create_fee);
+        let period = parse_period(p, STORAGE_LIVE_MAX_PERIODS)?;
+        let sk = Self::skey(cadr, &k)?;
+        if self.sfetch(curhei, &sk)?.is_some() {
+            return itr_err_code!(StorageKeyExists);
         }
-
-        let mut vobj = match old {
-            Some(vold) => vold.update(curhei, v, gst.storege_value_base_size),
-            None => ValueSto::new(curhei, v),
-        };
-
-        // If remaining lease is less than 1 period, SSAVE performs an auto-renew to 1 period. This must not exceed the max lease cap.
-        if old_valid {
-            let due = vobj.expire.uint();
-            let rest = due.saturating_sub(curhei);
-            if rest < STORAGE_PERIOD {
-                let max_exp = vobj.max_expire();
-                let want = curhei.saturating_add(STORAGE_PERIOD);
-                if want > max_exp {
-                    return itr_err_fmt!(
-                        StorageError,
-                        "ssave renew overflow, max expire {} but got {}",
-                        max_exp,
-                        want
-                    );
-                }
-                extra_gas = extra_gas.saturating_add(one_period_rent);
-                vobj.expire = BlockHeight::from(want);
-            }
-        }
-        self.ctrtkvdb_set(&k, &vobj);
-        Ok(extra_gas)
+        let unit = val_len as u64 + STORAGE_UNIT_BASE_BYTES;
+        let live_credit = period_credit(unit, period)?;
+        let vobj = ValueSto::new(curhei, v, live_credit, 0);
+        self.ctrtkvdb_set(&sk, &vobj);
+        let gas = STORAGE_NEW_SLOT_FEE
+            .saturating_add(u64_to_i64_sat(unit).saturating_mul(2))
+            .saturating_add(u64_to_i64_sat(unit).saturating_mul(period as i64));
+        Ok(gas)
     }
 
-    // return gas use
+    fn sedit(
+        &mut self,
+        _gst: &GasExtra,
+        curhei: u64,
+        cadr: &Address,
+        k: Value,
+        v: Value,
+    ) -> VmrtRes<i64> {
+        if matches!(v, Value::Nil) {
+            return itr_err_code!(StorageNilNotAllowed);
+        }
+        v.check_scalar()?;
+        let val_len = v.can_get_size()? as usize;
+        let max_val = SpaceCap::new(curhei).value_size;
+        if val_len > max_val {
+            return itr_err_fmt!(
+                StorageValSizeErr,
+                "storage value too large, max {} bytes but got {}",
+                max_val,
+                val_len
+            );
+        }
+        let sk = Self::skey(cadr, &k)?;
+        let Some(mut old) = self.sfetch(curhei, &sk)? else {
+            return itr_err_code!(StorageKeyNotFind);
+        };
+        if !old.is_active() {
+            return itr_err_code!(StorageRecoverable);
+        }
+        old.data = v;
+        old.charge = BlockHeight::from(curhei);
+        self.ctrtkvdb_set(&sk, &old);
+        let unit = val_len as u64 + STORAGE_UNIT_BASE_BYTES;
+        Ok(u64_to_i64_sat(unit).saturating_mul(2))
+    }
+
     fn srent(
         &mut self,
-        gst: &GasExtra,
+        _gst: &GasExtra,
         curhei: u64,
         cadr: &Address,
         k: Value,
         p: Value,
     ) -> VmrtRes<i64> {
-        let k = Self::skey(cadr, &k)?;
-        let Some(mut v) = self.ctrtkvdb(&k) else {
+        let period = parse_period(p, STORAGE_LIVE_MAX_PERIODS)?;
+        let sk = Self::skey(cadr, &k)?;
+        let Some(mut v) = self.sfetch(curhei, &sk)? else {
             return itr_err_code!(StorageKeyNotFind);
         };
-        let (_, is_delete, _) = v.check(curhei);
-        if is_delete {
-            self.ctrtkvdb_del(&k);
-            return itr_err_fmt!(StorageExpired, "data deleted");
+        let unit = v.unit()?;
+        let add_credit = period_credit(unit, period)?;
+        let add_blocks = period
+            .checked_mul(STORAGE_PERIOD)
+            .ok_or_else(|| ItrErr::new(StorageError, "rent blocks overflow"))?;
+        let cur_blocks = v.live_credit.uint() / unit;
+        let next_blocks = cur_blocks
+            .checked_add(add_blocks)
+            .ok_or_else(|| ItrErr::new(StorageError, "rent overflow"))?;
+        if next_blocks > STORAGE_LIVE_MAX_BLOCKS {
+            return itr_err_fmt!(
+                StoragePeriodErr,
+                "live periods max is {}",
+                STORAGE_LIVE_MAX_PERIODS
+            );
         }
-        let gas = v.rent(gst, curhei, p)?;
-        self.ctrtkvdb_set(&k, &v);
-        Ok(gas)
+        let next_credit = v
+            .live_credit
+            .uint()
+            .checked_add(add_credit)
+            .ok_or_else(|| ItrErr::new(StorageError, "rent credit overflow"))?;
+        v.live_credit = Uint8::from(next_credit);
+        v.charge = BlockHeight::from(curhei);
+        self.ctrtkvdb_set(&sk, &v);
+        Ok(u64_to_i64_sat(unit).saturating_mul(period as i64))
     }
 
-    fn sdel(&mut self, cadr: &Address, k: Value) -> VmrtErr {
-        let k = Self::skey(cadr, &k)?;
-        self.ctrtkvdb_del(&k);
-        Ok(())
+    fn srecv(
+        &mut self,
+        _gst: &GasExtra,
+        curhei: u64,
+        cadr: &Address,
+        k: Value,
+        p: Value,
+    ) -> VmrtRes<i64> {
+        let period = parse_period(p, STORAGE_RECV_MAX_PERIODS)?;
+        let sk = Self::skey(cadr, &k)?;
+        let Some(mut v) = self.sfetch(curhei, &sk)? else {
+            return itr_err_code!(StorageKeyNotFind);
+        };
+        let unit = v.unit()?;
+        let add_credit = period_credit(unit, period)?;
+        let add_blocks = period
+            .checked_mul(STORAGE_PERIOD)
+            .ok_or_else(|| ItrErr::new(StorageError, "recover blocks overflow"))?;
+        let cur_blocks = v.recover_credit.uint() / unit;
+        let next_blocks = cur_blocks
+            .checked_add(add_blocks)
+            .ok_or_else(|| ItrErr::new(StorageError, "recover overflow"))?;
+        if next_blocks > STORAGE_RECV_MAX_BLOCKS {
+            return itr_err_fmt!(
+                StoragePeriodErr,
+                "recover periods max is {}",
+                STORAGE_RECV_MAX_PERIODS
+            );
+        }
+        let next_credit = v
+            .recover_credit
+            .uint()
+            .checked_add(add_credit)
+            .ok_or_else(|| ItrErr::new(StorageError, "recover credit overflow"))?;
+        v.recover_credit = Uint8::from(next_credit);
+        v.charge = BlockHeight::from(curhei);
+        self.ctrtkvdb_set(&sk, &v);
+        Ok(u64_to_i64_sat(unit)
+            .saturating_mul(period as i64)
+            .saturating_div(3))
+    }
+
+    fn sdel(&mut self, curhei: u64, cadr: &Address, k: Value) -> VmrtRes<i64> {
+        let sk = Self::skey(cadr, &k)?;
+        let Some(mut v) = self.ctrtkvdb(&sk) else {
+            return Ok(0);
+        };
+        v.settle(curhei)?;
+        let refund = u64_to_i64_sat(v.live_credit.uint().saturating_div(STORAGE_PERIOD));
+        self.ctrtkvdb_del(&sk);
+        Ok(refund)
     }
 }

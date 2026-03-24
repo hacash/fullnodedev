@@ -668,26 +668,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     gas_add!(resource, raw, unpack_seq(i, locals, items, gst, cap)?);
                     ops.pop()?; // pop argv wrapper after unpack
                 }
-                // heap
-                HGROW => gas_add!(resource, raw, heap.grow(pu8!())?),
-                HWRITE => hwrite!(ops_pop_to_u16!()),
-                HREAD => {
-                    let n = ops.pop()?;
-                    let len = n.extract_u16()? as usize;
-                    gas_resource!(heap_read, len);
-                    let peek = ops.peek()?;
-                    *peek = heap.read(peek, n)?.valid(cap)?;
-                }
-                HWRITEX => hwrite!(pu8_as_u16!()),
-                HWRITEXL => hwrite!(pu16!()),
-                HREADU => hread_push!(heap.read_u(pu8!())?),
-                HREADUL => hread_push!(heap.read_ul(pu16!())?),
-                HSLICE => {
-                    let p = ops.pop()?;
-                    let peek = ops.peek()?;
-                    *peek = heap.slice(p, peek)?;
-                }
-                // locals & heap & global_map & memory_map
+                // locals, logs, heap, global_map & memory_map
                 XLG => {
                     let mark = pu8!();
                     let (opt, idx) = decode_local_logic_mark(mark);
@@ -699,7 +680,13 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     local_logic(mark, locals, ops.peek()?)?;
                 }
                 XOP => local_operand(pu8!(), locals, ops.pop()?)?,
-                ALLOC => gas_add!(resource, raw, gst.one_local_alloc * locals.alloc(pu8!())? as i64),
+                GET => local_get!(pu8!()),
+                PUT => {
+                    let v = ops.pop()?.valid(cap)?;
+                    let vlen = v.val_size();
+                    gas_resource!(stack_write, vlen);
+                    locals.save(pu8_as_u16!(), v)?;
+                }
                 GETX => {
                     let v = locals.load(ops_peek_to_u16!() as usize)?.valid(cap)?;
                     gas_resource!(stack_copy, v.dup_size());
@@ -711,20 +698,33 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     gas_resource!(stack_write, vlen);
                     locals.save(ops_pop_to_u16!(), v)?;
                 }
-                PUT => {
-                    let v = ops.pop()?.valid(cap)?;
-                    let vlen = v.val_size();
-                    gas_resource!(stack_write, vlen);
-                    locals.save(pu8_as_u16!(), v)?;
-                }
-                GET => local_get!(pu8!()),
+                ALLOC => gas_add!(resource, raw, gst.one_local_alloc * locals.alloc(pu8!())? as i64),
                 GET0 | GET1 | GET2 | GET3 => local_get!(instbyte - GET0 as u8),
+                LOG1 | LOG2 | LOG3 | LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
+                HSLICE => {
+                    let p = ops.pop()?;
+                    let peek = ops.peek()?;
+                    *peek = heap.slice(p, peek)?;
+                }
+                HREADUL => hread_push!(heap.read_ul(pu16!())?),
+                HREADU => hread_push!(heap.read_u(pu8!())?),
+                HWRITEXL => hwrite!(pu16!()),
+                HWRITEX => hwrite!(pu8_as_u16!()),
+                HREAD => {
+                    let n = ops.pop()?;
+                    let len = n.extract_u16()? as usize;
+                    gas_resource!(heap_read, len);
+                    let peek = ops.peek()?;
+                    *peek = heap.read(peek, n)?.valid(cap)?;
+                }
+                HWRITE => hwrite!(ops_pop_to_u16!()),
+                HGROW => gas_add!(resource, raw, heap.grow(pu8!())?),
                 // storage
-                SREST => {
+                SSTAT => {
                     nsr!();
                     let v = {
                         let k = ops.peek()?;
-                        host.srest(context_addr, k)?
+                        host.sinfo(context_addr, k)?
                     }
                     .valid(cap)?;
                     *ops.peek()? = v;
@@ -736,21 +736,36 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         host.sload(context_addr, k)?
                     }
                     .valid(cap)?;
-                    let vlen = v.val_size();
-                    gas_add!(storage, storage_read, vlen);
+                    if !matches!(v, Value::Nil) {
+                        let vlen = v.val_size();
+                        gas_add!(storage, storage_read, vlen);
+                    }
                     *ops.peek()? = v;
+                }
+                SEDIT => {
+                    nsw!();
+                    let v = ops.pop()?.valid(cap)?;
+                    let k = ops.pop()?;
+                    gas_add!(storage, raw, host.sedit(gst, context_addr, k, v)?);
                 }
                 SDEL => {
                     nsw!();
                     let k = ops.pop()?;
-                    gas_add!(storage, storage_del);
-                    host.sdel(context_addr, k)?;
+                    let refund = host.sdel(context_addr, k)?;
+                    host.gas_rebate(refund)?;
                 }
-                SSAVE => {
+                SNEW => {
                     nsw!();
+                    let t = ops.pop()?;
                     let v = ops.pop()?.valid(cap)?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.ssave(gst, context_addr, k, v)?);
+                    gas_add!(storage, raw, host.snew(gst, context_addr, k, v, t)?);
+                }
+                SRECV => {
+                    nsw!();
+                    let t = ops.pop()?;
+                    let k = ops.pop()?;
+                    gas_add!(storage, raw, host.srecv(gst, context_addr, k, t)?);
                 }
                 SRENT => {
                     nsw!();
@@ -767,8 +782,17 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     kvput_inner!(mem, gst.memory_key_cost);
                 }
                 MGET => kvget!(k => memory_map.get(context_addr, k)?),
-                // log (t1,[t2,t3,t4,]d)
-                LOG1 | LOG2 | LOG3 | LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
+                MTAKE => {
+                    nsw!();
+                    let k = ops.peek()?.clone();
+                    let v = memory_map.get(context_addr, &k)?.valid(cap)?;
+                    if matches!(v, Value::Nil) {
+                        return itr_err_fmt!(MemoryError, "memory take value not found");
+                    }
+                    gas_resource!(stack_copy, v.dup_size());
+                    memory_map.remove(context_addr, &k)?;
+                    *ops.peek()? = v;
+                }
                 // logic
                 AND => binop_btw(ops, lgc_and)?,
                 OR => binop_btw(ops, lgc_or)?,

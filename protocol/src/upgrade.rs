@@ -65,7 +65,7 @@ pub fn check_gated_action(height: u64, kind: u16) -> Rerr {
 
 #[inline]
 pub fn check_transfer_addr_online_open(height: u64, from: &Address, to: &Address) -> Rerr {
-    if height >= ONLINE_OPEN_HEIGHT {
+    if is_global_upgrade_open(height) {
         return Ok(());
     }
     if from.is_scriptmh() {

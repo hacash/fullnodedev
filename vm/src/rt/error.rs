@@ -95,9 +95,12 @@ pub enum ItrErrCode {
     StoragePeriodErr = 105,
     StorageValSizeErr = 106,
     StorageRestoreNotMatch = 107,
+    StorageRecoverable = 108,
+    StorageKeyExists = 109,
+    StorageNilNotAllowed = 110,
 
-    ThrowAbort = 111, // user code call
-    DeferredError = 120, // defer callback error
+    ThrowAbort = 151, // user code call
+    DeferredError = 152, // defer callback error
 
     #[default]
     NeverError = 255,

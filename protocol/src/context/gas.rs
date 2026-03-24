@@ -72,6 +72,7 @@ struct GasCounter {
     running: bool,
     remaining: i64,
     used: i64,
+    rebated: i64,
     max_charge: Amount,
 }
 
@@ -87,6 +88,7 @@ impl GasCounter {
             running: false,
             remaining: 0,
             used: 0,
+            rebated: 0,
             max_charge: Amount::zero(),
         }
     }
@@ -127,14 +129,21 @@ impl GasCounter {
         Ok(self.max_charge.clone())
     }
 
+    #[inline(always)]
+    fn used_net(&self) -> i64 {
+        let cut = self.rebated.min(self.used);
+        self.used - cut
+    }
+
     fn used_charge(&self, price: &GasPrice) -> Ret<Amount> {
         if !self.max_charge.is_positive() {
             return errf!("gas not initialized");
         }
-        if self.used <= 0 {
+        let used = self.used_net();
+        if used <= 0 {
             return Ok(Amount::zero());
         }
-        Self::calc_burn_amount(self.used, price)
+        Self::calc_burn_amount(used, price)
     }
 
     fn begin(&mut self, budget: i64, max_charge: Amount) -> Rerr {
@@ -150,6 +159,7 @@ impl GasCounter {
         self.running = true;
         self.remaining = budget;
         self.used = 0;
+        self.rebated = 0;
         self.max_charge = max_charge;
         Ok(())
     }
@@ -191,6 +201,26 @@ impl GasCounter {
             .used
             .checked_add(gas)
             .ok_or_else(|| "gas has run out".to_owned())?;
+        Ok(())
+    }
+
+    fn rebate(&mut self, gas: i64) -> Rerr {
+        if gas < 0 {
+            return errf!("gas refund invalid");
+        }
+        if !self.running {
+            return maybe!(self.max_charge.is_positive(),
+                errf!("gas already settled"),
+                errf!("gas not initialized")
+            );
+        }
+        if gas == 0 {
+            return Ok(());
+        }
+        self.rebated = self
+            .rebated
+            .checked_add(gas)
+            .ok_or_else(|| "gas refund overflow".to_owned())?;
         Ok(())
     }
 }

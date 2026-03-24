@@ -72,6 +72,11 @@ macro_rules! memories_kvmap_define {
                 })
             }
 
+            pub fn remove(&mut self, k: &Value) -> VmrtErr {
+                self.datas.remove(&Self::key(k)?);
+                Ok(())
+            }
+
             pub fn contains_key(&self, k: &Value) -> VmrtRes<bool> {
                 Ok(self.datas.contains_key(&Self::key(k)?))
             }
@@ -130,6 +135,14 @@ impl CtcKVMap {
             Some(mem) => mem.get(key),
             None => Ok(Value::Nil),
         }
+    }
+
+    pub fn remove(&mut self, addr: &Address, key: &Value) -> VmrtErr {
+        Self::check_addr(addr)?;
+        if let Some(mem) = self.datas.get_mut(addr) {
+            mem.remove(key)?;
+        }
+        Ok(())
     }
 }
 

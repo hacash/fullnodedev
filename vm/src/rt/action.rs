@@ -150,7 +150,7 @@ mod action_call_tests {
         let env_id = EnvCoinbaseAddr::IDX;
         let def = search_act_by_id(env_id, &ACTION_ENV_DEFS)
             .expect("EnvCoinbaseAddr must exist in ACTION_ENV_DEFS");
-        assert_eq!(def.1, "block_coinbase_address");
+        assert_eq!(def.1, "block_coinbase_addr");
         assert!(ensure_act_allowed(ExecCtx::main(), Bytecode::ACTENV, env_id).is_ok());
     }
 }

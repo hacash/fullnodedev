@@ -46,6 +46,11 @@ mod tests {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtRes<()> {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
             vm::VMState::wrap(self.ctx.state()).contract_edition(addr)
         }
@@ -64,7 +69,7 @@ mod tests {
             Ok(())
         }
 
-        fn srest(&mut self, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
+        fn sinfo(&mut self, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
             let _ = (addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
@@ -74,12 +79,24 @@ mod tests {
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
-        fn sdel(&mut self, addr: &Address, key: vm::value::Value) -> VmrtRes<()> {
+        fn sdel(&mut self, addr: &Address, key: vm::value::Value) -> VmrtRes<i64> {
             let _ = (addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
-        fn ssave(
+        fn snew(
+            &mut self,
+            gst: &GasExtra,
+            addr: &Address,
+            key: vm::value::Value,
+            val: vm::value::Value,
+            period: vm::value::Value,
+        ) -> VmrtRes<i64> {
+            let _ = (gst, addr, key, val, period);
+            Err(ItrErr::code(ItrErrCode::StorageError))
+        }
+
+        fn sedit(
             &mut self,
             gst: &GasExtra,
             addr: &Address,
@@ -91,6 +108,17 @@ mod tests {
         }
 
         fn srent(
+            &mut self,
+            gst: &GasExtra,
+            addr: &Address,
+            key: vm::value::Value,
+            period: vm::value::Value,
+        ) -> VmrtRes<i64> {
+            let _ = (gst, addr, key, period);
+            Err(ItrErr::code(ItrErrCode::StorageError))
+        }
+
+        fn srecv(
             &mut self,
             gst: &GasExtra,
             addr: &Address,
