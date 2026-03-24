@@ -19,46 +19,52 @@ fn impl_tx_submit(this: &HacashMinter, engine: &dyn EngineRead, txp: &TxPkg) -> 
 
 
 
-fn impl_blk_found(
+fn impl_blk_found_pending(
     this: &HacashMinter,
     curblkhead: &dyn BlockRead,
     body: &Vec<u8>,
+    _: &dyn Store,
+) -> Option<RetBlkFound> {
+    let curhei = curblkhead.height().uint();
+    let cblkhx = curblkhead.hash();
+    let mut biddings = this.bidding_prove.lock().unwrap();
+    let Some(min_pow) = biddings.min_pow_hash_by_prev(curblkhead.prevhash()) else {
+        return None;
+    };
+    if hash_bigger_than(curblkhead.hash().as_ref(), &min_pow) {
+        return Some(RetBlkFound::Reject)
+    }
+    let Ok(mut blkp) = build_block_package(body.clone()) else {
+        return Some(RetBlkFound::Reject)
+    };
+    blkp.set_origin(BlkOrigin::Discover);
+    if biddings.cache_low_bid_child(blkp) {
+        biddings.mark_block_arrival(curhei, cblkhx);
+        return Some(RetBlkFound::PendingCached)
+    }
+    Some(RetBlkFound::Reject)
+}
+
+fn impl_blk_found(
+    this: &HacashMinter,
+    curblkhead: &dyn BlockRead,
+    _: &Vec<u8>,
     sto: &dyn Store,
-) -> RetBlkFound {
+) -> Rerr {
     let curhei = curblkhead.height().uint();
     let curdifnum = curblkhead.difficulty().uint();
     let cblkhx = curblkhead.hash();
     let blkspan = this.cnf.difficulty_adjust_blocks;
-    let is_low_bid_child = {
-        let biddings = this.bidding_prove.lock().unwrap();
-        biddings.matches_low_bid_tip(curblkhead.prevhash())
-    };
-    if is_low_bid_child {
-        let min_pow = current_low_bid_min_pow_hash(this, sto);
-        if hash_bigger_than(curblkhead.hash().as_ref(), &min_pow) {
-            return RetBlkFound::Reject
-        }
-        let Ok(mut blkp) = build_block_package(body.clone()) else {
-            return RetBlkFound::Reject
-        };
-        blkp.set_origin(BlkOrigin::Discover);
-        let mut biddings = this.bidding_prove.lock().unwrap();
-        if biddings.cache_low_bid_child(blkp) {
-            biddings.mark_block_arrival(curhei, cblkhx);
-            return RetBlkFound::PendingCached
-        }
-        return RetBlkFound::Reject
-    }
 
     if curhei <= blkspan {
         let mut biddings = this.bidding_prove.lock().unwrap();
         biddings.mark_block_arrival(curhei, cblkhx);
-        return RetBlkFound::Normal
+        return Ok(())
     }
     if curhei < blkspan*200 && this.cnf.is_mainnet() {
         let mut biddings = this.bidding_prove.lock().unwrap();
         biddings.mark_block_arrival(curhei, cblkhx);
-        return RetBlkFound::Normal
+        return Ok(())
     }
 
     if curhei % blkspan == 0 {
@@ -66,22 +72,22 @@ fn impl_blk_found(
         let bign = u32_to_biguint(difnum).mul(4usize); // max is 4 times
         let mindiffhx = biguint_to_hash(&bign);
         if hash_bigger_than(cblkhx.as_ref(), &mindiffhx) {
-            return RetBlkFound::Reject
+            return errf!("block found height {} PoW hashrates check failed", curhei)
         }
         let mut biddings = this.bidding_prove.lock().unwrap();
         biddings.mark_block_arrival(curhei, cblkhx);
-        return RetBlkFound::Normal
+        return Ok(())
     }
     let (_, difnum, diffhx) = this.difficulty.req_cycle_block(curhei, sto);
     if difnum != curdifnum {
-        return RetBlkFound::Reject
+        return errf!("block found height {} PoW difficulty check failed: expected {} but got {}", curhei, difnum, curdifnum)
     }
     if hash_bigger_than(cblkhx.as_ref(), &diffhx) {
-        return RetBlkFound::Reject
+        return errf!("block found height {} PoW hashrates check failed", curhei)
     }
     let mut biddings = this.bidding_prove.lock().unwrap();
     biddings.mark_block_arrival(curhei, cblkhx);
-    RetBlkFound::Normal
+    Ok(())
 }
 
 
@@ -174,22 +180,6 @@ fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dy
     }
     Ok(())
 }
-
-fn current_low_bid_min_pow_hash(this: &HacashMinter, sto: &dyn Store) -> [u8; 32] {
-    let latest = sto.status().last_height.uint();
-    let diffnum = if latest == 0 {
-        this.genesis_block.difficulty().uint()
-    } else if let Some((_, blkdts)) = sto.block_data_by_height(&BlockHeight::from(latest)) {
-        let intro = BlockIntro::build(&blkdts).unwrap();
-        intro.difficulty().uint()
-    } else {
-        this.genesis_block.difficulty().uint()
-    };
-    let max_hash = u32_to_biguint(diffnum).mul(2usize);
-    biguint_to_hash(&max_hash)
-}
-
-
 
 fn check_diamond_mint_minimum_bidding_fee(next_hei: u64, tx: &dyn TransactionRead, dmact: &action::DiamondMint) -> Rerr {
     const CKN: u32 = DIAMOND_ABOVE_NUMBER_OF_MIN_FEE_AND_FORCE_CHECK_HIGHEST;

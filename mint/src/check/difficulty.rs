@@ -32,10 +32,27 @@ impl DifficultyGnr {
             }
         }
         // read from database
-        let (_, blkdts) = sto
-            .block_data_by_height(&BlockHeight::from(cylhei))
-            .unwrap();
-        let intro = BlockIntro::build(&blkdts).unwrap();
+        let Some((hx, blkdts)) = sto.block_data_by_height(&BlockHeight::from(cylhei)) else {
+            self.log_cycle_block_miss(hei, cylhei, cylnum, sto);
+            panic!(
+                "difficulty cycle block missing: request_height={} cycle_height={} cycle_blocks={}",
+                hei,
+                cylhei,
+                cylnum,
+            );
+        };
+        let intro = match BlockIntro::build(&blkdts) {
+            Ok(v) => v,
+            Err(e) => {
+                self.log_cycle_block_parse_failure(hei, cylhei, cylnum, &hx, &blkdts, &e);
+                panic!(
+                    "difficulty cycle block parse failed: request_height={} cycle_height={} hash={}",
+                    hei,
+                    cylhei,
+                    hx.half(),
+                );
+            }
+        };
         // get time
         let cyltime = intro.timestamp().uint();
         let diffcty = intro.difficulty().uint();
@@ -51,6 +68,47 @@ impl DifficultyGnr {
         }
         // ok
         ccitem
+    }
+
+    fn log_cycle_block_miss(&self, reqhei: u64, cylhei: u64, cylnum: u64, sto: &dyn Store) {
+        let stat = sto.status();
+        let has_cycle_hash = sto.block_hash(&BlockHeight::from(cylhei));
+        let prev_hash = cylhei
+            .checked_sub(1)
+            .and_then(|hei| sto.block_hash(&BlockHeight::from(hei)));
+        let next_hash = sto.block_hash(&BlockHeight::from(cylhei + 1));
+        eprintln!(
+            "[Difficulty] cycle block lookup failed req_height={} cycle_height={} cycle_blocks={} root_height={} last_height={} cycle_hash={} prev_hash={} next_hash={} thread={:?}",
+            reqhei,
+            cylhei,
+            cylnum,
+            stat.root_height.uint(),
+            stat.last_height.uint(),
+            has_cycle_hash.as_ref().map(|v| format!("{}", v.half())).unwrap_or_else(|| "<missing>".to_string()),
+            prev_hash.as_ref().map(|v| format!("{}", v.half())).unwrap_or_else(|| "<missing>".to_string()),
+            next_hash.as_ref().map(|v| format!("{}", v.half())).unwrap_or_else(|| "<missing>".to_string()),
+            std::thread::current().id(),
+        );
+    }
+
+    fn log_cycle_block_parse_failure(
+        &self,
+        reqhei: u64,
+        cylhei: u64,
+        cylnum: u64,
+        hx: &Hash,
+        blkdts: &[u8],
+        err: &String,
+    ) {
+        eprintln!(
+            "[Difficulty] cycle block parse failed req_height={} cycle_height={} cycle_blocks={} hash={} data_len={} err={}",
+            reqhei,
+            cylhei,
+            cylnum,
+            hx.half(),
+            blkdts.len(),
+            err,
+        );
     }
 
     /*

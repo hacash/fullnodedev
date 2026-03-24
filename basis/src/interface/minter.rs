@@ -33,7 +33,8 @@ pub trait Minter : Send + Sync {
     // check
     fn initialize(&self, _: &mut dyn State) -> Rerr { Ok(()) }
     fn tx_submit(&self, _: &dyn EngineRead, _: &TxPkg) -> Rerr { Ok(()) }
-    fn blk_found(&self, _: &dyn BlockRead, _: &Vec<u8>, _: &dyn Store) -> RetBlkFound { RetBlkFound::Normal }
+    fn blk_found_pending(&self, _: &dyn BlockRead, _: &Vec<u8>, _: &dyn Store) -> Option<RetBlkFound> { None }
+    fn blk_found(&self, _: &dyn BlockRead, _: &Vec<u8>, _: &dyn Store) -> Rerr { Ok(()) }
     fn blk_verify(&self, _: &dyn BlockRead, _prev: &dyn BlockRead, _: &dyn Store) -> Rerr { Ok(()) }
     fn blk_insert(&self, _: &BlkPkg, _sub: &dyn State, _prev: &dyn State) -> Rerr { Ok(()) }
     // 

@@ -58,21 +58,24 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
     }
     let mintckr = eng.minter();
     let sto = eng.store();
-    match mintckr.blk_found(&blkhead, &body, sto.as_ref()) {
-        RetBlkFound::Reject => return,
-        RetBlkFound::PendingCached => {
-            let p2p = this.p2pmng.lock().unwrap();
-            let p2p = p2p.as_ref().unwrap();
-            p2p.broadcast_message(0/*not delay*/, knowkey, MSG_BLOCK_DISCOVER, body);
-            return
+    if let Some(ret) = mintckr.blk_found_pending(&blkhead, &body, sto.as_ref()) {
+        match ret {
+            RetBlkFound::Reject => return,
+            RetBlkFound::PendingCached => {
+                let p2p = this.p2pmng.lock().unwrap();
+                let p2p = p2p.as_ref().unwrap();
+                p2p.broadcast_message(0/*not delay*/, knowkey, MSG_BLOCK_DISCOVER, body);
+                return
+            }
+            RetBlkFound::Normal => {}
         }
-        RetBlkFound::Normal => {}
     }
-    // check height and difficulty (mint consensus)
+    let status = sto.status();
+    let root_hei = status.root_height.uint();
     let heispan = engcnf.unstable_block;
     let latest = eng.latest_block();
     let lathei = latest.height().uint();
-    if blkhei > heispan && blkhei < lathei - heispan {
+    if blkhei <= root_hei {
         return // height too late
     }
     if blkhei > lathei + 1 {
@@ -80,7 +83,19 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
         if let Some(ref pr) = peer {
             send_req_block_hash_msg(pr.clone(), (heispan+1) as u8, lathei).await;
         }
+        if lathei + heispan + 1 < blkhei {
+            println!(
+                "[P2P] ignore future block height={} root_height={} local_head={} store_height={} during history sync",
+                blkhei,
+                root_hei,
+                lathei,
+                status.last_height.uint(),
+            );
+        }
         return // not broadcast
+    }
+    if let Err(..) = mintckr.blk_found(&blkhead, &body, sto.as_ref()) {
+        return
     }
     let blkpkg = protocol::block::build_block_package(body.clone());
     if let Err(..) = blkpkg {

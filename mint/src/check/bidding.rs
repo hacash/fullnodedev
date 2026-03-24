@@ -36,6 +36,10 @@ impl LowBidBranch {
         self.blocks[0].hash()
     }
 
+    fn root_difficulty(&self) -> u32 {
+        self.blocks[0].block().difficulty().uint()
+    }
+
     fn tip_hash(&self) -> Hash {
         self.blocks.last().unwrap().hash()
     }
@@ -354,8 +358,17 @@ impl BiddingProve {
         }
     }
 
-    fn matches_low_bid_tip(&self, prev: &Hash) -> bool {
-        self.low_bid_groups.values().any(|group| group.matches_tip(prev))
+    fn min_pow_hash_by_prev(&self, prev: &Hash) -> Option<[u8; 32]> {
+        for group in self.low_bid_groups.values() {
+            for branch in group.branches.iter() {
+                if branch.tip_hash() != *prev {
+                    continue;
+                }
+                let max_hash = u32_to_biguint(branch.root_difficulty()).mul(2usize);
+                return Some(biguint_to_hash(&max_hash));
+            }
+        }
+        None
     }
 
     fn cache_low_bid_child(&mut self, blk: BlkPkg) -> bool {

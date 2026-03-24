@@ -62,7 +62,18 @@ impl Store for BlockStore {
         let Some(hx) = self.block_hash(hei) else {
             return None
         };
-        self.block_data(&hx).map(|d|(hx, d))
+        let data = self.block_data(&hx);
+        if data.is_none() {
+            let stat = self.status();
+            eprintln!(
+                "[BlockStore] missing block data for indexed height={} hash={} root_height={} last_height={}",
+                hei.uint(),
+                hx.half(),
+                stat.root_height.uint(),
+                stat.last_height.uint(),
+            );
+        }
+        data.map(|d| (hx, d))
     }
 
 }

@@ -52,7 +52,11 @@ impl Minter for HacashMinter {
         impl_tx_submit(self, eng, tx)
     }
 
-    fn blk_found(&self, curblk: &dyn BlockRead, body: &Vec<u8>, sto: &dyn Store ) -> RetBlkFound {
+    fn blk_found_pending(&self, curblk: &dyn BlockRead, body: &Vec<u8>, sto: &dyn Store) -> Option<RetBlkFound> {
+        impl_blk_found_pending(self, curblk, body, sto)
+    }
+
+    fn blk_found(&self, curblk: &dyn BlockRead, body: &Vec<u8>, sto: &dyn Store ) -> Rerr {
         impl_blk_found(self, curblk, body, sto)
     }
 
