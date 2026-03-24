@@ -21,6 +21,7 @@ pub struct SpaceCap {
     pub inherit: usize, // 12
     pub library: usize, // 100
     pub reentry_level: u32, // 1, ACTION re-entry level limit
+    pub intent_bind_depth_max: usize, // 10
 
     // pub max_ctl_func: usize, // 200 cache pub max_ctl_libx: usize, // 100 cache pub max_ctl_body: usize, // 50  cache
 }
@@ -47,6 +48,7 @@ impl SpaceCap {
             inherit: 12,
             library: 100,
             reentry_level: 1, // allow 1 re-entry (2 call layers total)
+            intent_bind_depth_max: 10,
             // max_ctl_func:   200, max_ctl_libx:   100, max_ctl_body:   50,
         }
     }

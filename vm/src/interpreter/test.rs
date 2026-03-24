@@ -3,7 +3,7 @@ mod bounds_tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::machine::{DeferCallbacks, VmHost};
+    use crate::machine::{DeferCallbacks, DeferredEntry, VmHost};
     use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
     use crate::value::{CompoItem, TupleItem, Value, ValueTy, REF_DUP_SIZE, RESERVED_U256_TYPE_ID};
@@ -1185,7 +1185,12 @@ mod bounds_tests {
         let mut gas_use = basis::interface::GasUse::default();
 
         let cadr = ContractAddress::from_unchecked(Address::create_contract([7u8; 20]));
-        let codes = vec![Bytecode::NTCTL as u8, NativeCtl::idx_defer, Bytecode::END as u8];
+        let codes = vec![
+            Bytecode::PNIL as u8,
+            Bytecode::NTCTL as u8,
+            NativeCtl::idx_defer,
+            Bytecode::END as u8,
+        ];
 
         super::execute_code(
             &mut pc,
@@ -1207,7 +1212,10 @@ mod bounds_tests {
         )
         .unwrap();
 
-        assert_eq!(defer_callbacks.drain_lifo(), vec![cadr]);
+        assert_eq!(
+            defer_callbacks.drain_lifo(),
+            vec![DeferredEntry { addr: cadr, intent_id: None }]
+        );
     }
 
     #[test]
@@ -1231,7 +1239,12 @@ mod bounds_tests {
         let mut gas_use = basis::interface::GasUse::default();
 
         let main = Address::create_privakey([3u8; 20]);
-        let codes = vec![Bytecode::NTCTL as u8, NativeCtl::idx_defer, Bytecode::END as u8];
+        let codes = vec![
+            Bytecode::PNIL as u8,
+            Bytecode::NTCTL as u8,
+            NativeCtl::idx_defer,
+            Bytecode::END as u8,
+        ];
 
         let err = super::execute_code(
             &mut pc,

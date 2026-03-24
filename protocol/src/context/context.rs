@@ -242,6 +242,10 @@ impl Context for ContextInst<'_> {
         ret
     }
 
+    fn vm_current_intent_scope(&mut self) -> Option<Option<u64>> {
+        self.vm_mut().and_then(|vm| vm.current_intent_scope())
+    }
+
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> {
         self.vm_mut().map(|vm| vm.snapshot_volatile())
     }

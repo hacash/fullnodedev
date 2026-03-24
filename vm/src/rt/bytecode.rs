@@ -338,7 +338,7 @@ bytecode_metadata_define! {
     ACTVIEW    : 1, 1, 1,     actview
     ACTENV     : 1, 0, 1,     actenv
     NTENV      : 1, 0, 1,     native_env
-    NTCTL      : 1, 0, 1,     native_ctl
+    NTCTL      : 1, 1, 1,     native_ctl
     NTFUNC     : 1, 1, 1,     native_func
 
     CODECALL     : 1+4, 1, 0,   code_call

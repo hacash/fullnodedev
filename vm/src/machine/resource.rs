@@ -6,10 +6,112 @@ const UPGRADE_HEIGHTS: &[u64] = &[
 ];
 
 #[derive(Clone, Debug)]
+pub struct IntentEntry {
+    pub kind: Vec<u8>,
+    pub data: MKVMap,
+}
+
+#[derive(Clone, Debug)]
+pub struct IntentRuntime {
+    next_id: u64,
+    intent_limit: usize,
+    key_limit: usize,
+    intents: HashMap<u64, IntentEntry>,
+}
+
+impl Default for IntentRuntime {
+    fn default() -> Self {
+        Self::new(0, 0)
+    }
+}
+
+impl IntentRuntime {
+    pub fn new(intent_limit: usize, key_limit: usize) -> Self {
+        Self {
+            next_id: 0,
+            intent_limit,
+            key_limit,
+            intents: HashMap::new(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.next_id = 0;
+        self.intents.clear();
+    }
+
+    pub fn reset(&mut self, intent_limit: usize, key_limit: usize) {
+        self.intent_limit = intent_limit;
+        self.key_limit = key_limit;
+        self.clear();
+    }
+
+    pub fn create(&mut self, kind: Vec<u8>) -> VmrtRes<u64> {
+        if kind.is_empty() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent kind cannot be empty");
+        }
+        if self.intents.len() >= self.intent_limit {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent limit exceeded");
+        }
+        let next = self
+            .next_id
+            .checked_add(1)
+            .ok_or_else(|| ItrErr::new(ItrErrCode::IntentError, "intent id overflow"))?;
+        self.next_id = next;
+        self.intents.insert(
+            next,
+            IntentEntry {
+                kind,
+                data: MKVMap::new(self.key_limit),
+            },
+        );
+        Ok(next)
+    }
+
+    fn require_mut(&mut self, id: u64) -> VmrtRes<&mut IntentEntry> {
+        self.intents
+            .get_mut(&id)
+            .ok_or_else(|| ItrErr::new(ItrErrCode::IntentError, &format!("intent {} not found", id)))
+    }
+
+    fn require_ref(&self, id: u64) -> VmrtRes<&IntentEntry> {
+        self.intents
+            .get(&id)
+            .ok_or_else(|| ItrErr::new(ItrErrCode::IntentError, &format!("intent {} not found", id)))
+    }
+
+    pub fn put(&mut self, id: u64, key: Value, val: Value) -> VmrtErr {
+        self.require_mut(id)?.data.put(key, val)
+    }
+
+    pub fn exists(&self, id: u64) -> bool {
+        self.intents.contains_key(&id)
+    }
+
+    pub fn get(&self, id: u64, key: &Value) -> VmrtRes<Value> {
+        self.require_ref(id)?.data.get(key)
+    }
+
+    pub fn take(&mut self, id: u64, key: &Value) -> VmrtRes<Value> {
+        let val = self.get(id, key)?;
+        if !matches!(val, Value::Nil) {
+            self.require_mut(id)?.data.remove(key)?;
+        }
+        Ok(val)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DeferredEntry {
+    pub addr: ContractAddress,
+    pub intent_id: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
 pub struct DeferredRegistry {
     active: bool,
-    addrs: Vec<ContractAddress>,
-    seen: HashSet<ContractAddress>,
+    entries: Vec<DeferredEntry>,
+    seen: HashSet<DeferredEntry>,
 }
 
 impl Default for DeferredRegistry {
@@ -22,33 +124,33 @@ impl DeferredRegistry {
     pub fn new() -> Self {
         Self {
             active: true,
-            addrs: Vec::new(),
+            entries: Vec::new(),
             seen: HashSet::new(),
         }
     }
 
     pub fn clear(&mut self) {
         self.active = true;
-        self.addrs.clear();
+        self.entries.clear();
         self.seen.clear();
     }
 
-    pub fn register(&mut self, addr: ContractAddress) -> VmrtErr {
+    pub fn register(&mut self, entry: DeferredEntry) -> VmrtErr {
         if !self.active {
             return itr_err_fmt!(
                 ItrErrCode::DeferredError,
                 "defer is closed during deferred dispatch"
             );
         }
-        if self.seen.insert(addr.clone()) {
-            self.addrs.push(addr);
+        if self.seen.insert(entry.clone()) {
+            self.entries.push(entry);
         }
         Ok(())
     }
 
-    pub fn drain_lifo(&mut self) -> Vec<ContractAddress> {
+    pub fn drain_lifo(&mut self) -> Vec<DeferredEntry> {
         self.active = false;
-        self.addrs.drain(..).rev().collect()
+        self.entries.drain(..).rev().collect()
     }
 }
 
@@ -63,6 +165,7 @@ pub struct Resoure {
     pub space_cap: SpaceCap,
     pub global_map: GKVMap,
     pub memory_map: CtcKVMap,
+    pub intents: IntentRuntime,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
     pub gas_use: GasUse,
     pub stack_pool: Vec<Stack>,
@@ -78,6 +181,7 @@ impl Resoure {
             next_upgrade: Self::next_upgrade_after(height),
             global_map: GKVMap::new(cap.global),
             memory_map: CtcKVMap::new(cap.memory),
+            intents: IntentRuntime::new(cap.global, cap.memory),
             space_cap: cap,
             gas_extra: GasExtra::new(height),
             gas_table: GasTable::new(height),
@@ -89,6 +193,7 @@ impl Resoure {
     pub fn reclaim(&mut self) {
         self.global_map.clear();
         self.memory_map.clear();
+        self.intents.clear();
         self.contracts.clear();
         self.deferred_registry.clear();
     }
@@ -110,6 +215,7 @@ impl Resoure {
         // rebuild
         self.global_map.reset(cap.global);
         self.memory_map.reset(cap.memory);
+        self.intents.reset(cap.global, cap.memory);
         self.space_cap = cap;
         self.gas_extra = GasExtra::new(height);
         self.gas_table = GasTable::new(height);
@@ -409,10 +515,22 @@ mod resource_tests {
         let mut callbacks = DeferCallbacks::new();
         let a = ContractAddress::from_unchecked(Address::create_contract([1u8; 20]));
         let b = ContractAddress::from_unchecked(Address::create_contract([2u8; 20]));
-        callbacks.register(a.clone()).unwrap();
-        callbacks.register(a.clone()).unwrap();
-        callbacks.register(b.clone()).unwrap();
+        callbacks
+            .register(DeferredEntry { addr: a.clone(), intent_id: None })
+            .unwrap();
+        callbacks
+            .register(DeferredEntry { addr: a.clone(), intent_id: None })
+            .unwrap();
+        callbacks
+            .register(DeferredEntry { addr: b.clone(), intent_id: Some(7) })
+            .unwrap();
         let drained = callbacks.drain_lifo();
-        assert_eq!(drained, vec![b, a]);
+        assert_eq!(
+            drained,
+            vec![
+                DeferredEntry { addr: b, intent_id: Some(7) },
+                DeferredEntry { addr: a, intent_id: None },
+            ]
+        );
     }
 }

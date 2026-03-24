@@ -10,7 +10,7 @@ use crate::value::Value;
 macro_rules! memories_kvmap_define {
     ($class:ident, $er1:expr, $er2:expr) => {
         #[allow(dead_code)]
-        #[derive(Default, Clone)]
+        #[derive(Default, Clone, Debug)]
         pub struct $class {
             limit: usize,
             datas: HashMap<Vec<u8>, Value>,

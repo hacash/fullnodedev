@@ -49,7 +49,7 @@ impl Syntax {
         }
 
         if let Some(idx) = NativeCtl::from_name(&id).map(|v| v.0) {
-            let (num, _) = self.parse_call_args(ArgPackMode::Concat)?;
+            let (num, argvs) = self.parse_call_args(ArgPackMode::Packed)?;
             let Some(need) = NativeCtl::argv_len(idx) else {
                 return errf!("unknown native ctl idx {}", idx);
             };
@@ -61,18 +61,7 @@ impl Syntax {
                     num
                 );
             }
-            if need != 0 {
-                return errf!(
-                    "native ctl '{}' with arguments is not supported by current opcode layout",
-                    id
-                );
-            }
-            return Ok(Box::new(IRNodeParam1 {
-                hrtv: true,
-                inst: Bytecode::NTCTL,
-                para: idx,
-                text: s!(""),
-            }));
+            return Ok(push_single_p1_hr(true, Bytecode::NTCTL, idx, argvs));
         }
 
         if let Some(idx) = NativeEnv::from_name(&id).map(|v| v.0) {

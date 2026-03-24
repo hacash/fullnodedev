@@ -185,6 +185,43 @@ mod machine_file_test {
         run_main_script_with(base_addr, tx_libs, ext_state, main_script, false)
     }
 
+    #[test]
+    fn main_call_intent_primitives_roundtrip_basic_flow() {
+        let base_addr = test_base_addr();
+        let rv = run_main_script_with(
+            base_addr,
+            vec![],
+            StateMem::default(),
+            r#"
+                var iid = intent_new("basic")
+                intent_use(iid)
+                intent_put("foo", "bar")
+                assert intent_current() == iid
+                assert intent_get("foo") == "bar"
+                assert intent_take("foo") == "bar"
+                intent_pop()
+                return iid
+            "#,
+            true,
+        )
+        .unwrap();
+        assert_eq!(rv.extract_u64().unwrap(), 1);
+    }
+
+    #[test]
+    fn main_call_intent_bind_depth_overflow_fails() {
+        let base_addr = test_base_addr();
+        let mut body = String::new();
+        for _ in 0..10 {
+            body.push_str("intent_use(nil)\n");
+        }
+        body.push_str("intent_use(nil)\nreturn 0\n");
+        let err = run_main_script_with(base_addr, vec![], StateMem::default(), &body, true)
+            .expect_err("intent bind depth overflow must fail");
+        assert!(err.contains("IntentError"), "unexpected error: {err}");
+        assert!(err.contains("intent bind depth exceeded max 10"), "unexpected error: {err}");
+    }
+
     fn run_main_script_raw(
         base_addr: Address,
         tx_libs: Vec<crate::ContractAddress>,
@@ -226,6 +263,7 @@ mod machine_file_test {
             p2sh_addr,
             tx_libs,
             p2sh_codes.into(),
+            None,
             Value::Nil,
         )?;
         Ok(rv)
@@ -661,6 +699,7 @@ mod machine_file_test {
                 &mut host,
                 AbstCall::Construct,
                 contract_child,
+                None,
                 Value::Bytes(vec![]),
             )
             .unwrap();
@@ -709,6 +748,7 @@ mod machine_file_test {
                 &mut host_1,
                 AbstCall::Construct,
                 contract_child.clone(),
+                None,
                 Value::Bytes(vec![]),
             )
             .unwrap();
@@ -720,6 +760,7 @@ mod machine_file_test {
                 &mut host_2,
                 AbstCall::Construct,
                 contract_child,
+                None,
                 Value::Bytes(vec![]),
             )
             .unwrap();
@@ -788,6 +829,7 @@ mod machine_file_test {
                 &mut host,
                 AbstCall::Construct,
                 contract_entry.clone(),
+                None,
                 Value::Bytes(vec![]),
             )
             .expect_err("abst external call must be rejected before target load");
@@ -1815,6 +1857,7 @@ end",
                 &mut host,
                 AbstCall::Construct,
                 contract_target.clone(),
+                None,
                 Value::HeapSlice((0, 1)),
             )
             .expect_err("invalid abst argv must fail locally");
@@ -1862,6 +1905,7 @@ end",
                 &mut host,
                 AbstCall::Construct,
                 contract_target.clone(),
+                None,
                 Value::Compo(list),
             )
             .expect_err("oversize compo argv must fail locally");

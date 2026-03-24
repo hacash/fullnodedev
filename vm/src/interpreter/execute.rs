@@ -1,7 +1,7 @@
 /**
 * parse bytecode params
 */
-use crate::machine::{DeferredRegistry, VmHost};
+use crate::machine::{DeferredRegistry, IntentRuntime, VmHost};
 
 #[inline(always)]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -162,6 +162,50 @@ macro_rules! ostbranch {
 */
 
 pub fn execute_code<H: VmHost + ?Sized>(
+    pc: &mut usize,
+    codes: &[u8],
+    exec: ExecCtx,
+    operands: &mut Stack,
+    locals: &mut Stack,
+    heap: &mut Heap,
+    context_addr: &field::Address,
+    current_addr: &field::Address,
+    gas_table: &GasTable,
+    gas_extra: &GasExtra,
+    space_cap: &SpaceCap,
+    gas_use: &mut GasUse,
+    global_map: &mut GKVMap,
+    memory_map: &mut CtcKVMap,
+    deferred_registry: &mut DeferredRegistry,
+    host: &mut H,
+) -> VmrtRes<CallExit> {
+    let mut bindings = FrameBindings::root(*context_addr, Vec::<field::Address>::new().into());
+    let mut intent_stack = Vec::new();
+    let mut intents = IntentRuntime::default();
+    execute_code_in_frame(
+        pc,
+        codes,
+        exec,
+        operands,
+        locals,
+        heap,
+        &mut bindings,
+        &mut intent_stack,
+        context_addr,
+        current_addr,
+        gas_table,
+        gas_extra,
+        space_cap,
+        gas_use,
+        global_map,
+        memory_map,
+        &mut intents,
+        deferred_registry,
+        host,
+    )
+}
+
+pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     // frame local
     pc: &mut usize,
     codes: &[u8],
@@ -169,6 +213,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
     operands: &mut Stack,
     locals: &mut Stack,
     heap: &mut Heap,
+    bindings: &mut FrameBindings,
+    intent_stack: &mut Vec<IntentBinding>,
     context_addr: &field::Address,
     current_addr: &field::Address,
     // shared runtime
@@ -178,6 +224,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
     gas_use: &mut GasUse,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
+    intents: &mut IntentRuntime,
     deferred_registry: &mut DeferredRegistry,
     host: &mut H,
 ) -> VmrtRes<CallExit> {
@@ -404,7 +451,18 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // native runtime control (VM-local side effects)
                 NTCTL => {
                     let nt_idx = pu8!();
-                    let (r, g) = call_ntctl(exec, context_addr, deferred_registry, nt_idx)?;
+                    let argv = ops.pop()?.valid(cap)?;
+                    let (r, g) = call_ntctl(
+                        exec,
+                        cap,
+                        bindings,
+                        intent_stack,
+                        context_addr,
+                        intents,
+                        deferred_registry,
+                        nt_idx,
+                        argv,
+                    )?;
                     finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
                 }
                 // native func (pure computation, always allowed)
@@ -418,7 +476,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 // native env (VM context read, forbidden in Pure mode)
                 NTENV  => {
                     let nt_idx = pu8!();
-                    let (r, g) = call_ntenv(exec, context_addr, nt_idx)?;
+                    let (r, g) = call_ntenv(exec, bindings, context_addr, nt_idx)?;
                     finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
                 }
                 // constant

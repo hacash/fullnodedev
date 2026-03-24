@@ -430,7 +430,7 @@ mod fitsh_compile_tests {
             func_fold64_to_u64: "return fold64_to_u64(0xABCD)",
             func_pack_asset: "return pack_asset(1, 100)",
             func_address_ptr: "return address_ptr(emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS)",
-            func_defer: "defer()\nreturn 0",
+            func_defer: "defer(nil)\nreturn 0",
             func_context_address: "return context_address()",
             func_block_height: "return block_height()",
             func_storage_load: "return storage_load(\"key\")",

@@ -52,11 +52,13 @@ pub(crate) enum VmCallReq {
         state_addr: Address,
         libs: Vec<ContractAddress>,
         codes: ByteView,
+        intent_binding: IntentScope,
         param: Value,
     },
     Abst {
         kind: AbstCall,
         contract_addr: ContractAddress,
+        intent_binding: IntentScope,
         param: Value,
     },
 }
@@ -82,13 +84,15 @@ impl VmCallReq {
                 state_addr,
                 libs,
                 codes,
+                intent_binding,
                 param,
-            } => machine.p2sh_call(ctx, code_type, state_addr, libs, codes, param),
+            } => machine.p2sh_call(ctx, code_type, state_addr, libs, codes, intent_binding, param),
             Self::Abst {
                 kind,
                 contract_addr,
+                intent_binding,
                 param,
-            } => machine.abst_call(ctx, kind, contract_addr, param),
+            } => machine.abst_call(ctx, kind, contract_addr, intent_binding, param),
         }
     }
 }
@@ -254,29 +258,36 @@ impl MachineBox {
 }
 
 impl VM for MachineBox {
+    fn current_intent_scope(&mut self) -> Option<Option<u64>> {
+        self.machine_ref().ok().and_then(Machine::current_intent_scope)
+    }
+
     fn snapshot_volatile(&mut self) -> Box<dyn Any> {
         match self.machine_ref() {
             Ok(m) => Box::new((
                 m.r.global_map.clone(),
                 m.r.memory_map.clone(),
+                m.r.intents.clone(),
                 m.r.deferred_registry.clone(),
             )),
             Err(_) => Box::new((
                 GKVMap::default(),
                 CtcKVMap::default(),
+                IntentRuntime::default(),
                 DeferredRegistry::default(),
             )),
         }
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap, DeferredRegistry)>() else {
+        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap, IntentRuntime, DeferredRegistry)>() else {
             return;
         };
-        let (global_map, memory_map, deferred_registry) = *snap;
+        let (global_map, memory_map, intents, deferred_registry) = *snap;
         if let Ok(m) = self.machine_mut() {
             m.r.global_map = global_map;
             m.r.memory_map = memory_map;
+            m.r.intents = intents;
             m.r.deferred_registry = deferred_registry;
         }
     }
@@ -285,6 +296,7 @@ impl VM for MachineBox {
         if let Ok(m) = self.machine_mut() {
             m.r.global_map.clear();
             m.r.memory_map.clear();
+            m.r.intents.clear();
             m.r.deferred_registry.clear();
         }
     }
@@ -312,7 +324,8 @@ impl VM for MachineBox {
                     ctx,
                     VmCallReq::Abst {
                         kind: AbstCall::Deferred,
-                        contract_addr: caddr,
+                        contract_addr: caddr.addr,
+                        intent_binding: Some(caddr.intent_id),
                         param: Value::Nil,
                     },
                 )
@@ -339,6 +352,12 @@ pub struct Machine {
 }
 
 impl Machine {
+    fn current_intent_scope(&self) -> Option<Option<u64>> {
+        self.frames
+            .last()
+            .and_then(CallFrame::current_intent_scope)
+    }
+
     pub fn is_in_calling(&self) -> bool {
         !self.frames.is_empty()
     }
@@ -380,6 +399,7 @@ impl Machine {
         host: &mut H,
         cty: AbstCall,
         contract_addr: ContractAddress,
+        intent_binding: IntentScope,
         param: Value,
     ) -> XRet<Value> {
         let exec = EntryKind::Abst.root_exec();
@@ -401,7 +421,8 @@ impl Machine {
             host,
             exec,
             hit.fnobj.as_ref(),
-            FrameBindings::contract(contract_addr, hit.owner, hit.lib_table),
+            FrameBindings::contract(contract_addr, hit.owner, hit.lib_table)
+                .with_intent_binding(intent_binding),
             Some(param),
         ).map_err(XError::from)?;
         check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
@@ -415,6 +436,7 @@ impl Machine {
         p2sh_addr: Address,
         libs: Vec<ContractAddress>,
         codes: ByteView,
+        intent_binding: IntentScope,
         param: Value,
     ) -> XRet<Value> {
         // Caller must pre-validate lock script bytes. Production P2SH flow verifies inputs before VM call.
@@ -430,7 +452,8 @@ impl Machine {
                     .map(|addr| addr.into_addr())
                     .collect::<Vec<_>>()
                     .into(),
-            ),
+            )
+            .with_intent_binding(intent_binding),
             Some(param),
         ).map_err(XError::from)?;
         check_vm_return_value(&rv, "p2sh call")?;

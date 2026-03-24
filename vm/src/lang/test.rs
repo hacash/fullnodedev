@@ -838,10 +838,10 @@ mod token_t {
         use super::Formater;
         use super::PrintOption;
 
-        let ir = lang_to_irnode("defer()\nreturn 0").expect("Failed to compile");
+        let ir = lang_to_irnode("intent_pop()\nreturn 0").expect("Failed to compile");
         let plain = Formater::new(&PrintOption::new("  ", 0)).print(&ir);
         assert!(
-            plain.contains("defer()"),
+            plain.contains("intent_pop()"),
             "NTREG should stay zero-arg without placeholder, got: {}",
             plain
         );
@@ -849,7 +849,7 @@ mod token_t {
         opt.hide_default_call_argv = true;
         let decompiled = Formater::new(&opt).print(&ir);
         assert!(
-            decompiled.contains("defer()"),
+            decompiled.contains("intent_pop()"),
             "NTREG should stay zero-arg when hide option enabled, got: {}",
             decompiled
         );

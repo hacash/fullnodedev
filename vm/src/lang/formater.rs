@@ -461,6 +461,9 @@ impl<'a> Formater<'a> {
         use Bytecode::*;
         if system_call {
             if let Some(expect) = expected_system_args {
+                if expect == 0 {
+                    return vec![];
+                }
                 if expect == 1 {
                     return vec![self.print_inline(node)];
                 }
@@ -1244,10 +1247,12 @@ impl<'a> Formater<'a> {
             ACTVIEW => self.format_action_call(node, &ACTION_VIEW_DEFS),
             ACTION => self.format_action_call(node, &ACTION_DEFS),
             NTCTL => {
+                let expect = NativeCtl::argv_len(node.para).map(|n| n as usize);
+                let argv = self.build_call_args(&*node.subx, true, expect);
                 let Ok(ntfn) = NativeCtl::try_from_u8(node.para) else {
-                    return format!("__unknown_native_ctl_{}()", node.para);
+                    return format!("__unknown_native_ctl_{}({})", node.para, argv);
                 };
-                format!("{}()", ntfn.name())
+                format!("{}({})", ntfn.name(), argv)
             }
             NTFUNC => {
                 let expect = NativeFunc::argv_len(node.para).map(|n| n as usize);

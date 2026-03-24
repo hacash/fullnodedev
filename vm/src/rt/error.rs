@@ -101,6 +101,7 @@ pub enum ItrErrCode {
 
     ThrowAbort = 151, // user code call
     DeferredError = 152, // defer callback error
+    IntentError = 153,
 
     #[default]
     NeverError = 255,

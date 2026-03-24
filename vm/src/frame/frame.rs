@@ -32,6 +32,12 @@ impl CallFrame {
             frame.reclaim(r)
         }
     }
+
+    pub fn current_intent_scope(&self) -> IntentScope {
+        self.frames
+            .last()
+            .and_then(|frame| frame.bindings.intent_binding)
+    }
 }
 
 #[allow(dead_code)]
@@ -40,6 +46,7 @@ pub struct Frame {
     pub pc: usize,
     pub exec: ExecCtx,
     pub bindings: FrameBindings,
+    pub intent_stack: Vec<IntentBinding>,
     pub call_argv: Value,
     pub types: Option<FuncArgvTypes>,
     pub codes: ByteView,
@@ -76,6 +83,7 @@ impl Frame {
         f.oprnds.reset(stks);
         f.locals.reset(locs);
         f.bindings = self.bindings.clone();
+        f.intent_stack = self.intent_stack.clone();
         f
     }
 
@@ -121,6 +129,13 @@ impl Frame {
             self.oprnds.push(argv.clone())?;
         }
         self.bindings = bindings;
+        if self.intent_stack.is_empty() {
+            if let Some(binding) = self.bindings.intent_binding {
+                self.intent_stack.push(binding);
+            }
+        } else {
+            self.bindings.intent_binding = self.intent_stack.last().cloned();
+        }
         self.call_argv = argv;
         self.types = fnobj.agvty.clone();
         self.pc = 0;
@@ -191,6 +206,7 @@ impl Frame {
             )
         };
         self.bindings = bindings;
+        self.bindings.intent_binding = self.intent_stack.last().cloned();
         self.pc = 0;
         self.exec = exec;
         self.call_argv = param;
@@ -199,26 +215,31 @@ impl Frame {
     }
 
     pub fn execute<H: VmHost + ?Sized>(&mut self, r: &mut Resoure, host: &mut H) -> VmrtRes<CallExit> {
-        execute_code(
+        let context_addr = self.bindings.context_addr;
+        let current_addr = self
+            .bindings
+            .code_owner
+            .as_ref()
+            .map(ContractAddress::to_addr)
+            .unwrap_or(context_addr);
+        execute_code_in_frame(
             &mut self.pc,
             self.codes.as_slice(),
             self.exec,
             &mut self.oprnds,
             &mut self.locals,
             &mut self.heap,
-            &self.bindings.context_addr,
-            self.bindings
-                .code_owner
-                .as_ref()
-                .map(ContractAddress::to_addr)
-                .as_ref()
-                .unwrap_or(&self.bindings.context_addr),
+            &mut self.bindings,
+            &mut self.intent_stack,
+            &context_addr,
+            &current_addr,
             &r.gas_table,
             &r.gas_extra,
             &r.space_cap,
             &mut r.gas_use,
             &mut r.global_map,
             &mut r.memory_map,
+            &mut r.intents,
             &mut r.deferred_registry,
             host,
         )

@@ -11,6 +11,7 @@ include!("amount.rs");
 include!("address.rs");
 include!("ascii.rs");
 include!("defer.rs");
+include!("intent.rs");
 
 use ValueTy::*;
 
@@ -46,7 +47,13 @@ native_func_env_define! { func, NativeFunc, NativeFuncError,
 */
 native_func_env_define! { ctl, NativeCtl, NativeCtlError,
     // idx, argv_len, gas, ValueType
-    defer              = 150,   0,        8,    Nil
+    defer              = 150,   1,        8,    Nil
+    intent_new         = 151,   1,        8,    U64
+    intent_use         = 152,   1,        8,    Nil
+    intent_pop         = 153,   0,        8,    Nil
+    intent_put         = 154,   2,       12,    Nil
+    intent_get         = 155,   1,       10,    Bytes
+    intent_take        = 156,   1,       12,    Bytes
 }
 
 /*
@@ -55,6 +62,7 @@ native_func_env_define! { ctl, NativeCtl, NativeCtlError,
 native_func_env_define! { env, NativeEnv, NativeEnvError,
     // idx, argv_len, gas, ValueType
     context_address    = 1,    0,        6,    Address
+    intent_current     = 2,    0,        6,    U64
 }
 
 include!("call.rs");

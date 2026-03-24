@@ -240,7 +240,8 @@ mod hook_arg_tests {
         tex: TexLedger,
         p2sh_addr: Address,
         p2sh_box: Box<dyn P2sh>,
-        calls: Vec<Value>,
+        calls: Vec<(Value, IntentScope)>,
+        intent_scope: IntentScope,
         exec_from: ExecFrom,
     }
 
@@ -269,8 +270,14 @@ mod hook_arg_tests {
                     witness: vec![0; 21],
                 }),
                 calls: vec![],
+                intent_scope: None,
                 exec_from: ExecFrom::Top,
             }
+        }
+
+        fn with_intent_scope(mut self, intent_scope: IntentScope) -> Self {
+            self.intent_scope = intent_scope;
+            self
         }
     }
 
@@ -311,13 +318,18 @@ mod hook_arg_tests {
             let Ok(req) = req.downcast::<crate::machine::VmCallReq>() else {
                 return Err(XError::fault("vm call req type mismatch".to_owned()));
             };
-            let param = match *req {
-                crate::machine::VmCallReq::Main { .. } => Value::Nil,
-                crate::machine::VmCallReq::P2sh { param, .. }
-                | crate::machine::VmCallReq::Abst { param, .. } => param,
+            let (param, intent_scope) = match *req {
+                crate::machine::VmCallReq::Main { .. } => (Value::Nil, None),
+                crate::machine::VmCallReq::P2sh { param, intent_binding, .. }
+                | crate::machine::VmCallReq::Abst { param, intent_binding, .. } => {
+                    (param, intent_binding)
+                }
             };
-            self.calls.push(param);
+            self.calls.push((param, intent_scope));
             Ok((GasUse { compute: 1, resource: 0, storage: 0 }, Box::new(Value::Nil)))
+        }
+        fn vm_current_intent_scope(&mut self) -> IntentScope {
+            self.intent_scope
         }
         fn tex_ledger(&mut self) -> &mut TexLedger {
             &mut self.tex
@@ -344,7 +356,7 @@ mod hook_arg_tests {
 
         try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
         assert_eq!(ctx.calls.len(), 1);
-        let param = &ctx.calls[0];
+        let param = &ctx.calls[0].0;
         assert!(matches!(param, Value::Tuple(_)));
     }
 
@@ -358,7 +370,21 @@ mod hook_arg_tests {
 
         try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
         assert_eq!(ctx.calls.len(), 1);
-        let param = &ctx.calls[0];
+        let param = &ctx.calls[0].0;
         assert!(matches!(param, Value::Tuple(_)));
+    }
+
+    #[test]
+    fn action_hook_carries_current_intent_scope_into_vm_callback() {
+        let main = Address::create_privakey([1u8; 20]);
+        let contract = Address::create_contract([3u8; 20]);
+        let mut ctx = CaptureCtx::new(main, Address::create_scriptmh([2u8; 20]))
+            .with_intent_scope(Some(Some(77)));
+
+        let act = HacToTrs::create_by(contract, Amount::mei(1));
+
+        try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
+        assert_eq!(ctx.calls.len(), 1);
+        assert_eq!(ctx.calls[0].1, Some(Some(77)));
     }
 }

@@ -14,6 +14,7 @@ pub trait Context: StateOperat {
     fn check_sign(&mut self, _: &Address) -> Rerr;
     fn tx(&self) -> &dyn TransactionRead;
     fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)>;
+    fn vm_current_intent_scope(&mut self) -> Option<Option<u64>> { None }
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> { None }
     fn vm_restore_volatile(&mut self, _: Box<dyn Any>) {}
     fn vm_restore_but_keep_warmup(&mut self) {}
