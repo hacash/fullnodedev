@@ -1,97 +1,3 @@
-
-
-
-fn impl_tx_submit(this: &HacashMinter, engine: &dyn EngineRead, txp: &TxPkg) -> Rerr {
-    let txr = txp.tx_read();
-    let curr_hei = engine.latest_block().height().uint();
-    let next_hei = curr_hei + 1;
-    let Some(diamintact) = action::pickout_diamond_mint_action(txr) else {
-        return Ok(()) // other normal tx
-    };
-    if next_hei % 5 == 0 {
-        return errf!("diamond mint transaction cannot be submitted after height ending in 4 or 9")
-    }
-    check_diamond_mint_minimum_bidding_fee(next_hei, txr, &diamintact)?;
-    let mut biddings = this.bidding_prove.lock().unwrap();
-    biddings.record(curr_hei, txp, &diamintact);
-    Ok(())
-}
-
-
-
-fn impl_blk_found_pending(
-    this: &HacashMinter,
-    curblkhead: &dyn BlockRead,
-    body: &Vec<u8>,
-    _: &dyn Store,
-) -> Option<RetBlkFound> {
-    let curhei = curblkhead.height().uint();
-    let cblkhx = curblkhead.hash();
-    let mut biddings = this.bidding_prove.lock().unwrap();
-    let Some(min_pow) = biddings.min_pow_hash_by_prev(curblkhead.prevhash()) else {
-        return None;
-    };
-    if hash_bigger_than(curblkhead.hash().as_ref(), &min_pow) {
-        return Some(RetBlkFound::Reject)
-    }
-    let Ok(mut blkp) = build_block_package(body.clone()) else {
-        return Some(RetBlkFound::Reject)
-    };
-    blkp.set_origin(BlkOrigin::Discover);
-    if biddings.cache_low_bid_child(blkp) {
-        biddings.mark_block_arrival(curhei, cblkhx);
-        return Some(RetBlkFound::PendingCached)
-    }
-    Some(RetBlkFound::Reject)
-}
-
-fn impl_blk_found(
-    this: &HacashMinter,
-    curblkhead: &dyn BlockRead,
-    _: &Vec<u8>,
-    sto: &dyn Store,
-) -> Rerr {
-    let curhei = curblkhead.height().uint();
-    let curdifnum = curblkhead.difficulty().uint();
-    let cblkhx = curblkhead.hash();
-    let blkspan = this.cnf.difficulty_adjust_blocks;
-
-    if curhei <= blkspan {
-        let mut biddings = this.bidding_prove.lock().unwrap();
-        biddings.mark_block_arrival(curhei, cblkhx);
-        return Ok(())
-    }
-    if curhei < blkspan*200 && this.cnf.is_mainnet() {
-        let mut biddings = this.bidding_prove.lock().unwrap();
-        biddings.mark_block_arrival(curhei, cblkhx);
-        return Ok(())
-    }
-
-    if curhei % blkspan == 0 {
-        let (_, difnum, _) = this.difficulty.req_cycle_block(curhei - 1, sto);
-        let bign = u32_to_biguint(difnum).mul(4usize); // max is 4 times
-        let mindiffhx = biguint_to_hash(&bign);
-        if hash_bigger_than(cblkhx.as_ref(), &mindiffhx) {
-            return errf!("block found height {} PoW hashrates check failed", curhei)
-        }
-        let mut biddings = this.bidding_prove.lock().unwrap();
-        biddings.mark_block_arrival(curhei, cblkhx);
-        return Ok(())
-    }
-    let (_, difnum, diffhx) = this.difficulty.req_cycle_block(curhei, sto);
-    if difnum != curdifnum {
-        return errf!("block found height {} PoW difficulty check failed: expected {} but got {}", curhei, difnum, curdifnum)
-    }
-    if hash_bigger_than(cblkhx.as_ref(), &diffhx) {
-        return errf!("block found height {} PoW hashrates check failed", curhei)
-    }
-    let mut biddings = this.bidding_prove.lock().unwrap();
-    biddings.mark_block_arrival(curhei, cblkhx);
-    Ok(())
-}
-
-
-
 fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn BlockRead, sto: &dyn Store) -> Rerr {
     let curhei = curblk.height().uint(); // u64
     let smaxh = this.cnf.sync_maxh;
@@ -105,31 +11,22 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
     if curhei < blkcln*200 && this.cnf.is_mainnet() {
         return Ok(()) // not check, compatible history code
     }
-    // check
     let curn = curblk.difficulty().uint(); // u32
     let (tarn, tarhx, _tarbign) = this.next_difficulty(prevblk, sto);
     if tarn != curn {
         return errf!("height {} PoW difficulty check failed: expected {} but got {}", curhei, tarn, curn)
     }
     if hash_bigger_than(curblk.hash().as_ref(), &tarhx) {
-        return errf!("height {} PoW hashrates check failed: must not exceed {} but got {}", 
+        return errf!("height {} PoW hashrates check failed: must not exceed {} but got {}",
             curhei, hex::encode(tarhx),  hex::encode(curblk.hash()))
     }
     Ok(())
 }
 
-
-
 fn impl_blk_insert(this: &HacashMinter, curblk: &BlkPkg, _sta: &dyn State, prev: &dyn State) -> Rerr {
     check_highest_bid_of_block(this, curblk, prev)?;
     Ok(())
 }
-
-
-
-/************************/
-
-
 
 fn check_highest_bid_of_block(this: &HacashMinter, curblk: &BlkPkg, prevsta: &dyn State) -> Rerr {
     let curhei = curblk.hein();

@@ -58,7 +58,8 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
     }
     let mintckr = eng.minter();
     let sto = eng.store();
-    if let Some(ret) = mintckr.blk_found_pending(&blkhead, &body, sto.as_ref()) {
+    // Stage 1: earliest shadow-chain forwarding gate.
+    if let Some(ret) = mintckr.blk_found(&blkhead, &body, sto.as_ref()) {
         match ret {
             RetBlkFound::Reject => return,
             RetBlkFound::PendingCached => {
@@ -70,6 +71,7 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
             RetBlkFound::Normal => {}
         }
     }
+    // Stage 2: local root/head window gate.
     let status = sto.status();
     let root_hei = status.root_height.uint();
     let heispan = engcnf.unstable_block;
@@ -94,7 +96,8 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
         }
         return // not broadcast
     }
-    if let Err(..) = mintckr.blk_found(&blkhead, &body, sto.as_ref()) {
+    // Stage 3: header quick gate before full block parse.
+    if let Err(..) = mintckr.blk_arrive(&blkhead, &body, sto.as_ref()) {
         return
     }
     let blkpkg = protocol::block::build_block_package(body.clone());

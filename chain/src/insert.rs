@@ -56,7 +56,9 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();
+        // Stage 4: minter pre-exec block gate.
         eng.minter.blk_verify(blk.block_read(), parent_blk, eng.store.as_ref())?;
+        // Stage 5: generic structural block gate.
         block_verify(&eng.cnf, blk.block_read(), blk.data().len(), parent_blk)?;
     }
 
@@ -76,6 +78,7 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         blk.set_origin(orgi);
         let new_state_ref: &dyn State = new_state.as_ref();
         let prev_state_ref: &dyn State = prev_state.as_ref().as_ref();
+        // Stage 8: final gate after execution and before forktree insertion.
         eng.minter.blk_insert(&blk, new_state_ref, prev_state_ref)?;
     }
 

@@ -93,9 +93,6 @@ pub fn create_coinbase_tx(hei: u64, msg: Fixed16, adr: Address) -> TransactionCo
     }
 }
 
-/*
-    park txs to block
-*/
 fn append_valid_tx_pick_from_txpool(
     pending_hei: u64,
     trslen: &mut usize,
@@ -180,7 +177,6 @@ fn append_valid_tx_pick_from_txpool(
     if invalidtxhxs.len() > 0 {
         let _ = txpool.drain(&invalidtxhxs);
     }
-    // ok
 }
 
 /********************************************/
@@ -258,6 +254,94 @@ mod tests {
         fn print(&self) -> String {
             s!("OneTxPool")
         }
+        fn insert_by(&self, _: TxPkg, _: &dyn Fn(&TxPkg) -> usize) -> Rerr {
+            Ok(())
+        }
+        fn first_at(&self, _: usize) -> Ret<Option<TxPkg>> {
+            Ok(None)
+        }
+        fn retain_at(&self, _: usize, _: &mut dyn FnMut(&TxPkg) -> bool) -> Rerr {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct DummyBlock {
+        intro: BlockIntro,
+    }
+    impl Serialize for DummyBlock {
+        fn serialize(&self) -> Vec<u8> {
+            self.intro.serialize()
+        }
+        fn size(&self) -> usize {
+            self.intro.size()
+        }
+    }
+    impl Parse for DummyBlock {
+        fn parse(&mut self, _: &[u8]) -> Ret<usize> {
+            errf!("none")
+        }
+    }
+    impl ToJSON for DummyBlock {
+        fn to_json_fmt(&self, _: &JSONFormater) -> String {
+            s!("{}")
+        }
+    }
+    impl FromJSON for DummyBlock {
+        fn from_json(&mut self, _: &str) -> Ret<()> {
+            errf!("none")
+        }
+    }
+    impl BlockExec for DummyBlock {}
+    impl BlockRead for DummyBlock {
+        fn hash(&self) -> Hash {
+            self.intro.hash()
+        }
+        fn version(&self) -> &Uint1 {
+            self.intro.version()
+        }
+        fn height(&self) -> &BlockHeight {
+            self.intro.height()
+        }
+        fn timestamp(&self) -> &Timestamp {
+            self.intro.timestamp()
+        }
+        fn nonce(&self) -> &Uint4 {
+            self.intro.nonce()
+        }
+        fn difficulty(&self) -> &Uint4 {
+            self.intro.difficulty()
+        }
+        fn prevhash(&self) -> &Hash {
+            self.intro.prevhash()
+        }
+        fn mrklroot(&self) -> &Hash {
+            self.intro.mrklroot()
+        }
+        fn coinbase_transaction(&self) -> Ret<&dyn TransactionRead> {
+            errf!("none")
+        }
+        fn transaction_count(&self) -> &Uint4 {
+            static ZERO: std::sync::LazyLock<Uint4> = std::sync::LazyLock::new(Uint4::default);
+            &ZERO
+        }
+        fn transactions(&self) -> &Vec<Box<dyn Transaction>> {
+            static EMPTY: std::sync::LazyLock<Vec<Box<dyn Transaction>>> = std::sync::LazyLock::new(Vec::new);
+            &EMPTY
+        }
+        fn transaction_hash_list(&self, _: bool) -> Vec<Hash> {
+            vec![]
+        }
+    }
+    impl Field for DummyBlock {
+        fn new() -> Self {
+            never!()
+        }
+    }
+    impl Block for DummyBlock {
+        fn as_read(&self) -> &dyn BlockRead {
+            self
+        }
     }
 
     struct TestEngine {
@@ -265,7 +349,6 @@ mod tests {
         latest: Arc<dyn Block>,
         store: Arc<dyn Store>,
     }
-
     impl EngineRead for TestEngine {
         fn config(&self) -> &EngineConf {
             &self.cnf
@@ -290,96 +373,44 @@ mod tests {
     }
 
     #[test]
-    fn packing_merkle_root_uses_hash_with_fee() {
-        // HacashMinter::create() validates genesis hash, so setup must provide block hasher.
+    fn packing_next_block_merkle_matches_hash_with_fee() {
         let _setup = protocol::setup::install_scoped_for_test(
             protocol::setup::standard_protocol_builder(x16rs::block_hash)
                 .build()
                 .unwrap(),
         );
 
-        // Keep test independent from genesis init checks (which require the global block hasher
-        // to be configured by the binary).
-        let prev_blk = {
-            let cbtx = TransactionCoinbase {
-                ty: Uint1::from(0),
-                address: Address::default(),
-                reward: Amount::small_mei(1),
-                message: Fixed16::default(),
-                extend: CoinbaseExtend::default(),
-            };
-            let intro = BlockIntro {
+        let prev_blk = DummyBlock {
+            intro: BlockIntro {
                 head: BlockHead {
                     version: Uint1::from(1),
-                    height: BlockHeight::from(0),
-                    timestamp: Timestamp::from(1549250700),
+                    height: BlockHeight::from(99u64),
+                    timestamp: Timestamp::from(1u64),
                     prevhash: Hash::default(),
                     mrklroot: Hash::default(),
-                    transaction_count: Uint4::from(1),
+                    transaction_count: Uint4::default(),
                 },
                 meta: BlockMeta {
                     nonce: Uint4::default(),
-                    difficulty: Uint4::from(0),
+                    difficulty: Uint4::from(LOWEST_DIFFICULTY),
                     witness_stage: Fixed2::default(),
                 },
-            };
-
-            let mut txs = DynVecTransaction::default();
-            txs.push(Box::new(cbtx)).unwrap();
-
-            let mut blk = BlockV1 {
-                intro,
-                transactions: txs,
-            };
-            blk.update_mrklroot();
-            blk
+            },
         };
 
-        // Build a tx where hash() != hash_with_fee() (fee is non-zero).
-        let acc = Account::create_by_password("merkle-test").unwrap();
-        let main = Address::from(*acc.address());
-
-        let mut tx = TransactionType2::new_by(main, Amount::small(1, 248), curtimes());
-        tx.fill_sign(&acc).unwrap();
+        let mut tx = TransactionType3::default();
+        tx.timestamp = Timestamp::from(1u64);
+        tx.fee = Amount::small_mei(1);
         let txp = TxPkg::create(Box::new(tx));
-
         let tp = OneTxPool { tx: txp };
 
-        let mut cnf = EngineConf {
-            max_block_txs: 1000,
-            max_block_size: 1024 * 1024,
-            max_tx_size: 1024 * 16,
-            max_tx_actions: 200,
-            chain_id: 0,
-            unstable_block: 4,
-            fast_sync: false,
-            sync_maxh: 0,
-            data_dir: "/tmp".to_string(),
-            block_data_dir: std::path::PathBuf::from("/tmp/hacash_test_block"),
-            state_data_dir: std::path::PathBuf::from("/tmp/hacash_test_state"),
-            vmlog_data_dir: std::path::PathBuf::from("/tmp/hacash_test_vmlog"),
-            show_miner_name: false,
-            vmlogs_enable: false,
-            vmlogs_open_height: 0,
-            vmlogs_can_delete: false,
-            dev_count_switch: 0,
-            diamond_form: true,
-            recent_blocks: false,
-            average_fee_purity: false,
-            lowest_fee_purity: 0,
-            miner_enable: false,
-            miner_reward_address: Address::default(),
-            miner_message: Fixed16::default(),
-            dmer_enable: false,
-            dmer_reward_address: Address::default(),
-            dmer_bid_account: Account::create_by_password("123456").unwrap(),
-            dmer_bid_min: Amount::small_mei(1),
-            dmer_bid_max: Amount::small_mei(31),
-            dmer_bid_step: Amount::small(5, 247),
-            txpool_maxs: Vec::default(),
-            contract_cache_size: 0.0,
-        };
-        // Make sure we set miner message/reward (pack uses these).
+        let mut cnf = EngineConf::new(&IniObj::default(), 0);
+        cnf.max_block_txs = 10;
+        cnf.max_block_size = 1_000_000;
+        cnf.max_tx_size = 100_000;
+        cnf.max_tx_actions = 16;
+        cnf.lowest_fee_purity = 0;
+        cnf.contract_cache_size = 0.0;
         cnf.miner_message = Fixed16::default();
         cnf.miner_reward_address = Address::default();
 
@@ -396,59 +427,4 @@ mod tests {
         let want = calculate_mrklroot(&blk.transaction_hash_list(true));
         assert_eq!(*blk.mrklroot(), want);
     }
-}
-
-/********************************************/
-
-fn impl_tx_pool_refresh(
-    _this: &HacashMinter,
-    eng: &dyn EngineRead,
-    txpool: &dyn TxPool,
-    txs: Vec<Hash>,
-    blkhei: u64,
-) {
-    if blkhei % 15 == 0 {
-        println!("{}.", txpool.print());
-    }
-    // drop all overdue diamond mint tx
-    if blkhei % 5 == 0 {
-        clean_invalid_diamond_mint_txs(eng, txpool, blkhei);
-    }
-    // drop all exist normal tx
-    if txs.len() > 1 {
-        let _ = txpool.drain(&txs[1..]); // over coinbase tx
-    }
-    // drop invalid normal
-    if blkhei % 11 == 0 {
-        // 1 hours
-        clean_invalid_normal_txs(eng, txpool, blkhei);
-    }
-}
-
-// clean_
-fn clean_invalid_normal_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, blkhei: u64) {
-    let pdhei = blkhei + 1;
-    let mut sub_state = eng.fork_sub_state();
-    // already minted hacd number
-    let _ = txpool.retain_at(TXGID_NORMAL, &mut |a: &TxPkg| {
-        let txr = a.tx_read();
-        let exec = eng.try_execute_tx_by(txr, pdhei, &mut sub_state);
-        exec.is_ok() // keep or delete
-    });
-}
-
-// clean_
-fn clean_invalid_diamond_mint_txs(eng: &dyn EngineRead, txpool: &dyn TxPool, _blkhei: u64) {
-    // already minted hacd number
-    let sta = eng.state();
-    let sta = sta.as_ref();
-    let curdn = CoreStateRead::wrap(sta.as_ref())
-        .get_latest_diamond()
-        .number
-        .uint();
-    let nextdn = curdn + 1;
-    let _ = txpool.retain_at(TXGID_DIAMINT, &mut |a: &TxPkg| {
-        // must be next diamond number, or delete
-        nextdn == action::get_diamond_mint_number(a.tx_read())
-    });
 }
