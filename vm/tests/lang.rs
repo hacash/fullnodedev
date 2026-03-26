@@ -1650,11 +1650,11 @@ fn format_ircode_preserves_cto_u8_opcode_identity() {
 #[test]
 fn format_ircode_preserves_cto_bytes_opcode_identity() {
     let script = r##"
-        print cast_to(10, 1)
+        print cast_to(9, 1)
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(formatted.contains("cast_to(10"));
+    assert!(formatted.contains("cast_to(9"));
     let reparsed = lang_to_ircode(&formatted).unwrap();
     assert_eq!(ircode, reparsed);
 }

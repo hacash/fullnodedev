@@ -608,6 +608,19 @@ return x"
 
     // ========================================================================= 16. BYTECODE GENERATION =========================================================================
 
+    mod intent_batch_argv {
+        use super::*;
+
+        assert_compile_ok!(
+            intent_put_pairs_flat_kv_list_compiles: "return intent_put_pairs(list { \"k1\" 1 \"k2\" 2 })",
+            intent_require_many_keys_list_compiles: "return intent_require_many(list { \"k1\" \"k2\" })",
+            intent_take_many_keys_list_compiles: "return intent_take_many(list { \"k1\" \"k2\" })",
+            intent_del_many_keys_list_compiles: "return intent_del_many(list { \"k1\" \"k2\" })",
+            intent_has_all_keys_list_compiles: "return intent_has_all(list { \"k1\" \"k2\" })",
+            intent_has_any_keys_list_compiles: "return intent_has_any(list { \"k1\" \"k2\" })",
+        );
+    }
+
     mod bytecode_generation {
         use super::*;
 
@@ -665,17 +678,13 @@ return C.0xabcdef01(1, 2)",
         }
 
         #[test]
-        fn explicit_tuple_constructor_rejects_33_items() {
+        fn explicit_tuple_constructor_accepts_33_items() {
             let argv = (1..=(crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH + 1))
                 .map(|i| i.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
             let code = format!("return tuple({})", argv);
-            let err = lang_to_bytecode(&code).expect_err("tuple(33 items) must fail");
-            assert!(err.to_string().contains(&format!(
-                "tuple length cannot more than {}",
-                crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH
-            )));
+            lang_to_bytecode(&code).expect("tuple(33 items) should compile");
         }
 
         #[test]

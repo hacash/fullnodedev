@@ -226,10 +226,7 @@ impl VMState<'_> {
         v: Value,
         p: Value,
     ) -> VmrtRes<i64> {
-        if matches!(v, Value::Nil) {
-            return itr_err_code!(StorageNilNotAllowed);
-        }
-        v.check_scalar()?;
+        v.check_non_nil_scalar(StorageNilNotAllowed)?;
         let val_len = v.can_get_size()? as usize;
         let max_val = SpaceCap::new(curhei).value_size;
         if val_len > max_val {
@@ -263,10 +260,7 @@ impl VMState<'_> {
         k: Value,
         v: Value,
     ) -> VmrtRes<i64> {
-        if matches!(v, Value::Nil) {
-            return itr_err_code!(StorageNilNotAllowed);
-        }
-        v.check_scalar()?;
+        v.check_non_nil_scalar(StorageNilNotAllowed)?;
         let val_len = v.can_get_size()? as usize;
         let max_val = SpaceCap::new(curhei).value_size;
         if val_len > max_val {

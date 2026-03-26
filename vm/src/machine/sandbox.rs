@@ -174,7 +174,7 @@ fn append_push_value_code(codes: &mut Vec<u8>, value: &Value) -> Rerr {
             codes.push(CTO as u8);
             codes.push(ValueTy::Address as u8);
         }
-        HeapSlice(_) | Tuple(_) | Compo(_) => {
+        HeapSlice(_) | Tuple(_) | Handle(_) | Compo(_) => {
             return errf!("sandbox argument type {:?} not supported", value.ty())
         }
     }

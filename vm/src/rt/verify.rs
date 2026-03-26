@@ -189,7 +189,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_unknown_type_id_for_tis_and_cto() {
-        let unknown_ids = [12u8];
+        let unknown_ids = [11u8];
         for raw in unknown_ids {
             let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, raw, Bytecode::END as u8];
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, raw, Bytecode::END as u8];
@@ -232,6 +232,7 @@ mod verify_type_param_tests {
             ValueTy::Address,
             ValueTy::HeapSlice,
             ValueTy::Tuple,
+            ValueTy::Handle,
             ValueTy::Compo,
         ];
         for ty in types {
@@ -260,7 +261,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_cto_targets_outside_cast_set() {
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
             let res = verify_bytecodes(&cto_codes);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));

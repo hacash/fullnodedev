@@ -80,6 +80,16 @@ macro_rules! memories_kvmap_define {
             pub fn contains_key(&self, k: &Value) -> VmrtRes<bool> {
                 Ok(self.datas.contains_key(&Self::key(k)?))
             }
+
+            pub fn len(&self) -> usize {
+                self.datas.len()
+            }
+
+            pub fn keys_sorted(&self) -> Vec<Vec<u8>> {
+                let mut keys = self.datas.keys().cloned().collect::<Vec<_>>();
+                keys.sort_unstable();
+                keys
+            }
         }
     };
 }

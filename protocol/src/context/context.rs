@@ -242,7 +242,7 @@ impl Context for ContextInst<'_> {
         ret
     }
 
-    fn vm_current_intent_scope(&mut self) -> Option<Option<u64>> {
+    fn vm_current_intent_scope(&mut self) -> Option<Option<usize>> {
         self.vm_mut().and_then(|vm| vm.current_intent_scope())
     }
 

@@ -611,6 +611,10 @@ mod compo_tests {
         let err =
             CompoItem::list(VecDeque::from([Value::Compo(CompoItem::new_map())])).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+
+        let err =
+            CompoItem::list(VecDeque::from([Value::handle(7u32)])).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
     }
 
     #[test]
@@ -647,6 +651,15 @@ mod compo_tests {
                 &SpaceCap::new(1),
                 Value::Bytes(vec![1]),
                 Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()),
+        )
+        .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+
+        let err = compo
+            .insert(
+                &SpaceCap::new(1),
+                Value::Bytes(vec![2]),
+                Value::handle(9u32),
         )
         .unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);

@@ -191,6 +191,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         heap,
         &mut bindings,
         &mut intent_stack,
+        None,
         context_addr,
         current_addr,
         gas_table,
@@ -215,6 +216,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     heap: &mut Heap,
     bindings: &mut FrameBindings,
     intent_stack: &mut Vec<IntentBinding>,
+    base_intent_binding: IntentScope,
     context_addr: &field::Address,
     current_addr: &field::Address,
     // shared runtime
@@ -457,6 +459,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                         cap,
                         bindings,
                         intent_stack,
+                        base_intent_binding,
                         context_addr,
                         intents,
                         deferred_registry,

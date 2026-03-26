@@ -89,7 +89,7 @@ impl Parse for Value {
                 let (adr, sz) = field::Address::create(buf)?;
                 (sz, Address(adr))
             },
-            _ => return errf!("Tuple, compo or slice value item cannot be parsed"),
+            _ => return errf!("Tuple, handle, compo or slice value item cannot be parsed"),
         };
         Ok(sz + 1)
     }
@@ -100,8 +100,8 @@ impl Serialize for Value {
         match self {
             // Runtime-only variants are intentionally excluded from field serialization.
             // Parse also rejects them, so serialize must keep the same type boundary.
-            HeapSlice(..) | Tuple(..) | Compo(..) => {
-                panic!("Value::serialize does not support HeapSlice/Tuple/Compo")
+            HeapSlice(..) | Tuple(..) | Handle(..) | Compo(..) => {
+                panic!("Value::serialize does not support HeapSlice/Tuple/Handle/Compo")
             }
             Bytes(buf) => {
                 let mut out = Vec::with_capacity(1 + 2 + buf.len());
@@ -184,6 +184,12 @@ mod field_tests {
             <Value as Serialize>::serialize(&av)
         }));
         assert!(ap.is_err());
+
+        let hv = Value::handle(7u32);
+        let hnp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            <Value as Serialize>::serialize(&hv)
+        }));
+        assert!(hnp.is_err());
     }
 
     #[test]

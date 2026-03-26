@@ -29,7 +29,7 @@ pub struct ExecCtx {
     pub call_depth: usize,
 }
 
-pub type IntentBinding = Option<u64>;
+pub type IntentBinding = Option<usize>;
 pub type IntentScope = Option<IntentBinding>;
 
 #[derive(Debug, Clone)]

@@ -365,7 +365,7 @@ mod bounds_tests {
     fn execute_code_rejects_unknown_type_id_for_tis_and_cto() {
         use crate::rt::Bytecode;
 
-        for raw in [12u8] {
+        for raw in [11u8] {
             for inst in [Bytecode::TIS, Bytecode::CTO] {
                 let codes = vec![Bytecode::P0 as u8, inst as u8, raw, Bytecode::END as u8];
 
@@ -417,6 +417,7 @@ mod bounds_tests {
             ValueTy::Nil,
             ValueTy::HeapSlice,
             ValueTy::Tuple,
+            ValueTy::Handle,
             ValueTy::Compo,
         ];
         for ty in non_castable_targets {
@@ -515,6 +516,10 @@ mod bounds_tests {
         );
         assert_eq!(
             run(Value::Compo(CompoItem::new_list()), ValueTy::Compo).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            run(Value::handle(7u32), ValueTy::Handle).unwrap(),
             Value::Bool(true)
         );
     }
@@ -633,6 +638,16 @@ mod bounds_tests {
         );
         assert!(matches!(
             run(Bytecode::CTO, Value::Tuple(args), ValueTy::Tuple),
+            Err(ItrErr(ItrErrCode::InstParamsErr, _))
+        ));
+
+        let handle = Value::handle(7u32);
+        assert_eq!(
+            run(Bytecode::TIS, handle.clone(), ValueTy::Handle).unwrap(),
+            Value::Bool(true)
+        );
+        assert!(matches!(
+            run(Bytecode::CTO, handle, ValueTy::Handle),
             Err(ItrErr(ItrErrCode::InstParamsErr, _))
         ));
 

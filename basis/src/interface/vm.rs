@@ -3,7 +3,7 @@ pub trait VM {
         let _ = (ctx, req);
         never!()
     }
-    fn current_intent_scope(&mut self) -> Option<Option<u64>> { None }
+    fn current_intent_scope(&mut self) -> Option<Option<usize>> { None }
     /// Snapshot volatile VM state for AstSelect/AstIf recover paths.
     /// Note: gas remaining is intentionally excluded so gas usage stays monotonic in one tx.
     fn snapshot_volatile(&mut self) -> Box<dyn Any> { Box::new(()) }

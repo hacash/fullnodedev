@@ -161,7 +161,7 @@ fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
 fn record_recent(eng: &ChainEngine, block: &dyn BlockRead, root_height: u64) {
     let deln = root_height.saturating_sub(eng.cnf.unstable_block);
     let mut rcts = eng.recent_blocks.lock().unwrap();
-    rcts.retain(|x| x.height >= deln);
+    rcts.retain(|x| x.height > deln);
     rcts.push_front(Arc::new(create_recent_block_info(block)));
 }
 

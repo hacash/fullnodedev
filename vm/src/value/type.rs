@@ -11,12 +11,13 @@ pub enum ValueTy {
     U32         = 4,
     U64         = 5,
     U128        = 6,
-    // U256     = 7 ...      = 8 ...      = 9
-    Bytes       = 10,
-    Address     = 11,
-    HeapSlice   = 13,
-    Tuple        = 14,
-    Compo       = 15
+    // U256     = 7 ...      = 8
+    Bytes       = 9,
+    Address     = 10,
+    HeapSlice   = 12,
+    Tuple       = 13,
+    Compo       = 14,
+    Handle      = 15
 }
 
 pub const RESERVED_U256_TYPE_NAME: &str = "u256";
@@ -54,6 +55,7 @@ impl ValueTy {
             ValueTy::HeapSlice => "heapslice" ,
             ValueTy::Tuple     => "tuple"     ,
             ValueTy::Compo     => "compo"     ,
+            ValueTy::Handle    => "handle"    ,
         }
     }
 
@@ -88,6 +90,7 @@ impl ValueTy {
             "heapslice" => HeapSlice,
             "tuple"     => Tuple,
             "compo"     => Compo,
+            "handle"    => Handle,
             a => return errf!("value type '{}' not found", a)
         })
     }
@@ -104,11 +107,12 @@ impl ValueTy {
             6  => U128      ,
             RESERVED_U256_TYPE_ID => return errf!("ValueTy {} (u256) is reserved but not enabled", RESERVED_U256_TYPE_ID),
             /* */
-            10 => Bytes     ,
-            11 => Address   ,
-            13 => HeapSlice ,
-            14 => Tuple      ,
-            15 => Compo     ,
+            9  => Bytes     ,
+            10 => Address   ,
+            12 => HeapSlice ,
+            13 => Tuple      ,
+            14 => Compo     ,
+            15 => Handle    ,
             _ => return errf!("ValueTy {} not found", t)
         })
     }
@@ -164,7 +168,7 @@ mod type_tests {
             assert_eq!(parse_cto_target_ty_param(ty as u8).unwrap(), ty);
         }
 
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
             let res = parse_cto_target_ty_param(ty as u8);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }
@@ -178,6 +182,9 @@ mod type_tests {
         assert!(ValueTy::Nil.check_func_argv_type().is_err());
         assert!(ValueTy::HeapSlice.check_func_argv_type().is_err());
         assert!(ValueTy::Tuple.check_func_argv_type().is_err());
+        assert!(ValueTy::Handle.check_func_argv_type().is_ok());
+        assert!(ValueTy::Handle.check_func_retv_type().is_ok());
         assert_eq!(ValueTy::from_name("tuple").unwrap(), ValueTy::Tuple);
+        assert_eq!(ValueTy::from_name("handle").unwrap(), ValueTy::Handle);
     }
 }

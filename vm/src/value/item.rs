@@ -1,4 +1,6 @@
+use std::usize;
 
+use Value::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum Value {
@@ -9,12 +11,13 @@ pub enum Value {
     U32(u32),                //           4
     U64(u64),                //           5
     U128(u128),              //           6
-    // U256(u256), ...       //           7..
-    Bytes(Vec<u8>),          //           10
-    Address(field::Address), //           11
-    HeapSlice((u32, u32)),   //           13
-    Tuple(TupleItem),        //           14
-    Compo(CompoItem),        //           15
+    // U256(u256), ...       //           7..8
+    Bytes(Vec<u8>),          //           9
+    Address(field::Address), //           10
+    HeapSlice((u32, u32)),   //           12
+    Tuple(TupleItem),        //           13
+    Compo(CompoItem),        //           14
+    Handle(HandleItem),      //           15
 }
 
 
@@ -23,11 +26,6 @@ impl std::fmt::Display for Value {
         write!(f, "{}", self.to_string())
     }
 }
-
-
-use std::usize;
-
-use Value::*;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CallArgsPack {
@@ -65,8 +63,9 @@ impl Value {
             Bytes(..)     => ValueTy::Bytes,
             Address(..)   => ValueTy::Address,
             HeapSlice(..) => ValueTy::HeapSlice,
-            Tuple(..)      => ValueTy::Tuple,
+            Tuple(..)     => ValueTy::Tuple,
             Compo(..)     => ValueTy::Compo,
+            Handle(..)    => ValueTy::Handle,
         }
     }
 
@@ -268,6 +267,8 @@ impl Value {
             // not support
             Tuple(..) => "{tuple value ...}".to_owned().into_bytes(),
             Compo(..) => "{compo value ...}".to_owned().into_bytes(),
+            Handle(..) => "{handle value ...}".to_owned().into_bytes(),
+
         }
     }
 
@@ -290,6 +291,7 @@ impl Value {
             HeapSlice((_, n)) => *n as usize,
             Tuple(a) => a.val_size(),
             Compo(c) => c.val_size(),
+            Handle(..) => REF_DUP_SIZE,
         }
     }
 
@@ -304,12 +306,12 @@ impl Value {
             U128(..) => 16,
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
-            HeapSlice(..) | Tuple(..) | Compo(..) => REF_DUP_SIZE,
+            HeapSlice(..) | Tuple(..) | Compo(..) | Handle(..) => REF_DUP_SIZE,
         }
     }
 
     pub fn can_get_size(&self) -> VmrtRes<u16> {
-        if let HeapSlice(..) | Tuple(..) | Compo(..) = self {
+        if let HeapSlice(..) | Tuple(..) | Compo(..) | Handle(..) = self {
             return itr_err_code!(ItemNoSize)
         }
         let n = self.val_size();
@@ -347,6 +349,7 @@ impl Value {
             HeapSlice((s, l)) => format!("heap({},{})", s, l),
             Tuple(a) => a.to_string(),
             Compo(a) => format!("compo({}){}", a.len(), a.to_string()),
+            Handle(..) => s!("handle"),
         }
     }
 
@@ -365,6 +368,7 @@ impl Value {
             HeapSlice((s, l)) => format!("[{},{}]", s, l),
             Tuple(a) => a.to_json(),
             Compo(a) => a.to_json(),
+            Handle(..) => s!(r#"{"$handle":true}"#),
         }
     }
 
@@ -386,6 +390,7 @@ impl Value {
             HeapSlice((s, l)) => format!(r#"{{"$heap":[{},{}]}}"#, s, l),
             Tuple(a) => a.to_debug_json(),
             Compo(a) => a.to_debug_json(),
+            Handle(..) => s!(r#"{"$handle":true}"#),
         }
     }
 

@@ -46,6 +46,7 @@ pub struct Frame {
     pub pc: usize,
     pub exec: ExecCtx,
     pub bindings: FrameBindings,
+    pub base_intent_binding: IntentScope,
     pub intent_stack: Vec<IntentBinding>,
     pub call_argv: Value,
     pub types: Option<FuncArgvTypes>,
@@ -83,7 +84,6 @@ impl Frame {
         f.oprnds.reset(stks);
         f.locals.reset(locs);
         f.bindings = self.bindings.clone();
-        f.intent_stack = self.intent_stack.clone();
         f
     }
 
@@ -129,13 +129,6 @@ impl Frame {
             self.oprnds.push(argv.clone())?;
         }
         self.bindings = bindings;
-        if self.intent_stack.is_empty() {
-            if let Some(binding) = self.bindings.intent_binding {
-                self.intent_stack.push(binding);
-            }
-        } else {
-            self.bindings.intent_binding = self.intent_stack.last().cloned();
-        }
         self.call_argv = argv;
         self.types = fnobj.agvty.clone();
         self.pc = 0;
@@ -154,6 +147,8 @@ impl Frame {
         cap: &SpaceCap,
     ) -> VmrtErr {
         // Caller must validate argv shape before any contract planning/warmup.
+        self.base_intent_binding = bindings.intent_binding;
+        self.intent_stack.clear();
         self.prepare_common(exec, bindings, fnobj, height, param, true, cap)
     }
 
@@ -171,6 +166,8 @@ impl Frame {
         if have_param {
             argv.check_func_argv()?;
         }
+        self.base_intent_binding = bindings.intent_binding;
+        self.intent_stack.clear();
         self.prepare_common(exec, bindings, fnobj, height, argv, have_param, cap)
     }
 
@@ -206,7 +203,6 @@ impl Frame {
             )
         };
         self.bindings = bindings;
-        self.bindings.intent_binding = self.intent_stack.last().cloned();
         self.pc = 0;
         self.exec = exec;
         self.call_argv = param;
@@ -214,7 +210,11 @@ impl Frame {
         Ok(())
     }
 
-    pub fn execute<H: VmHost + ?Sized>(&mut self, r: &mut Resoure, host: &mut H) -> VmrtRes<CallExit> {
+    pub fn execute<H: VmHost + ?Sized>(
+        &mut self,
+        r: &mut Resoure,
+        host: &mut H,
+    ) -> VmrtRes<CallExit> {
         let context_addr = self.bindings.context_addr;
         let current_addr = self
             .bindings
@@ -231,6 +231,7 @@ impl Frame {
             &mut self.heap,
             &mut self.bindings,
             &mut self.intent_stack,
+            self.base_intent_binding,
             &context_addr,
             &current_addr,
             &r.gas_table,
@@ -254,7 +255,9 @@ mod frame_boundary_tests {
     fn check_output_type_rejects_heapslice_without_declared_output_type() {
         let frame = Frame::default();
         let mut retv = Value::HeapSlice((0, 1));
-        let err = frame.check_output_type(&mut retv, &SpaceCap::new(1)).unwrap_err();
+        let err = frame
+            .check_output_type(&mut retv, &SpaceCap::new(1))
+            .unwrap_err();
         assert!(matches!(err, ItrErr(CastBeFnRetvFail, _)));
     }
 
@@ -262,13 +265,25 @@ mod frame_boundary_tests {
     fn check_output_type_rejects_oversize_compo() {
         let frame = Frame::default();
         let mut retv = Value::Compo(
-            CompoItem::list(std::collections::VecDeque::from([Value::U8(1), Value::U8(2)]))
-                .unwrap(),
+            CompoItem::list(std::collections::VecDeque::from([
+                Value::U8(1),
+                Value::U8(2),
+            ]))
+            .unwrap(),
         );
         let mut cap = SpaceCap::new(1);
         cap.compo_length = 1;
         let err = frame.check_output_type(&mut retv, &cap).unwrap_err();
         assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
+    }
+
+    #[test]
+    fn check_output_type_allows_handle_for_internal_flow() {
+        let frame = Frame::default();
+        let mut retv = Value::handle(7u32);
+        frame
+            .check_output_type(&mut retv, &SpaceCap::new(1))
+            .unwrap();
     }
 }
 

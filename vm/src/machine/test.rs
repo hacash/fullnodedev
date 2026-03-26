@@ -186,26 +186,15 @@ mod machine_file_test {
     }
 
     #[test]
-    fn main_call_intent_primitives_roundtrip_basic_flow() {
+    fn main_call_intent_new_requires_contract_context() {
         let base_addr = test_base_addr();
-        let rv = run_main_script_with(
+        let res = run_main_script_raw(
             base_addr,
             vec![],
             StateMem::default(),
-            r#"
-                var iid = intent_new("basic")
-                intent_use(iid)
-                intent_put("foo", "bar")
-                assert intent_current() == iid
-                assert intent_get("foo") == "bar"
-                assert intent_take("foo") == "bar"
-                intent_pop()
-                return iid
-            "#,
-            true,
-        )
-        .unwrap();
-        assert_eq!(rv.extract_u64().unwrap(), 1);
+            r##"return intent_new("basic")"##,
+        );
+        assert_err_contains(res, "contract context");
     }
 
     #[test]
@@ -222,6 +211,18 @@ mod machine_file_test {
         assert!(err.contains("intent bind depth exceeded max 10"), "unexpected error: {err}");
     }
 
+    #[test]
+    fn main_call_intent_use_rejects_non_handle() {
+        let base_addr = test_base_addr();
+        let res = run_main_script_raw(
+            base_addr,
+            vec![],
+            StateMem::default(),
+            "intent_use(1)\nreturn 0",
+        );
+        assert_err_contains(res, "requires intent handle");
+    }
+
     fn run_main_script_raw(
         base_addr: Address,
         tx_libs: Vec<crate::ContractAddress>,
@@ -229,6 +230,223 @@ mod machine_file_test {
         main_script: &str,
     ) -> Ret<Value> {
         run_main_script_with(base_addr, tx_libs, ext_state, main_script, true)
+    }
+
+    fn setup_intent_owner_contracts(
+        base_addr: &Address,
+    ) -> (crate::ContractAddress, crate::ContractAddress, StateMem) {
+        let contract_owner = test_contract(base_addr, 141);
+        let contract_foreign = test_contract(base_addr, 142);
+        let owner_sto = Contract::new()
+            .func(
+                Func::new("make")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("owned")
+                        intent_use(iid)
+                        intent_put("flag", 7)
+                        return iid
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("read_flag")
+                    .unwrap()
+                    .external()
+                    .fitsh(r##"return intent_require("flag")"##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("register_defer")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        param { iid }
+                        defer(iid)
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let foreign_sto = Contract::new()
+            .func(
+                Func::new("read_flag")
+                    .unwrap()
+                    .external()
+                    .fitsh(r##"return intent_require("flag")"##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("register_defer")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        param { iid }
+                        defer(iid)
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_owner, &owner_sto);
+            vmsta.contract_set_sync_edition(&contract_foreign, &foreign_sto);
+        }
+        (contract_owner, contract_foreign, ext_state)
+    }
+
+    #[test]
+    fn contract_owned_intent_handle_is_visible_only_inside_owner_contract() {
+        let base_addr = test_base_addr();
+        let (contract_owner, contract_foreign, ext_state) = setup_intent_owner_contracts(&base_addr);
+
+        let owner_script = r##"
+            lib O = 0
+            var iid = O.make()
+            intent_use(iid)
+            assert O.read_flag() == 7
+            return 0
+        "##;
+        let rv = run_main_script_raw(
+            base_addr.clone(),
+            vec![contract_owner.clone()],
+            ext_state.clone(),
+            owner_script,
+        )
+        .unwrap();
+        assert_eq!(rv.extract_u8().unwrap(), 0);
+        let foreign_script = r##"
+            lib O = 0
+            lib F = 1
+            var iid = O.make()
+            intent_use(iid)
+            return F.read_flag()
+        "##;
+        let foreign_res = run_main_script_raw(
+            base_addr,
+            vec![contract_owner, contract_foreign],
+            ext_state,
+            foreign_script,
+        );
+        assert_err_contains(foreign_res, "not owned by contract");
+    }
+
+    #[test]
+    fn defer_requires_intent_owner() {
+        let base_addr = test_base_addr();
+        let (contract_owner, contract_foreign, ext_state) = setup_intent_owner_contracts(&base_addr);
+
+        let owner_script = r##"
+            lib O = 0
+            var iid = O.make()
+            return O.register_defer(iid)
+        "##;
+        let rv = run_main_script_raw(
+            base_addr.clone(),
+            vec![contract_owner.clone()],
+            ext_state.clone(),
+            owner_script,
+        )
+        .unwrap();
+        assert_eq!(rv.extract_u8().unwrap(), 0);
+
+        let foreign_script = r##"
+            lib O = 0
+            lib F = 1
+            var iid = O.make()
+            return F.register_defer(iid)
+        "##;
+        let res = run_main_script_raw(
+            base_addr,
+            vec![contract_owner, contract_foreign],
+            ext_state,
+            foreign_script,
+        );
+        assert_err_contains(res, "not owned by contract");
+    }
+
+    #[test]
+    fn intent_put_pairs_accepts_flat_kv_list() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 166);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("kv")
+                        intent_use(iid)
+                        intent_put_pairs(list { "a" 3 "b" 5 })
+                        return intent_len()
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run()
+            "##,
+        )
+        .unwrap();
+        assert_eq!(rv, Value::U64(2));
+    }
+
+    #[test]
+    fn intent_put_pairs_list_tuple_form_hits_scalar_boundary_error() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 167);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("kv")
+                        intent_use(iid)
+                        intent_put_pairs(list { tuple("a", 3) tuple("b", 5) })
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let res = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run()
+            "##,
+        );
+        assert_err_contains(res, "CastBeValueFail");
     }
 
     fn run_p2sh_script(

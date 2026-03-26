@@ -601,12 +601,6 @@ fn pack_explicit_tuple_v2(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>
     if len == 0 {
         return errf!("tuple() cannot be empty");
     }
-    if len > crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH {
-        return errf!(
-            "tuple length cannot more than {}",
-            crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH
-        );
-    }
     subs.push(push_num(len as u128));
     subs.push(push_inst(Bytecode::PACKTUPLE));
     Ok(Box::new(Syntax::build_irlist(subs)?))

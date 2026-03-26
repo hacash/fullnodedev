@@ -258,7 +258,7 @@ impl MachineBox {
 }
 
 impl VM for MachineBox {
-    fn current_intent_scope(&mut self) -> Option<Option<u64>> {
+    fn current_intent_scope(&mut self) -> Option<Option<usize>> {
         self.machine_ref().ok().and_then(Machine::current_intent_scope)
     }
 
@@ -352,7 +352,7 @@ pub struct Machine {
 }
 
 impl Machine {
-    fn current_intent_scope(&self) -> Option<Option<u64>> {
+    fn current_intent_scope(&self) -> Option<Option<usize>> {
         self.frames
             .last()
             .and_then(CallFrame::current_intent_scope)
@@ -374,13 +374,15 @@ impl Machine {
     ) -> Ret<Value> {
         // Caller must pre-validate code bytes. Production entry actions run convert_and_check before setup_vm_run.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
-        Ok(self.do_call(
+        let rv = self.do_call(
             host,
             EntryKind::Main.root_exec(),
             &fnobj,
             host.main_entry_bindings(),
             None,
-        )?)
+        )?;
+        rv.check_vm_boundary_retv()?;
+        Ok(rv)
     }
 
     pub fn main_call<H: VmHost + ?Sized>(
@@ -404,7 +406,7 @@ impl Machine {
     ) -> XRet<Value> {
         let exec = EntryKind::Abst.root_exec();
         exec.ensure_call_depth(&self.r.space_cap).map_err(XError::from)?;
-        param.check_func_argv().map_err(XError::from)?;
+        param.check_vm_boundary_argv().map_err(XError::from)?;
         param
             .check_container_cap(&self.r.space_cap)
             .map_err(XError::from)?;
@@ -442,6 +444,10 @@ impl Machine {
         // Caller must pre-validate lock script bytes. Production P2SH flow verifies inputs before VM call.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = p2sh_addr;
+        param.check_vm_boundary_argv().map_err(XError::from)?;
+        param
+            .check_container_cap(&self.r.space_cap)
+            .map_err(XError::from)?;
         let rv = self.do_call(
             host,
             EntryKind::P2sh.root_exec(),

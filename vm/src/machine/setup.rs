@@ -11,8 +11,10 @@ fn ensure_vm_run_ready(ctx: &dyn Context) -> Rerr {
     Ok(())
 }
 
-/// Falsy return => success. Non-falsy or object return => recoverable (XError::revert). HeapSlice => unrecoverable (XError::fault).
+/// Falsy return => success. Non-falsy or object return => recoverable (XError::revert). Runtime-only values crossing the VM boundary are unrecoverable (XError::fault).
 pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
+    rv.check_vm_boundary_retv()
+        .map_err(|e| XError::fault(format!("{} return cannot cross VM boundary: {}", err_msg, e)))?;
     use Value::*;
     let detail: Option<String> = match rv {
         Nil => None,
@@ -36,12 +38,7 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
             None,
             Some(format!("address {}", a.to_readable()))
         ),
-        HeapSlice(_) => {
-            return Err(XError::fault(format!(
-                "{} return type HeapSlice is not supported",
-                err_msg
-            )))
-        }
+        HeapSlice(_) | Handle(_) => never!(),
         Tuple(_) | Compo(_) => Some(format!("object {}", rv.to_json())),
     };
     match detail {
@@ -115,4 +112,19 @@ pub fn setup_vm_run_abst(
         return errf!("vm call return type mismatch");
     };
     Ok((cost, *rv))
+}
+
+#[cfg(test)]
+mod setup_tests {
+    use super::*;
+
+    #[test]
+    fn check_vm_return_value_faults_handle_inside_tuple() {
+        let rv = Value::Tuple(
+            TupleItem::new(vec![Value::U8(1), Value::handle(7u32)]).unwrap(),
+        );
+        let err = check_vm_return_value(&rv, "main call").unwrap_err();
+        assert!(err.is_fault());
+        assert!(err.to_string().contains("cannot cross VM boundary"));
+    }
 }
