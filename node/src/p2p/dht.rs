@@ -1,15 +1,5 @@
 
 /**
-* return: exist peer
-*/
-fn check_exist_in_dht_list(lklist: PeerList, peer: &Peer) -> Option<Arc<Peer>> {
-    lklist.lock().unwrap().iter().find(|p|{
-        p.key == peer.key || p.addr == peer.addr
-    }).map(|a|a.clone())
-}
-
-
-/**
  * remove one from 
  */
 fn checkout_one_from_dht_list<F>(lklist: PeerList, choose: F) -> Option<Arc<Peer>>
@@ -64,21 +54,10 @@ fn insert_nearest_to_dht_list(list: &mut Vec<PeerKey>, compare: &PeerKey, least:
  */
 fn remove_peer_from_dht_list(lklist: PeerList, peer: Arc<Peer>) -> bool {
     let key = peer.key;
-    let mut rmid = -1isize;
     let mut list = lklist.lock().unwrap();
-    for i in 0..list.len() {
-        if key == list[i].key {
-            rmid = i as isize;
-            break
-        }
-    }
-    // rm 
-    if rmid >=0 {
-        list.remove(rmid as usize);
-        return true;
-    }
-    // not find
-    false
+    let len = list.len();
+    list.retain(|p| p.key != key);
+    len != list.len()
 }
 
 /**
@@ -89,14 +68,9 @@ fn remove_peer_from_dht_list(lklist: PeerList, peer: Arc<Peer>) -> bool {
 }
 
 
-/**
- * return: maybe drop one
- */
-fn insert_peer_to_dht_list(lklist: PeerList, max: usize, 
+fn insert_peer_to_dht_vec(list: &mut Vec<Arc<Peer>>, max: usize, 
     compare: &PeerKey, peer: Arc<Peer>
 ) -> Option<Arc<Peer>> {
-
-    let mut list = lklist.lock().unwrap();
     let length = list.len();
     let mut insert_idx = length;
     for i in 0..length {

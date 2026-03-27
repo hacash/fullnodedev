@@ -35,35 +35,36 @@ impl P2PManage {
     }
 
     /**
-    * return: maybe drop one
+    * return: (is accepted, maybe drop one)
     */
-    fn insert(&self, peer: Arc<Peer>) -> Option<Arc<Peer>> {
+    fn insert(&self, peer: Arc<Peer>) -> (bool, Option<Arc<Peer>>) {
         let mypid = &self.cnf.node_key;
-        let mut lmax = self.cnf.offshoot_peers;
-        let mut list = self.offshoots.clone();
-        // check exist repeat
-        let exist = check_exist_in_dht_list(self.backbones.clone(), &peer)
-            .or_else(|| check_exist_in_dht_list(self.offshoots.clone(), &peer));
-        if exist.is_some() {
-            return None // exist
+        let mut backbones = self.backbones.lock().unwrap();
+        let mut offshoots = self.offshoots.lock().unwrap();
+        let key = peer.key;
+        let exist = backbones.iter().any(|p| p.key == key)
+            || offshoots.iter().any(|p| p.key == key);
+        if exist {
+            return (false, None) // exist
         }
         if peer.is_public {
-            // add in backbones
-            lmax = self.cnf.backbone_peers;
-            list = self.backbones.clone();
+            let droped = insert_peer_to_dht_vec(&mut backbones, self.cnf.backbone_peers, mypid, peer.clone());
+            if droped.is_none() {
+                return (true, None) // insert ok
+            }
+            let droped = droped.unwrap();
+            if !droped.is_cntome {
+                return (true, Some(droped))
+            }
+            let dpk = droped.key;
+            let exist = backbones.iter().any(|p| p.key == dpk)
+                || offshoots.iter().any(|p| p.key == dpk);
+            if exist {
+                return (true, Some(droped))
+            }
+            return (true, insert_peer_to_dht_vec(&mut offshoots, self.cnf.offshoot_peers, mypid, droped))
         }
-        let droped = insert_peer_to_dht_list(list, lmax, mypid, peer.clone());
-        if peer.is_public {
-        }
-        if droped.is_none() {
-            return None // insert ok
-        }
-        let droped = droped.unwrap();
-        if !peer.is_public || !droped.is_cntome {
-            return Some(droped) // not
-        }
-        // second insert to offshoots
-        insert_peer_to_dht_list(self.offshoots.clone(), self.cnf.offshoot_peers, mypid, droped)
+        (true, insert_peer_to_dht_vec(&mut offshoots, self.cnf.offshoot_peers, mypid, peer))
     }
 
     fn publics(&self) -> Vec<Arc<Peer>> {

@@ -80,15 +80,19 @@ impl P2PManage {
         // println!("&&&& try_create_peer(peer.clone()) ...");
         let (peer, conn_read) = self.try_create_peer(conn, mynodeinfo).await?;
         // println!("&&&& try_create_peer(peer.clone()) ok.");
+        // insert to node list
+        // println!("&&&& insert(peer.clone()) ...");
+        let (accepted, droped) = self.insert(peer.clone());
+        if !accepted {
+            peer.disconnect().await;
+            return errf!("peer already exists")
+        }
+        self.delay_close_peer(droped, 15).await; // delay 15 secs to close
+        // println!("&&&& insert(peer.clone()) ok.");
         // loop read peer msg
         // println!("&&&& handle_peer_message(peer.clone(), conn_read) ...");
         self.handle_peer_message(peer.clone(), conn_read).await?;
         // println!("&&&& handle_peer_message(peer.clone(), conn_read) ok.");
-        // insert to node list
-        // println!("&&&& insert(peer.clone()) ...");
-        let droped = self.insert(peer.clone());
-        self.delay_close_peer(droped, 15).await; // delay 15 secs to close
-        // println!("&&&& insert(peer.clone()) ok.");
         Ok(peer)
     }
 

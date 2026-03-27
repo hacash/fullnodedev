@@ -88,13 +88,9 @@ async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler
     // close the conn
     peer.disconnect().await;
     // remove from list
-    if remove_peer_from_dht_list(pary2.clone(), peer.clone()) {
-        // println!("remove from pary2");
-        return;
-    }
+    let _ = remove_peer_from_dht_list(pary2.clone(), peer.clone());
     if remove_peer_from_dht_list(pary1.clone(), peer.clone()) {
         // println!("remove from pary1");
         persist_stable_nodes_from_conf(&cnf, &pary1);
-        return;
     }
 }
