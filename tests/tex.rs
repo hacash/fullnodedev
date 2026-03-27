@@ -70,7 +70,7 @@ mod tex {
             ticket: BytesW1::from_str("USDT").unwrap(),
             name: BytesW1::from_str("Teather").unwrap(),
         };
-        act2.protocol_fee = Amount::mei(1);
+        act2.protocol_cost = Amount::mei(1);
 
         //
         curl_trs_1(vec![

@@ -540,15 +540,20 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 ROLL => ops.roll(pu8!())?,
                 SWAP => ops.swap()?,
                 REV => ops.reverse(pu8!())?, // reverse
-                // CHOOSE: pop condition; if false swap the remaining two values so
-                // the chosen branch becomes the top of the stack. Leave the
-                // chosen value on the stack for subsequent instructions to consume.
+                // CHOOSE expects stack order [..., cond, yes, no] and keeps
+                // exactly one chosen branch value on stack top.
                 CHOOSE => {
-                    if !ops.pop()?.extract_bool()? {
-                        ops.swap()?
+                    let l = ops.datas.len();
+                    if l < 3 {
+                        return itr_err_code!(OutOfStack);
                     }
-                    ops.pop()?;
-                } /* x ? a : b */
+                    let c = l - 3;
+                    let y = c + 1;
+                    let n = c + 2;
+                    let pick = maybe!(ops.datas[c].extract_bool()?, y, n);
+                    ops.datas.swap(c, pick);
+                    ops.datas.truncate(l - 2);
+                } /* choose(cond, yes, no) */
                 CAT => {
                     let (xlen, ylen) = match ops.datas.len() {
                         l if l >= 2 => (ops.datas[l - 2].val_size(), ops.datas[l - 1].val_size()),

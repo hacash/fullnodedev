@@ -178,9 +178,9 @@ fn add_diamond_insc_burn_count(state: &mut CoreState, pfee: &Amount) -> Rerr {
     let mut ttcount = state.get_total_count();
     let pfee_238 = pfee.to_238_u64()?;
     let burn_total = (*ttcount.diamond_insc_burn_238)
-        .checked_add(pfee_238)
+        .checked_add(pfee_238 as u128)
         .ok_or_else(|| "diamond_insc_burn_238 overflow".to_string())?;
-    ttcount.diamond_insc_burn_238 = Uint8::from(burn_total);
+    ttcount.diamond_insc_burn_238 = Uint12::from(burn_total);
     state.set_total_count(&ttcount);
     Ok(())
 }

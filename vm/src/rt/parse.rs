@@ -95,7 +95,7 @@ impl BytecodePrint for Vec<u8> {
                         pms.push(format!("{}, {}", idx, opt));
                     }else if let XLG = inst {
                         let (opt, idx) = local_logic_param_parse(self[i]);
-                        pms.push(format!("{}, {}", opt, idx));
+                        pms.push(format!("{}, {}", idx, opt));
                     } else if is_user_call_inst(inst) {
                         let body = &self[i..i + meta.param as usize];
                         match decode_user_call_site(inst, body) {

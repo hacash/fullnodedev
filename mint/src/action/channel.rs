@@ -115,11 +115,11 @@ fn channel_open(this: &ChannelOpen, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let opening = (*ttcount.opening_channel)
         .checked_add(1)
         .ok_or_else(|| "opening_channel overflow".to_string())?;
-    ttcount.opening_channel = Uint5::from(opening);
+    ttcount.opening_channel = Uint8::from(opening);
     let dep = (*ttcount.channel_deposit_238)
-        .checked_add(lock_total_238)
+        .checked_add(lock_total_238 as u128)
         .ok_or_else(|| "channel_deposit_238 overflow".to_string())?;
-    ttcount.channel_deposit_238 = Uint8::from(dep);
+    ttcount.channel_deposit_238 = Uint12::from(dep);
     cstate.set_total_count(&ttcount);
 
     // ok finish

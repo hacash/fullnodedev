@@ -170,6 +170,9 @@ uint_define!{Uint5, 5, 8, u64}
 uint_define!{Uint6, 6, 8, u64}
 uint_define!{Uint7, 7, 8, u64}
 uint_define!{Uint8, 8, 8, u64}
+uint_define!{Uint10, 10, 16, u128}
+uint_define!{Uint12, 12, 16, u128}
+uint_define!{Uint16, 16, 16, u128}
 
 impl ParsePrefix for Uint1 {
     fn create_with_prefix(prefix: &[u8], _rest: &[u8]) -> Ret<(Self, usize)> {

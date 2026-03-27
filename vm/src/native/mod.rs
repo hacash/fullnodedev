@@ -16,6 +16,14 @@ include!("intent.rs");
 use ValueTy::*;
 
 /*
+    Native env define (VM context reads, stack 0→1)
+*/
+native_func_env_define! { env, NativeEnv, NativeEnvError,
+    // idx, argv_len, gas, ValueType
+    context_address    = 1,    0,        6,    Address
+}
+
+/*
     Native func define (pure functions, stack 1→1)
 */
 native_func_env_define! { func, NativeFunc, NativeFuncError,
@@ -74,7 +82,7 @@ native_func_env_define! { ctl, NativeCtl, NativeCtlError,
     intent_has_any     = 43,    1,       12,    Bool
     intent_put         = 44,    2,       24,    Nil
     intent_put_if_absent = 45,  2,       24,    Bool
-    intent_put_if_absent_or_match = 46, 2,  24,    Bool
+    intent_put_if_absent_or_match = 46, 2,  24, Bool
     intent_put_pairs   = 47,    1,       32,    Nil
     intent_replace     = 48,    2,       14,    Bytes
     intent_replace_if  = 49,    3,       16,    Bool
@@ -95,12 +103,5 @@ native_func_env_define! { ctl, NativeCtl, NativeCtlError,
     intent_sub         = 64,    2,       14,    U64
 }
 
-/*
-    Native env define (VM context reads, stack 0→1)
-*/
-native_func_env_define! { env, NativeEnv, NativeEnvError,
-    // idx, argv_len, gas, ValueType
-    context_address    = 1,    0,        6,    Address
-}
 
 include!("call.rs");

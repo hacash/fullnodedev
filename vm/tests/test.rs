@@ -56,7 +56,7 @@ mod other {
         csto.userfuncs.push(usrfun1).unwrap();
         let mut act2 = ContractDeploy::new();
         act2.contract = csto;
-        // act2.protocol_fee = Amount::coin(6, 245);
+        // act2.protocol_cost = Amount::coin(6, 245);
 
         // print
         curl_trs_1(vec![Box::new(act2)]);
@@ -83,7 +83,7 @@ mod other {
         act.metadata.decimal = Uint1::from(4);
         act.metadata.ticket = BytesW1::from(b"USDT".to_vec()).unwrap();
         act.metadata.name = BytesW1::from(b"USD Tether".to_vec()).unwrap();
-        act.protocol_fee = Amount::mei(1);
+        act.protocol_cost = Amount::mei(1);
         curl_trs_1(vec![Box::new(act)]);
 
         let mut act = HacToTrs::new();

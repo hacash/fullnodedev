@@ -136,12 +136,10 @@ impl P2SHScriptProve {
         if !libs.iter().all(|a| a.is_contract()) {
             return errf!("contract libs invalid");
         }
-        for i in 1..libs.len() {
-            if libs[..i].iter().any(|a| a == &libs[i]) {
-                return errf!(
-                    "duplicate p2sh lib address '{}'",
-                    libs[i].to_readable()
-                );
+        let mut libset = std::collections::HashSet::with_capacity(libs.len());
+        for a in libs.iter() {
+            if !libset.insert(a) {
+                return errf!("duplicate p2sh lib address '{}'", a.to_readable());
             }
         }
         Ok(())

@@ -720,7 +720,7 @@ impl IntentRuntime {
         let end = from.saturating_add(limit).min(keys.len());
         let page = keys[from..end].to_vec();
         let next = if end < keys.len() {
-            Some(keys[end].clone())
+            Some(page[page.len() - 1].clone())
         } else {
             None
         };
@@ -1403,12 +1403,18 @@ mod resource_tests {
         // First page: get 2 keys starting from None
         let (next, page) = rt.keys_from(&owner, id, None, 2).unwrap();
         assert_eq!(page, vec![b"a".to_vec(), b"b".to_vec()]);
-        assert_eq!(next, Some(b"c".to_vec())); // Should be "c", not "b"
+        assert_eq!(next, Some(b"b".to_vec())); // Resume token must be reusable as next start
 
         // Second page: use next as start
         let next_val = Value::Bytes(next.unwrap());
         let (next2, page2) = rt.keys_from(&owner, id, Some(&next_val), 2).unwrap();
-        assert_eq!(page2, vec![b"d".to_vec(), b"e".to_vec()]); // Should get d, e (not c, d)
-        assert_eq!(next2, None);
+        assert_eq!(page2, vec![b"c".to_vec(), b"d".to_vec()]);
+        assert_eq!(next2, Some(b"d".to_vec()));
+
+        // Third page: consume the tail
+        let next_val2 = Value::Bytes(next2.unwrap());
+        let (next3, page3) = rt.keys_from(&owner, id, Some(&next_val2), 2).unwrap();
+        assert_eq!(page3, vec![b"e".to_vec()]);
+        assert_eq!(next3, None);
     }
 }

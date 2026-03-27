@@ -88,7 +88,7 @@ pub enum Bytecode {
     LDROP = 0x4e,  // *&     drop buf left *
     RDROP = 0x4f,  // *&     drop buf right *
     SIZE = 0x50,   // &      size (u16)
-    CHOOSE = 0x51, // a,b,c+ (x ? a : b)
+    CHOOSE = 0x51, // cond,yes,no+ (cond ? yes : no)
     ________________82 = 0x52,
     ________________83 = 0x53,
     ________________84 = 0x54,

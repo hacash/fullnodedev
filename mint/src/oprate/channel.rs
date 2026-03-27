@@ -52,7 +52,7 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
     let opening = (*ttcount.opening_channel)
         .checked_sub(1)
         .ok_or_else(|| "opening_channel underflow".to_string())?;
-    ttcount.opening_channel = Uint5::from(opening);
+    ttcount.opening_channel = Uint8::from(opening);
     // do close
     if ttamt.is_positive() {
         // calculate_interest
@@ -71,9 +71,9 @@ pub fn close_channel_with_distribution(pdhei: u64, ctx: &mut dyn Context, channe
             .ok_or_else(|| "channel_interest_238 overflow".to_string())?;
         ttcount.channel_interest_238 = Uint8::from(interest);
         let dep = (*ttcount.channel_deposit_238)
-            .checked_sub(ttamt_238)
+            .checked_sub(ttamt_238 as u128)
             .ok_or_else(|| "channel_deposit_238 underflow".to_string())?;
-        ttcount.channel_deposit_238 = Uint8::from(dep);
+        ttcount.channel_deposit_238 = Uint12::from(dep);
         if newamt1.is_positive() {
             hac_add(ctx, left_addr, &newamt1)?;
         }

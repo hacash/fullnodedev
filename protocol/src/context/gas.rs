@@ -263,11 +263,10 @@ impl ContextInst<'_> {
         // add count
         let mut state = crate::state::CoreState::wrap(self.state());
         let mut ttcount = state.get_total_count();
-        // u64 cap in unit238 is about 1,844,674,407 HAC, so this overflow is practically unreachable.
         let next_burn = (*ttcount.ast_vm_gas_burn_238)
-            .checked_add(used_238)
+            .checked_add(used_238 as u128)
             .ok_or_else(|| "ast_vm_gas_burn_238 overflow".to_string())?;
-        ttcount.ast_vm_gas_burn_238 = Uint8::from(next_burn);
+        ttcount.ast_vm_gas_burn_238 = Uint12::from(next_burn);
         state.set_total_count(&ttcount);
         Ok(())
     }

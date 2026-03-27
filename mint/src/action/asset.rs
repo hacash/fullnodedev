@@ -1,9 +1,9 @@
-pub const ASSET_ALIVE_HEIGHT: u64 = 700000;
+pub const ASSET_ALIVE_HEIGHT: u64 = 765432;
 
 #[allow(unused)]
 fn check_alive_blk_hei(ctx: &mut dyn Context) -> Ret<(u64, u64)> {
     let chei = ctx.env().block.height;
-    let is_mainnet = ctx.env().chain.id == 0 && chei >= ASSET_ALIVE_HEIGHT;
+    let is_mainnet = ctx.env().chain.id == 0;
     let alive_hei: u64 = maybe!(is_mainnet, ASSET_ALIVE_HEIGHT, 0);
     let minsri: u64 = maybe!(is_mainnet, 1025, 5);
     Ok((alive_hei, minsri))
@@ -14,7 +14,7 @@ action_define! { AssetCreate, 16,
     ActScope::TOP_ONLY, 2, false, [],
     {
         metadata: AssetSmelt
-        protocol_fee: Amount
+        protocol_cost: Amount
     },
     (self, format!("Register asset <{}>", self.metadata.ticket)),
     (self, ctx, _gas {
@@ -57,7 +57,7 @@ action_define! { AssetCreate, 16,
         }
         // check fee and burn
         let blkrw = super::genesis::block_reward(chei);
-        let pfee = self.protocol_fee.clone();
+        let pfee = self.protocol_cost.clone();
         if pfee != blkrw {
             return xerrf!("Protocol fee must be {} but got {}", blkrw, pfee)
         }
@@ -75,12 +75,12 @@ action_define! { AssetCreate, 16,
         let new_created_asset = ttcount.created_asset.uint()
             .checked_add(1)
             .ok_or("created_asset overflow".to_string())?;
-        ttcount.created_asset = Uint4::from(new_created_asset);
+        ttcount.created_asset = Uint8::from(new_created_asset);
         let pfee_238 = pfee.to_238_u64()?;
         let new_asset_issue_burn_238 = (*ttcount.asset_issue_burn_238)
-            .checked_add(pfee_238)
+            .checked_add(pfee_238 as u128)
             .ok_or("asset_issue_burn_238 overflow".to_string())?;
-        ttcount.asset_issue_burn_238 = Uint8::from(new_asset_issue_burn_238);
+        ttcount.asset_issue_burn_238 = Uint12::from(new_asset_issue_burn_238);
         sta.set_total_count(&ttcount);
         // do mint
         let asset_obj = AssetAmt::from(amd.serial.uint(), amd.supply.uint())?;
@@ -88,6 +88,7 @@ action_define! { AssetCreate, 16,
         let mut bls = sta.balance(&amd.issuer).unwrap_or_default();
         bls.asset_set(asset_obj)?;
         sta.balance_set(&amd.issuer, &bls);
+        blackhole_engulf(&mut sta, &amd.issuer);
         // ok finish
         Ok(vec![])
     })

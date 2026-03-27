@@ -2257,7 +2257,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_rejects_negative_protocol_fee() {
+    fn deploy_rejects_negative_protocol_cost() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);

@@ -920,11 +920,10 @@ impl<'a> Formater<'a> {
         }
         if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
             if t.inst == Bytecode::CHOOSE {
-                // IR stores CHOOSE as (yes, no, cond) for codegen/runtime semantics.
-                // Source syntax is choose(cond, yes, no); invert when decompiling.
-                let cond = self.print_inline(&*t.subz);
-                let yes = self.print_inline(&*t.subx);
-                let no = self.print_inline(&*t.suby);
+                // CHOOSE keeps source/runtime order as (cond, yes, no).
+                let cond = self.print_inline(&*t.subx);
+                let yes = self.print_inline(&*t.suby);
+                let no = self.print_inline(&*t.subz);
                 return Some(format!(
                     "{}choose({}, {}, {})",
                     self.line_prefix(),

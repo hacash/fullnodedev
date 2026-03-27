@@ -39,7 +39,7 @@ action_define! { ContractDeploy, 40,
         precheck_contract_store(&caddr, &self.contract, ctx)?;
         let charge_bytes = self.contract.size();
         // spend protocol fee
-        check_sub_contract_protocol_fee(ctx, &self.protocol_cost, charge_bytes)?;
+        check_sub_contract_protocol_cost(ctx, &self.protocol_cost, charge_bytes)?;
         // save the contract
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
         let cargv = self.construct_argv.to_vec();
@@ -94,7 +94,7 @@ action_define! { ContractUpdate, 41,
         let old_size = contract.size();
         let new_size = new_contract.size();
         let delta_bytes = new_size.saturating_sub(old_size);
-        check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
+        check_sub_contract_protocol_cost(ctx, &self.protocol_cost, delta_bytes)?;
         // Append is valid only when each newly exposed selector was absent from self and every inherited parent before the update; if any parent-visible selector is shadowed, it is Change.
         let sys = maybe!(did_change, Change, Append); // Change or Append
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
@@ -440,7 +440,7 @@ fn check_static_call_targets(
     Ok(())
 }
 
-fn check_sub_contract_protocol_fee(
+fn check_sub_contract_protocol_cost(
     ctx: &mut dyn Context,
     pfee: &Amount,
     charge_bytes: usize,
@@ -451,7 +451,7 @@ fn check_sub_contract_protocol_fee(
     if charge_bytes == 0 {
         return Ok(());
     }
-    let min_fee = calc_contract_protocol_fee_min(ctx, charge_bytes)?;
+    let min_fee = calc_contract_protocol_cost_min(ctx, charge_bytes)?;
     let maddr = ctx.env().tx.main;
     // check fee
     if pfee < &min_fee {
@@ -473,7 +473,7 @@ fn contract_store_perm_periods(_hei: u64) -> u64 {
     CONTRACT_STORE_PERM_PERIODS
 }
 
-fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret<Amount> {
+fn calc_contract_protocol_cost_min(ctx: &dyn Context, charge_bytes: usize) -> Ret<Amount> {
     if charge_bytes == 0 {
         return Ok(Amount::zero());
     }

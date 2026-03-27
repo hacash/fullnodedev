@@ -498,18 +498,6 @@ fn build_ir_func_v2(
                 subx: take(&mut argvs),
                 suby: take(&mut argvs),
             }),
-            3 if inst == Bytecode::CHOOSE => {
-                let cond = take(&mut argvs);
-                let yes = take(&mut argvs);
-                let no = take(&mut argvs);
-                Box::new(IRNodeTriple {
-                    hrtv,
-                    inst,
-                    subx: yes,
-                    suby: no,
-                    subz: cond,
-                })
-            }
             3 => Box::new(IRNodeTriple {
                 hrtv,
                 inst,
