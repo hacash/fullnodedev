@@ -70,7 +70,7 @@ impl FnObj {
         }
     }
 
-    pub fn exec_bytecodes(&self, height: u64) -> VmrtRes<ByteView> {
+    pub fn exec_bytecodes(&self, _height: u64, gas_extra: &GasExtra) -> VmrtRes<ByteView> {
         use CodeType::*;
         Ok(match self.ctype {
             Bytecode => self.codes.clone(),
@@ -78,7 +78,7 @@ impl FnObj {
                 if let Some(cached) = self.compiled.get() {
                     return Ok(cached.clone())
                 }
-                let compiled = ByteView::from_vec(runtime_irs_to_exec_bytecodes(self.codes.as_slice(), height)?);
+                let compiled = ByteView::from_vec(runtime_irs_to_exec_bytecodes(self.codes.as_slice(), gas_extra)?);
                 let _ = self.compiled.set(compiled.clone());
                 compiled
             }

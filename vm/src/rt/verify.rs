@@ -5,10 +5,10 @@ use crate::value::{parse_cto_target_ty_param, parse_value_ty_param};
 /*
     Verify bytecode validity and return the instruction table.
 */
-pub fn convert_and_check(cap: &SpaceCap, ctype: CodeType, codes: &[u8], height: u64) -> VmrtRes<Vec<u8>> {
+pub fn convert_and_check(cap: &SpaceCap, gst: &GasExtra, ctype: CodeType, codes: &[u8], _height: u64) -> VmrtRes<Vec<u8>> {
     use CodeType::*;
     let bytecodes = match ctype {
-        IRNode =>  &runtime_irs_to_bytecodes(codes, height)?,
+        IRNode =>  &runtime_irs_to_bytecodes(codes, gst)?,
         Bytecode => codes
     };
     // check size

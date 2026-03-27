@@ -78,63 +78,67 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
-    fn sinfo(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
-        let _ = (addr, key);
+    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+        let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn sload(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
-        let _ = (addr, key);
+    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+        let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn sdel(&mut self, addr: &FieldAddress, key: Value) -> VmrtRes<i64> {
-        let _ = (addr, key);
+    fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: Value) -> VmrtRes<i64> {
+        let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
     fn snew(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &FieldAddress,
         key: Value,
         val: Value,
         period: Value,
     ) -> VmrtRes<i64> {
-        let _ = (gst, addr, key, val, period);
+        let _ = (gst, cap, addr, key, val, period);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
     fn sedit(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &FieldAddress,
         key: Value,
         val: Value,
     ) -> VmrtRes<i64> {
-        let _ = (gst, addr, key, val);
+        let _ = (gst, cap, addr, key, val);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
     fn srent(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &FieldAddress,
         key: Value,
         period: Value,
     ) -> VmrtRes<i64> {
-        let _ = (gst, addr, key, period);
+        let _ = (gst, cap, addr, key, period);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
     fn srecv(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &FieldAddress,
         key: Value,
         period: Value,
     ) -> VmrtRes<i64> {
-        let _ = (gst, addr, key, period);
+        let _ = (gst, cap, addr, key, period);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 }

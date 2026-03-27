@@ -4,11 +4,6 @@ pub const STORAGE_LIVE_MAX_PERIODS: u64 = 30000;
 pub const STORAGE_RECV_MAX_PERIODS: u64 = 3000;
 pub const STORAGE_LIVE_MAX_BLOCKS: u64 = STORAGE_PERIOD * STORAGE_LIVE_MAX_PERIODS;
 pub const STORAGE_RECV_MAX_BLOCKS: u64 = STORAGE_PERIOD * STORAGE_RECV_MAX_PERIODS;
-pub const STORAGE_UNIT_BASE_BYTES: u64 = 16;
-pub const STORAGE_NEW_SLOT_FEE: i64 = 2048;
-
-/// Maximum bytes allowed for a storage key (excluding address prefix).
-pub const STORAGE_KEY_MAX_BYTES: usize = 256;
 
 combi_struct! { ValueSto,
     charge: BlockHeight
@@ -28,13 +23,13 @@ impl ValueSto {
     }
 
     #[inline(always)]
-    fn unit_for(v: &Value) -> VmrtRes<u64> {
-        Ok(v.can_get_size()? as u64 + STORAGE_UNIT_BASE_BYTES)
+    fn unit_for(gst: &GasExtra, v: &Value) -> VmrtRes<u64> {
+        Ok((v.can_get_size()? as u64).saturating_add(gst.storege_value_base_size.max(0) as u64))
     }
 
     #[inline(always)]
-    fn unit(&self) -> VmrtRes<u64> {
-        Self::unit_for(&self.data)
+    fn unit(&self, gst: &GasExtra) -> VmrtRes<u64> {
+        Self::unit_for(gst, &self.data)
     }
 
     #[inline(always)]
@@ -52,8 +47,8 @@ impl ValueSto {
         self.live_credit.uint() == 0 && self.recover_credit.uint() == 0
     }
 
-    fn settle(&mut self, curhei: u64) -> VmrtErr {
-        let unit = self.unit()?;
+    fn settle(&mut self, curhei: u64, gst: &GasExtra) -> VmrtErr {
+        let unit = self.unit(gst)?;
         if unit == 0 {
             self.charge = BlockHeight::from(curhei);
             return Ok(());
@@ -89,14 +84,14 @@ impl ValueSto {
     }
 
     #[inline(always)]
-    fn live_rest_blocks(&self) -> VmrtRes<u64> {
-        let unit = self.unit()?;
+    fn live_rest_blocks(&self, gst: &GasExtra) -> VmrtRes<u64> {
+        let unit = self.unit(gst)?;
         Ok(self.live_credit.uint() / unit)
     }
 
     #[inline(always)]
-    fn recover_rest_blocks(&self) -> VmrtRes<u64> {
-        let unit = self.unit()?;
+    fn recover_rest_blocks(&self, gst: &GasExtra) -> VmrtRes<u64> {
+        let unit = self.unit(gst)?;
         Ok(self.recover_credit.uint() / unit)
     }
 }
@@ -159,7 +154,7 @@ impl VMState<'_> {
         self.contract_edition_set(addr, &sto.calc_edition());
     }
 
-    fn skey(cadr: &Address, key: &Value) -> VmrtRes<ValueKey> {
+    fn skey(cadr: &Address, key: &Value, key_max: usize) -> VmrtRes<ValueKey> {
         cadr.check_version().map_ires(
             StorageError,
             format!("storage must be in effective address but got {}", cadr),
@@ -168,11 +163,11 @@ impl VMState<'_> {
         if k.is_empty() {
             return itr_err_code!(StorageKeyInvalid);
         }
-        if k.len() > STORAGE_KEY_MAX_BYTES {
+        if k.len() > key_max {
             return itr_err_fmt!(
                 StorageKeyInvalid,
                 "storage key too long, max {} bytes but got {}",
-                STORAGE_KEY_MAX_BYTES,
+                key_max,
                 k.len()
             );
         }
@@ -183,11 +178,11 @@ impl VMState<'_> {
         Ok(ValueKey::from(k))
     }
 
-    fn sfetch(&mut self, curhei: u64, sk: &ValueKey) -> VmrtRes<Option<ValueSto>> {
+    fn sfetch(&mut self, curhei: u64, gst: &GasExtra, sk: &ValueKey) -> VmrtRes<Option<ValueSto>> {
         let Some(mut v) = self.ctrtkvdb(sk) else {
             return Ok(None);
         };
-        v.settle(curhei)?;
+        v.settle(curhei, gst)?;
         if v.is_absent() {
             self.ctrtkvdb_del(sk);
             return Ok(None);
@@ -196,19 +191,19 @@ impl VMState<'_> {
         Ok(Some(v))
     }
 
-    fn sinfo(&mut self, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
-        let sk = Self::skey(cadr, k)?;
-        let Some(v) = self.sfetch(curhei, &sk)? else {
+    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
+        let sk = Self::skey(cadr, k, cap.value_size)?;
+        let Some(v) = self.sfetch(curhei, gst, &sk)? else {
             return Ok(Value::Nil);
         };
-        let live = v.live_rest_blocks()?;
-        let recover = v.recover_rest_blocks()?;
+        let live = v.live_rest_blocks(gst)?;
+        let recover = v.recover_rest_blocks(gst)?;
         Value::pack_call_args([Value::U64(live), Value::U64(recover)])
     }
 
-    fn sload(&mut self, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
-        let sk = Self::skey(cadr, k)?;
-        let Some(v) = self.sfetch(curhei, &sk)? else {
+    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
+        let sk = Self::skey(cadr, k, cap.value_size)?;
+        let Some(v) = self.sfetch(curhei, gst, &sk)? else {
             return Ok(Value::Nil);
         };
         if v.is_recoverable() {
@@ -219,7 +214,8 @@ impl VMState<'_> {
 
     fn snew(
         &mut self,
-        _gst: &GasExtra,
+        gst: &GasExtra,
+        cap: &SpaceCap,
         curhei: u64,
         cadr: &Address,
         k: Value,
@@ -228,7 +224,7 @@ impl VMState<'_> {
     ) -> VmrtRes<i64> {
         v.check_non_nil_scalar(StorageNilNotAllowed)?;
         let val_len = v.can_get_size()? as usize;
-        let max_val = SpaceCap::new(curhei).value_size;
+        let max_val = cap.value_size;
         if val_len > max_val {
             return itr_err_fmt!(
                 StorageValSizeErr,
@@ -238,23 +234,23 @@ impl VMState<'_> {
             );
         }
         let period = parse_period(p, STORAGE_LIVE_MAX_PERIODS)?;
-        let sk = Self::skey(cadr, &k)?;
-        if self.sfetch(curhei, &sk)?.is_some() {
+        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        if self.sfetch(curhei, gst, &sk)?.is_some() {
             return itr_err_code!(StorageKeyExists);
         }
-        let unit = val_len as u64 + STORAGE_UNIT_BASE_BYTES;
+        let unit = (val_len as u64).saturating_add(gst.storege_value_base_size.max(0) as u64);
         let live_credit = period_credit(unit, period)?;
         let vobj = ValueSto::new(curhei, v, live_credit, 0);
         self.ctrtkvdb_set(&sk, &vobj);
-        let gas = STORAGE_NEW_SLOT_FEE
-            .saturating_add(u64_to_i64_sat(unit).saturating_mul(2))
+        let gas = gst.storage_key_cost
             .saturating_add(u64_to_i64_sat(unit).saturating_mul(period as i64));
         Ok(gas)
     }
 
     fn sedit(
         &mut self,
-        _gst: &GasExtra,
+        gst: &GasExtra,
+        cap: &SpaceCap,
         curhei: u64,
         cadr: &Address,
         k: Value,
@@ -262,7 +258,7 @@ impl VMState<'_> {
     ) -> VmrtRes<i64> {
         v.check_non_nil_scalar(StorageNilNotAllowed)?;
         let val_len = v.can_get_size()? as usize;
-        let max_val = SpaceCap::new(curhei).value_size;
+        let max_val = cap.value_size;
         if val_len > max_val {
             return itr_err_fmt!(
                 StorageValSizeErr,
@@ -271,8 +267,8 @@ impl VMState<'_> {
                 val_len
             );
         }
-        let sk = Self::skey(cadr, &k)?;
-        let Some(mut old) = self.sfetch(curhei, &sk)? else {
+        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        let Some(mut old) = self.sfetch(curhei, gst, &sk)? else {
             return itr_err_code!(StorageKeyNotFind);
         };
         if !old.is_active() {
@@ -281,24 +277,25 @@ impl VMState<'_> {
         old.data = v;
         old.charge = BlockHeight::from(curhei);
         self.ctrtkvdb_set(&sk, &old);
-        let unit = val_len as u64 + STORAGE_UNIT_BASE_BYTES;
+        let unit = (val_len as u64).saturating_add(gst.storege_value_base_size.max(0) as u64);
         Ok(u64_to_i64_sat(unit).saturating_mul(2))
     }
 
     fn srent(
         &mut self,
-        _gst: &GasExtra,
+        gst: &GasExtra,
+        cap: &SpaceCap,
         curhei: u64,
         cadr: &Address,
         k: Value,
         p: Value,
     ) -> VmrtRes<i64> {
         let period = parse_period(p, STORAGE_LIVE_MAX_PERIODS)?;
-        let sk = Self::skey(cadr, &k)?;
-        let Some(mut v) = self.sfetch(curhei, &sk)? else {
+        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        let Some(mut v) = self.sfetch(curhei, gst, &sk)? else {
             return itr_err_code!(StorageKeyNotFind);
         };
-        let unit = v.unit()?;
+        let unit = v.unit(gst)?;
         let add_credit = period_credit(unit, period)?;
         let add_blocks = period
             .checked_mul(STORAGE_PERIOD)
@@ -327,18 +324,19 @@ impl VMState<'_> {
 
     fn srecv(
         &mut self,
-        _gst: &GasExtra,
+        gst: &GasExtra,
+        cap: &SpaceCap,
         curhei: u64,
         cadr: &Address,
         k: Value,
         p: Value,
     ) -> VmrtRes<i64> {
         let period = parse_period(p, STORAGE_RECV_MAX_PERIODS)?;
-        let sk = Self::skey(cadr, &k)?;
-        let Some(mut v) = self.sfetch(curhei, &sk)? else {
+        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        let Some(mut v) = self.sfetch(curhei, gst, &sk)? else {
             return itr_err_code!(StorageKeyNotFind);
         };
-        let unit = v.unit()?;
+        let unit = v.unit(gst)?;
         let add_credit = period_credit(unit, period)?;
         let add_blocks = period
             .checked_mul(STORAGE_PERIOD)
@@ -367,14 +365,20 @@ impl VMState<'_> {
             .saturating_div(3))
     }
 
-    fn sdel(&mut self, curhei: u64, cadr: &Address, k: Value) -> VmrtRes<i64> {
-        let sk = Self::skey(cadr, &k)?;
+    fn sdel(&mut self, 
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        curhei: u64, cadr: &Address, k: Value) -> VmrtRes<i64> {
+        let sk = Self::skey(cadr, &k, cap.value_size)?;
         let Some(mut v) = self.ctrtkvdb(&sk) else {
             return Ok(0);
         };
-        v.settle(curhei)?;
+        v.settle(curhei, gst)?;
         let refund = u64_to_i64_sat(v.live_credit.uint().saturating_div(STORAGE_PERIOD));
         self.ctrtkvdb_del(&sk);
+        let refund = refund
+            .checked_add(gst.storage_key_cost)
+            .ok_or_else(|| ItrErr::new(StorageError, "delete refund overflow"))?;
         Ok(refund)
     }
 }

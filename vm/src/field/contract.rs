@@ -137,9 +137,9 @@ impl ContractCalcFunc {
 	}
 }
 
-fn verify_code_stuff(cap: &SpaceCap, code_stuff: &CodeStuff, hei: u64) -> VmrtErr {
+fn verify_code_stuff(cap: &SpaceCap, gst: &GasExtra, code_stuff: &CodeStuff, hei: u64) -> VmrtErr {
 	let code_pkg = CodePkg::try_from(code_stuff)?;
-	convert_and_check(cap, code_pkg.code_type()?, &code_pkg.data, hei)?;
+	convert_and_check(cap, gst, code_pkg.code_type()?, &code_pkg.data, hei)?;
 	Ok(())
 }
 
@@ -222,9 +222,8 @@ impl ContractSto {
 		}
 	}
 
-	pub fn apply_edit(&mut self, edit: &ContractEdit, hei: u64) -> VmrtRes<(bool, bool)> {
+	pub fn apply_edit(&mut self, edit: &ContractEdit, hei: u64, cap: &SpaceCap, gst: &GasExtra) -> VmrtRes<(bool, bool)> {
 		use ItrErrCode::*;
-		let cap = SpaceCap::new(hei);
 
 		let old_rev = self.metas.revision.uint();
 		if old_rev == Uint2::MAX {
@@ -338,7 +337,7 @@ impl ContractSto {
 			for a in edit.abstcalls.as_list() {
 				a.check(hei)?;
 				AbstCall::check(a.sign[0])?;
-				verify_code_stuff(&cap, &a.code_stuff, hei)?;
+					verify_code_stuff(cap, gst, &a.code_stuff, hei)?;
 			}
 			self.abstcalls.check_merge(&edit.abstcalls)?;
 		}
@@ -355,7 +354,7 @@ impl ContractSto {
 			}
 			for a in edit.userfuncs.as_list() {
 				a.check(hei)?;
-				verify_code_stuff(&cap, &a.code_stuff, hei)?;
+					verify_code_stuff(cap, gst, &a.code_stuff, hei)?;
 			}
 			let replaced = self.userfuncs.check_merge(&edit.userfuncs)?;
 			if replaced {
@@ -406,10 +405,9 @@ impl ContractSto {
 	}
 
 	/* return Upgrade or Append for check */
-	pub fn merge(&mut self, src: &ContractSto, hei: u64) -> VmrtRes<bool> {
+	pub fn merge(&mut self, src: &ContractSto, hei: u64, cap: &SpaceCap, gst: &GasExtra) -> VmrtRes<bool> {
 		use ItrErrCode::*;
-		src.check(hei)?;
-		let cap = SpaceCap::new(hei);
+		src.check(hei, cap, gst)?;
 		if self.inherit.length() + src.inherit.length() > cap.inherit {
 			return itr_err_fmt!(InheritError, "inherit number overflow")
 		}
@@ -441,10 +439,9 @@ impl ContractSto {
 		Ok(edit1 || edit2 || edit3)
 	}
 
-	pub fn check(&self, hei: u64) -> VmrtErr {
+	pub fn check(&self, hei: u64, cap: &SpaceCap, gst: &GasExtra) -> VmrtErr {
 		self.metas.check(hei)?;
 		use ItrErrCode::*;
-		let cap = SpaceCap::new(hei);
 		if self.morextend.uint() > 1 {
 			return itr_err_fmt!(ContractError, "contract format invalid")
 		}
@@ -499,7 +496,7 @@ impl ContractSto {
 		for a in self.abstcalls.as_list() {
 			a.check(hei)?;
 			AbstCall::check(a.sign[0])?;
-			verify_code_stuff(&cap, &a.code_stuff, hei)?; // check compile
+			verify_code_stuff(cap, gst, &a.code_stuff, hei)?; // check compile
 		}
 		// usrfun call
 		{
@@ -513,7 +510,7 @@ impl ContractSto {
 		}
 		for a in self.userfuncs.as_list() {
 			a.check(hei)?;
-			verify_code_stuff(&cap, &a.code_stuff, hei)?; // check compile
+			verify_code_stuff(cap, gst, &a.code_stuff, hei)?; // check compile
 		}
 		{
 			let mut seen = HashSet::new();

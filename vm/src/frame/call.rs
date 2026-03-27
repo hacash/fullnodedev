@@ -16,7 +16,7 @@ impl CallFrame {
 
         exec.ensure_call_depth(&r.space_cap)?;
         let mut root = self.increase(r)?;
-        root.prepare(exec, bindings, code, height, param, &r.space_cap)?;
+        root.prepare(exec, bindings, code, height, &r.gas_extra, param, &r.space_cap)?;
         self.push(root);
 
         loop {
@@ -45,6 +45,7 @@ impl CallFrame {
                                 plan.next_bindings,
                                 plan.fnobj.as_ref(),
                                 height,
+                                &r.gas_extra,
                                 param,
                                 &r.space_cap,
                             )?;
@@ -58,6 +59,7 @@ impl CallFrame {
                                 plan.next_bindings,
                                 plan.fnobj.as_ref(),
                                 height,
+                                &r.gas_extra,
                                 param,
                                 &r.space_cap,
                             )?;

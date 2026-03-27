@@ -147,6 +147,7 @@ impl P2SHScriptProve {
 
     pub fn verify_unlock_inputs(
         block_height: u64,
+        gst: &GasExtra,
         adrlibs: &ContractAddressW1,
         codeconf: CodeConf,
         lockbox: &BytesW2,
@@ -154,7 +155,7 @@ impl P2SHScriptProve {
     ) -> Ret<()> {
         let cap = SpaceCap::new(block_height);
         Self::verify_adrlibs(&cap, adrlibs)?;
-        convert_and_check(&cap, codeconf.code_type(), lockbox.as_vec(), block_height)?;
+        convert_and_check(&cap, gst, codeconf.code_type(), lockbox.as_vec(), block_height)?;
         Self::verify_witness_bytes(&cap, witness.as_vec())?;
         Ok(())
     }
@@ -166,10 +167,11 @@ impl P2SHScriptProve {
         Ok(())
     }
 
-    fn get_stuff_with_merkel(&self, ctx: &dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
+    fn get_stuff_with_merkel(&self, ctx: &mut dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
         let hei = ctx.env().block.height;
+        let (gst, _) = setup_vm_runtime_gascap(ctx, hei);
         let codeconf = CodeConf::parse(self.codeconf.uint())?;
-        Self::verify_unlock_inputs(hei, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
+        Self::verify_unlock_inputs(hei, &gst, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
         let lockbox = self.lockbox.as_vec();
         let witness = self.argvkey.as_vec().clone();
         // ok
@@ -264,8 +266,10 @@ mod p2sh_test {
         let libs = ContractAddressW1::from_list(vec![lib.clone(), lib]).unwrap();
         let lockbox = dummy_lockbox(13);
         let witness = BytesW2::from(vec![]).unwrap();
+        let gst = GasExtra::new(1);
         let err = P2SHScriptProve::verify_unlock_inputs(
             1,
+            &gst,
             &libs,
             CodeConf::from_type(CodeType::Bytecode),
             &lockbox,

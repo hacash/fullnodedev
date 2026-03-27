@@ -262,6 +262,12 @@ impl VM for MachineBox {
         self.machine_ref().ok().and_then(Machine::current_intent_scope)
     }
 
+    fn runtime_config(&mut self) -> Option<Box<dyn Any>> {
+        self.machine_ref()
+            .ok()
+            .map(|m| Box::new((m.r.gas_extra.clone(), m.r.space_cap.clone())) as Box<dyn Any>)
+    }
+
     fn snapshot_volatile(&mut self) -> Box<dyn Any> {
         match self.machine_ref() {
             Ok(m) => Box::new((

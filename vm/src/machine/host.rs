@@ -30,12 +30,13 @@ pub trait VmHost {
     fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr;
 
     // Storage
-    fn sinfo(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value>;
-    fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value>;
-    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtRes<i64>;
+    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value>;
+    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value>;
+    fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value) -> VmrtRes<i64>;
     fn snew(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         val: Value,
@@ -44,6 +45,7 @@ pub trait VmHost {
     fn sedit(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         val: Value,
@@ -51,6 +53,7 @@ pub trait VmHost {
     fn srent(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         period: Value,
@@ -58,6 +61,7 @@ pub trait VmHost {
     fn srecv(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         period: Value,
@@ -106,63 +110,67 @@ impl<T: Context + ?Sized> VmHost for T {
         Ok(())
     }
 
-    fn sinfo(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).sinfo(hei, addr, key)
+        crate::VMState::wrap(self.state()).sstat(gst, cap, hei, addr, key)
     }
 
-    fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).sload(hei, addr, key)
+        crate::VMState::wrap(self.state()).sload(gst, cap, hei, addr, key)
     }
 
-    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtRes<i64> {
+    fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value) -> VmrtRes<i64> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).sdel(hei, addr, key)
+        crate::VMState::wrap(self.state()).sdel(gst, cap, hei, addr, key)
     }
 
     fn snew(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         val: Value,
         period: Value,
     ) -> VmrtRes<i64> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).snew(gst, hei, addr, key, val, period)
+        crate::VMState::wrap(self.state()).snew(gst, cap, hei, addr, key, val, period)
     }
 
     fn sedit(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         val: Value,
     ) -> VmrtRes<i64> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).sedit(gst, hei, addr, key, val)
+        crate::VMState::wrap(self.state()).sedit(gst, cap, hei, addr, key, val)
     }
 
     fn srent(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         period: Value,
     ) -> VmrtRes<i64> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).srent(gst, hei, addr, key, period)
+        crate::VMState::wrap(self.state()).srent(gst, cap, hei, addr, key, period)
     }
 
     fn srecv(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &Address,
         key: Value,
         period: Value,
     ) -> VmrtRes<i64> {
         let hei = self.env().block.height;
-        crate::VMState::wrap(self.state()).srecv(gst, hei, addr, key, period)
+        crate::VMState::wrap(self.state()).srecv(gst, cap, hei, addr, key, period)
     }
 }

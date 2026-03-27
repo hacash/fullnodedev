@@ -11,6 +11,16 @@ fn ensure_vm_run_ready(ctx: &dyn Context) -> Rerr {
     Ok(())
 }
 
+pub fn setup_vm_runtime_gascap(ctx: &mut dyn Context, height: u64) -> (GasExtra, SpaceCap) {
+    let Some(conf) = ctx.vm_runtime_config() else {
+        return (GasExtra::new(height), SpaceCap::new(height));
+    };
+    let Ok(conf) = conf.downcast::<(GasExtra, SpaceCap)>() else {
+        return (GasExtra::new(height), SpaceCap::new(height));
+    };
+    *conf
+}
+
 /// Falsy return => success. Non-falsy or object return => recoverable (XError::revert). Runtime-only values crossing the VM boundary are unrecoverable (XError::fault).
 pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
     rv.check_vm_boundary_retv()

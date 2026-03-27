@@ -130,27 +130,28 @@ mod bounds_tests {
             Ok(())
         }
 
-        fn sinfo(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+        fn sstat(&mut self, _gst: &GasExtra, _cap: &SpaceCap, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.srest_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
             }
         }
 
-        fn sload(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, _gst: &GasExtra, _cap: &SpaceCap, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.sload_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
             }
         }
 
-        fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtRes<i64> {
+        fn sdel(&mut self, _gst: &GasExtra, _cap: &SpaceCap, _cadr: &Address, _key: Value) -> VmrtRes<i64> {
             itr_err_code!(ItrErrCode::StorageError)
         }
 
         fn snew(
             &mut self,
             _gst: &GasExtra,
+            _cap: &SpaceCap,
             _cadr: &Address,
             _key: Value,
             _val: Value,
@@ -162,6 +163,7 @@ mod bounds_tests {
         fn sedit(
             &mut self,
             _gst: &GasExtra,
+            _cap: &SpaceCap,
             _cadr: &Address,
             _key: Value,
             _val: Value,
@@ -172,6 +174,7 @@ mod bounds_tests {
         fn srent(
             &mut self,
             _gst: &GasExtra,
+            _cap: &SpaceCap,
             _cadr: &Address,
             _key: Value,
             _period: Value,
@@ -182,6 +185,7 @@ mod bounds_tests {
         fn srecv(
             &mut self,
             _gst: &GasExtra,
+            _cap: &SpaceCap,
             _cadr: &Address,
             _key: Value,
             _period: Value,

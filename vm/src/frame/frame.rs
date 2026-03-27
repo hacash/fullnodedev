@@ -116,6 +116,7 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         mut argv: Value,
         have_param: bool,
         cap: &SpaceCap,
@@ -133,7 +134,7 @@ impl Frame {
         self.types = fnobj.agvty.clone();
         self.pc = 0;
         self.exec = exec;
-        self.codes = fnobj.exec_bytecodes(height)?;
+        self.codes = fnobj.exec_bytecodes(height, gas_extra)?;
         Ok(())
     }
 
@@ -143,13 +144,14 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         param: Value,
         cap: &SpaceCap,
     ) -> VmrtErr {
         // Caller must validate argv shape before any contract planning/warmup.
         self.base_intent_binding = bindings.intent_binding;
         self.intent_stack.clear();
-        self.prepare_common(exec, bindings, fnobj, height, param, true, cap)
+        self.prepare_common(exec, bindings, fnobj, height, gas_extra, param, true, cap)
     }
 
     pub fn prepare(
@@ -158,6 +160,7 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         param: Option<Value>,
         cap: &SpaceCap,
     ) -> VmrtErr {
@@ -168,7 +171,7 @@ impl Frame {
         }
         self.base_intent_binding = bindings.intent_binding;
         self.intent_stack.clear();
-        self.prepare_common(exec, bindings, fnobj, height, argv, have_param, cap)
+        self.prepare_common(exec, bindings, fnobj, height, gas_extra, argv, have_param, cap)
     }
 
     pub fn prepare_splice(
@@ -177,6 +180,7 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         param: Value,
         cap: &SpaceCap,
     ) -> VmrtErr {
@@ -206,7 +210,7 @@ impl Frame {
         self.pc = 0;
         self.exec = exec;
         self.call_argv = param;
-        self.codes = fnobj.exec_bytecodes(height)?;
+        self.codes = fnobj.exec_bytecodes(height, gas_extra)?;
         Ok(())
     }
 
@@ -319,6 +323,7 @@ mod splice_prepare_tests {
                 bindings.clone(),
                 &fnobj,
                 1,
+                &res.gas_extra,
                 Value::U8(2),
                 &res.space_cap,
             )

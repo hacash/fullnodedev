@@ -14,6 +14,8 @@ pub trait VM {
     fn restore_but_keep_warmup(&mut self) {}
     /// Invalidate contract caches by address (global and tx-local, if implementation supports it).
     fn invalidate_contract_cache(&mut self, _: &Address) {}
+    /// Snapshot runtime config (e.g. GasExtra/SpaceCap) if implementation supports it.
+    fn runtime_config(&mut self) -> Option<Box<dyn Any>> { None }
     /// Execute deferred VM callbacks at tx tail.
     fn drain_deferred(&mut self, _: &mut dyn Context) -> Rerr { Ok(()) }
 }

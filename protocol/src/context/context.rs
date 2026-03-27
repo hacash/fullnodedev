@@ -246,6 +246,13 @@ impl Context for ContextInst<'_> {
         self.vm_mut().and_then(|vm| vm.current_intent_scope())
     }
 
+    fn vm_runtime_config(&mut self) -> Option<Box<dyn Any>> {
+        if self.ensure_vm_assigned().is_err() {
+            return None;
+        }
+        self.vm_mut().and_then(|vm| vm.runtime_config())
+    }
+
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> {
         self.vm_mut().map(|vm| vm.snapshot_volatile())
     }

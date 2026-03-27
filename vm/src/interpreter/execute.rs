@@ -790,7 +790,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     nsr!();
                     let v = {
                         let k = ops.peek()?;
-                        host.sinfo(context_addr, k)?
+                        host.sstat(gst, cap, context_addr, k)?
                     }
                     .valid(cap)?;
                     *ops.peek()? = v;
@@ -799,7 +799,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     nsr!();
                     let v = {
                         let k = ops.peek()?;
-                        host.sload(context_addr, k)?
+                        host.sload(gst, cap, context_addr, k)?
                     }
                     .valid(cap)?;
                     if !matches!(v, Value::Nil) {
@@ -812,12 +812,12 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     nsw!();
                     let v = ops.pop()?.valid(cap)?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.sedit(gst, context_addr, k, v)?);
+                    gas_add!(storage, raw, host.sedit(gst, cap, context_addr, k, v)?);
                 }
                 SDEL => {
                     nsw!();
                     let k = ops.pop()?;
-                    let refund = host.sdel(context_addr, k)?;
+                    let refund = host.sdel(gst, cap, context_addr, k)?;
                     host.gas_rebate(refund)?;
                 }
                 SNEW => {
@@ -825,19 +825,19 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     let t = ops.pop()?;
                     let v = ops.pop()?.valid(cap)?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.snew(gst, context_addr, k, v, t)?);
+                    gas_add!(storage, raw, host.snew(gst, cap, context_addr, k, v, t)?);
                 }
                 SRECV => {
                     nsw!();
                     let t = ops.pop()?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.srecv(gst, context_addr, k, t)?);
+                    gas_add!(storage, raw, host.srecv(gst, cap, context_addr, k, t)?);
                 }
                 SRENT => {
                     nsw!();
                     let t = ops.pop()?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.srent(gst, context_addr, k, t)?);
+                    gas_add!(storage, raw, host.srent(gst, cap, context_addr, k, t)?);
                 }
                 // global_map & memory_map
                 GPUT => kvput!(global_map, gst.global_key_cost),

@@ -115,7 +115,7 @@ impl GasTable {
 /***********************************/
 
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GasExtra {
     pub compute_limit: i64,  // <=0 means disabled
     pub resource_limit: i64, // <=0 means disabled
@@ -130,7 +130,6 @@ pub struct GasExtra {
     pub global_key_cost: i64,
     pub storege_value_base_size: i64,
     pub storage_key_cost: i64,
-    pub storage_del_min: i64,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
     stack_write_div: i64,
@@ -140,6 +139,7 @@ pub struct GasExtra {
     heap_write_div: i64,
     log_div: i64,
     compile_div: i64,
+    contract_div: i64,
     compo_byte_div: i64,
     compo_item_read_div: i64,
     compo_item_edit_div: i64,
@@ -169,8 +169,7 @@ impl GasExtra {
             memory_key_cost:    20,
             global_key_cost:    32,
             storege_value_base_size: 16,
-            storage_key_cost:  2048,
-            storage_del_min:    16,
+            storage_key_cost: 2048,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
             stack_write_div:    28,
@@ -179,7 +178,8 @@ impl GasExtra {
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
-            compile_div:         8,
+            compile_div:        10,
+            contract_div:       50,
             ntfunc_div:         16,
             act_div:            12,
             // Compo
@@ -277,6 +277,12 @@ impl GasExtra {
     pub fn compo_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.compo_byte_div)
     }
+
+    #[inline(always)]
+    pub fn contract_bytes(&self, len: usize) -> i64 {
+        Self::div_op(len, self.contract_div)
+    }
+    
 }
 
 
@@ -422,7 +428,6 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.global_key_cost, 32);
         assert_eq!(gst.new_contract_load, 32);
         assert_eq!(gst.storage_key_cost, 2048);
-        assert_eq!(gst.storage_del_min, 16);
         assert_eq!(gst.storege_value_base_size, 16);
     }
 

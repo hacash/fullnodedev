@@ -304,21 +304,22 @@ mod loader_tests {
             unreachable!()
         }
 
-        fn sinfo(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+        fn sstat(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
 
-        fn sload(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
 
-        fn sdel(&mut self, _: &Address, _: Value) -> VmrtRes<i64> {
+        fn sdel(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
         fn snew(
             &mut self,
             _: &GasExtra,
+            _: &SpaceCap,
             _: &Address,
             _: Value,
             _: Value,
@@ -327,15 +328,15 @@ mod loader_tests {
             unreachable!()
         }
 
-        fn sedit(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
-        fn srent(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn srent(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
-        fn srecv(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn srecv(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
     }

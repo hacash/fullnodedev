@@ -218,7 +218,8 @@ impl P2shMerkleTree {
     /// the same rules as `P2SHScriptProve::get_stuff`.
     pub fn build_unlock_script_prove_checked(&self, block_height: u64, idx: usize, witness: BytesW2) -> Ret<(Address, P2SHScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
-        P2SHScriptProve::verify_unlock_inputs(block_height, &spec.adrlibs, spec.codeconf, &spec.lockbox, &witness)?;
+        let gst = GasExtra::new(block_height);
+        P2SHScriptProve::verify_unlock_inputs(block_height, &gst, &spec.adrlibs, spec.codeconf, &spec.lockbox, &witness)?;
         // ok, build action
         self.build_unlock_script_prove_unchecked(idx, witness)
     }

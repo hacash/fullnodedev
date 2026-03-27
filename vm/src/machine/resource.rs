@@ -1182,7 +1182,8 @@ impl Resoure {
         host: &mut H,
         bytes: usize,
     ) -> VmrtErr {
-        let gas = self.gas_extra.new_contract_load + (bytes as i64 / 64);
+        let gas = self.gas_extra.new_contract_load +
+            (bytes as i64 / 64);
         let next_resource = self.next_resource_used(gas)?;
         host.gas_charge(gas)?;
         self.gas_use.resource = next_resource;
@@ -1285,21 +1286,22 @@ mod resource_tests {
             unreachable!()
         }
 
-        fn sinfo(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+        fn sstat(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
 
-        fn sload(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
 
-        fn sdel(&mut self, _: &Address, _: Value) -> VmrtRes<i64> {
+        fn sdel(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
         fn snew(
             &mut self,
             _: &GasExtra,
+            _: &SpaceCap,
             _: &Address,
             _: Value,
             _: Value,
@@ -1308,15 +1310,15 @@ mod resource_tests {
             unreachable!()
         }
 
-        fn sedit(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
-        fn srent(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn srent(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
-        fn srecv(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn srecv(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
     }
