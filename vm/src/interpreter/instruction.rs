@@ -853,7 +853,7 @@ fn devscaled_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let xv = x.extract_u128()?;
     let reference = y.extract_u128()?;
     if reference == 0 {
-        return maybe!(xv == 0, cast_uint_like(x, 0, "dev_scaled", x, y, z), Err(err()));
+        return Err(err());
     }
     let diff = xv.abs_diff(reference);
     let (hi, lo) = mul_wide_u128(diff, z.extract_u128()?);

@@ -905,16 +905,19 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 MULSHR => triop_arithmetic(ops, mulshr_checked)?,
                 MULSHRUP => triop_arithmetic(ops, mulshrup_checked)?,
                 RPOW => {
-                    let exp_bits = match ops.len().checked_sub(2).and_then(|i| ops.datas.get(i)) {
-                        Some(v) => {
-                            let exp = v.to_uint()?.extract_u128()?;
-                            if exp == 0 {
-                                0
-                            } else {
-                                (u128::BITS - exp.leading_zeros()) as i64
-                            }
+                    let exp_bits = if ops.len() >= 3 {
+                        let idx = ops.len() - 2;
+                        match ops
+                            .datas
+                            .get(idx)
+                            .and_then(|v| v.to_uint().ok())
+                            .and_then(|v| v.extract_u128().ok())
+                        {
+                            Some(exp) if exp > 0 => (u128::BITS - exp.leading_zeros()) as i64,
+                            _ => 0,
                         }
-                        None => 0,
+                    } else {
+                        0
                     };
                     gas_add!(compute, raw, exp_bits * 2 + 1);
                     triop_arithmetic(ops, rpow_checked)?

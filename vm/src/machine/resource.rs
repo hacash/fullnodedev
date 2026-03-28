@@ -682,6 +682,7 @@ impl IntentRuntime {
             if !entry.data.contains_key(&src_key)? {
                 return itr_err_fmt!(ItrErrCode::IntentError, "intent source key not found");
             }
+            self.validate_intent_key(&dst_key)?;
             if entry.data.contains_key(&dst_key)? {
                 return itr_err_fmt!(ItrErrCode::IntentError, "intent destination key already exists");
             }

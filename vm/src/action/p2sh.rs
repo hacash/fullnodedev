@@ -20,7 +20,7 @@ pub struct UnlockScript {
 /// from consensus.
 ///
 /// Hashing rules (same as `P2SHScriptProve::get_merkel()`):
-/// - Leaf: `sha3("p2sh_leaf_v2_" || libs || codeconf || lockbox)`
+/// - Leaf: `sha3("p2sh_leaf_" || libs || codeconf || lockbox)`
 /// - Branch i: `sha3("p2sh_branch_" || left || right)` where `(left,right)` is decided by `posi`.
 /// - Address: `Address::create_scriptmh(ripemd160(root_sha3))`
 #[derive(Debug, Clone)]
@@ -96,7 +96,7 @@ impl P2SHScriptProve {
     ) -> Ret<ScriptmhCalc> {
         let mut h = Hash::from(sha3(
             vec![
-                "p2sh_leaf_v2_".as_bytes().to_vec(), // domain separator for safety
+                "p2sh_leaf_".as_bytes().to_vec(), // domain separator for safety
                 adrlibs.serialize(),
                 vec![codeconf.raw()],
                 lockbox.to_vec(),

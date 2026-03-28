@@ -21,7 +21,7 @@ impl Cursor {
 
     pub(super) fn next(&mut self) -> Ret<Token> {
         if self.idx >= self.tokens.len() {
-            return errf!("syntax_v2: unexpected end of token stream");
+            return errf!("syntax: unexpected end of token stream");
         }
         let token = self.tokens[self.idx].clone();
         self.idx += 1;
