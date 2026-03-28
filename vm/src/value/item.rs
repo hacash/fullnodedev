@@ -212,6 +212,13 @@ impl Value {
     where
         I: IntoIterator<Item = Value>,
     {
+        Self::pack_tuple(items)
+    }
+
+    pub fn pack_tuple<I>(items: I) -> VmrtRes<Self>
+    where
+        I: IntoIterator<Item = Value>,
+    {
         let mut items: Vec<_> = items.into_iter().collect();
         Ok(match classify_call_args_len(items.len())? {
             CallArgsPack::Nil => Self::Nil,

@@ -124,16 +124,19 @@ impl<'a> ContextInst<'a> {
         Box::new((
             self.tex_ledger.clone(),
             self.psh.keys().cloned().collect::<HashSet<Address>>(),
+            self.gas.rebated_checkpoint(),
         ))
     }
 
     fn restore_volatile_inner(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>)>() else {
+        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>, i64)>() else {
             return;
         };
-        let (tex, keys) = *snap;
+        let (tex, keys, rebated) = *snap;
         self.tex_ledger = tex;
         self.psh.retain(|k, _| keys.contains(k));
+        // On AST rollback, keep gas_charge effects but roll back gas_rebate to avoid refundable-gas replay.
+        self.gas.restore_rebated(rebated);
     }
 
     fn addr_resolve(&self, ptr: &AddrOrPtr) -> Ret<Address> {

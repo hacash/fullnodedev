@@ -1183,7 +1183,7 @@ impl Resoure {
         bytes: usize,
     ) -> VmrtErr {
         let gas = self.gas_extra.new_contract_load +
-            (bytes as i64 / 64);
+            self.gas_extra.contract_bytes(bytes);
         let next_resource = self.next_resource_used(gas)?;
         host.gas_charge(gas)?;
         self.gas_use.resource = next_resource;
@@ -1324,12 +1324,12 @@ mod resource_tests {
     }
 
     #[test]
-    fn settle_new_contract_load_gas_charges_base_plus_bytes_div_64() {
+    fn settle_new_contract_load_gas_charges_base_plus_bytes_div_50() {
         let mut r = Resoure::create(1);
         let base = r.gas_extra.new_contract_load;
         let mut host = GasHost { remaining: 1000 };
         r.settle_new_contract_load_gas(&mut host, 129).unwrap();
-        assert_eq!(host.remaining, 1000 - base - 2);
+        assert_eq!(host.remaining, 1000 - base - 3);
     }
 
     #[test]

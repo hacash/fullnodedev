@@ -42,11 +42,15 @@ fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRe
 }
 
 
-/// Ensure the last instruction is a terminal one (RET/END/ERR/ABT or exposed call opcode).
+/// Ensure the last instruction is a terminal one (RET/END/ERR/ABT, optional CALCCALL, or exposed call opcode).
 /// Failure (CodeNotWithEnd) is a fitsh code compile error and propagates to the compiler
 /// via compile_body -> parse_function -> parse_top_level -> fitshc::compile.
 fn ensure_terminal_instruction(inst: Bytecode) -> VmrtErr {
     if matches!(inst, RET | END | ERR | ABT) || is_user_call_inst(inst) {
+        return Ok(())
+    };
+    #[cfg(feature = "calcfunc")]
+    if matches!(inst, CALCCALL) {
         return Ok(())
     };
     // error

@@ -11,6 +11,26 @@ impl CallFrame {
         use CallExit::*;
         macro_rules! curr { () => { self.frames.last().unwrap() }; }
         macro_rules! curr_mut { () => { self.frames.last_mut().unwrap() }; }
+        macro_rules! settle_return {
+            ($retv:expr) => {{
+                let mut retv = $retv;
+                curr!().check_output_type(&mut retv, &r.space_cap)?;
+                self.pop().unwrap().reclaim(r);
+                loop {
+                    let is_tail = match self.frames.last() {
+                        Some(f) => f.pc == f.codes.len(),
+                        None => return Ok(retv),
+                    };
+                    if !is_tail {
+                        curr_mut!().push_value(retv)?;
+                        break;
+                    }
+                    let tail = self.pop().unwrap();
+                    tail.check_output_type(&mut retv, &r.space_cap)?;
+                    tail.reclaim(r);
+                }
+            }};
+        }
 
         let height = host.height();
 
@@ -93,6 +113,10 @@ impl CallFrame {
                     }
                     r.settle_calc_resource_gas(host, gas_used)?;
                     curr_mut!().push_value(Value::Bytes(output).valid(&r.space_cap)?)?;
+                    if curr!().pc == curr!().codes.len() {
+                        let retv = curr_mut!().pop_value()?;
+                        settle_return!(retv);
+                    }
                     continue;
                 }
 
@@ -104,22 +128,7 @@ impl CallFrame {
                     if matches!(exit, Abort | Throw) {
                         return itr_err_fmt!(ThrowAbort, "VM return failed: {}", retv);
                     }
-                    curr!().check_output_type(&mut retv, &r.space_cap)?;
-                    self.pop().unwrap().reclaim(r);
-
-                    loop {
-                        let is_tail = match self.frames.last() {
-                            Some(f) => f.pc == f.codes.len(),
-                            None => return Ok(retv),
-                        };
-                        if !is_tail {
-                            curr_mut!().push_value(retv)?;
-                            break;
-                        }
-                        let tail = self.pop().unwrap();
-                        tail.check_output_type(&mut retv, &r.space_cap)?;
-                        tail.reclaim(r);
-                    }
+                    settle_return!(retv);
                 }
             }
         }

@@ -198,7 +198,7 @@ impl VMState<'_> {
         };
         let live = v.live_rest_blocks(gst)?;
         let recover = v.recover_rest_blocks(gst)?;
-        Value::pack_call_args([Value::U64(live), Value::U64(recover)])
+        Value::pack_tuple([Value::U64(live), Value::U64(recover)])
     }
 
     fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, curhei: u64, cadr: &Address, k: &Value) -> VmrtRes<Value> {
@@ -278,7 +278,7 @@ impl VMState<'_> {
         old.charge = BlockHeight::from(curhei);
         self.ctrtkvdb_set(&sk, &old);
         let unit = (val_len as u64).saturating_add(gst.storege_value_base_size.max(0) as u64);
-        Ok(u64_to_i64_sat(unit).saturating_mul(2))
+        Ok(u64_to_i64_sat(unit).saturating_mul(gst.storage_edit_mul))
     }
 
     fn srent(

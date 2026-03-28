@@ -122,6 +122,14 @@ impl GasCounter {
         self.remaining
     }
 
+    fn rebated_checkpoint(&self) -> i64 {
+        self.rebated
+    }
+
+    fn restore_rebated(&mut self, rebated: i64) {
+        self.rebated = rebated;
+    }
+
     fn max_charge(&self) -> Ret<Amount> {
         if !self.max_charge.is_positive() {
             return errf!("gas not initialized");

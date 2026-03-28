@@ -130,6 +130,7 @@ pub struct GasExtra {
     pub global_key_cost: i64,
     pub storege_value_base_size: i64,
     pub storage_key_cost: i64,
+    pub storage_edit_mul: i64,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
     stack_write_div: i64,
@@ -152,7 +153,7 @@ impl GasExtra {
     pub fn new(_hei: u64) -> Self {
         use protocol::context::*;
         Self {
-            compute_limit:   decode_gas_budget(72), // 18009
+            compute_limit:   decode_gas_budget(64), // 10481
             resource_limit:  decode_gas_budget(56), // 6100
             storage_limit:   decode_gas_budget(99), // 111911
             // // debug test
@@ -168,8 +169,9 @@ impl GasExtra {
             // Space alloc
             memory_key_cost:    20,
             global_key_cost:    32,
-            storege_value_base_size: 16,
+            storege_value_base_size: 22,
             storage_key_cost: 2048,
+            storage_edit_mul:    3,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
             stack_write_div:    28,
@@ -428,7 +430,7 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.global_key_cost, 32);
         assert_eq!(gst.new_contract_load, 32);
         assert_eq!(gst.storage_key_cost, 2048);
-        assert_eq!(gst.storege_value_base_size, 16);
+        assert_eq!(gst.storege_value_base_size, 22);
     }
 
     #[test]
