@@ -111,8 +111,7 @@ impl Peer {
         let (read_half, write_half) = stream.into_split();
 
         // cid
-        PEER_AUTO_ID_INCREASE.fetch_add(1, Ordering::Relaxed);
-        let atid = PEER_AUTO_ID_INCREASE.load(Ordering::Relaxed);
+        let atid = PEER_AUTO_ID_INCREASE.fetch_add(1, Ordering::Relaxed) + 1;
 
         // create
         let peer = Peer {

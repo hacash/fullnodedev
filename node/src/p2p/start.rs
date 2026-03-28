@@ -9,6 +9,7 @@ impl P2PManage {
         // tokio::spawn(async move{
         //     P2PManage::server_listen(p2p).await
         // });
+        this.start_peer_table_loop();
         
         // connect boot nodes
         let p2p = this.clone();

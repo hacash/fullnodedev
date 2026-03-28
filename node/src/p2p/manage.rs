@@ -34,8 +34,8 @@ impl P2PManage {
             return p
         }
         for pr in &pubps {
-            if pr.id == p.id {
-                return p
+            if Arc::ptr_eq(pr, &p) || pr.key == p.key {
+                return pr.clone()
             }
         }
         // the first one

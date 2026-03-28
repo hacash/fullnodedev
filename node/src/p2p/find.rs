@@ -16,7 +16,7 @@ impl P2PManage {
 async fn do_insert_new_nodes(this: &P2PManage, mearest_addrs: Vec<SocketAddr>, first: &PeerKey) {
     let nodelen = mearest_addrs.len();
     if nodelen == 0 {
-        let publen = this.backbones.lock().unwrap().len();
+        let publen = this.backbones().len();
         println!("connected {} public nodes, did not find any nearest.", publen);
         return
     }
@@ -32,7 +32,7 @@ async fn do_insert_new_nodes(this: &P2PManage, mearest_addrs: Vec<SocketAddr>, f
         if cncount >= 16 {
             break // end
         }
-        if let None = find_peer_from_dht_list(this.backbones.clone(), first) {
+        if let None = find_peer_from_dht_vec(&this.backbones(), first) {
             // println!("--------------------let None = find_peer_from_dht_list(this.backbones.clone(), first = {}", hex::encode(first));
             break // replace all old nodes
         }
@@ -104,5 +104,4 @@ async fn request_public_nodes(addr: SocketAddr, datas: &mut HashMap<PeerKey, Soc
     // ok fnish
     Ok(())
 }
-
 

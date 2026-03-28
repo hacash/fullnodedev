@@ -104,12 +104,11 @@ fn read_stable_nodes_file(path: &PathBuf, max: usize) -> Vec<SocketAddr> {
 }
 
 
-fn persist_stable_nodes_file(path: &PathBuf, peers: &PeerList, max: usize) {
+fn persist_stable_nodes_file(path: &PathBuf, peers: &[Arc<Peer>], max: usize) {
     let mut out = String::new();
     if max > 0 {
-        let list = peers.lock().unwrap();
         let mut count = 0usize;
-        for p in list.iter() {
+        for p in peers.iter() {
             if count >= max {
                 break;
             }
@@ -133,10 +132,19 @@ fn persist_stable_nodes_file(path: &PathBuf, peers: &PeerList, max: usize) {
 }
 
 
-fn persist_stable_nodes_from_conf(cnf: &NodeConf, peers: &PeerList) {
+fn persist_stable_nodes_from_conf(cnf: &NodeConf, peers: &[Arc<Peer>]) {
     if !cnf.use_stable_nodes {
         return;
     }
     let path = stable_nodes_path_from_conf(cnf);
     persist_stable_nodes_file(&path, peers, cnf.backbone_peers);
+}
+
+fn persist_stable_nodes_async(cnf: NodeConf, peers: Vec<Arc<Peer>>) {
+    if !cnf.use_stable_nodes {
+        return;
+    }
+    tokio::task::spawn_blocking(move || {
+        persist_stable_nodes_from_conf(&cnf, &peers);
+    });
 }

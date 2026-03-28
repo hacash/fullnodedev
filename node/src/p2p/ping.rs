@@ -19,13 +19,8 @@ impl P2PManage {
         if chn >= self.cnf.backbone_peers {
             return // unnecessary
         }
-        let remv = checkout_one_from_dht_list(self.offshoots.clone(), |p|p.is_public);
-        if remv.is_none() {
-            return // not find
-        }
-        let peer = remv.unwrap();
-        // boost the public peer
-        self.insert(peer);
+        let dropeds = self.boost_public_table().await;
+        self.delay_close_peers(dropeds, 15).await;
     }
 
     

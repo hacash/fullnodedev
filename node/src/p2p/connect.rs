@@ -82,12 +82,8 @@ impl P2PManage {
         // println!("&&&& try_create_peer(peer.clone()) ok.");
         // insert to node list
         // println!("&&&& insert(peer.clone()) ...");
-        let (accepted, droped) = self.insert(peer.clone());
-        if !accepted {
-            peer.disconnect().await;
-            return errf!("peer already exists")
-        }
-        self.delay_close_peer(droped, 15).await; // delay 15 secs to close
+        let dropeds = self.insert(peer.clone()).await?;
+        self.delay_close_peers(dropeds, 15).await; // delay 15 secs to close
         // println!("&&&& insert(peer.clone()) ok.");
         // loop read peer msg
         // println!("&&&& handle_peer_message(peer.clone(), conn_read) ...");
@@ -154,6 +150,12 @@ impl P2PManage {
             asleep(delay as f32).await;
             peer.disconnect().await;
         });
+    }
+
+    async fn delay_close_peers(&self, peers: Vec<Arc<Peer>>, delay: u64) {
+        for peer in peers {
+            self.delay_close_peer(Some(peer), delay).await;
+        }
     }
 
     fn load_stable_nodes(&self) -> Vec<SocketAddr> {

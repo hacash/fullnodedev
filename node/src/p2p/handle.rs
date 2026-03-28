@@ -7,15 +7,14 @@ impl P2PManage {
         let peer1 = peer.clone();
         let peer2 = peer.clone();
         let peer3 = peer.clone();
-        let pary1 = self.backbones.clone();
-        let pary2 = self.offshoots.clone();
-        let cnf = self.cnf.clone();
+        let peersnaprx = self.peersnaprx.clone();
+        let peertabletx = self.peertabletx.clone();
         let hdl1 = self.msghandler.clone();
         let hdl2 = self.msghandler.clone();
         let hdl3 = self.msghandler.clone();
         tokio::spawn(async move {
             // handle msg
-            do_handle_pmsg(pary1, pary2, hdl2, peer2, conn_read, cnf).await;
+            do_handle_pmsg(peersnaprx, peertabletx, hdl2, peer2, conn_read).await;
             // on disconnect
             let hdlcp = hdl3;
             tokio::spawn(async move {
@@ -33,14 +32,13 @@ impl P2PManage {
 
 }
 
-async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler>, 
-    peer: Arc<Peer>, mut conn_read: OwnedReadHalf, cnf: NodeConf
+async fn do_handle_pmsg(peersnaprx: PeerSnapRx, peertabletx: PeerTableCmdTx, msghdl: Arc<MsgHandler>, 
+    peer: Arc<Peer>, mut conn_read: OwnedReadHalf
 ) {
     {   // print connect tips
-        let ps1 = pary1.lock().unwrap();
-        let ps2 = pary2.lock().unwrap();
+        let peersnap = peersnaprx.borrow().clone();
         println!("[Peer] {} connected, total {} public {} subnet.", 
-            peer.nick(), ps1.len(), ps2.len());
+            peer.nick(), peersnap.backbones.len(), peersnap.offshoots.len());
     }
     // run loop
     loop {
@@ -88,9 +86,5 @@ async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler
     // close the conn
     peer.disconnect().await;
     // remove from list
-    let _ = remove_peer_from_dht_list(pary2.clone(), peer.clone());
-    if remove_peer_from_dht_list(pary1.clone(), peer.clone()) {
-        // println!("remove from pary1");
-        persist_stable_nodes_from_conf(&cnf, &pary1);
-    }
+    let _ = peertabletx.send(PeerTableCmd::Remove(peer.clone()));
 }

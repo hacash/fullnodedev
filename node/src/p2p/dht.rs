@@ -2,12 +2,11 @@
 /**
  * remove one from 
  */
-fn checkout_one_from_dht_list<F>(lklist: PeerList, choose: F) -> Option<Arc<Peer>>
+fn checkout_one_from_dht_vec<F>(list: &mut Vec<Arc<Peer>>, choose: F) -> Option<Arc<Peer>>
 where
     F: Fn(&Peer) -> bool,
 {
     let mut rmid = -1isize;
-    let mut list = lklist.lock().unwrap();
     for i in 0..list.len() {
         if choose(&list[i]) {
             rmid = i as isize;
@@ -52,19 +51,17 @@ fn insert_nearest_to_dht_list(list: &mut Vec<PeerKey>, compare: &PeerKey, least:
 /**
  * return: maybe drop
  */
-fn remove_peer_from_dht_list(lklist: PeerList, peer: Arc<Peer>) -> bool {
-    let key = peer.key;
-    let mut list = lklist.lock().unwrap();
+fn remove_peer_from_dht_vec(list: &mut Vec<Arc<Peer>>, peer: &Arc<Peer>) -> bool {
     let len = list.len();
-    list.retain(|p| p.key != key);
+    list.retain(|p| !Arc::ptr_eq(p, peer));
     len != list.len()
 }
 
 /**
  * find
  */
- fn find_peer_from_dht_list(lklist: PeerList, pk: &PeerKey) -> Option<Arc<Peer>> {
-    lklist.lock().unwrap().iter().find(|a|*pk==a.key).map(|a|a.clone())
+ fn find_peer_from_dht_vec(list: &[Arc<Peer>], pk: &PeerKey) -> Option<Arc<Peer>> {
+    list.iter().find(|a|*pk==a.key).map(|a|a.clone())
 }
 
 
