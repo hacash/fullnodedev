@@ -2183,6 +2183,122 @@ end",
     }
 
     #[test]
+    fn top_level_calls_keep_tx_cumulative_vm_gas_use() {
+        use crate::rt::Bytecode;
+
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(3200)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
+
+        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let fail_codes = lang_to_bytecode("return 1").unwrap();
+        let ok_codes = vec![Bytecode::END as u8];
+
+        let failed = vm.call(
+            &mut ctx,
+            Box::new(VmCallReq::Main {
+                code_type: CodeType::Bytecode,
+                codes: fail_codes.into(),
+            }),
+        );
+        assert!(failed.is_err(), "first call must fail");
+
+        let gas_after_fail = vm.machine.as_ref().unwrap().r.gas_use();
+        assert!(
+            gas_after_fail.total() > 0,
+            "failed top-level call must leave cumulative vm gas usage"
+        );
+
+        let (ok_cost, _rv) = vm
+            .call(
+                &mut ctx,
+                Box::new(VmCallReq::Main {
+                    code_type: CodeType::Bytecode,
+                    codes: ok_codes.into(),
+                }),
+            )
+            .unwrap();
+
+        let gas_after_ok = vm.machine.as_ref().unwrap().r.gas_use();
+        assert!(
+            gas_after_ok.total() > gas_after_fail.total(),
+            "later top-level call must add onto tx cumulative vm gas usage"
+        );
+        assert_eq!(
+            gas_after_ok.checked_sub(gas_after_fail).unwrap(),
+            ok_cost,
+            "returned gas must stay delta-only even when tx cumulative usage already exists"
+        );
+    }
+
+    #[test]
+    fn top_level_calls_share_tx_compute_bucket() {
+        use crate::rt::Bytecode;
+
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(3200)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
+
+        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let limit = GasExtra::new(1).main_call_min * 2 - 1;
+        vm.machine.as_mut().unwrap().r.gas_extra.compute_limit = limit;
+        let codes = vec![Bytecode::END as u8];
+
+        vm.call(
+            &mut ctx,
+            Box::new(VmCallReq::Main {
+                code_type: CodeType::Bytecode,
+                codes: codes.clone().into(),
+            }),
+        )
+        .unwrap();
+
+        let err = vm
+            .call(
+                &mut ctx,
+                Box::new(VmCallReq::Main {
+                    code_type: CodeType::Bytecode,
+                    codes: codes.into(),
+                }),
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("compute gas limit exceeded"),
+            "second top-level call must observe tx cumulative compute bucket: {err}"
+        );
+    }
+
+    #[test]
     fn snapshot_restore_volatile_fields_only_except_gas_and_warmups() {
         use crate::rt::Bytecode;
         use std::sync::Arc;

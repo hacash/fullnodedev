@@ -158,19 +158,13 @@ impl MachineBox {
         let max_reentry = machine.r.space_cap.reentry_level;
         let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)
             .map_err(|e| e.to_string())?;
-        let call_level = _guard.call_state.reentry_level;
         let min_cost = EntryKind::Main.min_call_cost(&machine.r.gas_extra);
         let gas_before = ctx.gas_remaining();
         let call_base = {
             let Some(machine) = self.machine.as_mut() else {
                 return errf!("machine runtime missing");
             };
-            if call_level <= 1 {
-                machine.r.reset_call_gas_use();
-                GasUse::default()
-            } else {
-                machine.r.gas_use()
-            }
+            machine.r.gas_use()
         };
         let result = {
             let Some(machine) = self.machine.as_mut() else {
@@ -210,7 +204,6 @@ impl MachineBox {
         };
         let max_reentry = machine.r.space_cap.reentry_level;
         let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)?;
-        let call_level = _guard.call_state.reentry_level;
         let min_cost = req.min_call_cost(&machine.r.gas_extra);
         let gas_before = ctx.gas_remaining();
         let old_exec_from = ctx.exec_from();
@@ -220,12 +213,7 @@ impl MachineBox {
                 ctx.exec_from_set(old_exec_from);
                 return xerrf!("machine runtime missing");
             };
-            let call_base = if call_level <= 1 {
-                machine.r.reset_call_gas_use();
-                GasUse::default()
-            } else {
-                machine.r.gas_use()
-            };
+            let call_base = machine.r.gas_use();
             let result = req.execute(machine, ctx);
             (call_base, result)
         };
@@ -360,14 +348,14 @@ impl VM for MachineBox {
 #[allow(dead_code)]
 pub struct Machine {
     r: Resoure,
-    frames: Vec<CallFrame>,
+    frames: Vec<Box<CallFrame>>,
 }
 
 impl Machine {
     fn current_intent_scope(&self) -> Option<Option<usize>> {
         self.frames
             .last()
-            .and_then(CallFrame::current_intent_scope)
+            .and_then(|frame| frame.current_intent_scope())
     }
 
     pub fn is_in_calling(&self) -> bool {
@@ -486,16 +474,25 @@ impl Machine {
         bindings: FrameBindings,
         param: Option<Value>,
     ) -> VmrtRes<Value> {
-        self.frames.push(CallFrame::new());
-        let res = self.frames.last_mut().unwrap().start_call(
-            &mut self.r,
-            host,
-            exec,
-            code,
-            bindings,
-            param,
-        );
-        self.frames.pop().unwrap().reclaim(&mut self.r);
+        self.frames.push(Box::new(CallFrame::new()));
+        // Keep the active root call frame at a stable heap address so re-entry can grow `self.frames` safely.
+        let root_ptr = self
+            .frames
+            .last_mut()
+            .map(|frame| frame.as_mut() as *mut CallFrame)
+            .unwrap();
+        let res = unsafe {
+            (*root_ptr).start_call(
+                &mut self.r,
+                host,
+                exec,
+                code,
+                bindings,
+                param,
+            )
+        };
+        let root = *self.frames.pop().unwrap();
+        root.reclaim(&mut self.r);
         res
     }
 }

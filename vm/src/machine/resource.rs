@@ -1017,7 +1017,7 @@ pub struct Resoure {
     pub memory_map: CtcKVMap,
     pub intents: IntentRuntime,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
-    pub gas_use: GasUse,
+    pub gas_use: GasUse, // tx-cumulative VM bucket usage
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
     pub deferred_registry: DeferredRegistry,
@@ -1069,11 +1069,6 @@ impl Resoure {
         self.space_cap = cap;
         self.gas_extra = GasExtra::new(height);
         self.gas_table = GasTable::new(height);
-    }
-
-    #[inline(always)]
-    pub fn reset_call_gas_use(&mut self) {
-        self.gas_use = GasUse::default();
     }
 
     #[inline(always)]

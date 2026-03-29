@@ -124,6 +124,20 @@ pub fn setup_vm_run_abst(
     Ok((cost, *rv))
 }
 
+
+
+
+
+
+
+
+/*****************************************/
+
+
+
+
+
+
 #[cfg(test)]
 mod setup_tests {
     use super::*;
