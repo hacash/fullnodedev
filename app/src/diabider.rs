@@ -55,7 +55,9 @@ pub fn start_diamond_auto_bidding(mut worker: Worker, hnode: Arc<dyn HNoder>) {
     // thread loop
     let engcnf = cnf.clone();
     thread::spawn(move || {
-        thread::sleep(Duration::from_secs(15));
+        if worker.sleep_or_quit(Duration::from_secs(15)) {
+            return;
+        }
         let mut current_number: u32 = 0;
         loop {
             let pending_height = eng.latest_block().height().uint() + 1;

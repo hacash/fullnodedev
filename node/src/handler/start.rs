@@ -19,6 +19,7 @@ impl MsgHandler {
                     match msg.unwrap() {
                         BlockTxArrive::Tx(peer, tx) => handle_new_tx(this.clone(), peer, tx).await,
                         BlockTxArrive::Block(peer, blk) => handle_new_block(this.clone(), peer, blk).await,
+                        BlockTxArrive::P2P(peer, ty, body) => this.handle_p2p_message(peer, ty, body).await,
                     }
                 }
             }
@@ -26,5 +27,3 @@ impl MsgHandler {
         println!("[P2P] handler loop end.");
     }
 }
-
-

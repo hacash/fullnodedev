@@ -276,17 +276,21 @@ impl VM for MachineBox {
                 m.r.intents.clone(),
                 m.r.deferred_registry.clone(),
             )),
-            Err(_) => Box::new((
-                GKVMap::default(),
-                CtcKVMap::default(),
-                IntentRuntime::default(),
-                DeferredRegistry::default(),
-            )),
+            Err(e) => {
+                debug_assert!(false, "snapshot_volatile: {}", e);
+                Box::new((
+                    GKVMap::default(),
+                    CtcKVMap::default(),
+                    IntentRuntime::default(),
+                    DeferredRegistry::default(),
+                ))
+            }
         }
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
         let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap, IntentRuntime, DeferredRegistry)>() else {
+            debug_assert!(false, "restore_volatile: snapshot type mismatch");
             return;
         };
         let (global_map, memory_map, intents, deferred_registry) = *snap;
@@ -295,6 +299,8 @@ impl VM for MachineBox {
             m.r.memory_map = memory_map;
             m.r.intents = intents;
             m.r.deferred_registry = deferred_registry;
+        } else {
+            debug_assert!(false, "restore_volatile: machine missing");
         }
     }
 

@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use tokio::net::tcp::*;
 use tokio::net::*;
-use tokio::sync::Notify;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 
 use basis::interface::*;
 use field::*;

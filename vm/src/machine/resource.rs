@@ -1041,6 +1041,7 @@ impl Resoure {
     }
 
     pub fn reclaim(&mut self) {
+        self.gas_use = GasUse::default();
         self.global_map.clear();
         self.memory_map.clear();
         self.intents.clear();
@@ -1049,7 +1050,6 @@ impl Resoure {
     }
 
     pub fn reset(&mut self, height: u64) {
-        self.gas_use = GasUse::default();
         // Rebuild config when height rolls back below current cfg_height, or crosses next upgrade.
         if height >= self.cfg_height && height < self.next_upgrade {
             return; // same protocol version, skip config rebuild
@@ -1069,7 +1069,6 @@ impl Resoure {
         self.space_cap = cap;
         self.gas_extra = GasExtra::new(height);
         self.gas_table = GasTable::new(height);
-        self.gas_use = GasUse::default();
     }
 
     #[inline(always)]

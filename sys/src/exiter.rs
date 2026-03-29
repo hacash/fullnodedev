@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::*;
+use std::time::Duration;
 
 use async_broadcast::{broadcast, Sender, Receiver, Recv, TryRecvError};
 
@@ -111,6 +112,27 @@ impl Worker {
                 true
             }
         }
+    }
+
+    pub fn sleep_or_quit(&mut self, total: Duration) -> bool {
+        const EXIT_SLEEP_SLICE_MS: u64 = 777;
+        if self.quit() {
+            return true;
+        }
+        let slice = Duration::from_millis(EXIT_SLEEP_SLICE_MS);
+        let mut left = total;
+        while left.as_nanos() > 0 {
+            std::thread::sleep(if left > slice { slice } else { left });
+            if self.quit() {
+                return true;
+            }
+            if left > slice {
+                left -= slice;
+            } else {
+                left = Duration::from_secs(0);
+            }
+        }
+        false
     }
 
 }

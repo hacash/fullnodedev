@@ -24,19 +24,15 @@ impl Peer {
     }
 
     pub async fn send(&self, buf: &Vec<u8>) -> Rerr {
-        let mut w;
-        {
-            w = match self.conn_write.lock().unwrap().take() {
-                None => return errf!("peer may be busy or closed"),
-                Some(w) => w,
-            };
-        }
-        let send_res = tcp_send(&mut w, buf).await;
+        let mut wlk = self.conn_write.lock().await;
+        let Some(w) = wlk.as_mut() else {
+            return errf!("peer may be closed")
+        };
+        let send_res = tcp_send(w, buf).await;
         if let Err(e) = send_res {
-            *self.conn_write.lock().unwrap() = None;
+            *wlk = None;
             return Err(e)
         }
-        *self.conn_write.lock().unwrap() = Some(w);
         Ok(())
     }
 

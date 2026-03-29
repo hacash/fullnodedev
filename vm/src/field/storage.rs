@@ -296,6 +296,7 @@ impl VMState<'_> {
             return itr_err_code!(StorageKeyNotFind);
         };
         let unit = v.unit(gst)?;
+        debug_assert!(unit != 0, "srent: unit is 0");
         let add_credit = period_credit(unit, period)?;
         let add_blocks = period
             .checked_mul(STORAGE_PERIOD)
@@ -337,6 +338,7 @@ impl VMState<'_> {
             return itr_err_code!(StorageKeyNotFind);
         };
         let unit = v.unit(gst)?;
+        debug_assert!(unit != 0, "srecv: unit is 0");
         let add_credit = period_credit(unit, period)?;
         let add_blocks = period
             .checked_mul(STORAGE_PERIOD)

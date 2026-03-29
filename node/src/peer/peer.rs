@@ -12,7 +12,7 @@ pub struct Peer {
     pub addr: SocketAddr,
     // will change
     pub active: StdMutex<SystemTime>,
-    pub conn_write: StdMutex<Option<OwnedWriteHalf>>,
+    pub conn_write: AsyncMutex<Option<OwnedWriteHalf>>,
     pub close_notify: Arc<Notify>,
     // data
     pub knows: Knowledge,
@@ -38,14 +38,10 @@ impl Peer {
         *self.active.lock().unwrap() = SystemTime::now();
     }
 
-    fn take_conn_write(&self) -> Option<OwnedWriteHalf> {
-        self.conn_write.lock().unwrap().take()
-    }
-
     pub async fn disconnect(&self) {
         // println!("----- call fn disconnect peer: {}", self.nick());
         self.close_notify.notify_one();
-        let mayconn = self.take_conn_write();
+        let mayconn = self.conn_write.lock().await.take();
         if let Some(mut w) = mayconn {
             let close_msg = tcp_create_msg(MSG_CLOSE, vec![]);
             let _ = tcp_send(&mut w, &close_msg).await; // send close mark

@@ -458,7 +458,9 @@ fn low_bid_replay_loop(prove: Arc<Mutex<BiddingProve>>, mut worker: Worker) {
         if worker.quit() {
             return;
         }
-        std::thread::sleep(Duration::from_secs(BiddingProve::LOW_BID_LOOP_SECS));
+        if worker.sleep_or_quit(Duration::from_secs(BiddingProve::LOW_BID_LOOP_SECS)) {
+            return;
+        }
         let (engine, groups) = {
             let mut bidding = prove.lock().unwrap();
             if bidding.stop {
@@ -474,7 +476,10 @@ fn low_bid_replay_loop(prove: Arc<Mutex<BiddingProve>>, mut worker: Worker) {
             (engine, groups)
         };
         for group in groups.into_iter() {
-            replay_low_bid_group(prove.clone(), engine.clone(), group);
+            if worker.quit() {
+                return;
+            }
+            replay_low_bid_group(prove.clone(), engine.clone(), group, &mut worker);
         }
     }
 }
@@ -483,6 +488,7 @@ fn replay_low_bid_group(
     prove: Arc<Mutex<BiddingProve>>,
     engine: Arc<dyn Engine>,
     group: LowBidGroup,
+    worker: &mut Worker,
 ) {
     let branches = group.replay_branches();
     if branches.is_empty() {
@@ -495,6 +501,9 @@ fn replay_low_bid_group(
         group.branch_num(),
     );
     for branch in branches.into_iter() {
+        if worker.quit() {
+            return;
+        }
         let chain = branch.blocks;
         let hashes: Vec<Hash> = chain.iter().map(|blk| blk.hash()).collect();
         {
@@ -516,6 +525,11 @@ fn replay_low_bid_group(
         let mut inserted = 0usize;
         let mut success = true;
         for blk in chain.iter() {
+            if worker.quit() {
+                let mut bidding = prove.lock().unwrap();
+                bidding.clear_replay_chain(&hashes);
+                return;
+            }
             let hash = blk.hash();
             if store.block_data(&hash).is_some() {
                 inserted += 1;
