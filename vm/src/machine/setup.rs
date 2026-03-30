@@ -66,7 +66,7 @@ pub fn setup_vm_run_main(
 ) -> Ret<(GasUse, Value)> {
     // Bytecode verification is intentionally handled by upper-layer action validators before calling setup_vm_run_main.
     ensure_vm_run_ready(ctx)?;
-    let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::Main {
+    let (cost, rv) = ctx.vm_call(Box::new(VmEntryReq::Main {
         code_type: CodeConf::parse(codeconf)?.code_type(),
         codes: Arc::from(payload),
     }))?;
@@ -90,7 +90,7 @@ pub fn setup_vm_run_p2sh(
     let (libs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
     let mv = mv1 + mv2;
     let intent_binding = ctx.vm_current_intent_scope();
-    let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::P2sh {
+    let (cost, rv) = ctx.vm_call(Box::new(VmEntryReq::P2sh {
         code_type: CodeConf::parse(codeconf)?.code_type(),
         state_addr,
         libs: libs.into_list(),
@@ -112,7 +112,7 @@ pub fn setup_vm_run_abst(
 ) -> Ret<(GasUse, Value)> {
     ensure_vm_run_ready(ctx)?;
     let intent_binding = ctx.vm_current_intent_scope();
-    let (cost, rv) = ctx.vm_call(Box::new(VmCallReq::Abst {
+    let (cost, rv) = ctx.vm_call(Box::new(VmEntryReq::Abst {
         kind: target,
         contract_addr: ContractAddress::from_addr(payload)?,
         intent_binding,

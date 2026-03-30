@@ -86,6 +86,7 @@ action_define! { BalanceFloor, 0x0413,
             return xerrf!("balance floor is empty")
         }
         let adr = ctx.addr(&self.addr)?;
+        // Intentionally checks the current in-tx state at this action point, not post-settlement final balances.
         let bls = CoreState::wrap(ctx.state()).balance(&adr).unwrap_or_default();
         if check_hac && bls.hacash < self.hacash {
             return xerr_rf!(

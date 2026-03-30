@@ -266,9 +266,9 @@ impl Context for ContextInst<'_> {
         }
     }
 
-    fn vm_restore_but_keep_warmup(&mut self) {
+    fn vm_rollback_volatile_preserve_warm_and_gas(&mut self) {
         if let Some(vm) = self.vm_mut() {
-            vm.restore_but_keep_warmup();
+            vm.rollback_volatile_preserve_warm_and_gas();
         }
     }
 

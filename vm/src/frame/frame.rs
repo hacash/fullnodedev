@@ -70,7 +70,7 @@ impl Frame {
             heap: r.heap_allocat(),
             ..Default::default()
         };
-        let cap = &r.space_cap;
+        let cap = &r.warm.space_cap;
         f.oprnds.reset(cap.stack_slot);
         f.locals.reset(cap.local_slot);
         f.heap.reset(cap.heap_segment);
@@ -238,14 +238,14 @@ impl Frame {
             self.base_intent_binding,
             &context_addr,
             &current_addr,
-            &r.gas_table,
-            &r.gas_extra,
-            &r.space_cap,
-            &mut r.gas_use,
-            &mut r.global_map,
-            &mut r.memory_map,
-            &mut r.intents,
-            &mut r.deferred_registry,
+            &r.warm.gas_table,
+            &r.warm.gas_extra,
+            &r.warm.space_cap,
+            &mut r.warm.gas_use,
+            &mut r.volatile.global_map,
+            &mut r.volatile.memory_map,
+            &mut r.volatile.intents,
+            &mut r.volatile.deferred_registry,
             host,
         )
     }

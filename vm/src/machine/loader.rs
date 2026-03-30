@@ -73,13 +73,13 @@ impl Resoure {
                 addr.to_readable()
             );
         };
-        if let Some(c) = self.contracts.get(addr) {
+        if let Some(c) = self.warm.contracts.get(addr) {
             if c.edition == state_ed {
                 return Ok(c.clone());
             }
-            self.contracts.remove(addr);
+            self.warm.contracts.remove(addr);
         }
-        if self.contracts.len() >= self.space_cap.loaded_contract {
+        if self.warm.contracts.len() >= self.warm.space_cap.loaded_contract {
             return itr_err_code!(OutOfLoadContract);
         }
         let cbytes = state_ed.raw_size.uint() as usize;
@@ -89,7 +89,7 @@ impl Resoure {
         {
             // OutOfGas here is terminal for the VM call; warmup is only recorded after gas settlement succeeds.
             self.settle_new_contract_load_gas(host, cbytes)?;
-            self.contracts.insert(addr.clone(), obj.clone());
+            self.warm.contracts.insert(addr.clone(), obj.clone());
             return Ok(obj);
         }
         let Some(csto) = host.contract(addr) else {
@@ -102,7 +102,7 @@ impl Resoure {
         let cobj = self.load_contract_from_state(addr, &state_ed, csto)?;
         // Keep this order explicit: even on miss, warmup/cache write is gated by successful gas settlement.
         self.settle_new_contract_load_gas(host, cbytes)?;
-        self.contracts.insert(addr.clone(), cobj.clone());
+        self.warm.contracts.insert(addr.clone(), cobj.clone());
         global_machine_manager()
             .contract_cache()
             .insert(addr, cobj.clone());

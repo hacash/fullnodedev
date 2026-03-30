@@ -16,14 +16,14 @@ action_define! { TexCellAct, 22,
         if ! verify_signature(&thx, &self.addr, &self.sign) {
             return xerrf!("address {} signature verification failed in tex cell action", self.addr)
         }
-        // exec
+        // Condition/business failures are intentionally surfaced as plain text errors, which map to Fault here.
         self.cells.execute(ctx, &self.addr).map(|_| vec![]).map_err(XError::from)
     })
 }
 
 impl TexCellAct {
     fn get_sign_stuff(&self) -> Hash {
-        // Intentionally signs only addr+cells so the same authorized TEX bundle stays reusable across transactions by design.
+        // Intentionally signs only addr+cells so the same authorized TEX bundle remains replayable across transactions by design.
         let stf = vec![self.addr.serialize(), self.cells.serialize()].concat();
         Hash::from(sha3(&stf))
     }

@@ -18,7 +18,7 @@ pub trait Context: StateOperat {
     fn vm_runtime_config(&mut self) -> Option<Box<dyn Any>> { None }
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> { None }
     fn vm_restore_volatile(&mut self, _: Box<dyn Any>) {}
-    fn vm_restore_but_keep_warmup(&mut self) {}
+    fn vm_rollback_volatile_preserve_warm_and_gas(&mut self) {}
     fn vm_invalidate_contract_cache(&mut self, _: &Address) {}
     fn gas_remaining(&self) -> i64 { 0  }
     fn gas_charge(&mut self, _: i64) -> Rerr { Ok(()) }

@@ -1007,20 +1007,41 @@ impl DeferredRegistry {
 pub type DeferCallbacks = DeferredRegistry;
 
 #[derive(Default)]
-pub struct Resoure {
-    cfg_height: u64,   // height used to build current config
-    next_upgrade: u64, // cached: next upgrade height (skip rebuild if height < this)
+pub struct WarmState {
     pub gas_table: GasTable,
     pub gas_extra: GasExtra,
     pub space_cap: SpaceCap,
-    pub global_map: GKVMap,
-    pub memory_map: CtcKVMap,
-    pub intents: IntentRuntime,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
     pub gas_use: GasUse, // tx-cumulative VM bucket usage
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
+}
+
+#[derive(Clone)]
+pub struct VolatileState {
+    pub global_map: GKVMap,
+    pub memory_map: CtcKVMap,
+    pub intents: IntentRuntime,
     pub deferred_registry: DeferredRegistry,
+}
+
+impl Default for VolatileState {
+    fn default() -> Self {
+        Self {
+            global_map: GKVMap::default(),
+            memory_map: CtcKVMap::default(),
+            intents: IntentRuntime::default(),
+            deferred_registry: DeferredRegistry::default(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct Resoure {
+    cfg_height: u64,   // height used to build current config
+    next_upgrade: u64, // cached: next upgrade height (skip rebuild if height < this)
+    pub warm: WarmState,
+    pub volatile: VolatileState,
 }
 
 impl Resoure {
@@ -1029,24 +1050,28 @@ impl Resoure {
         Self {
             cfg_height: height,
             next_upgrade: Self::next_upgrade_after(height),
-            global_map: GKVMap::new(cap.global),
-            memory_map: CtcKVMap::new(cap.memory),
-            intents: IntentRuntime::new(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key),
-            space_cap: cap,
-            gas_extra: GasExtra::new(height),
-            gas_table: GasTable::new(height),
-            deferred_registry: DeferredRegistry::new(),
-            ..Default::default()
+            warm: WarmState {
+                space_cap: cap.clone(),
+                gas_extra: GasExtra::new(height),
+                gas_table: GasTable::new(height),
+                ..Default::default()
+            },
+            volatile: VolatileState {
+                global_map: GKVMap::new(cap.global),
+                memory_map: CtcKVMap::new(cap.memory),
+                intents: IntentRuntime::new(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key),
+                deferred_registry: DeferredRegistry::new(),
+            },
         }
     }
 
     pub fn reclaim(&mut self) {
-        self.gas_use = GasUse::default();
-        self.global_map.clear();
-        self.memory_map.clear();
-        self.intents.clear();
-        self.contracts.clear();
-        self.deferred_registry.clear();
+        self.warm.gas_use = GasUse::default();
+        self.volatile.global_map.clear();
+        self.volatile.memory_map.clear();
+        self.volatile.intents.clear();
+        self.warm.contracts.clear();
+        self.volatile.deferred_registry.clear();
     }
 
     pub fn reset(&mut self, height: u64) {
@@ -1063,61 +1088,59 @@ impl Resoure {
         self.cfg_height = height;
         self.next_upgrade = Self::next_upgrade_after(height);
         // rebuild
-        self.global_map.reset(cap.global);
-        self.memory_map.reset(cap.memory);
-        self.intents.reset(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key);
-        self.space_cap = cap;
-        self.gas_extra = GasExtra::new(height);
-        self.gas_table = GasTable::new(height);
+        self.volatile.global_map.reset(cap.global);
+        self.volatile.memory_map.reset(cap.memory);
+        self.volatile.intents.reset(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key);
+        self.warm.space_cap = cap;
+        self.warm.gas_extra = GasExtra::new(height);
+        self.warm.gas_table = GasTable::new(height);
     }
 
     #[inline(always)]
     pub fn gas_use(&self) -> GasUse {
-        self.gas_use
+        self.warm.gas_use
+    }
+
+    fn preview_bucket_add(
+        &self,
+        cur: i64,
+        add: i64,
+        limit: i64,
+        overflow_msg: &str,
+        limit_err: impl FnOnce(i64, i64) -> ItrErr,
+    ) -> VmrtRes<i64> {
+        if add < 0 {
+            return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", add);
+        }
+        let next = cur
+            .checked_add(add)
+            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, overflow_msg))?;
+        if limit > 0 && next > limit {
+            return Err(limit_err(next, limit));
+        }
+        Ok(next)
     }
 
     #[inline(always)]
     pub fn next_compute_used(&self, add: i64) -> VmrtRes<i64> {
-        if add < 0 {
-            return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", add);
-        }
-        let next = self
-            .gas_use
-            .compute
-            .checked_add(add)
-            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "compute gas overflow"))?;
-        let limit = self.gas_extra.compute_limit;
-        if limit > 0 && next > limit {
-            return itr_err_fmt!(
-                ItrErrCode::OutOfGas,
-                "compute gas limit exceeded: used {} > limit {}",
-                next,
-                limit
-            );
-        }
-        Ok(next)
+        self.preview_bucket_add(
+            self.warm.gas_use.compute,
+            add,
+            self.warm.gas_extra.compute_limit,
+            "compute gas overflow",
+            |next, limit| ItrErr::new(ItrErrCode::OutOfGas, &format!("compute gas limit exceeded: used {} > limit {}", next, limit)),
+        )
     }
 
     #[inline(always)]
     pub fn next_resource_used(&self, add: i64) -> VmrtRes<i64> {
-        if add < 0 {
-            return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", add);
-        }
-        let next = self
-            .gas_use
-            .resource
-            .checked_add(add)
-            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "resource gas overflow"))?;
-        let limit = self.gas_extra.resource_limit;
-        if limit > 0 && next > limit {
-            return itr_err_fmt!(
-                ItrErrCode::OutOfGas,
-                "resource gas limit exceeded: used {} > limit {}",
-                next,
-                limit
-            );
-        }
-        Ok(next)
+        self.preview_bucket_add(
+            self.warm.gas_use.resource,
+            add,
+            self.warm.gas_extra.resource_limit,
+            "resource gas overflow",
+            |next, limit| ItrErr::new(ItrErrCode::OutOfGas, &format!("resource gas limit exceeded: used {} > limit {}", next, limit)),
+        )
     }
 
     #[cfg(feature = "calcfunc")]
@@ -1127,48 +1150,56 @@ impl Resoure {
         if host_limit < 0 {
             return itr_err_code!(ItrErrCode::OutOfGas);
         }
-        let bucket_limit = self.gas_extra.resource_limit;
+        let bucket_limit = self.warm.gas_extra.resource_limit;
         if bucket_limit <= 0 {
             return Ok(host_limit);
         }
-        if self.gas_use.resource > bucket_limit {
+        if self.warm.gas_use.resource > bucket_limit {
             return itr_err_fmt!(
                 ItrErrCode::OutOfGas,
                 "resource gas limit exceeded: used {} > limit {}",
-                self.gas_use.resource,
+                self.warm.gas_use.resource,
                 bucket_limit
             );
         }
-        Ok(host_limit.min(bucket_limit - self.gas_use.resource))
+        Ok(host_limit.min(bucket_limit - self.warm.gas_use.resource))
     }
 
     #[inline(always)]
     pub fn next_storage_used(&self, add: i64) -> VmrtRes<i64> {
-        if add < 0 {
-            return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", add);
-        }
-        let next = self
-            .gas_use
-            .storage
-            .checked_add(add)
-            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "storage gas overflow"))?;
-        let limit = self.gas_extra.storage_limit;
-        if limit > 0 && next > limit {
-            return itr_err_fmt!(
-                ItrErrCode::OutOfGas,
-                "storage gas limit exceeded: used {} > limit {}",
-                next,
-                limit
-            );
-        }
-        Ok(next)
+        self.preview_bucket_add(
+            self.warm.gas_use.storage,
+            add,
+            self.warm.gas_extra.storage_limit,
+            "storage gas overflow",
+            |next, limit| ItrErr::new(ItrErrCode::OutOfGas, &format!("storage gas limit exceeded: used {} > limit {}", next, limit)),
+        )
     }
 
     #[inline(always)]
     pub fn commit_gas_use(&mut self, compute: i64, resource: i64, storage: i64) {
-        self.gas_use.compute = compute;
-        self.gas_use.resource = resource;
-        self.gas_use.storage = storage;
+        self.warm.gas_use.compute = compute;
+        self.warm.gas_use.resource = resource;
+        self.warm.gas_use.storage = storage;
+    }
+
+    fn charge_and_commit_gas<H: VmHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        add_compute: i64,
+        add_resource: i64,
+        add_storage: i64,
+    ) -> VmrtErr {
+        let next_compute = self.next_compute_used(add_compute)?;
+        let next_resource = self.next_resource_used(add_resource)?;
+        let next_storage = self.next_storage_used(add_storage)?;
+        let total = add_compute
+            .checked_add(add_resource)
+            .and_then(|v| v.checked_add(add_storage))
+            .ok_or_else(|| ItrErr::new(ItrErrCode::OutOfGas, "gas cost overflow"))?;
+        host.gas_charge(total)?;
+        self.commit_gas_use(next_compute, next_resource, next_storage);
+        Ok(())
     }
 
     // Charge one cold contract load with per-load bytes fee.
@@ -1177,12 +1208,9 @@ impl Resoure {
         host: &mut H,
         bytes: usize,
     ) -> VmrtErr {
-        let gas = self.gas_extra.new_contract_load +
-            self.gas_extra.contract_bytes(bytes);
-        let next_resource = self.next_resource_used(gas)?;
-        host.gas_charge(gas)?;
-        self.gas_use.resource = next_resource;
-        Ok(())
+        let gas = self.warm.gas_extra.new_contract_load +
+            self.warm.gas_extra.contract_bytes(bytes);
+        self.charge_and_commit_gas(host, 0, gas, 0)
     }
 
     #[cfg(feature = "calcfunc")]
@@ -1191,26 +1219,27 @@ impl Resoure {
         host: &mut H,
         gas: i64,
     ) -> VmrtErr {
-        let next_resource = self.next_resource_used(gas)?;
-        host.gas_charge(gas)?;
-        self.gas_use.resource = next_resource;
-        Ok(())
+        self.charge_and_commit_gas(host, 0, gas, 0)
+    }
+
+    pub fn settle_compute_gas<H: VmHost + ?Sized>(&mut self, host: &mut H, gas: i64) -> VmrtErr {
+        self.charge_and_commit_gas(host, gas, 0, 0)
     }
 
     pub fn stack_allocat(&mut self) -> Stack {
-        self.stack_pool.pop().unwrap_or(Stack::default())
+        self.warm.stack_pool.pop().unwrap_or(Stack::default())
     }
 
     pub fn stack_reclaim(&mut self, stk: Stack) {
-        self.stack_pool.push(stk);
+        self.warm.stack_pool.push(stk);
     }
 
     pub fn heap_allocat(&mut self) -> Heap {
-        self.heap_pool.pop().unwrap_or(Heap::default())
+        self.warm.heap_pool.pop().unwrap_or(Heap::default())
     }
 
     pub fn heap_reclaim(&mut self, heap: Heap) {
-        self.heap_pool.push(heap);
+        self.warm.heap_pool.push(heap);
     }
 
     // util

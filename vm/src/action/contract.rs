@@ -99,6 +99,7 @@ action_define! { ContractUpdate, 41,
         check_sub_contract_protocol_cost(ctx, &self.protocol_cost, delta_bytes)?;
         // Append is valid only when each newly exposed selector was absent from self and every inherited parent before the update; if any parent-visible selector is shadowed, it is Change.
         let sys = maybe!(did_change, Change, Append); // Change or Append
+        // Authorization is intentionally delegated to the contract's Change/Append hook; this action does not add a separate owner gate.
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
         let _ = setup_vm_run_abst(
             ctx,

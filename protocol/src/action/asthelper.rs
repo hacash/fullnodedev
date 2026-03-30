@@ -21,6 +21,7 @@ pub fn ast_exec_item<T>(
             snap.rollback(ctx)?;
             Err(XError::revert(msg))
         }
+        // Faults intentionally bubble without child rollback; outer tx-level isolation owns final unwind.
         Err(e) => Err(e),
     }
 }

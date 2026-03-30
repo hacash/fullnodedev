@@ -1,48 +1,28 @@
-#[derive(Clone, Default)]
-pub struct VmCallState {
-    reentry_level: u32,
+pub struct MachineRuntime {
+    r: Resoure,
 }
 
-struct VmReentryGuard<'a> {
-    call_state: &'a mut VmCallState,
-}
-
-impl<'a> VmReentryGuard<'a> {
-    fn enter(call_state: &'a mut VmCallState, max_reentry: u32) -> Ret<Self> {
-        call_state.enter(max_reentry)?;
-        Ok(Self { call_state })
+impl MachineRuntime {
+    pub fn new(r: Resoure) -> Self {
+        Self { r }
     }
 }
 
-impl Drop for VmReentryGuard<'_> {
-    fn drop(&mut self) {
-        self.call_state.leave();
+impl std::ops::Deref for MachineRuntime {
+    type Target = Resoure;
+
+    fn deref(&self) -> &Self::Target {
+        &self.r
     }
 }
 
-impl VmCallState {
-    fn enter(&mut self, max_reentry: u32) -> Rerr {
-        let next_level = self
-            .reentry_level
-            .checked_add(1)
-            .ok_or_else(|| "re-entry level overflow".to_owned())?;
-        if next_level > max_reentry + 1 {
-            return errf!(
-                "re-entry level {} exceeded limit {}",
-                next_level - 1,
-                max_reentry
-            );
-        }
-        self.reentry_level = next_level;
-        Ok(())
-    }
-
-    fn leave(&mut self) {
-        self.reentry_level = self.reentry_level.saturating_sub(1);
+impl std::ops::DerefMut for MachineRuntime {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.r
     }
 }
 
-pub(crate) enum VmCallReq {
+pub(crate) enum VmEntryReq {
     Main {
         code_type: CodeType,
         codes: Arc<[u8]>,
@@ -63,7 +43,7 @@ pub(crate) enum VmCallReq {
     },
 }
 
-impl VmCallReq {
+impl VmEntryReq {
     fn entry_kind(&self) -> EntryKind {
         match self {
             Self::Main { .. } => EntryKind::Main,
@@ -76,9 +56,14 @@ impl VmCallReq {
         self.entry_kind().min_call_cost(gas_extra)
     }
 
-    fn execute(self, machine: &mut Machine, ctx: &mut dyn Context) -> XRet<Value> {
+    fn execute(
+        self,
+        machine: &mut Machine,
+        runtime: &mut MachineRuntime,
+        ctx: &mut dyn Context,
+    ) -> XRet<Value> {
         match self {
-            Self::Main { code_type, codes } => machine.main_call(ctx, code_type, codes),
+            Self::Main { code_type, codes } => machine.main_call(runtime, ctx, code_type, codes),
             Self::P2sh {
                 code_type,
                 state_addr,
@@ -86,54 +71,277 @@ impl VmCallReq {
                 codes,
                 intent_binding,
                 param,
-            } => machine.p2sh_call(ctx, code_type, state_addr, libs, codes, intent_binding, param),
+            } => machine.p2sh_call(runtime, ctx, code_type, state_addr, libs, codes, intent_binding, param),
             Self::Abst {
                 kind,
                 contract_addr,
                 intent_binding,
                 param,
-            } => machine.abst_call(ctx, kind, contract_addr, intent_binding, param),
+            } => machine.abst_call(runtime, ctx, kind, contract_addr, intent_binding, param),
         }
     }
 }
 
 /*********************************/
 
+struct VmEntryFrame {
+    kind: EntryKind,
+    gas_base: GasUse,
+    min_cost: i64,
+}
+
+struct VmVolatileSnapshot {
+    global_map: GKVMap,
+    memory_map: CtcKVMap,
+    intents: IntentRuntime,
+    deferred_registry: DeferredRegistry,
+}
+
+#[derive(Clone, Copy)]
+enum VmEntryMode {
+    KeepCurrentExecFrom,
+    ForceCall,
+    AssumeAlreadyCall,
+}
+
+enum VmEntryFailure {
+    Message(String),
+    Runtime(crate::rt::ItrErr),
+}
+
+struct VmEntryGuard {
+    entries: *mut Vec<VmEntryFrame>,
+    entry: VmEntryFrame,
+    index: usize,
+    armed: bool,
+}
+
+impl VmEntryGuard {
+    fn push<E>(
+        entries: &mut Vec<VmEntryFrame>,
+        max_reentry: u32,
+        gas_base: GasUse,
+        kind: EntryKind,
+        min_cost: i64,
+        map: fn(VmEntryFailure) -> E,
+    ) -> Result<Self, E> {
+        let next_level = entries
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| map(VmEntryFailure::Message("re-entry level overflow".to_owned())))?;
+        if next_level as u32 > max_reentry + 1 {
+            return Err(map(VmEntryFailure::Message(format!(
+                "re-entry level {} exceeded limit {}",
+                next_level - 1,
+                max_reentry
+            ))));
+        }
+        let entry = VmEntryFrame {
+            kind,
+            gas_base,
+            min_cost,
+        };
+        let index = entries.len();
+        entries.push(VmEntryFrame {
+            kind: entry.kind,
+            gas_base: entry.gas_base,
+            min_cost: entry.min_cost,
+        });
+        Ok(Self {
+            entries,
+            entry,
+            index,
+            armed: true,
+        })
+    }
+
+    fn entry(&self) -> VmEntryFrame {
+        VmEntryFrame {
+            kind: self.entry.kind,
+            gas_base: self.entry.gas_base,
+            min_cost: self.entry.min_cost,
+        }
+    }
+
+    fn disarm(mut self) -> VmEntryFrame {
+        self.armed = false;
+        self.entry()
+    }
+}
+
+impl Drop for VmEntryGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let entries = unsafe { &mut *self.entries };
+        let Some(popped) = entries.pop() else {
+            debug_assert!(false, "vm entry frame missing during guard drop");
+            return;
+        };
+        debug_assert_eq!(entries.len(), self.index);
+        debug_assert_eq!(popped.kind as u8, self.entry.kind as u8);
+    }
+}
+
 #[allow(dead_code)]
 pub struct MachineBox {
-    call_state: VmCallState,
-    machine: Option<Machine>,
+    runtime: Option<MachineRuntime>,
+    machine: Machine,
+    entries: Vec<VmEntryFrame>,
 }
 
 impl Drop for MachineBox {
     fn drop(&mut self) {
-        match self.machine.take() {
-            Some(m) => global_machine_manager().reclaim(m.r),
-            _ => (),
+        if let Some(runtime) = self.runtime.take() {
+            global_machine_manager().reclaim(runtime.r);
         }
     }
 }
 
 impl MachineBox {
-    pub fn new(m: Machine) -> Self {
+    pub fn from_resource(r: Resoure) -> Self {
         Self {
-            call_state: VmCallState::default(),
-            machine: Some(m),
+            runtime: Some(MachineRuntime::new(r)),
+            machine: Machine::new(),
+            entries: vec![],
         }
     }
 
     #[inline]
-    fn machine_ref(&self) -> Ret<&Machine> {
-        self.machine
+    fn runtime_ref(&self) -> Ret<&MachineRuntime> {
+        self.runtime
             .as_ref()
             .ok_or_else(|| "machine runtime missing".to_owned())
     }
 
     #[inline]
-    fn machine_mut(&mut self) -> Ret<&mut Machine> {
-        self.machine
+    fn runtime_mut(&mut self) -> Ret<&mut MachineRuntime> {
+        self.runtime
             .as_mut()
             .ok_or_else(|| "machine runtime missing".to_owned())
+    }
+
+    fn map_ret_entry_failure(err: VmEntryFailure) -> String {
+        match err {
+            VmEntryFailure::Message(msg) => msg,
+            VmEntryFailure::Runtime(err) => err.to_string(),
+        }
+    }
+
+    fn map_xret_entry_failure(err: VmEntryFailure) -> XError {
+        match err {
+            VmEntryFailure::Message(msg) => XError::fault(msg),
+            VmEntryFailure::Runtime(err) => XError::from(err),
+        }
+    }
+
+    fn append_secondary_message(primary: String, secondary: String) -> String {
+        if secondary.is_empty() || primary.contains(&secondary) {
+            primary
+        } else {
+            format!("{} | secondary: {}", primary, secondary)
+        }
+    }
+
+    fn merge_ret_entry_errors(exec_err: String, settle_err: String) -> String {
+        Self::append_secondary_message(exec_err, settle_err)
+    }
+
+    fn merge_xret_entry_errors(exec_err: XError, settle_err: XError) -> XError {
+        let exec_is_revert = exec_err.is_revert();
+        let settle_is_revert = settle_err.is_revert();
+        if exec_is_revert && !settle_is_revert {
+            match settle_err {
+                sys::ExecError::Revert(msg) => XError::fault(Self::append_secondary_message(msg, exec_err.to_string())),
+                sys::ExecError::Fault(msg) => XError::fault(Self::append_secondary_message(msg, exec_err.to_string())),
+            }
+        } else {
+            match exec_err {
+                sys::ExecError::Revert(msg) => XError::revert(Self::append_secondary_message(msg, settle_err.to_string())),
+                sys::ExecError::Fault(msg) => XError::fault(Self::append_secondary_message(msg, settle_err.to_string())),
+            }
+        }
+    }
+
+    fn with_entry_mode<T>(
+        ctx: &mut dyn Context,
+        mode: VmEntryMode,
+        f: impl for<'a> FnOnce(&'a mut dyn Context) -> T,
+    ) -> T {
+        match mode {
+            VmEntryMode::KeepCurrentExecFrom => f(ctx),
+            VmEntryMode::ForceCall => basis::interface::with_exec_from(
+                ctx,
+                basis::component::ExecFrom::Call,
+                f,
+            ),
+            VmEntryMode::AssumeAlreadyCall => f(ctx),
+        }
+    }
+
+    fn run_vm_entry<T, E>(
+        &mut self,
+        ctx: &mut dyn Context,
+        kind: EntryKind,
+        min_cost: i64,
+        mode: VmEntryMode,
+        execute: impl FnOnce(&mut Machine, &mut MachineRuntime, &mut dyn Context) -> Result<T, E>,
+        map: fn(VmEntryFailure) -> E,
+        merge: fn(E, E) -> E,
+    ) -> Result<(GasUse, T), E> {
+        let (max_reentry, gas_base) = {
+            let runtime = self
+                .runtime_ref()
+                .map_err(|e| map(VmEntryFailure::Message(e)))?;
+            (runtime.warm.space_cap.reentry_level, runtime.gas_use())
+        };
+        let guard = VmEntryGuard::push(&mut self.entries, max_reentry, gas_base, kind, min_cost, map)?;
+        let result = Self::with_entry_mode(ctx, mode, |ctx| {
+            let machine = &mut self.machine;
+            let Some(runtime) = self.runtime.as_mut() else {
+                return Err(map(VmEntryFailure::Message("machine runtime missing".to_owned())));
+            };
+            execute(machine, runtime, ctx)
+        });
+        let entry = guard.disarm();
+        let settle = match self.runtime_mut() {
+            Ok(runtime) => {
+                let mut cost = runtime
+                    .gas_use()
+                    .checked_sub(entry.gas_base)
+                    .ok_or_else(|| {
+                        map(VmEntryFailure::Message(format!(
+                            "gas cost underflow: total={:?}, base={:?}",
+                            runtime.gas_use(),
+                            entry.gas_base
+                        )))
+                    })?;
+                if cost.total() < entry.min_cost {
+                    let delta = entry.min_cost - cost.total();
+                    runtime
+                        .settle_compute_gas(ctx, delta)
+                        .map_err(|e| map(VmEntryFailure::Runtime(e)))?;
+                    cost.compute += delta;
+                }
+                if cost.total() <= 0 {
+                    Err(map(VmEntryFailure::Message(format!(
+                        "{:?} gas cost invalid: {}",
+                        entry.kind,
+                        cost.total()
+                    ))))
+                } else {
+                    Ok(cost)
+                }
+            }
+            Err(e) => Err(map(VmEntryFailure::Message(e))),
+        };
+        match (result, settle) {
+            (Err(exec_err), Err(settle_err)) => Err(merge(exec_err, settle_err)),
+            (Err(exec_err), _) => Err(exec_err),
+            (Ok(_), Err(settle_err)) => Err(settle_err),
+            (Ok(retv), Ok(cost)) => Ok((cost, retv)),
+        }
     }
 
     pub fn sandbox_main_call_raw(
@@ -152,152 +360,95 @@ impl MachineBox {
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> Ret<(GasUse, Value)> {
-        let Some(machine) = self.machine.as_ref() else {
-            return errf!("machine runtime missing");
+        let min_cost = {
+            let runtime = self.runtime_ref().map_err(|e| e.to_string())?;
+            EntryKind::Main.min_call_cost(&runtime.warm.gas_extra)
         };
-        let max_reentry = machine.r.space_cap.reentry_level;
-        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)
-            .map_err(|e| e.to_string())?;
-        let min_cost = EntryKind::Main.min_call_cost(&machine.r.gas_extra);
-        let gas_before = ctx.gas_remaining();
-        let call_base = {
-            let Some(machine) = self.machine.as_mut() else {
-                return errf!("machine runtime missing");
-            };
-            machine.r.gas_use()
-        };
-        let result = {
-            let Some(machine) = self.machine.as_mut() else {
-                return errf!("machine runtime missing");
-            };
-            machine.main_call_raw(ctx, ctype, codes)
-        };
-        let gas_after = ctx.gas_remaining();
-        let actual = gas_before - gas_after;
-        let Some(machine) = self.machine.as_mut() else {
-            return errf!("machine runtime missing");
-        };
-        if actual < min_cost {
-            let delta = min_cost - actual;
-            let next_compute = machine.r.next_compute_used(delta).map_err(|e| e.to_string())?;
-            ctx.gas_charge(delta)?;
-            machine.r.gas_use.compute = next_compute;
-        }
-        let total_cost = machine.r.gas_use();
-        let Some(cost) = total_cost.checked_sub(call_base) else {
-            return errf!("gas cost underflow: total={:?}, base={:?}", total_cost, call_base);
-        };
-        let ret_val = result?;
-        if cost.total() <= 0 {
-            return errf!("gas cost invalid: {}", cost.total());
-        }
-        Ok((cost, ret_val))
+        self.run_vm_entry(
+            ctx,
+            EntryKind::Main,
+            min_cost,
+            VmEntryMode::KeepCurrentExecFrom,
+            move |machine, runtime, ctx| machine.main_call_raw(runtime, ctx, ctype, codes),
+            Self::map_ret_entry_failure,
+            Self::merge_ret_entry_errors,
+        )
     }
 
-    fn execute_req_internal(
+    fn execute_entry_req(
         &mut self,
         ctx: &mut dyn Context,
-        req: VmCallReq,
+        req: VmEntryReq,
     ) -> XRet<(GasUse, Value)> {
-        let Some(machine) = self.machine.as_ref() else {
-            return xerrf!("machine runtime missing");
+        let (kind, min_cost) = {
+            let runtime = self.runtime_ref().map_err(XError::fault)?;
+            (req.entry_kind(), req.min_call_cost(&runtime.warm.gas_extra))
         };
-        let max_reentry = machine.r.space_cap.reentry_level;
-        let _guard = VmReentryGuard::enter(&mut self.call_state, max_reentry)?;
-        let min_cost = req.min_call_cost(&machine.r.gas_extra);
-        let gas_before = ctx.gas_remaining();
-        let old_exec_from = ctx.exec_from();
-        ctx.exec_from_set(basis::component::ExecFrom::Call);
-        let (call_base, result) = {
-            let Some(machine) = self.machine.as_mut() else {
-                ctx.exec_from_set(old_exec_from);
-                return xerrf!("machine runtime missing");
-            };
-            let call_base = machine.r.gas_use();
-            let result = req.execute(machine, ctx);
-            (call_base, result)
-        };
-        ctx.exec_from_set(old_exec_from);
-        let gas_after = ctx.gas_remaining();
-        let actual = gas_before - gas_after;
-        let Some(machine) = self.machine.as_mut() else {
-            return xerrf!("machine runtime missing");
-        };
-        if actual < min_cost {
-            let delta = min_cost - actual;
-            let next_compute = machine.r.next_compute_used(delta)?;
-            ctx.gas_charge(delta)?;
-            machine.r.gas_use.compute = next_compute;
-        }
-        let total_cost = machine.r.gas_use();
-        let Some(cost) = total_cost.checked_sub(call_base) else {
-            return xerrf!(
-                "gas cost underflow: total={:?}, base={:?}",
-                total_cost,
-                call_base
-            );
-        };
-        let resv = result?;
-        if cost.total() <= 0 {
-            return xerrf!("gas cost invalid: {}", cost.total());
-        }
-        Ok((cost, resv))
+        self.run_vm_entry(
+            ctx,
+            kind,
+            min_cost,
+            VmEntryMode::AssumeAlreadyCall,
+            move |machine, runtime, ctx| req.execute(machine, runtime, ctx),
+            Self::map_xret_entry_failure,
+            Self::merge_xret_entry_errors,
+        )
     }
 }
 
 impl VM for MachineBox {
     fn current_intent_scope(&mut self) -> Option<Option<usize>> {
-        self.machine_ref().ok().and_then(Machine::current_intent_scope)
+        self.machine.current_intent_scope()
     }
 
     fn runtime_config(&mut self) -> Option<Box<dyn Any>> {
-        self.machine_ref()
+        self.runtime_ref()
             .ok()
-            .map(|m| Box::new((m.r.gas_extra.clone(), m.r.space_cap.clone())) as Box<dyn Any>)
+            .map(|r| Box::new((r.warm.gas_extra.clone(), r.warm.space_cap.clone())) as Box<dyn Any>)
     }
 
     fn snapshot_volatile(&mut self) -> Box<dyn Any> {
-        match self.machine_ref() {
-            Ok(m) => Box::new((
-                m.r.global_map.clone(),
-                m.r.memory_map.clone(),
-                m.r.intents.clone(),
-                m.r.deferred_registry.clone(),
-            )),
+        match self.runtime_ref() {
+            Ok(r) => Box::new(VmVolatileSnapshot {
+                global_map: r.volatile.global_map.clone(),
+                memory_map: r.volatile.memory_map.clone(),
+                intents: r.volatile.intents.clone(),
+                deferred_registry: r.volatile.deferred_registry.clone(),
+            }),
             Err(e) => {
                 debug_assert!(false, "snapshot_volatile: {}", e);
-                Box::new((
-                    GKVMap::default(),
-                    CtcKVMap::default(),
-                    IntentRuntime::default(),
-                    DeferredRegistry::default(),
-                ))
+                Box::new(VmVolatileSnapshot {
+                    global_map: GKVMap::default(),
+                    memory_map: CtcKVMap::default(),
+                    intents: IntentRuntime::default(),
+                    deferred_registry: DeferredRegistry::default(),
+                })
             }
         }
     }
 
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(GKVMap, CtcKVMap, IntentRuntime, DeferredRegistry)>() else {
+        let Ok(snap) = snap.downcast::<VmVolatileSnapshot>() else {
             debug_assert!(false, "restore_volatile: snapshot type mismatch");
             return;
         };
-        let (global_map, memory_map, intents, deferred_registry) = *snap;
-        if let Ok(m) = self.machine_mut() {
-            m.r.global_map = global_map;
-            m.r.memory_map = memory_map;
-            m.r.intents = intents;
-            m.r.deferred_registry = deferred_registry;
+        let snap = *snap;
+        if let Ok(r) = self.runtime_mut() {
+            r.volatile.global_map = snap.global_map;
+            r.volatile.memory_map = snap.memory_map;
+            r.volatile.intents = snap.intents;
+            r.volatile.deferred_registry = snap.deferred_registry;
         } else {
             debug_assert!(false, "restore_volatile: machine missing");
         }
     }
 
-    fn restore_but_keep_warmup(&mut self) {
-        if let Ok(m) = self.machine_mut() {
-            m.r.global_map.clear();
-            m.r.memory_map.clear();
-            m.r.intents.clear();
-            m.r.deferred_registry.clear();
+    fn rollback_volatile_preserve_warm_and_gas(&mut self) {
+        if let Ok(r) = self.runtime_mut() {
+            r.volatile.global_map.clear();
+            r.volatile.memory_map.clear();
+            r.volatile.intents.clear();
+            r.volatile.deferred_registry.clear();
         }
     }
 
@@ -305,8 +456,8 @@ impl VM for MachineBox {
         let Ok(caddr) = ContractAddress::from_addr(*addr) else {
             return;
         };
-        if let Ok(m) = self.machine_mut() {
-            m.r.contracts.remove(&caddr);
+        if let Ok(r) = self.runtime_mut() {
+            r.warm.contracts.remove(&caddr);
         }
         global_machine_manager()
             .contract_cache()
@@ -315,19 +466,34 @@ impl VM for MachineBox {
 
     fn drain_deferred(&mut self, ctx: &mut dyn Context) -> Rerr {
         let callbacks = {
-            let m = self.machine_mut().map_err(|e| e.to_string())?;
-            m.r.deferred_registry.drain_lifo()
+            let r = self.runtime_mut().map_err(|e| e.to_string())?;
+            // Deferred phase currently uses strict one-shot consumption: once drained, callbacks are consumed
+            // even if a later deferred callback fails. This keeps deferred dispatch non-reentrant and matches the
+            // existing transaction semantics where warmups/gas remain monotonic after the phase begins.
+            r.volatile.deferred_registry.drain_lifo()
         };
         for caddr in callbacks {
             let _ = self
-                .execute_req_internal(
+                .run_vm_entry(
                     ctx,
-                    VmCallReq::Abst {
-                        kind: AbstCall::Deferred,
-                        contract_addr: caddr.addr,
-                        intent_binding: Some(caddr.intent_id),
-                        param: Value::Nil,
+                    EntryKind::Abst,
+                    {
+                        let runtime = self.runtime_ref().map_err(|e| e.to_string())?;
+                        EntryKind::Abst.min_call_cost(&runtime.warm.gas_extra)
                     },
+                    VmEntryMode::ForceCall,
+                    move |machine, runtime, ctx| {
+                        VmEntryReq::Abst {
+                            kind: AbstCall::Deferred,
+                            contract_addr: caddr.addr,
+                            intent_binding: Some(caddr.intent_id),
+                            param: Value::Nil,
+                        }
+                        .execute(machine, runtime, ctx)
+                        .map_err(|e| e.to_string())
+                    },
+                    Self::map_ret_entry_failure,
+                    Self::merge_ret_entry_errors,
                 )
                 .map_err(|e| e.to_string())?;
         }
@@ -335,10 +501,10 @@ impl VM for MachineBox {
     }
 
     fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
-        let Ok(req) = req.downcast::<VmCallReq>() else {
+        let Ok(req) = req.downcast::<VmEntryReq>() else {
             return xerrf!("vm call request type mismatch");
         };
-        let (cost, resv) = self.execute_req_internal(ctx, *req)?;
+        let (cost, resv) = self.execute_entry_req(ctx, *req)?;
         Ok((cost, Box::new(resv)))
     }
 }
@@ -347,27 +513,48 @@ impl VM for MachineBox {
 
 #[allow(dead_code)]
 pub struct Machine {
-    r: Resoure,
     frames: Vec<Box<CallFrame>>,
 }
 
 impl Machine {
-    fn current_intent_scope(&self) -> Option<Option<usize>> {
-        self.frames
-            .last()
-            .and_then(|frame| frame.current_intent_scope())
+    fn validate_vm_entry_param(
+        kind: EntryKind,
+        runtime: &MachineRuntime,
+        exec: &ExecCtx,
+        param: Option<&Value>,
+    ) -> XRerr {
+        exec.ensure_call_depth(&runtime.warm.space_cap).map_err(XError::from)?;
+        if let Some(param) = param {
+            param.check_vm_boundary_argv().map_err(XError::from)?;
+            param
+                .check_container_cap(&runtime.warm.space_cap)
+                .map_err(XError::from)?;
+        }
+        let _ = kind;
+        Ok(())
+    }
+
+    fn validate_vm_entry_return(kind: EntryKind, rv: &Value, err_msg: &str) -> XRerr {
+        match kind {
+            EntryKind::Main | EntryKind::P2sh | EntryKind::Abst => check_vm_return_value(rv, err_msg),
+        }
+    }
+
+    fn current_intent_scope(&self) -> IntentScope {
+        self.frames.last().and_then(|frame| frame.current_intent_scope())
     }
 
     pub fn is_in_calling(&self) -> bool {
         !self.frames.is_empty()
     }
 
-    pub fn create(r: Resoure) -> Self {
-        Self { r, frames: vec![] }
+    pub fn new() -> Self {
+        Self { frames: vec![] }
     }
 
     pub fn main_call_raw<H: VmHost + ?Sized>(
         &mut self,
+        runtime: &mut MachineRuntime,
         host: &mut H,
         ctype: CodeType,
         codes: Arc<[u8]>,
@@ -375,6 +562,7 @@ impl Machine {
         // Caller must pre-validate code bytes. Production entry actions run convert_and_check before setup_vm_run.
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let rv = self.do_call(
+            runtime,
             host,
             EntryKind::Main.root_exec(),
             &fnobj,
@@ -387,17 +575,20 @@ impl Machine {
 
     pub fn main_call<H: VmHost + ?Sized>(
         &mut self,
+        runtime: &mut MachineRuntime,
         host: &mut H,
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> XRet<Value> {
-        let rv = self.main_call_raw(host, ctype, codes)?;
-        check_vm_return_value(&rv, "main call")?;
+        Self::validate_vm_entry_param(EntryKind::Main, runtime, &EntryKind::Main.root_exec(), None)?;
+        let rv = self.main_call_raw(runtime, host, ctype, codes)?;
+        Self::validate_vm_entry_return(EntryKind::Main, &rv, "main call")?;
         Ok(rv)
     }
 
     pub fn abst_call<H: VmHost + ?Sized>(
         &mut self,
+        runtime: &mut MachineRuntime,
         host: &mut H,
         cty: AbstCall,
         contract_addr: ContractAddress,
@@ -405,14 +596,9 @@ impl Machine {
         param: Value,
     ) -> XRet<Value> {
         let exec = EntryKind::Abst.root_exec();
-        exec.ensure_call_depth(&self.r.space_cap).map_err(XError::from)?;
-        param.check_vm_boundary_argv().map_err(XError::from)?;
-        param
-            .check_container_cap(&self.r.space_cap)
-            .map_err(XError::from)?;
+        Self::validate_vm_entry_param(EntryKind::Abst, runtime, &exec, Some(&param))?;
         let adr = contract_addr.to_readable();
-        let Some(hit) = self
-            .r
+        let Some(hit) = runtime
             .resolve_abstfn(host, &contract_addr, cty)
             .map_err(XError::from)?
         else {
@@ -420,6 +606,7 @@ impl Machine {
         };
         // Keep state anchored to the concrete contract address, even when abstract entry body is inherited from a parent owner. This preserves this/self split semantics.
         let rv = self.do_call(
+            runtime,
             host,
             exec,
             hit.fnobj.as_ref(),
@@ -427,12 +614,13 @@ impl Machine {
                 .with_intent_binding(intent_binding),
             Some(param),
         ).map_err(XError::from)?;
-        check_vm_return_value(&rv, &format!("call {}.{:?}", adr, cty))?;
+        Self::validate_vm_entry_return(EntryKind::Abst, &rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
     }
 
     fn p2sh_call<H: VmHost + ?Sized>(
         &mut self,
+        runtime: &mut MachineRuntime,
         host: &mut H,
         ctype: CodeType,
         p2sh_addr: Address,
@@ -442,15 +630,14 @@ impl Machine {
         param: Value,
     ) -> XRet<Value> {
         // Caller must pre-validate lock script bytes. Production P2SH flow verifies inputs before VM call.
+        let exec = EntryKind::P2sh.root_exec();
+        Self::validate_vm_entry_param(EntryKind::P2sh, runtime, &exec, Some(&param))?;
         let fnobj = FnObj::plain(ctype, codes, 0, None);
         let ctx_adr = p2sh_addr;
-        param.check_vm_boundary_argv().map_err(XError::from)?;
-        param
-            .check_container_cap(&self.r.space_cap)
-            .map_err(XError::from)?;
         let rv = self.do_call(
+            runtime,
             host,
-            EntryKind::P2sh.root_exec(),
+            exec,
             &fnobj,
             FrameBindings::root(
                 ctx_adr,
@@ -462,12 +649,13 @@ impl Machine {
             .with_intent_binding(intent_binding),
             Some(param),
         ).map_err(XError::from)?;
-        check_vm_return_value(&rv, "p2sh call")?;
+        Self::validate_vm_entry_return(EntryKind::P2sh, &rv, "p2sh call")?;
         Ok(rv)
     }
 
     fn do_call<H: VmHost + ?Sized>(
         &mut self,
+        runtime: &mut MachineRuntime,
         host: &mut H,
         exec: ExecCtx,
         code: &FnObj,
@@ -483,7 +671,7 @@ impl Machine {
             .unwrap();
         let res = unsafe {
             (*root_ptr).start_call(
-                &mut self.r,
+                runtime,
                 host,
                 exec,
                 code,
@@ -492,7 +680,7 @@ impl Machine {
             )
         };
         let root = *self.frames.pop().unwrap();
-        root.reclaim(&mut self.r);
+        root.reclaim(runtime);
         res
     }
 }

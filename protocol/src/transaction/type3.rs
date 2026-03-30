@@ -217,6 +217,11 @@ pub fn tx_gas_initialize(ctx: &mut dyn Context) -> Ret<bool> {
     };
     let budget = decode_gas_budget(gas_max_byte.min(TX_GAS_BUDGET_CAP_BYTE));
     if budget <= 0 {
+        // `gas_max=0` is intentional and means "do not initialize tx gas".
+        // This is valid because not every action path consumes gas. Callers must not
+        // reinterpret this branch as an invalid transaction; if a later action actually
+        // charges gas, the execution path will fail with the normal "gas not initialized"
+        // error at the first real gas use.
         return Ok(false);
     }
     ctx.gas_initialize(budget)?;

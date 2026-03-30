@@ -315,13 +315,13 @@ mod hook_arg_tests {
             &self.tx
         }
         fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
-            let Ok(req) = req.downcast::<crate::machine::VmCallReq>() else {
+            let Ok(req) = req.downcast::<crate::machine::VmEntryReq>() else {
                 return Err(XError::fault("vm call req type mismatch".to_owned()));
             };
             let (param, intent_scope) = match *req {
-                crate::machine::VmCallReq::Main { .. } => (Value::Nil, None),
-                crate::machine::VmCallReq::P2sh { param, intent_binding, .. }
-                | crate::machine::VmCallReq::Abst { param, intent_binding, .. } => {
+                crate::machine::VmEntryReq::Main { .. } => (Value::Nil, None),
+                crate::machine::VmEntryReq::P2sh { param, intent_binding, .. }
+                | crate::machine::VmEntryReq::Abst { param, intent_binding, .. } => {
                     (param, intent_binding)
                 }
             };

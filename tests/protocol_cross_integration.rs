@@ -609,7 +609,7 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
 }
 
 #[test]
-fn test_ast_tx_gasmax_zero_is_rejected_before_execution() {
+fn test_ast_tx_gasmax_zero_skips_init_and_fails_on_first_real_gas_use() {
     let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -635,7 +635,7 @@ fn test_ast_tx_gasmax_zero_is_rejected_before_execution() {
 
     ctx.exec_from_set(ExecFrom::Top);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("gas_max must be non-zero"), "{}", err);
+    assert!(err.contains("gas not initialized"), "{}", err);
 }
 
 #[test]
@@ -2102,7 +2102,7 @@ impl VM for AstDeepDelayVm {
         }
     }
 
-    fn restore_but_keep_warmup(&mut self) {
+    fn rollback_volatile_preserve_warm_and_gas(&mut self) {
         self.clean_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.volatile.store(0, std::sync::atomic::Ordering::SeqCst);
