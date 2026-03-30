@@ -47,7 +47,7 @@ impl SandboxSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxResult {
     pub use_gas: i64,
-    pub gas_use: GasUse,
+    pub gas_use: VmGasBuckets,
     pub ret_val: Value,
 }
 

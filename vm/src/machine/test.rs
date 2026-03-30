@@ -2588,7 +2588,7 @@ end",
     }
 
     #[test]
-    fn outermost_failed_call_consumes_remaining_without_burn() {
+    fn outermost_failed_call_reduces_remaining_before_tx_settlement() {
         let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let mut env = Env::default();
         env.block.height = 1;
@@ -2632,7 +2632,7 @@ end",
         );
         assert_eq!(
             bal_before, bal_after,
-            "outermost failed call currently skips settle burn"
+            "direct vm.call failure does not settle protocol billing inside this helper path"
         );
     }
 
@@ -2676,7 +2676,7 @@ end",
     }
 
     #[test]
-    fn fail_then_success_charges_same_as_success_only() {
+    fn fail_then_success_keeps_same_balance_until_tx_level_settlement() {
         let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let fail_codes = lang_to_bytecode("return 1").unwrap();
         let ok_codes = vec![crate::rt::Bytecode::END as u8];
@@ -2729,7 +2729,7 @@ end",
 
         assert_eq!(
             bal_fail_then_success, bal_success_only,
-            "failed outermost call before a successful one is currently not additionally charged"
+            "direct vm.call failure alone does not settle protocol billing before tx-level settlement"
         );
         assert!(
             rem_fail_then_success < rem_success_only,

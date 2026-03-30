@@ -68,6 +68,11 @@ impl GasPrice {
 }
 
 #[derive(Clone)]
+/// Source of truth for protocol-side gas billing.
+///
+/// This ledger tracks the tx-scoped gas budget, cumulative charges, and rebates
+/// that determine the final HAC burn/refund in `gas_refund()`.
+/// VM runtime bucket reporting (`VmGasBuckets`) is not used as the billing source of truth.
 struct GasCounter {
     running: bool,
     remaining: i64,
@@ -253,6 +258,16 @@ impl ContextInst<'_> {
         self.gas.begin(budget, max_burn_amt)
     }
 
+    /// Finalize protocol-side gas settlement for a successfully committing transaction.
+    ///
+    /// Source of truth:
+    /// - final HAC burn/refund is derived from `self.gas.used_net()` in `GasCounter`
+    /// - not from VM runtime bucket reporting (`VmGasBuckets`) returned by VM entry calls
+    /// - `total_count.ast_vm_gas_burn_238` below is committed statistics only
+    ///
+    /// Commit semantics:
+    /// - this runs only on the tx success path
+    /// - if upper layers roll back the transaction, neither the refund nor the statistics update commit
     pub fn gas_refund(&mut self) -> Rerr {
         let price = GasPrice::from_tx(self.tx())?;
         let (refund, used_charge) = self.gas.finalize(&price)?;

@@ -198,6 +198,7 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
     }
     super::tex::do_settlement(ctx)?;
     ctx.run_deferred_phase()?;
+    // Commit semantics: gas settlement/statistics are committed only on the tx success path.
     // Upper layers roll back failed transaction state, so refund is only executed on success and cannot leave inconsistent state behind.
     if gas_initialized {
         ctx.gas_refund()?;

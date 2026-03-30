@@ -161,7 +161,7 @@ mod tests {
         let mut ops = Stack::new(16);
         let mut locals = Stack::new(16);
         let mut heap = Heap::new(16);
-        let mut gas_use = basis::interface::GasUse::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
 
         let mut host = TestVmHost {
             ctx,

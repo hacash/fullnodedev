@@ -1,5 +1,5 @@
 pub trait VM {
-    fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
+    fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
         let _ = (ctx, req);
         never!()
     }

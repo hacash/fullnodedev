@@ -975,7 +975,7 @@ return C.0xabcdef01(1, 2)",
                 ctx,
                 gas_remaining: gas,
             };
-            let mut gas_use = basis::interface::GasUse::default();
+            let mut gas_use = basis::interface::VmGasBuckets::default();
             let mut defer_callbacks = crate::machine::DeferCallbacks::default();
 
             crate::interpreter::execute_code(

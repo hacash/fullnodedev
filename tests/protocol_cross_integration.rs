@@ -2112,7 +2112,7 @@ impl VM for AstDeepDelayVm {
         &mut self,
         _: &mut dyn Context,
         req: Box<dyn std::any::Any>,
-    ) -> XRet<(GasUse, Box<dyn std::any::Any>)> {
+    ) -> XRet<(VmGasBuckets, Box<dyn std::any::Any>)> {
         let Ok(data) = req.downcast::<Vec<u8>>() else {
             return xerrf!("deep delay vm payload type mismatch");
         };
@@ -2130,7 +2130,7 @@ impl VM for AstDeepDelayVm {
         if should_fail {
             return xerr_rf!("deep delay vm forced fail");
         }
-        Ok((GasUse::default(), Box::new(Vec::<u8>::new())))
+        Ok((VmGasBuckets::default(), Box::new(Vec::<u8>::new())))
     }
 }
 
@@ -2358,7 +2358,7 @@ impl VM for AstBugAssumeVm {
         &mut self,
         _: &mut dyn Context,
         req: Box<dyn std::any::Any>,
-    ) -> XRet<(GasUse, Box<dyn std::any::Any>)> {
+    ) -> XRet<(VmGasBuckets, Box<dyn std::any::Any>)> {
         let Ok(data) = req.downcast::<Vec<u8>>() else {
             return xerrf!("ast bug assume vm payload type mismatch");
         };
@@ -2378,9 +2378,9 @@ impl VM for AstBugAssumeVm {
         self.burned
             .fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
         Ok((
-            GasUse {
+            VmGasBuckets {
                 compute: gas_cost,
-                ..GasUse::default()
+                ..VmGasBuckets::default()
             },
             Box::new(Vec::<u8>::new()),
         ))
@@ -2473,7 +2473,7 @@ impl AstTestBugVmCall {
 }
 
 #[test]
-fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
+fn test_ast_vm_assumption_fail_child_then_success_child_reports_only_success_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -2502,7 +2502,7 @@ fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
 }
 
 #[test]
-fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
+fn test_ast_vm_assumption_min_zero_keeps_failed_vm_branch_unreported_in_mock_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -2524,7 +2524,7 @@ fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
 }
 
 #[test]
-fn test_ast_bug_control_all_success_children_no_burn_gap() {
+fn test_ast_vm_assumption_all_success_children_match_mock_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -2556,7 +2556,7 @@ fn test_ast_bug_control_all_success_children_no_burn_gap() {
 }
 
 #[test]
-fn test_ast_bug_control_min_zero_success_child_charged() {
+fn test_ast_vm_assumption_min_zero_success_child_updates_mock_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =

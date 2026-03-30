@@ -1012,7 +1012,7 @@ pub struct WarmState {
     pub gas_extra: GasExtra,
     pub space_cap: SpaceCap,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
-    pub gas_use: GasUse, // tx-cumulative VM bucket usage
+    pub gas_use: VmGasBuckets, // tx-cumulative VM bucket usage for metering/reporting, not protocol billing source of truth
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
 }
@@ -1066,7 +1066,7 @@ impl Resoure {
     }
 
     pub fn reclaim(&mut self) {
-        self.warm.gas_use = GasUse::default();
+        self.warm.gas_use = VmGasBuckets::default();
         self.volatile.global_map.clear();
         self.volatile.memory_map.clear();
         self.volatile.intents.clear();
@@ -1097,7 +1097,7 @@ impl Resoure {
     }
 
     #[inline(always)]
-    pub fn gas_use(&self) -> GasUse {
+    pub fn gas_use(&self) -> VmGasBuckets {
         self.warm.gas_use
     }
 

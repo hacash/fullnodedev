@@ -329,7 +329,7 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         ctx,
         gas_remaining: gas,
     };
-    let mut gas_use = basis::interface::GasUse::default();
+    let mut gas_use = basis::interface::VmGasBuckets::default();
     let mut defer_callbacks = DeferCallbacks::default();
 
     execute_code(

@@ -228,7 +228,7 @@ impl Context for ContextInst<'_> {
         self.txr
     }
 
-    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
+    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
         self.ensure_vm_assigned()?;
         let old = self.exec_from;
         self.exec_from = ExecFrom::Call;

@@ -34,7 +34,7 @@ mod bounds_tests {
         host: &mut H,
     ) -> VmrtRes<CallExit> {
         host.set_test_gas(*gas_usable);
-        let mut gas_use = basis::interface::GasUse::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
         let mut defer_callbacks = DeferCallbacks::default();
         let res = super::execute_code(
             pc,
@@ -1201,7 +1201,7 @@ mod bounds_tests {
         let mut global_map = GKVMap::new(20);
         let mut memory_map = CtcKVMap::new(12);
         let mut defer_callbacks = DeferCallbacks::default();
-        let mut gas_use = basis::interface::GasUse::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
 
         let cadr = ContractAddress::from_unchecked(Address::create_contract([7u8; 20]));
         let codes = vec![
@@ -1255,7 +1255,7 @@ mod bounds_tests {
         let mut global_map = GKVMap::new(20);
         let mut memory_map = CtcKVMap::new(12);
         let mut defer_callbacks = DeferCallbacks::default();
-        let mut gas_use = basis::interface::GasUse::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
 
         let main = Address::create_privakey([3u8; 20]);
         let codes = vec![

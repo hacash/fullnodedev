@@ -86,7 +86,7 @@ impl VmEntryReq {
 
 struct VmEntryFrame {
     kind: EntryKind,
-    gas_base: GasUse,
+    gas_base: VmGasBuckets,
     min_cost: i64,
 }
 
@@ -120,7 +120,7 @@ impl VmEntryGuard {
     fn push<E>(
         entries: &mut Vec<VmEntryFrame>,
         max_reentry: u32,
-        gas_base: GasUse,
+        gas_base: VmGasBuckets,
         kind: EntryKind,
         min_cost: i64,
         map: fn(VmEntryFailure) -> E,
@@ -289,7 +289,7 @@ impl MachineBox {
         execute: impl FnOnce(&mut Machine, &mut MachineRuntime, &mut dyn Context) -> Result<T, E>,
         map: fn(VmEntryFailure) -> E,
         merge: fn(E, E) -> E,
-    ) -> Result<(GasUse, T), E> {
+    ) -> Result<(VmGasBuckets, T), E> {
         let (max_reentry, gas_base) = {
             let runtime = self
                 .runtime_ref()
@@ -337,6 +337,9 @@ impl MachineBox {
             Err(e) => Err(map(VmEntryFailure::Message(e))),
         };
         match (result, settle) {
+            // `VmGasBuckets` returned here are VM-side reporting values for this entry delta.
+            // They are not the source of truth for protocol billing: final HAC burn/refund is
+            // driven by host/context gas charges that were already applied during execution.
             (Err(exec_err), Err(settle_err)) => Err(merge(exec_err, settle_err)),
             (Err(exec_err), _) => Err(exec_err),
             (Ok(_), Err(settle_err)) => Err(settle_err),
@@ -359,7 +362,7 @@ impl MachineBox {
         ctx: &mut dyn Context,
         ctype: CodeType,
         codes: Arc<[u8]>,
-    ) -> Ret<(GasUse, Value)> {
+    ) -> Ret<(VmGasBuckets, Value)> {
         let min_cost = {
             let runtime = self.runtime_ref().map_err(|e| e.to_string())?;
             EntryKind::Main.min_call_cost(&runtime.warm.gas_extra)
@@ -379,7 +382,7 @@ impl MachineBox {
         &mut self,
         ctx: &mut dyn Context,
         req: VmEntryReq,
-    ) -> XRet<(GasUse, Value)> {
+    ) -> XRet<(VmGasBuckets, Value)> {
         let (kind, min_cost) = {
             let runtime = self.runtime_ref().map_err(XError::fault)?;
             (req.entry_kind(), req.min_call_cost(&runtime.warm.gas_extra))
@@ -500,7 +503,7 @@ impl VM for MachineBox {
         Ok(())
     }
 
-    fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
+    fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
         let Ok(req) = req.downcast::<VmEntryReq>() else {
             return xerrf!("vm call request type mismatch");
         };

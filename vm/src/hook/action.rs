@@ -147,7 +147,7 @@ fn coin_asset_transfer_call(
 mod hook_arg_tests {
     use super::*;
     use basis::component::{Env, ExecFrom, TexLedger};
-    use basis::interface::{Context, GasUse, Logs, P2sh, State, StateOperat, TransactionRead};
+    use basis::interface::{Context, VmGasBuckets, Logs, P2sh, State, StateOperat, TransactionRead};
     use field::{Address, Amount, Hash};
     use protocol::context::EmptyState;
     use std::sync::{Arc, Weak};
@@ -314,7 +314,7 @@ mod hook_arg_tests {
         fn tx(&self) -> &dyn TransactionRead {
             &self.tx
         }
-        fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
+        fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
             let Ok(req) = req.downcast::<crate::machine::VmEntryReq>() else {
                 return Err(XError::fault("vm call req type mismatch".to_owned()));
             };
@@ -326,7 +326,7 @@ mod hook_arg_tests {
                 }
             };
             self.calls.push((param, intent_scope));
-            Ok((GasUse { compute: 1, resource: 0, storage: 0 }, Box::new(Value::Nil)))
+            Ok((VmGasBuckets { compute: 1, resource: 0, storage: 0 }, Box::new(Value::Nil)))
         }
         fn vm_current_intent_scope(&mut self) -> IntentScope {
             self.intent_scope

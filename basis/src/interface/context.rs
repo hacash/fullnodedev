@@ -13,7 +13,7 @@ pub trait Context: StateOperat {
     fn addr(&self, _: &AddrOrPtr) -> Ret<Address>;
     fn check_sign(&mut self, _: &Address) -> Rerr;
     fn tx(&self) -> &dyn TransactionRead;
-    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)>;
+    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)>;
     fn vm_current_intent_scope(&mut self) -> Option<Option<usize>> { None }
     fn vm_runtime_config(&mut self) -> Option<Box<dyn Any>> { None }
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> { None }

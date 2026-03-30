@@ -15,7 +15,7 @@ unsafe fn read_arr<const N: usize>(codes: &[u8], pc: usize) -> [u8; N] {
 fn finish_ntcall(
     cap: &SpaceCap,
     gst: &GasExtra,
-    step_gas_use: &mut GasUse,
+    step_gas_use: &mut VmGasBuckets,
     ops: &mut Stack,
     r: Value,
     g: i64,
@@ -173,7 +173,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
     gas_table: &GasTable,
     gas_extra: &GasExtra,
     space_cap: &SpaceCap,
-    gas_use: &mut GasUse,
+    gas_use: &mut VmGasBuckets,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
     deferred_registry: &mut DeferredRegistry,
@@ -223,7 +223,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     gas_table: &GasTable,
     gas_extra: &GasExtra,
     space_cap: &SpaceCap,
-    gas_use: &mut GasUse,
+    gas_use: &mut VmGasBuckets,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
     intents: &mut IntentRuntime,
@@ -279,9 +279,9 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         
         // gas
         let base_gas = gas_table.gas(instbyte);
-        let mut step_gas_use = GasUse {
+        let mut step_gas_use = VmGasBuckets {
             compute: base_gas,
-            ..GasUse::default()
+            ..VmGasBuckets::default()
         };
 
         macro_rules! gas_add {
@@ -1012,8 +1012,8 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
 
 #[inline(always)]
 fn check_add_gas_use(
-    gas_use: &mut GasUse,
-    step_gas_use: &GasUse,
+    gas_use: &mut VmGasBuckets,
+    step_gas_use: &VmGasBuckets,
     gst: &GasExtra,
 ) -> VmrtRes<i64> {
     if step_gas_use.compute < 0 || step_gas_use.resource < 0 || step_gas_use.storage < 0 {
