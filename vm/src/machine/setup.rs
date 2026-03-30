@@ -1,4 +1,4 @@
-pub fn setup_vm_runtime_gascap(ctx: &mut dyn Context, height: u64) -> (GasExtra, SpaceCap) {
+pub fn peek_vm_runtime_limits(ctx: &mut dyn Context, height: u64) -> (GasExtra, SpaceCap) {
     let Some(conf) = ctx.vm_runtime_config() else {
         return (GasExtra::new(height), SpaceCap::new(height));
     };
@@ -7,3 +7,4 @@ pub fn setup_vm_runtime_gascap(ctx: &mut dyn Context, height: u64) -> (GasExtra,
     };
     *conf
 }
+

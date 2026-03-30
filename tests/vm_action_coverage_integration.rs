@@ -24,7 +24,7 @@ mod action_coverage {
     use vm::build_codes;
     use vm::contract::{Abst, Contract, Func};
     use vm::lang::lang_to_bytecode;
-    use vm::machine::{self, Machine, Resoure};
+    use vm::machine::{self, Executor, Runtime};
     use vm::rt::{AbstCall, Bytecode, Bytecode::*, CodeConf, CodeType, SpaceCap, calc_func_sign};
     use vm::value::Value;
     use vm::{ContractAddrListW1, ContractAddress, ContractAddressW1, ContractSto, VMState};
@@ -88,7 +88,7 @@ mod action_coverage {
             }
         }
         let height = ctx.env().block.height;
-        let mut machine = Machine::create(Resoure::create(height));
+        let mut machine = Executor::from_runtime(Runtime::create(height));
         let rv = machine.main_call(ctx, CodeType::Bytecode, codes.into())?;
         Ok(rv)
     }
@@ -597,7 +597,7 @@ mod action_coverage {
     fn deploy_with_construct_function() {
         let _guard = test_guard();
         set_vm_assigner(Some(|height| {
-            Box::new(vm::global_machine_manager().assign(height))
+            Box::new(vm::global_runtime_pool().checkout(height))
         }));
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);

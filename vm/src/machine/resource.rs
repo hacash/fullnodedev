@@ -1037,14 +1037,14 @@ impl Default for VolatileState {
 }
 
 #[derive(Default)]
-pub struct Resoure {
+pub struct Runtime {
     cfg_height: u64,   // height used to build current config
     next_upgrade: u64, // cached: next upgrade height (skip rebuild if height < this)
     pub warm: WarmState,
     pub volatile: VolatileState,
 }
 
-impl Resoure {
+impl Runtime {
     pub fn create(height: u64) -> Self {
         let cap = SpaceCap::new(height);
         Self {
@@ -1349,7 +1349,7 @@ mod resource_tests {
 
     #[test]
     fn settle_new_contract_load_gas_charges_base_plus_bytes_div_50() {
-        let mut r = Resoure::create(1);
+        let mut r = Runtime::create(1);
         let base = r.warm.gas_extra.new_contract_load;
         let mut host = GasHost { remaining: 1000 };
         r.settle_new_contract_load_gas(&mut host, 129).unwrap();
@@ -1358,7 +1358,7 @@ mod resource_tests {
 
     #[test]
     fn reset_rebuilds_config_when_height_rolls_back() {
-        let mut r = Resoure::create(200);
+        let mut r = Runtime::create(200);
         assert_eq!(r.cfg_height, 200);
         r.reset(100);
         assert_eq!(r.cfg_height, 100);

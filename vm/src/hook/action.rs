@@ -119,7 +119,7 @@ fn coin_asset_transfer_call(
             }
         }
         let param = Value::pack_call_args(params)?;
-        let _ = setup_vm_run_p2sh(ctx, codeconf, codes, param)?;
+        let _ = run_p2sh_entry(ctx, codeconf, codes, param)?;
         // return value checked inside p2sh_call
     }
 
@@ -128,7 +128,7 @@ fn coin_asset_transfer_call(
         let mut argvs = argvs.clone();
         argvs.push_front(Value::Address(to));
         let param = Value::pack_call_args(argvs)?;
-        let _ = setup_vm_run_abst(ctx, abstfrom, from, param)?;
+        let _ = run_abst_entry(ctx, abstfrom, from, param)?;
         // return value checked inside abst_call
     }
 
@@ -136,7 +136,7 @@ fn coin_asset_transfer_call(
     if tc {
         argvs.push_front(Value::Address(from));
         let param = Value::pack_call_args(argvs)?;
-        let _ = setup_vm_run_abst(ctx, abstto, to, param)?;
+        let _ = run_abst_entry(ctx, abstto, to, param)?;
         // return value checked inside abst_call
     }
 
@@ -315,13 +315,13 @@ mod hook_arg_tests {
             &self.tx
         }
         fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
-            let Ok(req) = req.downcast::<crate::machine::VmEntryReq>() else {
+            let Ok(req) = req.downcast::<crate::machine::EntryRequest>() else {
                 return Err(XError::fault("vm call req type mismatch".to_owned()));
             };
             let (param, intent_scope) = match *req {
-                crate::machine::VmEntryReq::Main { .. } => (Value::Nil, None),
-                crate::machine::VmEntryReq::P2sh { param, intent_binding, .. }
-                | crate::machine::VmEntryReq::Abst { param, intent_binding, .. } => {
+                crate::machine::EntryRequest::Main { .. } => (Value::Nil, None),
+                crate::machine::EntryRequest::P2sh { param, intent_binding, .. }
+                | crate::machine::EntryRequest::Abst { param, intent_binding, .. } => {
                     (param, intent_binding)
                 }
             };

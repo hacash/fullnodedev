@@ -230,19 +230,14 @@ impl Context for ContextInst<'_> {
 
     fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
         self.ensure_vm_assigned()?;
-        let old = self.exec_from;
-        self.exec_from = ExecFrom::Call;
-        let ret = unsafe {
+        unsafe {
             let ctx = self as *mut Self;
             let Some(vm) = (*ctx).vm.as_deref_mut() else {
-                self.exec_from = old;
                 return xerrf!("vm state invalid after assign")
             };
             // Re-entry must observe the same VM instance while also passing the same context as host.
             vm.call(&mut *ctx as &mut dyn Context, req)
-        };
-        self.exec_from = old;
-        ret
+        }
     }
 
     fn vm_current_intent_scope(&mut self) -> Option<Option<usize>> {

@@ -1,7 +1,7 @@
 impl CallFrame {
     pub(crate) fn start_call<H: VmHost + ?Sized>(
         &mut self,
-        r: &mut Resoure,
+        r: &mut Runtime,
         host: &mut H,
         exec: ExecCtx,
         code: &FnObj,

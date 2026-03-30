@@ -13,7 +13,7 @@ pub struct ResolvedCallPlan {
     pub fnobj: Arc<FnObj>,
 }
 
-impl Resoure {
+impl Runtime {
     #[inline(always)]
     fn require_resolved(found: Option<ResolvedFn>) -> VmrtRes<ResolvedFn> {
         use ItrErrCode::*;
@@ -83,7 +83,7 @@ impl Resoure {
             return itr_err_code!(OutOfLoadContract);
         }
         let cbytes = state_ed.raw_size.uint() as usize;
-        if let Some(obj) = global_machine_manager()
+        if let Some(obj) = global_runtime_pool()
             .contract_cache()
             .get(addr, &state_ed)
         {
@@ -103,7 +103,7 @@ impl Resoure {
         // Keep this order explicit: even on miss, warmup/cache write is gated by successful gas settlement.
         self.settle_new_contract_load_gas(host, cbytes)?;
         self.warm.contracts.insert(addr.clone(), cobj.clone());
-        global_machine_manager()
+        global_runtime_pool()
             .contract_cache()
             .insert(addr, cobj.clone());
         Ok(cobj)
@@ -353,7 +353,7 @@ mod loader_tests {
             state,
             gas_remaining: 0,
         };
-        let mut res = Resoure::create(1);
+        let mut res = Runtime::create(1);
         let err = match res.load_contract(&mut host, &caddr) {
             Ok(_) => panic!("expected OutOfGas"),
             Err(e) => e,
@@ -375,7 +375,7 @@ mod loader_tests {
             state,
             gas_remaining: 10_000,
         };
-        let mut res = Resoure::create(1);
+        let mut res = Runtime::create(1);
         let one_cold_fee = res.warm.gas_extra.new_contract_load
             + res.warm.gas_extra.contract_bytes(cbytes);
         {

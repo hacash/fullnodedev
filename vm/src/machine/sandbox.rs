@@ -94,9 +94,9 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
         &Amount::unit238(SANDBOX_FUND_238),
     )?;
     temp_ctx.gas_initialize(gas_budget)?;
-    let mut vmb = global_machine_manager().assign(hei);
+    let mut vmb = global_runtime_pool().checkout(hei);
     let (gas_use, ret_val) =
-        vmb.sandbox_main_call_raw_with_gas(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
+        vmb.raw_main_entry(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
     Ok(SandboxResult {
         use_gas: gas_use.total(),
         gas_use,

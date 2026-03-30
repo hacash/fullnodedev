@@ -23,8 +23,8 @@ mod machine_file_test {
         crate::ContractAddress::calculate(base, &Uint4::from(nonce))
     }
 
-    fn new_test_machine() -> (Machine, MachineRuntime) {
-        (Machine::new(), MachineRuntime::new(Resoure::create(1)))
+    fn new_test_machine() -> (Machine, Runtime) {
+        (Machine::new(), Runtime::create(1))
     }
 
     struct TestVmHost<'a> {
@@ -1065,8 +1065,8 @@ mod machine_file_test {
             )
             .expect_err("abst external call must be rejected before target load");
         assert!(err.contains("CallInAbst"), "unexpected error: {err}");
-        assert!(runtime.r.warm.contracts.contains_key(&contract_entry));
-        assert!(!runtime.r.warm.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1908,14 +1908,14 @@ end",
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let (mut machine, mut runtime) = new_test_machine();
-        runtime.r.warm.space_cap.call_depth = 1;
+        runtime.warm.space_cap.call_depth = 1;
 
         let err = machine
             .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("nested call must exceed call_depth limit");
         assert!(err.contains("OutOfCallDepth"), "unexpected error: {err}");
-        assert!(runtime.r.warm.contracts.contains_key(&contract_entry));
-        assert!(!runtime.r.warm.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1984,8 +1984,8 @@ end",
             .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("nested call without argv must fail locally");
         assert!(err.contains("Read empty stack"), "unexpected error: {err}");
-        assert!(runtime.r.warm.contracts.contains_key(&contract_entry));
-        assert!(!runtime.r.warm.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -2048,8 +2048,8 @@ end",
             .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("codecall without argv must fail locally");
         assert!(err.contains("Read empty stack"), "unexpected error: {err}");
-        assert!(runtime.r.warm.contracts.contains_key(&contract_entry));
-        assert!(!runtime.r.warm.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -2094,7 +2094,7 @@ end",
             )
             .expect_err("invalid abst argv must fail locally");
         assert!(err.contains("CastBeFnArgvFail"), "unexpected error: {err}");
-        assert!(!runtime.r.warm.contracts.contains_key(&contract_target));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -2130,7 +2130,7 @@ end",
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let (mut machine, mut runtime) = new_test_machine();
 
-        let over = runtime.r.warm.space_cap.compo_length + 1;
+        let over = runtime.warm.space_cap.compo_length + 1;
         let list = CompoItem::list(VecDeque::from(vec![Value::U8(1); over])).unwrap();
         let err = machine
             .abst_call(
@@ -2143,7 +2143,7 @@ end",
             )
             .expect_err("oversize compo argv must fail locally");
         assert!(err.contains("OutOfCompoLen"), "unexpected error: {err}");
-        assert!(!runtime.r.warm.contracts.contains_key(&contract_target));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -2170,13 +2170,13 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         // END is a minimal "return nil" program; actual instruction gas is tiny.
         let codes = vec![Bytecode::END as u8];
 
         vm.call(
             &mut ctx,
-            Box::new(VmEntryReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: codes.clone().into(),
             }),
@@ -2216,20 +2216,20 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let fail_codes = lang_to_bytecode("return 1").unwrap();
         let ok_codes = vec![Bytecode::END as u8];
 
         let failed = vm.call(
             &mut ctx,
-            Box::new(VmEntryReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: fail_codes.into(),
             }),
         );
         assert!(failed.is_err(), "first call must fail");
 
-        let gas_after_fail = vm.runtime.as_ref().unwrap().r.gas_use();
+        let gas_after_fail = vm.runtime.gas_use();
         assert!(
             gas_after_fail.total() > 0,
             "failed top-level call must leave cumulative vm gas usage"
@@ -2238,14 +2238,14 @@ end",
         let (ok_cost, _rv) = vm
             .call(
                 &mut ctx,
-                Box::new(VmEntryReq::Main {
+                Box::new(EntryRequest::Main {
                     code_type: CodeType::Bytecode,
                     codes: ok_codes.into(),
                 }),
             )
             .unwrap();
 
-        let gas_after_ok = vm.runtime.as_ref().unwrap().r.gas_use();
+        let gas_after_ok = vm.runtime.gas_use();
         assert!(
             gas_after_ok.total() > gas_after_fail.total(),
             "later top-level call must add onto tx cumulative vm gas usage"
@@ -2280,14 +2280,14 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let limit = GasExtra::new(1).main_call_min * 2 - 1;
-        vm.runtime.as_mut().unwrap().r.warm.gas_extra.compute_limit = limit;
+        vm.runtime.warm.gas_extra.compute_limit = limit;
         let codes = vec![Bytecode::END as u8];
 
         vm.call(
             &mut ctx,
-            Box::new(VmEntryReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: codes.clone().into(),
             }),
@@ -2297,7 +2297,7 @@ end",
         let err = vm
             .call(
                 &mut ctx,
-                Box::new(VmEntryReq::Main {
+                Box::new(EntryRequest::Main {
                     code_type: CodeType::Bytecode,
                     codes: codes.into(),
                 }),
@@ -2333,11 +2333,11 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let codes = vec![Bytecode::END as u8];
         vm.call(
             &mut ctx,
-            Box::new(VmEntryReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: codes.clone().into(),
             }),
@@ -2347,9 +2347,6 @@ end",
         let warm_a = test_contract(&main, 201);
         let warm_b = test_contract(&main, 202);
         vm.runtime
-            .as_mut()
-            .unwrap()
-            .r
             .warm
             .contracts
             .insert(warm_a.clone(), Arc::new(ContractObj::default()));
@@ -2360,9 +2357,6 @@ end",
         Context::gas_charge(&mut ctx, gas_to_consume).unwrap();
         // Mutate volatile fields (should be restored)
         vm.runtime
-            .as_mut()
-            .unwrap()
-            .r
             .warm
             .contracts
             .insert(warm_b.clone(), Arc::new(ContractObj::default()));
@@ -2372,8 +2366,8 @@ end",
         // Gas remaining is NOT restored: gas usage must stay monotonic in one tx.
         assert_eq!(Context::gas_remaining(&ctx), 1);
         // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
-        assert_eq!(vm.runtime.as_ref().unwrap().r.warm.contracts.len(), 2);
-        assert!(vm.runtime.as_ref().unwrap().r.warm.contracts.contains_key(&warm_b));
+        assert_eq!(vm.runtime.warm.contracts.len(), 2);
+        assert!(vm.runtime.warm.contracts.contains_key(&warm_b));
     }
 
     #[test]
@@ -2399,13 +2393,13 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(1)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let codes = vec![Bytecode::END as u8];
 
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             vm.call(
                 &mut ctx,
-                Box::new(VmEntryReq::Main {
+                Box::new(EntryRequest::Main {
                     code_type: CodeType::Bytecode,
                     codes: codes.clone().into(),
                 }),
@@ -2439,7 +2433,7 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         // Invalid request type should still unwind the re-entry guard.
         let early = vm.call(&mut ctx, Box::new(()));
         assert!(early.is_err(), "invalid request type must fail");
@@ -2453,7 +2447,7 @@ end",
         let codes = vec![Bytecode::END as u8];
         let ok = vm.call(
             &mut ctx,
-            Box::new(VmEntryReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: codes.into(),
             }),
@@ -2490,16 +2484,16 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
-        let min_cost = EntryKind::Main.min_call_cost(&vm.runtime.as_ref().unwrap().r.warm.gas_extra);
+        let mut vm = Executor::from_runtime(Runtime::create(1));
+        let min_cost = EntryKind::Main.min_call_cost(&vm.runtime.warm.gas_extra);
         let gas_before = Context::gas_remaining(&ctx);
 
         let (cost, ()) = vm
-            .run_vm_entry(
+            .run_vm_entry_ret(
                 &mut ctx,
                 EntryKind::Main,
                 min_cost,
-                VmEntryMode::KeepCurrentExecFrom,
+                true,
                 |_machine, runtime, ctx| {
                     ctx.gas_charge(1)?;
                     ctx.gas_rebate(1)?;
@@ -2508,13 +2502,11 @@ end",
                         .map_err(|e| e.to_string())?;
                     Ok(())
                 },
-                MachineBox::entry_failure_to_ret,
-                MachineBox::merge_ret_entry_failure,
             )
             .unwrap();
 
         assert_eq!(cost.total(), min_cost);
-        assert_eq!(vm.runtime.as_ref().unwrap().r.gas_use().total(), min_cost);
+        assert_eq!(vm.runtime.gas_use().total(), min_cost);
         assert_eq!(Context::gas_remaining(&ctx), gas_before - min_cost);
         assert_eq!(ctx.exec_from(), basis::component::ExecFrom::Top);
         assert!(vm.entries.is_empty(), "vm entry stack must unwind after settle");
@@ -2551,11 +2543,8 @@ end",
         protocol::operate::hac_add(&mut ctx, &base_addr, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         vm.runtime
-            .as_mut()
-            .unwrap()
-            .r
             .volatile
             .deferred_registry
             .register(DeferredEntry {
@@ -2568,14 +2557,7 @@ end",
         assert!(err.contains("Deferred"), "unexpected error: {err}");
         assert_eq!(ctx.exec_from(), basis::component::ExecFrom::Top);
         assert!(vm.entries.is_empty(), "deferred failure must unwind vm entry stack");
-        let rest = vm
-            .runtime
-            .as_mut()
-            .unwrap()
-            .r
-            .volatile
-            .deferred_registry
-            .drain_lifo();
+        let rest = vm.runtime.volatile.deferred_registry.drain_lifo();
         assert!(
             rest.is_empty(),
             "deferred phase is strict one-shot: drained callbacks are not restored after failure"
@@ -2610,13 +2592,13 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let fail_codes = lang_to_bytecode("return 1").unwrap();
 
         let bal_before = read_hac_balance(&mut ctx, &main);
         let call = vm.call(
             &mut ctx,
-            Box::new(VmEntryReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: fail_codes.into(),
             }),
@@ -2659,13 +2641,13 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(1)).unwrap();
 
-        let mut vm = MachineBox::from_resource(Resoure::create(1));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let fail_codes = lang_to_bytecode("return 1").unwrap();
 
         let err = vm
             .call(
                 &mut ctx,
-                Box::new(VmEntryReq::Main {
+                Box::new(EntryRequest::Main {
                     code_type: CodeType::Bytecode,
                     codes: fail_codes.into(),
                 }),
@@ -2702,11 +2684,11 @@ end",
             protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
             ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-            let mut vm = MachineBox::from_resource(Resoure::create(1));
+            let mut vm = Executor::from_runtime(Runtime::create(1));
             if run_failed_first {
                 let failed = vm.call(
                     &mut ctx,
-                    Box::new(VmEntryReq::Main {
+                    Box::new(EntryRequest::Main {
                         code_type: CodeType::Bytecode,
                         codes: fail_codes.clone().into(),
                     }),
@@ -2716,7 +2698,7 @@ end",
 
             let ok = vm.call(
                 &mut ctx,
-                Box::new(VmEntryReq::Main {
+                Box::new(EntryRequest::Main {
                     code_type: CodeType::Bytecode,
                     codes: ok_codes.clone().into(),
                 }),

@@ -20,14 +20,14 @@ impl CallFrame {
         self.frames.push(frame);
     }
 
-    pub fn increase(&mut self, r: &mut Resoure) -> VmrtRes<Frame> {
+    pub fn increase(&mut self, r: &mut Runtime) -> VmrtRes<Frame> {
         Ok(match self.frames.last() {
             Some(f) => f.next(r),
             None => Frame::new(r),
         })
     }
 
-    pub fn reclaim(mut self, r: &mut Resoure) {
+    pub fn reclaim(mut self, r: &mut Runtime) {
         while let Some(frame) = self.pop() {
             frame.reclaim(r)
         }
@@ -57,13 +57,13 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn reclaim(self, r: &mut Resoure) {
+    pub fn reclaim(self, r: &mut Runtime) {
         r.stack_reclaim(self.oprnds);
         r.stack_reclaim(self.locals);
         r.heap_reclaim(self.heap);
     }
 
-    pub fn new(r: &mut Resoure) -> Self {
+    pub fn new(r: &mut Runtime) -> Self {
         let mut f = Self {
             oprnds: r.stack_allocat(),
             locals: r.stack_allocat(),
@@ -77,7 +77,7 @@ impl Frame {
         f
     }
 
-    pub fn next(&self, r: &mut Resoure) -> Self {
+    pub fn next(&self, r: &mut Runtime) -> Self {
         let mut f = Self::new(r);
         let stks = self.oprnds.limit() - self.oprnds.len();
         let locs = self.locals.limit() - self.locals.len();
@@ -216,7 +216,7 @@ impl Frame {
 
     pub fn execute<H: VmHost + ?Sized>(
         &mut self,
-        r: &mut Resoure,
+        r: &mut Runtime,
         host: &mut H,
     ) -> VmrtRes<CallExit> {
         let context_addr = self.bindings.context_addr;
@@ -307,7 +307,7 @@ mod splice_prepare_tests {
 
     #[test]
     fn prepare_splice_preserves_runtime_state_and_signature() {
-        let mut res = Resoure::create(1);
+        let mut res = Runtime::create(1);
         let mut frame = Frame::new(&mut res);
         frame.call_argv = Value::U8(1);
         frame.types =

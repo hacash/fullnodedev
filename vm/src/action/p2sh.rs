@@ -169,7 +169,7 @@ impl P2SHScriptProve {
 
     fn get_stuff_with_merkel(&self, ctx: &mut dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
         let hei = ctx.env().block.height;
-        let (gst, _) = setup_vm_runtime_gascap(ctx, hei);
+        let (gst, _) = peek_vm_runtime_limits(ctx, hei);
         let codeconf = CodeConf::parse(self.codeconf.uint())?;
         Self::verify_unlock_inputs(hei, &gst, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
         let lockbox = self.lockbox.as_vec();

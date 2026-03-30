@@ -1,7 +1,7 @@
 /*********************************/
 /* VM entry request + guard state */
 
-pub(crate) enum VmEntryReq {
+pub(crate) enum EntryRequest {
     Main {
         code_type: CodeType,
         codes: Arc<[u8]>,
@@ -22,7 +22,7 @@ pub(crate) enum VmEntryReq {
     },
 }
 
-impl VmEntryReq {
+impl EntryRequest {
     fn entry_kind(&self) -> EntryKind {
         match self {
             Self::Main { .. } => EntryKind::Main,
@@ -38,7 +38,7 @@ impl VmEntryReq {
     fn execute(
         self,
         machine: &mut Machine,
-        runtime: &mut MachineRuntime,
+        runtime: &mut Runtime,
         ctx: &mut dyn Context,
     ) -> XRet<Value> {
         match self {
@@ -67,18 +67,6 @@ struct VmEntryFrame {
     min_cost: i64,
 }
 
-#[derive(Clone, Copy)]
-enum VmEntryMode {
-    KeepCurrentExecFrom,
-    ForceCall,
-    AssumeAlreadyCall,
-}
-
-enum VmEntryFailure {
-    Message(String),
-    Runtime(crate::rt::ItrErr),
-}
-
 struct VmEntryGuard {
     entries: *mut Vec<VmEntryFrame>,
     entry: VmEntryFrame,
@@ -87,24 +75,23 @@ struct VmEntryGuard {
 }
 
 impl VmEntryGuard {
-    fn push<E>(
+    fn push(
         entries: &mut Vec<VmEntryFrame>,
         max_reentry: u32,
         gas_base: VmGasBuckets,
         kind: EntryKind,
         min_cost: i64,
-        map: fn(VmEntryFailure) -> E,
-    ) -> Result<Self, E> {
+    ) -> Ret<Self> {
         let next_level = entries
             .len()
             .checked_add(1)
-            .ok_or_else(|| map(VmEntryFailure::Message("re-entry level overflow".to_owned())))?;
+            .ok_or_else(|| "re-entry level overflow".to_owned())?;
         if next_level as u32 > max_reentry + 1 {
-            return Err(map(VmEntryFailure::Message(format!(
+            return Err(format!(
                 "re-entry level {} exceeded limit {}",
                 next_level - 1,
                 max_reentry
-            ))));
+            ));
         }
         let entry = VmEntryFrame {
             kind,
@@ -212,14 +199,14 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
     }
 }
 
-pub fn setup_vm_run_main(
+pub fn run_main_entry(
     ctx: &mut dyn Context,
     codeconf: u8,
     payload: Vec<u8>,
 ) -> Ret<(VmGasBuckets, Value)> {
-    // Bytecode verification is intentionally handled by upper-layer action validators before calling setup_vm_run_main.
+    // Bytecode verification is intentionally handled by upper-layer action validators before calling run_main_entry.
     ensure_vm_run_ready(ctx)?;
-    let (cost, rv) = ctx.vm_call(Box::new(VmEntryReq::Main {
+    let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::Main {
         code_type: CodeConf::parse(codeconf)?.code_type(),
         codes: Arc::from(payload),
     }))?;
@@ -229,13 +216,13 @@ pub fn setup_vm_run_main(
     Ok((cost, *rv))
 }
 
-pub fn setup_vm_run_p2sh(
+pub fn run_p2sh_entry(
     ctx: &mut dyn Context,
     codeconf: u8,
     payload: Vec<u8>,
     param: Value,
 ) -> Ret<(VmGasBuckets, Value)> {
-    // Lock script verification is intentionally handled by upper-layer action validators before calling setup_vm_run_p2sh.
+    // Lock script verification is intentionally handled by upper-layer action validators before calling run_p2sh_entry.
     ensure_vm_run_ready(ctx)?;
     let payload = ByteView::from_arc(Arc::from(payload));
     let payload_ref = payload.as_slice();
@@ -243,7 +230,7 @@ pub fn setup_vm_run_p2sh(
     let (libs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
     let mv = mv1 + mv2;
     let intent_binding = ctx.vm_current_intent_scope();
-    let (cost, rv) = ctx.vm_call(Box::new(VmEntryReq::P2sh {
+    let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::P2sh {
         code_type: CodeConf::parse(codeconf)?.code_type(),
         state_addr,
         libs: libs.into_list(),
@@ -257,7 +244,7 @@ pub fn setup_vm_run_p2sh(
     Ok((cost, *rv))
 }
 
-pub fn setup_vm_run_abst(
+pub fn run_abst_entry(
     ctx: &mut dyn Context,
     target: AbstCall,
     payload: Address,
@@ -265,7 +252,7 @@ pub fn setup_vm_run_abst(
 ) -> Ret<(VmGasBuckets, Value)> {
     ensure_vm_run_ready(ctx)?;
     let intent_binding = ctx.vm_current_intent_scope();
-    let (cost, rv) = ctx.vm_call(Box::new(VmEntryReq::Abst {
+    let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::Abst {
         kind: target,
         contract_addr: ContractAddress::from_addr(payload)?,
         intent_binding,
@@ -278,22 +265,191 @@ pub fn setup_vm_run_abst(
 }
 
 /*********************************/
-/* MachineBox entry orchestration */
+/* Entry-specific machine wrappers */
 
-impl MachineBox {
-    fn entry_failure_to_ret(err: VmEntryFailure) -> String {
-        match err {
-            VmEntryFailure::Message(msg) => msg,
-            VmEntryFailure::Runtime(err) => err.to_string(),
-        }
+impl Machine {
+    pub fn main_call<H: VmHost + ?Sized>(
+        &mut self,
+        runtime: &mut Runtime,
+        host: &mut H,
+        ctype: CodeType,
+        codes: Arc<[u8]>,
+    ) -> XRet<Value> {
+        validate_vm_entry_param(runtime, &EntryKind::Main.root_exec(), None)?;
+        let rv = self.main_call_raw(runtime, host, ctype, codes)?;
+        validate_vm_entry_return(EntryKind::Main, &rv, "main call")?;
+        Ok(rv)
     }
 
-    fn entry_failure_to_xret(err: VmEntryFailure) -> XError {
-        match err {
-            VmEntryFailure::Message(msg) => XError::fault(msg),
-            VmEntryFailure::Runtime(err) => XError::from(err),
-        }
+    pub fn abst_call<H: VmHost + ?Sized>(
+        &mut self,
+        runtime: &mut Runtime,
+        host: &mut H,
+        cty: AbstCall,
+        contract_addr: ContractAddress,
+        intent_binding: IntentScope,
+        param: Value,
+    ) -> XRet<Value> {
+        let exec = EntryKind::Abst.root_exec();
+        validate_vm_entry_param(runtime, &exec, Some(&param))?;
+        let adr = contract_addr.to_readable();
+        let Some(hit) = runtime
+            .resolve_abstfn(host, &contract_addr, cty)
+            .map_err(XError::from)?
+        else {
+            return Err(XError::fault(format!("abst call {:?} not found in {}", cty, adr)));
+        };
+        let rv = self.do_call(
+            runtime,
+            host,
+            exec,
+            hit.fnobj.as_ref(),
+            FrameBindings::contract(contract_addr, hit.owner, hit.lib_table)
+                .with_intent_binding(intent_binding),
+            Some(param),
+        ).map_err(XError::from)?;
+        validate_vm_entry_return(EntryKind::Abst, &rv, &format!("call {}.{:?}", adr, cty))?;
+        Ok(rv)
     }
+
+    pub fn p2sh_call<H: VmHost + ?Sized>(
+        &mut self,
+        runtime: &mut Runtime,
+        host: &mut H,
+        ctype: CodeType,
+        p2sh_addr: Address,
+        libs: Vec<ContractAddress>,
+        codes: ByteView,
+        intent_binding: IntentScope,
+        param: Value,
+    ) -> XRet<Value> {
+        let exec = EntryKind::P2sh.root_exec();
+        validate_vm_entry_param(runtime, &exec, Some(&param))?;
+        let fnobj = FnObj::plain(ctype, codes, 0, None);
+        let rv = self.do_call(
+            runtime,
+            host,
+            exec,
+            &fnobj,
+            FrameBindings::root(
+                p2sh_addr,
+                libs.into_iter()
+                    .map(|addr| addr.into_addr())
+                    .collect::<Vec<_>>()
+                    .into(),
+            )
+            .with_intent_binding(intent_binding),
+            Some(param),
+        ).map_err(XError::from)?;
+        validate_vm_entry_return(EntryKind::P2sh, &rv, "p2sh call")?;
+        Ok(rv)
+    }
+}
+
+/*********************************/
+/* VM trait entry bridge */
+
+impl VM for Executor {
+    fn current_intent_scope(&mut self) -> Option<Option<usize>> {
+        self.machine.current_intent_scope()
+    }
+
+    fn runtime_config(&mut self) -> Option<Box<dyn Any>> {
+        self.runtime_config_any()
+    }
+
+    fn snapshot_volatile(&mut self) -> Box<dyn Any> {
+        self.snapshot_volatile_state()
+    }
+
+    fn restore_volatile(&mut self, snap: Box<dyn Any>) {
+        self.restore_volatile_state(snap)
+    }
+
+    fn rollback_volatile_preserve_warm_and_gas(&mut self) {
+        self.rollback_volatile_state_preserve_warm_and_gas()
+    }
+
+    fn invalidate_contract_cache(&mut self, addr: &Address) {
+        self.invalidate_runtime_contract_cache(addr)
+    }
+
+    fn drain_deferred(&mut self, ctx: &mut dyn Context) -> Rerr {
+        self.run_deferred_entries(ctx)
+    }
+
+    fn call(&mut self, ctx: &mut dyn Context, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
+        self.dispatch_entry_call(ctx, req)
+    }
+}
+
+/*********************************/
+/* Executor public entry APIs */
+
+impl Executor {
+    pub fn sandbox_main_call_raw(
+        &mut self,
+        ctx: &mut dyn Context,
+        ctype: CodeType,
+        codes: Arc<[u8]>,
+    ) -> Ret<Value> {
+        let (_, ret_val) = self.raw_main_entry(ctx, ctype, codes)?;
+        Ok(ret_val)
+    }
+
+    pub fn main_call(
+        &mut self,
+        ctx: &mut dyn Context,
+        ctype: CodeType,
+        codes: Arc<[u8]>,
+    ) -> XRet<Value> {
+        let req = EntryRequest::Main { code_type: ctype, codes };
+        let (_, retv) = self.execute_entry_req(ctx, req)?;
+        Ok(retv)
+    }
+
+    pub fn p2sh_call(
+        &mut self,
+        ctx: &mut dyn Context,
+        ctype: CodeType,
+        state_addr: Address,
+        libs: Vec<ContractAddress>,
+        codes: ByteView,
+        intent_binding: IntentScope,
+        param: Value,
+    ) -> XRet<Value> {
+        let req = EntryRequest::P2sh {
+            code_type: ctype,
+            state_addr,
+            libs,
+            codes,
+            intent_binding,
+            param,
+        };
+        let (_, retv) = self.execute_entry_req(ctx, req)?;
+        Ok(retv)
+    }
+
+    pub fn abst_call(
+        &mut self,
+        ctx: &mut dyn Context,
+        kind: AbstCall,
+        contract_addr: ContractAddress,
+        intent_binding: IntentScope,
+        param: Value,
+    ) -> XRet<Value> {
+        let req = EntryRequest::Abst {
+            kind,
+            contract_addr,
+            intent_binding,
+            param,
+        };
+        let (_, retv) = self.execute_entry_req(ctx, req)?;
+        Ok(retv)
+    }
+
+    /*********************************/
+    /* Executor internal entry pipeline */
 
     fn append_secondary_message(primary: String, secondary: String) -> String {
         if secondary.is_empty() || primary.contains(&secondary) {
@@ -303,11 +459,11 @@ impl MachineBox {
         }
     }
 
-    fn merge_ret_entry_failure(exec_err: String, settle_err: String) -> String {
+    fn merge_ret_failure(exec_err: String, settle_err: String) -> String {
         Self::append_secondary_message(exec_err, settle_err)
     }
 
-    fn merge_xret_entry_failure(exec_err: XError, settle_err: XError) -> XError {
+    fn merge_xret_failure(exec_err: XError, settle_err: XError) -> XError {
         let exec_is_revert = exec_err.is_revert();
         let settle_is_revert = settle_err.is_revert();
         if exec_is_revert && !settle_is_revert {
@@ -323,127 +479,146 @@ impl MachineBox {
         }
     }
 
-    fn with_entry_exec_from<T>(
-        ctx: &mut dyn Context,
-        mode: VmEntryMode,
-        f: impl for<'a> FnOnce(&'a mut dyn Context) -> T,
-    ) -> T {
-        match mode {
-            VmEntryMode::KeepCurrentExecFrom => f(ctx),
-            VmEntryMode::ForceCall => basis::interface::with_exec_from(
-                ctx,
-                basis::component::ExecFrom::Call,
-                f,
-            ),
-            VmEntryMode::AssumeAlreadyCall => f(ctx),
-        }
-    }
-
-    fn run_vm_entry<T, E>(
+    fn run_vm_entry_ret<T>(
         &mut self,
         ctx: &mut dyn Context,
         kind: EntryKind,
         min_cost: i64,
-        mode: VmEntryMode,
-        execute: impl FnOnce(&mut Machine, &mut MachineRuntime, &mut dyn Context) -> Result<T, E>,
-        map: fn(VmEntryFailure) -> E,
-        merge: fn(E, E) -> E,
-    ) -> Result<(VmGasBuckets, T), E> {
-        let (max_reentry, gas_base) = {
-            let runtime = self
-                .runtime_ref()
-                .map_err(|e| map(VmEntryFailure::Message(e)))?;
-            (runtime.warm.space_cap.reentry_level, runtime.gas_use())
+        preserve_exec_from: bool,
+        execute: impl FnOnce(&mut Machine, &mut Runtime, &mut dyn Context) -> Ret<T>,
+    ) -> Ret<(VmGasBuckets, T)> {
+        let guard = VmEntryGuard::push(
+            &mut self.entries,
+            self.runtime.warm.space_cap.reentry_level,
+            self.runtime.gas_use(),
+            kind,
+            min_cost,
+        )?;
+        let result = if preserve_exec_from {
+            execute(&mut self.machine, &mut self.runtime, ctx)
+        } else {
+            basis::interface::with_exec_from(ctx, basis::component::ExecFrom::Call, |ctx| {
+                execute(&mut self.machine, &mut self.runtime, ctx)
+            })
         };
-        let guard = VmEntryGuard::push(&mut self.entries, max_reentry, gas_base, kind, min_cost, map)?;
-        let result = Self::with_entry_exec_from(ctx, mode, |ctx| {
-            let machine = &mut self.machine;
-            let Some(runtime) = self.runtime.as_mut() else {
-                return Err(map(VmEntryFailure::Message("machine runtime missing".to_owned())));
-            };
-            execute(machine, runtime, ctx)
-        });
         let entry = guard.disarm();
-        let settle = match self.runtime_mut() {
-            Ok(runtime) => {
-                let mut cost = runtime
-                    .gas_use()
-                    .checked_sub(entry.gas_base)
-                    .ok_or_else(|| {
-                        map(VmEntryFailure::Message(format!(
-                            "gas cost underflow: total={:?}, base={:?}",
-                            runtime.gas_use(),
-                            entry.gas_base
-                        )))
-                    })?;
-                if cost.total() < entry.min_cost {
-                    let delta = entry.min_cost - cost.total();
-                    runtime
-                        .settle_compute_gas(ctx, delta)
-                        .map_err(|e| map(VmEntryFailure::Runtime(e)))?;
-                    cost.compute += delta;
-                }
-                if cost.total() <= 0 {
-                    Err(map(VmEntryFailure::Message(format!(
-                        "{:?} gas cost invalid: {}",
-                        entry.kind,
-                        cost.total()
-                    ))))
-                } else {
-                    Ok(cost)
-                }
+        let settle = {
+            let runtime = &mut self.runtime;
+            let mut cost = runtime
+                .gas_use()
+                .checked_sub(entry.gas_base)
+                .ok_or_else(|| {
+                    format!(
+                        "gas cost underflow: total={:?}, base={:?}",
+                        runtime.gas_use(),
+                        entry.gas_base
+                    )
+                })?;
+            if cost.total() < entry.min_cost {
+                let delta = entry.min_cost - cost.total();
+                runtime.settle_compute_gas(ctx, delta)?;
+                cost.compute += delta;
             }
-            Err(e) => Err(map(VmEntryFailure::Message(e))),
+            if cost.total() <= 0 {
+                Err(format!("{:?} gas cost invalid: {}", entry.kind, cost.total()))
+            } else {
+                Ok(cost)
+            }
         };
         match (result, settle) {
-            // `VmGasBuckets` returned here are VM-side reporting values for this entry delta.
-            // They are not the source of truth for protocol billing: final HAC burn/refund is
-            // driven by host/context gas charges that were already applied during execution.
-            (Err(exec_err), Err(settle_err)) => Err(merge(exec_err, settle_err)),
+            (Err(exec_err), Err(settle_err)) => Err(Self::merge_ret_failure(exec_err, settle_err)),
             (Err(exec_err), _) => Err(exec_err),
             (Ok(_), Err(settle_err)) => Err(settle_err),
             (Ok(retv), Ok(cost)) => Ok((cost, retv)),
         }
     }
 
-    pub(crate) fn sandbox_main_call_raw_with_gas(
+    fn run_vm_entry_xret<T>(
+        &mut self,
+        ctx: &mut dyn Context,
+        kind: EntryKind,
+        min_cost: i64,
+        preserve_exec_from: bool,
+        execute: impl FnOnce(&mut Machine, &mut Runtime, &mut dyn Context) -> XRet<T>,
+    ) -> XRet<(VmGasBuckets, T)> {
+        let guard = VmEntryGuard::push(
+            &mut self.entries,
+            self.runtime.warm.space_cap.reentry_level,
+            self.runtime.gas_use(),
+            kind,
+            min_cost,
+        )
+        .map_err(XError::fault)?;
+        let result = if preserve_exec_from {
+            execute(&mut self.machine, &mut self.runtime, ctx)
+        } else {
+            basis::interface::with_exec_from(ctx, basis::component::ExecFrom::Call, |ctx| {
+                execute(&mut self.machine, &mut self.runtime, ctx)
+            })
+        };
+        let entry = guard.disarm();
+        let settle = {
+            let runtime = &mut self.runtime;
+            let mut cost = runtime
+                .gas_use()
+                .checked_sub(entry.gas_base)
+                .ok_or_else(|| {
+                    XError::fault(format!(
+                        "gas cost underflow: total={:?}, base={:?}",
+                        runtime.gas_use(),
+                        entry.gas_base
+                    ))
+                })?;
+            if cost.total() < entry.min_cost {
+                let delta = entry.min_cost - cost.total();
+                runtime
+                    .settle_compute_gas(ctx, delta)
+                    .map_err(XError::from)?;
+                cost.compute += delta;
+            }
+            if cost.total() <= 0 {
+                Err(XError::fault(format!("{:?} gas cost invalid: {}", entry.kind, cost.total())))
+            } else {
+                Ok(cost)
+            }
+        };
+        match (result, settle) {
+            (Err(exec_err), Err(settle_err)) => Err(Self::merge_xret_failure(exec_err, settle_err)),
+            (Err(exec_err), _) => Err(exec_err),
+            (Ok(_), Err(settle_err)) => Err(settle_err),
+            (Ok(retv), Ok(cost)) => Ok((cost, retv)),
+        }
+    }
+
+    pub(crate) fn raw_main_entry(
         &mut self,
         ctx: &mut dyn Context,
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> Ret<(VmGasBuckets, Value)> {
-        let min_cost = {
-            let runtime = self.runtime_ref().map_err(|e| e.to_string())?;
-            EntryKind::Main.min_call_cost(&runtime.warm.gas_extra)
-        };
-        self.run_vm_entry(
+        let min_cost = EntryKind::Main.min_call_cost(&self.runtime.warm.gas_extra);
+        self.run_vm_entry_ret(
             ctx,
             EntryKind::Main,
             min_cost,
-            VmEntryMode::KeepCurrentExecFrom,
+            true,
             move |machine, runtime, ctx| machine.main_call_raw(runtime, ctx, ctype, codes),
-            Self::entry_failure_to_ret,
-            Self::merge_ret_entry_failure,
         )
     }
 
     fn execute_entry_req(
         &mut self,
         ctx: &mut dyn Context,
-        req: VmEntryReq,
+        req: EntryRequest,
     ) -> XRet<(VmGasBuckets, Value)> {
-        let (kind, min_cost) = {
-            let runtime = self.runtime_ref().map_err(XError::fault)?;
-            (req.entry_kind(), req.min_call_cost(&runtime.warm.gas_extra))
-        };
-        self.run_vm_entry(
+        let kind = req.entry_kind();
+        let min_cost = req.min_call_cost(&self.runtime.warm.gas_extra);
+        self.run_vm_entry_xret(
             ctx,
             kind,
             min_cost,
-            VmEntryMode::AssumeAlreadyCall,
+            false,
             move |machine, runtime, ctx| req.execute(machine, runtime, ctx),
-            Self::entry_failure_to_xret,
-            Self::merge_xret_entry_failure,
         )
     }
 
@@ -452,7 +627,7 @@ impl MachineBox {
         ctx: &mut dyn Context,
         req: Box<dyn Any>,
     ) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
-        let Ok(req) = req.downcast::<VmEntryReq>() else {
+        let Ok(req) = req.downcast::<EntryRequest>() else {
             return xerrf!("vm call request type mismatch");
         };
         let (cost, resv) = self.execute_entry_req(ctx, *req)?;
@@ -461,24 +636,20 @@ impl MachineBox {
 
     fn run_deferred_entries(&mut self, ctx: &mut dyn Context) -> Rerr {
         let callbacks = {
-            let r = self.runtime_mut().map_err(|e| e.to_string())?;
             // Deferred phase currently uses strict one-shot consumption: once drained, callbacks are consumed
             // even if a later deferred callback fails. This keeps deferred dispatch non-reentrant and matches the
             // existing transaction semantics where warmups/gas remain monotonic after the phase begins.
-            r.volatile.deferred_registry.drain_lifo()
+            self.runtime.volatile.deferred_registry.drain_lifo()
         };
         for caddr in callbacks {
             let _ = self
-                .run_vm_entry(
+                .run_vm_entry_ret(
                     ctx,
                     EntryKind::Abst,
-                    {
-                        let runtime = self.runtime_ref().map_err(|e| e.to_string())?;
-                        EntryKind::Abst.min_call_cost(&runtime.warm.gas_extra)
-                    },
-                    VmEntryMode::ForceCall,
+                    EntryKind::Abst.min_call_cost(&self.runtime.warm.gas_extra),
+                    false,
                     move |machine, runtime, ctx| {
-                        VmEntryReq::Abst {
+                        EntryRequest::Abst {
                             kind: AbstCall::Deferred,
                             contract_addr: caddr.addr,
                             intent_binding: Some(caddr.intent_id),
@@ -487,8 +658,6 @@ impl MachineBox {
                         .execute(machine, runtime, ctx)
                         .map_err(|e| e.to_string())
                     },
-                    Self::entry_failure_to_ret,
-                    Self::merge_ret_entry_failure,
                 )
                 .map_err(|e| e.to_string())?;
         }
@@ -499,26 +668,24 @@ impl MachineBox {
 /*********************************/
 /* Entry boundary validation */
 
-impl Machine {
-    fn validate_vm_entry_param(
-        runtime: &MachineRuntime,
-        exec: &ExecCtx,
-        param: Option<&Value>,
-    ) -> XRerr {
-        exec.ensure_call_depth(&runtime.warm.space_cap).map_err(XError::from)?;
-        if let Some(param) = param {
-            param.check_vm_boundary_argv().map_err(XError::from)?;
-            param
-                .check_container_cap(&runtime.warm.space_cap)
-                .map_err(XError::from)?;
-        }
-        Ok(())
+fn validate_vm_entry_param(
+    runtime: &Runtime,
+    exec: &ExecCtx,
+    param: Option<&Value>,
+) -> XRerr {
+    exec.ensure_call_depth(&runtime.warm.space_cap).map_err(XError::from)?;
+    if let Some(param) = param {
+        param.check_vm_boundary_argv().map_err(XError::from)?;
+        param
+            .check_container_cap(&runtime.warm.space_cap)
+            .map_err(XError::from)?;
     }
+    Ok(())
+}
 
-    fn validate_vm_entry_return(kind: EntryKind, rv: &Value, err_msg: &str) -> XRerr {
-        match kind {
-            EntryKind::Main | EntryKind::P2sh | EntryKind::Abst => check_vm_return_value(rv, err_msg),
-        }
+fn validate_vm_entry_return(kind: EntryKind, rv: &Value, err_msg: &str) -> XRerr {
+    match kind {
+        EntryKind::Main | EntryKind::P2sh | EntryKind::Abst => check_vm_return_value(rv, err_msg),
     }
 }
 

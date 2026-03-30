@@ -12,10 +12,10 @@ action_define! { ContractMainCall, 44,
         }
         // check codes
         let hei = ctx.env().block.height;
-        let (gst, cap) = setup_vm_runtime_gascap(ctx, hei);
+        let (gst, cap) = peek_vm_runtime_limits(ctx, hei);
         let codeconf = CodeConf::parse(self.codeconf.to_uint())?;
         convert_and_check(&cap, &gst, codeconf.code_type(), &self.codes, hei)?;
-        let _ = setup_vm_run_main(ctx, codeconf.raw(), self.codes.as_vec().clone())?;
+        let _ = run_main_entry(ctx, codeconf.raw(), self.codes.as_vec().clone())?;
         Ok(vec![])
     })
 }

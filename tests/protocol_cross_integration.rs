@@ -3780,7 +3780,7 @@ fn test_ast_real_maincall_and_p2sh_transfer_failure_isolated_by_outer_select() {
 
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_initialize(10000).unwrap();
-    ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
+    ctx.test_set_vm(Box::new(vm::global_runtime_pool().checkout(1)));
     let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
     protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(11)).unwrap();
 
@@ -3831,7 +3831,7 @@ fn test_ast_deep_real_maincall_and_p2sh_transfer_commit_expected_balances() {
 
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_initialize(10000).unwrap();
-    ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
+    ctx.test_set_vm(Box::new(vm::global_runtime_pool().checkout(1)));
     let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
     protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(9)).unwrap();
 

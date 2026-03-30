@@ -25,7 +25,7 @@ action_define! { ContractDeploy, 40,
             return xerrf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
-        let (gst, cap) = setup_vm_runtime_gascap(ctx, hei);
+        let (gst, cap) = peek_vm_runtime_limits(ctx, hei);
         let maddr = ctx.env().tx.main;
         // check contract
         let caddr = ContractAddress::calculate(&maddr, &self.nonce);
@@ -49,7 +49,7 @@ action_define! { ContractDeploy, 40,
         }
         // call construct only when explicitly enabled by action flag
         if self.construct_call.check() {
-            let _ = setup_vm_run_abst(
+            let _ = run_abst_entry(
                 ctx,
                 AbstCall::Construct,
                 caddr.to_addr(),
@@ -76,7 +76,7 @@ action_define! { ContractUpdate, 41,
             return xerrf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
-        let (gst, cap) = setup_vm_runtime_gascap(ctx, hei);
+        let (gst, cap) = peek_vm_runtime_limits(ctx, hei);
         // load old
         let caddr = ContractAddress::from_addr(self.address)?;
         let Some(contract) = vmsto!(ctx).contract(&caddr) else {
@@ -101,7 +101,7 @@ action_define! { ContractUpdate, 41,
         let sys = maybe!(did_change, Change, Append); // Change or Append
         // Authorization is intentionally delegated to the contract's Change/Append hook; this action does not add a separate owner gate.
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
-        let _ = setup_vm_run_abst(
+        let _ = run_abst_entry(
             ctx,
             sys,
             caddr.to_addr(),
