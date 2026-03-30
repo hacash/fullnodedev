@@ -1350,7 +1350,7 @@ mod resource_tests {
     #[test]
     fn settle_new_contract_load_gas_charges_base_plus_bytes_div_50() {
         let mut r = Resoure::create(1);
-        let base = r.gas_extra.new_contract_load;
+        let base = r.warm.gas_extra.new_contract_load;
         let mut host = GasHost { remaining: 1000 };
         r.settle_new_contract_load_gas(&mut host, 129).unwrap();
         assert_eq!(host.remaining, 1000 - base - 3);

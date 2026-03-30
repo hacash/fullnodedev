@@ -359,7 +359,7 @@ mod loader_tests {
             Err(e) => e,
         };
         assert_eq!(err.0, ItrErrCode::OutOfGas);
-        assert!(!res.contracts.contains_key(&caddr));
+        assert!(!res.warm.contracts.contains_key(&caddr));
     }
 
     #[test]
@@ -376,12 +376,12 @@ mod loader_tests {
             gas_remaining: 10_000,
         };
         let mut res = Resoure::create(1);
-        let one_cold_fee = res.gas_extra.new_contract_load 
-            + res.gas_extra.contract_bytes(cbytes);
+        let one_cold_fee = res.warm.gas_extra.new_contract_load
+            + res.warm.gas_extra.contract_bytes(cbytes);
         {
             let _ = res.load_contract(&mut host, &caddr).unwrap();
         }
-        assert!(res.contracts.contains_key(&caddr));
+        assert!(res.warm.contracts.contains_key(&caddr));
         assert_eq!(host.gas_remaining, 10_000 - one_cold_fee);
 
         let gas_after_first = host.gas_remaining;

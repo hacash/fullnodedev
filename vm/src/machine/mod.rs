@@ -14,6 +14,7 @@ include! {"host.rs"}
 include! {"cachepool.rs"}
 include! {"manage.rs"}
 include! {"machine.rs"}
+include! {"entry.rs"}
 include! {"resource.rs"}
 include! {"loader.rs"}
 include! {"sandbox.rs"}

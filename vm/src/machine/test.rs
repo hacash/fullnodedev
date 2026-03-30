@@ -2508,8 +2508,8 @@ end",
                         .map_err(|e| e.to_string())?;
                     Ok(())
                 },
-                MachineBox::map_ret_entry_failure,
-                MachineBox::merge_ret_entry_errors,
+                MachineBox::entry_failure_to_ret,
+                MachineBox::merge_ret_entry_failure,
             )
             .unwrap();
 
@@ -2556,6 +2556,7 @@ end",
             .as_mut()
             .unwrap()
             .r
+            .volatile
             .deferred_registry
             .register(DeferredEntry {
                 addr: contract.clone(),
@@ -2572,6 +2573,7 @@ end",
             .as_mut()
             .unwrap()
             .r
+            .volatile
             .deferred_registry
             .drain_lifo();
         assert!(

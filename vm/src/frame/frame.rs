@@ -323,9 +323,9 @@ mod splice_prepare_tests {
                 bindings.clone(),
                 &fnobj,
                 1,
-                &res.gas_extra,
+                &res.warm.gas_extra,
                 Value::U8(2),
-                &res.space_cap,
+                &res.warm.space_cap,
             )
             .unwrap();
         assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);
