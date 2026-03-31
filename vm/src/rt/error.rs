@@ -52,7 +52,6 @@ pub enum ItrErrCode {
     CallLibIdxOverflow = 52,
     CallInvalid = 53,
     CallExitInvalid = 54,
-    CallInCallcode = 55,
     CallInAbst = 56,
     CallOtherInMain = 57,
     CallLocInView = 58,

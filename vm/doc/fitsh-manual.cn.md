@@ -33,7 +33,7 @@
 | 字符串/字节 | `bytes`（引号字符串和十六进制） | `string`、`bytes` |
 | 参数 | `param { a b c }` 解包到槽位 | 在函数签名中声明 |
 | 状态可变性 | `callextview`/`callusepure` 只读 | `view`/`pure` 修饰符 |
-| 底层调用 | `codecall`（必须紧跟 `end`） | `delegatecall` |
+| 底层调用 | `codecall`（源码层 `end` 可省略；原地执行） | `delegatecall` |
 | 支付钩子 | `abstract PayableHACD` 等 | `receive()`、`fallback()` |
 
 ---
@@ -166,7 +166,7 @@ function [external] [ircode|bytecode] name(param1: type1, param2: type2) -> ret_
 | `call` | 调用外部合约 |
 | `callthis` / `callself` / `callsuper` | 内部调用 |
 | `callextview` / `callusepure` | 只读调用 |
-| `codecall` | CodeCall（无返回值；必须紧跟 `end`） |
+| `codecall` | CodeCall（原地 splice；源码层 `end` 可省略） |
 | `bytecode` | 原始字节码注入 |
 
 ### 4.5 类型与字面量关键字
@@ -285,7 +285,7 @@ param { owner amount fee }
 
 - 支持可选参数列表：`codecall C.f`、`codecall C.f()`、`codecall C.f(nil)`、`codecall C.f(a)`、`codecall C.f(a, b)`
 - `codecall C.f`、`codecall C.f()`、`codecall C.f(nil)` 三者等价
-- 必须紧跟 `end`
+- 源码层尾随 `end` 可省略；`codecall C.f` 与 `codecall C.f` 后再写 `end` 都合法
 - 用于底层委托
 
 ```fitsh
@@ -667,12 +667,12 @@ storage_save(bk, balance + 100)
 
 ### 11.2 调用权限与状态访问控制
 
-VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**，再叠加 **in_codecall**。
+VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**。
 
 - `ExecDomain` 描述当前调用策略来源：`TopMain`、`TopP2sh`、`TopAbst`、`Contract`。
 - `FrameMode` 描述当前状态访问强度：`External`、`Inner`、`View`、`Pure`。
 - 固定模式调用（`CALL`、`CALLEXTVIEW`、`CALLUSEVIEW`、`CALLUSEPURE`、`CALLTHIS`、`CALLSELF`、`CALLSUPER`）会切到 `ExecDomain::Contract`，并设置固定 `FrameMode`。
-- `CODECALL` 会完整继承调用方的 `ExecCtx`，并以 `in_codecall = true` 原地执行。
+- `CODECALL` 会完整继承调用方的 `ExecCtx`，并在当前帧原地执行。
 
 #### 常用 Call 指令分发表
 
@@ -702,7 +702,7 @@ VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**，
 
 **状态** = 存储、全局、内存、日志。
 
-**重要说明**：`codecall` 在**当前帧**中执行并**完整继承调用方的 ExecCtx** —— 它**没有独立的状态访问控制逻辑**。codecall 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）都受继承下来的 domain/frame 权限限制。此外，`codecall` 会设置 `in_codecall = true`，禁止任何后续嵌套调用（CallInCallcode 错误）。
+**重要说明**：`codecall` 在**当前帧**中执行并**完整继承调用方的 ExecCtx** —— 它**没有独立的状态访问控制逻辑**。codecall 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）都受继承下来的 domain/frame 权限限制。与隔离的新调用帧不同，`codecall` **不会**额外禁止后续嵌套调用；splice 代码中的 `CALL*` 仍按普通 `(domain, frame, depth)` 运行时门控执行。
 
 #### 正交权限矩阵
 
@@ -724,7 +724,7 @@ Frame 轴限制：
 | `View` | `CALLEXTVIEW`、`CALLUSEVIEW`、`CALLUSEPURE` | 允许 | 禁止 |
 | `Pure` | 仅 `CALLUSEPURE` | 禁止 | 禁止 |
 
-`in_codecall` 仍然禁止所有嵌套调用。`TopAbst` 禁止 `CALL`（External），用于防止支付钩子经由外部合约重入。
+`TopAbst` 禁止 `CALL`（External），用于防止支付钩子经由外部合约重入。`CODECALL` 本身不会额外增加“禁止嵌套调用”的限制；splice 代码中的嵌套调用仍受常规 entry/effect/depth 检查约束。
 
 #### 各模式下的状态访问控制矩阵
 
@@ -741,8 +741,8 @@ Frame 轴限制：
 
 | 模式 | EXTACTION | EXTENV | EXTVIEW | 备注 |
 |------|-----------|--------|---------|------|
-| **Main**（depth==0，不在 in_codecall 中） | ✅ 允许 | ✅ 允许 | ✅ 允许 | 完全访问 |
-| **Main**（depth>0 或 in_codecall 中） | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 在嵌套调用/codecall 中被阻止 |
+| **Main**（depth==0） | ✅ 允许 | ✅ 允许 | ✅ 允许 | 完全访问 |
+| **Main**（depth>0） | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 在嵌套调用中被阻止，包括嵌套 codecall 路径 |
 | **P2sh、Abst** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 仅限入口层 |
 | **External、Inner** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | EXTACTION 仅限入口层 |
 | **View** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | 只读环境访问 |
@@ -759,7 +759,7 @@ Frame 轴限制：
 | NTFUNC | `address_ptr` | 1 | ✅ 允许 | ✅ | ✅ | 纯地址指针提取 |
 
 **小结**：
-- **EXTACTION**（资产转移）：仅 `Main` 模式在 `depth == 0` 且**非** `codecall` 中
+- **EXTACTION**（资产转移）：仅 `Main` 模式在 `depth == 0`
 - **EXTENV**（`block_height`、`tx_main_address`）：在 `Pure` 中禁止，其他允许
 - **EXTVIEW**（`check_signature`、`balance`）：在 `Pure` 中禁止，其他允许 —— 只读链状态查询
 - **NTFUNC**（纯计算）：所有模式均允许，包括 `Pure`
@@ -769,8 +769,8 @@ Frame 轴限制：
 
 | 条件 | EXTACTION 是否允许 |
 |------|-------------------|
-| mode == Main 且 depth == 0 且未处于 in_codecall | 允许 |
-| mode != Main 或 depth > 0 或 in_codecall | 禁止 |
+| mode == Main 且 depth == 0 | 允许 |
+| mode != Main 或 depth > 0 | 禁止 |
 
 `transfer_hac_to`、`transfer_sat_to` 等只能在顶层主调用中执行。在 `codecall`、抽象/支付钩子及嵌套调用中均禁用。
 
@@ -779,7 +779,7 @@ Frame 轴限制：
 - **call** → External：完全状态访问；被调用方须标记为 `external`
 - **callextview** → View：只读；禁止存储/全局/内存/日志写入
 - **callusepure** → Pure：无状态访问；仅纯计算及嵌套 CALLUSEPURE
-- **codecall** → 继承当前模式；禁止嵌套调用；EXTACTION 禁用
+- **codecall** → 继承当前模式；原地执行；允许继续嵌套调用，但仍受常规运行时门控约束；EXTACTION 仍取决于继承到的 mode/depth
 - **callthis/callself/callsuper** → Inner：完全状态访问；仅内部调用
 
 ### 11.3 函数查找：`this`、`self` 与 `super`
@@ -1011,5 +1011,5 @@ map { "k": "v" }
 - **函数参数上限**：15（pack list）；更多时用 `list`/`map` 包装
 - **函数签名**：仅按名称 4 字节哈希；无重载
 - **`param`**：必须位于函数体开头
-- **`codecall`**：必须紧跟 `end`
+- **`codecall`**：源码层尾随 `end` 可省略；原地 splice 执行
 - **`bind`**：惰性；有副作用时用 `var`

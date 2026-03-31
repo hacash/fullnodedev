@@ -337,7 +337,6 @@ fn vm_itr_err_code_revert_mapping_is_strict() {
         CallLibIdxOverflow,
         CallInvalid,
         CallExitInvalid,
-        CallInCallcode,
         CallInAbst,
         CallOtherInMain,
         CallLocInView,

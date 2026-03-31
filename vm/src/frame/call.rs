@@ -65,7 +65,9 @@ impl CallFrame {
                     // malformed input cannot warm caches via either Invoke or Splice.
                     curr_mut!().oprnds.peek()?.check_func_argv()?;
                     curr_mut!().oprnds.peek()?.check_container_cap(&r.warm.space_cap)?;
-                    let plan = r.plan_user_call(host, &spec, &curr_bindings)?;
+                    let mut plan = r.plan_user_call(host, &spec, &curr_bindings)?;
+                    plan.next_bindings.intent_binding = curr!().intent_state.current();
+                    plan.inherited_intent_scope = plan.next_bindings.intent_binding;
 
                     match spec {
                         CallSpec::Splice { .. } => {

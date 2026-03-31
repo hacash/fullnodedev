@@ -647,7 +647,7 @@ mod action_coverage {
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         let err =
-            protocol::action::precheck_tx_actions(tx.ty(), false, tx.actions()).unwrap_err();
+            protocol::action::precheck_tx_actions(tx.ty(), tx.actions()).unwrap_err();
         assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{err}");
     }
 

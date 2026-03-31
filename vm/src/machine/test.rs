@@ -1249,6 +1249,63 @@ mod machine_file_test {
     }
 
     #[test]
+    fn codecall_inherits_current_intent_state() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 168);
+        let target_sto = Contract::new()
+            .func(
+                Func::new("read_flag")
+                    .unwrap()
+                    .fitsh(r##"return intent_require("flag")"##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("jump_read_flag")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib C = 0
+                        codecall C.read_flag
+                        end
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("seed_and_jump")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("owned")
+                        intent_use(iid)
+                        intent_put("flag", 7)
+                        return this.jump_read_flag()
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![contract_target],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.seed_and_jump()
+            "##,
+        )
+        .unwrap();
+        assert_eq!(rv, Value::U8(7));
+    }
+
+    #[test]
     fn codecall_uses_explicit_argv_and_allows_nested_calls() {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 23);
@@ -2549,7 +2606,7 @@ end",
             .deferred_registry
             .register(DeferredEntry {
                 addr: contract.clone(),
-                intent_id: None,
+                intent_scope: Some(None),
             })
             .unwrap();
 

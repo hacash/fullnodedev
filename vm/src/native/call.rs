@@ -6,8 +6,7 @@ pub fn call_ntctl(
     exec: ExecCtx,
     cap: &SpaceCap,
     bindings: &mut FrameBindings,
-    intent_stack: &mut Vec<IntentBinding>,
-    base_intent_binding: IntentScope,
+    intent_state: &mut crate::frame::IntentBindingState,
     _context_addr: &field::Address,
     intents: &mut crate::machine::IntentRuntime,
     deferred_registry: &mut crate::machine::DeferredRegistry,
@@ -16,17 +15,17 @@ pub fn call_ntctl(
 ) -> VmrtRes<(Value, i64)> {
     let ctl = NativeCtl::try_from_u8(idx)?;
     macro_rules! call_intent {
-        ($name: ident) => { 
+        ($name: ident) => {
             concat_idents::concat_idents!{  f_call_intent = call_intent_, $name {
-                f_call_intent(exec, bindings, intents, argv)
+                f_call_intent(exec, bindings, intent_state, intents, argv)
             }}
         }
     }
     match ctl {
         NativeCtl::defer => call_defer(exec, bindings, intents, deferred_registry, argv),
         NativeCtl::intent_new           => call_intent!{ new },
-        NativeCtl::intent_use => call_intent_use(exec, cap, bindings, intent_stack, intents, argv),
-        NativeCtl::intent_pop => call_intent_pop(exec, bindings, intent_stack, base_intent_binding, argv),
+        NativeCtl::intent_use => call_intent_use(exec, cap, bindings, intent_state, intents, argv),
+        NativeCtl::intent_pop => call_intent_pop(exec, bindings, intent_state, argv),
         NativeCtl::intent_exists        => call_intent!{ exists },
         NativeCtl::intent_kind          => call_intent!{ kind },
         NativeCtl::intent_kind_is       => call_intent!{ kind_is },
@@ -53,7 +52,7 @@ pub fn call_ntctl(
         NativeCtl::intent_put_pairs     => call_intent!{ put_pairs },
         NativeCtl::intent_replace       => call_intent!{ replace },
         NativeCtl::intent_replace_if    => call_intent!{ replace_if },
-        NativeCtl::intent_move          => call_intent_move(exec, bindings, intents, argv),
+        NativeCtl::intent_move          => call_intent_move(exec, bindings, intent_state, intents, argv),
         NativeCtl::intent_take          => call_intent!{ take },
         NativeCtl::intent_take_or       => call_intent!{ take_or },
         NativeCtl::intent_take_if       => call_intent!{ take_if },

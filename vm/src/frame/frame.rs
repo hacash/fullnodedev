@@ -36,18 +36,54 @@ impl CallFrame {
     pub fn current_intent_scope(&self) -> IntentScope {
         self.frames
             .last()
-            .and_then(|frame| frame.bindings.intent_binding)
+            .and_then(|frame| frame.intent_state.current())
     }
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+pub struct IntentBindingState {
+    base: IntentScope,
+    stack: Vec<IntentBinding>,
+}
+
+impl IntentBindingState {
+    pub fn current(&self) -> IntentScope {
+        if self.stack.is_empty() {
+            self.base
+        } else {
+            self.stack.last().cloned()
+        }
+    }
+
+    pub fn base(&self) -> IntentScope {
+        self.base
+    }
+
+    pub fn len(&self) -> usize {
+        self.stack.len()
+    }
+
+    pub fn reset(&mut self, base: IntentScope) {
+        self.base = base;
+        self.stack.clear();
+    }
+
+    pub fn push(&mut self, binding: IntentBinding) {
+        self.stack.push(binding);
+    }
+
+    pub fn pop(&mut self) -> Option<IntentBinding> {
+        self.stack.pop()
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Frame {
     pub pc: usize,
     pub exec: ExecCtx,
     pub bindings: FrameBindings,
-    pub base_intent_binding: IntentScope,
-    pub intent_stack: Vec<IntentBinding>,
+    pub intent_state: IntentBindingState,
     pub call_argv: Value,
     pub types: Option<FuncArgvTypes>,
     pub codes: ByteView,
@@ -149,8 +185,7 @@ impl Frame {
         cap: &SpaceCap,
     ) -> VmrtErr {
         // Caller must validate argv shape before any contract planning/warmup.
-        self.base_intent_binding = bindings.intent_binding;
-        self.intent_stack.clear();
+        self.intent_state.reset(bindings.intent_binding);
         self.prepare_common(exec, bindings, fnobj, height, gas_extra, param, true, cap)
     }
 
@@ -169,8 +204,7 @@ impl Frame {
         if have_param {
             argv.check_func_argv()?;
         }
-        self.base_intent_binding = bindings.intent_binding;
-        self.intent_stack.clear();
+        self.intent_state.reset(bindings.intent_binding);
         self.prepare_common(exec, bindings, fnobj, height, gas_extra, argv, have_param, cap)
     }
 
@@ -234,8 +268,7 @@ impl Frame {
             &mut self.locals,
             &mut self.heap,
             &mut self.bindings,
-            &mut self.intent_stack,
-            self.base_intent_binding,
+            &mut self.intent_state,
             &context_addr,
             &current_addr,
             &r.warm.gas_table,

@@ -32,65 +32,97 @@ pub enum TopRule {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ActScope {
-    Top { rule: TopRule },
+enum ScopeKind {
+    Top,
     Ast,
     Guard,
-    Call { only: bool },
+    Call,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum ExecPolicy {
+    TopOnly,
+    TopAndAst,
+    Anywhere,
+    CallOnly,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct ActScope {
+    kind: ScopeKind,
+    exec: ExecPolicy,
+    top: TopRule,
 }
 
 impl ActScope {
-    pub const TOP: Self = Self::Top {
-        rule: TopRule::None,
+    pub const TOP: Self = Self {
+        kind: ScopeKind::Top,
+        exec: ExecPolicy::TopOnly,
+        top: TopRule::None,
     };
-    pub const TOP_ONLY: Self = Self::Top {
-        rule: TopRule::Only,
+    pub const TOP_ONLY: Self = Self {
+        kind: ScopeKind::Top,
+        exec: ExecPolicy::TopOnly,
+        top: TopRule::Only,
     };
-    pub const TOP_ONLY_CAN_WITH_GUARD: Self = Self::Top {
-        rule: TopRule::OnlyCanWithGuard,
+    pub const TOP_ONLY_CAN_WITH_GUARD: Self = Self {
+        kind: ScopeKind::Top,
+        exec: ExecPolicy::TopOnly,
+        top: TopRule::OnlyCanWithGuard,
     };
-    pub const TOP_UNIQUE: Self = Self::Top {
-        rule: TopRule::Unique,
+    pub const TOP_UNIQUE: Self = Self {
+        kind: ScopeKind::Top,
+        exec: ExecPolicy::TopOnly,
+        top: TopRule::Unique,
     };
-    pub const AST: Self = Self::Ast;
-    pub const GUARD: Self = Self::Guard;
-    pub const CALL: Self = Self::Call { only: false };
-    pub const CALL_ONLY: Self = Self::Call { only: true };
+    pub const AST: Self = Self {
+        kind: ScopeKind::Ast,
+        exec: ExecPolicy::TopAndAst,
+        top: TopRule::None,
+    };
+    pub const GUARD: Self = Self {
+        kind: ScopeKind::Guard,
+        exec: ExecPolicy::TopAndAst,
+        top: TopRule::None,
+    };
+    pub const CALL: Self = Self {
+        kind: ScopeKind::Call,
+        exec: ExecPolicy::Anywhere,
+        top: TopRule::None,
+    };
+    pub const CALL_ONLY: Self = Self {
+        kind: ScopeKind::Call,
+        exec: ExecPolicy::CallOnly,
+        top: TopRule::None,
+    };
 
     pub const fn top_rule(self) -> Option<TopRule> {
-        match self {
-            Self::Top { rule } => Some(rule),
+        match self.kind {
+            ScopeKind::Top => Some(self.top),
             _ => None,
         }
     }
 
     pub const fn name(self) -> &'static str {
-        match self {
-            Self::Top {
-                rule: TopRule::None,
-            } => "TOP",
-            Self::Top {
-                rule: TopRule::Only,
-            } => "TOP_ONLY",
-            Self::Top {
-                rule: TopRule::OnlyCanWithGuard,
-            } => "TOP_ONLY_CAN_WITH_GUARD",
-            Self::Top {
-                rule: TopRule::Unique,
-            } => "TOP_UNIQUE",
-            Self::Ast => "AST",
-            Self::Guard => "GUARD",
-            Self::Call { only: false } => "CALL",
-            Self::Call { only: true } => "CALL_ONLY",
+        match (self.kind, self.top, self.exec) {
+            (ScopeKind::Top, TopRule::None, _) => "TOP",
+            (ScopeKind::Top, TopRule::Only, _) => "TOP_ONLY",
+            (ScopeKind::Top, TopRule::OnlyCanWithGuard, _) => "TOP_ONLY_CAN_WITH_GUARD",
+            (ScopeKind::Top, TopRule::Unique, _) => "TOP_UNIQUE",
+            (ScopeKind::Ast, _, _) => "AST",
+            (ScopeKind::Guard, _, _) => "GUARD",
+            (ScopeKind::Call, _, ExecPolicy::Anywhere) => "CALL",
+            (ScopeKind::Call, _, ExecPolicy::CallOnly) => "CALL_ONLY",
+            _ => "UNKNOWN",
         }
     }
 
     pub const fn allows(self, from: ExecFrom) -> bool {
-        match self {
-            Self::Top { .. } => matches!(from, ExecFrom::Top),
-            Self::Ast | Self::Guard => !matches!(from, ExecFrom::Call),
-            Self::Call { only: false } => true,
-            Self::Call { only: true } => matches!(from, ExecFrom::Call),
+        match self.exec {
+            ExecPolicy::TopOnly => matches!(from, ExecFrom::Top),
+            ExecPolicy::TopAndAst => !matches!(from, ExecFrom::Call),
+            ExecPolicy::Anywhere => true,
+            ExecPolicy::CallOnly => matches!(from, ExecFrom::Call),
         }
     }
 }

@@ -954,7 +954,7 @@ impl IntentRuntime {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DeferredEntry {
     pub addr: ContractAddress,
-    pub intent_id: Option<usize>,
+    pub intent_scope: IntentScope,
 }
 
 #[derive(Clone, Debug)]
@@ -1388,13 +1388,13 @@ mod resource_tests {
         callbacks
             .register(DeferredEntry {
                 addr: a.clone(),
-                intent_id: None,
+                intent_scope: Some(None),
             })
             .unwrap();
         let err = callbacks
             .register(DeferredEntry {
                 addr: a.clone(),
-                intent_id: None,
+                intent_scope: Some(None),
             })
             .unwrap_err();
         assert_eq!(err.0, ItrErrCode::DeferredError);
@@ -1402,7 +1402,7 @@ mod resource_tests {
         callbacks
             .register(DeferredEntry {
                 addr: b.clone(),
-                intent_id: Some(7),
+                intent_scope: Some(Some(7)),
             })
             .unwrap();
         let drained = callbacks.drain_lifo();
@@ -1411,11 +1411,11 @@ mod resource_tests {
             vec![
                 DeferredEntry {
                     addr: b,
-                    intent_id: Some(7)
+                    intent_scope: Some(Some(7))
                 },
                 DeferredEntry {
                     addr: a,
-                    intent_id: None
+                    intent_scope: Some(None)
                 },
             ]
         );

@@ -31,18 +31,18 @@ pub fn call_defer(
     let Some(caddr) = bindings.state_this.clone() else {
         return itr_err_fmt!(DeferredError, "defer requires contract context");
     };
-    let intent_id = if argv.is_nil() {
-        None
+    let intent_scope = if argv.is_nil() {
+        Some(None)
     } else {
         let id = defer_extract_intent_handle_id(&argv)?;
         intents
             .ensure_owner(&caddr, id)
             .map_err(|e| ItrErr::new(DeferredError, &e.1))?;
-        Some(id)
+        Some(Some(id))
     };
     deferred_registry.register(crate::machine::DeferredEntry {
         addr: caddr,
-        intent_id,
+        intent_scope,
     })?;
     Ok((Value::Nil, NativeCtl::defer.gas_of()))
 }

@@ -655,7 +655,7 @@ impl Executor {
                         EntryRequest::Abst {
                             kind: AbstCall::Deferred,
                             contract_addr: caddr.addr,
-                            intent_binding: Some(caddr.intent_id),
+                            intent_binding: caddr.intent_scope,
                             param: Value::Nil,
                         }
                         .execute(machine, runtime, ctx)

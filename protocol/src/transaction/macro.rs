@@ -237,7 +237,7 @@ fn prepare_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Ret<TxExec
         .actions()
         .iter()
         .any(|a| crate::action::is_ast_container_action(a.as_ref()));
-    precheck_tx_actions(tx.ty(), env.chain.fast_sync, tx.actions())?;
+    precheck_tx_actions(tx.ty(), tx.actions())?;
     let state = CoreState::wrap(ctx.state());
     if not_fast_sync {
         if !main.is_privakey() {

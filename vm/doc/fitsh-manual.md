@@ -33,7 +33,7 @@ A practical guide for developers with smart contract experience (e.g., Solidity)
 | String/Bytes | `bytes` (quoted strings and hex) | `string`, `bytes` |
 | Parameters | `param { a b c }` unpacks to slots | Declared in function signature |
 | State mutability | `callextview`/`callusepure` for read-only | `view`/`pure` modifiers |
-| Low-level call | `codecall` (must follow with `end`) | `delegatecall` |
+| Low-level call | `codecall` (source-level `end` optional; runs in-place) | `delegatecall` |
 | Payment hooks | `abstract PayableHACD` etc. | `receive()`, `fallback()` |
 
 ---
@@ -166,7 +166,7 @@ Visibility note:
 | `call` | Call external contract |
 | `callthis` / `callself` / `callsuper` | Internal calls |
 | `callextview` / `callusepure` | Read-only calls |
-| `codecall` | CodeCall (no return; must follow with `end`) |
+| `codecall` | CodeCall（in-place splice；source-level `end` optional） |
 | `bytecode` | Raw bytecode injection |
 
 ### 4.5 Type and Literal Keywords
@@ -285,7 +285,7 @@ param { owner amount fee }
 
 - Optional argument list is supported: `codecall C.f`, `codecall C.f()`, `codecall C.f(nil)`, `codecall C.f(a)`, `codecall C.f(a, b)`
 - `codecall C.f`, `codecall C.f()`, and `codecall C.f(nil)` are equivalent
-- Must be followed by `end`
+- Source-level trailing `end` is optional; `codecall C.f` and `codecall C.f` + `end` are both valid
 - Used for low-level delegation
 
 ```fitsh
@@ -667,12 +667,12 @@ Library resolution note:
 
 ### 11.2 Call Permission and State Access Control
 
-The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)** plus **in_codecall**.
+The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)**.
 
 - `ExecDomain` describes the current dispatch policy source: `TopMain`, `TopP2sh`, `TopAbst`, or `Contract`.
 - `FrameMode` describes current state-access strength: `External`, `Inner`, `View`, or `Pure`.
 - Fixed call instructions (`CALL`, `CALLEXTVIEW`, `CALLUSEVIEW`, `CALLUSEPURE`, `CALLTHIS`, `CALLSELF`, `CALLSUPER`) switch to `ExecDomain::Contract` and set a fixed `FrameMode`.
-- `CODECALL` inherits the caller's full `ExecCtx` and runs in-place with `in_codecall = true`.
+- `CODECALL` inherits the caller's full `ExecCtx` and runs in-place on the current frame.
 
 #### Selected Call Instructions: Dispatch Matrix
 
@@ -702,7 +702,7 @@ The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)** pl
 
 **State** = Storage, Global, Memory, Log.
 
-**Important**: `codecall` runs in the **current frame** and **fully inherits the caller's ExecCtx** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the codecall body are governed by the inherited domain/frame permissions. Additionally, `codecall` sets `in_codecall = true`, which forbids any further nested calls (CallInCallcode error).
+**Important**: `codecall` runs in the **current frame** and **fully inherits the caller's ExecCtx** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the codecall body are governed by the inherited domain/frame permissions. Unlike an isolated call frame, `codecall` does **not** forbid subsequent nested calls; nested `CALL*` instructions continue to follow the normal `(domain, frame, depth)` runtime gates.
 
 #### Orthogonal Permission Matrix
 
@@ -724,7 +724,7 @@ Frame restrictions:
 | `View` | `CALLEXTVIEW`, `CALLUSEVIEW`, `CALLUSEPURE` | Yes | No |
 | `Pure` | `CALLUSEPURE` only | No | No |
 
-`in_codecall` still forbids all nested calls. `TopAbst` disallows `CALL` (External) to prevent reentrancy from payment hooks into external contracts.
+`TopAbst` disallows `CALL` (External) to prevent reentrancy from payment hooks into external contracts. `CODECALL` itself does not add an extra nested-call ban; nested calls inside splice code still follow the ordinary entry/effect/depth checks.
 
 #### State Access Control Matrix by Mode
 
@@ -741,8 +741,8 @@ Frame restrictions:
 
 | Mode | EXTACTION | EXTENV | EXTVIEW | Notes |
 |------|-----------|--------|---------|-------|
-| **Main** (depth==0, not in_codecall) | ✅ Yes | ✅ Yes | ✅ Yes | Full access |
-| **Main** (depth>0 or in_codecall) | ❌ No | ✅ Yes | ✅ Yes | EXTACTION blocked in nested calls / codecall |
+| **Main** (depth==0) | ✅ Yes | ✅ Yes | ✅ Yes | Full access |
+| **Main** (depth>0) | ❌ No | ✅ Yes | ✅ Yes | EXTACTION blocked in nested calls, including nested codecall paths |
 | **P2sh, Abst** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
 | **External, Inner** | ❌ No | ✅ Yes | ✅ Yes | EXTACTION entry-only |
 | **View** | ❌ No | ✅ Yes | ✅ Yes | Read-only environment access |
@@ -759,7 +759,7 @@ Frame restrictions:
 | NTFUNC | `address_ptr` | 1 | ✅ Allowed | ✅ | ✅ | Pure address pointer extraction |
 
 **Summary**:
-- **EXTACTION** (asset transfers): Only `Main` mode at `depth == 0` and **not** in `codecall`
+- **EXTACTION** (asset transfers): Only `Main` mode at `depth == 0`
 - **EXTENV** (`block_height`, `tx_main_address`): Forbidden in `Pure`, allowed elsewhere
 - **EXTVIEW** (`check_signature`, `balance`): Forbidden in `Pure`, allowed elsewhere — read-only chain state queries
 - **NTFUNC** (pure computation): Always allowed in all modes including `Pure`
@@ -769,8 +769,8 @@ Frame restrictions:
 
 | Condition | EXTACTION allowed |
 |-----------|-------------------|
-| mode == Main AND depth == 0 AND not in_codecall | Yes |
-| mode != Main OR depth > 0 OR in_codecall | No |
+| mode == Main AND depth == 0 | Yes |
+| mode != Main OR depth > 0 | No |
 
 `transfer_hac_to`, `transfer_sat_to`, etc. can only run at the top-level main call. They are disabled in `codecall`, in abstract/payment hooks, and in nested calls.
 
@@ -779,7 +779,7 @@ Frame restrictions:
 - **call** → External: full state access; callee must be marked `external`
 - **callextview** → View: read-only; no storage/global/memory/log writes
 - **callusepure** → Pure: no state access; only pure computation and nested CALLUSEPURE
-- **codecall** → inherits mode; no nested calls; EXTACTION disabled
+- **codecall** → inherits mode; runs in-place; nested calls remain allowed subject to normal runtime gates; EXTACTION still depends on inherited mode/depth
 - **callthis/callself/callsuper** → Inner: full state access; internal-only
 
 ### 11.3 Function Lookup: `this`, `self`, and `super`
@@ -1011,5 +1011,5 @@ Developers coming from Solidity or similar languages should note: Fitsh does not
 - **Function args limit**: 15 (pack list); wrap in `list`/`map` for more
 - **Function signature**: 4-byte hash of name only; no overloading
 - **`param`**: Must be at top of body
-- **`codecall`**: Must be followed by `end`
+- **`codecall`**: Source-level trailing `end` is optional; runs as in-place splice
 - **`bind`**: Lazy; use `var` for side effects

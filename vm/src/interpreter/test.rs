@@ -1211,13 +1211,17 @@ mod bounds_tests {
             Bytecode::END as u8,
         ];
 
-        super::execute_code(
+        let mut bindings = FrameBindings::contract(cadr.clone(), cadr.clone(), Vec::<Address>::new().into());
+        let mut intent_state = crate::frame::IntentBindingState::default();
+        super::execute_code_in_frame(
             &mut pc,
             &codes,
             ExecCtx::external(),
             &mut operands,
             &mut locals,
             &mut heap,
+            &mut bindings,
+            &mut intent_state,
             &cadr.to_addr(),
             &cadr.to_addr(),
             &GasTable::new(1),
@@ -1226,6 +1230,7 @@ mod bounds_tests {
             &mut gas_use,
             &mut global_map,
             &mut memory_map,
+            &mut crate::machine::IntentRuntime::default(),
             &mut defer_callbacks,
             &mut host,
         )
@@ -1233,7 +1238,10 @@ mod bounds_tests {
 
         assert_eq!(
             defer_callbacks.drain_lifo(),
-            vec![DeferredEntry { addr: cadr, intent_id: None }]
+            vec![DeferredEntry {
+                addr: cadr,
+                intent_scope: Some(None),
+            }]
         );
     }
 

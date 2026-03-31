@@ -719,7 +719,7 @@ fn test_precheck_tx_actions_rejects_guard_only_ast_select() {
         HeightScope::new(),
     )]))];
 
-    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("all GUARD"), "{}", err);
 }
 
@@ -731,7 +731,7 @@ fn test_precheck_tx_actions_rejects_guard_only_ast_if() {
         AstSelect::nop(),
     ))];
 
-    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("all GUARD"), "{}", err);
 }
 
@@ -742,7 +742,7 @@ fn test_precheck_tx_actions_allows_mixed_guard_and_non_guard_leafs_in_ast() {
         Box::new(HacToTrs::new()),
     ]))];
 
-    precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap();
+    precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap();
 }
 
 #[test]
@@ -752,7 +752,7 @@ fn test_precheck_tx_actions_rejects_duplicate_top_unique() {
         Box::new(TestLevelNoopAction::top_unique()),
     ];
 
-    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("TOP_UNIQUE"), "{}", err);
 }
 
@@ -762,7 +762,7 @@ fn test_precheck_tx_actions_rejects_nested_top_only_can_with_guard_in_ast() {
         TestLevelNoopAction::top_only_can_with_guard(),
     )]))];
 
-    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{}", err);
 }
 
@@ -770,7 +770,7 @@ fn test_precheck_tx_actions_rejects_nested_top_only_can_with_guard_in_ast() {
 fn test_precheck_tx_actions_rejects_call_only_in_tx_tree() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::call_only())];
 
-    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(
         err.contains("CALL_ONLY") && err.contains("TOP"),
         "{}",
@@ -787,13 +787,13 @@ fn test_precheck_runtime_action_depth_accepts_ast_leaf_action() {
 #[test]
 fn test_precheck_tx_actions_allows_top_level_ast_leaf_action_on_type3() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::ast())];
-    precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap();
+    precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap();
 }
 
 #[test]
 fn test_precheck_tx_actions_rejects_type2_top_level_ast_leaf_action() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::ast())];
-    let err = precheck_tx_actions(TransactionType2::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType2::TYPE, &actions).unwrap_err();
     assert!(err.contains("requires tx type >= 3"), "{}", err);
 }
 
@@ -802,7 +802,7 @@ fn test_precheck_tx_actions_allows_nested_ast_leaf_action_on_type3() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
         TestLevelNoopAction::ast(),
     )]))];
-    precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap();
+    precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap();
 }
 
 #[test]
@@ -834,9 +834,9 @@ fn test_tx_execute_fast_sync_ast_depth_precheck_rejects_7th_level() {
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
-    use crate::transaction::TransactionType2;
+    use crate::transaction::TransactionType3;
 
-    let mut tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
+    let mut tx = TransactionType3::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
     tx.actions
         .push(Box::new(build_depth_7_ast_select()))
         .unwrap();
@@ -1331,7 +1331,7 @@ fn test_precheck_tx_actions_rejects_top_only_can_with_guard_plus_guard_only_ast_
         Box::new(TestLevelNoopAction::top_only_can_with_guard()),
         Box::new(AstSelect::create_list(vec![Box::new(HeightScope::new())])),
     ];
-    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{}", err);
 }
 
@@ -1429,7 +1429,7 @@ fn test_precheck_tx_actions_rejects_top_only_can_with_guard_plus_non_guard_ast_w
         Box::new(TestLevelNoopAction::top_only_can_with_guard()),
         Box::new(AstSelect::create_list(vec![Box::new(HacToTrs::new())])),
     ];
-    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
     assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{}", err);
 }
 
