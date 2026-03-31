@@ -612,7 +612,7 @@ return x"
         use super::*;
 
         assert_compile_ok!(
-            intent_put_pairs_flat_kv_list_compiles: "return intent_put_pairs(list { \"k1\" 1 \"k2\" 2 })",
+            intent_put_flat_kv_flat_kv_list_compiles: "return intent_put_flat_kv(list { \"k1\" 1 \"k2\" 2 })",
             intent_require_many_keys_list_compiles: "return intent_require_many(list { \"k1\" \"k2\" })",
             intent_take_many_keys_list_compiles: "return intent_take_many(list { \"k1\" \"k2\" })",
             intent_del_many_keys_list_compiles: "return intent_del_many(list { \"k1\" \"k2\" })",

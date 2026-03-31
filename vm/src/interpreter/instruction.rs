@@ -226,6 +226,7 @@ fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
         (Bytes(l), Bytes(r)) => Ok(l == r),
         (Address(l), Address(r)) => Ok(l == r),
         (HeapSlice(l), HeapSlice(r)) => Ok(l == r),
+        // Tuple/Compo equality is intentionally identity-based rather than structural.
         (Tuple(l), Tuple(r)) => Ok(l.ptr_eq(r)),
         (Compo(l), Compo(r)) => Ok(l.ptr_eq(r)),
         (U8(l), U8(r)) => Ok(l == r),

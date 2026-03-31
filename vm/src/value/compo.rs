@@ -362,7 +362,9 @@ impl CompoItem {
             let v = items[i * 2 + 1].take().unwrap();
             let k = k.extract_key_bytes()?;
             v.check_scalar()?;
-            mapobj.insert(k, v);
+            if mapobj.insert(k, v).is_some() {
+                return itr_err_fmt!(CompoPackError, "duplicate key in pack_map");
+            }
         }
         Ok((Value::Compo(Self::map(mapobj)?), sz))
     }

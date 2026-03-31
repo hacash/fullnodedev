@@ -10,7 +10,6 @@ pub struct ResolvedFn {
 #[derive(Debug, Clone)]
 pub struct ResolvedCallPlan {
     pub next_bindings: FrameBindings,
-    pub inherited_intent_scope: IntentScope,
     pub fnobj: Arc<FnObj>,
 }
 
@@ -238,7 +237,6 @@ impl Runtime {
         let next_bindings =
             bindings.next_after_call(call.switches_context(), anchor, hit.owner, hit.lib_table);
         Ok(ResolvedCallPlan {
-            inherited_intent_scope: next_bindings.intent_binding,
             next_bindings,
             fnobj: hit.fnobj,
         })

@@ -383,7 +383,7 @@ mod machine_file_test {
     }
 
     #[test]
-    fn intent_put_pairs_accepts_flat_kv_list() {
+    fn intent_put_flat_kv_accepts_flat_kv_list() {
         let base_addr = test_base_addr();
         let contract = test_contract(&base_addr, 166);
         let contract_sto = Contract::new()
@@ -395,7 +395,7 @@ mod machine_file_test {
                         r##"
                         var iid = intent_new("kv")
                         intent_use(iid)
-                        intent_put_pairs(list { "a" 3 "b" 5 })
+                        intent_put_flat_kv(list { "a" 3 "b" 5 })
                         return intent_len()
                         "##,
                     )
@@ -421,7 +421,7 @@ mod machine_file_test {
     }
 
     #[test]
-    fn intent_put_pairs_list_tuple_form_hits_scalar_boundary_error() {
+    fn intent_put_flat_kv_list_tuple_form_hits_scalar_boundary_error() {
         let base_addr = test_base_addr();
         let contract = test_contract(&base_addr, 167);
         let contract_sto = Contract::new()
@@ -433,7 +433,7 @@ mod machine_file_test {
                         r##"
                         var iid = intent_new("kv")
                         intent_use(iid)
-                        intent_put_pairs(list { tuple("a", 3) tuple("b", 5) })
+                        intent_put_flat_kv(list { tuple("a", 3) tuple("b", 5) })
                         return 0
                         "##,
                     )
@@ -1253,6 +1253,7 @@ mod machine_file_test {
         let base_addr = test_base_addr();
         let contract_target = test_contract(&base_addr, 168);
         let target_sto = Contract::new()
+            .lib(contract_target.to_addr())
             .func(
                 Func::new("read_flag")
                     .unwrap()

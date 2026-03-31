@@ -60,7 +60,7 @@ native_func_env_define! { ctl, NativeCtl, NativeCtlError,
     intent_new         = 21,    1,       32,    Handle
     intent_use         = 22,    1,        8,    Nil
     intent_pop         = 23,    0,        8,    Nil
-    intent_exists      = 24,    1,       10,    Bool
+    intent_is_own_handle      = 24,    1,       10,    Bool
     intent_kind        = 25,    0,        8,    Bytes
     intent_kind_is     = 26,    1,        8,    Bool
     intent_destroy     = 27,    0,       10,    Nil
@@ -70,7 +70,7 @@ native_func_env_define! { ctl, NativeCtl, NativeCtlError,
     intent_has         = 31,    1,       10,    Bool
     intent_keys        = 32,    0,       16,    Compo
     intent_keys_page   = 33,    2,       16,    Tuple
-    intent_keys_from   = 34,    2,       16,    Tuple
+    intent_keys_after   = 34,    2,       16,    Tuple
     intent_get         = 35,    1,       10,    Bytes
     intent_get_or      = 36,    2,       12,    Bytes
     intent_require     = 37,    1,       10,    Bytes
@@ -83,10 +83,10 @@ native_func_env_define! { ctl, NativeCtl, NativeCtlError,
     intent_put         = 44,    2,       24,    Nil
     intent_put_if_absent = 45,  2,       24,    Bool
     intent_put_if_absent_or_match = 46, 2,  24, Bool
-    intent_put_pairs   = 47,    1,       32,    Nil
+    intent_put_flat_kv   = 47,    1,       32,    Nil
     intent_replace     = 48,    2,       14,    Bytes
     intent_replace_if  = 49,    3,       16,    Bool
-    intent_move        = 50,    2,       14,    Nil
+    intent_rename        = 50,    2,       14,    Nil
     intent_take        = 51,    1,       12,    Bytes
     intent_take_or     = 52,    2,       14,    Bytes
     intent_take_if     = 53,    2,       14,    Tuple

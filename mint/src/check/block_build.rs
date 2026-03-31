@@ -14,8 +14,7 @@ fn impl_packing_next_block(
         newdifn = Uint4::from(LOWEST_DIFFICULTY);
     }
     let nexthei = oldblk.height().uint() + 1;
-    // update difficulty number
-    if nexthei % mtcnf.difficulty_adjust_blocks == 0 {
+    if this.difficulty.is_upgrade_height(nexthei) || nexthei % mtcnf.difficulty_adjust_blocks == 0 {
         let sto = engine.store();
         let (difn, ..) = this.next_difficulty(oldblk.as_read(), sto.as_ref());
         newdifn = Uint4::from(difn);
@@ -372,32 +371,27 @@ mod tests {
         }
     }
 
-    #[test]
-    fn packing_next_block_merkle_matches_hash_with_fee() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
-
-        let prev_blk = DummyBlock {
+    fn make_prev_blk(height: u64, timestamp: u64, difficulty: u32) -> DummyBlock {
+        DummyBlock {
             intro: BlockIntro {
                 head: BlockHead {
                     version: Uint1::from(1),
-                    height: BlockHeight::from(99u64),
-                    timestamp: Timestamp::from(1u64),
+                    height: BlockHeight::from(height),
+                    timestamp: Timestamp::from(timestamp),
                     prevhash: Hash::default(),
                     mrklroot: Hash::default(),
                     transaction_count: Uint4::default(),
                 },
                 meta: BlockMeta {
                     nonce: Uint4::default(),
-                    difficulty: Uint4::from(LOWEST_DIFFICULTY),
+                    difficulty: Uint4::from(difficulty),
                     witness_stage: Fixed2::default(),
                 },
             },
-        };
+        }
+    }
 
+    fn build_engine(prev_blk: DummyBlock) -> (TestEngine, OneTxPool) {
         let mut tx = TransactionType3::default();
         tx.timestamp = Timestamp::from(1u64);
         tx.fee = Amount::small_mei(1);
@@ -414,17 +408,46 @@ mod tests {
         cnf.miner_message = Fixed16::default();
         cnf.miner_reward_address = Address::default();
 
-        let engine = TestEngine {
-            cnf,
-            latest: Arc::new(prev_blk),
-            store: Arc::new(DummyStore),
-        };
+        (
+            TestEngine {
+                cnf,
+                latest: Arc::new(prev_blk),
+                store: Arc::new(DummyStore),
+            },
+            tp,
+        )
+    }
 
+    #[test]
+    fn packing_next_block_merkle_matches_hash_with_fee() {
+        let _setup = protocol::setup::install_scoped_for_test(
+            protocol::setup::standard_protocol_builder(x16rs::block_hash)
+                .build()
+                .unwrap(),
+        );
+
+        let (engine, tp) = build_engine(make_prev_blk(99, 1, LOWEST_DIFFICULTY));
         let minter = HacashMinter::create(&IniObj::default());
         let blk_any = minter.packing_next_block(&engine, &tp);
         let blk = *blk_any.downcast::<BlockV1>().unwrap();
 
         let want = calculate_mrklroot(&blk.transaction_hash_list(true));
         assert_eq!(*blk.mrklroot(), want);
+    }
+
+    #[test]
+    fn packing_next_block_keeps_legacy_non_boundary_difficulty_before_upgrade() {
+        let _setup = protocol::setup::install_scoped_for_test(
+            protocol::setup::standard_protocol_builder(x16rs::block_hash)
+                .build()
+                .unwrap(),
+        );
+        let prevdiff = LOWEST_DIFFICULTY - 123;
+        let prev_blk = make_prev_blk(100, 10_000, prevdiff);
+        let (engine, tp) = build_engine(prev_blk);
+        let minter = HacashMinter::create(&IniObj::default());
+        let blk_any = minter.packing_next_block(&engine, &tp);
+        let blk = *blk_any.downcast::<BlockV1>().unwrap();
+        assert_eq!(blk.difficulty().uint(), prevdiff);
     }
 }

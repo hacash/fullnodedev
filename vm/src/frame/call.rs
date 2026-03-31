@@ -67,7 +67,6 @@ impl CallFrame {
                     curr_mut!().oprnds.peek()?.check_container_cap(&r.warm.space_cap)?;
                     let mut plan = r.plan_user_call(host, &spec, &curr_bindings)?;
                     plan.next_bindings.intent_binding = curr!().intent_state.current();
-                    plan.inherited_intent_scope = plan.next_bindings.intent_binding;
 
                     match spec {
                         CallSpec::Splice { .. } => {

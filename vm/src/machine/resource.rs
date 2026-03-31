@@ -272,6 +272,19 @@ impl IntentRuntime {
         Ok(exists)
     }
 
+    fn prepare_put_mode(
+        &mut self,
+        owner: &ContractAddress,
+        id: usize,
+        key: &Value,
+        val: &Value,
+    ) -> VmrtRes<bool> {
+        self.validate_key_value_for_put(key, val)?;
+        let intent_key_limit = self.intent_key_limit;
+        let entry = self.require_mut(owner, id)?;
+        Self::ensure_insert_capacity(entry, key, intent_key_limit)
+    }
+
     fn add_core(
         &mut self,
         owner: &ContractAddress,
@@ -316,11 +329,8 @@ impl IntentRuntime {
     }
 
     pub fn put(&mut self, owner: &ContractAddress, id: usize, key: Value, val: Value) -> VmrtErr {
-        self.validate_key_value_for_put(&key, &val)?;
-        let intent_key_limit = self.intent_key_limit;
-        let entry = self.require_mut(owner, id)?;
-        Self::ensure_insert_capacity(entry, &key, intent_key_limit)?;
-        entry.data.put(key, val)
+        self.prepare_put_mode(owner, id, &key, &val)?;
+        self.require_mut(owner, id)?.data.put(key, val)
     }
 
     pub fn exists(&self, id: usize) -> bool {
@@ -545,13 +555,10 @@ impl IntentRuntime {
         key: Value,
         val: Value,
     ) -> VmrtRes<bool> {
-        self.validate_key_value_for_put(&key, &val)?;
-        let intent_key_limit = self.intent_key_limit;
-        let entry = self.require_mut(owner, id)?;
-        if Self::ensure_insert_capacity(entry, &key, intent_key_limit)? {
+        if self.prepare_put_mode(owner, id, &key, &val)? {
             return Ok(false);
         }
-        entry.data.put(key, val)?;
+        self.require_mut(owner, id)?.data.put(key, val)?;
         Ok(true)
     }
 
@@ -677,24 +684,25 @@ impl IntentRuntime {
         dst_key: Value,
     ) -> VmrtErr {
         self.validate_intent_key(&src_key)?;
+        self.validate_intent_key(&dst_key)?;
         let val = {
             let entry = self.require_ref(owner, id)?;
             if !entry.data.contains_key(&src_key)? {
                 return itr_err_fmt!(ItrErrCode::IntentError, "intent source key not found");
             }
-            self.validate_intent_key(&dst_key)?;
             if entry.data.contains_key(&dst_key)? {
                 return itr_err_fmt!(ItrErrCode::IntentError, "intent destination key already exists");
             }
             entry.data.get(&src_key)?
         };
         self.validate_key_value_for_put(&dst_key, &val)?;
-        self.require_mut(owner, id)?.data.remove(&src_key)?;
-        self.put(owner, id, dst_key, val)?;
+        let entry = self.require_mut(owner, id)?;
+        entry.data.remove(&src_key)?;
+        entry.data.put(dst_key, val)?;
         Ok(())
     }
 
-    pub fn keys_from(
+    pub fn keys_after(
         &self,
         owner: &ContractAddress,
         id: usize,
@@ -778,17 +786,15 @@ impl IntentRuntime {
         key: Value,
         val: Value,
     ) -> VmrtRes<bool> {
-        self.validate_key_value_for_put(&key, &val)?;
-        let intent_key_limit = self.intent_key_limit;
+        let existed = self.prepare_put_mode(owner, id, &key, &val)?;
         let entry = self.require_mut(owner, id)?;
-        if entry.data.contains_key(&key)? {
+        if existed {
             let existing = entry.data.get(&key)?;
             if existing == val {
                 return Ok(false);
             }
             return itr_err_fmt!(ItrErrCode::IntentError, "intent existing value mismatch");
         }
-        Self::ensure_insert_capacity(entry, &key, intent_key_limit)?;
         entry.data.put(key, val)?;
         Ok(true)
     }
@@ -1422,7 +1428,7 @@ mod resource_tests {
     }
 
     #[test]
-    fn intent_keys_from_pagination_returns_correct_next_key() {
+    fn intent_keys_after_pagination_returns_correct_next_key() {
         let owner = ContractAddress::from_unchecked(Address::create_contract([1u8; 20]));
         let mut rt = IntentRuntime::new(100, 16, 1280, 128);
         let id = rt.create(owner.clone(), b"test".to_vec()).unwrap();
@@ -1433,19 +1439,19 @@ mod resource_tests {
         }
 
         // First page: get 2 keys starting from None
-        let (next, page) = rt.keys_from(&owner, id, None, 2).unwrap();
+        let (next, page) = rt.keys_after(&owner, id, None, 2).unwrap();
         assert_eq!(page, vec![b"a".to_vec(), b"b".to_vec()]);
         assert_eq!(next, Some(b"b".to_vec())); // Resume token must be reusable as next start
 
         // Second page: use next as start
         let next_val = Value::Bytes(next.unwrap());
-        let (next2, page2) = rt.keys_from(&owner, id, Some(&next_val), 2).unwrap();
+        let (next2, page2) = rt.keys_after(&owner, id, Some(&next_val), 2).unwrap();
         assert_eq!(page2, vec![b"c".to_vec(), b"d".to_vec()]);
         assert_eq!(next2, Some(b"d".to_vec()));
 
         // Third page: consume the tail
         let next_val2 = Value::Bytes(next2.unwrap());
-        let (next3, page3) = rt.keys_from(&owner, id, Some(&next_val2), 2).unwrap();
+        let (next3, page3) = rt.keys_after(&owner, id, Some(&next_val2), 2).unwrap();
         assert_eq!(page3, vec![b"e".to_vec()]);
         assert_eq!(next3, None);
     }

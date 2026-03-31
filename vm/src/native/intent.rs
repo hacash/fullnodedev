@@ -447,16 +447,16 @@ intent_std_fn!(call_intent_take_if, |exec, bindings, intent_state, intents, argv
     ))
 });
 
-intent_std_fn!(call_intent_exists, |exec, bindings, _intent_state, intents, argv| {
-    ctl_require_non_pure(exec, "intent_exists")?;
-    let owner = ctl_contract_owner(bindings, "intent_exists")?;
-    let id = extract_intent_handle_id(&argv, "intent_exists")?;
+intent_std_fn!(call_intent_is_own_handle, |exec, bindings, _intent_state, intents, argv| {
+    ctl_require_non_pure(exec, "intent_is_own_handle")?;
+    let owner = ctl_contract_owner(bindings, "intent_is_own_handle")?;
+    let id = extract_intent_handle_id(&argv, "intent_is_own_handle")?;
     if !intents.exists(id) {
-        return Ok((Value::Bool(false), NativeCtl::intent_exists.gas_of()));
+        return Ok((Value::Bool(false), NativeCtl::intent_is_own_handle.gas_of()));
     }
     Ok((
         Value::Bool(intents.is_owner(&owner, id)?),
-        NativeCtl::intent_exists.gas_of(),
+        NativeCtl::intent_is_own_handle.gas_of(),
     ))
 });
 
@@ -490,17 +490,17 @@ intent_std_fn!(call_intent_keys_page, |exec, bindings, intent_state, intents, ar
     ))
 });
 
-intent_std_fn!(call_intent_keys_from, |exec, bindings, intent_state, intents, argv| {
-    ctl_require_non_pure(exec, "intent_keys_from")?;
-    let items = ctl_expect_tuple(argv, "intent_keys_from", 2)?;
-    let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_keys_from")?;
-    let limit = ctl_expect_u32(&items[1], "intent_keys_from", "limit")? as usize;
+intent_std_fn!(call_intent_keys_after, |exec, bindings, intent_state, intents, argv| {
+    ctl_require_non_pure(exec, "intent_keys_after")?;
+    let items = ctl_expect_tuple(argv, "intent_keys_after", 2)?;
+    let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_keys_after")?;
+    let limit = ctl_expect_u32(&items[1], "intent_keys_after", "limit")? as usize;
     let start = if items[0].is_nil() {
         None
     } else {
         Some(&items[0])
     };
-    let (next, keys) = intents.keys_from(&owner, id, start, limit)?;
+    let (next, keys) = intents.keys_after(&owner, id, start, limit)?;
     let list = Value::Compo(CompoItem::list(
         keys.into_iter().map(Value::Bytes).collect::<VecDeque<_>>(),
     )?);
@@ -510,7 +510,7 @@ intent_std_fn!(call_intent_keys_from, |exec, bindings, intent_state, intents, ar
     };
     Ok((
         Value::Tuple(TupleItem::new(vec![next_key, list])?),
-        NativeCtl::intent_keys_from.gas_of(),
+        NativeCtl::intent_keys_after.gas_of(),
     ))
 });
 
@@ -545,17 +545,17 @@ intent_std_fn!(call_intent_require_map, |exec, bindings, intent_state, intents, 
     ))
 });
 
-intent_std_fn!(call_intent_put_pairs, |exec, bindings, intent_state, intents, argv| {
-    ctl_put_kv_list(exec, bindings, intent_state, intents, argv, "intent_put_pairs")?;
-    Ok((Value::Nil, NativeCtl::intent_put_pairs.gas_of()))
+intent_std_fn!(call_intent_put_flat_kv, |exec, bindings, intent_state, intents, argv| {
+    ctl_put_kv_list(exec, bindings, intent_state, intents, argv, "intent_put_flat_kv")?;
+    Ok((Value::Nil, NativeCtl::intent_put_flat_kv.gas_of()))
 });
 
-intent_std_fn!(call_intent_move, |exec, bindings, intent_state, intents, argv| {
-    ctl_require_edit(exec, "intent_move")?;
-    let items = ctl_expect_tuple(argv, "intent_move", 2)?;
-    let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_move")?;
+intent_std_fn!(call_intent_rename, |exec, bindings, intent_state, intents, argv| {
+    ctl_require_edit(exec, "intent_rename")?;
+    let items = ctl_expect_tuple(argv, "intent_rename", 2)?;
+    let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_rename")?;
     intents.move_key(&owner, id, items[0].clone(), items[1].clone())?;
-    Ok((Value::Nil, NativeCtl::intent_move.gas_of()))
+    Ok((Value::Nil, NativeCtl::intent_rename.gas_of()))
 });
 
 intent_std_fn!(call_intent_add, |exec, bindings, intent_state, intents, argv| {

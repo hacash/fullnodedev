@@ -15,11 +15,15 @@ impl Engine for ChainEngine {
             None
         );
         let became_head = rid.head_change.is_some();
+        let root_roll_blk = rid.root_change.as_ref().map(|root| root.block());
         roll_by(self, rid)?;
 
         // Update runtime caches only after the block is fully accepted and rolled.
         if let Some((blk, root_height)) = recent_ctx {
             record_recent(self, blk.as_read(), root_height);
+        }
+        if let Some(root_blk) = root_roll_blk {
+            self.minter.blk_root_roll(root_blk.as_read(), self.store.as_ref());
         }
         if became_head {
             let head = tree.head().block();

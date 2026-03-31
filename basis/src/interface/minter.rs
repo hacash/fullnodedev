@@ -36,6 +36,8 @@ pub trait Minter : Send + Sync {
     fn blk_verify(&self, _: &dyn BlockRead, _prev: &dyn BlockRead, _: &dyn Store) -> Rerr { Ok(()) }
     // Final gate. Runs after block execution and before forktree insertion.
     fn blk_insert(&self, _: &BlkPkg, _sub: &dyn State, _prev: &dyn State) -> Rerr { Ok(()) }
+    // Stable-root callback. Runs after root/head roll is fully committed.
+    fn blk_root_roll(&self, _: &dyn BlockRead, _: &dyn Store) {}
 
     // block build
     fn block_reward(&self, _: u64) -> u64 { 0 }

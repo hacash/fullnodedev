@@ -36,5 +36,6 @@ include! {"check/bidding.rs"}
 include! {"check/initialize.rs"}
 include! {"check/coinbase.rs"}
 include! {"check/difficulty.rs"}
+include! {"check/difficulty_old.rs"}
 include! {"check/block_accept.rs"}
 include! {"minter.rs"}

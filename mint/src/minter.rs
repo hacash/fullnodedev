@@ -72,6 +72,10 @@ impl Minter for HacashMinter {
         impl_blk_insert(self, curblk, sta, prev)
     }
 
+    fn blk_root_roll(&self, rootblk: &dyn BlockRead, _: &dyn Store) {
+        self.difficulty.cache_root_block_intro(rootblk)
+    }
+
     // <dyn Block> == BlockV1
     fn packing_next_block(&self, eng: &dyn EngineRead, tp: &dyn TxPool) -> Box<dyn Any> {
         impl_packing_next_block(self, eng, tp)

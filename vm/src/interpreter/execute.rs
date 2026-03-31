@@ -765,9 +765,9 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 GET0 | GET1 | GET2 | GET3 => local_get!(instbyte - GET0 as u8),
                 LOG1 | LOG2 | LOG3 | LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
                 HSLICE => {
-                    let p = ops.pop()?;
+                    let start = ops.pop()?;
                     let peek = ops.peek()?;
-                    *peek = heap.slice(p, peek)?;
+                    *peek = heap.slice(peek.clone(), &start)?;
                 }
                 HREADUL => hread_push!(heap.read_ul(pu16!())?),
                 HREADU => hread_push!(heap.read_u(pu8!())?),
