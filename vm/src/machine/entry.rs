@@ -121,6 +121,8 @@ impl VmEntryGuard {
     }
 
     fn disarm(mut self) -> VmEntryFrame {
+        // SAFETY: `entries` points to the current executor-owned entry stack captured at push time.
+        // The guard never outlives that stack and only mutates it during unwind/disarm.
         let entries = unsafe { &mut *self.entries };
         let popped = entries
             .pop()
@@ -137,6 +139,7 @@ impl Drop for VmEntryGuard {
         if !self.armed {
             return;
         }
+        // SAFETY: same invariant as `disarm` — this guard only ever targets the executor entry stack it was pushed into.
         let entries = unsafe { &mut *self.entries };
         let Some(popped) = entries.pop() else {
             debug_assert!(false, "vm entry frame missing during guard drop");

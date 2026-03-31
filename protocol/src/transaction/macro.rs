@@ -237,10 +237,9 @@ fn prepare_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Ret<TxExec
         .actions()
         .iter()
         .any(|a| crate::action::is_ast_container_action(a.as_ref()));
-    check_tx_action_ast_tree_depth(tx.actions())?;
+    precheck_tx_actions(tx.ty(), env.chain.fast_sync, tx.actions())?;
     let state = CoreState::wrap(ctx.state());
     if not_fast_sync {
-        analyze_tx_action_set_for_tx(tx.ty(), tx.actions())?;
         if !main.is_privakey() {
             return errf!("tx fee address version must be PRIVAKEY type.");
         }

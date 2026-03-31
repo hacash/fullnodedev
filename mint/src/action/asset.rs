@@ -29,7 +29,7 @@ action_define! { AssetCreate, 16,
         if serial < minsri {
             return xerrf!("serial cannot be less than {}", minsri)
         }
-        let serial_limit = chei - alive_hei;
+        let serial_limit = minsri + (chei - alive_hei);
         if serial > serial_limit {
             return xerr!("asset serial overflow")
         }

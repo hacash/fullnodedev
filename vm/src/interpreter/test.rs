@@ -1238,7 +1238,7 @@ mod bounds_tests {
     }
 
     #[test]
-    fn ntreg_defer_rejects_top_level_main() {
+    fn ntreg_defer_requires_contract_context() {
         use crate::machine::DeferCallbacks;
         use crate::native::NativeCtl;
         use crate::rt::Bytecode;
@@ -1286,6 +1286,7 @@ mod bounds_tests {
         .unwrap_err();
 
         assert_eq!(err.0, ItrErrCode::DeferredError);
+        assert!(err.1.contains("contract context"), "unexpected error: {}", err.1);
     }
 
     #[test]

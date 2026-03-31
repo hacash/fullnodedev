@@ -640,15 +640,15 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_top_only_with_guard_rejects_multiple_non_guard_actions() {
+    fn deploy_top_only_can_with_guard_rejects_multiple_non_guard_actions() {
         let _guard = test_guard();
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         let err =
-            protocol::action::analyze_tx_action_set_for_tx(tx.ty(), tx.actions()).unwrap_err();
-        assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
+            protocol::action::precheck_tx_actions(tx.ty(), false, tx.actions()).unwrap_err();
+        assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{err}");
     }
 
     #[test]
@@ -1219,7 +1219,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn ctx_action_call_rejects_top_only_with_guard_action() {
+    fn ctx_action_call_rejects_top_only_can_with_guard_action() {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
@@ -1233,7 +1233,7 @@ mod action_coverage {
 
         let body = ContractDeploy::new().serialize()[2..].to_vec();
         let err = ctx.action_call(ContractDeploy::KIND, body).unwrap_err();
-        assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
+        assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════

@@ -27,7 +27,7 @@ impl core::fmt::Display for ExecFrom {
 pub enum TopRule {
     None,
     Only,
-    OnlyWithGuard,
+    OnlyCanWithGuard,
     Unique,
 }
 
@@ -46,8 +46,8 @@ impl ActScope {
     pub const TOP_ONLY: Self = Self::Top {
         rule: TopRule::Only,
     };
-    pub const TOP_ONLY_WITH_GUARD: Self = Self::Top {
-        rule: TopRule::OnlyWithGuard,
+    pub const TOP_ONLY_CAN_WITH_GUARD: Self = Self::Top {
+        rule: TopRule::OnlyCanWithGuard,
     };
     pub const TOP_UNIQUE: Self = Self::Top {
         rule: TopRule::Unique,
@@ -73,8 +73,8 @@ impl ActScope {
                 rule: TopRule::Only,
             } => "TOP_ONLY",
             Self::Top {
-                rule: TopRule::OnlyWithGuard,
-            } => "TOP_ONLY_WITH_GUARD",
+                rule: TopRule::OnlyCanWithGuard,
+            } => "TOP_ONLY_CAN_WITH_GUARD",
             Self::Top {
                 rule: TopRule::Unique,
             } => "TOP_UNIQUE",

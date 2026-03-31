@@ -28,17 +28,8 @@ pub fn call_defer(
     if exec.effect != EffectMode::Edit {
         return itr_err_fmt!(DeferredError, "defer not allowed in non-edit mode");
     }
-    if exec.call_depth == 0 {
-        return itr_err_fmt!(DeferredError, "defer not allowed at top-level entry");
-    }
-    let caddr = match bindings.state_this.clone() {
-        Some(caddr) => caddr,
-        None => crate::ContractAddress::from_addr(bindings.context_addr).map_err(|e| {
-            ItrErr::new(
-                DeferredError,
-                &format!("defer requires concrete contract frame: {}", e),
-            )
-        })?,
+    let Some(caddr) = bindings.state_this.clone() else {
+        return itr_err_fmt!(DeferredError, "defer requires contract context");
     };
     let intent_id = if argv.is_nil() {
         None

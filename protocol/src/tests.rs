@@ -192,13 +192,13 @@ struct TestLevelNoopAction {
 }
 
 impl TestLevelNoopAction {
-    const TOP_ONLY_WITH_GUARD_KIND: u16 = 0x07f2;
+    const TOP_ONLY_CAN_WITH_GUARD_KIND: u16 = 0x07f2;
     const TOP_UNIQUE_KIND: u16 = 0x07f3;
     const CALL_ONLY_KIND: u16 = 0x07f4;
     const AST_KIND: u16 = 0x07f5;
 
-    fn top_only_with_guard() -> Self {
-        Self::from_kind(Self::TOP_ONLY_WITH_GUARD_KIND).unwrap()
+    fn top_only_can_with_guard() -> Self {
+        Self::from_kind(Self::TOP_ONLY_CAN_WITH_GUARD_KIND).unwrap()
     }
 
     fn top_unique() -> Self {
@@ -215,8 +215,8 @@ impl TestLevelNoopAction {
 
     fn meta(kind: u16) -> Ret<(ActScope, &'static str)> {
         match kind {
-            Self::TOP_ONLY_WITH_GUARD_KIND => {
-                Ok((ActScope::TOP_ONLY_WITH_GUARD, "Test top-only-with-guard"))
+            Self::TOP_ONLY_CAN_WITH_GUARD_KIND => {
+                Ok((ActScope::TOP_ONLY_CAN_WITH_GUARD, "Test top-only-can-with-guard"))
             }
             Self::TOP_UNIQUE_KIND => Ok((ActScope::TOP_UNIQUE, "Test top-unique")),
             Self::CALL_ONLY_KIND => Ok((ActScope::CALL_ONLY, "Test call-only")),
@@ -303,7 +303,7 @@ impl Description for TestLevelNoopAction {
 impl ActExec for TestLevelNoopAction {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         if !ctx.env().chain.fast_sync {
-            check_action_scope(ctx.exec_from(), self)?;
+            precheck_runtime_action(ctx.env().tx.ty, self, ctx.exec_from())?;
         }
         Ok((0, vec![]))
     }
@@ -360,7 +360,7 @@ impl Description for TestType3GasAction {
 impl ActExec for TestType3GasAction {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         if !ctx.env().chain.fast_sync {
-            check_action_scope(ctx.exec_from(), self)?;
+            precheck_runtime_action(ctx.env().tx.ty, self, ctx.exec_from())?;
         }
         Ok((*self.gas_used as u32, vec![]))
     }
@@ -421,7 +421,7 @@ impl Description for TestStateSetAction {
 impl ActExec for TestStateSetAction {
     fn execute(&self, ctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
         if !ctx.env().chain.fast_sync {
-            check_action_scope(ctx.exec_from(), self)?;
+            precheck_runtime_action(ctx.env().tx.ty, self, ctx.exec_from())?;
         }
         ctx.state().set(vec![*self.key], vec![*self.val]);
         match *self.mode {
@@ -670,7 +670,7 @@ fn test_tx_execute_must_reject_action_count_over_max() {
 }
 
 #[test]
-fn test_tx_execute_must_reject_invalid_top_only_with_guard_before_any_action_runs() {
+fn test_tx_execute_must_reject_invalid_top_only_can_with_guard_before_any_action_runs() {
     init_test_registry();
 
     use crate::context::ContextInst;
@@ -686,7 +686,7 @@ fn test_tx_execute_must_reject_invalid_top_only_with_guard_before_any_action_run
     writer.hacash = Amount::mei(1);
     tx.actions.push(Box::new(writer)).unwrap();
     tx.actions
-        .push(Box::new(TestLevelNoopAction::top_only_with_guard()))
+        .push(Box::new(TestLevelNoopAction::top_only_can_with_guard()))
         .unwrap();
     tx.fill_sign(&main_acc).unwrap();
 
@@ -706,7 +706,7 @@ fn test_tx_execute_must_reject_invalid_top_only_with_guard_before_any_action_run
     }
 
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
+    assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{}", err);
     let bls = crate::state::CoreState::wrap(ctx.state())
         .balance(&main)
         .unwrap_or_default();
@@ -714,117 +714,117 @@ fn test_tx_execute_must_reject_invalid_top_only_with_guard_before_any_action_run
 }
 
 #[test]
-fn test_analyze_tx_action_set_rejects_guard_only_ast_select() {
+fn test_precheck_tx_actions_rejects_guard_only_ast_select() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
         HeightScope::new(),
     )]))];
 
-    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
     assert!(err.contains("all GUARD"), "{}", err);
 }
 
 #[test]
-fn test_analyze_tx_action_set_rejects_guard_only_ast_if() {
+fn test_precheck_tx_actions_rejects_guard_only_ast_if() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(AstIf::create_by(
         AstSelect::create_list(vec![Box::new(HeightScope::new())]),
         AstSelect::nop(),
         AstSelect::nop(),
     ))];
 
-    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
     assert!(err.contains("all GUARD"), "{}", err);
 }
 
 #[test]
-fn test_analyze_tx_action_set_allows_mixed_guard_and_non_guard_leafs_in_ast() {
+fn test_precheck_tx_actions_allows_mixed_guard_and_non_guard_leafs_in_ast() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![
         Box::new(HeightScope::new()),
         Box::new(HacToTrs::new()),
     ]))];
 
-    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
+    precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap();
 }
 
 #[test]
-fn test_analyze_tx_action_set_rejects_duplicate_top_unique() {
+fn test_precheck_tx_actions_rejects_duplicate_top_unique() {
     let actions: Vec<Box<dyn Action>> = vec![
         Box::new(TestLevelNoopAction::top_unique()),
         Box::new(TestLevelNoopAction::top_unique()),
     ];
 
-    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
     assert!(err.contains("TOP_UNIQUE"), "{}", err);
 }
 
 #[test]
-fn test_analyze_tx_action_set_rejects_nested_top_only_with_guard_in_ast() {
+fn test_precheck_tx_actions_rejects_nested_top_only_can_with_guard_in_ast() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
-        TestLevelNoopAction::top_only_with_guard(),
+        TestLevelNoopAction::top_only_can_with_guard(),
     )]))];
 
-    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
-    assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
+    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{}", err);
 }
 
 #[test]
-fn test_analyze_tx_action_set_rejects_call_only_in_tx_tree() {
+fn test_precheck_tx_actions_rejects_call_only_in_tx_tree() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::call_only())];
 
-    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
     assert!(
-        err.contains("CALL_ONLY") && err.contains("tx top level"),
+        err.contains("CALL_ONLY") && err.contains("TOP"),
         "{}",
         err
     );
 }
 
 #[test]
-fn test_check_action_ast_tree_depth_accepts_ast_leaf_action() {
+fn test_precheck_runtime_action_depth_accepts_ast_leaf_action() {
     let act = TestLevelNoopAction::ast();
-    check_action_ast_tree_depth(&act).unwrap();
+    precheck_runtime_action(TransactionType3::TYPE, &act, ExecFrom::Top).unwrap();
 }
 
 #[test]
-fn test_analyze_tx_action_set_allows_top_level_ast_leaf_action_on_type3() {
+fn test_precheck_tx_actions_allows_top_level_ast_leaf_action_on_type3() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::ast())];
-    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
+    precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap();
 }
 
 #[test]
-fn test_analyze_tx_action_set_for_tx_rejects_type2_top_level_ast_leaf_action() {
+fn test_precheck_tx_actions_rejects_type2_top_level_ast_leaf_action() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::ast())];
-    let err = analyze_tx_action_set_for_tx(TransactionType2::TYPE, &actions).unwrap_err();
+    let err = precheck_tx_actions(TransactionType2::TYPE, false, &actions).unwrap_err();
     assert!(err.contains("requires tx type >= 3"), "{}", err);
 }
 
 #[test]
-fn test_analyze_tx_action_set_allows_nested_ast_leaf_action_on_type3() {
+fn test_precheck_tx_actions_allows_nested_ast_leaf_action_on_type3() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(AstSelect::create_list(vec![Box::new(
         TestLevelNoopAction::ast(),
     )]))];
-    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
+    precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap();
 }
 
 #[test]
 fn test_guard_level_error_message_reports_top_and_ast_scope() {
-    let err = check_action_scope(ExecFrom::Call, &HeightScope::new()).unwrap_err();
+    let err = precheck_runtime_action(TransactionType3::TYPE, &HeightScope::new(), ExecFrom::Call).unwrap_err();
     assert!(err.contains("GUARD") && err.contains("CALL"), "{}", err);
 }
 
 #[test]
-fn test_check_action_scope_allows_call_only_from_action_call_at_top_ctx() {
-    check_action_scope(ExecFrom::Call, &TestLevelNoopAction::call_only()).unwrap();
+fn test_precheck_runtime_action_allows_call_only_from_action_call_at_top_ctx() {
+    precheck_runtime_action(TransactionType3::TYPE, &TestLevelNoopAction::call_only(), ExecFrom::Call).unwrap();
 }
 
 #[test]
-fn test_check_action_scope_rejects_call_only_without_action_call_origin() {
-    let err = check_action_scope(ExecFrom::Top, &TestLevelNoopAction::call_only()).unwrap_err();
+fn test_precheck_runtime_action_rejects_call_only_without_action_call_origin() {
+    let err = precheck_runtime_action(TransactionType3::TYPE, &TestLevelNoopAction::call_only(), ExecFrom::Top).unwrap_err();
     assert!(err.contains("CALL_ONLY") && err.contains("TOP"), "{}", err);
 }
 
 #[test]
-fn test_check_action_scope_rejects_guard_from_action_call() {
-    let err = check_action_scope(ExecFrom::Call, &HeightScope::new()).unwrap_err();
+fn test_precheck_runtime_action_rejects_guard_from_action_call() {
+    let err = precheck_runtime_action(TransactionType3::TYPE, &HeightScope::new(), ExecFrom::Call).unwrap_err();
     assert!(err.contains("GUARD") && err.contains("CALL"), "{}", err);
 }
 
@@ -1241,7 +1241,7 @@ fn test_ctx_action_call_actenv_does_not_require_tx_main_signature() {
     use crate::state::EmptyLogs;
     use crate::transaction::TransactionType2;
 
-    let tx = TransactionType2::default();
+    let tx = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), Amount::mei(1), 1730000000);
 
     let mut env = Env::default();
     env.tx = crate::transaction::create_tx_info(&tx);
@@ -1285,8 +1285,8 @@ fn test_tx_req_sign_must_collect_nested_ast_child_actions() {
 }
 
 #[test]
-fn test_check_action_scope_rejects_ast_leaf_from_action_call() {
-    let err = check_action_scope(ExecFrom::Call, &TestLevelNoopAction::ast()).unwrap_err();
+fn test_precheck_runtime_action_rejects_ast_leaf_from_action_call() {
+    let err = precheck_runtime_action(TransactionType3::TYPE, &TestLevelNoopAction::ast(), ExecFrom::Call).unwrap_err();
     assert!(err.contains("AST") && err.contains("CALL"), "{}", err);
 }
 
@@ -1326,12 +1326,13 @@ fn test_tx_req_sign_astif_must_collect_cond_if_else_and_filter_scriptmh() {
 }
 
 #[test]
-fn test_analyze_tx_action_set_allows_top_only_with_guard_plus_guard_only_ast_wrapper() {
+fn test_precheck_tx_actions_rejects_top_only_can_with_guard_plus_guard_only_ast_wrapper() {
     let actions: Vec<Box<dyn Action>> = vec![
-        Box::new(TestLevelNoopAction::top_only_with_guard()),
+        Box::new(TestLevelNoopAction::top_only_can_with_guard()),
         Box::new(AstSelect::create_list(vec![Box::new(HeightScope::new())])),
     ];
-    analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap();
+    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{}", err);
 }
 
 #[test]
@@ -1423,13 +1424,13 @@ fn test_ast_if_rethrow_preserves_revert_kind() {
 }
 
 #[test]
-fn test_analyze_tx_action_set_rejects_top_only_with_guard_plus_non_guard_ast_wrapper() {
+fn test_precheck_tx_actions_rejects_top_only_can_with_guard_plus_non_guard_ast_wrapper() {
     let actions: Vec<Box<dyn Action>> = vec![
-        Box::new(TestLevelNoopAction::top_only_with_guard()),
+        Box::new(TestLevelNoopAction::top_only_can_with_guard()),
         Box::new(AstSelect::create_list(vec![Box::new(HacToTrs::new())])),
     ];
-    let err = analyze_tx_action_set_for_tx(TransactionType3::TYPE, &actions).unwrap_err();
-    assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{}", err);
+    let err = precheck_tx_actions(TransactionType3::TYPE, false, &actions).unwrap_err();
+    assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{}", err);
 }
 
 #[test]

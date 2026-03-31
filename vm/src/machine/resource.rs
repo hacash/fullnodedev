@@ -992,9 +992,13 @@ impl DeferredRegistry {
                 "defer is closed during deferred dispatch"
             );
         }
-        if self.seen.insert(entry.clone()) {
-            self.entries.push(entry);
+        if !self.seen.insert(entry.clone()) {
+            return itr_err_fmt!(
+                ItrErrCode::DeferredError,
+                "duplicate deferred cleanup hook registration"
+            );
         }
+        self.entries.push(entry);
         Ok(())
     }
 
@@ -1377,7 +1381,7 @@ mod resource_tests {
     }
 
     #[test]
-    fn defer_callbacks_are_deduped_and_drained_lifo() {
+    fn defer_callbacks_reject_duplicates_and_drain_lifo() {
         let mut callbacks = DeferCallbacks::new();
         let a = ContractAddress::from_unchecked(Address::create_contract([1u8; 20]));
         let b = ContractAddress::from_unchecked(Address::create_contract([2u8; 20]));
@@ -1387,12 +1391,14 @@ mod resource_tests {
                 intent_id: None,
             })
             .unwrap();
-        callbacks
+        let err = callbacks
             .register(DeferredEntry {
                 addr: a.clone(),
                 intent_id: None,
             })
-            .unwrap();
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::DeferredError);
+        assert!(err.1.contains("duplicate deferred cleanup hook"));
         callbacks
             .register(DeferredEntry {
                 addr: b.clone(),

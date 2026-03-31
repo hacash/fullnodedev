@@ -39,7 +39,8 @@ impl GasTable {
         // Arithmetic: binary (see module doc ladder)
         gst.set(2, &[ADD, SUB, MAX, MIN, INC, DEC]);
         gst.set(4, &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
-        gst.set(6, &[POW, ADDMOD, CLAMP, SQRT, SQRTUP]);
+        gst.set(5, &[SQRT, SQRTUP]);
+        gst.set(6, &[POW, ADDMOD, CLAMP]);
         gst.set(32, &[RPOW]);
         // Arithmetic: triple-operand mul pipeline
         gst.set(8, &[MULADD, MULSUB]);
@@ -170,8 +171,8 @@ impl GasExtra {
             memory_key_cost:    20,
             global_key_cost:    32,
             storege_value_base_size: 22,
-            storage_key_cost: 2048,
-            storage_edit_mul:    3,
+            storage_key_cost: 1024,
+            storage_edit_mul:    4,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
             stack_write_div:    28,
@@ -358,8 +359,8 @@ mod gas_budget_codec_tests {
             ),
             (3, vec![BSHR, BSHL, BXOR, BOR, BAND]),
             (4, vec![MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]),
-            (5, vec![MGET, GGET, NEWLIST, NEWMAP]),
-            (6, vec![POW, ADDMOD, CLAMP, SQRT, SQRTUP]),
+            (5, vec![MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP]),
+            (6, vec![POW, ADDMOD, CLAMP]),
             (
                 8,
                 vec![MULADD, MULSUB, PACKLIST, PACKMAP, PACKTUPLE],
@@ -429,7 +430,8 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.memory_key_cost, 20);
         assert_eq!(gst.global_key_cost, 32);
         assert_eq!(gst.new_contract_load, 32);
-        assert_eq!(gst.storage_key_cost, 2048);
+        assert_eq!(gst.storage_key_cost, 1024);
+        assert_eq!(gst.storage_edit_mul, 4);
         assert_eq!(gst.storege_value_base_size, 22);
     }
 
@@ -479,12 +481,12 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.log_bytes(0), 0);
         assert_eq!(gst.log_bytes(37), 37);
 
-        assert_eq!(gst.storage_read(0), 16);
-        assert_eq!(gst.storage_read(7), 23);
-        assert_eq!(gst.storage_read(8), 24);
-        assert_eq!(gst.storage_write(0), 32);
-        assert_eq!(gst.storage_write(5), 42);
-        assert_eq!(gst.storage_write(6), 44);
+        assert_eq!(gst.storage_read(0), 22);
+        assert_eq!(gst.storage_read(7), 29);
+        assert_eq!(gst.storage_read(8), 30);
+        assert_eq!(gst.storage_write(0), 44);
+        assert_eq!(gst.storage_write(5), 54);
+        assert_eq!(gst.storage_write(6), 56);
         assert_eq!(gst.compile_bytes(0), 0);
         assert_eq!(gst.compile_bytes(15), 2);
         assert_eq!(gst.compile_bytes(16), 2);

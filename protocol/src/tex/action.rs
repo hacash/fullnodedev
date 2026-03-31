@@ -11,7 +11,7 @@ action_define! { TexCellAct, 22,
     (self, format!("Execute {} tex cells by {}", self.cells.length(), self.addr)),
     (self, ctx, _gas {
         self.addr.must_privakey()?;
-        // check signature
+        // Check signature on the standalone TEX bundle.
         let thx = self.get_sign_stuff();
         if ! verify_signature(&thx, &self.addr, &self.sign) {
             return xerrf!("address {} signature verification failed in tex cell action", self.addr)
@@ -23,7 +23,8 @@ action_define! { TexCellAct, 22,
 
 impl TexCellAct {
     fn get_sign_stuff(&self) -> Hash {
-        // Intentionally signs only addr+cells so the same authorized TEX bundle remains replayable across transactions by design.
+        // Intentionally sign only addr+cells.
+        // TEX bundles are designed to be replayable across transactions.
         let stf = vec![self.addr.serialize(), self.cells.serialize()].concat();
         Hash::from(sha3(&stf))
     }

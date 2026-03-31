@@ -113,6 +113,8 @@ impl<'a> ContextInst<'a> {
 
     #[inline]
     fn bind_tx(&mut self, txr: &dyn TransactionRead) {
+        // SAFETY: `txr` is borrowed from the caller for the entire lifetime of this bound context.
+        // We only store it while the context is executing that tx and replace it on the next bind/reset.
         self.txr = unsafe {
             std::mem::transmute::<&dyn TransactionRead, &'static dyn TransactionRead>(txr)
         };
@@ -235,7 +237,8 @@ impl Context for ContextInst<'_> {
             let Some(vm) = (*ctx).vm.as_deref_mut() else {
                 return xerrf!("vm state invalid after assign")
             };
-            // Re-entry must observe the same VM instance while also passing the same context as host.
+            // SAFETY: we must re-enter the same VM instance while also passing the same context as host.
+            // `vm` is not moved during this call, `ctx` stays at a stable address, and neither reference escapes.
             vm.call(&mut *ctx as &mut dyn Context, req)
         }
     }
@@ -322,6 +325,8 @@ impl Context for ContextInst<'_> {
             unsafe {
                 let ctx = self as *mut Self;
                 let vm = (*ctx).vm.as_mut().unwrap();
+                // SAFETY: deferred replay must use the same live VM instance and the same context object.
+                // The VM stays owned by this context for the duration of the call and no alias escapes.
                 vm.drain_deferred(&mut *ctx)
             }
         } else {

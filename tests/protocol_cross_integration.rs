@@ -77,6 +77,14 @@ fn build_maincall_hac_transfer(to: &Address, mei: u64) -> ContractMainCall {
     ContractMainCall::from_bytecode(lang_to_bytecode(&script).unwrap()).unwrap()
 }
 
+fn build_vm_defer_call(lib_idx: u8, func_name: &str) -> ContractMainCall {
+    let sig = vm::rt::calc_func_sign(func_name);
+    let mut codes = vec![vm::rt::Bytecode::PNIL as u8, vm::rt::Bytecode::CALLEXT as u8, lib_idx];
+    codes.extend_from_slice(&sig);
+    codes.push(vm::rt::Bytecode::END as u8);
+    ContractMainCall::from_bytecode(codes).unwrap()
+}
+
 unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::ContextInst<'a> {
     unsafe { &mut *(ctx as *mut dyn Context as *mut protocol::context::ContextInst<'a>) }
 }
@@ -934,7 +942,7 @@ fn test_ast_tree_depth_limit_6_rejects_7th_level() {
     let lvl2 = AstSelect::create_list(vec![Box::new(lvl3)]);
     let lvl1 = AstSelect::create_list(vec![Box::new(lvl2)]);
 
-    let err = check_action_ast_tree_depth(&lvl1).unwrap_err();
+    let err = precheck_runtime_action(TransactionType3::TYPE, &lvl1, ExecFrom::Top).unwrap_err();
     assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
     assert_eq!(ast_state_get_u8(&mut ctx, 105), None);
 }
@@ -2700,7 +2708,7 @@ fn test_ast_vm_delay_init_depth6_revert_and_fault_channels() {
         vec![Box::new(lvl3), Box::new(AstTestSet::create_by(233, 233))],
     );
 
-    let err = check_action_ast_tree_depth(&root).unwrap_err();
+    let err = precheck_runtime_action(TransactionType3::TYPE, &root, ExecFrom::Top).unwrap_err();
     assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
 
     // precheck rejects the whole root AST node before execution
@@ -3613,7 +3621,7 @@ fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3662,7 +3670,7 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3716,7 +3724,7 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -4023,7 +4031,7 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_initialize(10000).unwrap();
 
@@ -4058,7 +4066,7 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
@@ -4193,7 +4201,7 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();

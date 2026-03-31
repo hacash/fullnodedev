@@ -14,6 +14,8 @@ pub struct Executor {
 
 impl Drop for Executor {
     fn drop(&mut self) {
+        // SAFETY: `runtime` is wrapped in `ManuallyDrop` specifically so drop can move it back into the pool exactly once.
+        // After `take`, `self.runtime` must not be read again.
         let runtime = unsafe { std::mem::ManuallyDrop::take(&mut self.runtime) };
         global_runtime_pool().checkin(runtime);
     }
@@ -126,6 +128,8 @@ impl Machine {
     ) -> VmrtRes<Value> {
         self.frames.push(Box::new(CallFrame::new()));
         // Keep the active root call frame at a stable heap address so re-entry can grow `self.frames` safely.
+        // SAFETY: the frame itself lives on the heap inside `Box<CallFrame>`, so Vec growth may move the box pointer
+        // in the Vec but does not move the pointee. The pointee remains valid until we pop and reclaim it below.
         let root_ptr = self
             .frames
             .last_mut()

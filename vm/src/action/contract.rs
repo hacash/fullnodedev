@@ -8,7 +8,7 @@ macro_rules! vmsto {
 }
 
 action_define! { ContractDeploy, 40,
-    ActScope::TOP_ONLY_WITH_GUARD, 3, false, [],
+    ActScope::TOP_ONLY_CAN_WITH_GUARD, 3, false, [],
     {
         protocol_cost: Amount
         nonce: Uint4
@@ -62,7 +62,7 @@ action_define! { ContractDeploy, 40,
 }
 
 action_define! { ContractUpdate, 41,
-    ActScope::TOP_ONLY_WITH_GUARD, 3, false, [],
+    ActScope::TOP_ONLY_CAN_WITH_GUARD, 3, false, [],
     {
         protocol_cost: Amount
         address: Address // contract address
