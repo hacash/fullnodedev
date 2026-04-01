@@ -1,5 +1,5 @@
 const HXS: usize = 32; // hash size
-const DIFFICULTY_UPGRADE_EPOCH: u64 = 2564;
+const DIFFICULTY_UPGRADE_EPOCH: u64 = 2563; // 738144 height
 
 type CachedBlockIntro = (u64, u32, [u8; HXS]); // (time, diffnum, diffhash)
 

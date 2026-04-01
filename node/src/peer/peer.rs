@@ -1,3 +1,4 @@
+use tokio::sync::Notify;
 
 static PEER_AUTO_ID_INCREASE: AtomicU64 = AtomicU64::new(0);
 
@@ -7,14 +8,12 @@ pub struct Peer {
     pub id: u64,
     pub key: PeerKey,
     pub name: String,
-    pub is_public: bool, // is public IP
-    pub is_cntome: bool, // is connect to me
+    pub is_public: bool,
+    pub is_cntome: bool,
     pub addr: SocketAddr,
-    // will change
     pub active: StdMutex<SystemTime>,
-    pub conn_write: AsyncMutex<Option<OwnedWriteHalf>>,
+    pub conn_write: StdMutex<Option<OwnedWriteHalf>>,
     pub close_notify: Arc<Notify>,
-    // data
     pub knows: Knowledge,
 }
 
@@ -26,8 +25,6 @@ impl Peer {
 
     pub fn nick(&self) -> String {
         let mut nick = self.name.clone();
-        // let kpx: [u8; 4] = self.key.clone()[0..4].try_into().unwrap();
-        // nick += format!("[ {} ]", kpx[0]).as_str(); return nick; // debug
         if self.is_public {
             nick += format!("<{}>", self.addr).as_str();
         }
@@ -38,21 +35,23 @@ impl Peer {
         *self.active.lock().unwrap() = SystemTime::now();
     }
 
+    fn take_conn_write(&self) -> Option<OwnedWriteHalf> {
+        self.conn_write.lock().unwrap().take()
+    }
+
     pub async fn disconnect(&self) {
-        // println!("----- call fn disconnect peer: {}", self.nick());
         self.close_notify.notify_one();
-        let mayconn = self.conn_write.lock().await.take();
+        let mayconn = self.take_conn_write();
         if let Some(mut w) = mayconn {
             let close_msg = tcp_create_msg(MSG_CLOSE, vec![]);
-            let _ = tcp_send(&mut w, &close_msg).await; // send close mark
-            // drop write half to close
+            let _ = tcp_send(&mut w, &close_msg).await;
         }
     }
 
     pub async fn create_with_msg(mut stream: TcpStream, ty: u8, msg: Vec<u8>, mynodeinfo: Vec<u8>) -> Ret<(Arc<Peer>, OwnedReadHalf)> {
         let mut mykeyname = mynodeinfo;
         if mykeyname.len() > PEER_KEY_SIZE*2 {
-            mykeyname = mykeyname[4..].to_vec(); // drop port
+            mykeyname = mykeyname[4..].to_vec();
         }
         let conn  = &mut stream;
         let mut addr = conn.peer_addr().unwrap();
@@ -68,48 +67,37 @@ impl Peer {
             oginport = u16::from_be_bytes( bufcut!(msg, 2, 4) );
             idnamebts = &msg[4..];
         }else if MSG_ANSWER_PEER == ty {
-            is_public = !addr.ip().is_loopback(); // connect to public
+            is_public = !addr.ip().is_loopback();
             idnamebts = &msg[..];
         }else{
-            // unsupport msg ty
             return errf!("unsupported msg type {}", ty)
         }
         if idnamebts.len() < 32 {
-            return errf!("msg length too short (min 4)")
+            return errf!("msg length too short (min 32)")
         }
         let peerkey = bufcut!(idnamebts, 0, PEER_KEY_SIZE);
         let name = Fixed16::from( bufcut!(idnamebts, PEER_KEY_SIZE, PEER_KEY_SIZE*2) ).to_readable().replace(" ", "");
         if peerkey == mykeyname[0..PEER_KEY_SIZE] {
             return  errf!("cannot connect to self")
         }
-        // dial to check is public ip
         if MSG_REPORT_PEER == ty {
-            // to answer mys node info, report my node info: mark+port+id+name
-            // println!("&&&& MSG_ANSWER_PEER to answer mys node info, report my node info: mark+port+id+name");
             tcp_send_msg(conn, MSG_ANSWER_PEER, mykeyname.clone()).await?;
-            // check is public
             if oginport > 0 {
                 let mut pubaddr = addr.clone();
                 pubaddr.set_port(oginport);
                 if let Ok(pb) = tcp_dial_to_check_is_public_id(pubaddr, &peerkey, 3).await {
                     if pb && !addr.ip().is_loopback() {
-                        is_public = true; // public connect to me
+                        is_public = true;
                         addr.set_port(oginport);
-                        // println!("&&&& public connect to me!!!")
                     }
-                }else{
-                    // println!("&&&& tcp_dial_to_check_is_public_id error !!!!!!!!!!!11!!!!!!!!!!")
                 }
             }
         }
-        
-        // conn split
+
         let (read_half, write_half) = stream.into_split();
 
-        // cid
         let atid = PEER_AUTO_ID_INCREASE.fetch_add(1, Ordering::Relaxed) + 1;
 
-        // create
         let peer = Peer {
             id: atid,
             key: peerkey,
@@ -124,7 +112,6 @@ impl Peer {
         };
         let pptr = Arc::new(peer);
 
-        // println!("create peer {} successfully: {:?}", peer.desc(), peer);
         Ok((pptr, read_half))
     }
 

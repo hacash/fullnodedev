@@ -1,10 +1,7 @@
 
-/////////////////// DIAL ///////////////////
-
-
 pub async fn tcp_dial_connect(addr: SocketAddr, outsec: u64) -> Ret<TcpStream> {
     let Ok(res) = timeout(secs(outsec), TcpStream::connect(addr)).await else {
-        return errf!("tcp_dial_connect addr {} timeout", addr)
+        return errf!("tcp_dial_connect addr {} timeout.", addr)
     };
     terrunbox!( res )
 }
@@ -20,7 +17,6 @@ pub async fn tcp_dial_handshake_send_msg_and_read_all(addr: SocketAddr, msgty: u
     let mut stream = tcp_dial_handshake(addr, outsec).await?;
     let conn = &mut stream;
     tcp_send_msg(conn, msgty, vec![]).await?;
-    // read all and no timeout
     tcp_read(conn, 0, outsec).await
 }
 
@@ -31,32 +27,27 @@ pub async fn tcp_dial_to_check_is_public_id(addr: SocketAddr, pid: &PeerKey, out
     tcp_send_msg(conn, MSG_REQUEST_NODE_KEY_FOR_PUBLIC_CHECK, vec![]).await?;
     let retmsg = tcp_read(conn, PEER_KEY_SIZE, 3).await?;
     if *pid != *retmsg {
-        return errf!("peer id does not match")
+        return errf!("peer id not match")
     }
     Ok(true)
 }
-
 
 
 /////////////////// READ WRITE ///////////////////
 
 
 pub async fn tcp_check_handshake(conn: &mut (impl AsyncRead + AsyncWrite + Unpin), outsec: u64) -> Rerr {
-    // send handshake
     let handshake = P2P_HAND_SHAKE_MAGIC_NUMBER.to_be_bytes();
     terrunbox!( AsyncWriteExt::write_all(conn, &handshake).await )?;
-    // check magic
     let magicn = tcp_read(conn, 4, outsec).await?;
     if magicn != handshake {
-        return errf!("tcp handshake magic number invalid")
+        return errf!("tcp handshake magic number error")
     }
     Ok(())
 }
 
 pub async fn tcp_handshake_read_one_msg(conn: &mut (impl AsyncRead + AsyncWrite + Unpin), outsec: u64) -> Ret<(u8, Vec<u8>)> {
-    // check handshake
     tcp_check_handshake(conn, outsec+2).await?;
-    // read msg
     tcp_read_msg(conn, outsec).await
 }
 
@@ -86,21 +77,13 @@ pub async fn tcp_send(conn: &mut (impl AsyncWrite + Unpin), body: &Vec<u8>) -> R
 /////////////////// READ ///////////////////
 
 
-// return: ty body
 pub async fn tcp_read_msg(conn: &mut (impl AsyncRead + std::marker::Unpin), outsec: u64) -> Ret<(u8, Vec<u8>)> {
-    // println!("&&&& tcp_read_msg outsec={} ...", outsec);
-    // println!("&&&& tcp_read(conn, 4, outsec) ...");
     let size = tcp_read(conn, 4, outsec).await?;
-    // println!("&&&& tcp_read(conn, 4, outsec) ok. size={}", size.to_hex());
     let size = u32::from_be_bytes( bufcut!(size, 0, 4) );
     if size < 1 || size > P2P_MSG_DATA_MAX_SIZE {
-        return errf!("tcp msg size invalid")
+        return errf!("tcp msg size error")
     }
-    // println!("&&&& tcp_read(conn, size as usize, outsec) ... size={}", size);
     let tybody = tcp_read(conn, size as usize, outsec).await?;
-    // println!("&&&& tcp_read(conn, size as usize, outsec) ok. body len={}", tybody.len());
-    // println!("&&&& tcp_read_msg ok.");
-    // ok
     Ok((tybody[0], tybody[1..].to_vec()))
 }
 
@@ -110,32 +93,24 @@ pub async fn tcp_read(conn: &mut (impl AsyncRead + std::marker::Unpin), readlen:
     let is_time_out = outsec > 0 && outsec < u64::MAX;
     let mut buf = vec![];
     if is_read_all {
-
-        // read all
         let ft = AsyncReadExt::read_to_end(conn, &mut buf);
         if is_time_out {
-            // timeout
             if let Err(_) = timeout(secs(outsec), ft).await {
                 return errf!("tcp read timeout")
             }
         }else{
             terrunbox!( ft.await )?;
         }
-
     }else{
-        // read length
         buf = vec![0u8; readlen];
         let ft = AsyncReadExt::read_exact(conn, &mut buf);
         if is_time_out {
-            // timeout
             if let Err(_) = timeout(secs(outsec), ft).await {
                 return errf!("tcp read timeout")
             }
         }else{
             terrunbox!( ft.await )?;
         }
-
     }
-    // ok finish
     Ok(buf)
 }

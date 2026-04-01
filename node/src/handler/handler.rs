@@ -1,4 +1,3 @@
-
 pub struct MsgHandler {
     engine: Arc<dyn Engine>,
     txpool: Arc<dyn TxPool>,
@@ -9,9 +8,8 @@ pub struct MsgHandler {
 
     doing_sync: AtomicU64,
     knows: Knowledge,
-    // exiter: Exiter,
 
-    inserting: StdMutex<bool>, // is exited
+    inserting: StdMutex<bool>,
 }
 
 impl MsgHandler {
@@ -26,7 +24,6 @@ impl MsgHandler {
             blktxch: Some(rx).into(),
             doing_sync: AtomicU64::new(0),
             knows: Knowledge::new(200),
-            // exiter: Exiter::new(),
             inserting: StdMutex::new(false),
         }
     }
@@ -49,61 +46,31 @@ impl MsgHandler {
     }
 
     pub fn exit(&self) {
-        // wait block inserting finish
         let lk = self.inserting.lock().unwrap();
-        // self.exiter.exit();
         drop(lk)
     }
 
 }
 
 
-/**
-* handle message
-*/
 impl MsgHandler {
 
     pub async fn on_connect(&self, peer: Arc<Peer>) {
-        // println!("on_connect peer={}", peer.nick());
-        // println!("&&&& peer.send_msg(MSG_REQ_STATUS, vec![]) ...");
         let _ = peer.send_msg(MSG_REQ_STATUS, vec![]).await;
-        // println!("&&&& peer.send_msg(MSG_REQ_STATUS, vec![]) ok.");
-        // if peer.is_cntome { // peer is connect to me
         let eng = self.engine.clone();
         let txp = self.txpool.clone();
         if let Err(e) = self.engine.minter().p2p_on_connect(peer, eng, txp) {
             println!("minter p2p on connect error: {}", e)
         }
-        /*
-        if let Ok(Some(txp)) = self.txpool.first_at(TXGID_DIAMINT) {
-            // send highest bidding diamond mint tx
-            let _ = peer.send_msg(MSG_TX_SUBMIT, txp.data.to_vec()).await;
-        }
-        */
     }
-    
+
     pub async fn on_disconnect(&self, _peer: Arc<Peer>) {
-        // println!("- on disconnect peer = {}", peer.nick());
-        // do nothing
     }
-    
+
     pub async fn on_message(&self, peer: Arc<Peer>, ty: u16, body: Vec<u8>) {
-        self.handle_p2p_arrive(peer, ty, body).await;
-    }
-    
-    async fn handle_p2p_arrive(&self, peer: Arc<Peer>, ty: u16, body: Vec<u8>) {
         match ty {
             MSG_TX_SUBMIT =>      { let _ = self.blktx.send(BlockTxArrive::Tx(Some(peer.clone()), body)).await; },
             MSG_BLOCK_DISCOVER => { let _ = self.blktx.send(BlockTxArrive::Block(Some(peer.clone()), body)).await; },
-            MSG_BLOCK_HASH | MSG_REQ_BLOCK_HASH | MSG_BLOCK | MSG_REQ_BLOCK | MSG_REQ_STATUS | MSG_STATUS => {
-                let _ = self.blktx.send(BlockTxArrive::P2P(peer, ty, body)).await;
-            },
-            _ => (),
-        };
-    }
-
-    async fn handle_p2p_message(&self, peer: Arc<Peer>, ty: u16, body: Vec<u8>) {
-        match ty {
             MSG_BLOCK_HASH =>     { self.receive_hashs(peer, body).await; },
             MSG_REQ_BLOCK_HASH => { self.send_hashs(peer, body).await; },
             MSG_BLOCK =>          { self.receive_blocks(peer, body).await; },

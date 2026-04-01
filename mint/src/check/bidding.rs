@@ -364,7 +364,7 @@ impl BiddingProve {
                 if branch.tip_hash() != *prev {
                     continue;
                 }
-                let max_hash = u32_to_biguint(branch.root_difficulty()).mul(2usize);
+                let max_hash = u32_to_biguint(branch.root_difficulty()).mul(4usize);
                 return Some(biguint_to_hash(&max_hash));
             }
         }

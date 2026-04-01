@@ -1,63 +1,54 @@
 
-
 impl P2PManage {
 
     async fn handle_peer_message(&self, peer: Arc<Peer>, conn_read: OwnedReadHalf) -> Rerr {
-
         let peer1 = peer.clone();
         let peer2 = peer.clone();
         let peer3 = peer.clone();
-        let peersnaprx = self.peersnaprx.clone();
-        let peertabletx = self.peertabletx.clone();
+        let pary1 = self.backbones.clone();
+        let pary2 = self.offshoots.clone();
         let hdl1 = self.msghandler.clone();
         let hdl2 = self.msghandler.clone();
         let hdl3 = self.msghandler.clone();
         tokio::spawn(async move {
-            // handle msg
-            do_handle_pmsg(peersnaprx, peertabletx, hdl2, peer2, conn_read).await;
-            // on disconnect
+            do_handle_pmsg(pary1, pary2, hdl2, peer2, conn_read).await;
             let hdlcp = hdl3;
             tokio::spawn(async move {
                 hdlcp.on_disconnect(peer3).await
             });
         });
-        // on connect
         tokio::spawn(async move {
-            // println!("&&&& hdl1.on_connect(peer1) ...");
             hdl1.on_connect(peer1).await;
-            // println!("&&&& hdl1.on_connect(peer1) ok.");
         });
         Ok(())
     }
 
 }
 
-async fn do_handle_pmsg(peersnaprx: PeerSnapRx, peertabletx: PeerTableCmdTx, msghdl: Arc<MsgHandler>, 
+async fn do_handle_pmsg(pary1: PeerList, pary2: PeerList, msghdl: Arc<MsgHandler>,
     peer: Arc<Peer>, mut conn_read: OwnedReadHalf
 ) {
-    {   // print connect tips
-        let peersnap = peersnaprx.borrow().clone();
-        println!("[Peer] {} connected, total {} public {} subnet.", 
-            peer.nick(), peersnap.backbones.len(), peersnap.offshoots.len());
+    {
+        let ps1 = pary1.lock().unwrap();
+        let ps2 = pary2.lock().unwrap();
+        println!("[Peer] {} connected, total {} public {} subnet.",
+            peer.nick(), ps1.len(), ps2.len());
     }
-    // run loop
     loop {
         let rdres = tokio::select! {
             _ = peer.close_notify.notified() => {
-                break // locally requested close
+                break
             }
-            rd = tcp_read_msg(&mut conn_read, 0) => rd, // no timeout
+            rd = tcp_read_msg(&mut conn_read, 0) => rd,
         };
         if let Err(_) = rdres {
-            break // closed
+            break
         }
         peer.update_active();
         let (ty, msg) = rdres.unwrap();
-        // msg handle
         if MSG_CUSTOMER == ty {
-            // on customer message
             if msg.len() < 2 {
-                continue // ignore invalid msg
+                continue
             }
             let prcp = peer.clone();
             let ty = u16::from_be_bytes( bufcut!(msg,0,2) );
@@ -66,25 +57,20 @@ async fn do_handle_pmsg(peersnaprx: PeerSnapRx, peertabletx: PeerTableCmdTx, msg
             tokio::spawn(async move {
                 msghd1.on_message(prcp, ty, body).await;
             });
-            continue // next
+            continue
         }else if MSG_PING == ty {
-            // replay pong
             let _ = peer.send_p2p_msg(MSG_PONG, vec![]).await;
         }else if MSG_PONG == ty {
-            // do nothing
         }else if MSG_CLOSE == ty {
-            // close the connect
-            break // close
+            break
         }else{
-            // ignore
         }
-        // println!("=== Peer {} msg {} === {}", peer.nick(), ty, hex::encode(msg));
-        // next
     }
-    // 
-    // println!("--- drop the Peer {}", peer.nick());
-    // close the conn
     peer.disconnect().await;
-    // remove from list
-    let _ = peertabletx.send(PeerTableCmd::Remove(peer.clone()));
+    if remove_peer_from_dht_list(pary2, peer.clone()) {
+        return;
+    }
+    if remove_peer_from_dht_list(pary1, peer.clone()) {
+        return;
+    }
 }

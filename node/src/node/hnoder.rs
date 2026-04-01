@@ -1,18 +1,14 @@
 
-
 impl HNoder for HacashNode {
-
 
     fn start(&self, worker: Worker) {
         self.do_start(worker)
     }
 
-
     fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool, only_insert_txpool: bool) -> Rerr {
         let txread = txpkg.tx_read();
         self.engine.try_execute_tx(txread)?;
         if only_insert_txpool {
-            // Direct insert to txpool, no channel, no broadcast
             let minter = self.engine.minter();
             minter.tx_submit(self.engine.as_read(), txpkg)?;
             let _ = self.txpool.insert_by(txpkg.clone(), &|tx| minter.tx_pool_group(tx));
@@ -32,8 +28,6 @@ impl HNoder for HacashNode {
     }
 
     fn submit_block(&self, blkpkg: &BlkPkg, in_async: bool) -> Rerr {
-        // NOT do any check
-        // insert
         let msghdl = self.msghdl.clone();
         let blkbody = blkpkg.data().to_vec();
         let runobj = async move {
@@ -55,7 +49,7 @@ impl HNoder for HacashNode {
         self.txpool.clone()
     }
 
-    fn all_peer_prints(&self) -> Vec<String> { 
+    fn all_peer_prints(&self) -> Vec<String> {
         self.p2p.all_peer_prints()
     }
 
@@ -64,8 +58,6 @@ impl HNoder for HacashNode {
         self.p2p.exit();
         self.engine.exit();
         println!("[Node] network exit.");
-        // wait something to finish
-        // std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
     }
 
 }

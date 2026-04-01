@@ -1,29 +1,23 @@
 
-
-
 impl MsgHandler {
 
     pub async fn start(this: Arc<MsgHandler>, mut worker: Worker) {
-        // let mut closech = this.exiter.signal();
-        let mut blktxch = { 
+        let mut blktxch = {
             this.blktxch.lock().unwrap().take().unwrap()
         };
         loop {
             tokio::select! {
-                // close signal
                 _ = worker.wait() => {
                     break
                 },
-                // block tx arrived
                 msg = blktxch.recv() => {
                     match msg.unwrap() {
                         BlockTxArrive::Tx(peer, tx) => handle_new_tx(this.clone(), peer, tx).await,
                         BlockTxArrive::Block(peer, blk) => handle_new_block(this.clone(), peer, blk).await,
-                        BlockTxArrive::P2P(peer, ty, body) => this.handle_p2p_message(peer, ty, body).await,
                     }
                 }
             }
         }
-        println!("[P2P] handler loop end.");
+        println!("[MsgHandler] loop end.");
     }
 }

@@ -8,9 +8,7 @@ sys          = {path = "../sys"}
 field        = {path = "../field"}
 basis        = {path = "../basis"}
 protocol     = {path = "../protocol"}
-# chain = { path = "../chain" }
-# mint = { path = "../mint" }
-hex = "0.4.3"
-chrono = "0.4.38"
-getrandom = "0.3.2"
-tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread", "sync", "time", "io-util", "net", "macros"] }
+hex          = "0.4.3"
+chrono       = "0.4.38"
+getrandom    = "0.3.2"
+tokio        = { version = "1.41.1", features = ["rt", "rt-multi-thread", "sync", "time", "io-util", "net", "macros"] }

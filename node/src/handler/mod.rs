@@ -10,8 +10,6 @@ use field::*;
 use protocol;
 use sys::*;
 
-// use mint::*;
-
 use super::peer::*;
 
 include! {"msg.rs"}

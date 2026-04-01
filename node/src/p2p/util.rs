@@ -1,53 +1,47 @@
-
-/**
- * ipport(6bytes) + key(16byte)
- */
 fn serialize_public_nodes(peerlist: &Vec<Arc<Peer>>, _max: usize) -> (usize, Vec<u8>) {
     let mut listbts = vec![];
     let mut count = 0usize;
     for p in peerlist {
         if !p.is_public || p.addr.ip().is_loopback() || !p.addr.is_ipv4() {
-            continue
+            continue;
         }
         let ipbts = match p.addr.ip() {
             IpAddr::V4(ip) => ip.octets(),
             _ => continue,
         };
-        listbts.push(vec![
-            ipbts.to_vec(),
-            p.addr.port().to_be_bytes().to_vec(),
-            p.key.to_vec(),
-        ].concat());
-        count+=1;
+        listbts.push(
+            vec![
+                ipbts.to_vec(),
+                p.addr.port().to_be_bytes().to_vec(),
+                p.key.to_vec(),
+            ]
+            .concat(),
+        );
+        count += 1;
         if count >= 200 {
-            break // end max
+            break;
         }
     }
     (count, listbts.concat())
 }
 
-
 fn parse_public_nodes(bts: &[u8]) -> Vec<(PeerKey, SocketAddr)> {
-    let sn = 4 + 2 + 16; // ip port key
+    let sn = 4 + 2 + 16;
     let num = bts.len() / sn;
     let mut addr = Vec::with_capacity(num);
     for i in 0..num {
-        let one = &bts[i*sn .. i*sn+sn];
-        let ip: [u8;4] = one[0..4].try_into().unwrap();
-        let port: [u8;2] = one[4..6].try_into().unwrap() ;
-        let key: [u8;16] = one[6..22].try_into().unwrap() ;
+        let one = &bts[i * sn..i * sn + sn];
+        let ip: [u8; 4] = one[0..4].try_into().unwrap();
+        let port: [u8; 2] = one[4..6].try_into().unwrap();
+        let key: [u8; 16] = one[6..22].try_into().unwrap();
         let ipaddr = IpAddr::from(ip);
         if ipaddr.is_loopback() {
-            continue
+            continue;
         }
-        addr.push((key, SocketAddr::new(
-            ipaddr, 
-            u16::from_be_bytes(port)
-        )));
+        addr.push((key, SocketAddr::new(ipaddr, u16::from_be_bytes(port))));
     }
     addr
 }
-
 
 fn stable_nodes_path_from_conf(cnf: &NodeConf) -> PathBuf {
     join_path(&cnf.data_dir, "stable.nodes")
@@ -67,7 +61,6 @@ fn stable_nodes_cache_expired(path: &PathBuf) -> bool {
     };
     elapsed.as_secs() >= STABLE_NODES_CACHE_EXPIRE_SECS
 }
-
 
 fn read_stable_nodes_file(path: &PathBuf, max: usize) -> Vec<SocketAddr> {
     if max == 0 {
@@ -103,7 +96,7 @@ fn read_stable_nodes_file(path: &PathBuf, max: usize) -> Vec<SocketAddr> {
     res
 }
 
-
+#[allow(unused)]
 fn persist_stable_nodes_file(path: &PathBuf, peers: &[Arc<Peer>], max: usize) {
     let mut out = String::new();
     if max > 0 {
@@ -131,7 +124,7 @@ fn persist_stable_nodes_file(path: &PathBuf, peers: &[Arc<Peer>], max: usize) {
     }
 }
 
-
+#[allow(unused)]
 fn persist_stable_nodes_from_conf(cnf: &NodeConf, peers: &[Arc<Peer>]) {
     if !cnf.use_stable_nodes {
         return;
@@ -140,6 +133,7 @@ fn persist_stable_nodes_from_conf(cnf: &NodeConf, peers: &[Arc<Peer>]) {
     persist_stable_nodes_file(&path, peers, cnf.backbone_peers);
 }
 
+#[allow(unused)]
 fn persist_stable_nodes_async(cnf: NodeConf, peers: Vec<Arc<Peer>>) {
     if !cnf.use_stable_nodes {
         return;
