@@ -97,15 +97,15 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
     let hxtail = blkhx.as_bytes()[30..].to_vec();
     let txs = blkp.block().transaction_count().uint() - 1;
     let _blkts = &timeshow(blkp.block().timestamp().uint())[14..];
-    may_show_miner_detail(&engcnf, &blkp);
+    let mshow = may_show_miner_detail(&engcnf, &blkp);
     let thsx = blkp.block().transaction_hash_list(false);
     let engptr = eng.clone();
     let txpool = this.txpool.clone();
     let inserting = this.inserting.clone();
     let _res = tokio::task::spawn_blocking(move || {
         let _lk = inserting.lock().unwrap();
-        print!("block {} ...{}...{} txs{:2} insert at {} ",
-            blkhei, hex::encode(&hxstrt), hex::encode(&hxtail), txs, &ctshow()[11..]);
+        print!("block {} ...{}...{} txs{:2} insert at {} {}",
+            blkhei, hex::encode(&hxstrt), hex::encode(&hxtail), txs, &ctshow()[11..], mshow);
         let r = engptr.discover(blkp);
         if let Err(e) = &r {
             println!("Error: {}", e);
@@ -136,13 +136,13 @@ fn check_know(mine: &Knowledge, hxkey: &Hash, peer: Option<Arc<Peer>>) -> (bool,
 }
 
 
-fn may_show_miner_detail(engcnf: &EngineConf, blkp: &BlkPkg) {
+fn may_show_miner_detail(engcnf: &EngineConf, blkp: &BlkPkg) -> String {
     if !engcnf.show_miner_name {
-        return
+        return s!("")
     }
     let Ok(cbtx) = blkp.block().coinbase_transaction() else {
-        return
+        return s!("")
     };
     let adrt = cbtx.main().to_readable().drain(..9).collect::<String>();
-    print!("miner: {}...<{}> ", adrt, cbtx.message().to_readable_left());
+    format!("miner: {}...<{}> ", adrt, cbtx.message().to_readable_left())
 }
