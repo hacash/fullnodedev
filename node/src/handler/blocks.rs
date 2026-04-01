@@ -47,25 +47,24 @@ impl MsgHandler {
         let _start_hei = u64::from_be_bytes( bufcut!(buf, 8, 16) );
         let end_hei = u64::from_be_bytes( bufcut!(buf, 16, 24) );
         let persent =  end_hei as f64 / latest_hei as f64 * 100.0;
-        {
-            let isrlk = self.inserting.lock().unwrap();
+        let eng = self.engine.clone();
+        let inserting = self.inserting.clone();
+        let res = tokio::task::spawn_blocking(move || {
+            let _lk = inserting.lock().unwrap();
             flush!("{}({:.2}%) inserting...", end_hei, persent);
-            let res = self.engine.synchronize(blocks);
-            if let Err(e) = res {
-                println!("{}", e);
-                return
-            }
-            println!("ok.");
-            if end_hei >= latest_hei {
-                println!("all blocks sync finished.");
-                return
-            }
-            drop(isrlk);
+            eng.synchronize(blocks)
+        }).await.unwrap();
+        if let Err(e) = res {
+            println!("{}", e);
+            return
         }
-        {
-            let peer = self.switch_peer(peer);
-            send_req_block_msg(self, peer, end_hei+1).await;
+        println!("ok.");
+        if end_hei >= latest_hei {
+            println!("all blocks sync finished.");
+            return
         }
+        let peer = self.switch_peer(peer);
+        send_req_block_msg(self, peer, end_hei+1).await;
     }
 
 }

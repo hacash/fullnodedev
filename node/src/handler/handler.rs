@@ -9,7 +9,7 @@ pub struct MsgHandler {
     doing_sync: AtomicU64,
     knows: Knowledge,
 
-    inserting: StdMutex<bool>,
+    inserting: Arc<StdMutex<bool>>,
 }
 
 impl MsgHandler {
@@ -24,7 +24,7 @@ impl MsgHandler {
             blktxch: Some(rx).into(),
             doing_sync: AtomicU64::new(0),
             knows: Knowledge::new(200),
-            inserting: StdMutex::new(false),
+            inserting: Arc::new(StdMutex::new(false)),
         }
     }
 

@@ -93,24 +93,29 @@ async fn handle_new_block(this: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: 
     }
     let mut blkp = blkpkg.unwrap();
     blkp.set_origin( BlkOrigin::Discover );
-    let hxstrt = &blkhx.as_bytes()[4..12];
-    let hxtail = &blkhx.as_bytes()[30..];
+    let hxstrt = blkhx.as_bytes()[4..12].to_vec();
+    let hxtail = blkhx.as_bytes()[30..].to_vec();
     let txs = blkp.block().transaction_count().uint() - 1;
     let _blkts = &timeshow(blkp.block().timestamp().uint())[14..];
-    let isrlk = this.inserting.lock().unwrap();
-    print!("block {} ...{}...{} txs{:2} insert at {} ",
-        blkhei, hex::encode(hxstrt), hex::encode(hxtail), txs, &ctshow()[11..]);
-    let engptr = eng.clone();
-    let txpool = this.txpool.clone();
     may_show_miner_detail(&engcnf, &blkp);
     let thsx = blkp.block().transaction_hash_list(false);
-    if let Err(e) = engptr.discover(blkp) {
-        println!("Error: {}", e);
-    } else {
-        println!("ok.");
-        mintckr.tx_pool_refresh(engptr.as_ref().as_read(), txpool.as_ref(), thsx, blkhei);
-    }
-    drop(isrlk);
+    let engptr = eng.clone();
+    let txpool = this.txpool.clone();
+    let inserting = this.inserting.clone();
+    let _res = tokio::task::spawn_blocking(move || {
+        let _lk = inserting.lock().unwrap();
+        print!("block {} ...{}...{} txs{:2} insert at {} ",
+            blkhei, hex::encode(&hxstrt), hex::encode(&hxtail), txs, &ctshow()[11..]);
+        let r = engptr.discover(blkp);
+        if let Err(e) = &r {
+            println!("Error: {}", e);
+        } else {
+            println!("ok.");
+            let mintckr2 = engptr.minter();
+            mintckr2.tx_pool_refresh(engptr.as_ref().as_read(), txpool.as_ref(), thsx, blkhei);
+        }
+        r
+    }).await.unwrap();
     // Always broadcast, even on LOW_BID_CACHE_FULL_ERR.
     let p2p = this.p2pmng.lock().unwrap();
     let p2p = p2p.as_ref().unwrap();
