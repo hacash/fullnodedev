@@ -11,16 +11,16 @@ pub enum ValueTy {
     U32         = 4,
     U64         = 5,
     U128        = 6,
-    // U256     = 7 ...      = 8
-    Bytes       = 9,
-    Address     = 10,
-    HeapSlice   = 12,
+    // U256     = 7,
+    Bytes       = 8,
+    Address     = 9,
+    //          = 10,
+    HeapSlice   = 11,
+    //          = 12,
     Tuple       = 13,
     Compo       = 14,
     Handle      = 15
 }
-
-pub const RESERVED_U256_TYPE_NAME: &str = "u256";
 
 impl ValueTy {
 
@@ -84,14 +84,13 @@ impl ValueTy {
             "u32"       => U32,
             "u64"       => U64,
             "u128"      => U128,
-            RESERVED_U256_TYPE_NAME => return errf!("value type '{}' is reserved but not enabled", RESERVED_U256_TYPE_NAME),
             "bytes"     => Bytes,
             "address"   => Address,
             "heapslice" => HeapSlice,
             "tuple"     => Tuple,
             "compo"     => Compo,
             "handle"    => Handle,
-            a => return errf!("value type '{}' not found", a)
+            _ => return errf!("unknown type")
         })
     }
 
@@ -105,15 +104,13 @@ impl ValueTy {
             4  => U32       ,
             5  => U64       ,
             6  => U128      ,
-            RESERVED_U256_TYPE_ID => return errf!("ValueTy {} (u256) is reserved but not enabled", RESERVED_U256_TYPE_ID),
-            /* */
-            9  => Bytes     ,
-            10 => Address   ,
-            12 => HeapSlice ,
-            13 => Tuple      ,
+            8  => Bytes     ,
+            9  => Address   ,
+            11 => HeapSlice ,
+            13 => Tuple     ,
             14 => Compo     ,
             15 => Handle    ,
-            _ => return errf!("ValueTy {} not found", t)
+            _ => return errf!("unknown type")
         })
     }
 
@@ -139,9 +136,11 @@ mod type_tests {
     use super::*;
 
     #[test]
-    fn reserved_u256_name_and_type_id_are_rejected() {
-        assert!(ValueTy::from_name(RESERVED_U256_TYPE_NAME).is_err());
-        assert!(ValueTy::build(RESERVED_U256_TYPE_ID).is_err());
+    fn unknown_type_name_and_id_are_rejected() {
+        assert!(ValueTy::from_name("u256").is_err());
+        assert!(ValueTy::build(7).is_err());
+        assert!(ValueTy::build(10).is_err());
+        assert!(ValueTy::build(12).is_err());
     }
 
     #[test]

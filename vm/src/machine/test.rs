@@ -313,7 +313,7 @@ mod machine_file_test {
     }
 
     #[test]
-    fn contract_owned_intent_handle_is_visible_only_inside_owner_contract() {
+    fn intent_use_accepts_existing_foreign_handle_and_defers_owner_failure_until_access() {
         let base_addr = test_base_addr();
         let (contract_owner, contract_foreign, ext_state) = setup_intent_owner_contracts(&base_addr);
 
@@ -418,6 +418,125 @@ mod machine_file_test {
         )
         .unwrap();
         assert_eq!(rv, Value::U64(2));
+    }
+
+    #[test]
+    fn intent_keys_page_returns_u32_cursor_and_accepts_uint_family_args() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 168);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("pg")
+                        intent_use(iid)
+                        intent_put("a", 1)
+                        intent_put("b", 2)
+                        intent_put("c", 3)
+                        return intent_keys_page(0 as u8, 2 as u16)
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run()
+            "##,
+        )
+        .unwrap();
+        let Value::Tuple(ret) = rv else {
+            panic!("expected tuple");
+        };
+        let items = ret.to_vec();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0], Value::U32(2));
+        let Value::Compo(list) = &items[1] else {
+            panic!("expected list");
+        };
+        assert_eq!(list.list_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn intent_keys_after_requires_bytes_or_nil_token_and_accepts_uint_family_limit() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 169);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run_ok")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("pg")
+                        intent_use(iid)
+                        intent_put("a", 1)
+                        intent_put("b", 2)
+                        intent_put("c", 3)
+                        return intent_keys_after("a", 2 as u8)
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("run_bad")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("pg")
+                        intent_use(iid)
+                        intent_put("a", 1)
+                        return intent_keys_after(1, 1)
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let ok = run_main_script_raw(
+            base_addr.clone(),
+            vec![contract.clone()],
+            ext_state.clone(),
+            r##"
+                lib C = 0
+                return C.run_ok()
+            "##,
+        )
+        .unwrap();
+        let Value::Tuple(ok_ret) = ok else {
+            panic!("expected tuple");
+        };
+        let ok_items = ok_ret.to_vec();
+        assert_eq!(ok_items.len(), 2);
+        assert_eq!(ok_items[0], Value::Nil);
+
+        let bad = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run_bad()
+            "##,
+        );
+        assert_err_contains(bad, "requires after_key bytes argument");
     }
 
     #[test]

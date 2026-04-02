@@ -6,7 +6,7 @@ mod bounds_tests {
     use crate::machine::{DeferCallbacks, DeferredEntry, VmHost};
     use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
-    use crate::value::{CompoItem, TupleItem, Value, ValueTy, REF_DUP_SIZE, RESERVED_U256_TYPE_ID};
+    use crate::value::{CompoItem, TupleItem, Value, ValueTy, REF_DUP_SIZE};
     use crate::{ContractAddress, ContractEdition, ContractSto};
     use field::Address;
     use sys::{XError, XRet};
@@ -316,62 +316,17 @@ mod bounds_tests {
     }
 
     #[test]
-    fn execute_code_rejects_reserved_type_id_for_tis_and_cto() {
-        use crate::rt::Bytecode;
-
-        for inst in [Bytecode::TIS, Bytecode::CTO] {
-            let codes = vec![
-                Bytecode::P0 as u8,
-                inst as u8,
-                RESERVED_U256_TYPE_ID,
-                Bytecode::END as u8,
-            ];
-
-            let mut pc: usize = 0;
-            let mut gas: i64 = 1000;
-            let mut host = DummyHost::default();
-
-            let mut operands = Stack::new(256);
-            let mut locals = Stack::new(256);
-            let mut heap = Heap::new(64);
-            let mut global_map = GKVMap::new(20);
-            let mut memory_map = CtcKVMap::new(12);
-
-            let cadr = ContractAddress::default();
-
-            let res = execute_code(
-                &mut pc,
-                &codes,
-                ExecCtx::main(),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &cadr,
-                &cadr,
-                &mut gas,
-                &GasTable::new(1),
-                &GasExtra::new(1),
-                &SpaceCap::new(1),
-                &mut global_map,
-                &mut memory_map,
-                &mut host,
-            );
-
-            assert!(
-                matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))),
-                "instruction {:?} should fail with InstParamsErr",
-                inst
-            );
-        }
-    }
-
-    #[test]
     fn execute_code_rejects_unknown_type_id_for_tis_and_cto() {
         use crate::rt::Bytecode;
 
-        for raw in [11u8] {
+        for raw in [7u8, 10u8, 12u8] {
             for inst in [Bytecode::TIS, Bytecode::CTO] {
-                let codes = vec![Bytecode::P0 as u8, inst as u8, raw, Bytecode::END as u8];
+                let codes = vec![
+                    Bytecode::P0 as u8,
+                    inst as u8,
+                    raw,
+                    Bytecode::END as u8,
+                ];
 
                 let mut pc: usize = 0;
                 let mut gas: i64 = 1000;
@@ -412,6 +367,7 @@ mod bounds_tests {
             }
         }
     }
+
 
     #[test]
     fn execute_code_rejects_cto_targets_outside_cast_set() {

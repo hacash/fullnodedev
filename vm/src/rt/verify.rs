@@ -193,8 +193,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_unknown_type_id_for_tis_and_cto() {
-        let unknown_ids = [11u8];
-        for raw in unknown_ids {
+        for raw in [7u8, 10u8, 12u8] {
             let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, raw, Bytecode::END as u8];
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, raw, Bytecode::END as u8];
             let r1 = verify_bytecodes(&tis_codes);
@@ -202,16 +201,6 @@ mod verify_type_param_tests {
             assert!(matches!(r1, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
             assert!(matches!(r2, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }
-    }
-
-    #[test]
-    fn verify_rejects_reserved_type_id_for_tis_and_cto() {
-        let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
-        let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
-        let r1 = verify_bytecodes(&tis_codes);
-        let r2 = verify_bytecodes(&cto_codes);
-        assert!(matches!(r1, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
-        assert!(matches!(r2, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
     }
 
     #[test]

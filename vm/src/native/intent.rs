@@ -137,7 +137,7 @@ fn ctl_expect_u32(value: &Value, name: &str, label: &str) -> VmrtRes<u32> {
     value.extract_u32().map_err(|_| {
         ItrErr::new(
             ItrErrCode::IntentError,
-            &format!("native ctl '{}' requires {} u32 argument", name, label),
+            &format!("native ctl '{}' requires {} uint-family argument convertible to u32", name, label),
         )
     })
 }
@@ -481,7 +481,7 @@ intent_std_fn!(call_intent_keys_page, |exec, bindings, intent_state, intents, ar
         keys.into_iter().map(Value::Bytes).collect::<VecDeque<_>>(),
     )?);
     let next_cursor = match next {
-        Some(v) => Value::U64(v as u64),
+        Some(v) => Value::U32(v as u32),
         None => Value::Nil,
     };
     Ok((
@@ -497,8 +497,13 @@ intent_std_fn!(call_intent_keys_after, |exec, bindings, intent_state, intents, a
     let limit = ctl_expect_u32(&items[1], "intent_keys_after", "limit")? as usize;
     let start = if items[0].is_nil() {
         None
-    } else {
+    } else if let Value::Bytes(_) = &items[0] {
         Some(&items[0])
+    } else {
+        return itr_err_fmt!(
+            ItrErrCode::IntentError,
+            "native ctl 'intent_keys_after' requires after_key bytes argument"
+        );
     };
     let (next, keys) = intents.keys_after(&owner, id, start, limit)?;
     let list = Value::Compo(CompoItem::list(
