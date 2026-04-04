@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::SystemTime;
 
 use tokio::io::*;
-use tokio::net::tcp::*;
 use tokio::net::*;
 
 use basis::config::NodeConf;

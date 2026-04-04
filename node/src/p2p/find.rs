@@ -26,7 +26,7 @@ async fn do_insert_new_nodes(this: &P2PManage, mearest_addrs: Vec<SocketAddr>, f
         if cncount >= 16 {
             break
         }
-        if let None = find_peer_from_dht_list(this.backbones.clone(), first) {
+        if let None = find_peer_from_dht_vec(&this.backbones(), first) {
             break
         }
     }

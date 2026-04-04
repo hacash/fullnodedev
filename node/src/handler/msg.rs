@@ -27,24 +27,3 @@ combi_struct!{ HandshakeStatus,
     latest_hash:             Hash
 }
 
-async fn get_status_try_sync_blocks(hdl: &MsgHandler, peer: Arc<Peer>, starthei: u64) {
-    let prevdo = hdl.doing_sync.load(Ordering::Relaxed);
-    if prevdo + 10 > curtimes() {
-        return
-    }
-    send_req_block_msg(hdl, peer, starthei).await;
-}
-
-
-async fn send_req_block_msg(hdl: &MsgHandler, peer: Arc<Peer>, starthei: u64) {
-    hdl.doing_sync.store(curtimes(), Ordering::Relaxed);
-    let hei = Uint8::from(starthei);
-    let _ = peer.send_msg(MSG_REQ_BLOCK, hei.serialize()).await;
-    flush!("sync blocks from {} {}...", peer.name(), starthei);
-}
-
-async fn send_req_block_hash_msg(peer: Arc<Peer>, num: u8, starthei: u64) {
-    let hei = Uint8::from(starthei);
-    let buf = vec![vec![num], hei.serialize()].concat();
-    let _e = peer.send_msg(MSG_REQ_BLOCK_HASH, buf).await;
-}

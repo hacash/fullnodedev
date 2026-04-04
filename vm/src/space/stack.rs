@@ -111,7 +111,7 @@ impl Stack {
     }
 
     #[inline(always)]
-    pub fn edit<'a>(&'a mut self, idx: u8) -> VmrtRes<&'a mut Value> {
+    pub fn slot_mut<'a>(&'a mut self, idx: u8) -> VmrtRes<&'a mut Value> {
         self.get_mut_at(idx as usize)
     }
 

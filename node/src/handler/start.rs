@@ -11,7 +11,10 @@ impl MsgHandler {
                     break
                 },
                 msg = blktxch.recv() => {
-                    match msg.unwrap() {
+                    let Some(msg) = msg else {
+                        break
+                    };
+                    match msg {
                         BlockTxArrive::Tx(peer, tx) => handle_new_tx(this.clone(), peer, tx).await,
                         BlockTxArrive::Block(peer, blk) => handle_new_block(this.clone(), peer, blk).await,
                     }

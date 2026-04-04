@@ -2,6 +2,11 @@ use tokio::sync::Notify;
 
 static PEER_AUTO_ID_INCREASE: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Debug)]
+enum PeerWriterCmd {
+    Send(Vec<u8>),
+    Close,
+}
 
 #[derive(Debug)]
 pub struct Peer {
@@ -12,7 +17,8 @@ pub struct Peer {
     pub is_cntome: bool,
     pub addr: SocketAddr,
     pub active: StdMutex<SystemTime>,
-    pub conn_write: StdMutex<Option<OwnedWriteHalf>>,
+    writer_tx: Sender<PeerWriterCmd>,
+    pub writer_closed: StdMutex<bool>,
     pub close_notify: Arc<Notify>,
     pub knows: Knowledge,
 }
@@ -35,17 +41,18 @@ impl Peer {
         *self.active.lock().unwrap() = SystemTime::now();
     }
 
-    fn take_conn_write(&self) -> Option<OwnedWriteHalf> {
-        self.conn_write.lock().unwrap().take()
+    pub fn is_writer_closed(&self) -> bool {
+        *self.writer_closed.lock().unwrap()
     }
 
-    pub async fn disconnect(&self) {
-        self.close_notify.notify_one();
-        let mayconn = self.take_conn_write();
-        if let Some(mut w) = mayconn {
-            let close_msg = tcp_create_msg(MSG_CLOSE, vec![]);
-            let _ = tcp_send(&mut w, &close_msg).await;
-        }
+    fn mark_writer_closed(&self) {
+        *self.writer_closed.lock().unwrap() = true;
+    }
+
+    pub fn disconnect(&self) {
+        self.mark_writer_closed();
+        let _ = self.writer_tx.try_send(PeerWriterCmd::Close);
+        self.close_notify.notify_waiters();
     }
 
     pub async fn create_with_msg(mut stream: TcpStream, ty: u8, msg: Vec<u8>, mynodeinfo: Vec<u8>) -> Ret<(Arc<Peer>, OwnedReadHalf)> {
@@ -95,6 +102,7 @@ impl Peer {
         }
 
         let (read_half, write_half) = stream.into_split();
+        let (writer_tx, writer_rx) = mpsc::channel(128);
 
         let atid = PEER_AUTO_ID_INCREASE.fetch_add(1, Ordering::Relaxed) + 1;
 
@@ -106,14 +114,37 @@ impl Peer {
             is_public: is_public,
             addr: addr,
             active: SystemTime::now().into(),
-            conn_write: Some(write_half).into(),
+            writer_tx,
+            writer_closed: false.into(),
             close_notify: Arc::new(Notify::new()),
             knows: Knowledge::new(50),
         };
         let pptr = Arc::new(peer);
+        Peer::spawn_writer(pptr.clone(), write_half, writer_rx);
 
         Ok((pptr, read_half))
     }
 
+    fn spawn_writer(peer: Arc<Peer>, mut write_half: OwnedWriteHalf, mut writer_rx: Receiver<PeerWriterCmd>) {
+        tokio::spawn(async move {
+            while let Some(cmd) = writer_rx.recv().await {
+                match cmd {
+                    PeerWriterCmd::Send(buf) => {
+                        if tcp_send(&mut write_half, &buf).await.is_err() {
+                            peer.mark_writer_closed();
+                            break;
+                        }
+                    }
+                    PeerWriterCmd::Close => {
+                        let close_msg = tcp_create_msg(MSG_CLOSE, vec![]);
+                        let _ = tcp_send(&mut write_half, &close_msg).await;
+                        break;
+                    }
+                }
+            }
+            peer.mark_writer_closed();
+            peer.close_notify.notify_waiters();
+        });
+    }
 
 }

@@ -209,37 +209,11 @@ fn lgc_not(x: &Value) -> VmrtRes<Value> {
 }
 
 fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
-    if x.is_uint() && y.is_uint() {
-        return Ok(x.extract_u128()? == y.extract_u128()?);
-    }
-    if x.ty() != y.ty() {
-        return itr_err_fmt!(
-            Arithmetic,
-            "cannot compare different types {:?} and {:?}",
-            x,
-            y
-        );
-    }
-    match (x, y) {
-        (Nil, Nil) => Ok(true),
-        (Bool(l), Bool(r)) => Ok(l == r),
-        (Bytes(l), Bytes(r)) => Ok(l == r),
-        (Address(l), Address(r)) => Ok(l == r),
-        (HeapSlice(l), HeapSlice(r)) => Ok(l == r),
-        // Tuple/Compo equality is intentionally identity-based rather than structural.
-        (Tuple(l), Tuple(r)) => Ok(l.ptr_eq(r)),
-        (Compo(l), Compo(r)) => Ok(l.ptr_eq(r)),
-        (U8(l), U8(r)) => Ok(l == r),
-        (U16(l), U16(r)) => Ok(l == r),
-        (U32(l), U32(r)) => Ok(l == r),
-        (U64(l), U64(r)) => Ok(l == r),
-        (U128(l), U128(r)) => Ok(l == r),
-        _ => itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", x, y),
-    }
+    value_content_eq(x, y)
 }
 
-fn lgc_compare_fee(x: &Value, y: &Value) -> usize {
-    x.dup_size() + y.dup_size()
+fn lgc_compare_fee(x: &Value, y: &Value, gas_extra: &GasExtra) -> usize {
+    value_compare_fee(x, y, gas_extra.container_cmp_header_fee)
 }
 
 fn lgc_equal(x: &Value, y: &Value) -> VmrtRes<Value> {
@@ -1077,20 +1051,14 @@ mod shift_u64_tests {
     }
 
     #[test]
-    fn heapslice_eq_uses_src_len_and_other_ops_still_reject() {
+    fn heapslice_eq_is_rejected_and_other_ops_still_reject() {
         let mut heap = test_heap();
         heap.write(0, Value::Bytes(vec![1, 2, 3])).unwrap();
         let hs = Value::HeapSlice((0, 2));
 
         assert!(Value::normalize_arithmetic_pair(&hs, &Value::U8(1)).is_err());
-        assert_eq!(
-            lgc_equal(&hs, &Value::HeapSlice((0, 2))).unwrap(),
-            Value::Bool(true)
-        );
-        assert_eq!(
-            lgc_equal(&hs, &Value::HeapSlice((0, 3))).unwrap(),
-            Value::Bool(false)
-        );
+        assert!(lgc_equal(&hs, &Value::HeapSlice((0, 2))).is_err());
+        assert!(lgc_not_equal(&hs, &Value::HeapSlice((0, 3))).is_err());
         assert!(lgc_equal(&hs, &Value::Bytes(vec![1, 2])).is_err());
         assert!(lgc_not_equal(&hs, &Value::Bytes(vec![1, 2])).is_err());
         assert!(lgc_less(&hs, &Value::U8(1)).is_err());
@@ -1102,21 +1070,55 @@ mod shift_u64_tests {
     }
 
     #[test]
-    fn compo_eq_uses_pointer_identity() {
-        let c = CompoItem::new_list();
+    fn tuple_eq_uses_content_semantics() {
+        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let same = shared.clone();
+        let rebuilt = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let diff = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 4])]).unwrap();
+
+        assert_eq!(
+            lgc_equal(&Value::Tuple(shared.clone()), &Value::Tuple(same)).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            lgc_equal(&Value::Tuple(shared.clone()), &Value::Tuple(rebuilt)).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            lgc_equal(&Value::Tuple(shared.clone()), &Value::Tuple(diff)).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn compo_eq_uses_content_semantics() {
+        let c = CompoItem::list(VecDeque::from([Value::U8(1), Value::Bytes(vec![2, 3])])).unwrap();
         let same = c.clone();
-        let copied = c.copy();
+        let copied = CompoItem::list(VecDeque::from([Value::U8(1), Value::Bytes(vec![2, 3])])).unwrap();
+        let diff = CompoItem::list(VecDeque::from([Value::U8(1), Value::Bytes(vec![2, 4])])).unwrap();
 
         assert_eq!(
             lgc_equal(&Value::Compo(c.clone()), &Value::Compo(same)).unwrap(),
             Value::Bool(true)
         );
         assert_eq!(
-            lgc_equal(&Value::Compo(c), &Value::Compo(copied.clone())).unwrap(),
+            lgc_equal(&Value::Compo(c.clone()), &Value::Compo(copied.clone())).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            lgc_equal(&Value::Compo(c), &Value::Compo(diff)).unwrap(),
             Value::Bool(false)
         );
         assert!(lgc_equal(&Value::Compo(copied.clone()), &Value::Nil).is_err());
         assert!(lgc_not_equal(&Value::Compo(copied), &Value::Nil).is_err());
+    }
+
+    #[test]
+    fn handle_eq_is_rejected() {
+        let lhs = Value::handle(7u32);
+        let rhs = lhs.clone();
+        assert!(lgc_equal(&lhs, &rhs).is_err());
+        assert!(lgc_not_equal(&lhs, &rhs).is_err());
     }
 
     #[test]

@@ -6,7 +6,7 @@ mod bounds_tests {
     use crate::machine::{DeferCallbacks, DeferredEntry, VmHost};
     use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
-    use crate::value::{CompoItem, TupleItem, Value, ValueTy, REF_DUP_SIZE};
+    use crate::value::{CompoItem, TupleItem, Value, ValueTy};
     use crate::{ContractAddress, ContractEdition, ContractSto};
     use field::Address;
     use sys::{XError, XRet};
@@ -744,11 +744,12 @@ mod bounds_tests {
     }
 
     #[test]
-    fn eq_tuple_uses_pointer_identity_and_reference_compare_fee() {
+    fn eq_tuple_uses_content_compare_and_ptr_fast_path_gas() {
         use crate::rt::Bytecode;
 
-        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
-        let distinct = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let payload = vec![9u8; 64];
+        let shared = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload.clone())]).unwrap();
+        let distinct = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload)]).unwrap();
 
         let shared_gas = run_with_setup(
             vec![Bytecode::EQ as u8, Bytecode::END as u8],
@@ -768,11 +769,16 @@ mod bounds_tests {
         );
         let gst = GasTable::new(1);
         let gex = GasExtra::new(1);
-        let expected = gst.gas(Bytecode::EQ as u8)
+        let compare_fee = value_compare_fee(
+            &Value::Tuple(shared.clone()),
+            &Value::Tuple(shared.clone()),
+            gex.container_cmp_header_fee,
+        );
+        let shared_expected = gst.gas(Bytecode::EQ as u8)
             + gst.gas(Bytecode::END as u8)
-            + gex.stack_cmp(REF_DUP_SIZE * 2);
-        assert_eq!(shared_gas, expected);
-        assert_eq!(distinct_gas, expected);
+            + gex.stack_cmp(compare_fee);
+        assert_eq!(shared_gas, shared_expected);
+        assert!(distinct_gas > shared_gas);
 
         let run_result = |rhs: Value| -> Value {
             let mut pc: usize = 0;
@@ -808,15 +814,16 @@ mod bounds_tests {
         };
 
         assert_eq!(run_result(Value::Tuple(shared.clone())), Value::Bool(true));
-        assert_eq!(run_result(Value::Tuple(distinct)), Value::Bool(false));
+        assert_eq!(run_result(Value::Tuple(distinct)), Value::Bool(true));
     }
 
     #[test]
-    fn xlg_eq_tuple_uses_pointer_identity_and_reference_compare_fee() {
+    fn xlg_eq_tuple_uses_content_compare_and_ptr_fast_path_gas() {
         use crate::rt::Bytecode;
 
-        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
-        let distinct = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let payload = vec![9u8; 64];
+        let shared = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload.clone())]).unwrap();
+        let distinct = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload)]).unwrap();
         let mark = (2 << 5) | 0;
 
         let run = |local_v: Value, stack_v: Value| -> (Value, i64) {
@@ -857,19 +864,65 @@ mod bounds_tests {
 
         let gst = GasTable::new(1);
         let gex = GasExtra::new(1);
-        let expected = gst.gas(Bytecode::XLG as u8)
+        let compare_fee = value_compare_fee(
+            &Value::Tuple(shared.clone()),
+            &Value::Tuple(shared.clone()),
+            gex.container_cmp_header_fee,
+        );
+        let shared_expected = gst.gas(Bytecode::XLG as u8)
             + gst.gas(Bytecode::END as u8)
-            + gex.stack_cmp(REF_DUP_SIZE * 2);
+            + gex.stack_cmp(compare_fee);
 
         let (out_shared, gas_shared) = run(Value::Tuple(shared.clone()), Value::Tuple(shared.clone()));
         let (out_distinct, gas_distinct) = run(Value::Tuple(shared), Value::Tuple(distinct));
         assert_eq!(out_shared, Value::Bool(true));
-        assert_eq!(out_distinct, Value::Bool(false));
-        assert_eq!(gas_shared, expected);
-        assert_eq!(gas_distinct, expected);
+        assert_eq!(out_distinct, Value::Bool(true));
+        assert_eq!(gas_shared, shared_expected);
+        assert!(gas_distinct > gas_shared);
     }
 
     #[test]
+    fn size_rejects_tuple_compo_handle_and_heapslice() {
+        use crate::rt::Bytecode;
+
+        let run_err = |input: Value| -> ItrErrCode {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            operands.push(input).unwrap();
+            execute_code(
+                &mut pc,
+                &[Bytecode::SIZE as u8, Bytecode::END as u8],
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap_err()
+            .0
+        };
+
+        assert_eq!(run_err(Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap())), ItrErrCode::ItemNoSize);
+        assert_eq!(run_err(Value::Compo(CompoItem::list(std::collections::VecDeque::from([Value::U8(1)])).unwrap())), ItrErrCode::ItemNoSize);
+        assert_eq!(run_err(Value::handle(7u32)), ItrErrCode::ItemNoSize);
+        assert_eq!(run_err(Value::HeapSlice((0, 1))), ItrErrCode::ItemNoSize);
+    }
+
     fn xop_marks_execute_with_assignment_semantics() {
         use crate::rt::Bytecode;
 

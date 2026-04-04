@@ -132,6 +132,7 @@ pub struct GasExtra {
     pub storege_value_base_size: i64,
     pub storage_key_cost: i64,
     pub storage_edit_mul: i64,
+    pub container_cmp_header_fee: usize,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
     stack_write_div: i64,
@@ -173,6 +174,8 @@ impl GasExtra {
             storege_value_base_size: 22,
             storage_key_cost: 1024,
             storage_edit_mul:    4,
+            // other
+            container_cmp_header_fee: 12,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
             stack_write_div:    28,
@@ -285,7 +288,7 @@ impl GasExtra {
     pub fn contract_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.contract_div)
     }
-    
+
 }
 
 

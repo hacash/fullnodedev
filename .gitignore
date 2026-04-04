@@ -20,10 +20,7 @@ dist/
 *AGENTS.*
 
 chainv*/
-node2/
-node3/
-node4/
-node5/
+nodev*/
 
 fullnode
 poworker

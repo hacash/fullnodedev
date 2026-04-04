@@ -1,4 +1,4 @@
-fn serialize_public_nodes(peerlist: &Vec<Arc<Peer>>, _max: usize) -> (usize, Vec<u8>) {
+pub(crate) fn serialize_public_nodes(peerlist: &Vec<Arc<Peer>>, _max: usize) -> (usize, Vec<u8>) {
     let mut listbts = vec![];
     let mut count = 0usize;
     for p in peerlist {

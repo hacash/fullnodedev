@@ -1,15 +1,16 @@
 pub struct MsgHandler {
-    engine: Arc<dyn Engine>,
-    txpool: Arc<dyn TxPool>,
-    p2pmng: StdMutex<Option<Box<dyn PeerManage>>>,
+    pub(crate) engine: Arc<dyn Engine>,
+    pub(crate) txpool: Arc<dyn TxPool>,
+    pub(crate) p2pmng: StdMutex<Option<Box<dyn PeerManage>>>,
 
     blktx: Sender<BlockTxArrive>,
     blktxch: StdMutex<Option<Receiver<BlockTxArrive>>>,
 
-    doing_sync: AtomicU64,
-    knows: Knowledge,
+    pub(crate) doing_sync: AtomicU64,
+    pub(crate) sync_tracker: SyncTracker,
+    pub(crate) knows: Knowledge,
 
-    inserting: Arc<StdMutex<bool>>,
+    pub(crate) inserting: Arc<StdMutex<bool>>,
 }
 
 impl MsgHandler {
@@ -23,6 +24,7 @@ impl MsgHandler {
             blktx: tx,
             blktxch: Some(rx).into(),
             doing_sync: AtomicU64::new(0),
+            sync_tracker: SyncTracker::new(),
             knows: Knowledge::new(200),
             inserting: Arc::new(StdMutex::new(false)),
         }
@@ -64,7 +66,8 @@ impl MsgHandler {
         }
     }
 
-    pub async fn on_disconnect(&self, _peer: Arc<Peer>) {
+    pub async fn on_disconnect(&self, peer: Arc<Peer>) {
+        self.sync_tracker.clear_peer(&peer);
     }
 
     pub async fn on_message(&self, peer: Arc<Peer>, ty: u16, body: Vec<u8>) {

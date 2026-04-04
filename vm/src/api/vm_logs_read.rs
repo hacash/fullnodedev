@@ -45,5 +45,5 @@ fn vm_logs_read(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     filter_topic!("topic2", &item.topic2);
     filter_topic!("topic3", &item.topic3);
 
-    api_data_raw(item.render(""))
+    api_data_raw(format!(r#""height":{},"index":{},{}"#, ck_hei, index, item.render()))
 }

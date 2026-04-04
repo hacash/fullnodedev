@@ -5,7 +5,7 @@ use basis::config::*;
 use basis::interface::*;
 use chain::*;
 use mint::HacashMinter;
-use node::{memtxpool::*, node::HacashNode};
+use node::{core::HacashNode, memtxpool::*};
 use server::*;
 use sys::*;
 

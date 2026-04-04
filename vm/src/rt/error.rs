@@ -94,7 +94,7 @@ pub enum ItrErrCode {
     StoragePeriodErr = 105,
     StorageValSizeErr = 106,
     StorageRestoreNotMatch = 107,
-    StorageRecoverable = 108,
+    StorageNotActive = 108,
     StorageKeyExists = 109,
     StorageNilNotAllowed = 110,
 
@@ -127,7 +127,7 @@ impl From<ItrErr> for ExecError {
         use ItrErrCode::*;
         let ItrErr(code, msg) = e;
         let text = format!("{:?}({}): {}", code, code as u8, msg);
-        let is_revert = matches!(code, ThrowAbort | ActCallRevert);
+        let is_revert = matches!(code, ActCallRevert);
         maybe!(is_revert, XError::revert(text), XError::fault(text))
     }
 }

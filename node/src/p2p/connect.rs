@@ -1,113 +1,39 @@
-
 impl P2PManage {
 
     pub async fn connect_stable_then_boot(&self) -> Rerr {
-        if self.cnf.use_stable_nodes {
-            let _ = self.connect_stable_nodes().await;
-            if self.backbones().len() < self.cnf.backbone_peers {
-                let _ = self.connect_boot_nodes().await;
-            }
-        }else{
-            let _ = self.connect_boot_nodes().await;
-        }
-        Ok(())
+        crate::core::connect_stable_then_boot(self).await
     }
 
     pub async fn connect_stable_nodes(&self) -> Rerr {
-        if !self.cnf.use_stable_nodes {
-            return Ok(())
-        }
-        let addrs = self.load_stable_nodes();
-        if addrs.len() == 0 {
-            return Ok(())
-        }
-        print!("[P2P] Connect {} stable nodes", addrs.len());
-        for ndip in &addrs {
-            print!(", {}", &ndip);
-        }
-        println!(".");
-        for addr in addrs {
-            if let Err(e) = self.connect_node(addr).await {
-                println!("[P2P Error] Connect to {}, {}", &addr, e);
-            }
-        }
-        Ok(())
+        crate::core::connect_stable_nodes(self).await
     }
 
     pub async fn connect_boot_nodes(&self) -> Rerr {
-        print!("[P2P] Connect {} boot nodes", self.cnf.boot_nodes.len());
-        for ndip in &self.cnf.boot_nodes {
-            print!(", {}", &ndip);
-        }
-        if !self.cnf.find_nodes {
-            print!(", don't search nodes");
-        }
-        println!(".");
-        for addr in &self.cnf.boot_nodes {
-            if let Err(e) = self.connect_node(*addr).await {
-                println!("[P2P Error] Connect to {}, {}", &addr, e);
-            }
-        }
-        Ok(())
+        crate::core::connect_boot_nodes(self).await
     }
 
     pub async fn connect_node(&self, addr: SocketAddr) -> Ret<Arc<Peer>> {
-        let conn = tcp_dial_connect(addr, 6).await?;
-        let report_me = true;
-        self.handle_conn(conn, report_me).await
+        crate::core::connect_node(self, addr).await
     }
 
-    pub async fn handle_conn(&self, mut conn: TcpStream, report_me: bool) -> Ret<Arc<Peer>> {
-        tcp_check_handshake(&mut conn, 5).await?;
-        let mynodeinfo = self.pick_my_node_info();
-        let mndf = mynodeinfo.clone();
-        if report_me {
-            tcp_send_msg(&mut conn, MSG_REPORT_PEER, mndf).await?;
-        }
-        self.insert_peer(conn, mynodeinfo).await
+    pub async fn handle_conn(&self, conn: TcpStream, report_me: bool) -> Ret<Arc<Peer>> {
+        crate::core::handle_conn(self, conn, report_me).await
     }
 
     pub async fn insert_peer(&self, conn: TcpStream, mynodeinfo: Vec<u8>) -> Ret<Arc<Peer>> {
-        let (peer, conn_read) = self.try_create_peer(conn, mynodeinfo).await?;
-        // OLD ORDER: handle_peer_message FIRST, then insert
-        self.handle_peer_message(peer.clone(), conn_read).await?;
-        let dropeds = self.insert(peer.clone());
-        self.delay_close_peers(dropeds, 15).await;
-        Ok(peer)
+        crate::core::insert_peer(self, conn, mynodeinfo).await
     }
 
-
-    async fn try_create_peer(&self, mut stream: TcpStream, mynodeinfo: Vec<u8>) -> Ret<(Arc<Peer>, OwnedReadHalf)> {
-        let conn = &mut stream;
-        let (ty, body) = tcp_read_msg(conn, 5).await?;
-        if MSG_REMIND_ME_IS_PUBLIC == ty {
-            return errf!("ok")
-        }else if MSG_REQUEST_NODE_KEY_FOR_PUBLIC_CHECK == ty {
-            let buf = self.cnf.node_key.clone();
-            let _ = AsyncWriteExt::write_all(conn, &buf).await;
-            return errf!("ok")
-        }else if MSG_REQUEST_NEAREST_PUBLIC_NODES == ty {
-            let peerlist = self.publics();
-            let (count, adrbts) = serialize_public_nodes(&peerlist, 100);
-            let retbts = vec![vec![count as u8], adrbts].concat();
-            let _ = AsyncWriteExt::write_all(conn, &retbts).await;
-            return errf!("ok")
-        }
-        Peer::create_with_msg(stream, ty, body, mynodeinfo).await
-    }
-
-
-    fn pick_my_node_info(&self) -> Vec<u8> {
-        let mut nodeinfo = vec![0u8; 2+2+PEER_KEY_SIZE*2];
+    pub(crate) fn pick_my_node_info(&self) -> Vec<u8> {
+        let mut nodeinfo = vec![0u8; 2 + 2 + PEER_KEY_SIZE * 2];
         nodeinfo.splice(2..4, self.cnf.listen.to_be_bytes());
         nodeinfo.splice(4..20, self.cnf.node_key);
         let mut namebt = self.cnf.node_name.clone();
         namebt += "                ";
         namebt.truncate(PEER_KEY_SIZE);
-        nodeinfo.splice(20..20+PEER_KEY_SIZE, namebt.into_bytes());
+        nodeinfo.splice(20..20 + PEER_KEY_SIZE, namebt.into_bytes());
         nodeinfo
     }
-
 
     async fn delay_close_peer(&self, peer: Option<Arc<Peer>>, delay: u64) {
         if peer.is_none() {
@@ -115,22 +41,22 @@ impl P2PManage {
         }
         let peer = peer.unwrap();
         if delay == 0 {
-            peer.disconnect().await;
+            peer.disconnect();
             return
         }
-        tokio::spawn(async move{
+        tokio::spawn(async move {
             asleep(delay as f32).await;
-            peer.disconnect().await;
+            peer.disconnect();
         });
     }
 
-    async fn delay_close_peers(&self, peers: Vec<Arc<Peer>>, delay: u64) {
+    pub(crate) async fn delay_close_peers(&self, peers: Vec<Arc<Peer>>, delay: u64) {
         for peer in peers {
             self.delay_close_peer(Some(peer), delay).await;
         }
     }
 
-    fn load_stable_nodes(&self) -> Vec<SocketAddr> {
+    pub(crate) fn load_stable_nodes(&self) -> Vec<SocketAddr> {
         if !self.cnf.use_stable_nodes {
             return Vec::new();
         }
@@ -158,5 +84,4 @@ impl P2PManage {
         }
         res
     }
-
 }

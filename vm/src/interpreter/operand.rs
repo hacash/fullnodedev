@@ -25,7 +25,7 @@ fn check_call_mode(exec: ExecCtx, call: &CallSpec) -> VmrtErr {
 
 fn local_operand(mark: u8, locals: &mut Stack, mut value: Value) -> VmrtErr {
     let (opt, idx) = decode_local_operand_mark(mark);
-    let basev = locals.edit(idx)?;
+    let basev = locals.slot_mut(idx)?;
     match opt {
         LxOp::Add => locop_arithmetic(basev, &mut value, add_checked),
         LxOp::Sub => locop_arithmetic(basev, &mut value, sub_checked),
@@ -37,7 +37,7 @@ fn local_operand(mark: u8, locals: &mut Stack, mut value: Value) -> VmrtErr {
 
 fn local_logic(mark: u8, locals: &mut Stack, value: &mut Value) -> VmrtErr {
     let (opt, idx) = decode_local_logic_mark(mark);
-    let basev = locals.edit(idx)?;
+    let basev = locals.slot_mut(idx)?;
     let out = match opt {
         LxLg::And => lgc_and(basev, value),
         LxLg::Or => lgc_or(basev, value),
@@ -68,7 +68,7 @@ fn unpack_seq(
         let v = v.valid(cap)?;
         gas += gst.stack_write(v.val_size());
         let idx = u8::try_from(start + off).map_err(|_| ItrErr::code(OutOfStack))?;
-        *locals.edit(idx)? = v;
+        *locals.slot_mut(idx)? = v;
     }
     Ok(gas)
 }

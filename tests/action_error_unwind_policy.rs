@@ -269,10 +269,10 @@ fn vm_throw_abort_and_action_pass_through_policy() {
     let _guard = test_guard();
 
     let throw_abort: XError = ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
-    assert!(throw_abort.is_revert(), "{throw_abort}");
+    assert!(throw_abort.is_fault(), "{throw_abort}");
     let throw_abort_wire: Error =
         ItrErr(ItrErrCode::ThrowAbort, "contract abort".to_owned()).into();
-    assert!(decode_exec_error_from_text(throw_abort_wire).is_revert());
+    assert!(decode_exec_error_from_text(throw_abort_wire).is_fault());
 
     let action_revert: XError = ItrErr(ItrErrCode::ActCallRevert, "biz fail".to_owned()).into();
     assert!(action_revert.is_revert(), "{action_revert}");
@@ -373,14 +373,19 @@ fn vm_itr_err_code_revert_mapping_is_strict() {
         StoragePeriodErr,
         StorageValSizeErr,
         StorageRestoreNotMatch,
+        StorageNotActive,
+        StorageKeyExists,
+        StorageNilNotAllowed,
         ThrowAbort,
+        DeferredError,
+        IntentError,
         NeverError,
     ];
-    assert_eq!(all_codes.len(), 83);
+    assert_eq!(all_codes.len(), 87);
 
     for code in all_codes {
         let xerr: XError = ItrErr(code, "x".to_owned()).into();
-        let should_revert = matches!(code, ThrowAbort | ActCallRevert);
+        let should_revert = matches!(code, ActCallRevert);
         assert_eq!(
             xerr.is_revert(),
             should_revert,

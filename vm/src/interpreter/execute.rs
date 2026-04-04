@@ -352,7 +352,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             () => {{
                 if ops.datas.len() >= 2 {
                     let l = ops.datas.len();
-                    gas_resource!(stack_cmp, lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1]));
+                    gas_resource!(stack_cmp, lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1], gst));
                 }
             }};
         }
@@ -655,12 +655,14 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                         Some(c) => {
                             let len = c.len();
                             let bsz = match c.list_ref() {
-                                Ok(l) => l.iter().map(Value::val_size).sum(),
+                                Ok(l) => l.iter().fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
                                 Err(_) => c
                                     .map_ref()?
                                     .iter()
-                                    .map(|(k, v)| k.len() + v.val_size())
-                                    .sum(),
+                                    .fold(0usize, |acc, (k, v)| {
+                                        let acc = add_size_saturating(acc, k.len());
+                                        add_size_saturating(acc, v.val_size())
+                                    }),
                             };
                             (len, bsz)
                         }
@@ -712,12 +714,14 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                         let compo = ops.compo()?;
                         let len = compo.len();
                         let bsz = match compo.list_ref() {
-                            Ok(l) => l.iter().map(Value::val_size).sum(),
+                            Ok(l) => l.iter().fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
                             Err(_) => compo
                                 .map_ref()?
                                 .iter()
-                                .map(|(k, v)| k.len() + v.val_size())
-                                .sum(),
+                                .fold(0usize, |acc, (k, v)| {
+                                    let acc = add_size_saturating(acc, k.len());
+                                    add_size_saturating(acc, v.val_size())
+                                }),
                         };
                         (len, bsz, compo.copy())
                     };
@@ -738,7 +742,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     if matches!(opt, LxLg::Eq | LxLg::Ne) {
                         let base = locals.load(idx as usize)?;
                         let top = ops.peek()?;
-                        gas_resource!(stack_cmp, lgc_compare_fee(&base, top));
+                        gas_resource!(stack_cmp, lgc_compare_fee(&base, top, gst));
                     }
                     local_logic(mark, locals, ops.peek()?)?;
                 }

@@ -49,6 +49,50 @@ pub fn classify_call_args_len(len: usize) -> VmrtRes<CallArgsPack> {
     })
 }
 
+#[inline(always)]
+pub(crate) fn add_size_saturating(total: usize, add: usize) -> usize {
+    total.checked_add(add).unwrap_or(usize::MAX)
+}
+
+pub(crate) fn value_content_eq(lhs: &Value, rhs: &Value) -> VmrtRes<bool> {
+    if lhs.is_uint() && rhs.is_uint() {
+        return Ok(lhs.extract_u128()? == rhs.extract_u128()?);
+    }
+    if lhs.ty() != rhs.ty() {
+        return itr_err_fmt!(
+            Arithmetic,
+            "cannot compare different types {:?} and {:?}",
+            lhs,
+            rhs
+        );
+    }
+    match (lhs, rhs) {
+        (Nil, Nil) => Ok(true),
+        (Bool(l), Bool(r)) => Ok(l == r),
+        (Bytes(l), Bytes(r)) => Ok(l == r),
+        (Address(l), Address(r)) => Ok(l == r),
+        (Tuple(l), Tuple(r)) => l.content_eq(r),
+        (Compo(l), Compo(r)) => l.content_eq(r),
+        (HeapSlice(..), HeapSlice(..)) | (Handle(..), Handle(..)) => {
+            itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", lhs, rhs)
+        }
+        (U8(l), U8(r)) => Ok(l == r),
+        (U16(l), U16(r)) => Ok(l == r),
+        (U32(l), U32(r)) => Ok(l == r),
+        (U64(l), U64(r)) => Ok(l == r),
+        (U128(l), U128(r)) => Ok(l == r),
+        _ => itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", lhs, rhs),
+    }
+}
+
+pub(crate) fn value_compare_fee(lhs: &Value, rhs: &Value, container_header_fee: usize) -> usize {
+    match (lhs, rhs) {
+        (Tuple(l), Tuple(r)) => l.compare_fee(r, container_header_fee),
+        (Compo(l), Compo(r)) => l.compare_fee(r, container_header_fee),
+        _ => add_size_saturating(lhs.dup_size(), rhs.dup_size()),
+    }
+}
+
 impl Value {
 
     pub fn ty(&self) -> ValueTy {
@@ -420,6 +464,20 @@ mod tests {
     fn can_get_size_allows_u16_max_minus_one() {
         let v = Value::Bytes(vec![0u8; (u16::MAX as usize) - 1]);
         assert_eq!(v.can_get_size().unwrap(), u16::MAX - 1);
+    }
+
+    #[test]
+    fn can_get_size_rejects_runtime_and_container_values() {
+        assert!(matches!(Value::HeapSlice((0, 1)).can_get_size(), Err(ItrErr(ItrErrCode::ItemNoSize, _))));
+        assert!(matches!(
+            Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()).can_get_size(),
+            Err(ItrErr(ItrErrCode::ItemNoSize, _))
+        ));
+        assert!(matches!(
+            Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap()).can_get_size(),
+            Err(ItrErr(ItrErrCode::ItemNoSize, _))
+        ));
+        assert!(matches!(Value::handle(7u32).can_get_size(), Err(ItrErr(ItrErrCode::ItemNoSize, _))));
     }
 
     #[test]

@@ -17,7 +17,7 @@ This separation enables:
 ## 2. Error model and signaling
 
 - `XRet<T> = Result<T, XError>` and `XRerr = Result<(), XError>` are the typed error carriers.
-- `XError::Revert(msg)` means business/runtime failure that can be handled by caller logic.
+- `XError::Revert(msg)` means an explicitly declared business failure that caller logic may safely consume.
 - `XError::Fault(msg)` means hard failure and must stop the current execution path.
 - Wire protocol between `Ret<Error>` and `XRet<XError>`:
   - Recoverable: `"[REVERT] " + msg`
@@ -29,7 +29,61 @@ In action code:
 - `xerr!` / `xerrf!` => unrecoverable by default.
 - `xerr_r!` / `xerr_rf!` => explicitly recoverable.
 
-## 3. Business errors (recoverable)
+## 3. Normative design principle
+
+Recoverable errors must be kept intentionally narrow.
+
+### 3.1 Why the recoverable surface is narrow
+
+A recoverable error is not just an error report. Once upper layers are allowed to consume it, it becomes a control-flow signal that may:
+
+- skip a branch,
+- select a fallback path,
+- continue later state transitions,
+- or intentionally ignore a failed sub-attempt.
+
+Because of this, misclassifying a hard failure as recoverable is more dangerous than misclassifying a recoverable business failure as unrecoverable.
+
+- If a true business failure is treated as fault, the system becomes more conservative.
+- If a true fault is treated as recoverable, upper-layer contracts may accidentally swallow it and continue execution under invalid assumptions.
+
+For blockchain finance, the default policy must therefore be:
+
+- when semantics are unclear, fail hard;
+- only expose recoverable errors where upper-layer consumption is provably safe.
+
+### 3.2 VM-side recoverable policy
+
+Inside the VM, execution-time exceptions are **not** the recoverable channel.
+
+Normative rule:
+
+- All VM internal execution-time exceptions default to unrecoverable faults.
+- VM code must not rely on internal throw/abort behavior as a business-failure signaling mechanism.
+- VM-side recoverable business failure should be expressed through a single explicit exit: the top-level return-value contract.
+
+Concretely:
+
+- A VM contract may compute its own business checks internally.
+- If it wants to expose a recoverable business failure to upper layers, it should encode that result in its top-level return value.
+- The VM runtime then interprets the top-level non-falsy return-value failure shape as the recoverable outlet.
+
+This means recoverable semantics are treated as an interface contract, not as an internal implementation detail.
+
+### 3.3 Upper-layer consumption rule
+
+Upper layers must treat recoverable errors as a narrow, explicit business-result channel.
+
+They must **not** assume that arbitrary lower-layer exceptions are safe to swallow.
+
+Therefore:
+
+- only explicitly declared recoverable outputs should participate in fallback/branch logic;
+- internal execution faults, framework errors, context misuse, type violations, gas/accounting faults, and invariant failures must remain unrecoverable.
+
+This keeps consensus execution conservative and reduces the chance of latent financial bugs caused by accidental error swallowing.
+
+## 4. Business errors (recoverable)
 
 Business errors are limited to exactly three categories.
 
@@ -55,11 +109,11 @@ Why recoverable:
 
 - They are expected logic outcomes under business rules.
 
-### 3.3 VM opcode explicit throw/return failures
+### 3.3 VM explicit return-value business failures
 
 Runtime class:
 
-- `ThrowAbort` (contract opcode explicit throw/abort path).
+- Top-level VM return values rejected by `check_vm_return_value` (non-falsy/non-empty business error result).
 
 External action bridge:
 
@@ -70,10 +124,10 @@ External action bridge:
 
 Why recoverable:
 
-- Downstream module explicitly declares business-level failure semantics.
+- Business failure is expressed through an explicit top-level return contract.
 - Caller receives a stable contract for fallback behavior.
 
-## 4. Unrecoverable error classes
+## 5. Unrecoverable error classes
 
 ### 4.1 System faults / invariant violations
 
@@ -116,7 +170,7 @@ In `Action::execute`, these must be unrecoverable:
 - AST or execution-structure constraint violations treated as hard policy errors.
 - Any condition showing infrastructure breakage instead of business rejection.
 
-## 5. Action execute classification rule (normative)
+## 6. Action execute classification rule (normative)
 
 Use this strict split in all action implementations:
 
@@ -125,7 +179,7 @@ Use this strict split in all action implementations:
 
 This keeps action semantics aligned with VM and snapshot rollback strategy.
 
-## 6. One-to-one recoverable checklist
+## 7. One-to-one recoverable checklist
 
 This checklist is the authoritative reference for recoverable errors.
 
@@ -173,7 +227,7 @@ Mapping location:
 ### 6.4 Contract-thrown errors by AST / ERR / ABT bytecode
 
 - VM frame converts `Abort|Throw` exits into `ThrowAbort`.
-- `ThrowAbort` is classified as recoverable.
+- `ThrowAbort` is classified as unrecoverable.
 
 Mapping location:
 
@@ -192,7 +246,7 @@ Mapping location:
 - `vm/src/interpreter/execute.rs` (XError → ItrErr by variant)
 - `vm/src/rt/error.rs` (ItrErrCode → XError/Error)
 
-## 7. Additional business-failure candidates (optional)
+## 8. Additional business-failure candidates (optional)
 
 Potentially recoverable if product policy confirms:
 
