@@ -186,5 +186,5 @@ fn record_avgfee(eng: &ChainEngine, block: &dyn BlockRead) {
 
 
 fn is_open_vmlog(eng: &ChainEngine, ck_hei: u64) -> bool {
-    eng.cnf.vmlogs_enable && ck_hei >= eng.cnf.vmlogs_open_height
+    eng.cnf.vm_log_enable && ck_hei >= eng.cnf.vm_log_open_height
 }

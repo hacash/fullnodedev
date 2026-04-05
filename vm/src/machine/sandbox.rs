@@ -1,5 +1,5 @@
 const SANDBOX_TX_FEE_238: u64 = 100_000;
-const SANDBOX_FUND_238: u64 = 1_000_000_000;
+const SANDBOX_FUND_238: u64 = 10_000_000_000;
 
 #[derive(Debug, Clone)]
 pub struct SandboxSpec {
@@ -132,12 +132,29 @@ pub fn build_call_codes(funcname: &str, args: &[Value]) -> Ret<Vec<u8>> {
             codes.push(PACKTUPLE as u8);
         }
     }
-    let fnsg = calc_func_sign(funcname);
+    let fnsg = parse_sandbox_func_sign(funcname)?;
     codes.push(CALLEXT as u8);
     codes.push(1);
     codes.extend_from_slice(&fnsg);
     codes.push(RET as u8);
     Ok(codes)
+}
+
+fn parse_sandbox_func_sign(funcname: &str) -> Ret<FnSign> {
+    if let Some(hexsig) = funcname.strip_prefix("0x") {
+        if hexsig.len() != FN_SIGN_WIDTH * 2 {
+            return errf!(
+                "sandbox function selector length invalid: expected {} hex chars",
+                FN_SIGN_WIDTH * 2
+            )
+        }
+        let raw = hex::decode(hexsig)
+            .map_err(|_| "sandbox function selector hex invalid".to_owned())?;
+        return raw
+            .try_into()
+            .map_err(|_| "sandbox function selector length invalid".to_owned());
+    }
+    Ok(calc_func_sign(funcname))
 }
 
 fn append_push_value_code(codes: &mut Vec<u8>, value: &Value) -> Rerr {
@@ -253,6 +270,24 @@ mod sandbox_parse_tests {
     fn parse_sandbox_params_reports_invalid_bytes() {
         let err = parse_sandbox_params("0xzz:bytes").unwrap_err();
         assert!(err.to_string().contains("invalid bytes argument"));
+    }
+
+    #[test]
+    fn build_call_codes_accepts_explicit_selector_hex() {
+        let codes = build_call_codes("0x1234abcd", &[]).unwrap();
+        assert_eq!(&codes[codes.len() - 5..codes.len() - 1], &[0x12, 0x34, 0xab, 0xcd]);
+    }
+
+    #[test]
+    fn build_call_codes_rejects_bad_selector_hex_length() {
+        let err = build_call_codes("0x1234", &[]).unwrap_err();
+        assert!(err.contains("selector length invalid"));
+    }
+
+    #[test]
+    fn build_call_codes_rejects_bad_selector_hex_chars() {
+        let err = build_call_codes("0xzzzzzzzz", &[]).unwrap_err();
+        assert!(err.contains("selector hex invalid"));
     }
 
     #[test]

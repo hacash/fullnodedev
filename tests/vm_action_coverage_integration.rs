@@ -2199,9 +2199,15 @@ mod action_coverage {
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         let caddr = contract_addr(&main, 1);
-        let err = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "nonexistent"))
+        let err = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr.clone(), "nonexistent"))
             .unwrap_err();
         assert!(err.contains("CallNotExist"), "{err}");
+
+        let sig = vm::rt::calc_func_sign("f");
+        let selector = format!("0x{}", hex::encode(sig));
+        let callres = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, selector))
+            .unwrap();
+        assert_eq!(callres.ret_val, Value::U8(0));
     }
 
     #[test]

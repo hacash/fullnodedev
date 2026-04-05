@@ -3,12 +3,11 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let engcnf = ctx.engine.config();
     let staptr = ctx.engine.state();
     let substa = staptr.fork_sub(Arc::downgrade(&staptr));
-    let mut tx = TransactionType3::new_by(
+    let tx = TransactionType3::new_by(
         engcnf.external_exec_coinbase(),
         Amount::unit238(1_000_000),
         height,
     );
-    tx.gas_max = Uint1::from(17);
 
     let env = Env {
         chain: ChainInfo {
@@ -28,7 +27,7 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     // `sandbox_call` may mutate runtime level/addrs and does not need to restore them.
 
     let contract = req.query("contract").unwrap_or("");
-    let function = req.query("function").unwrap_or("").to_owned();
+    let function = req.query("function").unwrap_or("").trim().to_owned();
     let params = req.query("params").unwrap_or("");
     let Ok(addr) = Address::from_readable(contract) else {
         return api_error("contract address format invalid");
@@ -36,16 +35,31 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok(ctrladdr) = ContractAddress::from_addr(addr) else {
         return api_error("contract address version error");
     };
-
-    let Ok(args) = machine::parse_sandbox_params(params) else {
-        return api_error("contract call params invalid");
+    if function.is_empty() {
+        return api_error("function cannot be empty");
+    }
+    let caller = match req.query("caller") {
+        Some(addr) => match req_addr(addr) {
+            Ok(v) => Some(v),
+            Err(_) => return api_error("caller address format invalid"),
+        },
+        None => None,
     };
-    let callres = machine::sandbox_call(
+
+    let args = match machine::parse_sandbox_params(params) {
+        Ok(v) => v,
+        Err(e) => return api_error(&e),
+    };
+    let mut spec = machine::SandboxSpec::new(ctrladdr, function).args(args);
+    if let Some(caller) = caller {
+        spec = spec.caller(caller);
+    }
+    let callres = match machine::sandbox_call(
         &mut ctxobj,
-        machine::SandboxSpec::new(ctrladdr, function).args(args),
-    );
-    let Ok(callres) = callres else {
-        return api_error("contract call error");
+        spec,
+    ) {
+        Ok(v) => v,
+        Err(e) => return api_error(&e),
     };
     api_data_raw(format!(
         r#""use_gas":{},"gas_use":{{"compute":{},"resource":{},"storage":{}}},"ret_val":{}"#,

@@ -21,7 +21,8 @@ pub fn convert_and_check(cap: &SpaceCap, gst: &GasExtra, ctype: CodeType, codes:
 
 
 pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
-    verify_bytecodes_with_limits(codes, SpaceCap::new(1).value_size)
+    const VERIFY_MAX_PUSH_BUF_LEN: usize = 1280;
+    verify_bytecodes_with_limits(codes, VERIFY_MAX_PUSH_BUF_LEN)
 }
 
 fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<Vec<u8>> {
