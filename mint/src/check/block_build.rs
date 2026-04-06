@@ -78,9 +78,9 @@ fn impl_packing_next_block(
     Box::new(block)
 }
 
-pub fn create_coinbase_tx(hei: u64, msg: Fixed16, adr: Address) -> TransactionCoinbase {
+pub fn create_coinbase_tx(hei: u64, msg: Fixed16, adr: Address) -> crate::TransactionCoinbase {
     let rwdamt = genesis::block_reward(hei);
-    TransactionCoinbase {
+    crate::TransactionCoinbase {
         ty: Uint1::from(0), // ccoinbase type = 0
         address: adr,
         reward: rwdamt,
@@ -317,7 +317,7 @@ mod tests {
         fn mrklroot(&self) -> &Hash {
             self.intro.mrklroot()
         }
-        fn coinbase_transaction(&self) -> Ret<&dyn TransactionRead> {
+        fn prelude_transaction(&self) -> Ret<&dyn TransactionRead> {
             errf!("none")
         }
         fn transaction_count(&self) -> &Uint4 {

@@ -43,7 +43,7 @@ fn miner_success(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         local_coinbase_tx.set_nonce(Hash::from(cb_nonce_bytes.try_into().unwrap()));
         
         let cbhx = local_coinbase_tx.hash();
-        let mkrl = calculate_mrkl_coinbase_update(cbhx, &mrklrts);
+        let mkrl = calculate_mrkl_prelude_update(cbhx, &mrklrts);
         local_block.set_mrklroot(mkrl);
         
         let blkhx = local_block.hash();

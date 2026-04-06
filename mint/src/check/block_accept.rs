@@ -4,8 +4,12 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
     if smaxh > 0 && curhei > smaxh {
         return errf!("config [mint].height_max limit: {}", smaxh)
     }
-    // verify coinbase
-    verify_coinbase(curhei, curblk.coinbase_transaction()?)?;
+    // verify mainnet prelude as coinbase
+    let ptx = curblk.prelude_transaction()?;
+    if ptx.ty() != crate::TransactionCoinbase::TYPE {
+        return errf!("mainnet prelude tx must be coinbase")
+    }
+    verify_coinbase(curhei, ptx)?;
     // check difficulty
     let blkcln = this.cnf.difficulty_adjust_blocks; // 288
     if curhei < blkcln*200 && this.cnf.is_mainnet() {

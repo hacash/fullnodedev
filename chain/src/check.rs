@@ -1,8 +1,8 @@
 
 fn try_execute_tx_by(this: &ChainEngine, tx: &dyn TransactionRead, pd_hei: u64, sub_state: &mut Box<dyn State>) -> Rerr {
     let cnf = &this.cnf;
-    if tx.ty() == TransactionCoinbase::TYPE {
-        return errf!("cannot submit coinbase tx");
+    if protocol::transaction::is_prelude_tx_type(tx.ty()) {
+        return errf!("cannot submit author tx");
     }
     let an = tx.action_count();
     if an != tx.actions().len() {
@@ -28,7 +28,7 @@ fn try_execute_tx_by(this: &ChainEngine, tx: &dyn TransactionRead, pd_hei: u64, 
         block: BlkInfo {
             height: pd_hei,
             hash,
-            coinbase: cnf.external_exec_coinbase(),
+            author: cnf.external_exec_author(),
         },
         tx: create_tx_info(tx),
     };

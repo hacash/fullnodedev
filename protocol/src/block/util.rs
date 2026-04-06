@@ -44,7 +44,7 @@ pub fn calculate_mrklroot(list: &Vec<Hash>) -> Hash {
 /*
 * 
 */
-pub fn calculate_mrkl_coinbase_modify(list: &Vec<Hash>) -> Vec<Hash> {
+pub fn calculate_mrkl_prelude_modify(list: &Vec<Hash>) -> Vec<Hash> {
     let mut res = vec![];
     let hxl = list.len();
     if hxl == 0 {
@@ -78,7 +78,7 @@ pub fn calculate_mrkl_coinbase_modify(list: &Vec<Hash>) -> Vec<Hash> {
 /*
 * return: newmrkl_
 */
-pub fn calculate_mrkl_coinbase_update(cbhx: Hash, list: &Vec<Hash>) -> Hash {
+pub fn calculate_mrkl_prelude_update(cbhx: Hash, list: &Vec<Hash>) -> Hash {
     let mut reshx = cbhx;
     for h in list {
         reshx = Hash::from(sys::calculate_hash(vec![reshx.to_vec(), h.to_vec()].concat()));

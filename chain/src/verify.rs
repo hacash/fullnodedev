@@ -32,7 +32,7 @@ pub fn block_verify(cnf: &EngineConf, isrt_blk: &dyn BlockRead, blk_data_len: us
     let txhxs = isrt_blk.transaction_hash_list(is_hash_with_fee); // hash with fee
     let txcount = isrt_blk.transaction_count().uint() as usize;
     if txcount < 1 {
-        return err!("block txs cannot be empty; coinbase tx required")
+        return err!("block txs cannot be empty; tx(0) prelude required")
     }
     if txcount > cnf.max_block_txs { // may 1000
         return errf!("block txs cannot exceed {}", cnf.max_block_txs)
@@ -44,15 +44,14 @@ pub fn block_verify(cnf: &EngineConf, isrt_blk: &dyn BlockRead, blk_data_len: us
     let alltxs = isrt_blk.transactions();
     let mut txttsize = 0usize;
     let mut txttnum = 0usize;
-    const CBTY: u8 =  TransactionCoinbase::TYPE;
+    let prelude_ty = isrt_blk.prelude_transaction()?.ty();
     for tx in alltxs {
         let txty = tx.ty();
-        // check only one coinbase at first
-        if txttnum == 0 && txty != CBTY { // coinbase check
-            return errf!("tx({}) type must be coinbase", txttnum)
+        if txttnum == 0 && txty != prelude_ty {
+            return errf!("tx(0) type changed during block scan")
         }
-        if txttnum >= 1 && txty == CBTY { // must not be coinbase
-            return errf!("tx({}) type cannot be coinbase", txttnum)  
+        if txttnum >= 1 && txty == prelude_ty {
+            return errf!("tx({}) type cannot repeat prelude type {}", txttnum, txty)
         }
         let txsz = tx.size();
         if txsz > cnf.max_tx_size {
@@ -61,8 +60,8 @@ pub fn block_verify(cnf: &EngineConf, isrt_blk: &dyn BlockRead, blk_data_len: us
         // size count
         txttnum += 1;
         txttsize += txsz;
-        if txty == CBTY {
-            continue // igonre coinbase other check
+        if txttnum == 1 {
+            continue // prelude slot is not validated as a normal tx here
         }
         let an = tx.action_count();
         if an != tx.actions().len() {

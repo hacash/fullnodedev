@@ -8,7 +8,7 @@ pub enum ItrErrCode {
     CodeTypeError = 4,
     InheritError = 5,
     LibraryError = 6,
-    ComplieError = 7,
+    CompileError = 7,
     ContractAddrErr = 8,
     ContractUpgradeErr = 9,
 

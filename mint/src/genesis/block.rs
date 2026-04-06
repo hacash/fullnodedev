@@ -25,7 +25,7 @@ fn create_genesis_block() -> BlockV1 {
     let blknoncenum = Uint4::from(160117829);
     let reward_addr = Address::from_readable(&"1271438866CSDpJUqrnchoJAiGGBFSQhjd".to_string()).unwrap();
     let mut trsvec = DynVecTransaction::default(); 
-    trsvec.push(Box::new(TransactionCoinbase{
+    trsvec.push(Box::new(crate::TransactionCoinbase{
         ty: Uint1::from(0),
         address: reward_addr,
         reward: Amount::small_mei(1),

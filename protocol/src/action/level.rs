@@ -164,6 +164,23 @@ fn visit_runtime_node(
     }
 }
 
+fn visit_runtime_node_fast_sync(tx_type: u8, act: &dyn Action, ast_depth: usize) -> Rerr {
+    validate_node_tx_type(tx_type, act)?;
+    match action_shape(act) {
+        ActionShape::Terminal => Ok(()),
+        ActionShape::AstContainer {
+            depth_inc,
+            children,
+        } => {
+            let next_depth = validate_depth_limit(ast_depth, depth_inc)?;
+            for sub in children {
+                visit_runtime_node_fast_sync(tx_type, sub, next_depth)?;
+            }
+            Ok(())
+        }
+    }
+}
+
 fn validate_no_guard_only_tx(stats: &TxTopologyStats) -> Rerr {
     if stats.has_guard_terminal && stats.non_guard_terminal_count == 0 {
         return errf!("tx topology invalid: tx actions cannot be all GUARD");
@@ -228,4 +245,8 @@ pub fn precheck_tx_actions(tx_type: u8, actions: &[Box<dyn Action>]) -> Rerr {
 
 pub fn precheck_runtime_action(tx_type: u8, act: &dyn Action, from: ExecFrom) -> Rerr {
     visit_runtime_node(tx_type, act, from, 0)
+}
+
+pub fn precheck_runtime_action_fast_sync(tx_type: u8, act: &dyn Action) -> Rerr {
+    visit_runtime_node_fast_sync(tx_type, act, 0)
 }

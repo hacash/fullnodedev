@@ -198,7 +198,9 @@ impl Value {
             ValueTy::Bytes => Ok(Self::Bytes(stuff)),
             ValueTy::Address => {
                 ensure_len!(field::Address::SIZE);
-                let addr = field::Address::from_bytes(&stuff[0..field::Address::SIZE]).unwrap();
+                let Ok(addr) = field::Address::from_bytes(&stuff[0..field::Address::SIZE]) else {
+                    return cast_err!();
+                };
                 Ok(Self::Address(addr))
             }
             _ => cast_err!(),
@@ -236,5 +238,17 @@ mod convert_tests {
         assert_eq!(Value::type_from(ValueTy::Bool, vec![0]).unwrap(), Value::Bool(false));
         assert_eq!(Value::type_from(ValueTy::Bool, vec![1]).unwrap(), Value::Bool(true));
         assert!(Value::type_from(ValueTy::Bool, vec![2]).is_err());
+    }
+
+    #[test]
+    fn type_from_address_accepts_valid_bytes_and_rejects_invalid_version() {
+        let valid = field::Address::create_contract([1u8; 20]).serialize();
+        assert_eq!(
+            Value::type_from(ValueTy::Address, valid.clone()).unwrap(),
+            Value::Address(field::Address::from_bytes(&valid).unwrap())
+        );
+
+        let invalid = [vec![2u8], vec![0u8; field::Address::SIZE - 1]].concat();
+        assert!(Value::type_from(ValueTy::Address, invalid).is_err());
     }
 }

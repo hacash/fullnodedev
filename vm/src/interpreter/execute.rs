@@ -180,7 +180,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
     host: &mut H,
 ) -> VmrtRes<CallExit> {
     let mut bindings = FrameBindings::root(*context_addr, Vec::<field::Address>::new().into());
-    let mut intent_state = crate::frame::IntentBindingState::default();
+    let mut intent_state = crate::frame::IntentScopeState::default();
     let mut intents = IntentRuntime::default();
     execute_code_in_frame(
         pc,
@@ -214,7 +214,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     locals: &mut Stack,
     heap: &mut Heap,
     bindings: &mut FrameBindings,
-    intent_state: &mut crate::frame::IntentBindingState,
+    intent_state: &mut crate::frame::IntentScopeState,
     context_addr: &field::Address,
     current_addr: &field::Address,
     // shared runtime

@@ -24,6 +24,18 @@ pub enum ValueTy {
 
 impl ValueTy {
 
+    pub fn reserved_type_error(name: &str) -> String {
+        match name {
+            "u256" => "type 'u256' is reserved for future expansion and is not supported yet".to_owned(),
+            "uint" => "type 'uint' is reserved for future expansion and is not supported yet; use an explicit width such as u8/u16/u32/u64/u128".to_owned(),
+            _ => format!("unknown type '{}'", name),
+        }
+    }
+
+    pub fn is_reserved_type_name(name: &str) -> bool {
+        matches!(name, "u256" | "uint")
+    }
+
     pub fn check_func_argv_type(&self) -> Rerr {
         use ValueTy::*;
         match self {
@@ -90,7 +102,7 @@ impl ValueTy {
             "tuple"     => Tuple,
             "compo"     => Compo,
             "handle"    => Handle,
-            _ => return errf!("unknown type")
+            _ => return Err(Self::reserved_type_error(s)),
         })
     }
 
@@ -137,7 +149,12 @@ mod type_tests {
 
     #[test]
     fn unknown_type_name_and_id_are_rejected() {
-        assert!(ValueTy::from_name("u256").is_err());
+        let err_u256 = ValueTy::from_name("u256").unwrap_err();
+        assert!(err_u256.contains("reserved for future expansion"));
+        let err_uint = ValueTy::from_name("uint").unwrap_err();
+        assert!(err_uint.contains("explicit width"));
+        let err_unknown = ValueTy::from_name("wat").unwrap_err();
+        assert!(err_unknown.contains("unknown type 'wat'"));
         assert!(ValueTy::build(7).is_err());
         assert!(ValueTy::build(10).is_err());
         assert!(ValueTy::build(12).is_err());

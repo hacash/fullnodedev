@@ -55,12 +55,15 @@ impl Compo {
                 let sss: Vec<_> = a.iter().map(|a| a.to_json()).collect();
                 format!("[{}]", sss.join(","))
             }
-            Self::Map(b) => {
-                let mmm: Vec<_> = b
-                    .iter()
-                    .map(|(k, v)| format!("\"{}\":{}", bytes_to_readable_string(&k), v.to_json()))
-                    .collect();
-                format!("{{{}}}", mmm.join(","))
+            Self::Map(b) => match Self::map_debug_json(b) {
+                Some(s) => s,
+                None => {
+                    let mmm: Vec<_> = b
+                        .iter()
+                        .map(|(k, v)| format!(r#"{{"key_hex":"{}","value":{}}}"#, k.to_hex(), v.to_json()))
+                        .collect();
+                    format!(r#"{{"$map":[{}]}}"#, mmm.join(","))
+                }
             }
         }
     }
@@ -352,9 +355,9 @@ impl CompoItem {
         if m % 2 != 0 {
             return itr_err_code!(CompoPackError); // map must k => v
         }
-        let sz = m / 2;
+        let pair_count = m / 2;
         let mut mapobj = BTreeMap::new();
-        for i in 0..sz {
+        for i in 0..pair_count {
             let k = items[i * 2].take().unwrap();
             let v = items[i * 2 + 1].take().unwrap();
             let k = k.extract_key_bytes()?;
@@ -363,7 +366,7 @@ impl CompoItem {
                 return itr_err_fmt!(CompoPackError, "duplicate key in pack_map");
             }
         }
-        Ok((Value::Compo(Self::map(mapobj)?), sz))
+        Ok((Value::Compo(Self::map(mapobj)?), m))
     }
 
     pub fn is_list(&self) -> bool {

@@ -213,7 +213,7 @@ fn append_push_bytes_code(codes: &mut Vec<u8>, bytes: &[u8]) {
 
 fn parse_one_param(t: &str, v: &str) -> Ret<Value> {
     use ValueTy::*;
-    let ty = ValueTy::from_name(t).map_err(|_| format!("unsupported param type '{}'", t))?;
+    let ty = ValueTy::from_name(t)?;
     Ok(match ty {
         Nil => Value::Nil,
         Bool => match v {
@@ -270,6 +270,14 @@ mod sandbox_parse_tests {
     fn parse_sandbox_params_reports_invalid_bytes() {
         let err = parse_sandbox_params("0xzz:bytes").unwrap_err();
         assert!(err.to_string().contains("invalid bytes argument"));
+    }
+
+    #[test]
+    fn parse_sandbox_params_reports_reserved_type_names() {
+        let err_u256 = parse_sandbox_params("1:u256").unwrap_err();
+        assert!(err_u256.contains("reserved for future expansion"));
+        let err_uint = parse_sandbox_params("1:uint").unwrap_err();
+        assert!(err_uint.contains("explicit width"));
     }
 
     #[test]

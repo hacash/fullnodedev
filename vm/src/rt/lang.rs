@@ -58,7 +58,6 @@ keyword_define! {
     Assert    : "assert"
     Print     : "print"
     Call      : "call"
-    TailCall  : "tailcall"
     CallExt      : "callext"
     CallExtView  : "callextview"
     CallUseView  : "calluseview"
@@ -345,6 +344,7 @@ pub enum Token {
     Partition(char),
     Identifier(String),
     Integer(u128),
+    IntegerWithSuffix(u128, KwTy),
     Character(u8),
     Bytes(Vec<u8>),
     Address(Address),
@@ -367,7 +367,7 @@ mod irfn_tests {
         assert_eq!(inst, Bytecode::SEDIT);
         assert_eq!(pms, meta.param as usize);
         assert_eq!(args, meta.input as usize);
-        assert_eq!(outs, meta.otput as usize);
+        assert_eq!(outs, meta.output as usize);
     }
 
     #[test]

@@ -111,7 +111,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
 
     // parse
     let meta = inst.metadata();
-    let hrtv = meta.otput == 1;
+    let hrtv = meta.output == 1;
     // parse
     irnode = match inst {
         // BYTECODE LIST BLOCK IF WHILE
@@ -182,7 +182,7 @@ fn parse_ir_node_must(stuff: &[u8], seek: &mut usize, depth: usize, isrtv: bool)
             if ! meta.valid {
                 return itr_err_fmt!(InstInvalid, "bytecode {} not found", inst as u8)
             }
-            if meta.otput>1 && meta.input<255 { 
+            if meta.output>1 && meta.input<255 { 
                 return itr_err_fmt!(InstInvalid, "invalid irnode {}", inst as u8)
             }
             match (meta.param, meta.input) {

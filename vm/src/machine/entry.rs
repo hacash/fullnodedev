@@ -11,13 +11,13 @@ pub(crate) enum EntryRequest {
         state_addr: Address,
         libs: Vec<ContractAddress>,
         codes: ByteView,
-        intent_binding: IntentScope,
+        intent_scope: IntentScope,
         param: Value,
     },
     Abst {
         kind: AbstCall,
         contract_addr: ContractAddress,
-        intent_binding: IntentScope,
+        intent_scope: IntentScope,
         param: Value,
     },
 }
@@ -48,15 +48,15 @@ impl EntryRequest {
                 state_addr,
                 libs,
                 codes,
-                intent_binding,
+                intent_scope,
                 param,
-            } => machine.p2sh_call(runtime, ctx, code_type, state_addr, libs, codes, intent_binding, param),
+            } => machine.p2sh_call(runtime, ctx, code_type, state_addr, libs, codes, intent_scope, param),
             Self::Abst {
                 kind,
                 contract_addr,
-                intent_binding,
+                intent_scope,
                 param,
-            } => machine.abst_call(runtime, ctx, kind, contract_addr, intent_binding, param),
+            } => machine.abst_call(runtime, ctx, kind, contract_addr, intent_scope, param),
         }
     }
 }
@@ -232,13 +232,13 @@ pub fn run_p2sh_entry(
     let (state_addr, mv1) = Address::create(payload_ref)?;
     let (libs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
     let mv = mv1 + mv2;
-    let intent_binding = ctx.vm_current_intent_scope();
+    let intent_scope = ctx.vm_current_intent_scope();
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::P2sh {
         code_type: CodeConf::parse(codeconf)?.code_type(),
         state_addr,
         libs: libs.into_list(),
         codes: payload.slice(mv, payload.len())?,
-        intent_binding,
+        intent_scope,
         param,
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
@@ -254,11 +254,11 @@ pub fn run_abst_entry(
     param: Value,
 ) -> Ret<(VmGasBuckets, Value)> {
     ensure_vm_run_ready(ctx)?;
-    let intent_binding = ctx.vm_current_intent_scope();
+    let intent_scope = ctx.vm_current_intent_scope();
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::Abst {
         kind: target,
         contract_addr: ContractAddress::from_addr(payload)?,
-        intent_binding,
+        intent_scope,
         param,
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
@@ -290,7 +290,7 @@ impl Machine {
         host: &mut H,
         cty: AbstCall,
         contract_addr: ContractAddress,
-        intent_binding: IntentScope,
+        intent_scope: IntentScope,
         param: Value,
     ) -> XRet<Value> {
         let exec = EntryKind::Abst.root_exec();
@@ -308,7 +308,7 @@ impl Machine {
             exec,
             hit.fnobj.as_ref(),
             FrameBindings::contract(contract_addr, hit.owner, hit.lib_table)
-                .with_intent_binding(intent_binding),
+                .with_intent_scope(intent_scope),
             Some(param),
         ).map_err(XError::from)?;
         validate_vm_entry_return(EntryKind::Abst, &rv, &format!("call {}.{:?}", adr, cty))?;
@@ -323,7 +323,7 @@ impl Machine {
         p2sh_addr: Address,
         libs: Vec<ContractAddress>,
         codes: ByteView,
-        intent_binding: IntentScope,
+        intent_scope: IntentScope,
         param: Value,
     ) -> XRet<Value> {
         let exec = EntryKind::P2sh.root_exec();
@@ -341,7 +341,7 @@ impl Machine {
                     .collect::<Vec<_>>()
                     .into(),
             )
-            .with_intent_binding(intent_binding),
+            .with_intent_scope(intent_scope),
             Some(param),
         ).map_err(XError::from)?;
         validate_vm_entry_return(EntryKind::P2sh, &rv, "p2sh call")?;
@@ -418,7 +418,7 @@ impl Executor {
         state_addr: Address,
         libs: Vec<ContractAddress>,
         codes: ByteView,
-        intent_binding: IntentScope,
+        intent_scope: IntentScope,
         param: Value,
     ) -> XRet<Value> {
         let req = EntryRequest::P2sh {
@@ -426,7 +426,7 @@ impl Executor {
             state_addr,
             libs,
             codes,
-            intent_binding,
+            intent_scope,
             param,
         };
         let (_, retv) = self.execute_entry_req(ctx, req)?;
@@ -438,13 +438,13 @@ impl Executor {
         ctx: &mut dyn Context,
         kind: AbstCall,
         contract_addr: ContractAddress,
-        intent_binding: IntentScope,
+        intent_scope: IntentScope,
         param: Value,
     ) -> XRet<Value> {
         let req = EntryRequest::Abst {
             kind,
             contract_addr,
-            intent_binding,
+            intent_scope,
             param,
         };
         let (_, retv) = self.execute_entry_req(ctx, req)?;
@@ -655,7 +655,7 @@ impl Executor {
                         EntryRequest::Abst {
                             kind: AbstCall::Deferred,
                             contract_addr: caddr.addr,
-                            intent_binding: caddr.intent_scope,
+                            intent_scope: caddr.intent_scope,
                             param: Value::Nil,
                         }
                         .execute(machine, runtime, ctx)

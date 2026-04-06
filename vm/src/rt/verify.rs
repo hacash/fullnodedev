@@ -289,4 +289,12 @@ mod call_verify_tests {
         codes.push(Bytecode::END as u8);
         verify_bytecodes(&codes).unwrap();
     }
+
+    #[test]
+    fn verify_rejects_unknown_action_ids_as_inst_params_err() {
+        let codes = vec![Bytecode::ACTION as u8, u8::MAX, Bytecode::END as u8];
+        let err = verify_bytecodes(&codes).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstParamsErr);
+        assert!(err.1.contains("ACTION id 255 not found"));
+    }
 }

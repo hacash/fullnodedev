@@ -5,7 +5,7 @@ use field::*;
 use protocol::operate::*;
 use protocol::setup::*;
 use protocol::state::*;
-use protocol::transaction::*;
+use crate::TransactionCoinbase;
 use protocol::*;
 use std::any::Any;
 use sys::*;

@@ -1237,14 +1237,14 @@ mod action_coverage {
     }
 
     // ═══════════════════════════════════════════════════
-    // EnvCoinbaseAddr tests
+    // EnvBlockAuthorAddr tests
     // ═══════════════════════════════════════════════════
 
     #[test]
-    fn env_coinbase_addr_returns_block_coinbase() {
+    fn env_author_addr_returns_block_author() {
         let _guard = test_guard();
         let main = main_addr();
-        let coinbase = alt_addr();
+        let author = alt_addr();
         let tx = make_tx(3, main, vec![], 17);
         let mut ctx = make_ctx(
             1,
@@ -1253,20 +1253,20 @@ mod action_coverage {
             Box::new(MemLogs::default()),
         );
         ctx.env.chain.fast_sync = true;
-        ctx.env.block.coinbase = coinbase;
+        ctx.env.block.author = author;
 
-        let act = EnvCoinbaseAddr::new();
+        let act = EnvBlockAuthorAddr::new();
         let (gas, res) = act.execute(&mut ctx).unwrap();
         assert!(gas > 0);
         assert_eq!(
             res,
-            coinbase.to_vec(),
-            "EnvCoinbaseAddr should return coinbase address"
+            author.to_vec(),
+            "EnvBlockAuthorAddr should return author address"
         );
     }
 
     #[test]
-    fn env_coinbase_addr_default_is_zero() {
+    fn env_author_addr_default_is_zero() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
@@ -1278,7 +1278,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let act = EnvCoinbaseAddr::new();
+        let act = EnvBlockAuthorAddr::new();
         let (_, res) = act.execute(&mut ctx).unwrap();
         assert_eq!(res, Address::default().to_vec());
     }
@@ -1348,7 +1348,7 @@ mod action_coverage {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
-        let coinbase = alt_addr();
+        let author = alt_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
         let mut ctx = make_ctx_from_tx(
@@ -1357,7 +1357,7 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.env.block.coinbase = coinbase;
+        ctx.env.block.author = author;
 
         let script = format!(
             r#"
@@ -1365,12 +1365,12 @@ mod action_coverage {
             assert h == 777
             var m = tx_main_addr()
             assert m == {main}
-            var cb = block_coinbase_addr()
-            assert cb == {coinbase}
+            var cb = block_author_addr()
+            assert cb == {author}
             return 0
             "#,
             main = main.to_readable(),
-            coinbase = coinbase.to_readable(),
+            author = author.to_readable(),
         );
         let codes = lang_to_bytecode(&script).unwrap();
         assert!(codes.contains(&(Bytecode::ACTENV as u8)));

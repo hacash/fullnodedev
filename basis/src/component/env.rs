@@ -12,7 +12,7 @@ pub struct ChainInfo {
 pub struct BlkInfo {
     pub height: u64,
     pub hash: Hash,
-    pub coinbase: Address,
+    pub author: Address,
 }
 
 

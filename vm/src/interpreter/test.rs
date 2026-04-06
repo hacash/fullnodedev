@@ -1221,7 +1221,7 @@ mod bounds_tests {
         ];
 
         let mut bindings = FrameBindings::contract(cadr.clone(), cadr.clone(), Vec::<Address>::new().into());
-        let mut intent_state = crate::frame::IntentBindingState::default();
+        let mut intent_state = crate::frame::IntentScopeState::default();
         super::execute_code_in_frame(
             &mut pc,
             &codes,
@@ -2438,6 +2438,54 @@ mod bounds_tests {
         .unwrap_err();
 
         assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+    }
+
+    #[test]
+    fn unpack_rejects_nested_container_over_cap() {
+        use crate::rt::Bytecode;
+        use std::collections::VecDeque;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        let mut locals = Stack::new(256);
+        locals.alloc(1).unwrap();
+
+        let mut operands = Stack::new(256);
+        let nested = Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1), Value::U8(2)])).unwrap());
+        let args = Value::Tuple(TupleItem::new(vec![nested]).unwrap());
+        operands.push(args).unwrap();
+        operands.push(Value::U8(0)).unwrap();
+
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let codes = vec![Bytecode::UNPACK as u8, Bytecode::END as u8];
+        let err = execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &cap,
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
     }
 
     #[test]

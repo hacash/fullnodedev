@@ -5,6 +5,15 @@ type ActionDefTy = (u8, &'static str, ValueTy, usize);
 
 const ACTION_UNKNOWN_NAME: &str = "__unknown__";
 
+fn action_kind_name(act_kind: Bytecode) -> &'static str {
+    match act_kind {
+        Bytecode::ACTION => "ACTION",
+        Bytecode::ACTENV => "ACTENV",
+        Bytecode::ACTVIEW => "ACTVIEW",
+        _ => "ACTION?",
+    }
+}
+
 pub const ACTION_DEFS: [ActionDefTy; 13] = [
     (HacToTrs::IDX,      "transfer_hac_to",         ValueTy::Nil, 2),
     (HacFromTrs::IDX,    "transfer_hac_from",       ValueTy::Nil, 2),
@@ -22,9 +31,9 @@ pub const ACTION_DEFS: [ActionDefTy; 13] = [
 ];
 
 pub const ACTION_ENV_DEFS: [ActionDefTy; 3] = [
-    (EnvHeight::IDX,       "block_height",          ValueTy::U64,     0),
-    (EnvCoinbaseAddr::IDX, "block_coinbase_addr",   ValueTy::Address, 0),
-    (EnvMainAddr::IDX,     "tx_main_addr",          ValueTy::Address, 0),
+    (EnvHeight::IDX,          "block_height",          ValueTy::U64,     0),
+    (EnvBlockAuthorAddr::IDX, "block_author_addr",     ValueTy::Address, 0),
+    (EnvMainAddr::IDX,        "tx_main_addr",          ValueTy::Address, 0),
 ];
 
 pub const ACTION_VIEW_DEFS: [ActionDefTy; 7] = [
@@ -62,8 +71,8 @@ pub fn ensure_act_id(act_kind: Bytecode, id: u8) -> VmrtErr {
     };
     if !ok {
         return Err(ItrErr::new(
-            ItrErrCode::ActCallError,
-            &format!("action id {} not found", id),
+            ItrErrCode::InstParamsErr,
+            &format!("{} id {} not found", action_kind_name(act_kind), id),
         ));
     }
     Ok(())
@@ -114,7 +123,7 @@ pub fn act_retv_type(act_kind: Bytecode, idx: u8) -> VmrtRes<ValueTy> {
         Bytecode::ACTVIEW => search_act_by_id(idx, &ACTION_VIEW_DEFS),
         _ => None,
     }
-    .ok_or_else(|| ItrErr::new(ActCallError, &format!("action id {} not found", idx)))?;
+    .ok_or_else(|| ItrErr::new(ItrErrCode::InstParamsErr, &format!("{} id {} not found", action_kind_name(act_kind), idx)))?;
     Ok(def.2)
 }
 
@@ -146,11 +155,22 @@ mod action_call_tests {
     }
 
     #[test]
-    fn actenv_coinbase_is_registered_and_allowed() {
-        let env_id = EnvCoinbaseAddr::IDX;
+    fn actenv_author_is_registered_and_allowed() {
+        let env_id = EnvBlockAuthorAddr::IDX;
         let def = search_act_by_id(env_id, &ACTION_ENV_DEFS)
-            .expect("EnvCoinbaseAddr must exist in ACTION_ENV_DEFS");
-        assert_eq!(def.1, "block_coinbase_addr");
+            .expect("EnvBlockAuthorAddr must exist in ACTION_ENV_DEFS");
+        assert_eq!(def.1, "block_author_addr");
         assert!(ensure_act_allowed(ExecCtx::main(), Bytecode::ACTENV, env_id).is_ok());
+    }
+
+    #[test]
+    fn unknown_action_ids_are_instruction_param_errors() {
+        let err = ensure_act_id(Bytecode::ACTION, u8::MAX).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstParamsErr);
+        assert!(err.1.contains("ACTION id 255 not found"));
+
+        let err = act_retv_type(Bytecode::ACTVIEW, u8::MAX).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstParamsErr);
+        assert!(err.1.contains("ACTVIEW id 255 not found"));
     }
 }

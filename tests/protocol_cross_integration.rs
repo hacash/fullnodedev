@@ -682,14 +682,17 @@ fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
 }
 
 #[test]
-fn test_tx_without_ast_allows_nonzero_gasmax() {
+fn test_tx_without_ast_allows_nonzero_gasmax_when_topology_is_valid() {
     let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1_000_000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType3::TYPE);
     tx.gas_max = Uint1::from(17);
-    tx.actions.push(Box::new(TxMessage::new())).unwrap();
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    act.hacash = Amount::zhu(1);
+    tx.actions.push(Box::new(act)).unwrap();
 
     let main = tx.main();
     let mut env = Env::default();

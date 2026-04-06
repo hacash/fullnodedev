@@ -12,7 +12,7 @@ use basis::interface::*;
 use field::*;
 use mint::genesis::*;
 use protocol::block::*;
-use protocol::transaction::*;
+use mint::TransactionCoinbase;
 use sys::*;
 
 include! {"util.rs"}
@@ -248,11 +248,11 @@ fn run_block_mining_item(
     // stuff data
     let stuff = { MINING_BLOCK_STUFF.read().unwrap().clone() };
     let height = stuff.height;
-    let mut cbtx = stuff.coinbase_tx.clone();
-    cbtx.set_nonce(coinbase_nonce);
+    let mut coinbase_tx = stuff.coinbase_tx.clone();
+    coinbase_tx.set_nonce(coinbase_nonce);
     let mut block_intro = stuff.block_intro.clone();
-    block_intro.set_mrklroot(calculate_mrkl_coinbase_update(
-        cbtx.hash(),
+    block_intro.set_mrklroot(calculate_mrkl_prelude_update(
+        coinbase_tx.hash(),
         &stuff.mkrl_list,
     ));
     loop {

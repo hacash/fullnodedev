@@ -16,11 +16,11 @@ action_define! { EnvMainAddr, 0x0702,
     })
 }
 
-action_define! { EnvCoinbaseAddr, 0x0703,
+action_define! { EnvBlockAuthorAddr, 0x0703,
     ActScope::CALL_ONLY, 3, false, [], {},
-    (self, "Syscall: Get coinbase address".to_owned()),
+    (self, "Syscall: Get author address".to_owned()),
     (self, ctx, _gas {
-        let cbadr = ctx.env().block.coinbase.clone();
+        let cbadr = ctx.env().block.author.clone();
         Ok(cbadr.to_vec())
     })
 }

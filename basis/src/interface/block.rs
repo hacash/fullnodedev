@@ -11,10 +11,10 @@ pub trait BlockRead : BlockExec + Serialize + Send + Sync + DynClone {
     fn height(&self) -> &BlockHeight { never!() }
     fn timestamp(&self) -> &Timestamp { never!() }
     fn nonce(&self) -> &Uint4 { never!() }
-    fn difficulty(&self) -> &Uint4 { never!() } 
+    fn difficulty(&self) -> &Uint4 { never!() }
     fn prevhash(&self) -> &Hash { never!() }
     fn mrklroot(&self) -> &Hash { never!() }
-    fn coinbase_transaction(&self) ->  Ret<&dyn TransactionRead> { never!() } // must have
+    fn prelude_transaction(&self) -> Ret<&dyn TransactionRead> { never!() } // fixed tx[0]
     fn transaction_count(&self) -> &Uint4 { never!() }
     fn transactions(&self) -> &Vec<Box<dyn Transaction>> { never!() }
     fn transaction_hash_list(&self, _hash_with_fee: bool) -> Vec<Hash> { never!() }

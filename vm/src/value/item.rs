@@ -11,10 +11,12 @@ pub enum Value {
     U32(u32),                //           4
     U64(u64),                //           5
     U128(u128),              //           6
-    // U256(u256), ...       //           7..8
-    Bytes(Vec<u8>),          //           9
-    Address(field::Address), //           10
-    HeapSlice((u32, u32)),   //           12
+    // U256(u256), ...       //           7 (reserved)
+    Bytes(Vec<u8>),          //           8
+    Address(field::Address), //           9
+    // reserved              //           10
+    HeapSlice((u32, u32)),   //           11
+    // reserved              //           12
     Tuple(TupleItem),        //           13
     Compo(CompoItem),        //           14
     Handle(HandleItem),      //           15
@@ -414,7 +416,7 @@ impl Value {
             U32(n) =>  format!("{}", n),
             U64(n) =>  format!("{}", n),
             U128(n) => format!("{}", n),
-            Bytes(b) => format!("\"{}\"", &to_readable_or_base64(b)),
+            Bytes(b) => serde_json::to_string(&to_readable_or_base64(b)).unwrap(),
             Address(a) =>  format!("\"{}\"", a),
             HeapSlice((s, l)) => format!("[{},{}]", s, l),
             Tuple(a) => a.to_json(),
@@ -547,18 +549,37 @@ mod tests {
     }
 
     #[test]
+    fn to_json_escapes_readable_bytes() {
+        let v = Value::Bytes(br#"a"b\c"#.to_vec());
+        assert_eq!(v.to_json(), r#""a\"b\\c""#);
+    }
+
+    #[test]
     fn to_debug_json_escapes_readable_bytes() {
         let v = Value::Bytes(br#"a"b\c"#.to_vec());
         assert_eq!(v.to_debug_json(), r#""a\"b\\c""#);
     }
 
     #[test]
-    fn to_debug_json_keeps_readable_map_as_plain_object() {
+    fn to_json_keeps_readable_map_as_plain_object() {
         let mut map = BTreeMap::new();
         map.insert(b"kind".to_vec(), Value::Bytes(b"hnft".to_vec()));
         map.insert(b"mint".to_vec(), Value::U8(1));
         let v = Value::Compo(CompoItem::map(map).unwrap());
+        assert_eq!(v.to_json(), r#"{"kind":"hnft","mint":1}"#);
         assert_eq!(v.to_debug_json(), r#"{"kind":"hnft","mint":1}"#);
+    }
+
+    #[test]
+    fn to_json_falls_back_for_non_readable_map_keys() {
+        let mut map = BTreeMap::new();
+        map.insert(vec![0x61, 0x20], Value::U8(7));
+        map.insert(vec![0x61, 0x0a], Value::U8(8));
+        let v = Value::Compo(CompoItem::map(map).unwrap());
+        assert_eq!(
+            v.to_json(),
+            r#"{"$map":[{"key_hex":"610a","value":8},{"key_hex":"6120","value":7}]}"#
+        );
     }
 
     #[test]

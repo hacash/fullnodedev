@@ -156,6 +156,9 @@ pub enum Bytecode {
     MGET = 0x92,     // &     memory get
     MPUT = 0x93,     // a,b   memory put
     MTAKE = 0x94,    // &     memory take
+    ________________148 = 0x95,
+    ________________149 = 0x96,
+    ________________151 = 0x97,
     ________________152 = 0x98,
     SSTAT = 0x99, // &       storage info
     SLOAD = 0x9a, // &       storage load
@@ -278,7 +281,7 @@ pub struct BytecodeMetadata {
     pub valid: bool,
     pub param: u8,
     pub input: u8,
-    pub otput: u8,
+    pub output: u8,
     pub intro: &'static str,
 }
 
@@ -294,13 +297,13 @@ impl Bytecode {
                 valid: true,
                 param: 4,
                 input: 1,
-                otput: 1,
+                output: 1,
                 intro: "calc_call",
             }
         }
         match self {
             $(
-            $inst => BytecodeMetadata {valid: true, param: $p, input: $i, otput: $o, intro: stringify!($s)},
+            $inst => BytecodeMetadata {valid: true, param: $p, input: $i, output: $o, intro: stringify!($s)},
             )+
             _ => BytecodeMetadata::default(),
         }
@@ -334,7 +337,7 @@ macro_rules! bytecode_intro_sig {
 
 /* params, stack input, stack output */
 bytecode_metadata_define! {
-    ACTION     : 1, 1, 0,     action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
+    ACTION     : 1, 1, 0,     action  // no stack output; output=0 to avoid extra POP in IRBLOCK
     ACTVIEW    : 1, 1, 1,     actview
     ACTENV     : 1, 0, 1,     actenv
     NTENV      : 1, 0, 1,     native_env

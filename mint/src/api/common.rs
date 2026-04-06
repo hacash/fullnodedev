@@ -20,7 +20,7 @@ pub struct MinerBlockStuff {
     block_nonce: Uint4,
     coinbase_nonce: Hash,
     target_hash: Hash,
-    coinbase_tx: TransactionCoinbase,
+    coinbase_tx: crate::TransactionCoinbase,
     block: BlockV1,
     mrklrts: Vec<Hash>,
 }
@@ -166,8 +166,8 @@ fn read_mint_state(ctx: &ApiExecCtx) -> Arc<Box<dyn State>> {
 }
 
 
-fn update_miner_pending_block(block: BlockV1, cbtx: TransactionCoinbase) {
-    let mkrluphxs = calculate_mrkl_coinbase_modify(&block.transaction_hash_list(true));
+fn update_miner_pending_block(block: BlockV1, cbtx: crate::TransactionCoinbase) {
+    let mkrluphxs = calculate_mrkl_prelude_modify(&block.transaction_hash_list(true));
     let mut stfs = MINER_PENDING_BLOCK.lock().unwrap();
     stfs.push_front(MinerBlockStuff {
         height: block.height().clone(),
@@ -193,9 +193,9 @@ fn miner_reset_next_new_block(engine: Arc<dyn Engine>, txpool: &dyn TxPool) {
     let block = engine.minter().packing_next_block(engine.as_read(), txpool);
     let block = *block.downcast::<BlockV1>().unwrap();
     let cbtx: Box<dyn Transaction> = block.transactions()[0].clone();
-    let cbtx: TransactionCoinbase = maybe!(
+    let cbtx: crate::TransactionCoinbase = maybe!(
         cbtx.ty() == 0,
-        TransactionCoinbase::must(&cbtx.serialize()),
+        crate::TransactionCoinbase::must(&cbtx.serialize()),
         never!()
     );
     update_miner_pending_block(block, cbtx);
@@ -216,9 +216,9 @@ fn get_miner_pending_block_stuff(
     if let Err(e) = stuff.coinbase_nonce.increase() {
         return api_error(&e)
     }
-    stuff.coinbase_tx.set_nonce(stuff.coinbase_nonce);
+    stuff.coinbase_tx.set_mining_nonce(stuff.coinbase_nonce);
     let cbhx = stuff.coinbase_tx.hash();
-    let mkrl = calculate_mrkl_coinbase_update(cbhx, &stuff.mrklrts);
+    let mkrl = calculate_mrkl_prelude_update(cbhx, &stuff.mrklrts);
     stuff.block.set_mrklroot(mkrl);
     stuff.block.replace_transaction(0, Box::new(stuff.coinbase_tx.clone())).unwrap();
     let intro_data = stuff.block.intro.serialize().to_hex();
@@ -254,7 +254,7 @@ fn get_miner_pending_block_stuff(
         );
         data.insert(
             "reward_address".to_owned(),
-            json!(stuff.coinbase_tx.main().to_readable()),
+            json!(stuff.coinbase_tx.author().unwrap_or_default().to_readable()),
         );
     }
 
@@ -274,7 +274,7 @@ fn get_miner_pending_block_stuff(
             json!(encode_bytes(stuff.coinbase_tx.serialize(), is_base64)),
         );
         let mhxs: Vec<String> =
-            calculate_mrkl_coinbase_modify(&stuff.block.transaction_hash_list(true))
+            calculate_mrkl_prelude_modify(&stuff.block.transaction_hash_list(true))
                 .into_iter()
                 .map(|hx| encode_bytes(hx.serialize(), is_base64))
                 .collect();

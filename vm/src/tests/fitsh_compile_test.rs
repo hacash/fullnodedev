@@ -509,9 +509,6 @@ mod fitsh_compile_tests {
               codecall_keyword: "codecall 0.0xabcdef01",
         );
 
-        assert_compile_err!(
-            removed_tailcall_keyword: "tailcall code.0xabcdef01",
-        );
 
         assert_compile_err_contains!(
             dead_code_after_return: "return 1

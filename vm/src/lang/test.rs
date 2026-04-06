@@ -34,8 +34,14 @@ mod token_t {
             ("'\\n'", 10u8),
             ("'\\t'", 9),
             ("'\\r'", 13),
+            ("'\\0'", 0),
+            ("'\\b'", 8),
+            ("'\\f'", 12),
+            ("'\\v'", 11),
             ("'\\\\'", 92),
             ("'\\''", 39),
+            ("'\\\"'", 34),
+            ("'\\x41'", 65),
         ];
 
         for (input, expected) in tests {
@@ -72,16 +78,95 @@ mod token_t {
     #[test]
     fn test_char_error_handling() {
         let invalid_inputs = vec![
-            "'",     // Incomplete
-            "''",    // Empty
-            "'AB'",  // Multiple chars
-            "'\\x'", // Invalid escape
+            "'",      // Incomplete
+            "''",     // Empty
+            "'AB'",   // Multiple chars
+            "'\\x'",  // Invalid escape
+            "'\\x4'", // Incomplete hex escape
+            "'\\u'",  // Unsupported unicode escape
         ];
 
         for input in invalid_inputs {
             let tkr = super::Tokenizer::new(input.as_bytes());
             let result = tkr.parse();
             assert!(result.is_err(), "Should fail for invalid char: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_string_escape_sequences() {
+        let tests = vec![
+            ("\"\\n\"", vec![10u8]),
+            ("\"\\t\"", vec![9]),
+            ("\"\\r\"", vec![13]),
+            ("\"\\0\"", vec![0]),
+            ("\"\\b\"", vec![8]),
+            ("\"\\f\"", vec![12]),
+            ("\"\\v\"", vec![11]),
+            ("\"\\\\\"", vec![92]),
+            ("\"\\\"\"", vec![34]),
+            ("\"\\x41\\x42\"", vec![65, 66]),
+        ];
+
+        for (input, expected) in tests {
+            let tkr = super::Tokenizer::new(input.as_bytes());
+            let tokens = tkr.parse().expect(&format!("Failed to parse: {}", input));
+            match &tokens[0] {
+                super::Token::Bytes(bs) => assert_eq!(bs, &expected, "Wrong value for {}", input),
+                _ => panic!("Expected Bytes token for {}, got {:?}", input, tokens[0]),
+            }
+        }
+    }
+
+    #[test]
+    fn test_string_escape_error_handling() {
+        let invalid_inputs = vec!["\"\\x\"", "\"\\x4\"", "\"\\u0041\""];
+
+        for input in invalid_inputs {
+            let tkr = super::Tokenizer::new(input.as_bytes());
+            let result = tkr.parse();
+            assert!(result.is_err(), "Should fail for invalid string escape: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_nested_block_comments_parse() {
+        let script = r#"
+            /* outer
+                /* inner */
+            */
+            return 1
+        "#;
+        let result = super::lang_to_irnode(script);
+        assert!(result.is_ok(), "nested block comments should parse");
+    }
+
+    #[test]
+    fn test_binary_literal_too_wide_fails_cleanly() {
+        let input = format!("0b{}", "1".repeat(136));
+        let result = super::Tokenizer::new(input.as_bytes()).parse();
+        assert!(result.is_err(), "oversized binary literal must fail cleanly");
+    }
+
+    #[test]
+    fn test_short_binary_literals_fail_as_binary_errors() {
+        for input in ["0b", "0b1", "0b101", "0b1111111"] {
+            let err = super::Tokenizer::new(input.as_bytes())
+                .parse()
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("binary data"), "input={}, err={}", input, err);
+        }
+    }
+
+    #[test]
+    fn test_exact_byte_binary_literal_parses() {
+        let tokens = super::Tokenizer::new("0b11110000".as_bytes())
+            .parse()
+            .expect("binary literal should parse");
+        match &tokens[0] {
+            super::Token::Bytes(bs) => assert_eq!(bs, &vec![0xf0]),
+            _ => panic!("expected Bytes token, got {:?}", tokens[0]),
         }
     }
 
@@ -165,6 +250,15 @@ mod token_t {
             "Expected value 9, got: {:02x?}",
             bc_tab
         );
+    }
+
+    #[test]
+    fn test_not_operator_binds_tighter_than_binary_ops() {
+        use super::lang_to_irnode;
+
+        assert!(lang_to_irnode("return !1 == 0").is_ok());
+        assert!(lang_to_irnode("return !1 && 0 == 0").is_ok());
+        assert!(lang_to_irnode("return !1 is nil").is_ok());
     }
 
     #[test]
@@ -661,6 +755,16 @@ mod token_t {
         assert!(lang_to_irnode("1_000u64").is_ok());
     }
 
+    #[test]
+    fn test_suffix_requires_tokenizer_recognition_without_whitespace() {
+        use super::lang_to_irnode;
+
+        assert!(lang_to_irnode("100u64").is_ok());
+        assert!(lang_to_irnode("1000_u64").is_ok());
+        assert!(lang_to_irnode("100 u64").is_err());
+        assert!(lang_to_irnode("100\nu64").is_err());
+    }
+
     // ==================== Simplify Numeric As Suffix Test ====================
 
     #[test]
@@ -905,6 +1009,52 @@ mod token_t {
                 "multi-arg syscall must not stay CAT expression, got: {}",
                 out
             );
+        }
+    }
+
+    #[test]
+    fn test_all_print_options_disabled_preserve_ircode_semantics() {
+        use super::lang_to_ircode;
+        use super::lang_to_irnode_with_sourcemap;
+        use super::Formater;
+        use super::PrintOption;
+
+        let script = r#"
+            param { amt }
+            lib C = 1
+            print 1 as u64
+            ext(1).0xabcdef01()
+            print [1, 2]
+            if true { print 3 } else { print 4 }
+            while false { print 5 }
+            codecall C.probe
+        "#;
+
+        let expect = lang_to_ircode(script).expect("compile baseline");
+        let (block, smap) = lang_to_irnode_with_sourcemap(script).expect("compile with sourcemap");
+
+        for map_enabled in [false, true] {
+            let mut opt = PrintOption::new("  ", 0);
+            if map_enabled {
+                opt.map = Some(&smap);
+            }
+            opt.emit_lib_prelude = false;
+            opt.trim_root_block = false;
+            opt.trim_head_alloc = false;
+            opt.trim_param_unpack = false;
+            opt.hide_default_call_argv = false;
+            opt.call_short_syntax = false;
+            opt.flatten_call_list = false;
+            opt.flatten_array_list = false;
+            opt.flatten_syscall_cat = false;
+            opt.recover_literals = false;
+            opt.simplify_numeric_as_suffix = false;
+
+            let text = Formater::new(&opt).print(&block);
+            let reparsed = lang_to_ircode(&text)
+                .map_err(|e| format!("{}\n---- all-off printed (map_enabled={}) ----\n{}\n---------------------\n", e, map_enabled, text))
+                .unwrap();
+            assert_eq!(expect, reparsed, "all-off roundtrip mismatch (map_enabled={})\n{}", map_enabled, text);
         }
     }
 }

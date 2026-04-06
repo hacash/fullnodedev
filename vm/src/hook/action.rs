@@ -320,9 +320,9 @@ mod hook_arg_tests {
             };
             let (param, intent_scope) = match *req {
                 crate::machine::EntryRequest::Main { .. } => (Value::Nil, None),
-                crate::machine::EntryRequest::P2sh { param, intent_binding, .. }
-                | crate::machine::EntryRequest::Abst { param, intent_binding, .. } => {
-                    (param, intent_binding)
+                crate::machine::EntryRequest::P2sh { param, intent_scope, .. }
+                | crate::machine::EntryRequest::Abst { param, intent_scope, .. } => {
+                    (param, intent_scope)
                 }
             };
             self.calls.push((param, intent_scope));

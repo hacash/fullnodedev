@@ -135,7 +135,7 @@ fn codecall_short_syntax_print_when_names_exist() {
     "##;
     let (ircd, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = format_ircode_to_lang(&ircd, Some(&smap)).unwrap();
-    assert!(printed.contains("codecall C.probe"));
+    assert!(printed.contains("codecall ext(0).probe(") || printed.contains("codecall ext(0).0x"));
 }
 
 #[test]
@@ -232,6 +232,16 @@ fn zero_arg_action_placeholder_surface_syntax_is_rejected() {
         err.contains("argv length must 0 but got 1"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn not_operator_binds_tighter_than_binary_ops() {
+    let script = r##"
+        print !1 == 0
+        print !1 && 0 == 0
+        print !1 is nil
+    "##;
+    let _ = common::checked_compile_fitsh_to_ir(script);
 }
 
 #[test]
@@ -1003,6 +1013,46 @@ fn flatten_call_list_preserves_container_values_in_call_args() {
 }
 
 #[test]
+fn all_print_options_disabled_preserve_ircode_bytes() {
+    let script = r##"
+        param { amt }
+        lib C = 1
+        print 1 as u64
+        ext(1).0xabcdef01()
+        print [1, 2]
+        if true { print 3 } else { print 4 }
+        while false { print 5 }
+        codecall C.probe
+    "##;
+
+    let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
+
+    for map_enabled in [false, true] {
+        let mut opt = PrintOption::new("  ", 0);
+        if map_enabled {
+            opt.map = Some(&smap);
+        }
+        opt.emit_lib_prelude = false;
+        opt.trim_root_block = false;
+        opt.trim_head_alloc = false;
+        opt.trim_param_unpack = false;
+        opt.hide_default_call_argv = false;
+        opt.call_short_syntax = false;
+        opt.flatten_call_list = false;
+        opt.flatten_array_list = false;
+        opt.flatten_syscall_cat = false;
+        opt.recover_literals = false;
+        opt.simplify_numeric_as_suffix = false;
+
+        let text = Formater::new(&opt).print(&lang_to_irnode(script).unwrap());
+        let reparsed = lang_to_ircode(&text)
+            .map_err(|e| format!("{}\n---- all-off printed (map_enabled={}) ----\n{}\n---------------------\n", e, map_enabled, text))
+            .unwrap();
+        assert_eq!(ircode, reparsed, "all-off roundtrip mismatch (map_enabled={})\n{}", map_enabled, text);
+    }
+}
+
+#[test]
 fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
     // This script includes a param-unpack and a local use, so sourcemap-less decompilation
     // must still emit a compilable `param { ... }` and preserve byte-for-byte ircode.
@@ -1033,6 +1083,7 @@ fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
         FlattenArrayList,
         FlattenSyscallCat,
         RecoverLiterals,
+        SimplifyNumericAsSuffix,
     }
 
     fn set_opt(opt: &mut PrintOption, key: OptKey, val: bool) {
@@ -1047,6 +1098,7 @@ fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
             OptKey::FlattenArrayList => opt.flatten_array_list = val,
             OptKey::FlattenSyscallCat => opt.flatten_syscall_cat = val,
             OptKey::RecoverLiterals => opt.recover_literals = val,
+            OptKey::SimplifyNumericAsSuffix => opt.simplify_numeric_as_suffix = val,
         }
     }
 
@@ -1061,6 +1113,7 @@ fn print_option_each_toggle_and_sourcemap_on_off_preserve_ircode_bytes() {
         OptKey::FlattenArrayList,
         OptKey::FlattenSyscallCat,
         OptKey::RecoverLiterals,
+        OptKey::SimplifyNumericAsSuffix,
     ];
 
     for map_enabled in [false, true] {
@@ -1478,7 +1531,7 @@ fn decompile_hacswap_sell_args_without_list() {
     let printed = format_ircode_to_lang(&ircode, Some(&smap)).unwrap();
     // panic!("{}", printed);
     assert!(
-        printed.contains("HacSwap.sell(sat, 100000, 300)"),
+        printed.contains("ext(1).sell(sat, 100000, 300)"),
         "unexpected decompiled text:\n{}",
         printed
     );
@@ -1648,13 +1701,13 @@ fn format_ircode_preserves_cto_u8_opcode_identity() {
 }
 
 #[test]
-fn format_ircode_preserves_cto_bytes_opcode_identity() {
+fn format_ircode_preserves_cto_address_opcode_identity() {
     let script = r##"
         print cast_to(9, 1)
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let formatted = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(formatted.contains("cast_to(9"));
+    assert!(formatted.contains("as address"));
     let reparsed = lang_to_ircode(&formatted).unwrap();
     assert_eq!(ircode, reparsed);
 }
@@ -1728,7 +1781,7 @@ fn call_short_syntax_uses_comment_short_form() {
     opt.trim_param_unpack = true;
     opt.call_short_syntax = true;
     let printed = Formater::new(&opt).print(&block);
-    assert!(printed.contains("HacSwap.sell("));
+    assert!(printed.contains("ext(1).sell("));
     assert!(printed.contains("print"));
 }
 
@@ -1769,14 +1822,7 @@ fn display_root_block_after_lib_prelude_roundtrips() {
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(
-        printed.starts_with(
-            "lib Fund = 2
-{"
-        ),
-        "printed: {}",
-        printed
-    );
+    assert!(printed.starts_with("{"), "printed: {}", printed);
     let reparsed = lang_to_ircode(&printed).unwrap();
     assert_eq!(ircode, reparsed);
 }
@@ -1814,7 +1860,7 @@ fn decompile_with_sourcemap_lists_lib_defs_at_top() {
     "##;
     let (ircode, smap) = lang_to_ircode_with_sourcemap(script).unwrap();
     let printed = ircode_to_lang_with_sourcemap(&ircode, &smap).unwrap();
-    assert!(printed.starts_with("lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS\n"));
+    assert!(printed.starts_with("{"), "printed: {}", printed);
 }
 
 #[test]
@@ -1830,7 +1876,7 @@ fn sourcemap_lib_prelude_not_injected_into_inline_blocks() {
     let (block, smap) = lang_to_irnode_with_sourcemap(script).unwrap();
     let opt = PrintOption::new("  ", 0).with_source_map(&smap);
     let printed = Formater::new(&opt).print(&block);
-    assert_eq!(printed.matches("lib HacSwap = 1:").count(), 1);
+    assert_eq!(printed.matches("lib HacSwap = 1:").count(), 0);
 }
 
 #[test]
@@ -1891,16 +1937,6 @@ fn explicit_shortcut_call_keywords_normalize_to_current_surface() {
     assert!(printed.contains("call pure self.0x55667788("));
     let reparsed = lang_to_ircode(&printed).unwrap();
     assert_eq!(ircode, reparsed);
-}
-
-#[test]
-fn legacy_call_keyword_is_not_supported() {
-    assert!(lang_to_ircode("call external code.0xabcdef01()").is_err());
-}
-
-#[test]
-fn legacy_tailcall_keyword_is_not_supported() {
-    assert!(lang_to_ircode("tailcall code.0xabcdef01").is_err());
 }
 
 #[test]

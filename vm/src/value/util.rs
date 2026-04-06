@@ -57,17 +57,13 @@ pub fn buf_drop_left_zero(buf: &[u8], minl: usize) -> Vec<u8> {
     if n == 0 {
         return vec![]
     }
-    let mut l = 0;
-    let mut m = n;
-    for i in 0..n {
-        l = i;
-        if buf[i] != 0 || m <= minl {
-            break
-        }
-        m -= 1;
-    }
-    // ok
-    buf[l..].into()
+    let keep = minl.min(n);
+    let trim_limit = n - keep;
+    let first_non_zero = buf[..trim_limit]
+        .iter()
+        .position(|b| *b != 0)
+        .unwrap_or(trim_limit);
+    buf[first_non_zero..].into()
 }
 
 #[inline(always)]
@@ -96,5 +92,12 @@ mod value_output_len_tests {
         cap.value_size = usize::MAX;
         let err = checked_value_output_len(&cap, u16::MAX as usize).unwrap_err();
         assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+    }
+
+    #[test]
+    fn buf_drop_left_zero_trims_all_zero_buffer_when_min_is_zero() {
+        assert_eq!(buf_drop_left_zero(&[0, 0, 0], 0), Vec::<u8>::new());
+        assert_eq!(buf_drop_left_zero(&[0, 0, 3], 0), vec![3]);
+        assert_eq!(buf_drop_left_zero(&[0, 0, 0], 2), vec![0, 0]);
     }
 }

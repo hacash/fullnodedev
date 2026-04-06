@@ -36,19 +36,19 @@ impl CallFrame {
     pub fn current_intent_scope(&self) -> IntentScope {
         self.frames
             .last()
-            .and_then(|frame| frame.intent_state.current())
+            .and_then(|frame| frame.intent_state.current_scope())
     }
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
-pub struct IntentBindingState {
+pub struct IntentScopeState {
     base: IntentScope,
-    stack: Vec<IntentBinding>,
+    stack: Vec<BoundIntentId>,
 }
 
-impl IntentBindingState {
-    pub fn current(&self) -> IntentScope {
+impl IntentScopeState {
+    pub fn current_scope(&self) -> IntentScope {
         if self.stack.is_empty() {
             self.base
         } else {
@@ -56,7 +56,11 @@ impl IntentBindingState {
         }
     }
 
-    pub fn base(&self) -> IntentScope {
+    pub fn current_bound_intent_id(&self) -> BoundIntentId {
+        self.current_scope().flatten()
+    }
+
+    pub fn base_scope(&self) -> IntentScope {
         self.base
     }
 
@@ -69,11 +73,11 @@ impl IntentBindingState {
         self.stack.clear();
     }
 
-    pub fn push(&mut self, binding: IntentBinding) {
+    pub fn push(&mut self, binding: BoundIntentId) {
         self.stack.push(binding);
     }
 
-    pub fn pop(&mut self) -> Option<IntentBinding> {
+    pub fn pop(&mut self) -> Option<BoundIntentId> {
         self.stack.pop()
     }
 }
@@ -83,7 +87,7 @@ pub struct Frame {
     pub pc: usize,
     pub exec: ExecCtx,
     pub bindings: FrameBindings,
-    pub intent_state: IntentBindingState,
+    pub intent_state: IntentScopeState,
     pub call_argv: Value,
     pub types: Option<FuncArgvTypes>,
     pub codes: ByteView,
@@ -185,7 +189,7 @@ impl Frame {
         cap: &SpaceCap,
     ) -> VmrtErr {
         // Caller must validate argv shape before any contract planning/warmup.
-        self.intent_state.reset(bindings.intent_binding);
+        self.intent_state.reset(bindings.intent_scope);
         self.prepare_common(exec, bindings, fnobj, height, gas_extra, param, true, cap)
     }
 
@@ -204,7 +208,7 @@ impl Frame {
         if have_param {
             argv.check_func_argv()?;
         }
-        self.intent_state.reset(bindings.intent_binding);
+        self.intent_state.reset(bindings.intent_scope);
         self.prepare_common(exec, bindings, fnobj, height, gas_extra, argv, have_param, cap)
     }
 
@@ -321,6 +325,26 @@ mod frame_boundary_tests {
         frame
             .check_output_type(&mut retv, &SpaceCap::new(1))
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod intent_scope_state_tests {
+    use super::*;
+
+    #[test]
+    fn intent_scope_state_preserves_tri_state_semantics() {
+        let mut state = IntentScopeState::default();
+        assert_eq!(state.current_scope(), None);
+        assert_eq!(state.current_bound_intent_id(), None);
+
+        state.reset(Some(None));
+        assert_eq!(state.current_scope(), Some(None));
+        assert_eq!(state.current_bound_intent_id(), None);
+
+        state.push(Some(7));
+        assert_eq!(state.current_scope(), Some(Some(7)));
+        assert_eq!(state.current_bound_intent_id(), Some(7));
     }
 }
 

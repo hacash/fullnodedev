@@ -44,8 +44,8 @@ fn ctl_contract_owner(bindings: &FrameBindings, name: &str) -> VmrtRes<crate::Co
     })
 }
 
-fn bound_intent_id(intent_state: &crate::frame::IntentBindingState, name: &str) -> VmrtRes<usize> {
-    intent_state.current().flatten().ok_or_else(|| {
+fn bound_intent_id(intent_state: &crate::frame::IntentScopeState, name: &str) -> VmrtRes<usize> {
+    intent_state.current_bound_intent_id().ok_or_else(|| {
         ItrErr::new(
             ItrErrCode::IntentError,
             &format!("intent '{}' requires bound intent", name),
@@ -60,7 +60,7 @@ fn extract_intent_handle_id(argv: &Value, name: &str) -> VmrtRes<usize> {
 
 fn owned_bound_intent(
     bindings: &FrameBindings,
-    intent_state: &crate::frame::IntentBindingState,
+    intent_state: &crate::frame::IntentScopeState,
     intents: &crate::machine::IntentRuntime,
     name: &str,
 ) -> VmrtRes<(crate::ContractAddress, usize)> {
@@ -145,7 +145,7 @@ fn ctl_expect_u32(value: &Value, name: &str, label: &str) -> VmrtRes<u32> {
 fn ctl_put_kv_list(
     exec: ExecCtx,
     bindings: &FrameBindings,
-    intent_state: &crate::frame::IntentBindingState,
+    intent_state: &crate::frame::IntentScopeState,
     intents: &mut crate::machine::IntentRuntime,
     argv: Value,
     name: &str,
@@ -161,7 +161,7 @@ macro_rules! intent_std_fn {
         pub fn $name(
             $exec: ExecCtx,
             $bindings: &FrameBindings,
-            $intent_state: &crate::frame::IntentBindingState,
+            $intent_state: &crate::frame::IntentScopeState,
             $intents: &mut crate::machine::IntentRuntime,
             $argv: Value,
         ) -> VmrtRes<(Value, i64)> $body
@@ -174,7 +174,7 @@ macro_rules! intent_stack_fn {
             $exec: ExecCtx,
             $cap: &SpaceCap,
             $bindings: &mut FrameBindings,
-            $intent_state: &mut crate::frame::IntentBindingState,
+            $intent_state: &mut crate::frame::IntentScopeState,
             $intents: &mut crate::machine::IntentRuntime,
             $argv: Value,
         ) -> VmrtRes<(Value, i64)> $body
@@ -186,7 +186,7 @@ macro_rules! intent_pop_fn {
         pub fn $name(
             $exec: ExecCtx,
             $bindings: &mut FrameBindings,
-            $intent_state: &mut crate::frame::IntentBindingState,
+            $intent_state: &mut crate::frame::IntentScopeState,
             $argv: Value,
         ) -> VmrtRes<(Value, i64)> $body
     };
@@ -209,7 +209,7 @@ intent_stack_fn!(call_intent_use, |exec, cap, _bindings, intent_state, intents, 
             cap.intent_bind_depth
         );
     }
-    let binding: IntentBinding = if argv.is_nil() {
+    let binding: BoundIntentId = if argv.is_nil() {
         None
     } else {
         let id = extract_intent_handle_id(&argv, "intent_use")?;

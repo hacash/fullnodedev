@@ -538,15 +538,10 @@ fn test_block_json_full_cycle() {
 
     block.transactions.push(Box::new(tx1)).unwrap();
 
-    // Create and add Transaction 2 (Coinbase)
-    let mut tx2 = TransactionCoinbase::default();
-    tx2.ty = Uint1::from(0); // Coinbase is usually 0
-    tx2.reward = Amount::small(1, 248); // 1.0 HAC
+    // Create and add Transaction 2 (Prelude)
+    let mut tx2 = DefaultPreludeTx::default();
     tx2.address = field::ADDRESS_TWOX.clone();
-    let msg = "hello hacash".as_bytes();
-    let mut msg_fixed = [0u8; 16];
-    msg_fixed[..msg.len()].copy_from_slice(msg);
-    tx2.message = Fixed16::from(msg_fixed);
+    tx2.message = Fixed16::from_readable(b"hello prelude   ").unwrap();
 
     block.transactions.push(Box::new(tx2)).unwrap();
 
@@ -573,6 +568,82 @@ fn test_block_json_full_cycle() {
     assert_eq!(bin1, bin2, "Binary mismatch after Block JSON round-trip");
     assert_eq!(block2.transactions.length(), 2);
     assert_eq!(*block2.intro.head.height, 100);
+}
+
+#[test]
+fn test_block_prelude_transaction_must_return_tx0() {
+    init_test_registry();
+
+    let mut block = BlockV1::default();
+
+    let mut prelude = DefaultPreludeTx::default();
+    prelude.address = field::ADDRESS_TWOX.clone();
+    block.transactions.push(Box::new(prelude)).unwrap();
+
+    let mut tx = TransactionType2::default();
+    tx.ty = Uint1::from(TransactionType2::TYPE);
+    tx.timestamp = Timestamp::from(1730000001);
+    tx.fee = Amount::mei(1);
+    block.transactions.push(Box::new(tx)).unwrap();
+
+    block.intro.head.transaction_count = Uint4::from(block.transactions.length() as u32);
+
+    let ptx = block.prelude_transaction().unwrap();
+    assert_eq!(ptx.ty(), DefaultPreludeTx::TYPE);
+    assert_eq!(ptx.author(), Some(field::ADDRESS_TWOX.clone()));
+    assert_eq!(ptx.block_reward().cloned(), Some(Amount::small_mei(1)));
+}
+
+#[test]
+fn test_block_execute_must_credit_reward_and_fees_to_default_prelude() {
+    init_test_registry();
+
+    let miner_acc = Account::create_by("protocol-default-prelude-main").unwrap();
+    let miner = Address::from(*miner_acc.address());
+    let payee = field::ADDRESS_TWOX.clone();
+
+    let mut block = BlockV1::default();
+    block.intro.head.height = BlockHeight::from(1);
+    block.intro.head.transaction_count = Uint4::from(2u32);
+    let mut prelude = DefaultPreludeTx::default();
+    prelude.address = miner.clone();
+    block.transactions.push(Box::new(prelude)).unwrap();
+    let mut paytx = TransactionType2::new_by(miner.clone(), Amount::mei(1), 1730000000);
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(payee);
+    act.hacash = Amount::zhu(1);
+    paytx.actions.push(Box::new(act)).unwrap();
+    paytx.fill_sign(&miner_acc).unwrap();
+    block.transactions.push(Box::new(paytx)).unwrap();
+
+    let chain = ChainInfo {
+        id: 0,
+        diamond_form: false,
+        fast_sync: false,
+    };
+    let mut state_in: Box<dyn State> = Box::new(AstForkableState::default());
+    {
+        let mut st = crate::state::CoreState::wrap(state_in.as_mut());
+        let mut bls = st.balance(&miner).unwrap_or_default();
+        bls.hacash = Amount::mei(10);
+        st.balance_set(&miner, &bls);
+    }
+    let (mut state, _) = block.execute(chain, state_in, Box::new(EmptyLogs {})).unwrap();
+    let miner_bal = crate::state::CoreState::wrap(state.as_mut())
+        .balance(&miner)
+        .unwrap_or_default()
+        .hacash;
+    let expected = Amount::mei(10)
+        .sub_mode_u64(&Amount::mei(1))
+        .unwrap()
+        .sub_mode_u64(&Amount::zhu(1))
+        .unwrap()
+        .add_mode_u64(&Amount::small_mei(1))
+        .unwrap()
+        .add_mode_u64(&Amount::mei(1))
+        .unwrap();
+
+    assert_eq!(miner_bal, expected);
 }
 
 #[test]

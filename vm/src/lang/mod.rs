@@ -1,5 +1,3 @@
-use std::any::*;
-
 use sys::*;
 
 use super::ir::*;
@@ -17,7 +15,6 @@ include! {"decompilation_helper.rs"}
 pub mod syntax;
 pub use syntax::Syntax;
 
-include! {"interface.rs"}
 include! {"tokenizer.rs"}
 include! {"formater.rs"}
 include! {"test.rs"}

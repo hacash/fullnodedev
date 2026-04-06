@@ -6,7 +6,7 @@ pub fn call_ntctl(
     exec: ExecCtx,
     cap: &SpaceCap,
     bindings: &mut FrameBindings,
-    intent_state: &mut crate::frame::IntentBindingState,
+    intent_state: &mut crate::frame::IntentScopeState,
     _context_addr: &field::Address,
     intents: &mut crate::machine::IntentRuntime,
     deferred_registry: &mut crate::machine::DeferredRegistry,

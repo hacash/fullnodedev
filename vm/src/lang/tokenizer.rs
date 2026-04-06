@@ -23,12 +23,12 @@ impl Tokenizer<'_> {
                 Ok(d) => Bytes(d),
                 _ => return errf!("hex data format invalid '{}'", s),
             });
-        } else if s.starts_with("0b") && s.len() >= 10 {
+        } else if s.starts_with("0b") {
             // 0b11110000
             let e = errf!("binary data '{}' format invalid", s);
             let v = s.to_owned().split_off(2);
             let vl = v.len();
-            if vl % 8 != 0 {
+            if vl == 0 || vl % 8 != 0 || vl > 128 {
                 return e;
             }
             let n = vl / 8;
@@ -58,6 +58,48 @@ impl Tokenizer<'_> {
         }
     }
 
+    fn parse_hex_nibble(c: u8) -> Option<u8> {
+        match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            b'A'..=b'F' => Some(c - b'A' + 10),
+            _ => None,
+        }
+    }
+
+    fn parse_escape_byte(&self, max: usize, err_msg: &str) -> Ret<(u8, usize)> {
+        let nxt = self.idx + 1;
+        if nxt >= max {
+            return Err(err_msg.to_string().into());
+        }
+        let esc = self.texts[nxt];
+        let parsed = match esc {
+            b'0' => (0u8, 2usize),
+            b't' => (b'\t', 2),
+            b'n' => (b'\n', 2),
+            b'r' => (b'\r', 2),
+            b'b' => (0x08, 2),
+            b'f' => (0x0c, 2),
+            b'v' => (0x0b, 2),
+            b'\\' => (b'\\', 2),
+            b'\'' => (b'\'', 2),
+            b'"' => (b'"', 2),
+            b'x' => {
+                if nxt + 2 >= max {
+                    return Err(err_msg.to_string().into());
+                }
+                let hi = Self::parse_hex_nibble(self.texts[nxt + 1]);
+                let lo = Self::parse_hex_nibble(self.texts[nxt + 2]);
+                match (hi, lo) {
+                    (Some(hi), Some(lo)) => ((hi << 4) | lo, 4),
+                    _ => return Err(err_msg.to_string().into()),
+                }
+            }
+            _ => return Err(err_msg.to_string().into()),
+        };
+        Ok(parsed)
+    }
+
     pub fn parse_comments(&mut self, max: usize) -> Ret<bool> {
         let c = self.texts[self.idx] as char;
         macro_rules! gtc {
@@ -75,21 +117,26 @@ impl Tokenizer<'_> {
                 Ok(true)
             }
             '*' => {
-                // multiple line comments
+                // nested multiple line comments
                 self.idx += 1;
-                let mut closed = false;
-                while self.idx < max - 1 {
-                    if gtc!(0) == '*' && gtc!(1) == '/' {
+                let mut depth = 1usize;
+                while self.idx < max {
+                    if self.idx + 1 < max && gtc!(0) == '/' && gtc!(1) == '*' {
                         self.idx += 2;
-                        closed = true;
-                        break;
+                        depth += 1;
+                        continue;
+                    }
+                    if self.idx + 1 < max && gtc!(0) == '*' && gtc!(1) == '/' {
+                        self.idx += 2;
+                        depth -= 1;
+                        if depth == 0 {
+                            return Ok(true);
+                        }
+                        continue;
                     }
                     self.idx += 1;
                 }
-                if !closed {
-                    return errf!("unterminated block comment");
-                }
-                Ok(true)
+                errf!("unterminated block comment")
             }
             _ => Ok(false),
         }
@@ -131,17 +178,22 @@ impl Tokenizer<'_> {
         }
 
         // Check for type suffix format: number + type (e.g., 100u8, 1000_u64)
-        let type_suffixes = ["u8", "u16", "u32", "u64", "u128"];
+        let type_suffixes = ["u8", "u16", "u32", "u64", "u128", "u256", "uint"];
         let mut num_part = s.clone();
         let mut suffix_kw: Option<KwTy> = None;
 
         for suffix in &type_suffixes {
             if s.ends_with(suffix) {
                 let without_suffix = &s[..s.len() - suffix.len()];
-                // Remove underscores from number part
                 let without_underscores: String =
                     without_suffix.chars().filter(|c| *c != '_').collect();
                 if !without_underscores.is_empty() && without_underscores.parse::<u128>().is_ok() {
+                    if ValueTy::is_reserved_type_name(suffix) {
+                        return Err(format!(
+                            "integer suffix '{}' is reserved for future expansion and is not supported yet",
+                            suffix
+                        ));
+                    }
                     num_part = without_underscores;
                     if let Ok(kw) = KwTy::build(suffix) {
                         suffix_kw = Some(kw);
@@ -161,11 +213,13 @@ impl Tokenizer<'_> {
 
         // Parse the number part first
         let token = Self::parse_num_bytes_or_address(&num_part)?;
-        self.tokens.push(token);
-
-        // Then push the type suffix keyword (if any)
-        if let Some(kw) = suffix_kw {
-            self.tokens.push(Keyword(kw));
+        match (token, suffix_kw) {
+            (Integer(n), Some(kw)) => self.tokens.push(IntegerWithSuffix(n, kw)),
+            (token, Some(kw)) => {
+                self.tokens.push(token);
+                self.tokens.push(Keyword(kw));
+            }
+            (token, None) => self.tokens.push(token),
         }
         Ok(())
     }
@@ -195,7 +249,7 @@ impl Tokenizer<'_> {
     }
 
     pub fn parse_bytes(&mut self, max: usize, _c: char) -> Rerr {
-        let e = errf!("bytes format invalid");
+        let err_msg = "bytes format invalid";
         let mut s = vec![];
         let mut closed = false;
         while self.idx < max {
@@ -205,69 +259,46 @@ impl Tokenizer<'_> {
                 self.idx += 1;
                 break;
             }
-            // print!("{}", c);
             if c == '\\' {
-                let nxt = self.idx + 1;
-                if nxt >= max {
-                    return e;
-                }
-                let a = self.texts[nxt] as char;
-                s.push(match a {
-                    't' => '\t',
-                    'n' => '\n',
-                    'r' => '\r',
-                    '\\' => '\\',
-                    b => b,
-                } as u8);
-                self.idx += 1;
-            } else {
-                s.push(c as u8);
+                let (byte, consumed) = self.parse_escape_byte(max, err_msg)?;
+                s.push(byte);
+                self.idx += consumed;
+                continue;
             }
+            if !c.is_ascii() {
+                return errf!("{}", err_msg);
+            }
+            s.push(c as u8);
             self.idx += 1;
         }
         if !closed {
-            return e;
+            return errf!("{}", err_msg);
         }
         self.tokens.push(Bytes(s));
         Ok(())
     }
 
     pub fn parse_char(&mut self, max: usize, _c: char) -> Rerr {
-        let e = errf!("char format invalid");
-        // Require room for at least one char and closing quote: idx < max - 1
+        let err_msg = "char format invalid";
         if self.idx >= max - 1 {
-            return e;
+            return errf!("{}", err_msg);
         }
 
         let byte = if self.texts[self.idx] == b'\\' {
-            // Escape sequence
-            let nxt = self.idx + 1;
-            if nxt >= max {
-                return e;
-            }
-            let esc = self.texts[nxt] as char;
-            self.idx += 2; // Skip escape char
-            match esc {
-                't' => b'\t',
-                'n' => b'\n',
-                'r' => b'\r',
-                '\\' => b'\\',
-                '\'' => b'\'',
-                _ => return e,
-            }
+            let (byte, consumed) = self.parse_escape_byte(max, err_msg)?;
+            self.idx += consumed;
+            byte
         } else {
-            // Ordinary character
             let byte = self.texts[self.idx];
             self.idx += 1;
-            if byte == b'\'' {
-                return e; // Must not be opening quote
+            if byte == b'\'' || !byte.is_ascii() {
+                return errf!("{}", err_msg);
             }
             byte
         };
 
-        // Expect closing quote
         if self.idx >= max || self.texts[self.idx] != b'\'' {
-            return e;
+            return errf!("{}", err_msg);
         }
         self.idx += 1;
 

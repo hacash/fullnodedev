@@ -278,4 +278,42 @@ mod tests {
         .unwrap();
         assert!(!code.is_empty());
     }
+
+    #[test]
+    fn syntax_rejects_unterminated_if_block_at_eof() {
+        let err = parse("if true { return 1").unwrap_err().to_string();
+        assert!(err.contains("block format invalid"), "{}", err);
+    }
+
+    #[test]
+    fn syntax_rejects_unterminated_map_at_eof() {
+        let err = parse("return map { \"a\": 1").unwrap_err().to_string();
+        assert!(err.contains("map format invalid"), "{}", err);
+    }
+
+    #[test]
+    fn syntax_packmap_uses_total_item_count() {
+        let code = parse("return map { \"a\": 1, \"b\": 2 }").unwrap();
+        let packmap_idx = code
+            .iter()
+            .position(|b| *b == Bytecode::PACKMAP as u8)
+            .expect("PACKMAP must exist");
+        assert!(packmap_idx > 1, "PACKMAP must have a preceding count push");
+        assert_eq!(code[packmap_idx - 2], Bytecode::PU8 as u8, "count should be pushed as PU8");
+        assert_eq!(code[packmap_idx - 1], 4u8, "PACKMAP count must be total k/v items");
+    }
+
+    #[test]
+    fn syntax_reports_reserved_types_in_as_and_is() {
+        let err_as = parse("return 1 as u256").unwrap_err().to_string();
+        assert!(err_as.contains("reserved for future expansion"), "{}", err_as);
+        let err_is = parse("return 1 is uint").unwrap_err().to_string();
+        assert!(err_is.contains("reserved for future expansion"), "{}", err_is);
+    }
+
+    #[test]
+    fn syntax_reports_reserved_integer_suffixes() {
+        let err = parse("return 1u256").unwrap_err().to_string();
+        assert!(err.contains("integer suffix 'u256'"), "{}", err);
+    }
 }

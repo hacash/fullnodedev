@@ -4,7 +4,7 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let staptr = ctx.engine.state();
     let substa = staptr.fork_sub(Arc::downgrade(&staptr));
     let tx = TransactionType3::new_by(
-        engcnf.external_exec_coinbase(),
+        engcnf.external_exec_author(),
         Amount::unit238(1_000_000),
         height,
     );
@@ -18,7 +18,7 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         block: BlkInfo {
             height,
             hash: Hash::default(),
-            coinbase: engcnf.external_exec_coinbase(),
+            author: engcnf.external_exec_author(),
         },
         tx: protocol::transaction::create_tx_info(&tx),
     };

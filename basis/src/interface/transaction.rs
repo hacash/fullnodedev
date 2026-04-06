@@ -47,6 +47,19 @@ pub trait TransactionRead: Serialize + TxExec + Send + Sync + DynClone + std::fm
         Amount::zero_ref()
     }
 
+    fn author(&self) -> Option<Address> {
+        None
+    }
+    fn block_message(&self) -> Option<&Fixed16> {
+        None
+    }
+    fn block_reward(&self) -> Option<&Amount> {
+        None
+    }
+    fn fee_receiver(&self) -> Option<Address> {
+        None
+    }
+
     fn action_count(&self) -> usize {
         0
     }
@@ -70,6 +83,7 @@ pub trait Transaction: TransactionRead + Field + Send + Sync {
 
     fn set_fee(&mut self, _: Amount) {}
     fn set_nonce(&mut self, _: Hash) {}
+    fn set_mining_nonce(&mut self, _: Hash) {}
 
     fn fill_sign(&mut self, _: &Account) -> Ret<Sign> {
         errf!("never")

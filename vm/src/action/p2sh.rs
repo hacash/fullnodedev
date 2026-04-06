@@ -47,6 +47,9 @@ action_define! { P2SHScriptProve, 46,
     },
     (self, "Prove P2SH unlock script".to_owned()),
     (self, ctx, _gas {
+        if ctx.exec_from() != ExecFrom::Top {
+            return xerrf!("P2SHScriptProve can only run in TOP context, got {}", ctx.exec_from())
+        }
         if self._marks_.not_zero() {
             return xerrf!("marks bytes format invalid")
         }

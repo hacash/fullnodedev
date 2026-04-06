@@ -66,6 +66,7 @@ fn unpack_seq(
     let mut gas = 0i64;
     for (off, v) in items.into_iter().enumerate() {
         let v = v.valid(cap)?;
+        v.check_container_cap(cap)?;
         gas += gst.stack_write(v.val_size());
         let idx = u8::try_from(start + off).map_err(|_| ItrErr::code(OutOfStack))?;
         *locals.slot_mut(idx)? = v;

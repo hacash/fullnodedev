@@ -412,9 +412,16 @@ fn may_show_miner_detail(engcnf: &EngineConf, blkp: &BlkPkg) -> String {
     if !engcnf.show_miner_name {
         return s!("")
     }
-    let Ok(cbtx) = blkp.block().coinbase_transaction() else {
+    let Ok(ptx) = blkp.block().prelude_transaction() else {
         return s!("")
     };
-    let adrt = cbtx.main().to_readable().drain(..9).collect::<String>();
-    format!("miner: {}...<{}> ", adrt, cbtx.message().to_readable_left())
+    let Some(author) = ptx.author() else {
+        return s!("")
+    };
+    let adrt = author.to_readable().drain(..9).collect::<String>();
+    let message = ptx
+        .block_message()
+        .map(|msg| msg.to_readable_left())
+        .unwrap_or_else(|| s!(""));
+    format!("miner: {}...<{}> ", adrt, message)
 }
