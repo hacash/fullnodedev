@@ -1,4 +1,4 @@
-use crate::machine::VmHost;
+use crate::machine::{DeferredRegistry, VmHost};
 use basis::component::Env;
 use basis::interface::{Context, TransactionRead};
 use field::{Address, Amount, Hash};
@@ -38,6 +38,11 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
+    fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+        let _ = gas;
+        Ok(())
+    }
+
     fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
         crate::VMState::wrap(self.ctx.state()).contract_edition(addr)
     }
@@ -56,28 +61,54 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
-    fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let hei = self.ctx.env().block.height;
-        crate::VMState::wrap(self.ctx.state()).srest(hei, addr, key)
+        crate::VMState::wrap(self.ctx.state()).sstat(gst, cap, hei, addr, key)
     }
 
-    fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let hei = self.ctx.env().block.height;
-        crate::VMState::wrap(self.ctx.state()).sload(hei, addr, key)
+        crate::VMState::wrap(self.ctx.state()).sload(gst, cap, hei, addr, key)
     }
 
-    fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
-        crate::VMState::wrap(self.ctx.state()).sdel(addr, key)
+    fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value) -> VmrtRes<i64> {
+        let hei = self.ctx.env().block.height;
+        crate::VMState::wrap(self.ctx.state()).sdel(gst, cap, hei, addr, key)
     }
 
-    fn ssave(&mut self, gst: &GasExtra, addr: &Address, key: Value, val: Value) -> VmrtRes<i64> {
+    fn snew(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: Value,
+        val: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
         let hei = self.ctx.env().block.height;
-        crate::VMState::wrap(self.ctx.state()).ssave(gst, hei, addr, key, val)
+        crate::VMState::wrap(self.ctx.state()).snew(gst, cap, hei, addr, key, val, period)
     }
 
-    fn srent(&mut self, gst: &GasExtra, addr: &Address, key: Value, period: Value) -> VmrtRes<i64> {
+    fn sedit(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: Value,
+        val: Value,
+    ) -> VmrtRes<i64> {
         let hei = self.ctx.env().block.height;
-        crate::VMState::wrap(self.ctx.state()).srent(gst, hei, addr, key, period)
+        crate::VMState::wrap(self.ctx.state()).sedit(gst, cap, hei, addr, key, val)
+    }
+
+    fn srent(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value, period: Value) -> VmrtRes<i64> {
+        let hei = self.ctx.env().block.height;
+        crate::VMState::wrap(self.ctx.state()).srent(gst, cap, hei, addr, key, period)
+    }
+
+    fn srecv(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value, period: Value) -> VmrtRes<i64> {
+        let hei = self.ctx.env().block.height;
+        crate::VMState::wrap(self.ctx.state()).srecv(gst, cap, hei, addr, key, period)
     }
 }
 
@@ -161,7 +192,8 @@ fn execute_test_with_argv(
         ctx,
         gas_remaining: gas,
     };
-    let mut gas_use = basis::interface::GasUse::default();
+    let mut gas_use = basis::interface::VmGasBuckets::default();
+    let mut deferred_registry = DeferredRegistry::default();
     super::interpreter::execute_code(
         &mut pc,
         &codes,
@@ -177,6 +209,7 @@ fn execute_test_with_argv(
         &mut gas_use,
         &mut GKVMap::new(20),
         &mut CtcKVMap::new(12),
+        &mut deferred_registry,
         &mut host,
     )
     .map(|r| (r, gas_limit - host.gas_remaining, ops.release(), heap))

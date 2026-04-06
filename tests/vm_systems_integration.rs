@@ -11,7 +11,7 @@ use testkit::sim::state::FlatMemState as StateMem;
 use vm::action::ContractDeploy;
 use vm::contract::{Contract, Func};
 use vm::lang::lang_to_bytecode;
-use vm::machine::{self, ContractCacheConfig, Machine, Resoure};
+use vm::machine::{self, ContractCacheConfig, Executor, Runtime};
 use vm::rt::{Bytecode, CodeType, FnSign, calc_func_sign};
 use vm::value::Value;
 use vm::{ContractAddress, ContractSto, VMState, VmLog};
@@ -49,7 +49,7 @@ fn execute_main_bytecode(ctx: &mut dyn Context, codes: Vec<u8>) -> Ret<Value> {
         }
     }
     let height = ctx.env().block.height;
-    let mut machine = Machine::create(Resoure::create(height));
+    let mut machine = Executor::from_runtime(Runtime::create(height));
     let rv = machine.main_call(ctx, CodeType::Bytecode, codes.into())?;
     Ok(rv)
 }
@@ -88,7 +88,7 @@ fn setup_vm_run_rejects_low_tx_type() {
     );
     ctx.env.chain.fast_sync = true;
 
-    let err = machine::setup_vm_run_main(
+    let err = machine::run_main_entry(
         &mut ctx,
         CodeType::Bytecode as u8,
         vec![Bytecode::END as u8],
@@ -112,7 +112,7 @@ fn setup_vm_run_requires_registered_assigner() {
         Box::new(MemLogs::default()),
     );
 
-    let err = machine::setup_vm_run_main(
+    let err = machine::run_main_entry(
         &mut ctx,
         CodeType::Bytecode as u8,
         vec![Bytecode::END as u8],
@@ -126,7 +126,7 @@ fn setup_vm_run_requires_registered_assigner() {
 fn setup_vm_run_without_gas_init_reports_run_out() {
     let _guard = test_guard();
     set_vm_assigner(Some(|height| {
-        Box::new(vm::global_machine_manager().assign(height))
+        Box::new(vm::global_runtime_pool().checkout(height))
     }));
 
     let main = main_addr();
@@ -138,7 +138,7 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
         Box::new(MemLogs::default()),
     );
 
-    let err = machine::setup_vm_run_main(
+    let err = machine::run_main_entry(
         &mut ctx,
         CodeType::Bytecode as u8,
         vec![Bytecode::END as u8],
@@ -154,7 +154,7 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
 fn setup_vm_run_executes_after_assigner_registered() {
     let _guard = test_guard();
     set_vm_assigner(Some(|height| {
-        Box::new(vm::global_machine_manager().assign(height))
+        Box::new(vm::global_runtime_pool().checkout(height))
     }));
 
     let main = main_addr();
@@ -170,7 +170,7 @@ fn setup_vm_run_executes_after_assigner_registered() {
         protocol::context::decode_gas_budget(17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE));
     ctx.gas_initialize(budget).unwrap();
 
-    let (gas_used, rv) = machine::setup_vm_run_main(
+    let (gas_used, rv) = machine::run_main_entry(
         &mut ctx,
         CodeType::Bytecode as u8,
         vec![Bytecode::END as u8],
@@ -421,7 +421,7 @@ fn globals_contract_cache_hits_on_second_machine_call() {
     let mut state = StateMem::default();
     insert_contract(&mut state, &caddr, &sto);
 
-    let pool = vm::global_machine_manager().contract_cache();
+    let pool = vm::global_runtime_pool().contract_cache();
     let before = pool.stats();
 
     let tx = make_tx(3, main, vec![caddr.to_addr()], 17);

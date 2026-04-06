@@ -58,7 +58,6 @@ keyword_define! {
     Assert    : "assert"
     Print     : "print"
     Call      : "call"
-    TailCall  : "tailcall"
     CallExt      : "callext"
     CallExtView  : "callextview"
     CallUseView  : "calluseview"
@@ -296,11 +295,14 @@ irfn_define! {
     global_get
     memory_put
     memory_get
+    memory_take
 
-    storage_rest
+    storage_new
+    storage_recv
+    storage_stat
     storage_load
     storage_del
-    storage_save
+    storage_edit
     storage_rent
 
     add_mod
@@ -342,6 +344,7 @@ pub enum Token {
     Partition(char),
     Identifier(String),
     Integer(u128),
+    IntegerWithSuffix(u128, KwTy),
     Character(u8),
     Bytes(Vec<u8>),
     Address(Address),
@@ -359,12 +362,12 @@ mod irfn_tests {
 
     #[test]
     fn direct_ir_func_signatures_come_from_bytecode_metadata() {
-        let (_, inst, pms, args, outs) = pick_ir_func("storage_save").unwrap();
+        let (_, inst, pms, args, outs) = pick_ir_func("storage_edit").unwrap();
         let meta = inst.metadata();
-        assert_eq!(inst, Bytecode::SSAVE);
+        assert_eq!(inst, Bytecode::SEDIT);
         assert_eq!(pms, meta.param as usize);
         assert_eq!(args, meta.input as usize);
-        assert_eq!(outs, meta.otput as usize);
+        assert_eq!(outs, meta.output as usize);
     }
 
     #[test]

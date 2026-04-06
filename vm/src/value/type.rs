@@ -11,17 +11,30 @@ pub enum ValueTy {
     U32         = 4,
     U64         = 5,
     U128        = 6,
-    // U256     = 7 ...      = 8 ...      = 9
-    Bytes       = 10,
-    Address     = 11,
-    HeapSlice   = 13,
-    Tuple        = 14,
-    Compo       = 15
+    // U256     = 7,
+    Bytes       = 8,
+    Address     = 9,
+    //          = 10,
+    HeapSlice   = 11,
+    //          = 12,
+    Tuple       = 13,
+    Compo       = 14,
+    Handle      = 15
 }
 
-pub const RESERVED_U256_TYPE_NAME: &str = "u256";
-
 impl ValueTy {
+
+    pub fn reserved_type_error(name: &str) -> String {
+        match name {
+            "u256" => "type 'u256' is reserved for future expansion and is not supported yet".to_owned(),
+            "uint" => "type 'uint' is reserved for future expansion and is not supported yet; use an explicit width such as u8/u16/u32/u64/u128".to_owned(),
+            _ => format!("unknown type '{}'", name),
+        }
+    }
+
+    pub fn is_reserved_type_name(name: &str) -> bool {
+        matches!(name, "u256" | "uint")
+    }
 
     pub fn check_func_argv_type(&self) -> Rerr {
         use ValueTy::*;
@@ -54,6 +67,7 @@ impl ValueTy {
             ValueTy::HeapSlice => "heapslice" ,
             ValueTy::Tuple     => "tuple"     ,
             ValueTy::Compo     => "compo"     ,
+            ValueTy::Handle    => "handle"    ,
         }
     }
 
@@ -82,13 +96,13 @@ impl ValueTy {
             "u32"       => U32,
             "u64"       => U64,
             "u128"      => U128,
-            RESERVED_U256_TYPE_NAME => return errf!("value type '{}' is reserved but not enabled", RESERVED_U256_TYPE_NAME),
             "bytes"     => Bytes,
             "address"   => Address,
             "heapslice" => HeapSlice,
             "tuple"     => Tuple,
             "compo"     => Compo,
-            a => return errf!("value type '{}' not found", a)
+            "handle"    => Handle,
+            _ => return Err(Self::reserved_type_error(s)),
         })
     }
 
@@ -102,14 +116,13 @@ impl ValueTy {
             4  => U32       ,
             5  => U64       ,
             6  => U128      ,
-            RESERVED_U256_TYPE_ID => return errf!("ValueTy {} (u256) is reserved but not enabled", RESERVED_U256_TYPE_ID),
-            /* */
-            10 => Bytes     ,
-            11 => Address   ,
-            13 => HeapSlice ,
-            14 => Tuple      ,
-            15 => Compo     ,
-            _ => return errf!("ValueTy {} not found", t)
+            8  => Bytes     ,
+            9  => Address   ,
+            11 => HeapSlice ,
+            13 => Tuple     ,
+            14 => Compo     ,
+            15 => Handle    ,
+            _ => return errf!("unknown type")
         })
     }
 
@@ -135,9 +148,16 @@ mod type_tests {
     use super::*;
 
     #[test]
-    fn reserved_u256_name_and_type_id_are_rejected() {
-        assert!(ValueTy::from_name(RESERVED_U256_TYPE_NAME).is_err());
-        assert!(ValueTy::build(RESERVED_U256_TYPE_ID).is_err());
+    fn unknown_type_name_and_id_are_rejected() {
+        let err_u256 = ValueTy::from_name("u256").unwrap_err();
+        assert!(err_u256.contains("reserved for future expansion"));
+        let err_uint = ValueTy::from_name("uint").unwrap_err();
+        assert!(err_uint.contains("explicit width"));
+        let err_unknown = ValueTy::from_name("wat").unwrap_err();
+        assert!(err_unknown.contains("unknown type 'wat'"));
+        assert!(ValueTy::build(7).is_err());
+        assert!(ValueTy::build(10).is_err());
+        assert!(ValueTy::build(12).is_err());
     }
 
     #[test]
@@ -164,7 +184,7 @@ mod type_tests {
             assert_eq!(parse_cto_target_ty_param(ty as u8).unwrap(), ty);
         }
 
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
             let res = parse_cto_target_ty_param(ty as u8);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }
@@ -178,6 +198,9 @@ mod type_tests {
         assert!(ValueTy::Nil.check_func_argv_type().is_err());
         assert!(ValueTy::HeapSlice.check_func_argv_type().is_err());
         assert!(ValueTy::Tuple.check_func_argv_type().is_err());
+        assert!(ValueTy::Handle.check_func_argv_type().is_ok());
+        assert!(ValueTy::Handle.check_func_retv_type().is_ok());
         assert_eq!(ValueTy::from_name("tuple").unwrap(), ValueTy::Tuple);
+        assert_eq!(ValueTy::from_name("handle").unwrap(), ValueTy::Handle);
     }
 }

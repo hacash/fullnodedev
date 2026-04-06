@@ -8,6 +8,7 @@ mod hrc20 {
     use vm::ir::*;
     use vm::lang::*;
     use vm::rt::*;
+    use vm::value::ValueTy as VT;
 
     fn addr(s: &str) -> Address {
         Address::from_readable(s).unwrap()
@@ -15,6 +16,19 @@ mod hrc20 {
 
     #[test]
     fn test1() {
+        let render_code = lang_to_bytecode(
+            r##"
+            param{ num }
+            num = num + 1
+            log("log1", num + 1)
+            log("log2", 1, num + 2)
+            log("log3", 1, 2, num + 3)
+            log("log4", 1, 2, 3, num + 4)
+            return 0
+        "##,
+        )
+        .unwrap();
+
         // emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
         Contract::new()
             // log
@@ -22,17 +36,8 @@ mod hrc20 {
                 Func::new("render")
                     .unwrap()
                     .external()
-                    .fitsh(
-                        r##"
-            param{ num }
-            num = num + 1
-            log("log1", num + 1)
-            log("log2", 1, num + 2)
-            log("log3", 1, 2, num + 3)
-            log("log4", 1, 2, 3, num + 4)
-            end
-        "##,
-                    )
+                    .types(Some(VT::U32), vec![VT::U64])
+                    .bytecode(render_code)
                     .unwrap(),
             )
             .testnet_deploy_print_by_nonce("12:244", 0);

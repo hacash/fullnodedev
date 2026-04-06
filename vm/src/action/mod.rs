@@ -3,7 +3,6 @@ use std::any::*;
 use basis::component::*;
 use basis::interface::*;
 use field::*;
-use protocol::action::*;
 use protocol::setup::*;
 use protocol::state::*;
 use protocol::*;
@@ -32,10 +31,13 @@ action_register! {
 
     EnvHeight
     EnvMainAddr
-    EnvCoinbaseAddr
+    EnvBlockAuthorAddr
 
     ViewCheckSign
     ViewBalance
-    ViewDiamondInscNum
-    ViewDiamondInscGet
+    ViewDiaInscNum
+    ViewDiaInscGet
+    ViewDiaNameList
+    ViewAssetBalance
+    ViewDiaOwnerAddrs
 }

@@ -1,7 +1,7 @@
 /**
 * parse bytecode params
 */
-use crate::machine::VmHost;
+use crate::machine::{DeferredRegistry, IntentRuntime, VmHost};
 
 #[inline(always)]
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -9,6 +9,22 @@ unsafe fn read_arr<const N: usize>(codes: &[u8], pc: usize) -> [u8; N] {
     let mut out = [0u8; N];
     std::ptr::copy_nonoverlapping(codes.as_ptr().add(pc), out.as_mut_ptr(), N);
     out
+}
+
+#[inline(always)]
+fn finish_ntcall(
+    cap: &SpaceCap,
+    gst: &GasExtra,
+    step_gas_use: &mut VmGasBuckets,
+    ops: &mut Stack,
+    r: Value,
+    g: i64,
+) -> VmrtRes<()> {
+    let r = r.valid(cap)?;
+    step_gas_use.resource += gst.nt_bytes(r.val_size());
+    step_gas_use.resource += g;
+    ops.push(r)?;
+    Ok(())
 }
 
 macro_rules! itrparam {
@@ -146,7 +162,6 @@ macro_rules! ostbranch {
 */
 
 pub fn execute_code<H: VmHost + ?Sized>(
-    // frame local
     pc: &mut usize,
     codes: &[u8],
     exec: ExecCtx,
@@ -155,13 +170,62 @@ pub fn execute_code<H: VmHost + ?Sized>(
     heap: &mut Heap,
     context_addr: &field::Address,
     current_addr: &field::Address,
+    gas_table: &GasTable,
+    gas_extra: &GasExtra,
+    space_cap: &SpaceCap,
+    gas_use: &mut VmGasBuckets,
+    global_map: &mut GKVMap,
+    memory_map: &mut CtcKVMap,
+    deferred_registry: &mut DeferredRegistry,
+    host: &mut H,
+) -> VmrtRes<CallExit> {
+    let mut bindings = FrameBindings::root(*context_addr, Vec::<field::Address>::new().into());
+    let mut intent_state = crate::frame::IntentScopeState::default();
+    let mut intents = IntentRuntime::default();
+    execute_code_in_frame(
+        pc,
+        codes,
+        exec,
+        operands,
+        locals,
+        heap,
+        &mut bindings,
+        &mut intent_state,
+        context_addr,
+        current_addr,
+        gas_table,
+        gas_extra,
+        space_cap,
+        gas_use,
+        global_map,
+        memory_map,
+        &mut intents,
+        deferred_registry,
+        host,
+    )
+}
+
+pub fn execute_code_in_frame<H: VmHost + ?Sized>(
+    // frame local
+    pc: &mut usize,
+    codes: &[u8],
+    exec: ExecCtx,
+    operands: &mut Stack,
+    locals: &mut Stack,
+    heap: &mut Heap,
+    bindings: &mut FrameBindings,
+    intent_state: &mut crate::frame::IntentScopeState,
+    context_addr: &field::Address,
+    current_addr: &field::Address,
     // shared runtime
     gas_table: &GasTable,
     gas_extra: &GasExtra,
     space_cap: &SpaceCap,
-    gas_use: &mut GasUse,
+    gas_use: &mut VmGasBuckets,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
+    intents: &mut IntentRuntime,
+    deferred_registry: &mut DeferredRegistry,
     host: &mut H,
 ) -> VmrtRes<CallExit> {
 
@@ -213,9 +277,9 @@ pub fn execute_code<H: VmHost + ?Sized>(
         
         // gas
         let base_gas = gas_table.gas(instbyte);
-        let mut step_gas_use = GasUse {
+        let mut step_gas_use = VmGasBuckets {
             compute: base_gas,
-            ..GasUse::default()
+            ..VmGasBuckets::default()
         };
 
         macro_rules! gas_add {
@@ -261,33 +325,6 @@ pub fn execute_code<H: VmHost + ?Sized>(
             }
         }}}
 
-        // NTFUNC: pure native function (has args, stack 1→1, allowed in Pure mode)
-        macro_rules! ntcall {
-            (func, $idx: expr) => {{
-                let nt_idx = $idx;
-                let argv = ops.pop()?.extract_call_data(heap)?;
-                gas_resource!(ntfunc_bytes, argv.len());
-                let (r, g) = NativeFunc::call(hei, nt_idx, &argv)?;
-                let r = r.valid(cap)?;
-                gas_resource!(ntfunc_bytes, r.val_size());
-                gas_add!(resource, raw, g);
-                ops.push(r)?;
-            }};
-            (env, $idx: expr) => {{
-                let nt_idx = $idx;
-                nsr!();
-                let r = match nt_idx {
-                    NativeEnv::idx_context_address => Value::Address(*context_addr),
-                    _ => return itr_err_fmt!(NativeEnvError, "native env idx {} not find", nt_idx),
-                };
-                let g = NativeEnv::gas(nt_idx)?;
-                let r = r.valid(cap)?;
-                gas_resource!(ntfunc_bytes, r.val_size());
-                gas_add!(resource, raw, g);
-                ops.push(r)?;
-            }};
-        }
-
         macro_rules! local_get {
             ($idx: expr) => {{
                 let v = locals.load($idx as usize)?.valid(cap)?;
@@ -315,7 +352,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
             () => {{
                 if ops.datas.len() >= 2 {
                     let l = ops.datas.len();
-                    gas_resource!(stack_cmp, lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1]));
+                    gas_resource!(stack_cmp, lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1], gst));
                 }
             }};
         }
@@ -411,10 +448,37 @@ pub fn execute_code<H: VmHost + ?Sized>(
             match instruction {
                 // action
                 ACTION | ACTENV | ACTVIEW => actcall!(instruction),
+                // native runtime control (VM-local side effects)
+                NTCTL => {
+                    let nt_idx = pu8!();
+                    let argv = ops.pop()?.valid(cap)?;
+                    let (r, g) = call_ntctl(
+                        exec,
+                        cap,
+                        bindings,
+                        intent_state,
+                        context_addr,
+                        intents,
+                        deferred_registry,
+                        nt_idx,
+                        argv,
+                    )?;
+                    finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
+                }
                 // native func (pure computation, always allowed)
-                NTFUNC => ntcall!(func, pu8!()),
+                NTFUNC => {
+                    let nt_idx = pu8!();
+                    let argv = ops.pop()?.extract_call_data(heap)?;
+                    gas_resource!(nt_bytes, argv.len());
+                    let (r, g) = call_ntfunc(hei, nt_idx, &argv)?;
+                    finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
+                }
                 // native env (VM context read, forbidden in Pure mode)
-                NTENV  => ntcall!(env, pu8!()),
+                NTENV  => {
+                    let nt_idx = pu8!();
+                    let (r, g) = call_ntenv(exec, bindings, context_addr, nt_idx)?;
+                    finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
+                }
                 // constant
                 PU8 => ops.push(U8(pu8!()))?,
                 PU16 => ops.push(U16(pu16!()))?,
@@ -473,15 +537,20 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 ROLL => ops.roll(pu8!())?,
                 SWAP => ops.swap()?,
                 REV => ops.reverse(pu8!())?, // reverse
-                // CHOOSE: pop condition; if false swap the remaining two values so
-                // the chosen branch becomes the top of the stack. Leave the
-                // chosen value on the stack for subsequent instructions to consume.
+                // CHOOSE expects stack order [..., cond, yes, no] and keeps
+                // exactly one chosen branch value on stack top.
                 CHOOSE => {
-                    if !ops.pop()?.extract_bool()? {
-                        ops.swap()?
+                    let l = ops.datas.len();
+                    if l < 3 {
+                        return itr_err_code!(OutOfStack);
                     }
-                    ops.pop()?;
-                } /* x ? a : b */
+                    let c = l - 3;
+                    let y = c + 1;
+                    let n = c + 2;
+                    let pick = maybe!(ops.datas[c].extract_bool()?, y, n);
+                    ops.datas.swap(c, pick);
+                    ops.datas.truncate(l - 2);
+                } /* choose(cond, yes, no) */
                 CAT => {
                     let (xlen, ylen) = match ops.datas.len() {
                         l if l >= 2 => (ops.datas[l - 2].val_size(), ops.datas[l - 1].val_size()),
@@ -586,12 +655,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         Some(c) => {
                             let len = c.len();
                             let bsz = match c.list_ref() {
-                                Ok(l) => l.iter().map(Value::val_size).sum(),
+                                Ok(l) => l.iter().fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
                                 Err(_) => c
                                     .map_ref()?
                                     .iter()
-                                    .map(|(k, v)| k.len() + v.val_size())
-                                    .sum(),
+                                    .fold(0usize, |acc, (k, v)| {
+                                        let acc = add_size_saturating(acc, k.len());
+                                        add_size_saturating(acc, v.val_size())
+                                    }),
                             };
                             (len, bsz)
                         }
@@ -643,12 +714,14 @@ pub fn execute_code<H: VmHost + ?Sized>(
                         let compo = ops.compo()?;
                         let len = compo.len();
                         let bsz = match compo.list_ref() {
-                            Ok(l) => l.iter().map(Value::val_size).sum(),
+                            Ok(l) => l.iter().fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
                             Err(_) => compo
                                 .map_ref()?
                                 .iter()
-                                .map(|(k, v)| k.len() + v.val_size())
-                                .sum(),
+                                .fold(0usize, |acc, (k, v)| {
+                                    let acc = add_size_saturating(acc, k.len());
+                                    add_size_saturating(acc, v.val_size())
+                                }),
                         };
                         (len, bsz, compo.copy())
                     };
@@ -662,38 +735,25 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     gas_add!(resource, raw, unpack_seq(i, locals, items, gst, cap)?);
                     ops.pop()?; // pop argv wrapper after unpack
                 }
-                // heap
-                HGROW => gas_add!(resource, raw, heap.grow(pu8!())?),
-                HWRITE => hwrite!(ops_pop_to_u16!()),
-                HREAD => {
-                    let n = ops.pop()?;
-                    let len = n.extract_u16()? as usize;
-                    gas_resource!(heap_read, len);
-                    let peek = ops.peek()?;
-                    *peek = heap.read(peek, n)?.valid(cap)?;
-                }
-                HWRITEX => hwrite!(pu8_as_u16!()),
-                HWRITEXL => hwrite!(pu16!()),
-                HREADU => hread_push!(heap.read_u(pu8!())?),
-                HREADUL => hread_push!(heap.read_ul(pu16!())?),
-                HSLICE => {
-                    let p = ops.pop()?;
-                    let peek = ops.peek()?;
-                    *peek = heap.slice(p, peek)?;
-                }
-                // locals & heap & global_map & memory_map
+                // locals, logs, heap, global_map & memory_map
                 XLG => {
                     let mark = pu8!();
                     let (opt, idx) = decode_local_logic_mark(mark);
                     if matches!(opt, LxLg::Eq | LxLg::Ne) {
                         let base = locals.load(idx as usize)?;
                         let top = ops.peek()?;
-                        gas_resource!(stack_cmp, lgc_compare_fee(&base, top));
+                        gas_resource!(stack_cmp, lgc_compare_fee(&base, top, gst));
                     }
                     local_logic(mark, locals, ops.peek()?)?;
                 }
                 XOP => local_operand(pu8!(), locals, ops.pop()?)?,
-                ALLOC => gas_add!(resource, raw, gst.one_local_alloc * locals.alloc(pu8!())? as i64),
+                GET => local_get!(pu8!()),
+                PUT => {
+                    let v = ops.pop()?.valid(cap)?;
+                    let vlen = v.val_size();
+                    gas_resource!(stack_write, vlen);
+                    locals.save(pu8_as_u16!(), v)?;
+                }
                 GETX => {
                     let v = locals.load(ops_peek_to_u16!() as usize)?.valid(cap)?;
                     gas_resource!(stack_copy, v.dup_size());
@@ -705,20 +765,33 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     gas_resource!(stack_write, vlen);
                     locals.save(ops_pop_to_u16!(), v)?;
                 }
-                PUT => {
-                    let v = ops.pop()?.valid(cap)?;
-                    let vlen = v.val_size();
-                    gas_resource!(stack_write, vlen);
-                    locals.save(pu8_as_u16!(), v)?;
-                }
-                GET => local_get!(pu8!()),
+                ALLOC => gas_add!(resource, raw, gst.one_local_alloc * locals.alloc(pu8!())? as i64),
                 GET0 | GET1 | GET2 | GET3 => local_get!(instbyte - GET0 as u8),
+                LOG1 | LOG2 | LOG3 | LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
+                HSLICE => {
+                    let start = ops.pop()?;
+                    let peek = ops.peek()?;
+                    *peek = heap.slice(peek.clone(), &start)?;
+                }
+                HREADUL => hread_push!(heap.read_ul(pu16!())?),
+                HREADU => hread_push!(heap.read_u(pu8!())?),
+                HWRITEXL => hwrite!(pu16!()),
+                HWRITEX => hwrite!(pu8_as_u16!()),
+                HREAD => {
+                    let n = ops.pop()?;
+                    let len = n.extract_u16()? as usize;
+                    gas_resource!(heap_read, len);
+                    let peek = ops.peek()?;
+                    *peek = heap.read(peek, n)?.valid(cap)?;
+                }
+                HWRITE => hwrite!(ops_pop_to_u16!()),
+                HGROW => gas_add!(resource, raw, heap.grow(pu8!())?),
                 // storage
-                SREST => {
+                SSTAT => {
                     nsr!();
                     let v = {
                         let k = ops.peek()?;
-                        host.srest(context_addr, k)?
+                        host.sstat(gst, cap, context_addr, k)?
                     }
                     .valid(cap)?;
                     *ops.peek()? = v;
@@ -727,30 +800,45 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     nsr!();
                     let v = {
                         let k = ops.peek()?;
-                        host.sload(context_addr, k)?
+                        host.sload(gst, cap, context_addr, k)?
                     }
                     .valid(cap)?;
-                    let vlen = v.val_size();
-                    gas_add!(storage, storage_read, vlen);
+                    if !matches!(v, Value::Nil) {
+                        let vlen = v.val_size();
+                        gas_add!(storage, storage_read, vlen);
+                    }
                     *ops.peek()? = v;
+                }
+                SEDIT => {
+                    nsw!();
+                    let v = ops.pop()?.valid(cap)?;
+                    let k = ops.pop()?;
+                    gas_add!(storage, raw, host.sedit(gst, cap, context_addr, k, v)?);
                 }
                 SDEL => {
                     nsw!();
                     let k = ops.pop()?;
-                    gas_add!(storage, storage_del);
-                    host.sdel(context_addr, k)?;
+                    let refund = host.sdel(gst, cap, context_addr, k)?;
+                    host.gas_rebate(refund)?;
                 }
-                SSAVE => {
+                SNEW => {
                     nsw!();
+                    let t = ops.pop()?;
                     let v = ops.pop()?.valid(cap)?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.ssave(gst, context_addr, k, v)?);
+                    gas_add!(storage, raw, host.snew(gst, cap, context_addr, k, v, t)?);
+                }
+                SRECV => {
+                    nsw!();
+                    let t = ops.pop()?;
+                    let k = ops.pop()?;
+                    gas_add!(storage, raw, host.srecv(gst, cap, context_addr, k, t)?);
                 }
                 SRENT => {
                     nsw!();
                     let t = ops.pop()?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.srent(gst, context_addr, k, t)?);
+                    gas_add!(storage, raw, host.srent(gst, cap, context_addr, k, t)?);
                 }
                 // global_map & memory_map
                 GPUT => kvput!(global_map, gst.global_key_cost),
@@ -761,8 +849,17 @@ pub fn execute_code<H: VmHost + ?Sized>(
                     kvput_inner!(mem, gst.memory_key_cost);
                 }
                 MGET => kvget!(k => memory_map.get(context_addr, k)?),
-                // log (t1,[t2,t3,t4,]d)
-                LOG1 | LOG2 | LOG3 | LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
+                MTAKE => {
+                    nsw!();
+                    let k = ops.peek()?.clone();
+                    let v = memory_map.get(context_addr, &k)?.valid(cap)?;
+                    if matches!(v, Value::Nil) {
+                        return itr_err_fmt!(MemoryError, "memory take value not found");
+                    }
+                    gas_resource!(stack_copy, v.dup_size());
+                    memory_map.remove(context_addr, &k)?;
+                    *ops.peek()? = v;
+                }
                 // logic
                 AND => binop_btw(ops, lgc_and)?,
                 OR => binop_btw(ops, lgc_or)?,
@@ -809,16 +906,19 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 MULSHR => triop_arithmetic(ops, mulshr_checked)?,
                 MULSHRUP => triop_arithmetic(ops, mulshrup_checked)?,
                 RPOW => {
-                    let exp_bits = match ops.len().checked_sub(2).and_then(|i| ops.datas.get(i)) {
-                        Some(v) => {
-                            let exp = v.to_uint()?.extract_u128()?;
-                            if exp == 0 {
-                                0
-                            } else {
-                                (u128::BITS - exp.leading_zeros()) as i64
-                            }
+                    let exp_bits = if ops.len() >= 3 {
+                        let idx = ops.len() - 2;
+                        match ops
+                            .datas
+                            .get(idx)
+                            .and_then(|v| v.to_uint().ok())
+                            .and_then(|v| v.extract_u128().ok())
+                        {
+                            Some(exp) if exp > 0 => (u128::BITS - exp.leading_zeros()) as i64,
+                            _ => 0,
                         }
-                        None => 0,
+                    } else {
+                        0
                     };
                     gas_add!(compute, raw, exp_bits * 2 + 1);
                     triop_arithmetic(ops, rpow_checked)?
@@ -833,6 +933,20 @@ pub fn execute_code<H: VmHost + ?Sized>(
                 LERP => quadop_arithmetic(ops, lerp_checked)?,
                 INC => unary_inc(ops.peek()?, pu8!())?,
                 DEC => unary_dec(ops.peek()?, pu8!())?,
+                SQRT => {
+                    let v = {
+                        let x = ops.peek()?;
+                        sqrt_floor_checked(x)?
+                    };
+                    *ops.peek()? = v;
+                }
+                SQRTUP => {
+                    let v = {
+                        let x = ops.peek()?;
+                        sqrt_up_checked(x)?
+                    };
+                    *ops.peek()? = v;
+                }
                 // workflow control
                 JMPL  => jump!(codes, *pc, 2),
                 JMPS  => ostjump!(codes, *pc, 1),
@@ -899,8 +1013,8 @@ pub fn execute_code<H: VmHost + ?Sized>(
 
 #[inline(always)]
 fn check_add_gas_use(
-    gas_use: &mut GasUse,
-    step_gas_use: &GasUse,
+    gas_use: &mut VmGasBuckets,
+    step_gas_use: &VmGasBuckets,
     gst: &GasExtra,
 ) -> VmrtRes<i64> {
     if step_gas_use.compute < 0 || step_gas_use.resource < 0 || step_gas_use.storage < 0 {

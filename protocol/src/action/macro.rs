@@ -96,9 +96,10 @@ macro_rules! action_define {
             fn execute(&$pself, $pctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
                 use std::any::Any;
                 $crate::upgrade::check_gated_action($pctx.env().block.height, $pself.kind())?;
-                $crate::action::check_action_tx_type($pctx.env().tx.ty, $pself)?;
-                if !$pctx.env().chain.fast_sync {
-                    check_action_scope($pctx.exec_from(), $pself)?;
+                if $pctx.env().chain.fast_sync {
+                    $crate::action::precheck_runtime_action_fast_sync($pctx.env().tx.ty, $pself)?;
+                } else {
+                    $crate::action::precheck_runtime_action($pctx.env().tx.ty, $pself, $pctx.exec_from())?;
                 }
                 #[allow(unused_mut)]
                 let mut $pgas: u32 = $pself.size() as u32;

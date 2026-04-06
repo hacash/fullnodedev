@@ -13,8 +13,8 @@ pub enum Bytecode {
     ACTVIEW = 0x06, // *@  call action view (read-only query)
     ACTENV = 0x07,  // *+  call action env
     NTENV = 0x08,   // *+  native env (VM state read)
-    NTFUNC = 0x09,  // *@  native pure function
-    ________________10 = 0x0a,
+    NTCTL = 0x09,   // *@  native runtime control (modify VM tx-local state)
+    NTFUNC = 0x0a,  // *@  native pure function
     ________________11 = 0x0b,
     ________________12 = 0x0c,
     #[cfg(feature = "calcfunc")]
@@ -88,7 +88,7 @@ pub enum Bytecode {
     LDROP = 0x4e,  // *&     drop buf left *
     RDROP = 0x4f,  // *&     drop buf right *
     SIZE = 0x50,   // &      size (u16)
-    CHOOSE = 0x51, // a,b,c+ (x ? a : b)
+    CHOOSE = 0x51, // cond,yes,no+ (cond ? yes : no)
     ________________82 = 0x52,
     ________________83 = 0x53,
     ________________84 = 0x54,
@@ -128,21 +128,21 @@ pub enum Bytecode {
     _______________118 = 0x76,
     _______________119 = 0x77,
     _______________120 = 0x78,
-    _______________121 = 0x79,
-    _______________122 = 0x7a,
-    _______________123 = 0x7b,
-    _______________124 = 0x7c,
-    XLG = 0x7d,      // *&    local logic
-    XOP = 0x7e,      // *a    local operand
+    XLG = 0x79,      // *&    local logic
+    XOP = 0x7a,      // *a    local operand
+    GET = 0x7b,      // *+    local get
+    PUT = 0x7c,      // *a,b  local put
+    GETX = 0x7d,     // &     local x get
+    PUTX = 0x7e,     // v,i   local x put
     ALLOC = 0x7f,    // *     local allocQ
-    PUTX = 0x80,     // v,i   local x put
-    GETX = 0x81,     // &     local x get
-    PUT = 0x82,      // *a,b  local put
-    GET = 0x83,      // *+    local get
-    GET0 = 0x84,     // +     local get idx 0
-    GET1 = 0x85,     // +     local get idx 1
-    GET2 = 0x86,     // +     local get idx 2
-    GET3 = 0x87,     // +     local get idx 3
+    GET0 = 0x80,     // +     local get idx 0
+    GET1 = 0x81,     // +     local get idx 1
+    GET2 = 0x82,     // +     local get idx 2
+    GET3 = 0x83,     // +     local get idx 3
+    LOG1 = 0x84,
+    LOG2 = 0x85,
+    LOG3 = 0x86,
+    LOG4 = 0x87,
     HSLICE = 0x88,   // a,b+  create heap slice
     HREADUL = 0x89,  // **+   heap read ul
     HREADU = 0x8a,   // *+    heap read u
@@ -155,17 +155,17 @@ pub enum Bytecode {
     GPUT = 0x91,     // a,b   global put
     MGET = 0x92,     // &     memory get
     MPUT = 0x93,     // a,b   memory put
-    LOG1 = 0x94,
-    LOG2 = 0x95,
-    LOG3 = 0x96,
-    LOG4 = 0x97,
+    MTAKE = 0x94,    // &     memory take
+    ________________148 = 0x95,
+    ________________149 = 0x96,
+    ________________151 = 0x97,
     ________________152 = 0x98,
-    ________________153 = 0x99,
-    ________________154 = 0x9a,
-    SREST = 0x9b, // &     storage expire rest block
-    SLOAD = 0x9c, // &     storage load
-    SDEL = 0x9d,  // a     storage delete
-    SSAVE = 0x9e, // a,b   storage save
+    SSTAT = 0x99, // &       storage info
+    SLOAD = 0x9a, // &       storage load
+    SEDIT = 0x9b, // a,b     storage edit
+    SDEL = 0x9c,  // a       storage delete
+    SNEW = 0x9d,  // a,b,c   storage create
+    SRECV = 0x9e, // a,b     storage recover rent
     SRENT = 0x9f, // a,b   storage time rent
     AND = 0xa0,   // a,b+   and
     OR = 0xa1,    // a,b+   or
@@ -183,45 +183,48 @@ pub enum Bytecode {
     BXOR = 0xad,                // a,b+   xor: ^
     BOR  = 0xae,                // a,b+   or:  |
     BAND = 0xaf,                // a,b+   and: &
-    ADD  = 0xb0,                // a,b+   +
-    SUB  = 0xb1,                // a,b+   -
-    MUL  = 0xb2,                // a,b+   *
-    DIV  = 0xb3,                // a,b+   /
-    MOD  = 0xb4,                // a,b+   mod
-    POW  = 0xb5,                // a,b+   pow
-    MAX  = 0xb6,                // a,b+   max
-    MIN  = 0xb7,                // a,b+   min
-    INC  = 0xb8,                // *&     += u8
-    DEC  = 0xb9,                // *&     -= u8
-    ADDMOD   = 0xba,            // a,b,c+ (x+y)%z
-    MULMOD   = 0xbb,            // a,b,c+ (x*y)%z
-    MULADD   = 0xbc,            // a,b,c+ (x*y)+z
-    MULDIV   = 0xbd,            // a,b,c+ (x*y)/z
-    MULDIVUP = 0xbe,            // a,b,c+ ceil((x*y)/z)
-    MULSHR   = 0xbf,            // a,b,c+ (x*y)>>z
-    MULSHRUP = 0xc0,            // a,b,c+ ceil((x*y)/2^z)
-    RPOW     = 0xc1,            // a,b,c+ fixed-point pow
-    CLAMP    = 0xc2,            // a,b,c+ clamp(x, lo, hi)
-    DIVUP       = 0xc3,         // a,b+   ceil(x/y)
-    DIVROUND    = 0xc4,         // a,b+   round_half_up(x/y)
-    SATADD      = 0xc5,         // a,b+   saturating add
-    SATSUB      = 0xc6,         // a,b+   saturating sub
-    ABSDIFF     = 0xc7,         // a,b+   abs(x-y)
-    MULSUB      = 0xc8,         // a,b,c+ (x*y)-z
+    // arithmetic: binary core, div variants, pow, extrema, saturating, local inc/dec
+    ADD         = 0xb0,         // a,b+   +
+    SUB         = 0xb1,         // a,b+   -
+    MUL         = 0xb2,         // a,b+   *
+    DIV         = 0xb3,         // a,b+   /
+    MOD         = 0xb4,         // a,b+   mod
+    DIVUP       = 0xb5,         // a,b+   ceil(x/y)
+    DIVROUND    = 0xb6,         // a,b+   round_half_up(x/y)
+    POW         = 0xb7,         // a,b+   pow
+    RPOW        = 0xb8,         // a,b,c+ fixed-point pow
+    MAX         = 0xb9,         // a,b+   max
+    MIN         = 0xba,         // a,b+   min
+    SATADD      = 0xbb,         // a,b+   saturating add
+    SATSUB      = 0xbc,         // a,b+   saturating sub
+    ABSDIFF     = 0xbd,         // a,b+   abs(x-y)
+    INC         = 0xbe,         // *&     += u8
+    DEC         = 0xbf,         // *&     -= u8
+    SQRT        = 0xc0,         // a+     floor isqrt(a)
+    SQRTUP      = 0xc1,         // a+     ceil sqrt (min y with y*y >= a)
+    ________________211 = 0xc2, // reserved
+    // arithmetic: triple-input mul pipeline and mod
+    ADDMOD      = 0xc3,         // a,b,c+ (x+y)%z
+    MULMOD      = 0xc4,         // a,b,c+ (x*y)%z
+    MULADD      = 0xc5,         // a,b,c+ (x*y)+z
+    MULSUB      = 0xc6,         // a,b,c+ (x*y)-z
+    MULDIV      = 0xc7,         // a,b,c+ (x*y)/z
+    MULDIVUP    = 0xc8,         // a,b,c+ ceil((x*y)/z)
     MULDIVROUND = 0xc9,         // a,b,c+ round_half_up((x*y)/z)
-    DEVSCALED   = 0xca,         // a,b,c+ abs(x-b)*c/b
-    MULADDDIV   = 0xcb,         // a,b,c,d+ ((x*y)+z)/d
-    MULSUBDIV   = 0xcc,         // a,b,c,d+ ((x*y)-z)/d
-    MUL3DIV     = 0xcd,         // a,b,c,d+ (a*b*c)/d
-    WITHINBPS   = 0xce,         // a,b,c,d+ abs(a-b)*d <= b*c
-    WAVG2       = 0xcf,         // a,b,c,d+ (a*b+c*d)/(b+d)
-    LERP        = 0xd0,         // a,b,c,d+ linear interpolation
-    ________________209 = 0xd1,
-    ________________210 = 0xd2,
-    ________________211 = 0xd3,
-    ________________212 = 0xd4,
-    ________________213 = 0xd5,
-    ________________214 = 0xd6,
+    MULSHR      = 0xca,         // a,b,c+ (x*y)>>z
+    MULSHRUP    = 0xcb,         // a,b,c+ ceil((x*y)/2^z)
+    ________________212 = 0xcc, // reserved
+    ________________213 = 0xcd, // reserved
+    CLAMP       = 0xce,         // a,b,c+ clamp(x, lo, hi)
+    DEVSCALED   = 0xcf,         // a,b,c+ abs(x-b)*c/b
+    ________________214 = 0xd0, // reserved
+    // arithmetic: four-input composites
+    MULADDDIV   = 0xd1,         // a,b,c,d+ ((x*y)+z)/d
+    MULSUBDIV   = 0xd2,         // a,b,c,d+ ((x*y)-z)/d
+    MUL3DIV     = 0xd3,         // a,b,c,d+ (a*b*c)/d
+    WITHINBPS   = 0xd4,         // a,b,c,d+ abs(a-b)*d <= b*c
+    WAVG2       = 0xd5,         // a,b,c,d+ (a*b+c*d)/(b+d)
+    LERP        = 0xd6,         // a,b,c,d+ linear interpolation
     ________________215 = 0xd7,
     ________________216 = 0xd8,
     ________________217 = 0xd9,
@@ -278,7 +281,7 @@ pub struct BytecodeMetadata {
     pub valid: bool,
     pub param: u8,
     pub input: u8,
-    pub otput: u8,
+    pub output: u8,
     pub intro: &'static str,
 }
 
@@ -294,13 +297,13 @@ impl Bytecode {
                 valid: true,
                 param: 4,
                 input: 1,
-                otput: 1,
+                output: 1,
                 intro: "calc_call",
             }
         }
         match self {
             $(
-            $inst => BytecodeMetadata {valid: true, param: $p, input: $i, otput: $o, intro: stringify!($s)},
+            $inst => BytecodeMetadata {valid: true, param: $p, input: $i, output: $o, intro: stringify!($s)},
             )+
             _ => BytecodeMetadata::default(),
         }
@@ -334,11 +337,12 @@ macro_rules! bytecode_intro_sig {
 
 /* params, stack input, stack output */
 bytecode_metadata_define! {
-    ACTION     : 1, 1, 0,     action  // no stack output; otput=0 to avoid extra POP in IRBLOCK
+    ACTION     : 1, 1, 0,     action  // no stack output; output=0 to avoid extra POP in IRBLOCK
     ACTVIEW    : 1, 1, 1,     actview
     ACTENV     : 1, 0, 1,     actenv
-    NTFUNC     : 1, 1, 1,     native_func
     NTENV      : 1, 0, 1,     native_env
+    NTCTL      : 1, 1, 1,     native_ctl
+    NTFUNC     : 1, 1, 1,     native_func
 
     CODECALL     : 1+4, 1, 0,   code_call
     CALL         :   6, 1, 1,   call
@@ -420,15 +424,20 @@ bytecode_metadata_define! {
 
     XLG        : 1, 1, 1,     local_logic
     XOP        : 1, 1, 0,     local_operand
-    ALLOC      : 1, 0, 0,     local_alloc
-    PUTX       : 0, 2, 0,     local_x_put
-    GETX       : 0, 1, 1,     local_x
-    PUT        : 1, 1, 0,     local_put
     GET        : 1, 0, 1,     local
+    PUT        : 1, 1, 0,     local_put
+    GETX       : 0, 1, 1,     local_x
+    PUTX       : 0, 2, 0,     local_x_put
+    ALLOC      : 1, 0, 0,     local_alloc
     GET0       : 0, 0, 1,     local_0
     GET1       : 0, 0, 1,     local_1
     GET2       : 0, 0, 1,     local_2
     GET3       : 0, 0, 1,     local_3
+
+    LOG1       : 0, 1, 0,     log_1
+    LOG2       : 0, 2, 0,     log_2
+    LOG3       : 0, 3, 0,     log_3
+    LOG4       : 0, 4, 0,     log_4
 
     HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
@@ -443,16 +452,14 @@ bytecode_metadata_define! {
     GGET       : 0, 1, 1,     global_get
     MPUT       : 0, 2, 0,     memory_put
     MGET       : 0, 1, 1,     memory_get
+    MTAKE      : 0, 1, 1,     memory_take
 
-    LOG1       : 0, 255, 0,   log_1
-    LOG2       : 0, 255, 0,   log_2
-    LOG3       : 0, 255, 0,   log_3
-    LOG4       : 0, 255, 0,   log_4
-
-    SREST      : 0, 1, 1,     storage_rest
+    SSTAT      : 0, 1, 1,     storage_stat
     SLOAD      : 0, 1, 1,     storage_load
+    SEDIT      : 0, 2, 0,     storage_edit
     SDEL       : 0, 1, 0,     storage_del
-    SSAVE      : 0, 2, 0,     storage_save
+    SNEW       : 0, 3, 0,     storage_new
+    SRECV      : 0, 2, 0,     storage_recv
     SRENT      : 0, 2, 0,     storage_rent
 
     AND        : 0, 2, 1,     and
@@ -471,39 +478,41 @@ bytecode_metadata_define! {
     BOR        : 0, 2, 1,     bit_or
     BAND       : 0, 2, 1,     bit_and
 
-    ADD        : 0, 2, 1,     add
-    SUB        : 0, 2, 1,     sub
-    MUL        : 0, 2, 1,     mul
-    DIV        : 0, 2, 1,     div
-    MOD        : 0, 2, 1,     mod
-    POW        : 0, 2, 1,     pow
-    MAX        : 0, 2, 1,     max
-    MIN        : 0, 2, 1,     min
-    INC        : 1, 1, 1,     increase
-    DEC        : 1, 1, 1,     decrease
-    ADDMOD     : 0, 3, 1,     add_mod
-    MULMOD     : 0, 3, 1,     mul_mod
-    MULADD     : 0, 3, 1,     mul_add
-    MULSUB     : 0, 3, 1,     mul_sub
-    MULDIV     : 0, 3, 1,     mul_div
-    MULDIVUP   : 0, 3, 1,     mul_div_up
-    MULDIVROUND: 0, 3, 1,     mul_div_round
-    MULSHR     : 0, 3, 1,     mul_shr
-    MULSHRUP   : 0, 3, 1,     mul_shr_up
-    RPOW       : 0, 3, 1,     rpow
-    CLAMP      : 0, 3, 1,     clamp
-    DEVSCALED  : 0, 3, 1,     dev_scaled
-    DIVUP      : 0, 2, 1,     div_up
-    DIVROUND   : 0, 2, 1,     div_round
-    SATADD     : 0, 2, 1,     sat_add
-    SATSUB     : 0, 2, 1,     sat_sub
-    ABSDIFF    : 0, 2, 1,     abs_diff
-    MULADDDIV  : 0, 4, 1,     mul_add_div
-    MULSUBDIV  : 0, 4, 1,     mul_sub_div
-    MUL3DIV    : 0, 4, 1,     mul3_div
-    WITHINBPS  : 0, 4, 1,     within_bps
-    WAVG2      : 0, 4, 1,     wavg2
-    LERP       : 0, 4, 1,     lerp
+    ADD         : 0, 2, 1,     add
+    SUB         : 0, 2, 1,     sub
+    MUL         : 0, 2, 1,     mul
+    DIV         : 0, 2, 1,     div
+    MOD         : 0, 2, 1,     mod
+    DIVUP       : 0, 2, 1,     div_up
+    DIVROUND    : 0, 2, 1,     div_round
+    POW         : 0, 2, 1,     pow
+    RPOW        : 0, 3, 1,     rpow
+    MAX         : 0, 2, 1,     max
+    MIN         : 0, 2, 1,     min
+    SATADD      : 0, 2, 1,     sat_add
+    SATSUB      : 0, 2, 1,     sat_sub
+    ABSDIFF     : 0, 2, 1,     abs_diff
+    INC         : 1, 1, 1,     increase
+    DEC         : 1, 1, 1,     decrease
+    SQRT        : 0, 1, 1,     sqrt
+    SQRTUP      : 0, 1, 1,     sqrt_up
+    ADDMOD      : 0, 3, 1,     add_mod
+    MULMOD      : 0, 3, 1,     mul_mod
+    MULADD      : 0, 3, 1,     mul_add
+    MULSUB      : 0, 3, 1,     mul_sub
+    MULDIV      : 0, 3, 1,     mul_div
+    MULDIVUP    : 0, 3, 1,     mul_div_up
+    MULDIVROUND : 0, 3, 1,     mul_div_round
+    MULSHR      : 0, 3, 1,     mul_shr
+    MULSHRUP    : 0, 3, 1,     mul_shr_up
+    CLAMP       : 0, 3, 1,     clamp
+    DEVSCALED   : 0, 3, 1,     dev_scaled
+    MULADDDIV   : 0, 4, 1,     mul_add_div
+    MULSUBDIV   : 0, 4, 1,     mul_sub_div
+    MUL3DIV     : 0, 4, 1,     mul3_div
+    WITHINBPS   : 0, 4, 1,     within_bps
+    WAVG2       : 0, 4, 1,     wavg2
+    LERP        : 0, 4, 1,     lerp
 
     JMPL       : 2, 0, 0,     jump_long
     JMPS       : 1, 0, 0,     jump_offset

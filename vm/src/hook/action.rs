@@ -119,7 +119,7 @@ fn coin_asset_transfer_call(
             }
         }
         let param = Value::pack_call_args(params)?;
-        let _ = setup_vm_run_p2sh(ctx, codeconf, codes, param)?;
+        let _ = run_p2sh_entry(ctx, codeconf, codes, param)?;
         // return value checked inside p2sh_call
     }
 
@@ -128,7 +128,7 @@ fn coin_asset_transfer_call(
         let mut argvs = argvs.clone();
         argvs.push_front(Value::Address(to));
         let param = Value::pack_call_args(argvs)?;
-        let _ = setup_vm_run_abst(ctx, abstfrom, from, param)?;
+        let _ = run_abst_entry(ctx, abstfrom, from, param)?;
         // return value checked inside abst_call
     }
 
@@ -136,7 +136,7 @@ fn coin_asset_transfer_call(
     if tc {
         argvs.push_front(Value::Address(from));
         let param = Value::pack_call_args(argvs)?;
-        let _ = setup_vm_run_abst(ctx, abstto, to, param)?;
+        let _ = run_abst_entry(ctx, abstto, to, param)?;
         // return value checked inside abst_call
     }
 
@@ -147,7 +147,7 @@ fn coin_asset_transfer_call(
 mod hook_arg_tests {
     use super::*;
     use basis::component::{Env, ExecFrom, TexLedger};
-    use basis::interface::{Context, GasUse, Logs, P2sh, State, StateOperat, TransactionRead};
+    use basis::interface::{Context, VmGasBuckets, Logs, P2sh, State, StateOperat, TransactionRead};
     use field::{Address, Amount, Hash};
     use protocol::context::EmptyState;
     use std::sync::{Arc, Weak};
@@ -240,7 +240,8 @@ mod hook_arg_tests {
         tex: TexLedger,
         p2sh_addr: Address,
         p2sh_box: Box<dyn P2sh>,
-        calls: Vec<Value>,
+        calls: Vec<(Value, IntentScope)>,
+        intent_scope: IntentScope,
         exec_from: ExecFrom,
     }
 
@@ -269,8 +270,14 @@ mod hook_arg_tests {
                     witness: vec![0; 21],
                 }),
                 calls: vec![],
+                intent_scope: None,
                 exec_from: ExecFrom::Top,
             }
+        }
+
+        fn with_intent_scope(mut self, intent_scope: IntentScope) -> Self {
+            self.intent_scope = intent_scope;
+            self
         }
     }
 
@@ -307,17 +314,22 @@ mod hook_arg_tests {
         fn tx(&self) -> &dyn TransactionRead {
             &self.tx
         }
-        fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
-            let Ok(req) = req.downcast::<crate::machine::VmCallReq>() else {
+        fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
+            let Ok(req) = req.downcast::<crate::machine::EntryRequest>() else {
                 return Err(XError::fault("vm call req type mismatch".to_owned()));
             };
-            let param = match *req {
-                crate::machine::VmCallReq::Main { .. } => Value::Nil,
-                crate::machine::VmCallReq::P2sh { param, .. }
-                | crate::machine::VmCallReq::Abst { param, .. } => param,
+            let (param, intent_scope) = match *req {
+                crate::machine::EntryRequest::Main { .. } => (Value::Nil, None),
+                crate::machine::EntryRequest::P2sh { param, intent_scope, .. }
+                | crate::machine::EntryRequest::Abst { param, intent_scope, .. } => {
+                    (param, intent_scope)
+                }
             };
-            self.calls.push(param);
-            Ok((GasUse { compute: 1, resource: 0, storage: 0 }, Box::new(Value::Nil)))
+            self.calls.push((param, intent_scope));
+            Ok((VmGasBuckets { compute: 1, resource: 0, storage: 0 }, Box::new(Value::Nil)))
+        }
+        fn vm_current_intent_scope(&mut self) -> IntentScope {
+            self.intent_scope
         }
         fn tex_ledger(&mut self) -> &mut TexLedger {
             &mut self.tex
@@ -344,7 +356,7 @@ mod hook_arg_tests {
 
         try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
         assert_eq!(ctx.calls.len(), 1);
-        let param = &ctx.calls[0];
+        let param = &ctx.calls[0].0;
         assert!(matches!(param, Value::Tuple(_)));
     }
 
@@ -358,7 +370,21 @@ mod hook_arg_tests {
 
         try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
         assert_eq!(ctx.calls.len(), 1);
-        let param = &ctx.calls[0];
+        let param = &ctx.calls[0].0;
         assert!(matches!(param, Value::Tuple(_)));
+    }
+
+    #[test]
+    fn action_hook_carries_current_intent_scope_into_vm_callback() {
+        let main = Address::create_privakey([1u8; 20]);
+        let contract = Address::create_contract([3u8; 20]);
+        let mut ctx = CaptureCtx::new(main, Address::create_scriptmh([2u8; 20]))
+            .with_intent_scope(Some(Some(77)));
+
+        let act = HacToTrs::create_by(contract, Amount::mei(1));
+
+        try_action_hook(HacToTrs::KIND, &act, &mut ctx).unwrap();
+        assert_eq!(ctx.calls.len(), 1);
+        assert_eq!(ctx.calls[0].1, Some(Some(77)));
     }
 }

@@ -10,7 +10,8 @@ pub struct TexLedger {
     pub sat: i64,
     pub dia: i32,
     pub diamonds: DiamondNameListMax60000,
-    // By design TEX diamond receipts claim only a quantity from the shared pool, and exact names are assigned later by settlement order.
+    // By design TEX diamond receipts claim only a quantity from the shared pool.
+    // Exact names are assigned later by settlement order.
     pub diatrs:   Vec<(Address, usize)>,
     pub assets:   HashMap<Fold64, i128>,
     pub asset_checked: HashSet<Fold64>,

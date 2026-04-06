@@ -36,6 +36,10 @@ impl LowBidBranch {
         self.blocks[0].hash()
     }
 
+    fn root_difficulty(&self) -> u32 {
+        self.blocks[0].block().difficulty().uint()
+    }
+
     fn tip_hash(&self) -> Hash {
         self.blocks.last().unwrap().hash()
     }
@@ -188,6 +192,8 @@ struct BiddingProve {
     books: HashMap<u32, BiddingBook>,
     low_bid_groups: HashMap<u64, LowBidGroup>,
     replay_allow: HashSet<Hash>,
+    block_arrive_time: HashMap<Hash, u64>,
+    block_arrive_order: VecDeque<Hash>,
     engine: Option<Weak<dyn Engine>>,
     max_shadow_len: usize,
     max_group_branches: usize,
@@ -202,6 +208,8 @@ impl BiddingProve {
             books: HashMap::new(),
             low_bid_groups: HashMap::new(),
             replay_allow: HashSet::new(),
+            block_arrive_time: HashMap::new(),
+            block_arrive_order: VecDeque::new(),
             engine: None,
             max_shadow_len,
             max_group_branches: max_shadow_len,
@@ -215,8 +223,9 @@ impl BiddingProve {
     const DELAY_SECS: usize = 10;
     const HACD_KEEP: usize = 10;
     const UNIQ_TOP_MAX: usize = 50;
-    const LOW_BID_KEEP_SECS: u64 = 3600;
+    const LOW_BID_KEEP_SECS: u64 = 2400; // 40 min
     const LOW_BID_LOOP_SECS: u64 = 10;
+    const BLOCK_ARRIVE_KEEP: usize = 50;
 
     fn bind_engine(&mut self, eng: Arc<dyn Engine>) {
         let max_len = eng.config().unstable_block.saturating_mul(10) as usize;
@@ -268,9 +277,12 @@ impl BiddingProve {
         self.trim_books();
     }
 
-    fn highest(&self, curhei: u64, dianum: u32, sta: &dyn State, fblkt: u64) -> Option<Amount> {
+    fn highest(&self, curhei: u64, dianum: u32, sta: &dyn State, fblkt: u64) -> Amount {
+        if fblkt == 0 {
+            return Amount::zero();
+        }
         let Some(book) = self.books.get(&dianum) else {
-            return None;
+            return Amount::zero();
         };
         let coresta = CoreStateRead::wrap(sta);
         let ttx = fblkt.saturating_sub(Self::DELAY_SECS as u64);
@@ -279,11 +291,35 @@ impl BiddingProve {
             if r.time < ttx && isusa {
                 let hacbls = coresta.balance(&r.addr).unwrap_or_default();
                 if hacbls.hacash >= r.fee {
-                    return Some(r.fee.clone());
+                    return r.fee.clone();
                 }
             }
         }
-        None
+        Amount::zero()
+    }
+
+    fn mark_block_arrival(&mut self, hei: u64, hash: Hash) {
+        if hei % 5 != 4 {
+            return;
+        }
+        if self.block_arrive_time.contains_key(&hash) {
+            return;
+        }
+        self.block_arrive_time.insert(hash, curtimes());
+        self.block_arrive_order.push_back(hash);
+        while self.block_arrive_order.len() > Self::BLOCK_ARRIVE_KEEP {
+            let Some(hx) = self.block_arrive_order.pop_front() else {
+                break;
+            };
+            self.block_arrive_time.remove(&hx);
+        }
+    }
+
+    fn prev_block_arrive_time(&self, prevhx: &Hash) -> u64 {
+        self.block_arrive_time
+            .get(prevhx)
+            .copied()
+            .unwrap_or(0)
     }
 
     fn add_low_bid_root(&mut self, dianum: u32, blk: BlkPkg, root_fee: Amount) -> bool {
@@ -322,8 +358,17 @@ impl BiddingProve {
         }
     }
 
-    fn matches_low_bid_tip(&self, prev: &Hash) -> bool {
-        self.low_bid_groups.values().any(|group| group.matches_tip(prev))
+    fn min_pow_hash_by_prev(&self, prev: &Hash) -> Option<[u8; 32]> {
+        for group in self.low_bid_groups.values() {
+            for branch in group.branches.iter() {
+                if branch.tip_hash() != *prev {
+                    continue;
+                }
+                let max_hash = u32_to_biguint(branch.root_difficulty()).mul(4usize);
+                return Some(biguint_to_hash(&max_hash));
+            }
+        }
+        None
     }
 
     fn cache_low_bid_child(&mut self, blk: BlkPkg) -> bool {
@@ -413,7 +458,9 @@ fn low_bid_replay_loop(prove: Arc<Mutex<BiddingProve>>, mut worker: Worker) {
         if worker.quit() {
             return;
         }
-        std::thread::sleep(Duration::from_secs(BiddingProve::LOW_BID_LOOP_SECS));
+        if worker.sleep_or_quit(Duration::from_secs(BiddingProve::LOW_BID_LOOP_SECS)) {
+            return;
+        }
         let (engine, groups) = {
             let mut bidding = prove.lock().unwrap();
             if bidding.stop {
@@ -429,7 +476,10 @@ fn low_bid_replay_loop(prove: Arc<Mutex<BiddingProve>>, mut worker: Worker) {
             (engine, groups)
         };
         for group in groups.into_iter() {
-            replay_low_bid_group(prove.clone(), engine.clone(), group);
+            if worker.quit() {
+                return;
+            }
+            replay_low_bid_group(prove.clone(), engine.clone(), group, &mut worker);
         }
     }
 }
@@ -438,6 +488,7 @@ fn replay_low_bid_group(
     prove: Arc<Mutex<BiddingProve>>,
     engine: Arc<dyn Engine>,
     group: LowBidGroup,
+    worker: &mut Worker,
 ) {
     let branches = group.replay_branches();
     if branches.is_empty() {
@@ -450,6 +501,9 @@ fn replay_low_bid_group(
         group.branch_num(),
     );
     for branch in branches.into_iter() {
+        if worker.quit() {
+            return;
+        }
         let chain = branch.blocks;
         let hashes: Vec<Hash> = chain.iter().map(|blk| blk.hash()).collect();
         {
@@ -471,6 +525,11 @@ fn replay_low_bid_group(
         let mut inserted = 0usize;
         let mut success = true;
         for blk in chain.iter() {
+            if worker.quit() {
+                let mut bidding = prove.lock().unwrap();
+                bidding.clear_replay_chain(&hashes);
+                return;
+            }
             let hash = blk.hash();
             if store.block_data(&hash).is_some() {
                 inserted += 1;

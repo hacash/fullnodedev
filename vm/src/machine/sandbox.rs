@@ -1,5 +1,5 @@
 const SANDBOX_TX_FEE_238: u64 = 100_000;
-const SANDBOX_FUND_238: u64 = 1_000_000_000;
+const SANDBOX_FUND_238: u64 = 10_000_000_000;
 
 #[derive(Debug, Clone)]
 pub struct SandboxSpec {
@@ -47,7 +47,7 @@ impl SandboxSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxResult {
     pub use_gas: i64,
-    pub gas_use: GasUse,
+    pub gas_use: VmGasBuckets,
     pub ret_val: Value,
 }
 
@@ -94,9 +94,9 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
         &Amount::unit238(SANDBOX_FUND_238),
     )?;
     temp_ctx.gas_initialize(gas_budget)?;
-    let mut vmb = global_machine_manager().assign(hei);
+    let mut vmb = global_runtime_pool().checkout(hei);
     let (gas_use, ret_val) =
-        vmb.sandbox_main_call_raw_with_gas(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
+        vmb.raw_main_entry(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
     Ok(SandboxResult {
         use_gas: gas_use.total(),
         gas_use,
@@ -132,12 +132,29 @@ pub fn build_call_codes(funcname: &str, args: &[Value]) -> Ret<Vec<u8>> {
             codes.push(PACKTUPLE as u8);
         }
     }
-    let fnsg = calc_func_sign(funcname);
+    let fnsg = parse_sandbox_func_sign(funcname)?;
     codes.push(CALLEXT as u8);
     codes.push(1);
     codes.extend_from_slice(&fnsg);
     codes.push(RET as u8);
     Ok(codes)
+}
+
+fn parse_sandbox_func_sign(funcname: &str) -> Ret<FnSign> {
+    if let Some(hexsig) = funcname.strip_prefix("0x") {
+        if hexsig.len() != FN_SIGN_WIDTH * 2 {
+            return errf!(
+                "sandbox function selector length invalid: expected {} hex chars",
+                FN_SIGN_WIDTH * 2
+            )
+        }
+        let raw = hex::decode(hexsig)
+            .map_err(|_| "sandbox function selector hex invalid".to_owned())?;
+        return raw
+            .try_into()
+            .map_err(|_| "sandbox function selector length invalid".to_owned());
+    }
+    Ok(calc_func_sign(funcname))
 }
 
 fn append_push_value_code(codes: &mut Vec<u8>, value: &Value) -> Rerr {
@@ -174,7 +191,7 @@ fn append_push_value_code(codes: &mut Vec<u8>, value: &Value) -> Rerr {
             codes.push(CTO as u8);
             codes.push(ValueTy::Address as u8);
         }
-        HeapSlice(_) | Tuple(_) | Compo(_) => {
+        HeapSlice(_) | Tuple(_) | Handle(_) | Compo(_) => {
             return errf!("sandbox argument type {:?} not supported", value.ty())
         }
     }
@@ -196,7 +213,7 @@ fn append_push_bytes_code(codes: &mut Vec<u8>, bytes: &[u8]) {
 
 fn parse_one_param(t: &str, v: &str) -> Ret<Value> {
     use ValueTy::*;
-    let ty = ValueTy::from_name(t).map_err(|_| format!("unsupported param type '{}'", t))?;
+    let ty = ValueTy::from_name(t)?;
     Ok(match ty {
         Nil => Value::Nil,
         Bool => match v {
@@ -253,6 +270,32 @@ mod sandbox_parse_tests {
     fn parse_sandbox_params_reports_invalid_bytes() {
         let err = parse_sandbox_params("0xzz:bytes").unwrap_err();
         assert!(err.to_string().contains("invalid bytes argument"));
+    }
+
+    #[test]
+    fn parse_sandbox_params_reports_reserved_type_names() {
+        let err_u256 = parse_sandbox_params("1:u256").unwrap_err();
+        assert!(err_u256.contains("reserved for future expansion"));
+        let err_uint = parse_sandbox_params("1:uint").unwrap_err();
+        assert!(err_uint.contains("explicit width"));
+    }
+
+    #[test]
+    fn build_call_codes_accepts_explicit_selector_hex() {
+        let codes = build_call_codes("0x1234abcd", &[]).unwrap();
+        assert_eq!(&codes[codes.len() - 5..codes.len() - 1], &[0x12, 0x34, 0xab, 0xcd]);
+    }
+
+    #[test]
+    fn build_call_codes_rejects_bad_selector_hex_length() {
+        let err = build_call_codes("0x1234", &[]).unwrap_err();
+        assert!(err.contains("selector length invalid"));
+    }
+
+    #[test]
+    fn build_call_codes_rejects_bad_selector_hex_chars() {
+        let err = build_call_codes("0xzzzzzzzz", &[]).unwrap_err();
+        assert!(err.contains("selector hex invalid"));
     }
 
     #[test]

@@ -9,6 +9,7 @@ use testkit::sim::tx::DummyTx;
 use vm::ContractAddress;
 use vm::IRNode;
 use vm::interpreter::execute_code;
+use vm::machine::DeferCallbacks;
 use vm::ir::{convert_ir_to_bytecode, parse_ir_block};
 use vm::lang::*;
 use vm::machine::VmHost;
@@ -54,6 +55,11 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
+    fn gas_rebate(&mut self, gas: i64) -> VmrtRes<()> {
+        let _ = gas;
+        Ok(())
+    }
+
     fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
         vm::VMState::wrap(self.ctx.state()).contract_edition(addr)
     }
@@ -72,40 +78,67 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
-    fn srest(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
-        let _ = (addr, key);
+    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+        let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn sload(&mut self, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
-        let _ = (addr, key);
+    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+        let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn sdel(&mut self, addr: &FieldAddress, key: Value) -> VmrtRes<()> {
-        let _ = (addr, key);
+    fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: Value) -> VmrtRes<i64> {
+        let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn ssave(
+    fn snew(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &FieldAddress,
+        key: Value,
+        val: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
+        let _ = (gst, cap, addr, key, val, period);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn sedit(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &FieldAddress,
         key: Value,
         val: Value,
     ) -> VmrtRes<i64> {
-        let _ = (gst, addr, key, val);
+        let _ = (gst, cap, addr, key, val);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
     fn srent(
         &mut self,
         gst: &GasExtra,
+        cap: &SpaceCap,
         addr: &FieldAddress,
         key: Value,
         period: Value,
     ) -> VmrtRes<i64> {
-        let _ = (gst, addr, key, period);
+        let _ = (gst, cap, addr, key, period);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn srecv(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &FieldAddress,
+        key: Value,
+        period: Value,
+    ) -> VmrtRes<i64> {
+        let _ = (gst, cap, addr, key, period);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 }
@@ -296,7 +329,8 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         ctx,
         gas_remaining: gas,
     };
-    let mut gas_use = basis::interface::GasUse::default();
+    let mut gas_use = basis::interface::VmGasBuckets::default();
+    let mut defer_callbacks = DeferCallbacks::default();
 
     execute_code(
         &mut pc,
@@ -313,6 +347,7 @@ pub fn execute_lang_with_params(lang_script: &str, params: &str) -> VmrtRes<Valu
         &mut gas_use,
         &mut GKVMap::new(20),
         &mut CtcKVMap::new(12),
+        &mut defer_callbacks,
         &mut host,
     )?;
 

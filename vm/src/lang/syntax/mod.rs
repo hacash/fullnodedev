@@ -194,27 +194,27 @@ mod tests {
     use super::*;
     use crate::lang::Tokenizer;
 
-    fn parse_v2(src: &str) -> Ret<Vec<u8>> {
+    fn parse(src: &str) -> Ret<Vec<u8>> {
         let tokens = Tokenizer::new(src.as_bytes()).parse()?;
         let (ir, _) = Syntax::new(tokens).parse()?;
         drop_irblock_wrap(ir.serialize())
     }
 
     #[test]
-    fn syntax_v2_accepts_implicit_slot_alias() {
-        let code = parse_v2("return $7").unwrap();
+    fn syntax_accepts_implicit_slot_alias() {
+        let code = parse("return $7").unwrap();
         assert!(!code.is_empty());
     }
 
     #[test]
-    fn syntax_v2_accepts_assign_via_slot_alias_to_let_slot() {
-        let code = parse_v2("let x = 1\n$0 = 2\nreturn x").unwrap();
+    fn syntax_accepts_assign_via_slot_alias_to_let_slot() {
+        let code = parse("let x = 1\n$0 = 2\nreturn x").unwrap();
         assert!(!code.is_empty());
     }
 
     #[test]
-    fn syntax_v2_rejects_top_level_stray_closing_brace() {
-        let err = parse_v2("} return 1").unwrap_err().to_string();
+    fn syntax_rejects_top_level_stray_closing_brace() {
+        let err = parse("} return 1").unwrap_err().to_string();
         assert!(
             err.contains("unsupported token") || err.contains("top-level"),
             "{}",
@@ -223,22 +223,22 @@ mod tests {
     }
 
     #[test]
-    fn syntax_v2_rejects_ambiguous_hex_like_selector_name() {
-        let err = parse_v2("return self.deadbeef()").unwrap_err().to_string();
+    fn syntax_rejects_ambiguous_hex_like_selector_name() {
+        let err = parse("return self.deadbeef()").unwrap_err().to_string();
         assert!(err.contains("ambiguous selector"), "{}", err);
     }
 
     #[test]
-    fn syntax_v2_accepts_explicit_raw_selector() {
-        let code = parse_v2("return self.0xdeadbeef()").unwrap();
+    fn syntax_accepts_explicit_raw_selector() {
+        let code = parse("return self.0xdeadbeef()").unwrap();
         assert_eq!(code[0], Bytecode::RET as u8);
         assert_eq!(code[1], Bytecode::CALLSELF as u8);
         assert_eq!(&code[2..6], &[0xde, 0xad, 0xbe, 0xef]);
     }
 
     #[test]
-    fn syntax_v2_rejects_legacy_naked_hex_codecall_body() {
-        let err = parse_v2("codecall abcdef0123").unwrap_err().to_string();
+    fn syntax_rejects_legacy_naked_hex_codecall_body() {
+        let err = parse("codecall abcdef0123").unwrap_err().to_string();
         assert!(
             err.contains("no lib binding") || err.contains("codecall body"),
             "{}",
@@ -247,8 +247,8 @@ mod tests {
     }
 
     #[test]
-    fn syntax_v2_accepts_soft_separators_between_statements() {
-        let code = parse_v2(
+    fn syntax_accepts_soft_separators_between_statements() {
+        let code = parse(
             r#"
             var a = 1;;,;,
             var b = 2,,,;
@@ -260,15 +260,15 @@ mod tests {
     }
 
     #[test]
-    fn syntax_v2_soft_separators_do_not_change_call_arg_semantics() {
-        let with_sep = parse_v2("return tuple(1, 2;;, 3)").unwrap();
-        let no_sep = parse_v2("return tuple(1 2 3)").unwrap();
+    fn syntax_soft_separators_do_not_change_call_arg_semantics() {
+        let with_sep = parse("return tuple(1, 2;;, 3)").unwrap();
+        let no_sep = parse("return tuple(1 2 3)").unwrap();
         assert_eq!(with_sep, no_sep);
     }
 
     #[test]
-    fn syntax_v2_accepts_soft_separators_in_map_and_param() {
-        let code = parse_v2(
+    fn syntax_accepts_soft_separators_in_map_and_param() {
+        let code = parse(
             r#"
             param { a,;, b,, }
             var m = map { "x": a,,; "y": b }
@@ -277,5 +277,43 @@ mod tests {
         )
         .unwrap();
         assert!(!code.is_empty());
+    }
+
+    #[test]
+    fn syntax_rejects_unterminated_if_block_at_eof() {
+        let err = parse("if true { return 1").unwrap_err().to_string();
+        assert!(err.contains("block format invalid"), "{}", err);
+    }
+
+    #[test]
+    fn syntax_rejects_unterminated_map_at_eof() {
+        let err = parse("return map { \"a\": 1").unwrap_err().to_string();
+        assert!(err.contains("map format invalid"), "{}", err);
+    }
+
+    #[test]
+    fn syntax_packmap_uses_total_item_count() {
+        let code = parse("return map { \"a\": 1, \"b\": 2 }").unwrap();
+        let packmap_idx = code
+            .iter()
+            .position(|b| *b == Bytecode::PACKMAP as u8)
+            .expect("PACKMAP must exist");
+        assert!(packmap_idx > 1, "PACKMAP must have a preceding count push");
+        assert_eq!(code[packmap_idx - 2], Bytecode::PU8 as u8, "count should be pushed as PU8");
+        assert_eq!(code[packmap_idx - 1], 4u8, "PACKMAP count must be total k/v items");
+    }
+
+    #[test]
+    fn syntax_reports_reserved_types_in_as_and_is() {
+        let err_as = parse("return 1 as u256").unwrap_err().to_string();
+        assert!(err_as.contains("reserved for future expansion"), "{}", err_as);
+        let err_is = parse("return 1 is uint").unwrap_err().to_string();
+        assert!(err_is.contains("reserved for future expansion"), "{}", err_is);
+    }
+
+    #[test]
+    fn syntax_reports_reserved_integer_suffixes() {
+        let err = parse("return 1u256").unwrap_err().to_string();
+        assert!(err.contains("integer suffix 'u256'"), "{}", err);
     }
 }

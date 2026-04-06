@@ -9,7 +9,7 @@ impl Syntax {
     pub(super) fn parse_free_call(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
         if id == "tuple" {
             let args = self.parse_value_container('(', ')', "call argv format error")?;
-            return pack_explicit_tuple_v2(args);
+            return pack_explicit_tuple(args);
         }
 
         if let Some((_, inst, pms, args, rs)) = pick_ir_func(&id) {
@@ -29,7 +29,7 @@ impl Syntax {
                     rs
                 );
             }
-            return build_ir_func_v2(inst, pms, args, rs, argvs);
+            return build_ir_func(inst, pms, args, rs, argvs);
         }
 
         if let Some(idx) = NativeFunc::from_name(&id).map(|v| v.0) {
@@ -48,6 +48,22 @@ impl Syntax {
             return Ok(push_single_p1_hr(true, Bytecode::NTFUNC, idx, argvs));
         }
 
+        if let Some(idx) = NativeCtl::from_name(&id).map(|v| v.0) {
+            let (num, argvs) = self.parse_call_args(ArgPackMode::Packed)?;
+            let Some(need) = NativeCtl::argv_len(idx) else {
+                return errf!("unknown native ctl idx {}", idx);
+            };
+            if num != need {
+                return errf!(
+                    "native ctl '{}' requires {} argument(s) but got {}",
+                    id,
+                    need,
+                    num
+                );
+            }
+            return Ok(push_single_p1_hr(true, Bytecode::NTCTL, idx, argvs));
+        }
+
         if let Some(idx) = NativeEnv::from_name(&id).map(|v| v.0) {
             let (num, _) = self.parse_call_args(ArgPackMode::Concat)?;
             if num != 0 {
@@ -61,7 +77,7 @@ impl Syntax {
             }));
         }
 
-        if let Some((hrtv, inst, para, arg_len)) = pick_action_func_v2(&id) {
+        if let Some((hrtv, inst, para, arg_len)) = pick_action_func(&id) {
             let (num, argvs) = self.parse_call_args(ArgPackMode::Concat)?;
             if num != arg_len {
                 return errf!(
@@ -107,8 +123,8 @@ impl Syntax {
         let argvs = self.parse_value_container('(', ')', "call argv format error")?;
         let len = argvs.len();
         let node = match mode {
-            ArgPackMode::Concat => concat_func_args_v2(argvs)?,
-            ArgPackMode::Packed => pack_call_args_v2(argvs)?,
+            ArgPackMode::Concat => concat_func_args(argvs)?,
+            ArgPackMode::Packed => pack_call_args(argvs)?,
         };
         Ok((len, node))
     }
@@ -436,7 +452,7 @@ impl Syntax {
     }
 }
 
-fn build_ir_func_v2(
+fn build_ir_func(
     inst: Bytecode,
     pms: usize,
     args: usize,
@@ -482,18 +498,6 @@ fn build_ir_func_v2(
                 subx: take(&mut argvs),
                 suby: take(&mut argvs),
             }),
-            3 if inst == Bytecode::CHOOSE => {
-                let cond = take(&mut argvs);
-                let yes = take(&mut argvs);
-                let no = take(&mut argvs);
-                Box::new(IRNodeTriple {
-                    hrtv,
-                    inst,
-                    subx: yes,
-                    suby: no,
-                    subz: cond,
-                })
-            }
             3 => Box::new(IRNodeTriple {
                 hrtv,
                 inst,
@@ -546,7 +550,7 @@ fn build_ir_func_v2(
     errf!("cannot match ir call type: params({}), args({})", pms, args)
 }
 
-fn concat_func_args_v2(mut args: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+fn concat_func_args(mut args: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     let Some(mut res) = args.pop() else {
         return Ok(push_inst(Bytecode::PNBUF));
     };
@@ -561,7 +565,7 @@ fn concat_func_args_v2(mut args: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     Ok(res)
 }
 
-fn pack_call_args_v2(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+fn pack_call_args(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     let len = subs.len();
     Ok(match len {
         0 => push_nil(),
@@ -580,23 +584,17 @@ fn pack_call_args_v2(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     })
 }
 
-fn pack_explicit_tuple_v2(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
+fn pack_explicit_tuple(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
     let len = subs.len();
     if len == 0 {
         return errf!("tuple() cannot be empty");
-    }
-    if len > crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH {
-        return errf!(
-            "tuple length cannot more than {}",
-            crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH
-        );
     }
     subs.push(push_num(len as u128));
     subs.push(push_inst(Bytecode::PACKTUPLE));
     Ok(Box::new(Syntax::build_irlist(subs)?))
 }
 
-fn pick_action_func_v2(id: &str) -> Option<(bool, Bytecode, u8, usize)> {
+fn pick_action_func(id: &str) -> Option<(bool, Bytecode, u8, usize)> {
     if let Some(x) = ACTION_ENV_DEFS.iter().find(|f| f.1 == id) {
         return Some((true, Bytecode::ACTENV, x.0, x.3));
     }

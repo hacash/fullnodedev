@@ -27,12 +27,16 @@ pub mod hook;
 pub mod oprate;
 pub mod setup;
 
+
 use action::*;
 
-include! {"check/block.rs"}
+include! {"check/coinbase.rs"}
+include! {"check/tx.rs"}
+include! {"check/block_build.rs"}
+include! {"check/block_arrive.rs"}
 include! {"check/bidding.rs"}
 include! {"check/initialize.rs"}
-include! {"check/coinbase.rs"}
 include! {"check/difficulty.rs"}
-include! {"check/consensus.rs"}
+include! {"check/difficulty_old.rs"}
+include! {"check/block_accept.rs"}
 include! {"minter.rs"}

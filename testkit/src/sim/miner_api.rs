@@ -11,7 +11,7 @@ use axum::{Json, Router};
 use basis::interface::{Transaction, TransactionRead};
 use field::*;
 use protocol::block::*;
-use protocol::transaction::*;
+use mint::TransactionCoinbase;
 use serde_json::{Value as JV, json};
 use sys::ToHex;
 use tokio::runtime::Builder;
@@ -47,13 +47,13 @@ impl MinerPendingStuff {
     pub fn easy_for_test(height: u64) -> Self {
         let intro = BlockIntro::default();
 
-        let cbtx = TransactionCoinbase::default();
+        let coinbase_tx = TransactionCoinbase::default();
 
         Self {
             height,
             target_hash: Hash::from([0xFF; 32]),
             block_intro: intro,
-            coinbase_tx: cbtx,
+            coinbase_tx,
             mkrl_modify_list: vec![],
         }
     }
@@ -226,11 +226,11 @@ async fn handle_success(
         return Json(json!({"ret": 1, "err": "coinbase_nonce length invalid"}));
     }
 
-    let mut cbtx = pending.coinbase_tx.clone();
-    cbtx.set_nonce(Hash::from(coinbase_nonce_bytes.clone().try_into().unwrap()));
+    let mut coinbase_tx = pending.coinbase_tx.clone();
+    coinbase_tx.set_nonce(Hash::from(coinbase_nonce_bytes.clone().try_into().unwrap()));
 
-    let cbhx = cbtx.hash();
-    let mkrl = calculate_mrkl_coinbase_update(cbhx, &pending.mkrl_modify_list);
+    let prelude_hash = coinbase_tx.hash();
+    let mkrl = calculate_mrkl_prelude_update(prelude_hash, &pending.mkrl_modify_list);
     let mut intro = pending.block_intro.clone();
     intro.set_mrklroot(mkrl);
     intro.meta.nonce = Uint4::from(block_nonce);

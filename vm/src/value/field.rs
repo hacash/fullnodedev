@@ -89,7 +89,7 @@ impl Parse for Value {
                 let (adr, sz) = field::Address::create(buf)?;
                 (sz, Address(adr))
             },
-            _ => return errf!("Tuple, compo or slice value item cannot be parsed"),
+            _ => return errf!("Tuple, handle, compo or slice value item cannot be parsed"),
         };
         Ok(sz + 1)
     }
@@ -100,10 +100,15 @@ impl Serialize for Value {
         match self {
             // Runtime-only variants are intentionally excluded from field serialization.
             // Parse also rejects them, so serialize must keep the same type boundary.
-            HeapSlice(..) | Tuple(..) | Compo(..) => {
-                panic!("Value::serialize does not support HeapSlice/Tuple/Compo")
+            HeapSlice(..) | Tuple(..) | Handle(..) | Compo(..) => {
+                panic!("Value::serialize does not support HeapSlice/Tuple/Handle/Compo")
             }
             Bytes(buf) => {
+                assert!(
+                    buf.len() < u16::MAX as usize,
+                    "Value::serialize bytes length {} exceeds u16 field limit",
+                    buf.len()
+                );
                 let mut out = Vec::with_capacity(1 + 2 + buf.len());
                 out.push(self.ty_num());
                 out.extend_from_slice(&(buf.len() as u16).to_be_bytes());
@@ -121,12 +126,20 @@ impl Serialize for Value {
     }
 
     fn size(&self) -> usize {
-        // Keep size() panic-free for gas/accounting use; runtime-only variants are not serializable.
-        if self.is_bytes() {
-            let base = self.raw().len();
-            return 1 + 2 + base // type_id + bytes len prefix + payload
+        match self {
+            HeapSlice(..) | Tuple(..) | Handle(..) | Compo(..) => {
+                panic!("Value::size does not support HeapSlice/Tuple/Handle/Compo")
+            }
+            Bytes(buf) => {
+                assert!(
+                    buf.len() < u16::MAX as usize,
+                    "Value::size bytes length {} exceeds u16 field limit",
+                    buf.len()
+                );
+                1 + 2 + buf.len()
+            }
+            _ => 1 + self.raw().len(),
         }
-        1 + self.raw().len() // type_id + payload
     }
 }
 
@@ -135,7 +148,7 @@ impl Field for Value {}
 
 impl ToJSON for Value {
     fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
-        format!("\"{}\"", self.to_string())
+        Value::to_json(self)
     }
 }
 impl FromJSON for Value {
@@ -149,41 +162,104 @@ mod field_tests {
     use super::*;
     use std::collections::VecDeque;
 
+    fn assert_panics<F>(f: F)
+    where
+        F: FnOnce(),
+    {
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        assert!(res.is_err());
+    }
+
     #[test]
-    fn value_size_is_panic_free_for_non_storable_variants() {
+    fn value_size_matches_serialize_len_for_storable_variants() {
+        let values = [
+            Value::Nil,
+            Value::Bool(true),
+            Value::U8(7),
+            Value::U16(9),
+            Value::Bytes(vec![1, 2, 3]),
+            Value::Address(field::Address::create_contract([1u8; 20])),
+        ];
+        for value in values {
+            assert_eq!(<Value as Serialize>::size(&value), <Value as Serialize>::serialize(&value).len());
+        }
+    }
+
+    #[test]
+    fn value_size_panics_for_runtime_only_variants() {
         let hv = Value::HeapSlice((3, 7));
-        assert_eq!(<Value as Serialize>::size(&hv), 1 + 8);
+        assert_panics(|| {
+            <Value as Serialize>::size(&hv);
+        });
 
         let compo = CompoItem::list(VecDeque::from([Value::U8(1), Value::U16(2)])).unwrap();
         let cv = Value::Compo(compo);
-        let sz = <Value as Serialize>::size(&cv);
-        assert!(sz > 1);
+        assert_panics(|| {
+            <Value as Serialize>::size(&cv);
+        });
 
         let av = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
-        let asz = <Value as Serialize>::size(&av);
-        assert!(asz > 1);
+        assert_panics(|| {
+            <Value as Serialize>::size(&av);
+        });
+
+        let hv = Value::handle(7u32);
+        assert_panics(|| {
+            <Value as Serialize>::size(&hv);
+        });
     }
 
     #[test]
     fn value_serialize_panics_for_runtime_only_variants() {
         let hv = Value::HeapSlice((3, 7));
-        let hp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            <Value as Serialize>::serialize(&hv)
-        }));
-        assert!(hp.is_err());
+        assert_panics(|| {
+            <Value as Serialize>::serialize(&hv);
+        });
 
         let compo = CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap();
         let cv = Value::Compo(compo);
-        let cp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            <Value as Serialize>::serialize(&cv)
-        }));
-        assert!(cp.is_err());
+        assert_panics(|| {
+            <Value as Serialize>::serialize(&cv);
+        });
 
         let av = Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap());
-        let ap = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            <Value as Serialize>::serialize(&av)
-        }));
-        assert!(ap.is_err());
+        assert_panics(|| {
+            <Value as Serialize>::serialize(&av);
+        });
+
+        let hv = Value::handle(7u32);
+        assert_panics(|| {
+            <Value as Serialize>::serialize(&hv);
+        });
+    }
+
+    #[test]
+    fn value_serialize_enforces_u16_bytes_limit() {
+        let ok = Value::Bytes(vec![0u8; (u16::MAX as usize) - 1]);
+        let enc = <Value as Serialize>::serialize(&ok);
+        assert_eq!(enc.len(), <Value as Serialize>::size(&ok));
+        assert_eq!(u16::from_be_bytes([enc[1], enc[2]]) as usize, (u16::MAX as usize) - 1);
+
+        let too_large = Value::Bytes(vec![0u8; u16::MAX as usize]);
+        assert_panics(|| {
+            <Value as Serialize>::serialize(&too_large);
+        });
+        assert_panics(|| {
+            <Value as Serialize>::size(&too_large);
+        });
+    }
+
+    #[test]
+    fn value_tojson_trait_matches_value_json_semantics() {
+        let values = [
+            Value::Nil,
+            Value::Bool(true),
+            Value::U8(7),
+            Value::Bytes(br#"a"b\c"#.to_vec()),
+        ];
+        for value in values {
+            assert_eq!(value.to_json_fmt(&JSONFormater::default()), value.to_json());
+        }
     }
 
     #[test]

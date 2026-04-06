@@ -102,9 +102,9 @@ Token:balance_of(target_addr)     // Contract call (Single arg no PACKLIST)
 
 // 11. System and Data Structure Functions
 let storage_val = storage_load("key")
-storage_save("key", "value")
+storage_new("key", "value", 100)
 storage_del("key")
-let s_rest = storage_rest(target_addr)
+let s_stat = storage_stat(target_addr)
 storage_rent(target_addr, 100)
 
 global_put(1, 200)
@@ -154,7 +154,7 @@ let dec_val = decrease(1, counter)
 let choice = choose(counter > 0, 1, 0)
 
 let h = block_height()
-let m_addr = tx_main_address()
+let m_addr = tx_main_addr()
 let is_ok = check_signature(target_addr)
 let b = balance(target_addr)
 

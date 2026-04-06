@@ -14,7 +14,7 @@ use super::*;
 include! {"util.rs"}
 include! {"macro.rs"}
 include! {"type3.rs"}
-include! {"coinbase.rs"}
+include! {"prelude.rs"}
 include! {"create.rs"}
 include! {"store.rs"}
 
@@ -28,7 +28,7 @@ transaction_define_legacy! { TransactionType2, 2u8 }
 * register
 */
 transaction_register! {
-    TransactionCoinbase
+    DefaultPreludeTx
     TransactionType1
     TransactionType2
     TransactionType3

@@ -1,139 +1,51 @@
-pub fn check_action_ast_tree_depth(act: &dyn Action) -> Rerr {
-    fn check_depth(act: &dyn Action, ast_depth: usize) -> Rerr {
-        let Some((inc, childs)) = get_action_level_inc_and_childs(act) else {
-            return Ok(());
-        };
-        let next_depth = match ast_depth.checked_add(inc) {
-            Some(v) => v,
-            None => return errf!("ast tree depth overflow"),
-        };
-        if next_depth > AST_TREE_DEPTH_MAX {
-            return errf!(
-                "ast tree depth {} exceeded max {}",
-                next_depth,
-                AST_TREE_DEPTH_MAX
-            );
-        }
-        for sub in childs {
-            check_depth(sub, next_depth)?;
-        }
-        Ok(())
-    }
-
-    check_depth(act, 0)
-}
-
-pub fn check_action_tx_type(tx_type: u8, act: &dyn Action) -> Rerr {
-    let min_tx_type = act.min_tx_type();
-    if tx_type < min_tx_type {
-        return errf!(
-            "action {} requires tx type >= {} but current tx type is {}",
-            act.kind(),
-            min_tx_type,
-            tx_type
-        );
-    }
-    Ok(())
-}
-
-pub fn check_tx_action_ast_tree_depth(actions: &Vec<Box<dyn Action>>) -> Rerr {
-    for act in actions {
-        check_action_ast_tree_depth(act.as_ref())?;
-    }
-    Ok(())
+// Action tree shape used by level checking. "Terminal" means the node has no AST children.
+enum ActionShape<'a> {
+    Terminal,
+    AstContainer {
+        depth_inc: usize,
+        children: Vec<&'a dyn Action>,
+    },
 }
 
 #[derive(Default)]
-struct TxActionAnalyzeStats {
-    non_guard_leaf_count: usize,
+// Aggregated tx-level topology facts collected from the whole action forest.
+struct TxTopologyStats {
+    top_action_count: usize,
     top_kind_count: std::collections::HashMap<u16, usize>,
-    has_guard_leaf: bool,
+    top_guard_count: usize,
+    non_guard_terminal_count: usize,
+    has_guard_terminal: bool,
 }
 
-impl TxActionAnalyzeStats {
-    fn record_top(&mut self, act: &dyn Action) {
-        let kid = act.kind();
-        *self.top_kind_count.entry(kid).or_insert(0) += 1;
+impl TxTopologyStats {
+    fn record_top_action(&mut self, act: &dyn Action) {
+        self.top_action_count += 1;
+        *self.top_kind_count.entry(act.kind()).or_insert(0) += 1;
+        if act.scope() == ActScope::GUARD {
+            self.top_guard_count += 1;
+        }
     }
 
-    fn record_leaf(&mut self, scope: ActScope) {
+    fn record_terminal_action(&mut self, scope: ActScope) {
         if scope == ActScope::GUARD {
-            self.has_guard_leaf = true;
+            self.has_guard_terminal = true;
         } else {
-            self.non_guard_leaf_count += 1;
-        }
-    }
-
-    fn check_not_all_guard(&self) -> Rerr {
-        if self.has_guard_leaf && self.non_guard_leaf_count == 0 {
-            return errf!("tx actions cannot be all GUARD");
-        }
-        Ok(())
-    }
-
-    fn check_top_rule(&self, act: &dyn Action, actlen: usize) -> Rerr {
-        let kid = act.kind();
-        let Some(rule) = act.scope().top_rule() else {
-            return Ok(());
-        };
-        match rule {
-            TopRule::None => Ok(()),
-            TopRule::Only if actlen != 1 => {
-                errf!("action {} can only execute on TOP_ONLY", kid)
-            }
-            TopRule::OnlyWithGuard if self.non_guard_leaf_count != 1 => {
-                errf!(
-                    "action {} can only execute on TOP_ONLY_WITH_GUARD (requires exactly one non-guard leaf action)",
-                    kid
-                )
-            }
-            TopRule::Unique if self.top_kind_count.get(&kid).copied().unwrap_or(0) != 1 => {
-                errf!("action {} can only execute on TOP_UNIQUE", kid)
-            }
-            _ => Ok(()),
+            self.non_guard_terminal_count += 1;
         }
     }
 }
 
-fn scan_action_node(
-    tx_type: u8,
-    act: &dyn Action,
-    stats: &mut TxActionAnalyzeStats,
-    is_top: bool,
-) -> Rerr {
-    let kid = act.kind();
-    let scope = act.scope();
-    check_action_tx_type(tx_type, act)?;
-    let exec_from = maybe!(is_top, ExecFrom::Top, ExecFrom::Ast);
-    if !scope.allows(exec_from) {
-        return maybe!(
-            is_top,
-            errf!(
-                "action {} with scope {} cannot appear at tx top level",
-                kid,
-                scope
-            ),
-            errf!(
-                "action {} with scope {} cannot appear inside AST",
-                kid,
-                scope
-            )
-        );
+fn action_shape<'a>(act: &'a dyn Action) -> ActionShape<'a> {
+    match get_action_level_inc_and_childs(act) {
+        Some((depth_inc, children)) => ActionShape::AstContainer {
+            depth_inc,
+            children,
+        },
+        None => ActionShape::Terminal,
     }
-    if is_top {
-        stats.record_top(act);
-    }
-    if let Some((_, childs)) = get_action_level_inc_and_childs(act) {
-        for sub in childs {
-            scan_action_node(tx_type, sub, stats, false)?;
-        }
-    } else {
-        stats.record_leaf(scope);
-    }
-    Ok(())
 }
 
-pub fn analyze_tx_action_set_for_tx(tx_type: u8, actions: &Vec<Box<dyn Action>>) -> Rerr {
+fn validate_tx_action_count(actions: &[Box<dyn Action>]) -> Rerr {
     let actlen = actions.len();
     if actlen < 1 || actlen > TX_ACTIONS_MAX {
         return errf!(
@@ -142,26 +54,199 @@ pub fn analyze_tx_action_set_for_tx(tx_type: u8, actions: &Vec<Box<dyn Action>>)
             TX_ACTIONS_MAX
         );
     }
-    let mut stats = TxActionAnalyzeStats::default();
-    for act in actions {
-        scan_action_node(tx_type, act.as_ref(), &mut stats, true)?;
+    Ok(())
+}
+
+fn validate_depth_limit(ast_depth: usize, depth_inc: usize) -> Ret<usize> {
+    let next_depth = ast_depth
+        .checked_add(depth_inc)
+        .ok_or_else(|| "ast tree depth overflow".to_string())?;
+    if next_depth > AST_TREE_DEPTH_MAX {
+        return errf!(
+            "ast tree depth {} exceeded max {}",
+            next_depth,
+            AST_TREE_DEPTH_MAX
+        );
     }
-    stats.check_not_all_guard()?;
-    for act in actions {
-        stats.check_top_rule(act.as_ref(), actlen)?;
+    Ok(next_depth)
+}
+
+fn validate_node_tx_type(tx_type: u8, act: &dyn Action) -> Rerr {
+    let min_tx_type = act.min_tx_type();
+    if tx_type < min_tx_type {
+        return errf!(
+            "action node invalid: action {} requires tx type >= {} but current tx type is {}",
+            act.kind(),
+            min_tx_type,
+            tx_type
+        );
     }
     Ok(())
 }
 
-pub fn check_action_scope(exec_from: ExecFrom, act: &dyn Action) -> Rerr {
+fn validate_node_scope(origin: ExecFrom, act: &dyn Action) -> Rerr {
     let scope = act.scope();
-    if !scope.allows(exec_from) {
+    if !scope.allows(origin) {
         return errf!(
-            "action {} with scope {} not allowed from {}",
+            "action node invalid: action {} with scope {} not allowed from {}",
             act.kind(),
             scope,
-            exec_from
+            origin
         );
     }
     Ok(())
+}
+
+fn validate_current_node(tx_type: u8, act: &dyn Action, origin: ExecFrom) -> Rerr {
+    validate_node_scope(origin, act)?;
+    validate_node_tx_type(tx_type, act)?;
+    Ok(())
+}
+
+fn collect_tx_topology(
+    act: &dyn Action,
+    origin: ExecFrom,
+    shape: &ActionShape,
+    stats: &mut TxTopologyStats,
+) {
+    if origin == ExecFrom::Top {
+        stats.record_top_action(act);
+    }
+    if matches!(shape, ActionShape::Terminal) {
+        stats.record_terminal_action(act.scope());
+    }
+}
+
+fn visit_tx_node(
+    tx_type: u8,
+    act: &dyn Action,
+    origin: ExecFrom,
+    ast_depth: usize,
+    stats: &mut TxTopologyStats,
+) -> Rerr {
+    validate_current_node(tx_type, act, origin)?;
+    let shape = action_shape(act);
+    collect_tx_topology(act, origin, &shape, stats);
+    match shape {
+        ActionShape::Terminal => Ok(()),
+        ActionShape::AstContainer {
+            depth_inc,
+            children,
+        } => {
+            let next_depth = validate_depth_limit(ast_depth, depth_inc)?;
+            for sub in children {
+                visit_tx_node(tx_type, sub, ExecFrom::Ast, next_depth, stats)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn visit_runtime_node(
+    tx_type: u8,
+    act: &dyn Action,
+    origin: ExecFrom,
+    ast_depth: usize,
+) -> Rerr {
+    validate_current_node(tx_type, act, origin)?;
+    match action_shape(act) {
+        ActionShape::Terminal => Ok(()),
+        ActionShape::AstContainer {
+            depth_inc,
+            children,
+        } => {
+            let next_depth = validate_depth_limit(ast_depth, depth_inc)?;
+            for sub in children {
+                visit_runtime_node(tx_type, sub, ExecFrom::Ast, next_depth)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn visit_runtime_node_fast_sync(tx_type: u8, act: &dyn Action, ast_depth: usize) -> Rerr {
+    validate_node_tx_type(tx_type, act)?;
+    match action_shape(act) {
+        ActionShape::Terminal => Ok(()),
+        ActionShape::AstContainer {
+            depth_inc,
+            children,
+        } => {
+            let next_depth = validate_depth_limit(ast_depth, depth_inc)?;
+            for sub in children {
+                visit_runtime_node_fast_sync(tx_type, sub, next_depth)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_no_guard_only_tx(stats: &TxTopologyStats) -> Rerr {
+    if stats.has_guard_terminal && stats.non_guard_terminal_count == 0 {
+        return errf!("tx topology invalid: tx actions cannot be all GUARD");
+    }
+    Ok(())
+}
+
+fn validate_top_only_rule(act: &dyn Action, stats: &TxTopologyStats) -> Rerr {
+    if stats.top_action_count != 1 {
+        return errf!("tx topology invalid: action {} can only execute on TOP_ONLY", act.kind());
+    }
+    Ok(())
+}
+
+fn validate_top_only_can_with_guard_rule(act: &dyn Action, stats: &TxTopologyStats) -> Rerr {
+    if stats.top_action_count != 1 + stats.top_guard_count
+        || stats.non_guard_terminal_count != 1
+    {
+        return errf!(
+            "tx topology invalid: action {} can only execute on TOP_ONLY_CAN_WITH_GUARD (requires exactly one non-guard leaf action plus optional bare top-level GUARD actions)",
+            act.kind()
+        );
+    }
+    Ok(())
+}
+
+fn validate_top_unique_rule(act: &dyn Action, stats: &TxTopologyStats) -> Rerr {
+    if stats.top_kind_count.get(&act.kind()).copied().unwrap_or(0) != 1 {
+        return errf!("tx topology invalid: action {} can only execute on TOP_UNIQUE", act.kind());
+    }
+    Ok(())
+}
+
+fn validate_top_rule_for_action(act: &dyn Action, stats: &TxTopologyStats) -> Rerr {
+    let Some(rule) = act.scope().top_rule() else {
+        return Ok(());
+    };
+    match rule {
+        TopRule::None => Ok(()),
+        TopRule::Only => validate_top_only_rule(act, stats),
+        TopRule::OnlyCanWithGuard => validate_top_only_can_with_guard_rule(act, stats),
+        TopRule::Unique => validate_top_unique_rule(act, stats),
+    }
+}
+
+fn validate_tx_topology(actions: &[Box<dyn Action>], stats: &TxTopologyStats) -> Rerr {
+    validate_no_guard_only_tx(stats)?;
+    for act in actions {
+        validate_top_rule_for_action(act.as_ref(), stats)?;
+    }
+    Ok(())
+}
+
+pub fn precheck_tx_actions(tx_type: u8, actions: &[Box<dyn Action>]) -> Rerr {
+    validate_tx_action_count(actions)?;
+    let mut stats = TxTopologyStats::default();
+    for act in actions {
+        visit_tx_node(tx_type, act.as_ref(), ExecFrom::Top, 0, &mut stats)?;
+    }
+    validate_tx_topology(actions, &stats)
+}
+
+pub fn precheck_runtime_action(tx_type: u8, act: &dyn Action, from: ExecFrom) -> Rerr {
+    visit_runtime_node(tx_type, act, from, 0)
+}
+
+pub fn precheck_runtime_action_fast_sync(tx_type: u8, act: &dyn Action) -> Rerr {
+    visit_runtime_node_fast_sync(tx_type, act, 0)
 }

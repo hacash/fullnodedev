@@ -27,14 +27,14 @@ include! {"field/mod.rs"}
 include! {"interface/mod.rs"}
 
 use std::sync::OnceLock;
-static MACHINE_MANAGER_INSTANCE: OnceLock<MachineManage> = OnceLock::new();
+static RUNTIME_POOL_INSTANCE: OnceLock<RuntimePool> = OnceLock::new();
 
-pub fn global_machine_manager() -> &'static MachineManage {
-    MACHINE_MANAGER_INSTANCE.get_or_init(|| MachineManage::new())
+pub fn global_runtime_pool() -> &'static RuntimePool {
+    RUNTIME_POOL_INSTANCE.get_or_init(|| RuntimePool::new())
 }
 
 /// Configure the contract cache pool.
 /// Default is disabled (`max_bytes = 0`).
 pub fn configure_contract_cache(config: machine::ContractCacheConfig) {
-    global_machine_manager().contract_cache().configure(config);
+    global_runtime_pool().contract_cache().configure(config);
 }

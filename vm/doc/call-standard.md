@@ -501,7 +501,7 @@ The following must be treated as acceptance items:
 7. `Use(lib)` and `CODECALL` do not switch `context_addr/state_addr`
 8. `CODECALL` reuses current `operands / locals / heap / call_argv / types`
 9. `CODECALL` inherits current effect
-10. `CODECALL` cannot re-enable top-level `ACTION`
+10. `CODECALL` may continue into nested calls, but must not re-enable top-level `ACTION`
 11. `Main/P2sh/Abst` restrictions must match the runtime gates
 12. current search scope must stay limited to anchor plus direct parents only
 

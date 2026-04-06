@@ -82,6 +82,7 @@ pub fn do_diamonds_transfer(
     to: &Address,
     ctx: &mut dyn Context,
 ) -> XRet<Vec<u8>> {
+    crate::upgrade::check_transfer_addr_online_open(ctx.env().block.height, from, to)?;
     // check
     let dianum = diamonds.check()?;
     let isdf = ctx.env().chain.diamond_form;

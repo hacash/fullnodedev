@@ -9,17 +9,25 @@ impl Engine for ChainEngine {
         let _lk = self.syncing.lock().unwrap();
         let mut tree = self.tree.write().unwrap();
         let rid = insert_by(self, tree.deref_mut(), blk)?;
+        let recent_ctx = maybe!(
+            self.cnf.recent_blocks,
+            Some((rid.block.block_clone(), tree.root_height())),
+            None
+        );
         let became_head = rid.head_change.is_some();
+        let root_roll_blk = rid.root_change.as_ref().map(|root| root.block());
         roll_by(self, rid)?;
 
         // Update runtime caches only after the block is fully accepted and rolled.
-        // Also only track canonical(head) progression to avoid pollution by side-chain/invalid blocks.
+        if let Some((blk, root_height)) = recent_ctx {
+            record_recent(self, blk.as_read(), root_height);
+        }
+        if let Some(root_blk) = root_roll_blk {
+            self.minter.blk_root_roll(root_blk.as_read(), self.store.as_ref());
+        }
         if became_head {
             let head = tree.head().block();
             let head = head.as_read();
-            if self.cnf.recent_blocks {
-                record_recent(self, head);
-            }
             if self.cnf.average_fee_purity {
                 record_avgfee(self, head);
             }

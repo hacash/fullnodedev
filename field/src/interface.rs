@@ -49,10 +49,7 @@ pub trait Field : Serialize + Parse + ToJSON + FromJSON {
 
     fn build(buf: &[u8]) -> Ret<Self> where Self: Sized {
         let mut v = Self::new();
-        let used = v.parse(buf)?;
-        if used != buf.len() {
-            return errf!("field parse not consumed all bytes")
-        }
+        let _ = v.parse(buf)?;
         Ok(v)
     }
     

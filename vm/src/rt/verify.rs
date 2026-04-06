@@ -1,14 +1,14 @@
 
-use crate::native::{NativeFunc, NativeEnv};
+use crate::native::{NativeFunc, NativeEnv, NativeCtl};
 use crate::value::{parse_cto_target_ty_param, parse_value_ty_param};
 
 /*
     Verify bytecode validity and return the instruction table.
 */
-pub fn convert_and_check(cap: &SpaceCap, ctype: CodeType, codes: &[u8], height: u64) -> VmrtRes<Vec<u8>> {
+pub fn convert_and_check(cap: &SpaceCap, gst: &GasExtra, ctype: CodeType, codes: &[u8], _height: u64) -> VmrtRes<Vec<u8>> {
     use CodeType::*;
     let bytecodes = match ctype {
-        IRNode =>  &runtime_irs_to_bytecodes(codes, height)?,
+        IRNode =>  &runtime_irs_to_bytecodes(codes, gst)?,
         Bytecode => codes
     };
     // check size
@@ -21,7 +21,8 @@ pub fn convert_and_check(cap: &SpaceCap, ctype: CodeType, codes: &[u8], height: 
 
 
 pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
-    verify_bytecodes_with_limits(codes, SpaceCap::new(1).value_size)
+    const VERIFY_MAX_PUSH_BUF_LEN: usize = 1280;
+    verify_bytecodes_with_limits(codes, VERIFY_MAX_PUSH_BUF_LEN)
 }
 
 fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<Vec<u8>> {
@@ -42,11 +43,15 @@ fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRe
 }
 
 
-/// Ensure the last instruction is a terminal one (RET/END/ERR/ABT or exposed call opcode).
+/// Ensure the last instruction is a terminal one (RET/END/ERR/ABT, optional CALCCALL, or exposed call opcode).
 /// Failure (CodeNotWithEnd) is a fitsh code compile error and propagates to the compiler
 /// via compile_body -> parse_function -> parse_top_level -> fitshc::compile.
 fn ensure_terminal_instruction(inst: Bytecode) -> VmrtErr {
     if matches!(inst, RET | END | ERR | ABT) || is_user_call_inst(inst) {
+        return Ok(())
+    };
+    #[cfg(feature = "calcfunc")]
+    if matches!(inst, CALCCALL) {
         return Ok(())
     };
     // error
@@ -123,6 +128,12 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
                     return itr_err_fmt!(NativeFuncError, "native func idx {} not found", idx)
                 }
             }
+            NTCTL => {
+                let idx = pu8!();
+                if !NativeCtl::has_idx(idx) {
+                    return itr_err_fmt!(NativeCtlError, "native ctl idx {} not found", idx)
+                }
+            }
             NTENV => {
                 let idx = pu8!();
                 if !NativeEnv::has_idx(idx) {
@@ -183,8 +194,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_unknown_type_id_for_tis_and_cto() {
-        let unknown_ids = [12u8];
-        for raw in unknown_ids {
+        for raw in [7u8, 10u8, 12u8] {
             let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, raw, Bytecode::END as u8];
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, raw, Bytecode::END as u8];
             let r1 = verify_bytecodes(&tis_codes);
@@ -192,16 +202,6 @@ mod verify_type_param_tests {
             assert!(matches!(r1, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
             assert!(matches!(r2, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }
-    }
-
-    #[test]
-    fn verify_rejects_reserved_type_id_for_tis_and_cto() {
-        let tis_codes = vec![Bytecode::P0 as u8, Bytecode::TIS as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
-        let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, RESERVED_U256_TYPE_ID, Bytecode::END as u8];
-        let r1 = verify_bytecodes(&tis_codes);
-        let r2 = verify_bytecodes(&cto_codes);
-        assert!(matches!(r1, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
-        assert!(matches!(r2, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
     }
 
     #[test]
@@ -226,6 +226,7 @@ mod verify_type_param_tests {
             ValueTy::Address,
             ValueTy::HeapSlice,
             ValueTy::Tuple,
+            ValueTy::Handle,
             ValueTy::Compo,
         ];
         for ty in types {
@@ -254,7 +255,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_cto_targets_outside_cast_set() {
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
             let res = verify_bytecodes(&cto_codes);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
@@ -287,5 +288,13 @@ mod call_verify_tests {
         codes.push(Bytecode::P0 as u8);
         codes.push(Bytecode::END as u8);
         verify_bytecodes(&codes).unwrap();
+    }
+
+    #[test]
+    fn verify_rejects_unknown_action_ids_as_inst_params_err() {
+        let codes = vec![Bytecode::ACTION as u8, u8::MAX, Bytecode::END as u8];
+        let err = verify_bytecodes(&codes).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstParamsErr);
+        assert!(err.1.contains("ACTION id 255 not found"));
     }
 }

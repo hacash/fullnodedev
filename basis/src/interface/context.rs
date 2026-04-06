@@ -13,13 +13,16 @@ pub trait Context: StateOperat {
     fn addr(&self, _: &AddrOrPtr) -> Ret<Address>;
     fn check_sign(&mut self, _: &Address) -> Rerr;
     fn tx(&self) -> &dyn TransactionRead;
-    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)>;
+    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)>;
+    fn vm_current_intent_scope(&mut self) -> Option<Option<usize>> { None }
+    fn vm_runtime_config(&mut self) -> Option<Box<dyn Any>> { None }
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> { None }
     fn vm_restore_volatile(&mut self, _: Box<dyn Any>) {}
-    fn vm_restore_but_keep_warmup(&mut self) {}
+    fn vm_rollback_volatile_preserve_warm_and_gas(&mut self) {}
     fn vm_invalidate_contract_cache(&mut self, _: &Address) {}
     fn gas_remaining(&self) -> i64 { 0  }
     fn gas_charge(&mut self, _: i64) -> Rerr { Ok(()) }
+    fn gas_rebate(&mut self, _: i64) -> Rerr { Ok(()) }
     fn gas_initialize(&mut self, _: i64) -> Rerr {
         errf!("context gas init not supported")
     }
@@ -35,6 +38,7 @@ pub trait Context: StateOperat {
     // p2sh
     fn p2sh(&self, _: &Address) -> Ret<&dyn P2sh> {  errf!("not found") }
     fn p2sh_set(&mut self, _: Address, _: Box<dyn P2sh>) -> Rerr { Ok(()) }
+    fn run_deferred_phase(&mut self) -> Rerr { Ok(()) }
 }
 
 pub struct ExecFromGuard<'a> {

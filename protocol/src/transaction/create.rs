@@ -4,8 +4,8 @@
 
 macro_rules! transaction_register {
     ( $( $tty:ident )+ ) => {
-        
-        pub fn transaction_create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
+
+        fn transaction_create_builtin(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
             let ty = bufeatone(buf)?;
             match ty {
                 $(
@@ -18,7 +18,7 @@ macro_rules! transaction_register {
             }
         }
 
-        pub fn try_json_decode(ty: u8, json: &str) -> Ret<Option<Box<dyn Transaction>>> {
+        fn try_json_decode_builtin(ty: u8, json: &str) -> Ret<Option<Box<dyn Transaction>>> {
             match ty {
                 $(
                     <$tty>::TYPE => {
@@ -29,6 +29,29 @@ macro_rules! transaction_register {
                 )+
                 _ => Ok(None)
             }
+        }
+
+        pub fn transaction_create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
+            let ty = bufeatone(buf)?;
+            if ty == 0 {
+                if let Ok(reg) = crate::setup::get_registry() {
+                    if let Some(codec) = &reg.prelude_tx_codec {
+                        return (codec.create)(buf)
+                    }
+                }
+            }
+            transaction_create_builtin(buf)
+        }
+
+        pub fn try_json_decode(ty: u8, json: &str) -> Ret<Option<Box<dyn Transaction>>> {
+            if ty == 0 {
+                if let Ok(reg) = crate::setup::get_registry() {
+                    if let Some(codec) = &reg.prelude_tx_codec {
+                        return (codec.json_decode)(json).map(Some)
+                    }
+                }
+            }
+            try_json_decode_builtin(ty, json)
         }
 
         pub fn transaction_json_decode(json: &str) -> Ret<Option<Box<dyn Transaction>>> {

@@ -56,7 +56,7 @@ This means an `ActLv` name describes a capability upper bound, not an exact sing
 | ActLv | Intended Semantics | Allowed Contexts | Additional Constraints |
 |---|---|---|---|
 | `TopOnly` | Single unique top-level action | `TOP` only | A transaction may contain only this one action |
-| `TopOnlyWithGuard` | Top-level primary action with Guard companions | `TOP` only | There must be exactly one non-Guard action |
+| `TopOnlyCanWithGuard` | One primary top-level action that may be accompanied only by bare top-level Guard actions | `TOP` only | There must be exactly one non-Guard action; AST-wrapped Guard companions are not allowed |
 | `TopUnique` | Top-level and unique by kind | `TOP` only | Same kind cannot appear more than once in one transaction |
 | `Guard` | Protection/constraint action | `TOP + AST` | Typically used for environment constraints; should not form a standalone transaction |
 | `Top` | Standard top-level action | `TOP` only | No additional uniqueness requirement |
@@ -73,7 +73,7 @@ This means an `ActLv` name describes a capability upper bound, not an exact sing
 1. Transaction action count MUST be within valid bounds (non-zero and not above the max limit).
 2. In non-fast-sync mode, action level checks MUST be enforced.
 3. Guard actions should not form an "all-Guard transaction"; such transactions MUST be rejected.
-4. For `TopOnly`, `TopOnlyWithGuard`, and `TopUnique`, structural constraints MUST be enforced before execution.
+4. For `TopOnly`, `TopOnlyCanWithGuard`, and `TopUnique`, structural constraints MUST be enforced before execution. In particular, `TopOnlyCanWithGuard` may only be combined with bare top-level `Guard` actions, not AST wrappers.
 
 ---
 

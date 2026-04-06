@@ -1,4 +1,6 @@
+use std::usize;
 
+use Value::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum Value {
@@ -9,12 +11,15 @@ pub enum Value {
     U32(u32),                //           4
     U64(u64),                //           5
     U128(u128),              //           6
-    // U256(u256), ...       //           7..
-    Bytes(Vec<u8>),          //           10
-    Address(field::Address), //           11
-    HeapSlice((u32, u32)),   //           13
-    Tuple(TupleItem),        //           14
-    Compo(CompoItem),        //           15
+    // U256(u256), ...       //           7 (reserved)
+    Bytes(Vec<u8>),          //           8
+    Address(field::Address), //           9
+    // reserved              //           10
+    HeapSlice((u32, u32)),   //           11
+    // reserved              //           12
+    Tuple(TupleItem),        //           13
+    Compo(CompoItem),        //           14
+    Handle(HandleItem),      //           15
 }
 
 
@@ -23,11 +28,6 @@ impl std::fmt::Display for Value {
         write!(f, "{}", self.to_string())
     }
 }
-
-
-use std::usize;
-
-use Value::*;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CallArgsPack {
@@ -51,6 +51,50 @@ pub fn classify_call_args_len(len: usize) -> VmrtRes<CallArgsPack> {
     })
 }
 
+#[inline(always)]
+pub(crate) fn add_size_saturating(total: usize, add: usize) -> usize {
+    total.checked_add(add).unwrap_or(usize::MAX)
+}
+
+pub(crate) fn value_content_eq(lhs: &Value, rhs: &Value) -> VmrtRes<bool> {
+    if lhs.is_uint() && rhs.is_uint() {
+        return Ok(lhs.extract_u128()? == rhs.extract_u128()?);
+    }
+    if lhs.ty() != rhs.ty() {
+        return itr_err_fmt!(
+            Arithmetic,
+            "cannot compare different types {:?} and {:?}",
+            lhs,
+            rhs
+        );
+    }
+    match (lhs, rhs) {
+        (Nil, Nil) => Ok(true),
+        (Bool(l), Bool(r)) => Ok(l == r),
+        (Bytes(l), Bytes(r)) => Ok(l == r),
+        (Address(l), Address(r)) => Ok(l == r),
+        (Tuple(l), Tuple(r)) => l.content_eq(r),
+        (Compo(l), Compo(r)) => l.content_eq(r),
+        (HeapSlice(..), HeapSlice(..)) | (Handle(..), Handle(..)) => {
+            itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", lhs, rhs)
+        }
+        (U8(l), U8(r)) => Ok(l == r),
+        (U16(l), U16(r)) => Ok(l == r),
+        (U32(l), U32(r)) => Ok(l == r),
+        (U64(l), U64(r)) => Ok(l == r),
+        (U128(l), U128(r)) => Ok(l == r),
+        _ => itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", lhs, rhs),
+    }
+}
+
+pub(crate) fn value_compare_fee(lhs: &Value, rhs: &Value, container_header_fee: usize) -> usize {
+    match (lhs, rhs) {
+        (Tuple(l), Tuple(r)) => l.compare_fee(r, container_header_fee),
+        (Compo(l), Compo(r)) => l.compare_fee(r, container_header_fee),
+        _ => add_size_saturating(lhs.dup_size(), rhs.dup_size()),
+    }
+}
+
 impl Value {
 
     pub fn ty(&self) -> ValueTy {
@@ -65,8 +109,9 @@ impl Value {
             Bytes(..)     => ValueTy::Bytes,
             Address(..)   => ValueTy::Address,
             HeapSlice(..) => ValueTy::HeapSlice,
-            Tuple(..)      => ValueTy::Tuple,
+            Tuple(..)     => ValueTy::Tuple,
             Compo(..)     => ValueTy::Compo,
+            Handle(..)    => ValueTy::Handle,
         }
     }
 
@@ -213,6 +258,13 @@ impl Value {
     where
         I: IntoIterator<Item = Value>,
     {
+        Self::pack_tuple(items)
+    }
+
+    pub fn pack_tuple<I>(items: I) -> VmrtRes<Self>
+    where
+        I: IntoIterator<Item = Value>,
+    {
         let mut items: Vec<_> = items.into_iter().collect();
         Ok(match classify_call_args_len(items.len())? {
             CallArgsPack::Nil => Self::Nil,
@@ -268,6 +320,8 @@ impl Value {
             // not support
             Tuple(..) => "{tuple value ...}".to_owned().into_bytes(),
             Compo(..) => "{compo value ...}".to_owned().into_bytes(),
+            Handle(..) => "{handle value ...}".to_owned().into_bytes(),
+
         }
     }
 
@@ -290,6 +344,7 @@ impl Value {
             HeapSlice((_, n)) => *n as usize,
             Tuple(a) => a.val_size(),
             Compo(c) => c.val_size(),
+            Handle(..) => REF_DUP_SIZE,
         }
     }
 
@@ -304,12 +359,12 @@ impl Value {
             U128(..) => 16,
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
-            HeapSlice(..) | Tuple(..) | Compo(..) => REF_DUP_SIZE,
+            HeapSlice(..) | Tuple(..) | Compo(..) | Handle(..) => REF_DUP_SIZE,
         }
     }
 
     pub fn can_get_size(&self) -> VmrtRes<u16> {
-        if let HeapSlice(..) | Tuple(..) | Compo(..) = self {
+        if let HeapSlice(..) | Tuple(..) | Compo(..) | Handle(..) = self {
             return itr_err_code!(ItemNoSize)
         }
         let n = self.val_size();
@@ -347,6 +402,7 @@ impl Value {
             HeapSlice((s, l)) => format!("heap({},{})", s, l),
             Tuple(a) => a.to_string(),
             Compo(a) => format!("compo({}){}", a.len(), a.to_string()),
+            Handle(..) => s!("handle"),
         }
     }
 
@@ -360,11 +416,12 @@ impl Value {
             U32(n) =>  format!("{}", n),
             U64(n) =>  format!("{}", n),
             U128(n) => format!("{}", n),
-            Bytes(b) => format!("\"{}\"", &to_readable_or_base64(b)),
+            Bytes(b) => serde_json::to_string(&to_readable_or_base64(b)).unwrap(),
             Address(a) =>  format!("\"{}\"", a),
             HeapSlice((s, l)) => format!("[{},{}]", s, l),
             Tuple(a) => a.to_json(),
             Compo(a) => a.to_json(),
+            Handle(..) => s!(r#"{"$handle":true}"#),
         }
     }
 
@@ -386,6 +443,7 @@ impl Value {
             HeapSlice((s, l)) => format!(r#"{{"$heap":[{},{}]}}"#, s, l),
             Tuple(a) => a.to_debug_json(),
             Compo(a) => a.to_debug_json(),
+            Handle(..) => s!(r#"{"$handle":true}"#),
         }
     }
 
@@ -408,6 +466,20 @@ mod tests {
     fn can_get_size_allows_u16_max_minus_one() {
         let v = Value::Bytes(vec![0u8; (u16::MAX as usize) - 1]);
         assert_eq!(v.can_get_size().unwrap(), u16::MAX - 1);
+    }
+
+    #[test]
+    fn can_get_size_rejects_runtime_and_container_values() {
+        assert!(matches!(Value::HeapSlice((0, 1)).can_get_size(), Err(ItrErr(ItrErrCode::ItemNoSize, _))));
+        assert!(matches!(
+            Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()).can_get_size(),
+            Err(ItrErr(ItrErrCode::ItemNoSize, _))
+        ));
+        assert!(matches!(
+            Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap()).can_get_size(),
+            Err(ItrErr(ItrErrCode::ItemNoSize, _))
+        ));
+        assert!(matches!(Value::handle(7u32).can_get_size(), Err(ItrErr(ItrErrCode::ItemNoSize, _))));
     }
 
     #[test]
@@ -477,18 +549,37 @@ mod tests {
     }
 
     #[test]
+    fn to_json_escapes_readable_bytes() {
+        let v = Value::Bytes(br#"a"b\c"#.to_vec());
+        assert_eq!(v.to_json(), r#""a\"b\\c""#);
+    }
+
+    #[test]
     fn to_debug_json_escapes_readable_bytes() {
         let v = Value::Bytes(br#"a"b\c"#.to_vec());
         assert_eq!(v.to_debug_json(), r#""a\"b\\c""#);
     }
 
     #[test]
-    fn to_debug_json_keeps_readable_map_as_plain_object() {
+    fn to_json_keeps_readable_map_as_plain_object() {
         let mut map = BTreeMap::new();
         map.insert(b"kind".to_vec(), Value::Bytes(b"hnft".to_vec()));
         map.insert(b"mint".to_vec(), Value::U8(1));
         let v = Value::Compo(CompoItem::map(map).unwrap());
+        assert_eq!(v.to_json(), r#"{"kind":"hnft","mint":1}"#);
         assert_eq!(v.to_debug_json(), r#"{"kind":"hnft","mint":1}"#);
+    }
+
+    #[test]
+    fn to_json_falls_back_for_non_readable_map_keys() {
+        let mut map = BTreeMap::new();
+        map.insert(vec![0x61, 0x20], Value::U8(7));
+        map.insert(vec![0x61, 0x0a], Value::U8(8));
+        let v = Value::Compo(CompoItem::map(map).unwrap());
+        assert_eq!(
+            v.to_json(),
+            r#"{"$map":[{"key_hex":"610a","value":8},{"key_hex":"6120","value":7}]}"#
+        );
     }
 
     #[test]

@@ -8,7 +8,7 @@ pub enum ItrErrCode {
     CodeTypeError = 4,
     InheritError = 5,
     LibraryError = 6,
-    ComplieError = 7,
+    CompileError = 7,
     ContractAddrErr = 8,
     ContractUpgradeErr = 9,
 
@@ -52,7 +52,6 @@ pub enum ItrErrCode {
     CallLibIdxOverflow = 52,
     CallInvalid = 53,
     CallExitInvalid = 54,
-    CallInCallcode = 55,
     CallInAbst = 56,
     CallOtherInMain = 57,
     CallLocInView = 58,
@@ -83,9 +82,10 @@ pub enum ItrErrCode {
     BytesHandle = 91,
     NativeFuncError = 92,
     NativeEnvError = 93,
-    ActCallError = 94,   // unrecoverable action call failure
-    ActCallRevert = 95,  // recoverable action call failure
-    ItemNoSize = 96,
+    NativeCtlError = 94,
+    ActCallError = 95,   // unrecoverable action call failure
+    ActCallRevert = 96,  // recoverable action call failure
+    ItemNoSize = 97,
 
     StorageKeyInvalid = 101,
     StorageKeyNotFind = 102,
@@ -94,8 +94,13 @@ pub enum ItrErrCode {
     StoragePeriodErr = 105,
     StorageValSizeErr = 106,
     StorageRestoreNotMatch = 107,
+    StorageNotActive = 108,
+    StorageKeyExists = 109,
+    StorageNilNotAllowed = 110,
 
-    ThrowAbort = 111, // user code call
+    ThrowAbort = 151, // user code call
+    DeferredError = 152, // defer callback error
+    IntentError = 153,
 
     #[default]
     NeverError = 255,
@@ -122,7 +127,7 @@ impl From<ItrErr> for ExecError {
         use ItrErrCode::*;
         let ItrErr(code, msg) = e;
         let text = format!("{:?}({}): {}", code, code as u8, msg);
-        let is_revert = matches!(code, ThrowAbort | ActCallRevert);
+        let is_revert = matches!(code, ActCallRevert);
         maybe!(is_revert, XError::revert(text), XError::fault(text))
     }
 }

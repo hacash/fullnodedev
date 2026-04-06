@@ -8,6 +8,61 @@ use crate::value::ValueTy;
 use sys::*;
 use sys::{Ret, errf};
 
+fn reserved_parse_type_error(name: &str) -> Option<String> {
+    match name {
+        "u256" | "uint" => Some(ValueTy::reserved_type_error(name)),
+        _ => None,
+    }
+}
+
+fn parse_type(state: &mut ParseState) -> Ret<Option<ValueTy>> {
+    if state.idx >= state.max {
+        return Ok(None);
+    }
+    let tk = &state.tokens[state.idx];
+    let ty = if let Keyword(k) = tk {
+        match k {
+            KwTy::U8 => Some(ValueTy::U8),
+            KwTy::U16 => Some(ValueTy::U16),
+            KwTy::U32 => Some(ValueTy::U32),
+            KwTy::U64 => Some(ValueTy::U64),
+            KwTy::U128 => Some(ValueTy::U128),
+            KwTy::Address => Some(ValueTy::Address),
+            KwTy::Bytes => Some(ValueTy::Bytes),
+            KwTy::Bool => Some(ValueTy::Bool),
+            KwTy::Tuple => Some(ValueTy::Tuple),
+            KwTy::List | KwTy::Map => Some(ValueTy::Compo),
+            KwTy::U256 => return Err(ValueTy::reserved_type_error("u256")),
+            KwTy::Uint => return Err(ValueTy::reserved_type_error("uint")),
+            _ => None,
+        }
+    } else if let Identifier(tn) = tk {
+        if let Some(err) = reserved_parse_type_error(tn) {
+            return Err(err);
+        }
+        match tn.as_str() {
+            "u8" => Some(ValueTy::U8),
+            "u16" => Some(ValueTy::U16),
+            "u32" => Some(ValueTy::U32),
+            "u64" => Some(ValueTy::U64),
+            "u128" => Some(ValueTy::U128),
+            "address" => Some(ValueTy::Address),
+            "bytes" => Some(ValueTy::Bytes),
+            "bool" => Some(ValueTy::Bool),
+            "tuple" => Some(ValueTy::Tuple),
+            "list" | "map" => Some(ValueTy::Compo),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    if ty.is_some() {
+        state.advance();
+    }
+    Ok(ty)
+}
+
 pub fn parse_function(state: &mut ParseState, consume_kw: bool) -> Ret<(Func, SourceMap, String)> {
     // function external/ircode Name(...) -> Ret { ... }
     if consume_kw {
@@ -109,7 +164,7 @@ pub fn parse_func_sig(
             }
 
             // type
-            let rtype = parse_type(state);
+            let rtype = parse_type(state)?;
             let aty = match rtype {
                 Some(t) => t,
                 None => return errf!("unknown type"),
@@ -138,7 +193,7 @@ pub fn parse_func_sig(
         if state.idx >= state.max {
             return errf!("expected return type");
         }
-        let rtype = parse_type(state);
+        let rtype = parse_type(state)?;
 
         ret_ty = match rtype {
             Some(t) => Some(t),
@@ -157,50 +212,6 @@ pub fn parse_func_sig(
     Ok((name, args, ret_ty))
 }
 
-pub fn parse_type(state: &mut ParseState) -> Option<ValueTy> {
-    if state.idx >= state.max {
-        return None;
-    }
-    let tk = &state.tokens[state.idx];
-    let ty = if let Keyword(k) = tk {
-        match k {
-            KwTy::U8 => Some(ValueTy::U8),
-            KwTy::U16 => Some(ValueTy::U16),
-            KwTy::U32 => Some(ValueTy::U32),
-            KwTy::U64 => Some(ValueTy::U64),
-            KwTy::U128 => Some(ValueTy::U128),
-            KwTy::Address => Some(ValueTy::Address),
-            KwTy::Bytes => Some(ValueTy::Bytes),
-            KwTy::Bool => Some(ValueTy::Bool),
-            // Parsed here for syntax completeness; later function-input validation still
-            // rejects Tuple as a declared parameter type because it is an argv wrapper.
-            KwTy::Tuple => Some(ValueTy::Tuple),
-            KwTy::List | KwTy::Map => Some(ValueTy::Compo),
-            _ => None,
-        }
-    } else if let Identifier(tn) = tk {
-        match tn.as_str() {
-            "u8" => Some(ValueTy::U8),
-            "u16" => Some(ValueTy::U16),
-            "u32" => Some(ValueTy::U32),
-            "u64" => Some(ValueTy::U64),
-            "u128" => Some(ValueTy::U128),
-            "address" => Some(ValueTy::Address),
-            "bytes" => Some(ValueTy::Bytes),
-            "bool" => Some(ValueTy::Bool),
-            "tuple" => Some(ValueTy::Tuple),
-            "list" | "map" => Some(ValueTy::Compo),
-            _ => None,
-        }
-    } else {
-        None
-    };
-
-    if ty.is_some() {
-        state.advance();
-    }
-    ty
-}
 
 pub fn parse_func_body_tokens(state: &mut ParseState) -> Ret<Vec<Token>> {
     state.eat_partition('{')?;
@@ -222,4 +233,34 @@ pub fn parse_func_body_tokens(state: &mut ParseState) -> Ret<Vec<Token>> {
         state.advance();
     }
     errf!("bracket mismatch")
+}
+
+#[cfg(test)]
+mod parse_func_tests {
+    use super::*;
+    use crate::lang::Tokenizer;
+
+    fn parse_sig(src: &str) -> Ret<(Func, SourceMap, String)> {
+        let tokens = Tokenizer::new(src.as_bytes()).parse()?;
+        let mut state = ParseState::new(tokens);
+        parse_function(&mut state, true)
+    }
+
+    #[test]
+    fn parse_function_reports_reserved_argument_type() {
+        let err = match parse_sig("function probe(a: u256) { return a }") {
+            Ok(_) => panic!("expected reserved type error"),
+            Err(err) => err,
+        };
+        assert!(err.contains("reserved for future expansion"), "{}", err);
+    }
+
+    #[test]
+    fn parse_function_reports_reserved_return_type() {
+        let err = match parse_sig("function probe() -> uint { return 1 }") {
+            Ok(_) => panic!("expected reserved type error"),
+            Err(err) => err,
+        };
+        assert!(err.contains("reserved for future expansion"), "{}", err);
+    }
 }

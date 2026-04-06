@@ -42,6 +42,7 @@ amount_op_func_define!{do_hac_add, hac, addr, amt, {
 
 
 pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &Amount) -> XRet<Vec<u8>> {
+    crate::upgrade::check_transfer_addr_online_open(ctx.env().block.height, from, to)?;
     // is to self
     if from == to {
         if !from.is_privakey() {

@@ -91,13 +91,13 @@ Call Kind:
     - SuperCall           <fnsig>(argv)
     - ViewCall    <libidx, fnsig>(argv)
     - PureCall    <libidx, fnsig>(argv)
-    - CodeCall     <libidx, fnsig>         // no user argv; run delegated code in-place, inherit current ExecCtx(domain + frame) privileges, and forbid any nested call
+    - CodeCall     <libidx, fnsig>         // no user argv; run delegated code in-place and inherit current ExecCtx(domain + frame) privileges
 
 
 Call Privileges:
 
     State is Global Value, Memory Value, Storage Data, Log Data.
-    CodeCall is NOT a FrameMode: it inherits the upper-level ExecCtx(domain + frame) privileges, and execution enters an "in_codecall" state where any CALL* instruction is forbidden.
+    CodeCall is NOT a FrameMode: it inherits the upper-level ExecCtx(domain + frame) privileges and does not add an extra nested-call prohibition.
     Ext actions are still gated by (domain, frame, depth) rules.
 
     - Main          (State Write) => External,        View, Pure, Code

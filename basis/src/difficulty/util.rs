@@ -85,9 +85,57 @@ pub fn hash_bigger_than(src: &[u8], tar: &[u8]) -> bool {
             return false
         }
     }
-    // equal
     false
+}
 
+#[derive(Clone)]
+pub struct DifficultyTarget {
+    pub num: u32,
+    pub hash: [u8; HXS],
+    pub big: BigUint,
+}
+
+impl DifficultyTarget {
+    pub fn new(num: u32, hash: [u8; HXS], big: BigUint) -> Self {
+        Self { num, hash, big }
+    }
+
+    pub fn from_num(num: u32) -> Self {
+        let hash = u32_to_hash(num);
+        let big = u32_to_biguint(num);
+        Self { num, hash, big }
+    }
+
+    pub fn from_big(big: BigUint) -> Self {
+        let hash = biguint_to_hash(&big);
+        let num = hash_to_u32(&hash);
+        Self { num, hash, big }
+    }
+
+    pub fn into_tuple(self) -> (u32, [u8; HXS], BigUint) {
+        (self.num, self.hash, self.big)
+    }
+}
+
+pub fn scale_target_by_ratio(base: &BigUint, observed: u128, expected: u128) -> BigUint {
+    base.clone() * BigUint::from(observed) / BigUint::from(expected)
+}
+
+pub fn clamp_target_half_double(prev: &BigUint, next: BigUint) -> BigUint {
+    let min_target = prev.clone() / BigUint::from(2u8);
+    let max_target = prev.clone() * BigUint::from(2u8);
+    if next < min_target {
+        return min_target
+    }
+    if next > max_target {
+        return max_target
+    }
+    next
+}
+
+pub fn scaled_target_hash(diff: u32, scale: u64) -> [u8; HXS] {
+    let target = u32_to_biguint(diff) * BigUint::from(scale);
+    biguint_to_hash(&target)
 }
 
 fn left_zero(buf: &[u8]) -> usize {

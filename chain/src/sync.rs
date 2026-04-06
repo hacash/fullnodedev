@@ -75,10 +75,8 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
         // do roll
         loop {
             let Ok(rid) = ridcv.recv() else { break };
-            // let hei = rid.block.hein;
             if let Err(e) = roll_by(this, rid) {
                 let _ = errch2.send(format!("do roll failed: {}", e));
-                // Close roll receiver early so producer thread can exit instead of blocking on full channel.
                 drop(ridcv);
                 break
             }

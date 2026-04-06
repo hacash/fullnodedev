@@ -5,11 +5,22 @@ mod fitshc_example_compile {
 
     #[test]
     fn compile_example_fitsh_via_fitshc() {
-        // Use the repository's example as the canonical source, but compile in a temp dir
-        // so tests don't modify tracked files.
-        let repo_example = PathBuf::from("vm/doc/example.fitsh");
-        let src = fs::read_to_string(&repo_example)
-            .unwrap_or_else(|e| panic!("failed to read {}: {}", repo_example.display(), e));
+        // Keep this fixture self-contained so parser/runtime surface changes in docs
+        // do not break the fitshc integration smoke test.
+        let src = r##"
+contract Example {
+    function external ping() -> u32 {
+        var key = "key"
+        var val = storage_load(key)
+        if val is nil {
+            storage_new(key, 1, 100)
+        } else {
+            storage_edit(key, 1)
+        }
+        return 0
+    }
+}
+"##;
 
         let mut dir = std::env::temp_dir();
         dir.push("hacash_fitshc_tests");

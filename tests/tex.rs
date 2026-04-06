@@ -2,8 +2,9 @@
 #[allow(unused)]
 mod tex {
 
+    use basis::interface::{ActExec, StateOperat};
     use field::*;
-    use mint::action::AssetCreate;
+    use mint::action::{AssetCreate, ASSET_ALIVE_HEIGHT};
     use protocol::{action::*, tex::*};
     use sys::*;
     use vm::contract::*;
@@ -70,7 +71,7 @@ mod tex {
             ticket: BytesW1::from_str("USDT").unwrap(),
             name: BytesW1::from_str("Teather").unwrap(),
         };
-        act2.protocol_fee = Amount::mei(1);
+        act2.protocol_cost = Amount::mei(1);
 
         //
         curl_trs_1(vec![
@@ -79,5 +80,43 @@ mod tex {
             Box::new(tex1),
             Box::new(tex2),
         ]);
+    }
+
+    #[test]
+    fn asset_create_serial_unlocks_at_minsri_on_first_allowed_height() {
+        use mint::genesis;
+        use protocol::state::CoreState;
+        use testkit::sim::integration::{make_ctx_from_tx, make_stub_tx, scoped_setup, test_guard, vm_main_addr};
+        use testkit::sim::logs::MemLogs;
+        use testkit::sim::state::FlatMemState as StateMem;
+
+        let _guard = test_guard();
+        let _setup = scoped_setup(None);
+        let main = vm_main_addr();
+        let height = ASSET_ALIVE_HEIGHT;
+        let tx = make_stub_tx(3, main, vec![main], 17);
+        let mut ctx = make_ctx_from_tx(height, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        ctx.env.chain.fast_sync = true;
+
+        let bls = Balance::hac(genesis::block_reward(height));
+        CoreState::wrap(ctx.state()).balance_set(&main, &bls);
+
+        let mut act = AssetCreate::new();
+        act.metadata = AssetSmelt {
+            serial: Fold64::from(1025).unwrap(),
+            supply: Fold64::from(10000).unwrap(),
+            decimal: Uint1::from(2),
+            issuer: main,
+            ticket: BytesW1::from_str("USDT").unwrap(),
+            name: BytesW1::from_str("Tether").unwrap(),
+        };
+        act.protocol_cost = genesis::block_reward(height);
+
+        act.execute(&mut ctx).unwrap();
+
+        let sta = CoreState::wrap(ctx.state());
+        assert!(sta.asset(&Fold64::from(1025).unwrap()).is_some());
+        let bls = sta.balance(&main).unwrap();
+        assert_eq!(bls.asset(Fold64::from(1025).unwrap()).unwrap().amount.uint(), 10000);
     }
 }

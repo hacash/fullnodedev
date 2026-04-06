@@ -1,15 +1,13 @@
+use basis::interface::NPeer;
+use crate::new_current_thread_tokio_rt;
 
 impl NPeer for Peer {
-    
     fn send_msg_on_block(&self, ty: u16, body: Vec<u8>) -> Rerr {
-        let _ = new_current_thread_tokio_rt().block_on(async move {
+        new_current_thread_tokio_rt().block_on(async move {
             self.send_msg(ty, body).await
-        });
-        Ok(())
+        })
     }
-
 }
-
 
 impl Peer {
 
@@ -24,21 +22,17 @@ impl Peer {
     }
 
     pub async fn send(&self, buf: &Vec<u8>) -> Rerr {
-        let mut w;
-        {
-            w = match self.conn_write.lock().unwrap().take() {
-                None => return errf!("peer may be busy or closed"),
-                Some(w) => w,
-            };
+        if self.is_writer_closed() {
+            return errf!("peer may be closed")
         }
-        let send_res = tcp_send(&mut w, buf).await;
-        if let Err(e) = send_res {
-            *self.conn_write.lock().unwrap() = None;
-            return Err(e)
+        match self.writer_tx.try_send(PeerWriterCmd::Send(buf.clone())) {
+            Ok(_) => Ok(()),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => errf!("peer writer queue full"),
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                self.mark_writer_closed();
+                errf!("peer may be closed")
+            }
         }
-        *self.conn_write.lock().unwrap() = Some(w);
-        Ok(())
     }
-
 
 }

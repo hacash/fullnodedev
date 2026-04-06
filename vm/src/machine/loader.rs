@@ -13,7 +13,7 @@ pub struct ResolvedCallPlan {
     pub fnobj: Arc<FnObj>,
 }
 
-impl Resoure {
+impl Runtime {
     #[inline(always)]
     fn require_resolved(found: Option<ResolvedFn>) -> VmrtRes<ResolvedFn> {
         use ItrErrCode::*;
@@ -73,23 +73,23 @@ impl Resoure {
                 addr.to_readable()
             );
         };
-        if let Some(c) = self.contracts.get(addr) {
+        if let Some(c) = self.warm.contracts.get(addr) {
             if c.edition == state_ed {
                 return Ok(c.clone());
             }
-            self.contracts.remove(addr);
+            self.warm.contracts.remove(addr);
         }
-        if self.contracts.len() >= self.space_cap.loaded_contract {
+        if self.warm.contracts.len() >= self.warm.space_cap.loaded_contract {
             return itr_err_code!(OutOfLoadContract);
         }
         let cbytes = state_ed.raw_size.uint() as usize;
-        if let Some(obj) = global_machine_manager()
+        if let Some(obj) = global_runtime_pool()
             .contract_cache()
             .get(addr, &state_ed)
         {
             // OutOfGas here is terminal for the VM call; warmup is only recorded after gas settlement succeeds.
             self.settle_new_contract_load_gas(host, cbytes)?;
-            self.contracts.insert(addr.clone(), obj.clone());
+            self.warm.contracts.insert(addr.clone(), obj.clone());
             return Ok(obj);
         }
         let Some(csto) = host.contract(addr) else {
@@ -102,8 +102,8 @@ impl Resoure {
         let cobj = self.load_contract_from_state(addr, &state_ed, csto)?;
         // Keep this order explicit: even on miss, warmup/cache write is gated by successful gas settlement.
         self.settle_new_contract_load_gas(host, cbytes)?;
-        self.contracts.insert(addr.clone(), cobj.clone());
-        global_machine_manager()
+        self.warm.contracts.insert(addr.clone(), cobj.clone());
+        global_runtime_pool()
             .contract_cache()
             .insert(addr, cobj.clone());
         Ok(cobj)
@@ -283,6 +283,11 @@ mod loader_tests {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
             VMState::wrap(&mut self.state).contract_edition(addr)
         }
@@ -299,23 +304,39 @@ mod loader_tests {
             unreachable!()
         }
 
-        fn srest(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+        fn sstat(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
 
-        fn sload(&mut self, _: &Address, _: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
 
-        fn sdel(&mut self, _: &Address, _: Value) -> VmrtErr {
+        fn sdel(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
 
-        fn ssave(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn snew(
+            &mut self,
+            _: &GasExtra,
+            _: &SpaceCap,
+            _: &Address,
+            _: Value,
+            _: Value,
+            _: Value,
+        ) -> VmrtRes<i64> {
             unreachable!()
         }
 
-        fn srent(&mut self, _: &GasExtra, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+            unreachable!()
+        }
+
+        fn srent(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+            unreachable!()
+        }
+
+        fn srecv(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
             unreachable!()
         }
     }
@@ -332,13 +353,13 @@ mod loader_tests {
             state,
             gas_remaining: 0,
         };
-        let mut res = Resoure::create(1);
+        let mut res = Runtime::create(1);
         let err = match res.load_contract(&mut host, &caddr) {
             Ok(_) => panic!("expected OutOfGas"),
             Err(e) => e,
         };
         assert_eq!(err.0, ItrErrCode::OutOfGas);
-        assert!(!res.contracts.contains_key(&caddr));
+        assert!(!res.warm.contracts.contains_key(&caddr));
     }
 
     #[test]
@@ -354,12 +375,13 @@ mod loader_tests {
             state,
             gas_remaining: 10_000,
         };
-        let mut res = Resoure::create(1);
-        let one_cold_fee = res.gas_extra.new_contract_load + (cbytes as i64 / 64);
+        let mut res = Runtime::create(1);
+        let one_cold_fee = res.warm.gas_extra.new_contract_load
+            + res.warm.gas_extra.contract_bytes(cbytes);
         {
             let _ = res.load_contract(&mut host, &caddr).unwrap();
         }
-        assert!(res.contracts.contains_key(&caddr));
+        assert!(res.warm.contracts.contains_key(&caddr));
         assert_eq!(host.gas_remaining, 10_000 - one_cold_fee);
 
         let gas_after_first = host.gas_remaining;

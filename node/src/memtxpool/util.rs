@@ -1,39 +1,34 @@
-
 macro_rules! purity_or_fee {
     ($self:ident, $txp:expr, $opt:tt, $hav:expr) => {
-        maybe!(
-            $self.fpmd,
-            $txp.fpur() $opt $hav.fpur(),
-            $txp.tx().fee() $opt $hav.tx().fee()
-        )
+        maybe!($self.fpmd, $txp.fpur() $opt $hav.fpur(), $txp.tx().fee() $opt $hav.tx().fee() )
     };
 }
 
-
-
-
-fn scan_group_rng_by_feep(txpkgs: &Vec<TxPkg>, feep: u64, fee: &Amount, fpmd: bool, wsz: (usize, usize)) -> (usize, usize) {
+fn scan_group_rng_by_feep(
+    txpkgs: &Vec<TxPkg>,
+    feep: u64,
+    fee: &Amount,
+    fpmd: bool,
+    wsz: (usize, usize),
+) -> (usize, usize) {
     let mut rxl = wsz.0;
     let mut rxr = wsz.1;
-    // scan rng
     loop {
-        let rng = rxr-rxl;
+        let rng = rxr - rxl;
         if rng <= 10 {
-            break // end
+            break;
         }
-        let fct = rxl + rng/2;
+        let fct = rxl + rng / 2;
         let ct = &txpkgs[fct];
-        let lcd = maybe!( fpmd, feep > ct.fpur(), fee > ct.tx().fee() ); // fee
-        let rcd = maybe!( fpmd, feep < ct.fpur(), fee < ct.tx().fee() ); // fee puery
+        let lcd = maybe!(fpmd, feep > ct.fpur(), fee > ct.tx().fee());
+        let rcd = maybe!(fpmd, feep < ct.fpur(), fee < ct.tx().fee());
         if lcd {
-            rxr = fct; // in left
+            rxr = fct;
         } else if rcd {
-            rxl = fct; // in right
-        }else {
-            // feep == cfp
-            break // end
+            rxl = fct;
+        } else {
+            break;
         }
     }
-    // ok
     (rxl, rxr)
 }

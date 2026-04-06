@@ -7,6 +7,7 @@ mod tests {
     use testkit::sim::state::FlatMemState as MemState;
     use vm::ContractAddress;
     use vm::interpreter::execute_code;
+    use vm::machine::DeferCallbacks;
     use vm::machine::VmHost;
     use vm::rt::FrameBindings;
     use vm::rt::{Bytecode, ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtRes};
@@ -45,6 +46,11 @@ mod tests {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtRes<()> {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
             vm::VMState::wrap(self.ctx.state()).contract_edition(addr)
         }
@@ -63,40 +69,67 @@ mod tests {
             Ok(())
         }
 
-        fn srest(&mut self, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
-            let _ = (addr, key);
+        fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
+            let _ = (gst, cap, addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
-        fn sload(&mut self, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
-            let _ = (addr, key);
+        fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
+            let _ = (gst, cap, addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
-        fn sdel(&mut self, addr: &Address, key: vm::value::Value) -> VmrtRes<()> {
-            let _ = (addr, key);
+        fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: vm::value::Value) -> VmrtRes<i64> {
+            let _ = (gst, cap, addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
-        fn ssave(
+        fn snew(
             &mut self,
             gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: vm::value::Value,
+            val: vm::value::Value,
+            period: vm::value::Value,
+        ) -> VmrtRes<i64> {
+            let _ = (gst, cap, addr, key, val, period);
+            Err(ItrErr::code(ItrErrCode::StorageError))
+        }
+
+        fn sedit(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
             addr: &Address,
             key: vm::value::Value,
             val: vm::value::Value,
         ) -> VmrtRes<i64> {
-            let _ = (gst, addr, key, val);
+            let _ = (gst, cap, addr, key, val);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
         fn srent(
             &mut self,
             gst: &GasExtra,
+            cap: &SpaceCap,
             addr: &Address,
             key: vm::value::Value,
             period: vm::value::Value,
         ) -> VmrtRes<i64> {
-            let _ = (gst, addr, key, period);
+            let _ = (gst, cap, addr, key, period);
+            Err(ItrErr::code(ItrErrCode::StorageError))
+        }
+
+        fn srecv(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: vm::value::Value,
+            period: vm::value::Value,
+        ) -> VmrtRes<i64> {
+            let _ = (gst, cap, addr, key, period);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
     }
@@ -128,12 +161,13 @@ mod tests {
         let mut ops = Stack::new(16);
         let mut locals = Stack::new(16);
         let mut heap = Heap::new(16);
-        let mut gas_use = basis::interface::GasUse::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
 
         let mut host = TestVmHost {
             ctx,
             gas_remaining: gas,
         };
+        let mut defer_callbacks = DeferCallbacks::default();
         let res = execute_code(
             &mut pc,
             &codes,
@@ -149,6 +183,7 @@ mod tests {
             &mut gas_use,
             &mut GKVMap::new(4),
             &mut CtcKVMap::new(4),
+            &mut defer_callbacks,
             &mut host,
         );
 

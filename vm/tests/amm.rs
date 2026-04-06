@@ -142,15 +142,25 @@ mod amm {
             unpack(self.total(), 3)
             tt_shares += (zhu as u64)
             bind tt_k = "total_shares"
-            storage_save(tt_k, tt_shares)
+            var tt_old = storage_load(tt_k)
+            if tt_old is nil {
+                storage_new(tt_k, tt_shares, 100)
+            } else {
+                storage_edit(tt_k, tt_shares)
+            }
             // 
-            var lq_k $6 = addr ++ "_shares"
-            var my_shares $7 = storage_load(lq_k)
-            if my_shares is nil {
+            var lq_k = addr ++ "_shares"
+            var my_old_shares = storage_load(lq_k)
+            var my_shares = my_old_shares
+            if my_old_shares is nil {
                 my_shares = 0 as u64
             }
             my_shares += zhu as u64
-            storage_save(lq_k, my_shares)
+            if my_old_shares is nil {
+                storage_new(lq_k, my_shares, 100)
+            } else {
+                storage_edit(lq_k, my_shares)
+            }
             end
         "##,
         );
@@ -183,14 +193,14 @@ mod amm {
             tt_shares -= shares
             var tt_k = "total_shares"
             if tt_shares > 0 {
-                storage_save(tt_k, tt_shares as u64)
+                storage_edit(tt_k, tt_shares as u64)
             } else {
                 storage_del(tt_k)
             }
             // update my shares
             my_shares -= shares
             if my_shares > 0 {
-                storage_save(lq_k, my_shares as u64)
+                storage_edit(lq_k, my_shares as u64)
             } else {
                 storage_del(lq_k)
             }
@@ -292,11 +302,9 @@ mod amm {
             var tt_k = "total_shares"
             var total = storage_load(tt_k)
             if total is nil {
-                var exp = storage_rest(tt_k)
+                var exp = storage_stat(tt_k)
                 if exp is not nil {
-                    if exp < block_height() {
-                        throw "storage expire"
-                    }
+                    throw "storage recover"
                 }
             }
             var tt_shares = 0 as u64
@@ -439,7 +447,7 @@ mod amm {
             r##"
             lib HacSwap = 1: emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS
             var shares = 50000000000 as u64 // 500HAC
-            var coins = HacSwap.withdraw(tx_main_address(), shares) // 1k HAC
+            var coins = HacSwap.withdraw(tx_main_addr(), shares) // 1k HAC
             bind sat = item_get(coins, 0)
             bind zhu = item_get(coins, 1)
             var adr = address_ptr(1)

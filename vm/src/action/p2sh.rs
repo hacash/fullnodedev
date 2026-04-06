@@ -20,7 +20,7 @@ pub struct UnlockScript {
 /// from consensus.
 ///
 /// Hashing rules (same as `P2SHScriptProve::get_merkel()`):
-/// - Leaf: `sha3("p2sh_leaf_v2_" || libs || codeconf || lockbox)`
+/// - Leaf: `sha3("p2sh_leaf_" || libs || codeconf || lockbox)`
 /// - Branch i: `sha3("p2sh_branch_" || left || right)` where `(left,right)` is decided by `posi`.
 /// - Address: `Address::create_scriptmh(ripemd160(root_sha3))`
 #[derive(Debug, Clone)]
@@ -47,6 +47,9 @@ action_define! { P2SHScriptProve, 46,
     },
     (self, "Prove P2SH unlock script".to_owned()),
     (self, ctx, _gas {
+        if ctx.exec_from() != ExecFrom::Top {
+            return xerrf!("P2SHScriptProve can only run in TOP context, got {}", ctx.exec_from())
+        }
         if self._marks_.not_zero() {
             return xerrf!("marks bytes format invalid")
         }
@@ -96,7 +99,7 @@ impl P2SHScriptProve {
     ) -> Ret<ScriptmhCalc> {
         let mut h = Hash::from(sha3(
             vec![
-                "p2sh_leaf_v2_".as_bytes().to_vec(), // domain separator for safety
+                "p2sh_leaf_".as_bytes().to_vec(), // domain separator for safety
                 adrlibs.serialize(),
                 vec![codeconf.raw()],
                 lockbox.to_vec(),
@@ -136,12 +139,10 @@ impl P2SHScriptProve {
         if !libs.iter().all(|a| a.is_contract()) {
             return errf!("contract libs invalid");
         }
-        for i in 1..libs.len() {
-            if libs[..i].iter().any(|a| a == &libs[i]) {
-                return errf!(
-                    "duplicate p2sh lib address '{}'",
-                    libs[i].to_readable()
-                );
+        let mut libset = std::collections::HashSet::with_capacity(libs.len());
+        for a in libs.iter() {
+            if !libset.insert(a) {
+                return errf!("duplicate p2sh lib address '{}'", a.to_readable());
             }
         }
         Ok(())
@@ -149,6 +150,7 @@ impl P2SHScriptProve {
 
     pub fn verify_unlock_inputs(
         block_height: u64,
+        gst: &GasExtra,
         adrlibs: &ContractAddressW1,
         codeconf: CodeConf,
         lockbox: &BytesW2,
@@ -156,7 +158,7 @@ impl P2SHScriptProve {
     ) -> Ret<()> {
         let cap = SpaceCap::new(block_height);
         Self::verify_adrlibs(&cap, adrlibs)?;
-        convert_and_check(&cap, codeconf.code_type(), lockbox.as_vec(), block_height)?;
+        convert_and_check(&cap, gst, codeconf.code_type(), lockbox.as_vec(), block_height)?;
         Self::verify_witness_bytes(&cap, witness.as_vec())?;
         Ok(())
     }
@@ -168,10 +170,11 @@ impl P2SHScriptProve {
         Ok(())
     }
 
-    fn get_stuff_with_merkel(&self, ctx: &dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
+    fn get_stuff_with_merkel(&self, ctx: &mut dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
         let hei = ctx.env().block.height;
+        let (gst, _) = peek_vm_runtime_limits(ctx, hei);
         let codeconf = CodeConf::parse(self.codeconf.uint())?;
-        Self::verify_unlock_inputs(hei, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
+        Self::verify_unlock_inputs(hei, &gst, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
         let lockbox = self.lockbox.as_vec();
         let witness = self.argvkey.as_vec().clone();
         // ok
@@ -266,8 +269,10 @@ mod p2sh_test {
         let libs = ContractAddressW1::from_list(vec![lib.clone(), lib]).unwrap();
         let lockbox = dummy_lockbox(13);
         let witness = BytesW2::from(vec![]).unwrap();
+        let gst = GasExtra::new(1);
         let err = P2SHScriptProve::verify_unlock_inputs(
             1,
+            &gst,
             &libs,
             CodeConf::from_type(CodeType::Bytecode),
             &lockbox,

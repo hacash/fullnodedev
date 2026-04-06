@@ -23,6 +23,10 @@ mod machine_file_test {
         crate::ContractAddress::calculate(base, &Uint4::from(nonce))
     }
 
+    fn new_test_machine() -> (Machine, Runtime) {
+        (Machine::new(), Runtime::create(1))
+    }
+
     struct TestVmHost<'a> {
         ctx: &'a mut dyn Context,
         gas_remaining: i64,
@@ -58,6 +62,11 @@ mod machine_file_test {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
             crate::VMState::wrap(self.ctx.state()).contract_edition(addr)
         }
@@ -76,40 +85,68 @@ mod machine_file_test {
             Ok(())
         }
 
-        fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+        fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
             let hei = self.ctx.env().block.height;
-            crate::VMState::wrap(self.ctx.state()).srest(hei, addr, key)
+            crate::VMState::wrap(self.ctx.state()).sstat(gst, cap, hei, addr, key)
         }
 
-        fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
             let hei = self.ctx.env().block.height;
-            crate::VMState::wrap(self.ctx.state()).sload(hei, addr, key)
+            crate::VMState::wrap(self.ctx.state()).sload(gst, cap, hei, addr, key)
         }
 
-        fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
-            crate::VMState::wrap(self.ctx.state()).sdel(addr, key)
+        fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).sdel(gst, cap, hei, addr, key)
         }
 
-        fn ssave(
+        fn snew(
             &mut self,
             gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: Value,
+            val: Value,
+            period: Value,
+        ) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).snew(gst, cap, hei, addr, key, val, period)
+        }
+
+        fn sedit(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
             addr: &Address,
             key: Value,
             val: Value,
         ) -> VmrtRes<i64> {
             let hei = self.ctx.env().block.height;
-            crate::VMState::wrap(self.ctx.state()).ssave(gst, hei, addr, key, val)
+            crate::VMState::wrap(self.ctx.state()).sedit(gst, cap, hei, addr, key, val)
         }
 
         fn srent(
             &mut self,
             gst: &GasExtra,
+            cap: &SpaceCap,
             addr: &Address,
             key: Value,
             period: Value,
         ) -> VmrtRes<i64> {
             let hei = self.ctx.env().block.height;
-            crate::VMState::wrap(self.ctx.state()).srent(gst, hei, addr, key, period)
+            crate::VMState::wrap(self.ctx.state()).srent(gst, cap, hei, addr, key, period)
+        }
+
+        fn srecv(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: Value,
+            period: Value,
+        ) -> VmrtRes<i64> {
+            let hei = self.ctx.env().block.height;
+            crate::VMState::wrap(self.ctx.state()).srecv(gst, cap, hei, addr, key, period)
         }
     }
 
@@ -138,11 +175,11 @@ mod machine_file_test {
         let mut ctx = make_ctx_with_state(env, Box::new(std::mem::take(&mut ext_state)), &tx);
 
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
         if raw {
-            machine.main_call_raw(&mut host, CodeType::Bytecode, main_codes.into())
+            machine.main_call_raw(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
         } else {
-            let rv = machine.main_call(&mut host, CodeType::Bytecode, main_codes.into())?;
+            let rv = machine.main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())?;
             Ok(rv)
         }
     }
@@ -156,6 +193,44 @@ mod machine_file_test {
         run_main_script_with(base_addr, tx_libs, ext_state, main_script, false)
     }
 
+    #[test]
+    fn main_call_intent_new_requires_contract_context() {
+        let base_addr = test_base_addr();
+        let res = run_main_script_raw(
+            base_addr,
+            vec![],
+            StateMem::default(),
+            r##"return intent_new("basic")"##,
+        );
+        assert_err_contains(res, "contract context");
+    }
+
+    #[test]
+    fn main_call_intent_bind_depth_overflow_fails() {
+        let base_addr = test_base_addr();
+        let mut body = String::new();
+        for _ in 0..10 {
+            body.push_str("intent_use(nil)\n");
+        }
+        body.push_str("intent_use(nil)\nreturn 0\n");
+        let err = run_main_script_with(base_addr, vec![], StateMem::default(), &body, true)
+            .expect_err("intent bind depth overflow must fail");
+        assert!(err.contains("IntentError"), "unexpected error: {err}");
+        assert!(err.contains("intent bind depth exceeded max 10"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn main_call_intent_use_rejects_non_handle() {
+        let base_addr = test_base_addr();
+        let res = run_main_script_raw(
+            base_addr,
+            vec![],
+            StateMem::default(),
+            "intent_use(1)\nreturn 0",
+        );
+        assert_err_contains(res, "requires intent handle");
+    }
+
     fn run_main_script_raw(
         base_addr: Address,
         tx_libs: Vec<crate::ContractAddress>,
@@ -163,6 +238,342 @@ mod machine_file_test {
         main_script: &str,
     ) -> Ret<Value> {
         run_main_script_with(base_addr, tx_libs, ext_state, main_script, true)
+    }
+
+    fn setup_intent_owner_contracts(
+        base_addr: &Address,
+    ) -> (crate::ContractAddress, crate::ContractAddress, StateMem) {
+        let contract_owner = test_contract(base_addr, 141);
+        let contract_foreign = test_contract(base_addr, 142);
+        let owner_sto = Contract::new()
+            .func(
+                Func::new("make")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("owned")
+                        intent_use(iid)
+                        intent_put("flag", 7)
+                        return iid
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("read_flag")
+                    .unwrap()
+                    .external()
+                    .fitsh(r##"return intent_require("flag")"##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("register_defer")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        param { iid }
+                        defer(iid)
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let foreign_sto = Contract::new()
+            .func(
+                Func::new("read_flag")
+                    .unwrap()
+                    .external()
+                    .fitsh(r##"return intent_require("flag")"##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("register_defer")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        param { iid }
+                        defer(iid)
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_owner, &owner_sto);
+            vmsta.contract_set_sync_edition(&contract_foreign, &foreign_sto);
+        }
+        (contract_owner, contract_foreign, ext_state)
+    }
+
+    #[test]
+    fn intent_use_accepts_existing_foreign_handle_and_defers_owner_failure_until_access() {
+        let base_addr = test_base_addr();
+        let (contract_owner, contract_foreign, ext_state) = setup_intent_owner_contracts(&base_addr);
+
+        let owner_script = r##"
+            lib O = 0
+            var iid = O.make()
+            intent_use(iid)
+            assert O.read_flag() == 7
+            return 0
+        "##;
+        let rv = run_main_script_raw(
+            base_addr.clone(),
+            vec![contract_owner.clone()],
+            ext_state.clone(),
+            owner_script,
+        )
+        .unwrap();
+        assert_eq!(rv.extract_u8().unwrap(), 0);
+        let foreign_script = r##"
+            lib O = 0
+            lib F = 1
+            var iid = O.make()
+            intent_use(iid)
+            return F.read_flag()
+        "##;
+        let foreign_res = run_main_script_raw(
+            base_addr,
+            vec![contract_owner, contract_foreign],
+            ext_state,
+            foreign_script,
+        );
+        assert_err_contains(foreign_res, "not owned by contract");
+    }
+
+    #[test]
+    fn defer_requires_intent_owner() {
+        let base_addr = test_base_addr();
+        let (contract_owner, contract_foreign, ext_state) = setup_intent_owner_contracts(&base_addr);
+
+        let owner_script = r##"
+            lib O = 0
+            var iid = O.make()
+            return O.register_defer(iid)
+        "##;
+        let rv = run_main_script_raw(
+            base_addr.clone(),
+            vec![contract_owner.clone()],
+            ext_state.clone(),
+            owner_script,
+        )
+        .unwrap();
+        assert_eq!(rv.extract_u8().unwrap(), 0);
+
+        let foreign_script = r##"
+            lib O = 0
+            lib F = 1
+            var iid = O.make()
+            return F.register_defer(iid)
+        "##;
+        let res = run_main_script_raw(
+            base_addr,
+            vec![contract_owner, contract_foreign],
+            ext_state,
+            foreign_script,
+        );
+        assert_err_contains(res, "not owned by contract");
+    }
+
+    #[test]
+    fn intent_put_flat_kv_accepts_flat_kv_list() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 166);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("kv")
+                        intent_use(iid)
+                        intent_put_flat_kv(list { "a" 3 "b" 5 })
+                        return intent_len()
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run()
+            "##,
+        )
+        .unwrap();
+        assert_eq!(rv, Value::U64(2));
+    }
+
+    #[test]
+    fn intent_keys_page_returns_u32_cursor_and_accepts_uint_family_args() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 168);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("pg")
+                        intent_use(iid)
+                        intent_put("a", 1)
+                        intent_put("b", 2)
+                        intent_put("c", 3)
+                        return intent_keys_page(0 as u8, 2 as u16)
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run()
+            "##,
+        )
+        .unwrap();
+        let Value::Tuple(ret) = rv else {
+            panic!("expected tuple");
+        };
+        let items = ret.to_vec();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0], Value::U32(2));
+        let Value::Compo(list) = &items[1] else {
+            panic!("expected list");
+        };
+        assert_eq!(list.list_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn intent_keys_after_requires_bytes_or_nil_token_and_accepts_uint_family_limit() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 169);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run_ok")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("pg")
+                        intent_use(iid)
+                        intent_put("a", 1)
+                        intent_put("b", 2)
+                        intent_put("c", 3)
+                        return intent_keys_after("a", 2 as u8)
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("run_bad")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("pg")
+                        intent_use(iid)
+                        intent_put("a", 1)
+                        return intent_keys_after(1, 1)
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let ok = run_main_script_raw(
+            base_addr.clone(),
+            vec![contract.clone()],
+            ext_state.clone(),
+            r##"
+                lib C = 0
+                return C.run_ok()
+            "##,
+        )
+        .unwrap();
+        let Value::Tuple(ok_ret) = ok else {
+            panic!("expected tuple");
+        };
+        let ok_items = ok_ret.to_vec();
+        assert_eq!(ok_items.len(), 2);
+        assert_eq!(ok_items[0], Value::Nil);
+
+        let bad = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run_bad()
+            "##,
+        );
+        assert_err_contains(bad, "requires after_key bytes argument");
+    }
+
+    #[test]
+    fn intent_put_flat_kv_list_tuple_form_hits_scalar_boundary_error() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 167);
+        let contract_sto = Contract::new()
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("kv")
+                        intent_use(iid)
+                        intent_put_flat_kv(list { tuple("a", 3) tuple("b", 5) })
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+        let res = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run()
+            "##,
+        );
+        assert_err_contains(res, "CastBeValueFail");
     }
 
     fn run_p2sh_script(
@@ -190,13 +601,15 @@ mod machine_file_test {
         let mut ctx = make_ctx_with_state(env, Box::new(std::mem::take(&mut ext_state)), &tx);
 
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
         let rv = machine.p2sh_call(
+            &mut runtime,
             &mut host,
             CodeType::Bytecode,
             p2sh_addr,
             tx_libs,
             p2sh_codes.into(),
+            None,
             Value::Nil,
         )?;
         Ok(rv)
@@ -367,9 +780,9 @@ mod machine_file_test {
 
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
 
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
         let rv = machine
-            .main_call(&mut host, CodeType::Bytecode, main_codes.into())
+            .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
             .unwrap();
 
         assert!(
@@ -484,8 +897,8 @@ mod machine_file_test {
             let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
 
             let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-            let mut machine = Machine::create(Resoure::create(1));
-            let rv = machine.main_call(&mut host, CodeType::Bytecode, main_codes.into())?;
+            let (mut machine, mut runtime) = new_test_machine();
+            let rv = machine.main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())?;
             Ok(rv)
         };
 
@@ -626,12 +1039,14 @@ mod machine_file_test {
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
 
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
         let rv = machine
             .abst_call(
+                &mut runtime,
                 &mut host,
                 AbstCall::Construct,
                 contract_child,
+                None,
                 Value::Bytes(vec![]),
             )
             .unwrap();
@@ -672,14 +1087,16 @@ mod machine_file_test {
             .fee_purity(1)
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
         let gas_budget = 1_000_000i64;
         let mut host_1 = TestVmHost::new(&mut ctx as &mut dyn Context, gas_budget);
         machine
             .abst_call(
+                &mut runtime,
                 &mut host_1,
                 AbstCall::Construct,
                 contract_child.clone(),
+                None,
                 Value::Bytes(vec![]),
             )
             .unwrap();
@@ -688,9 +1105,11 @@ mod machine_file_test {
         let mut host_2 = TestVmHost::new(&mut ctx as &mut dyn Context, gas_budget);
         machine
             .abst_call(
+                &mut runtime,
                 &mut host_2,
                 AbstCall::Construct,
                 contract_child,
+                None,
                 Value::Bytes(vec![]),
             )
             .unwrap();
@@ -752,19 +1171,21 @@ mod machine_file_test {
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
 
         let err = machine
             .abst_call(
+                &mut runtime,
                 &mut host,
                 AbstCall::Construct,
                 contract_entry.clone(),
+                None,
                 Value::Bytes(vec![]),
             )
             .expect_err("abst external call must be rejected before target load");
         assert!(err.contains("CallInAbst"), "unexpected error: {err}");
-        assert!(machine.r.contracts.contains_key(&contract_entry));
-        assert!(!machine.r.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -944,6 +1365,64 @@ mod machine_file_test {
             res.is_ok(),
             "P2SH codecall should still allow nested view/pure calls: {res:?}"
         );
+    }
+
+    #[test]
+    fn codecall_inherits_current_intent_state() {
+        let base_addr = test_base_addr();
+        let contract_target = test_contract(&base_addr, 168);
+        let target_sto = Contract::new()
+            .lib(contract_target.to_addr())
+            .func(
+                Func::new("read_flag")
+                    .unwrap()
+                    .fitsh(r##"return intent_require("flag")"##)
+                    .unwrap(),
+            )
+            .func(
+                Func::new("jump_read_flag")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib C = 0
+                        codecall C.read_flag
+                        end
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .func(
+                Func::new("seed_and_jump")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("owned")
+                        intent_use(iid)
+                        intent_put("flag", 7)
+                        return this.jump_read_flag()
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_target, &target_sto);
+        }
+        let rv = run_main_script_raw(
+            base_addr,
+            vec![contract_target],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.seed_and_jump()
+            "##,
+        )
+        .unwrap();
+        assert_eq!(rv, Value::U8(7));
     }
 
     #[test]
@@ -1605,15 +2084,15 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
-        machine.r.space_cap.call_depth = 1;
+        let (mut machine, mut runtime) = new_test_machine();
+        runtime.warm.space_cap.call_depth = 1;
 
         let err = machine
-            .main_call(&mut host, CodeType::Bytecode, main_codes.into())
+            .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("nested call must exceed call_depth limit");
         assert!(err.contains("OutOfCallDepth"), "unexpected error: {err}");
-        assert!(machine.r.contracts.contains_key(&contract_entry));
-        assert!(!machine.r.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1676,14 +2155,14 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
 
         let err = machine
-            .main_call(&mut host, CodeType::Bytecode, main_codes.into())
+            .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("nested call without argv must fail locally");
         assert!(err.contains("Read empty stack"), "unexpected error: {err}");
-        assert!(machine.r.contracts.contains_key(&contract_entry));
-        assert!(!machine.r.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1740,14 +2219,14 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
 
         let err = machine
-            .main_call(&mut host, CodeType::Bytecode, main_codes.into())
+            .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())
             .expect_err("codecall without argv must fail locally");
         assert!(err.contains("Read empty stack"), "unexpected error: {err}");
-        assert!(machine.r.contracts.contains_key(&contract_entry));
-        assert!(!machine.r.contracts.contains_key(&contract_target));
+        assert!(runtime.warm.contracts.contains_key(&contract_entry));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1779,18 +2258,20 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
 
         let err = machine
             .abst_call(
+                &mut runtime,
                 &mut host,
                 AbstCall::Construct,
                 contract_target.clone(),
+                None,
                 Value::HeapSlice((0, 1)),
             )
             .expect_err("invalid abst argv must fail locally");
         assert!(err.contains("CastBeFnArgvFail"), "unexpected error: {err}");
-        assert!(!machine.r.contracts.contains_key(&contract_target));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1824,20 +2305,22 @@ end",
             .build();
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
-        let mut machine = Machine::create(Resoure::create(1));
+        let (mut machine, mut runtime) = new_test_machine();
 
-        let over = machine.r.space_cap.compo_length + 1;
+        let over = runtime.warm.space_cap.compo_length + 1;
         let list = CompoItem::list(VecDeque::from(vec![Value::U8(1); over])).unwrap();
         let err = machine
             .abst_call(
+                &mut runtime,
                 &mut host,
                 AbstCall::Construct,
                 contract_target.clone(),
+                None,
                 Value::Compo(list),
             )
             .expect_err("oversize compo argv must fail locally");
         assert!(err.contains("OutOfCompoLen"), "unexpected error: {err}");
-        assert!(!machine.r.contracts.contains_key(&contract_target));
+        assert!(!runtime.warm.contracts.contains_key(&contract_target));
     }
 
     #[test]
@@ -1864,13 +2347,13 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         // END is a minimal "return nil" program; actual instruction gas is tiny.
         let codes = vec![Bytecode::END as u8];
 
         vm.call(
             &mut ctx,
-            Box::new(VmCallReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: codes.clone().into(),
             }),
@@ -1884,6 +2367,122 @@ end",
         assert!(
             Context::gas_remaining(&ctx) <= (budget - min),
             "ctx gas remaining should include min cost deduction"
+        );
+    }
+
+    #[test]
+    fn top_level_calls_keep_tx_cumulative_vm_gas_use() {
+        use crate::rt::Bytecode;
+
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(3200)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
+
+        let mut vm = Executor::from_runtime(Runtime::create(1));
+        let fail_codes = lang_to_bytecode("return 1").unwrap();
+        let ok_codes = vec![Bytecode::END as u8];
+
+        let failed = vm.call(
+            &mut ctx,
+            Box::new(EntryRequest::Main {
+                code_type: CodeType::Bytecode,
+                codes: fail_codes.into(),
+            }),
+        );
+        assert!(failed.is_err(), "first call must fail");
+
+        let gas_after_fail = vm.runtime.gas_use();
+        assert!(
+            gas_after_fail.total() > 0,
+            "failed top-level call must leave cumulative vm gas usage"
+        );
+
+        let (ok_cost, _rv) = vm
+            .call(
+                &mut ctx,
+                Box::new(EntryRequest::Main {
+                    code_type: CodeType::Bytecode,
+                    codes: ok_codes.into(),
+                }),
+            )
+            .unwrap();
+
+        let gas_after_ok = vm.runtime.gas_use();
+        assert!(
+            gas_after_ok.total() > gas_after_fail.total(),
+            "later top-level call must add onto tx cumulative vm gas usage"
+        );
+        assert_eq!(
+            gas_after_ok.checked_sub(gas_after_fail).unwrap(),
+            ok_cost,
+            "returned gas must stay delta-only even when tx cumulative usage already exists"
+        );
+    }
+
+    #[test]
+    fn top_level_calls_share_tx_compute_bucket() {
+        use crate::rt::Bytecode;
+
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(3200)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
+
+        let mut vm = Executor::from_runtime(Runtime::create(1));
+        let limit = GasExtra::new(1).main_call_min * 2 - 1;
+        vm.runtime.warm.gas_extra.compute_limit = limit;
+        let codes = vec![Bytecode::END as u8];
+
+        vm.call(
+            &mut ctx,
+            Box::new(EntryRequest::Main {
+                code_type: CodeType::Bytecode,
+                codes: codes.clone().into(),
+            }),
+        )
+        .unwrap();
+
+        let err = vm
+            .call(
+                &mut ctx,
+                Box::new(EntryRequest::Main {
+                    code_type: CodeType::Bytecode,
+                    codes: codes.into(),
+                }),
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("compute gas limit exceeded"),
+            "second top-level call must observe tx cumulative compute bucket: {err}"
         );
     }
 
@@ -1911,11 +2510,11 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let codes = vec![Bytecode::END as u8];
         vm.call(
             &mut ctx,
-            Box::new(VmCallReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: codes.clone().into(),
             }),
@@ -1924,10 +2523,8 @@ end",
 
         let warm_a = test_contract(&main, 201);
         let warm_b = test_contract(&main, 202);
-        vm.machine
-            .as_mut()
-            .unwrap()
-            .r
+        vm.runtime
+            .warm
             .contracts
             .insert(warm_a.clone(), Arc::new(ContractObj::default()));
         let snap = vm.snapshot_volatile();
@@ -1936,10 +2533,8 @@ end",
         let gas_to_consume = Context::gas_remaining(&ctx) - 1;
         Context::gas_charge(&mut ctx, gas_to_consume).unwrap();
         // Mutate volatile fields (should be restored)
-        vm.machine
-            .as_mut()
-            .unwrap()
-            .r
+        vm.runtime
+            .warm
             .contracts
             .insert(warm_b.clone(), Arc::new(ContractObj::default()));
 
@@ -1948,8 +2543,8 @@ end",
         // Gas remaining is NOT restored: gas usage must stay monotonic in one tx.
         assert_eq!(Context::gas_remaining(&ctx), 1);
         // Warmup accounting is NOT restored: gas-charged preload state must remain monotonic.
-        assert_eq!(vm.machine.as_ref().unwrap().r.contracts.len(), 2);
-        assert!(vm.machine.as_ref().unwrap().r.contracts.contains_key(&warm_b));
+        assert_eq!(vm.runtime.warm.contracts.len(), 2);
+        assert!(vm.runtime.warm.contracts.contains_key(&warm_b));
     }
 
     #[test]
@@ -1975,13 +2570,13 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(1)).unwrap();
 
-        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let codes = vec![Bytecode::END as u8];
 
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             vm.call(
                 &mut ctx,
-                Box::new(VmCallReq::Main {
+                Box::new(EntryRequest::Main {
                     code_type: CodeType::Bytecode,
                     codes: codes.clone().into(),
                 }),
@@ -2015,12 +2610,12 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         // Invalid request type should still unwind the re-entry guard.
         let early = vm.call(&mut ctx, Box::new(()));
         assert!(early.is_err(), "invalid request type must fail");
         assert_eq!(
-            vm.call_state.reentry_level,
+            vm.entries.len(),
             0,
             "re-entry level must be restored after early return"
         );
@@ -2029,7 +2624,7 @@ end",
         let codes = vec![Bytecode::END as u8];
         let ok = vm.call(
             &mut ctx,
-            Box::new(VmCallReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: codes.into(),
             }),
@@ -2039,9 +2634,110 @@ end",
             "subsequent call must not be poisoned by previous early return"
         );
         assert_eq!(
-            vm.call_state.reentry_level,
+            vm.entries.len(),
             0,
             "re-entry level must remain balanced after successful call"
+        );
+    }
+
+    #[test]
+    fn min_call_floor_ignores_rebate_and_uses_runtime_delta() {
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
+
+        let mut vm = Executor::from_runtime(Runtime::create(1));
+        let min_cost = EntryKind::Main.min_call_cost(&vm.runtime.warm.gas_extra);
+        let gas_before = Context::gas_remaining(&ctx);
+
+        let (cost, ()) = vm
+            .run_vm_entry_ret(
+                &mut ctx,
+                EntryKind::Main,
+                min_cost,
+                true,
+                |_machine, runtime, ctx| {
+                    ctx.gas_charge(1)?;
+                    ctx.gas_rebate(1)?;
+                    runtime.warm.gas_use.compute = runtime
+                        .next_compute_used(1)
+                        .map_err(|e| e.to_string())?;
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        assert_eq!(cost.total(), min_cost);
+        assert_eq!(vm.runtime.gas_use().total(), min_cost);
+        assert_eq!(Context::gas_remaining(&ctx), gas_before - min_cost);
+        assert_eq!(ctx.exec_from(), basis::component::ExecFrom::Top);
+        assert!(vm.entries.is_empty(), "vm entry stack must unwind after settle");
+    }
+
+    #[test]
+    fn drain_deferred_is_one_shot_and_restores_exec_from_and_entry_stack_on_error() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 250);
+        let contract_sto = Contract::new()
+            .syst(Abst::new(AbstCall::Deferred).fitsh("return 1").unwrap())
+            .into_sto();
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+        env.tx.addrs = vec![base_addr];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(base_addr)
+            .addrs(vec![base_addr])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        protocol::operate::hac_add(&mut ctx, &base_addr, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
+
+        let mut vm = Executor::from_runtime(Runtime::create(1));
+        vm.runtime
+            .volatile
+            .deferred_registry
+            .register(DeferredEntry {
+                addr: contract.clone(),
+                intent_scope: Some(None),
+            })
+            .unwrap();
+
+        let err = vm.drain_deferred(&mut ctx).unwrap_err();
+        assert!(err.contains("Deferred"), "unexpected error: {err}");
+        assert_eq!(ctx.exec_from(), basis::component::ExecFrom::Top);
+        assert!(vm.entries.is_empty(), "deferred failure must unwind vm entry stack");
+        let rest = vm.runtime.volatile.deferred_registry.drain_lifo();
+        assert!(
+            rest.is_empty(),
+            "deferred phase is strict one-shot: drained callbacks are not restored after failure"
         );
     }
 
@@ -2053,7 +2749,7 @@ end",
     }
 
     #[test]
-    fn outermost_failed_call_consumes_remaining_without_burn() {
+    fn outermost_failed_call_reduces_remaining_before_tx_settlement() {
         let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let mut env = Env::default();
         env.block.height = 1;
@@ -2073,22 +2769,23 @@ end",
         protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-        let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+        let mut vm = Executor::from_runtime(Runtime::create(1));
         let fail_codes = lang_to_bytecode("return 1").unwrap();
 
         let bal_before = read_hac_balance(&mut ctx, &main);
         let call = vm.call(
             &mut ctx,
-            Box::new(VmCallReq::Main {
+            Box::new(EntryRequest::Main {
                 code_type: CodeType::Bytecode,
                 codes: fail_codes.into(),
             }),
         );
         let bal_after = read_hac_balance(&mut ctx, &main);
+        let err = call.expect_err("vm call should fail when script returns non-zero");
 
         assert!(
-            call.is_err(),
-            "vm call should fail when script returns non-zero"
+            err.to_string().contains("main call return error"),
+            "business failure should win over settle failure: {err}"
         );
         assert!(
             Context::gas_remaining(&ctx) < decode_gas_budget(17),
@@ -2096,12 +2793,51 @@ end",
         );
         assert_eq!(
             bal_before, bal_after,
-            "outermost failed call currently skips settle burn"
+            "direct vm.call failure does not settle protocol billing inside this helper path"
         );
     }
 
     #[test]
-    fn fail_then_success_charges_same_as_success_only() {
+    fn business_failure_wins_over_settle_failure() {
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(1))
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(1)).unwrap();
+
+        let mut vm = Executor::from_runtime(Runtime::create(1));
+        let fail_codes = lang_to_bytecode("return 1").unwrap();
+
+        let err = vm
+            .call(
+                &mut ctx,
+                Box::new(EntryRequest::Main {
+                    code_type: CodeType::Bytecode,
+                    codes: fail_codes.into(),
+                }),
+            )
+            .expect_err("vm call should fail");
+        assert!(
+            err.to_string().contains("main call return error"),
+            "execute error should take precedence over settle error: {err}"
+        );
+    }
+
+    #[test]
+    fn fail_then_success_keeps_same_balance_until_tx_level_settlement() {
         let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let fail_codes = lang_to_bytecode("return 1").unwrap();
         let ok_codes = vec![crate::rt::Bytecode::END as u8];
@@ -2125,11 +2861,11 @@ end",
             protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
             ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
-            let mut vm = MachineBox::new(Machine::create(Resoure::create(1)));
+            let mut vm = Executor::from_runtime(Runtime::create(1));
             if run_failed_first {
                 let failed = vm.call(
                     &mut ctx,
-                    Box::new(VmCallReq::Main {
+                    Box::new(EntryRequest::Main {
                         code_type: CodeType::Bytecode,
                         codes: fail_codes.clone().into(),
                     }),
@@ -2139,7 +2875,7 @@ end",
 
             let ok = vm.call(
                 &mut ctx,
-                Box::new(VmCallReq::Main {
+                Box::new(EntryRequest::Main {
                     code_type: CodeType::Bytecode,
                     codes: ok_codes.clone().into(),
                 }),
@@ -2154,7 +2890,7 @@ end",
 
         assert_eq!(
             bal_fail_then_success, bal_success_only,
-            "failed outermost call before a successful one is currently not additionally charged"
+            "direct vm.call failure alone does not settle protocol billing before tx-level settlement"
         );
         assert!(
             rem_fail_then_success < rem_success_only,

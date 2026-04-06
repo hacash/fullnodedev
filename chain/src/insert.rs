@@ -56,7 +56,9 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();
+        // Stage 4: minter pre-exec block gate.
         eng.minter.blk_verify(blk.block_read(), parent_blk, eng.store.as_ref())?;
+        // Stage 5: generic structural block gate.
         block_verify(&eng.cnf, blk.block_read(), blk.data().len(), parent_blk)?;
     }
 
@@ -76,6 +78,7 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         blk.set_origin(orgi);
         let new_state_ref: &dyn State = new_state.as_ref();
         let prev_state_ref: &dyn State = prev_state.as_ref().as_ref();
+        // Stage 8: final gate after execution and before forktree insertion.
         eng.minter.blk_insert(&blk, new_state_ref, prev_state_ref)?;
     }
 
@@ -155,12 +158,10 @@ fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
     Ok(())
 }
 
-fn record_recent(eng: &ChainEngine, block: &dyn BlockRead) {
-    let chei = block.height().uint() as i128;
-    let deln = (eng.cnf.unstable_block * 2) as i128; // retain unstable * 2
-    let deln = chei - deln;
+fn record_recent(eng: &ChainEngine, block: &dyn BlockRead, root_height: u64) {
+    let deln = root_height.saturating_sub(eng.cnf.unstable_block);
     let mut rcts = eng.recent_blocks.lock().unwrap();
-    rcts.retain(|x| x.height as i128 > deln);
+    rcts.retain(|x| x.height > deln);
     rcts.push_front(Arc::new(create_recent_block_info(block)));
 }
 
@@ -185,5 +186,5 @@ fn record_avgfee(eng: &ChainEngine, block: &dyn BlockRead) {
 
 
 fn is_open_vmlog(eng: &ChainEngine, ck_hei: u64) -> bool {
-    eng.cnf.vmlogs_enable && ck_hei >= eng.cnf.vmlogs_open_height
+    eng.cnf.vm_log_enable && ck_hei >= eng.cnf.vm_log_open_height
 }

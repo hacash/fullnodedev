@@ -38,7 +38,10 @@ fn diamond_views(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         }
     } else {
         for id in get_id_range(lastdianum, page, limit, start, desc) {
-            let Some(dian) = state.diamond_name(&DiamondNumber::from(id as u32)) else {
+            let Ok(dian) = DiamondNumber::from_usize(id as usize) else {
+                return api_error("diamond number error");
+            };
+            let Some(dian) = state.diamond_name(&dian) else {
                 continue;
             };
             query_item(&dian);

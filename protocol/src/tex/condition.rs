@@ -22,6 +22,8 @@ macro_rules! define_cell_cond_zhu {
                     .balance(taradr)
                     .unwrap_or_default();
                 let zhu = Amount::zhu(self.haczhu.uint());
+                // TEX conditions are pre-settlement conditions.
+                // They check the current in-tx state at this execution point.
                 let err = || errf!("cell condition zhu check failed");
                 let cnd = zhu.$check_op(&bls.hacash);
                 maybe!(cnd, Ok(()), err())

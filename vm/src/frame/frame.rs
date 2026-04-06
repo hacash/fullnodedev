@@ -20,26 +20,74 @@ impl CallFrame {
         self.frames.push(frame);
     }
 
-    pub fn increase(&mut self, r: &mut Resoure) -> VmrtRes<Frame> {
+    pub fn increase(&mut self, r: &mut Runtime) -> VmrtRes<Frame> {
         Ok(match self.frames.last() {
             Some(f) => f.next(r),
             None => Frame::new(r),
         })
     }
 
-    pub fn reclaim(mut self, r: &mut Resoure) {
+    pub fn reclaim(mut self, r: &mut Runtime) {
         while let Some(frame) = self.pop() {
             frame.reclaim(r)
         }
     }
+
+    pub fn current_intent_scope(&self) -> IntentScope {
+        self.frames
+            .last()
+            .and_then(|frame| frame.intent_state.current_scope())
+    }
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+pub struct IntentScopeState {
+    base: IntentScope,
+    stack: Vec<BoundIntentId>,
+}
+
+impl IntentScopeState {
+    pub fn current_scope(&self) -> IntentScope {
+        if self.stack.is_empty() {
+            self.base
+        } else {
+            self.stack.last().cloned()
+        }
+    }
+
+    pub fn current_bound_intent_id(&self) -> BoundIntentId {
+        self.current_scope().flatten()
+    }
+
+    pub fn base_scope(&self) -> IntentScope {
+        self.base
+    }
+
+    pub fn len(&self) -> usize {
+        self.stack.len()
+    }
+
+    pub fn reset(&mut self, base: IntentScope) {
+        self.base = base;
+        self.stack.clear();
+    }
+
+    pub fn push(&mut self, binding: BoundIntentId) {
+        self.stack.push(binding);
+    }
+
+    pub fn pop(&mut self) -> Option<BoundIntentId> {
+        self.stack.pop()
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Frame {
     pub pc: usize,
     pub exec: ExecCtx,
     pub bindings: FrameBindings,
+    pub intent_state: IntentScopeState,
     pub call_argv: Value,
     pub types: Option<FuncArgvTypes>,
     pub codes: ByteView,
@@ -49,27 +97,27 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn reclaim(self, r: &mut Resoure) {
+    pub fn reclaim(self, r: &mut Runtime) {
         r.stack_reclaim(self.oprnds);
         r.stack_reclaim(self.locals);
         r.heap_reclaim(self.heap);
     }
 
-    pub fn new(r: &mut Resoure) -> Self {
+    pub fn new(r: &mut Runtime) -> Self {
         let mut f = Self {
             oprnds: r.stack_allocat(),
             locals: r.stack_allocat(),
             heap: r.heap_allocat(),
             ..Default::default()
         };
-        let cap = &r.space_cap;
+        let cap = &r.warm.space_cap;
         f.oprnds.reset(cap.stack_slot);
         f.locals.reset(cap.local_slot);
         f.heap.reset(cap.heap_segment);
         f
     }
 
-    pub fn next(&self, r: &mut Resoure) -> Self {
+    pub fn next(&self, r: &mut Runtime) -> Self {
         let mut f = Self::new(r);
         let stks = self.oprnds.limit() - self.oprnds.len();
         let locs = self.locals.limit() - self.locals.len();
@@ -108,6 +156,7 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         mut argv: Value,
         have_param: bool,
         cap: &SpaceCap,
@@ -125,7 +174,7 @@ impl Frame {
         self.types = fnobj.agvty.clone();
         self.pc = 0;
         self.exec = exec;
-        self.codes = fnobj.exec_bytecodes(height)?;
+        self.codes = fnobj.exec_bytecodes(height, gas_extra)?;
         Ok(())
     }
 
@@ -135,11 +184,13 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         param: Value,
         cap: &SpaceCap,
     ) -> VmrtErr {
         // Caller must validate argv shape before any contract planning/warmup.
-        self.prepare_common(exec, bindings, fnobj, height, param, true, cap)
+        self.intent_state.reset(bindings.intent_scope);
+        self.prepare_common(exec, bindings, fnobj, height, gas_extra, param, true, cap)
     }
 
     pub fn prepare(
@@ -148,6 +199,7 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         param: Option<Value>,
         cap: &SpaceCap,
     ) -> VmrtErr {
@@ -156,7 +208,8 @@ impl Frame {
         if have_param {
             argv.check_func_argv()?;
         }
-        self.prepare_common(exec, bindings, fnobj, height, argv, have_param, cap)
+        self.intent_state.reset(bindings.intent_scope);
+        self.prepare_common(exec, bindings, fnobj, height, gas_extra, argv, have_param, cap)
     }
 
     pub fn prepare_splice(
@@ -165,6 +218,7 @@ impl Frame {
         bindings: FrameBindings,
         fnobj: &FnObj,
         height: u64,
+        gas_extra: &GasExtra,
         param: Value,
         cap: &SpaceCap,
     ) -> VmrtErr {
@@ -194,31 +248,41 @@ impl Frame {
         self.pc = 0;
         self.exec = exec;
         self.call_argv = param;
-        self.codes = fnobj.exec_bytecodes(height)?;
+        self.codes = fnobj.exec_bytecodes(height, gas_extra)?;
         Ok(())
     }
 
-    pub fn execute<H: VmHost + ?Sized>(&mut self, r: &mut Resoure, host: &mut H) -> VmrtRes<CallExit> {
-        execute_code(
+    pub fn execute<H: VmHost + ?Sized>(
+        &mut self,
+        r: &mut Runtime,
+        host: &mut H,
+    ) -> VmrtRes<CallExit> {
+        let context_addr = self.bindings.context_addr;
+        let current_addr = self
+            .bindings
+            .code_owner
+            .as_ref()
+            .map(ContractAddress::to_addr)
+            .unwrap_or(context_addr);
+        execute_code_in_frame(
             &mut self.pc,
             self.codes.as_slice(),
             self.exec,
             &mut self.oprnds,
             &mut self.locals,
             &mut self.heap,
-            &self.bindings.context_addr,
-            self.bindings
-                .code_owner
-                .as_ref()
-                .map(ContractAddress::to_addr)
-                .as_ref()
-                .unwrap_or(&self.bindings.context_addr),
-            &r.gas_table,
-            &r.gas_extra,
-            &r.space_cap,
-            &mut r.gas_use,
-            &mut r.global_map,
-            &mut r.memory_map,
+            &mut self.bindings,
+            &mut self.intent_state,
+            &context_addr,
+            &current_addr,
+            &r.warm.gas_table,
+            &r.warm.gas_extra,
+            &r.warm.space_cap,
+            &mut r.warm.gas_use,
+            &mut r.volatile.global_map,
+            &mut r.volatile.memory_map,
+            &mut r.volatile.intents,
+            &mut r.volatile.deferred_registry,
             host,
         )
     }
@@ -232,7 +296,9 @@ mod frame_boundary_tests {
     fn check_output_type_rejects_heapslice_without_declared_output_type() {
         let frame = Frame::default();
         let mut retv = Value::HeapSlice((0, 1));
-        let err = frame.check_output_type(&mut retv, &SpaceCap::new(1)).unwrap_err();
+        let err = frame
+            .check_output_type(&mut retv, &SpaceCap::new(1))
+            .unwrap_err();
         assert!(matches!(err, ItrErr(CastBeFnRetvFail, _)));
     }
 
@@ -240,13 +306,45 @@ mod frame_boundary_tests {
     fn check_output_type_rejects_oversize_compo() {
         let frame = Frame::default();
         let mut retv = Value::Compo(
-            CompoItem::list(std::collections::VecDeque::from([Value::U8(1), Value::U8(2)]))
-                .unwrap(),
+            CompoItem::list(std::collections::VecDeque::from([
+                Value::U8(1),
+                Value::U8(2),
+            ]))
+            .unwrap(),
         );
         let mut cap = SpaceCap::new(1);
         cap.compo_length = 1;
         let err = frame.check_output_type(&mut retv, &cap).unwrap_err();
         assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
+    }
+
+    #[test]
+    fn check_output_type_allows_handle_for_internal_flow() {
+        let frame = Frame::default();
+        let mut retv = Value::handle(7u32);
+        frame
+            .check_output_type(&mut retv, &SpaceCap::new(1))
+            .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod intent_scope_state_tests {
+    use super::*;
+
+    #[test]
+    fn intent_scope_state_preserves_tri_state_semantics() {
+        let mut state = IntentScopeState::default();
+        assert_eq!(state.current_scope(), None);
+        assert_eq!(state.current_bound_intent_id(), None);
+
+        state.reset(Some(None));
+        assert_eq!(state.current_scope(), Some(None));
+        assert_eq!(state.current_bound_intent_id(), None);
+
+        state.push(Some(7));
+        assert_eq!(state.current_scope(), Some(Some(7)));
+        assert_eq!(state.current_bound_intent_id(), Some(7));
     }
 }
 
@@ -266,7 +364,7 @@ mod splice_prepare_tests {
 
     #[test]
     fn prepare_splice_preserves_runtime_state_and_signature() {
-        let mut res = Resoure::create(1);
+        let mut res = Runtime::create(1);
         let mut frame = Frame::new(&mut res);
         frame.call_argv = Value::U8(1);
         frame.types =
@@ -282,8 +380,9 @@ mod splice_prepare_tests {
                 bindings.clone(),
                 &fnobj,
                 1,
+                &res.warm.gas_extra,
                 Value::U8(2),
-                &res.space_cap,
+                &res.warm.space_cap,
             )
             .unwrap();
         assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);

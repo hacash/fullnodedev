@@ -68,10 +68,16 @@ impl GasPrice {
 }
 
 #[derive(Clone)]
+/// Source of truth for protocol-side gas billing.
+///
+/// This ledger tracks the tx-scoped gas budget, cumulative charges, and rebates
+/// that determine the final HAC burn/refund in `gas_refund()`.
+/// VM runtime bucket reporting (`VmGasBuckets`) is not used as the billing source of truth.
 struct GasCounter {
     running: bool,
     remaining: i64,
     used: i64,
+    rebated: i64,
     max_charge: Amount,
 }
 
@@ -87,6 +93,7 @@ impl GasCounter {
             running: false,
             remaining: 0,
             used: 0,
+            rebated: 0,
             max_charge: Amount::zero(),
         }
     }
@@ -120,6 +127,14 @@ impl GasCounter {
         self.remaining
     }
 
+    fn rebated_checkpoint(&self) -> i64 {
+        self.rebated
+    }
+
+    fn restore_rebated(&mut self, rebated: i64) {
+        self.rebated = rebated;
+    }
+
     fn max_charge(&self) -> Ret<Amount> {
         if !self.max_charge.is_positive() {
             return errf!("gas not initialized");
@@ -127,14 +142,21 @@ impl GasCounter {
         Ok(self.max_charge.clone())
     }
 
+    #[inline(always)]
+    fn used_net(&self) -> i64 {
+        let cut = self.rebated.min(self.used);
+        self.used - cut
+    }
+
     fn used_charge(&self, price: &GasPrice) -> Ret<Amount> {
         if !self.max_charge.is_positive() {
             return errf!("gas not initialized");
         }
-        if self.used <= 0 {
+        let used = self.used_net();
+        if used <= 0 {
             return Ok(Amount::zero());
         }
-        Self::calc_burn_amount(self.used, price)
+        Self::calc_burn_amount(used, price)
     }
 
     fn begin(&mut self, budget: i64, max_charge: Amount) -> Rerr {
@@ -150,6 +172,7 @@ impl GasCounter {
         self.running = true;
         self.remaining = budget;
         self.used = 0;
+        self.rebated = 0;
         self.max_charge = max_charge;
         Ok(())
     }
@@ -193,6 +216,26 @@ impl GasCounter {
             .ok_or_else(|| "gas has run out".to_owned())?;
         Ok(())
     }
+
+    fn rebate(&mut self, gas: i64) -> Rerr {
+        if gas < 0 {
+            return errf!("gas refund invalid");
+        }
+        if !self.running {
+            return maybe!(self.max_charge.is_positive(),
+                errf!("gas already settled"),
+                errf!("gas not initialized")
+            );
+        }
+        if gas == 0 {
+            return Ok(());
+        }
+        self.rebated = self
+            .rebated
+            .checked_add(gas)
+            .ok_or_else(|| "gas refund overflow".to_owned())?;
+        Ok(())
+    }
 }
 
 impl ContextInst<'_> {
@@ -215,6 +258,16 @@ impl ContextInst<'_> {
         self.gas.begin(budget, max_burn_amt)
     }
 
+    /// Finalize protocol-side gas settlement for a successfully committing transaction.
+    ///
+    /// Source of truth:
+    /// - final HAC burn/refund is derived from `self.gas.used_net()` in `GasCounter`
+    /// - not from VM runtime bucket reporting (`VmGasBuckets`) returned by VM entry calls
+    /// - `total_count.ast_vm_gas_burn_238` below is committed statistics only
+    ///
+    /// Commit semantics:
+    /// - this runs only on the tx success path
+    /// - if upper layers roll back the transaction, neither the refund nor the statistics update commit
     pub fn gas_refund(&mut self) -> Rerr {
         let price = GasPrice::from_tx(self.tx())?;
         let (refund, used_charge) = self.gas.finalize(&price)?;
@@ -233,11 +286,10 @@ impl ContextInst<'_> {
         // add count
         let mut state = crate::state::CoreState::wrap(self.state());
         let mut ttcount = state.get_total_count();
-        // u64 cap in unit238 is about 1,844,674,407 HAC, so this overflow is practically unreachable.
         let next_burn = (*ttcount.ast_vm_gas_burn_238)
-            .checked_add(used_238)
+            .checked_add(used_238 as u128)
             .ok_or_else(|| "ast_vm_gas_burn_238 overflow".to_string())?;
-        ttcount.ast_vm_gas_burn_238 = Uint8::from(next_burn);
+        ttcount.ast_vm_gas_burn_238 = Uint12::from(next_burn);
         state.set_total_count(&ttcount);
         Ok(())
     }

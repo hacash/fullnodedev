@@ -237,10 +237,9 @@ fn prepare_tx_execute(tx: &dyn Transaction, ctx: &mut dyn Context) -> Ret<TxExec
         .actions()
         .iter()
         .any(|a| crate::action::is_ast_container_action(a.as_ref()));
-    check_tx_action_ast_tree_depth(tx.actions())?;
+    precheck_tx_actions(tx.ty(), tx.actions())?;
     let state = CoreState::wrap(ctx.state());
     if not_fast_sync {
-        analyze_tx_action_set_for_tx(tx.ty(), tx.actions())?;
         if !main.is_privakey() {
             return errf!("tx fee address version must be PRIVAKEY type.");
         }
@@ -293,9 +292,9 @@ fn record_legacy_extra9_burn_fee(
             let mut state = CoreState::wrap(ctx.state());
             let mut ttcount = state.get_total_count();
             let next_burn = (*ttcount.tx_fee_burn90_238)
-                .checked_add(burn_238)
+                .checked_add(burn_238 as u128)
                 .ok_or_else(|| "legacy_tx_extra9_burn_238 overflow".to_string())?;
-            ttcount.tx_fee_burn90_238 = Uint8::from(next_burn);
+            ttcount.tx_fee_burn90_238 = Uint12::from(next_burn);
             state.set_total_count(&ttcount);
         }
     }

@@ -32,28 +32,36 @@ impl HacashMinter {
 
 impl Minter for HacashMinter {
 
-    fn start(&self, worker: Worker) {
-        let start_loop = {
-            let mut biddings = self.bidding_prove.lock().unwrap();
-            biddings.start_loop()
-        };
-        if !start_loop {
-            return;
-        }
-        let prove = self.bidding_prove.clone();
-        low_bid_replay_loop(prove, worker);
+    fn genesis_block(&self) -> Arc<dyn Block> {
+        self.genesis_block.clone()
     }
 
     fn config(&self) -> Box<dyn Any> {
         Box::new(self.cnf.clone())
     }
 
+    fn initialize(&self, sta: &mut dyn State) -> Rerr {
+        do_initialize(self, sta)
+    }
+
     fn tx_submit(&self, eng: &dyn EngineRead, tx: &TxPkg) -> Rerr {
         impl_tx_submit(self, eng, tx)
     }
 
-    fn blk_found(&self, curblk: &dyn BlockRead, body: &Vec<u8>, sto: &dyn Store ) -> RetBlkFound {
+    fn tx_pool_group(&self, tx: &TxPkg) -> usize {
+        impl_tx_pool_group(tx)
+    }
+
+    fn tx_pool_refresh(&self, eng: &dyn EngineRead, txp: &dyn TxPool, txs: Vec<Hash>, blkhei: u64) {
+        impl_tx_pool_refresh(self, eng, txp, txs, blkhei)
+    }
+
+    fn blk_found(&self, curblk: &dyn BlockRead, body: &Vec<u8>, sto: &dyn Store) -> Option<RetBlkFound> {
         impl_blk_found(self, curblk, body, sto)
+    }
+
+    fn blk_arrive(&self, curblk: &dyn BlockRead, body: &Vec<u8>, sto: &dyn Store ) -> Rerr {
+        impl_blk_arrive(self, curblk, body, sto)
     }
 
     fn blk_verify(&self, curblk: &dyn BlockRead, prevblk: &dyn BlockRead, sto: &dyn Store) -> Rerr {
@@ -64,17 +72,25 @@ impl Minter for HacashMinter {
         impl_blk_insert(self, curblk, sta, prev)
     }
 
-    fn genesis_block(&self) -> Arc<dyn Block> {
-        self.genesis_block.clone()
-    }
-
-    fn initialize(&self, sta: &mut dyn State) -> Rerr {
-        do_initialize(self, sta)
+    fn blk_root_roll(&self, rootblk: &dyn BlockRead, _: &dyn Store) {
+        self.difficulty.cache_root_block_intro(rootblk)
     }
 
     // <dyn Block> == BlockV1
     fn packing_next_block(&self, eng: &dyn EngineRead, tp: &dyn TxPool) -> Box<dyn Any> {
         impl_packing_next_block(self, eng, tp)
+    }
+
+    fn start(&self, worker: Worker) {
+        let start_loop = {
+            let mut biddings = self.bidding_prove.lock().unwrap();
+            biddings.start_loop()
+        };
+        if !start_loop {
+            return;
+        }
+        let prove = self.bidding_prove.clone();
+        low_bid_replay_loop(prove, worker);
     }
 
     fn bind_engine(&self, eng: Arc<dyn Engine>) {
@@ -91,26 +107,6 @@ impl Minter for HacashMinter {
             }
         });
         Ok(())
-    }
-
-
-    /*
-    fn coinbase(&self, hei: u64, tx: &dyn TransactionRead) -> Rerr {
-        verify_coinbase(hei, tx)
-    }
-    */
-
-    fn tx_pool_group(&self, tx: &TxPkg) -> usize {
-        let mut group_id =  TXGID_NORMAL;
-        if let Some(..) = action::pickout_diamond_mint_action(tx.tx_read()) {
-            group_id = TXGID_DIAMINT;
-        }
-        group_id
-    }
-
-
-    fn tx_pool_refresh(&self, eng: &dyn EngineRead, txp: &dyn TxPool, txs: Vec<Hash>, blkhei: u64) {
-        impl_tx_pool_refresh(self, eng, txp, txs, blkhei)
     }
 
     fn exit(&self) {

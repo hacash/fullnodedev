@@ -143,9 +143,9 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
         let burn = tx_bid_fee.clone().sub_mode_u64(&keep_ten_percent)?;
         let burn_238 = burn.to_238_u64()?;
         let total_burn = (*ttcount.hacd_bid_burn_238)
-            .checked_add(burn_238)
+            .checked_add(burn_238 as u128)
             .ok_or_else(|| "hacd_bid_burn_238 overflow".to_string())?;
-        ttcount.hacd_bid_burn_238 = Uint8::from(total_burn);
+        ttcount.hacd_bid_burn_238 = Uint12::from(total_burn);
     }
     // gene
     let (life_gene, _visual_gene) =

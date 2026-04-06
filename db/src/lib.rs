@@ -1,45 +1,46 @@
+#[cfg(any(
+    feature = "db-sled",
+    feature = "db-rusty-leveldb",
+    feature = "db-leveldb-sys",
+    feature = "db-rocksdb"
+))]
 use std::path::*;
-use std::sync::OnceLock;
 
+#[cfg(any(
+    feature = "db-sled",
+    feature = "db-rusty-leveldb",
+    feature = "db-leveldb-sys",
+    feature = "db-rocksdb"
+))]
 use basis::interface::*;
+
+#[cfg(any(
+    feature = "db-sled",
+    feature = "db-rusty-leveldb",
+    feature = "db-leveldb-sys",
+    feature = "db-rocksdb"
+))]
 use sys::Rerr;
 
 /*****************************/
 
-#[cfg(all(feature = "db-sled", feature = "db-rusty-leveldb"))]
-compile_error!("db cannot be enabled at the same time");
-
-#[cfg(all(feature = "db-sled", feature = "db-leveldb-sys"))]
-compile_error!("db cannot be enabled at the same time");
-
-#[cfg(all(feature = "db-sled", feature = "db-rocksdb"))]
-compile_error!("db cannot be enabled at the same time");
-
-#[cfg(all(feature = "db-leveldb-sys", feature = "db-rusty-leveldb"))]
-compile_error!("db cannot be enabled at the same time");
-
-#[cfg(all(feature = "db-leveldb-sys", feature = "db-rocksdb"))]
-compile_error!("db cannot be enabled at the same time");
-
-#[cfg(all(feature = "db-rusty-leveldb", feature = "db-rocksdb"))]
-compile_error!("db cannot be enabled at the same time");
+#[cfg(not(any(
+    feature = "db-sled",
+    feature = "db-rusty-leveldb",
+    feature = "db-leveldb-sys",
+    feature = "db-rocksdb"
+)))]
+compile_error!("at least one db backend feature must be enabled");
 
 /*****************************/
 
-fn db_sync_enabled() -> bool {
-    static DB_SYNC: OnceLock<bool> = OnceLock::new();
-    *DB_SYNC.get_or_init(|| {
-        std::env::var("HACASH_DB_SYNC")
-            .ok()
-            .map(|v| {
-                matches!(
-                    v.trim().to_ascii_lowercase().as_str(),
-                    "1" | "true" | "yes" | "on"
-                )
-            })
-            .unwrap_or(false)
-    })
-}
+#[cfg(any(
+    feature = "db-sled",
+    feature = "db-rusty-leveldb",
+    feature = "db-leveldb-sys",
+    feature = "db-rocksdb"
+))]
+include! {"config.rs"}
 
 #[cfg(feature = "db-sled")]
 include! {"disk_sled.rs"}
@@ -55,4 +56,10 @@ include! {"disk_rocksdb.rs"}
 
 /*****************************/
 
+#[cfg(any(
+    feature = "db-sled",
+    feature = "db-rusty-leveldb",
+    feature = "db-leveldb-sys",
+    feature = "db-rocksdb"
+))]
 include! {"batch.rs"}

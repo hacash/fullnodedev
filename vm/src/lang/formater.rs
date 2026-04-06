@@ -461,6 +461,9 @@ impl<'a> Formater<'a> {
         use Bytecode::*;
         if system_call {
             if let Some(expect) = expected_system_args {
+                if expect == 0 {
+                    return vec![];
+                }
                 if expect == 1 {
                     return vec![self.print_inline(node)];
                 }
@@ -917,11 +920,10 @@ impl<'a> Formater<'a> {
         }
         if let Some(t) = node.as_any().downcast_ref::<IRNodeTriple>() {
             if t.inst == Bytecode::CHOOSE {
-                // IR stores CHOOSE as (yes, no, cond) for codegen/runtime semantics.
-                // Source syntax is choose(cond, yes, no); invert when decompiling.
-                let cond = self.print_inline(&*t.subz);
-                let yes = self.print_inline(&*t.subx);
-                let no = self.print_inline(&*t.suby);
+                // CHOOSE keeps source/runtime order as (cond, yes, no).
+                let cond = self.print_inline(&*t.subx);
+                let yes = self.print_inline(&*t.suby);
+                let no = self.print_inline(&*t.subz);
                 return Some(format!(
                     "{}choose({}, {}, {})",
                     self.line_prefix(),
@@ -1243,6 +1245,14 @@ impl<'a> Formater<'a> {
             ACTENV => self.format_action_call(node, &ACTION_ENV_DEFS),
             ACTVIEW => self.format_action_call(node, &ACTION_VIEW_DEFS),
             ACTION => self.format_action_call(node, &ACTION_DEFS),
+            NTCTL => {
+                let expect = NativeCtl::argv_len(node.para).map(|n| n as usize);
+                let argv = self.build_call_args(&*node.subx, true, expect);
+                let Ok(ntfn) = NativeCtl::try_from_u8(node.para) else {
+                    return format!("__unknown_native_ctl_{}({})", node.para, argv);
+                };
+                format!("{}({})", ntfn.name(), argv)
+            }
             NTFUNC => {
                 let expect = NativeFunc::argv_len(node.para).map(|n| n as usize);
                 let argv = self.build_call_args(&*node.subx, true, expect);
@@ -1342,6 +1352,16 @@ impl<'a> Formater<'a> {
                 let ary = ACTION_ENV_DEFS;
                 let f = search_act_name_by_id(node.para, &ary);
                 buf.push_str(&format!("{}()", f));
+            }
+            NTCTL => {
+                let Ok(ntfn) = NativeCtl::try_from_u8(node.para) else {
+                    return format!(
+                        "{}__unknown_native_ctl_{}()",
+                        self.opt.indent.repeat(self.opt.tab),
+                        node.para
+                    );
+                };
+                buf.push_str(&format!("{}()", ntfn.name()));
             }
             NTENV => {
                 let Ok(ntfn) = NativeEnv::try_from_u8(node.para) else {

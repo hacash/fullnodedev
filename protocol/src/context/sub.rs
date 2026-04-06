@@ -47,7 +47,7 @@ impl CtxSnapshot {
         match (self.vm_snap, cur_snap) {
             (None, None) => {}
             (None, Some(_)) => {
-                ctx.vm_restore_but_keep_warmup();
+                ctx.vm_rollback_volatile_preserve_warm_and_gas();
             }
             (Some(snap), Some(_)) => {
                 ctx.vm_restore_volatile(snap);

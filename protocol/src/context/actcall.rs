@@ -11,10 +11,7 @@ fn ctx_action_call(this: &mut dyn Context, k: u16, b: Vec<u8>) -> XRet<(u32, Vec
             body.len()
         );
     }
-    if this.env().chain.fast_sync {
-        action::check_action_scope(ExecFrom::Call, action.as_ref())?;
-    }
-    action::check_action_ast_tree_depth(action.as_ref())?;
+    action::precheck_runtime_action(this.env().tx.ty, action.as_ref(), ExecFrom::Call)?;
     // ACTION payload actions are runtime-created and not part of tx.actions.
     // Keep runtime req_sign checks here; tx.main signature is already verified in tx.execute().
     let mut seen = HashSet::new();

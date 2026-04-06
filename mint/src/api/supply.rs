@@ -2,9 +2,9 @@ fn supply(ctx: &ApiExecCtx, _req: ApiRequest) -> ApiResponse {
     let staptr = read_mint_state(ctx);
     let state = CoreStateRead::wrap(staptr.as_ref().as_ref());
     let lasthei = ctx.engine.latest_block().height().uint();
-    const UNIT_238: u64 = 100_0000_0000;
+    const UNIT_238: u128 = 100_0000_0000;
     let supply = state.get_total_count();
-    let blk_rwd = match cumulative_block_reward(lasthei).checked_mul(UNIT_238) {
+    let blk_rwd = match (cumulative_block_reward(lasthei) as u128).checked_mul(UNIT_238) {
         Some(v) => v,
         None => return api_error("block_reward overflow"),
     };
@@ -23,13 +23,13 @@ fn supply(ctx: &ApiExecCtx, _req: ApiRequest) -> ApiResponse {
         None => return api_error("burned_fee overflow"),
     };
     let curr_ccl = match blk_rwd
-        .checked_add(*supply.channel_interest_238)
+        .checked_add(*supply.channel_interest_238 as u128)
         .and_then(|v| v.checked_sub(burn_fee))
     {
         Some(v) => v,
         None => return api_error("current_circulation overflow"),
     };
-    let z2m = |v238| v238 as f64 / UNIT_238 as f64;
+    let z2m = |v238: u128| v238 as f64 / UNIT_238 as f64;
     api_ok(vec![
         ("latest_height", json!(lasthei)),
         ("current_circulation", json!(z2m(curr_ccl))),
@@ -40,7 +40,7 @@ fn supply(ctx: &ApiExecCtx, _req: ApiRequest) -> ApiResponse {
         ("burned_ast_vm_gas", json!(z2m(burned_vm_ast_gas))),
         ("burned_asset_issue", json!(z2m(burned_asset_issue))),
         ("channel_deposit", json!(z2m(*supply.channel_deposit_238))),
-        ("channel_interest", json!(z2m(*supply.channel_interest_238))),
+        ("channel_interest", json!(z2m(*supply.channel_interest_238 as u128))),
         ("channel_opening", json!(*supply.opening_channel)),
         ("diamond_engraved", json!(*supply.diamond_engraved)),
         ("transferred_bitcoin", json!(0)),

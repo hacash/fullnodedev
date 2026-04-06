@@ -421,6 +421,7 @@ mod fitsh_compile_tests {
             func_sha2: "return sha2(\"hello\")",
             func_sha3: "return sha3(\"hello\")",
             func_ripemd160: "return ripemd160(\"hello\")",
+            func_verify_signature: "return verify_signature(sha2(\"hello\"), emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS, 0x1234)",
             func_hac_to_mei: "return hac_to_mei(100)",
             func_hac_to_zhu: "return hac_to_zhu(100)",
             func_mei_to_hac: "return mei_to_hac(100)",
@@ -429,13 +430,16 @@ mod fitsh_compile_tests {
             func_fold64_to_u64: "return fold64_to_u64(0xABCD)",
             func_pack_asset: "return pack_asset(1, 100)",
             func_address_ptr: "return address_ptr(emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS)",
+            func_defer: "defer(nil)\nreturn 0",
             func_context_address: "return context_address()",
             func_block_height: "return block_height()",
             func_storage_load: "return storage_load(\"key\")",
-            func_storage_save: "storage_save(\"key\", \"value\")\nreturn 1",
+            func_storage_new: "storage_new(\"key\", \"value\", 100)\nreturn 1",
+            func_storage_edit: "storage_edit(\"key\", \"value\")\nreturn 1",
             func_storage_del: "storage_del(\"key\")\nreturn 1",
-            func_storage_rest: "return storage_rest(\"key\")",
+            func_storage_stat: "return storage_stat(\"key\")",
             func_storage_rent: "storage_rent(\"key\", 100)\nreturn 1",
+            func_storage_recv: "storage_recv(\"key\", 100)\nreturn 1",
             func_memory_put: "memory_put(\"key\", \"value\")\nreturn 1",
             func_memory_get: "return memory_get(\"key\")",
             func_global_put: "global_put(\"key\", \"value\")\nreturn 1",
@@ -505,9 +509,6 @@ mod fitsh_compile_tests {
               codecall_keyword: "codecall 0.0xabcdef01",
         );
 
-        assert_compile_err!(
-            removed_tailcall_keyword: "tailcall code.0xabcdef01",
-        );
 
         assert_compile_err_contains!(
             dead_code_after_return: "return 1
@@ -539,9 +540,10 @@ return x"
                 bind bk = "b_" ++ to
                 var bal = storage_load(bk)
                 if bal is nil {
-                    bal = 0 as u64
+                    storage_new(bk, amount, 100)
+                } else {
+                    storage_edit(bk, bal + amount)
                 }
-                storage_save(bk, bal + amount)
                 return 1
             "#,
             complex_calc: r#"
@@ -603,6 +605,19 @@ return x"
 
     // ========================================================================= 16. BYTECODE GENERATION =========================================================================
 
+    mod intent_batch_argv {
+        use super::*;
+
+        assert_compile_ok!(
+            intent_put_flat_kv_flat_kv_list_compiles: "return intent_put_flat_kv(list { \"k1\" 1 \"k2\" 2 })",
+            intent_require_many_keys_list_compiles: "return intent_require_many(list { \"k1\" \"k2\" })",
+            intent_take_many_keys_list_compiles: "return intent_take_many(list { \"k1\" \"k2\" })",
+            intent_del_many_keys_list_compiles: "return intent_del_many(list { \"k1\" \"k2\" })",
+            intent_has_all_keys_list_compiles: "return intent_has_all(list { \"k1\" \"k2\" })",
+            intent_has_any_keys_list_compiles: "return intent_has_any(list { \"k1\" \"k2\" })",
+        );
+    }
+
     mod bytecode_generation {
         use super::*;
 
@@ -660,17 +675,13 @@ return C.0xabcdef01(1, 2)",
         }
 
         #[test]
-        fn explicit_tuple_constructor_rejects_33_items() {
+        fn explicit_tuple_constructor_accepts_33_items() {
             let argv = (1..=(crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH + 1))
                 .map(|i| i.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
             let code = format!("return tuple({})", argv);
-            let err = lang_to_bytecode(&code).expect_err("tuple(33 items) must fail");
-            assert!(err.to_string().contains(&format!(
-                "tuple length cannot more than {}",
-                crate::rt::SpaceCap::DEFAULT_TUPLE_LENGTH
-            )));
+            lang_to_bytecode(&code).expect("tuple(33 items) should compile");
         }
 
         #[test]
@@ -851,6 +862,11 @@ return C.0xabcdef01(1, 2)",
                     Ok(())
                 }
 
+                fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+                    let _ = gas;
+                    Ok(())
+                }
+
                 fn contract_edition(&mut self, addr: &ContractAddress) -> Option<ContractEdition> {
                     crate::VMState::wrap(self.ctx.state()).contract_edition(addr)
                 }
@@ -869,40 +885,67 @@ return C.0xabcdef01(1, 2)",
                     Ok(())
                 }
 
-                fn srest(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
-                    let _ = (addr, key);
+                fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
+                    let _ = (gst, cap, addr, key);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
-                fn sload(&mut self, addr: &Address, key: &Value) -> VmrtRes<Value> {
-                    let _ = (addr, key);
+                fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
+                    let _ = (gst, cap, addr, key);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
-                fn sdel(&mut self, addr: &Address, key: Value) -> VmrtErr {
-                    let _ = (addr, key);
+                fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value) -> VmrtRes<i64> {
+                    let _ = (gst, cap, addr, key);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
-                fn ssave(
+                fn snew(
                     &mut self,
                     gst: &GasExtra,
+                    cap: &SpaceCap,
+                    addr: &Address,
+                    key: Value,
+                    val: Value,
+                    period: Value,
+                ) -> VmrtRes<i64> {
+                    let _ = (gst, cap, addr, key, val, period);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
+                }
+
+                fn sedit(
+                    &mut self,
+                    gst: &GasExtra,
+                    cap: &SpaceCap,
                     addr: &Address,
                     key: Value,
                     val: Value,
                 ) -> VmrtRes<i64> {
-                    let _ = (gst, addr, key, val);
+                    let _ = (gst, cap, addr, key, val);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
                 fn srent(
                     &mut self,
                     gst: &GasExtra,
+                    cap: &SpaceCap,
                     addr: &Address,
                     key: Value,
                     period: Value,
                 ) -> VmrtRes<i64> {
-                    let _ = (gst, addr, key, period);
+                    let _ = (gst, cap, addr, key, period);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
+                }
+
+                fn srecv(
+                    &mut self,
+                    gst: &GasExtra,
+                    cap: &SpaceCap,
+                    addr: &Address,
+                    key: Value,
+                    period: Value,
+                ) -> VmrtRes<i64> {
+                    let _ = (gst, cap, addr, key, period);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
             }
@@ -929,7 +972,8 @@ return C.0xabcdef01(1, 2)",
                 ctx,
                 gas_remaining: gas,
             };
-            let mut gas_use = basis::interface::GasUse::default();
+            let mut gas_use = basis::interface::VmGasBuckets::default();
+            let mut defer_callbacks = crate::machine::DeferCallbacks::default();
 
             crate::interpreter::execute_code(
                 &mut pc,
@@ -946,6 +990,7 @@ return C.0xabcdef01(1, 2)",
                 &mut gas_use,
                 &mut GKVMap::new(20),
                 &mut CtcKVMap::new(12),
+                &mut defer_callbacks,
                 &mut host,
             )
             .expect("Execution failed");

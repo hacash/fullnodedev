@@ -5,6 +5,8 @@ vscode-*/
 .cursor*
 */tests/*.md
 *.bnk/
+*_bnk/
+vendor/
 
 dist/
 
@@ -18,10 +20,7 @@ dist/
 *AGENTS.*
 
 chainv*/
-node2/
-node3/
-node4/
-node5/
+nodev*/
 
 fullnode
 poworker

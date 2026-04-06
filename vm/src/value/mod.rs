@@ -13,6 +13,9 @@ use super::*;
 
 pub const REF_DUP_SIZE: usize = 8;
 
+mod handle;
+pub use handle::*;
+
 include!("util.rs");
 include!("list.rs");
 include!("convert.rs");

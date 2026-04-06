@@ -35,7 +35,8 @@ impl Syntax {
             Token::Keyword(KwTy::Self_) => self.parse_identifier_expr("self".to_string()),
             Token::Keyword(KwTy::Super) => self.parse_identifier_expr("super".to_string()),
             Token::Keyword(KwTy::Tuple) => self.parse_identifier_expr("tuple".to_string()),
-            Token::Integer(n) => self.parse_integer_literal(n),
+            Token::Integer(n) => Ok(push_num(n)),
+            Token::IntegerWithSuffix(n, kw) => self.parse_integer_with_suffix_literal(n, kw),
             Token::Character(b) => Ok(push_num(b as u128)),
             Token::Address(addr) => Ok(push_addr(addr)),
             Token::Bytes(bytes) => push_bytes(&bytes),
@@ -46,7 +47,7 @@ impl Syntax {
                 Ok(Box::new(self.parse_group_block(self.mode.expect_retval)?))
             }
             Token::Operator(OpTy::NOT) | Token::Keyword(KwTy::Not) => {
-                let expr = self.parse_required_item()?;
+                let expr = self.parse_expr_bp(OpTy::NOT.next_min_prec())?;
                 expr.checkretval()?;
                 Ok(push_single(Bytecode::NOT, expr))
             }
@@ -139,16 +140,19 @@ impl Syntax {
         }
     }
 
-    fn parse_integer_literal(&mut self, n: u128) -> Ret<Box<dyn IRNode>> {
+    fn parse_integer_with_suffix_literal(&mut self, n: u128, kw: KwTy) -> Ret<Box<dyn IRNode>> {
         let num_node = push_num(n);
-        let Some(token) = self.cursor.peek() else {
-            return Ok(num_node);
-        };
-        let Some((ty, inst)) = Self::parse_uint_suffix_cast(token) else {
+        if let Some(name) = Self::reserved_type_name(&Token::Keyword(kw)) {
+            return Err(format!(
+                "integer suffix '{}' is reserved for future expansion and is not supported yet",
+                name
+            ));
+        }
+        let token = Token::Keyword(kw);
+        let Some((ty, inst)) = Self::parse_uint_suffix_cast(&token) else {
             return Ok(num_node);
         };
         Self::check_uint_literal_overflow(n, ty)?;
-        self.cursor.next()?;
         Ok(push_single(inst, num_node))
     }
 
@@ -267,6 +271,12 @@ impl Syntax {
                 self.cursor.next()?;
                 left.checkretval()?;
                 let token = self.cursor.next()?;
+                if let Some(name) = Self::reserved_type_name(&token) {
+                    return Err(format!(
+                        "<as> target type '{}' is reserved for future expansion and is not supported yet",
+                        name
+                    ));
+                }
                 let Some(target_ty) = Self::parse_scalar_value_ty(&token) else {
                     return errf!("<as> expression format invalid");
                 };
@@ -299,6 +309,12 @@ impl Syntax {
                         Self::build_is_node(source, ty)
                     }
                     _ => {
+                        if let Some(name) = Self::reserved_type_name(&token) {
+                            return Err(format!(
+                                "<is> target type '{}' is reserved for future expansion and is not supported yet",
+                                name
+                            ));
+                        }
                         let Some(ty) = Self::parse_scalar_value_ty(&token).or_else(|| {
                             maybe!(token == Token::Keyword(KwTy::Nil), Some(ValueTy::Nil), None)
                         }) else {
@@ -334,6 +350,14 @@ impl Syntax {
         node.as_any()
             .downcast_ref::<IRNodeLeaf>()
             .map(|ir| ir.as_text().clone())
+    }
+
+    fn reserved_type_name(token: &Token) -> Option<&'static str> {
+        match token {
+            Token::Keyword(KwTy::U256) => Some("u256"),
+            Token::Keyword(KwTy::Uint) => Some("uint"),
+            _ => None,
+        }
     }
 
     fn parse_scalar_value_ty(token: &Token) -> Option<ValueTy> {

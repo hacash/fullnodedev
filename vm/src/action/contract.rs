@@ -8,7 +8,7 @@ macro_rules! vmsto {
 }
 
 action_define! { ContractDeploy, 40,
-    ActScope::TOP_ONLY_WITH_GUARD, 3, false, [],
+    ActScope::TOP_ONLY_CAN_WITH_GUARD, 3, false, [],
     {
         protocol_cost: Amount
         nonce: Uint4
@@ -25,6 +25,7 @@ action_define! { ContractDeploy, 40,
             return xerrf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
+        let (gst, cap) = peek_vm_runtime_limits(ctx, hei);
         let maddr = ctx.env().tx.main;
         // check contract
         let caddr = ContractAddress::calculate(&maddr, &self.nonce);
@@ -32,23 +33,23 @@ action_define! { ContractDeploy, 40,
             return xerrf!("contract {} already exists", (*caddr).to_readable())
         }
         // check
-        self.contract.check(hei)?;
+        self.contract.check(hei, &cap, &gst)?;
         if self.contract.metas.revision.uint() != 0 {
             return xerrf!("contract revision must be 0 on deploy")
         }
-        precheck_contract_store(&caddr, &self.contract, ctx)?;
+        precheck_contract_store(&caddr, &self.contract, &gst, ctx)?;
         let charge_bytes = self.contract.size();
         // spend protocol fee
-        check_sub_contract_protocol_fee(ctx, &self.protocol_cost, charge_bytes)?;
+        check_sub_contract_protocol_cost(ctx, &self.protocol_cost, charge_bytes)?;
         // save the contract
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
         let cargv = self.construct_argv.to_vec();
-        if cargv.len() > SpaceCap::new(hei).value_size {
+        if cargv.len() > cap.value_size {
             return xerrf!("construct argv size overflow")
         }
         // call construct only when explicitly enabled by action flag
         if self.construct_call.check() {
-            let _ = setup_vm_run_abst(
+            let _ = run_abst_entry(
                 ctx,
                 AbstCall::Construct,
                 caddr.to_addr(),
@@ -61,7 +62,7 @@ action_define! { ContractDeploy, 40,
 }
 
 action_define! { ContractUpdate, 41,
-    ActScope::TOP_ONLY_WITH_GUARD, 3, false, [],
+    ActScope::TOP_ONLY_CAN_WITH_GUARD, 3, false, [],
     {
         protocol_cost: Amount
         address: Address // contract address
@@ -75,6 +76,7 @@ action_define! { ContractUpdate, 41,
             return xerrf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;
+        let (gst, cap) = peek_vm_runtime_limits(ctx, hei);
         // load old
         let caddr = ContractAddress::from_addr(self.address)?;
         let Some(contract) = vmsto!(ctx).contract(&caddr) else {
@@ -82,8 +84,8 @@ action_define! { ContractUpdate, 41,
         };
         // apply edit (in memory)
         let mut new_contract = contract.clone();
-        let (_did_append, mut did_change) = new_contract.apply_edit(&self.edit, hei)?;
-        precheck_contract_store(&caddr, &new_contract, ctx)?;
+        let (_did_append, mut did_change) = new_contract.apply_edit(&self.edit, hei, &cap, &gst)?;
+        precheck_contract_store(&caddr, &new_contract, &gst, ctx)?;
         did_change |= effective_userfn_lookup_changed(
             &mut vmsto!(ctx),
             &caddr,
@@ -94,11 +96,12 @@ action_define! { ContractUpdate, 41,
         let old_size = contract.size();
         let new_size = new_contract.size();
         let delta_bytes = new_size.saturating_sub(old_size);
-        check_sub_contract_protocol_fee(ctx, &self.protocol_cost, delta_bytes)?;
+        check_sub_contract_protocol_cost(ctx, &self.protocol_cost, delta_bytes)?;
         // Append is valid only when each newly exposed selector was absent from self and every inherited parent before the update; if any parent-visible selector is shadowed, it is Change.
         let sys = maybe!(did_change, Change, Append); // Change or Append
+        // Authorization is intentionally delegated to the contract's Change/Append hook; this action does not add a separate owner gate.
         // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
-        let _ = setup_vm_run_abst(
+        let _ = run_abst_entry(
             ctx,
             sys,
             caddr.to_addr(),
@@ -141,22 +144,23 @@ fn precheck_contract_links_and_calls(
     ctx: &mut dyn Context,
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
+    gst: &GasExtra,
 ) -> Rerr {
-    let height = ctx.env().block.height;
     let mut vmsta = VMState::wrap(ctx.state());
     check_link_contracts_exist(&mut vmsta, root_addr, root_contract)?;
     check_inherits_direct_parents_flat(&mut vmsta, root_addr, root_contract)?;
-    check_static_call_targets(&mut vmsta, root_addr, root_contract, height)?;
+    check_static_call_targets(&mut vmsta, root_addr, root_contract, gst)?;
     Ok(())
 }
 
 fn precheck_contract_store(
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
+    gst: &GasExtra,
     ctx: &mut dyn Context,
 ) -> Rerr {
     check_contract_self_reference(root_addr, root_contract)?;
-    precheck_contract_links_and_calls(ctx, root_addr, root_contract)
+    precheck_contract_links_and_calls(ctx, root_addr, root_contract, gst)
 }
 
 fn load_contract_for_check(
@@ -373,7 +377,7 @@ fn check_static_call_targets(
     vmsta: &mut VMState,
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
-    height: u64,
+    gst: &GasExtra,
 ) -> Rerr {
     let check_one = |func_tag: String, codes: &[u8], vmsta: &mut VMState| -> Rerr {
         let check_call = |call: CallSpec, vmsta: &mut VMState| -> Rerr {
@@ -417,7 +421,7 @@ fn check_static_call_targets(
         let codes = match ctype {
             CodeType::Bytecode => code_pkg.data,
             CodeType::IRNode => {
-                runtime_irs_to_bytecodes(&code_pkg.data, height).map_err(|e| e.to_string())?
+                runtime_irs_to_bytecodes(&code_pkg.data, gst).map_err(|e| e.to_string())?
             }
         };
         let tag = format!("userfn 0x{}", hex::encode(f.sign.to_array()));
@@ -430,7 +434,7 @@ fn check_static_call_targets(
         let codes = match ctype {
             CodeType::Bytecode => code_pkg.data,
             CodeType::IRNode => {
-                runtime_irs_to_bytecodes(&code_pkg.data, height).map_err(|e| e.to_string())?
+                runtime_irs_to_bytecodes(&code_pkg.data, gst).map_err(|e| e.to_string())?
             }
         };
         let tag = format!("abstcall {}", f.sign[0]);
@@ -440,7 +444,7 @@ fn check_static_call_targets(
     Ok(())
 }
 
-fn check_sub_contract_protocol_fee(
+fn check_sub_contract_protocol_cost(
     ctx: &mut dyn Context,
     pfee: &Amount,
     charge_bytes: usize,
@@ -451,7 +455,7 @@ fn check_sub_contract_protocol_fee(
     if charge_bytes == 0 {
         return Ok(());
     }
-    let min_fee = calc_contract_protocol_fee_min(ctx, charge_bytes)?;
+    let min_fee = calc_contract_protocol_cost_min(ctx, charge_bytes)?;
     let maddr = ctx.env().tx.main;
     // check fee
     if pfee < &min_fee {
@@ -473,7 +477,7 @@ fn contract_store_perm_periods(_hei: u64) -> u64 {
     CONTRACT_STORE_PERM_PERIODS
 }
 
-fn calc_contract_protocol_fee_min(ctx: &dyn Context, charge_bytes: usize) -> Ret<Amount> {
+fn calc_contract_protocol_cost_min(ctx: &dyn Context, charge_bytes: usize) -> Ret<Amount> {
     if charge_bytes == 0 {
         return Ok(Amount::zero());
     }

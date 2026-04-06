@@ -1,5 +1,21 @@
 /***********************************/
 
+// Per-opcode base gas units (`GasTable::gas`). The interpreter may add dynamic metering
+// on top (e.g. `RPOW` exponent bits, compare on wide integers).
+//
+// Arithmetic ladder (see `GasTable::new` grouping):
+// - 2: add/sub/min/max/inc/dec - single-step integer ops on stack slots.
+// - 4: mul/div/mod, div variants, saturating add/sub, abs diff - widening or division.
+// - 6: POW, ADDMOD, CLAMP - extra branches or triple operands without full mul-div path.
+// - 8: MULADD, MULSUB - one multiply plus add/sub.
+// - 10: MULMOD, MULSHR - multiply then mod or shift.
+// - 12: MULDIV*, MULSHRUP, DEVSCALED - multiply then divide/round.
+// - 14: MULADDDIV, MULSUBDIV, WITHINBPS, LERP - four operands, one divide.
+// - 16: WAVG2, MUL3DIV - four operands with extra multiply or sum path.
+// - 32: RPOW - high base like storage reads; extra per exponent in execute.
+//
+// Unrelated opcodes may share a tier when base interpreter cost is similar.
+// Reserved bytecode bytes stay at default 1.
 
 pub struct GasTable {
     table: [u8; 256]
@@ -17,24 +33,34 @@ impl Default for GasTable {
 impl GasTable {
 
     pub fn new(_hei: u64) -> Self {
-        let mut gst = Self { table : [1; 256] };
-        gst.set(2,  &[ADD, SUB, MAX, MIN, INC, DEC,
-            AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
-        gst.set(3,  &[BSHR, BSHL, BXOR, BOR, BAND]);
-        gst.set(4,  &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
-        gst.set(5,  &[MGET, GGET, NEWLIST, NEWMAP]);
-        gst.set(6,  &[POW, ADDMOD, CLAMP]);
-        gst.set(8,  &[PACKLIST, PACKMAP, PACKTUPLE, MULADD, MULSUB]);
-        gst.set(10,  &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR]);
-        gst.set(12,  &[CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED]);
-        gst.set(14,  &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
-        gst.set(16,  &[NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV]);
-        gst.set(20,  &[LOG1, NTENV, CALLEXTVIEW]);
-        gst.set(24,  &[LOG2, CALLEXT, CALL]);
-        gst.set(28,  &[LOG3, ACTENV, SDEL]);
-        gst.set(32,  &[LOG4, ACTVIEW, SLOAD, SREST, RPOW]);
-        gst.set(48,  &[ACTION]);
-        gst.set(64,  &[SSAVE, SRENT]);
+        let mut gst = Self { table: [1; 256] };
+        gst.set(2, &[AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
+        gst.set(3, &[BSHR, BSHL, BXOR, BOR, BAND]);
+        // Arithmetic: binary (see module doc ladder)
+        gst.set(2, &[ADD, SUB, MAX, MIN, INC, DEC]);
+        gst.set(4, &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
+        gst.set(5, &[SQRT, SQRTUP]);
+        gst.set(6, &[POW, ADDMOD, CLAMP]);
+        gst.set(32, &[RPOW]);
+        // Arithmetic: triple-operand mul pipeline
+        gst.set(8, &[MULADD, MULSUB]);
+        gst.set(10, &[MULMOD, MULSHR]);
+        gst.set(12, &[MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED]);
+        // Arithmetic: four-operand
+        gst.set(14, &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
+        gst.set(16, &[WAVG2, MUL3DIV]);
+        // Other
+        gst.set(5, &[MGET, GGET, NEWLIST, NEWMAP]);
+        gst.set(8, &[PACKLIST, PACKMAP, PACKTUPLE]);
+        gst.set(10, &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
+        gst.set(12, &[MTAKE, CALLUSEVIEW, CALLUSEPURE]);
+        gst.set(16, &[NTENV, NTCTL, NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
+        gst.set(20, &[LOG1, CALLEXTVIEW]);
+        gst.set(24, &[LOG2, CALLEXT, CALL]);
+        gst.set(28, &[LOG3, ACTENV, SDEL]);
+        gst.set(32, &[LOG4, ACTVIEW, SLOAD, SSTAT]);
+        gst.set(48, &[ACTION]);
+        gst.set(64, &[SNEW, SEDIT, SRENT, SRECV]);
         #[cfg(feature = "calcfunc")]
         gst.set(128, &[CALCCALL]);
         gst
@@ -90,7 +116,7 @@ impl GasTable {
 /***********************************/
 
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GasExtra {
     pub compute_limit: i64,  // <=0 means disabled
     pub resource_limit: i64, // <=0 means disabled
@@ -105,7 +131,8 @@ pub struct GasExtra {
     pub global_key_cost: i64,
     pub storege_value_base_size: i64,
     pub storage_key_cost: i64,
-    pub storage_del_min: i64,
+    pub storage_edit_mul: i64,
+    pub container_cmp_header_fee: usize,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
     stack_write_div: i64,
@@ -114,9 +141,8 @@ pub struct GasExtra {
     heap_read_div: i64,
     heap_write_div: i64,
     log_div: i64,
-    storage_read_div: i64,
-    storage_write_div: i64,
     compile_div: i64,
+    contract_div: i64,
     compo_byte_div: i64,
     compo_item_read_div: i64,
     compo_item_edit_div: i64,
@@ -129,7 +155,7 @@ impl GasExtra {
     pub fn new(_hei: u64) -> Self {
         use protocol::context::*;
         Self {
-            compute_limit:   decode_gas_budget(72), // 18009
+            compute_limit:   decode_gas_budget(64), // 10481
             resource_limit:  decode_gas_budget(56), // 6100
             storage_limit:   decode_gas_budget(99), // 111911
             // // debug test
@@ -145,9 +171,11 @@ impl GasExtra {
             // Space alloc
             memory_key_cost:    20,
             global_key_cost:    32,
-            storege_value_base_size: 16,
-            storage_key_cost:  256,
-            storage_del_min:    16,
+            storege_value_base_size: 22,
+            storage_key_cost: 1024,
+            storage_edit_mul:    4,
+            // other
+            container_cmp_header_fee: 12,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
             stack_write_div:    28,
@@ -156,9 +184,8 @@ impl GasExtra {
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
-            storage_read_div:    1,
-            storage_write_div:   1,
-            compile_div:         8,
+            compile_div:        10,
+            contract_div:       50,
             ntfunc_div:         16,
             act_div:            12,
             // Compo
@@ -198,7 +225,7 @@ impl GasExtra {
     }
 
     #[inline(always)]
-    pub fn ntfunc_bytes(&self, len: usize) -> i64 {
+    pub fn nt_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.ntfunc_div)
     }
 
@@ -224,22 +251,17 @@ impl GasExtra {
 
     #[inline(always)]
     pub fn storage_read(&self, val_len: usize) -> i64 {
-        Self::div_op(val_len, self.storage_read_div)
+        (val_len as i64).saturating_add(self.storege_value_base_size.max(0))
     }
 
     #[inline(always)]
     pub fn storage_write(&self, val_len: usize) -> i64 {
-        Self::div_op(val_len, self.storage_write_div)
+        self.storage_read(val_len).saturating_mul(2)
     }
 
     #[inline(always)]
     pub fn compile_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.compile_div)
-    }
-
-    #[inline(always)]
-    pub fn storage_del(&self) -> i64 {
-        self.storage_del_min
     }
 
     #[inline(always)]
@@ -261,6 +283,12 @@ impl GasExtra {
     pub fn compo_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.compo_byte_div)
     }
+
+    #[inline(always)]
+    pub fn contract_bytes(&self, len: usize) -> i64 {
+        Self::div_op(len, self.contract_div)
+    }
+
 }
 
 
@@ -326,31 +354,49 @@ mod gas_budget_codec_tests {
         let gst = GasTable::new(1);
         let mut configured = [false; 256];
         let groups: Vec<(i64, Vec<Bytecode>)> = vec![
-            (2, vec![
-                ADD, SUB, MAX, MIN, INC, DEC, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT,
-            ]),
+            (
+                2,
+                vec![
+                    AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD, SUB, MAX, MIN, INC, DEC,
+                ],
+            ),
             (3, vec![BSHR, BSHL, BXOR, BOR, BAND]),
             (4, vec![MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]),
-            (5, vec![MGET, GGET, NEWLIST, NEWMAP]),
+            (5, vec![MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP]),
             (6, vec![POW, ADDMOD, CLAMP]),
-            (8, vec![PACKLIST, PACKMAP, PACKTUPLE, MULADD, MULSUB]),
-            (10, vec![MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR]),
-            (12, vec![
-                CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED,
-            ]),
+            (
+                8,
+                vec![MULADD, MULSUB, PACKLIST, PACKMAP, PACKTUPLE],
+            ),
+            (
+                10,
+                vec![
+                    MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, MULSHR,
+                ],
+            ),
+            (
+                12,
+                vec![
+                    MTAKE, CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND,
+                    MULSHRUP, DEVSCALED,
+                ],
+            ),
             (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
-            (16, vec![NTFUNC, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV]),
-            (20, vec![LOG1, NTENV, CALLEXTVIEW]),
+            (
+                16,
+                vec![NTENV, NTFUNC, NTCTL, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV],
+            ),
+            (20, vec![LOG1, CALLEXTVIEW]),
             (24, vec![LOG2, CALLEXT, CALL]),
             (28, vec![LOG3, ACTENV, SDEL]),
-            (32, vec![LOG4, ACTVIEW, SLOAD, SREST, RPOW]),
+            (32, vec![LOG4, ACTVIEW, SLOAD, SSTAT, RPOW]),
             (48, vec![ACTION]),
-            (64, vec![SSAVE, SRENT]),
+            (64, vec![SNEW, SEDIT, SRENT, SRECV]),
         ];
         #[cfg(feature = "calcfunc")]
         let mut groups = groups;
         #[cfg(feature = "calcfunc")]
-        groups.push((16, vec![CALCCALL]));
+        groups.push((128, vec![CALCCALL]));
         for (gas, items) in &groups {
             for op in items {
                 let code = *op as u8;
@@ -387,9 +433,9 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.memory_key_cost, 20);
         assert_eq!(gst.global_key_cost, 32);
         assert_eq!(gst.new_contract_load, 32);
-        assert_eq!(gst.storage_key_cost, 256);
-        assert_eq!(gst.storage_del_min, 16);
-        assert_eq!(gst.storege_value_base_size, 16);
+        assert_eq!(gst.storage_key_cost, 1024);
+        assert_eq!(gst.storage_edit_mul, 4);
+        assert_eq!(gst.storege_value_base_size, 22);
     }
 
     #[test]
@@ -410,9 +456,9 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.stack_op(20), 1);
         assert_eq!(gst.stack_op(32), 2);
 
-        assert_eq!(gst.ntfunc_bytes(0), 0);
-        assert_eq!(gst.ntfunc_bytes(15), 1);
-        assert_eq!(gst.ntfunc_bytes(16), 1);
+        assert_eq!(gst.nt_bytes(0), 0);
+        assert_eq!(gst.nt_bytes(15), 1);
+        assert_eq!(gst.nt_bytes(16), 1);
         assert_eq!(gst.act_bytes(0), 0);
         assert_eq!(gst.act_bytes(12), 1);
         assert_eq!(gst.act_bytes(13), 2);
@@ -438,15 +484,14 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.log_bytes(0), 0);
         assert_eq!(gst.log_bytes(37), 37);
 
-        assert_eq!(gst.storage_read(0), 0);
-        assert_eq!(gst.storage_read(7), 7);
-        assert_eq!(gst.storage_read(8), 8);
-        assert_eq!(gst.storage_write(0), 0);
-        assert_eq!(gst.storage_write(5), 5);
-        assert_eq!(gst.storage_write(6), 6);
+        assert_eq!(gst.storage_read(0), 22);
+        assert_eq!(gst.storage_read(7), 29);
+        assert_eq!(gst.storage_read(8), 30);
+        assert_eq!(gst.storage_write(0), 44);
+        assert_eq!(gst.storage_write(5), 54);
+        assert_eq!(gst.storage_write(6), 56);
         assert_eq!(gst.compile_bytes(0), 0);
         assert_eq!(gst.compile_bytes(15), 2);
         assert_eq!(gst.compile_bytes(16), 2);
-        assert_eq!(gst.storage_del(), 16);
     }
 }

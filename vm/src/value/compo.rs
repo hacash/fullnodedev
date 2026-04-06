@@ -55,12 +55,15 @@ impl Compo {
                 let sss: Vec<_> = a.iter().map(|a| a.to_json()).collect();
                 format!("[{}]", sss.join(","))
             }
-            Self::Map(b) => {
-                let mmm: Vec<_> = b
-                    .iter()
-                    .map(|(k, v)| format!("\"{}\":{}", bytes_to_readable_string(&k), v.to_json()))
-                    .collect();
-                format!("{{{}}}", mmm.join(","))
+            Self::Map(b) => match Self::map_debug_json(b) {
+                Some(s) => s,
+                None => {
+                    let mmm: Vec<_> = b
+                        .iter()
+                        .map(|(k, v)| format!(r#"{{"key_hex":"{}","value":{}}}"#, k.to_hex(), v.to_json()))
+                        .collect();
+                    format!(r#"{{"$map":[{}]}}"#, mmm.join(","))
+                }
             }
         }
     }
@@ -117,14 +120,11 @@ impl Compo {
     }
 
     fn val_size(&self) -> usize {
-        fn add_or_max(total: usize, add: usize) -> usize {
-            total.checked_add(add).unwrap_or(usize::MAX)
-        }
         match self {
             Self::List(items) => {
                 let mut sum = 0usize;
                 for v in items {
-                    sum = add_or_max(sum, v.val_size());
+                    sum = add_size_saturating(sum, v.val_size());
                     if sum == usize::MAX {
                         break;
                     }
@@ -134,11 +134,11 @@ impl Compo {
             Self::Map(items) => {
                 let mut sum = 0usize;
                 for (k, v) in items {
-                    sum = add_or_max(sum, k.len());
+                    sum = add_size_saturating(sum, k.len());
                     if sum == usize::MAX {
                         break;
                     }
-                    sum = add_or_max(sum, v.val_size());
+                    sum = add_size_saturating(sum, v.val_size());
                     if sum == usize::MAX {
                         break;
                     }
@@ -257,8 +257,8 @@ impl Debug for CompoItem {
 }
 
 impl PartialEq for CompoItem {
-    fn eq(&self, _: &Self) -> bool {
-        false
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
     }
 }
 
@@ -355,16 +355,18 @@ impl CompoItem {
         if m % 2 != 0 {
             return itr_err_code!(CompoPackError); // map must k => v
         }
-        let sz = m / 2;
+        let pair_count = m / 2;
         let mut mapobj = BTreeMap::new();
-        for i in 0..sz {
+        for i in 0..pair_count {
             let k = items[i * 2].take().unwrap();
             let v = items[i * 2 + 1].take().unwrap();
             let k = k.extract_key_bytes()?;
             v.check_scalar()?;
-            mapobj.insert(k, v);
+            if mapobj.insert(k, v).is_some() {
+                return itr_err_fmt!(CompoPackError, "duplicate key in pack_map");
+            }
         }
-        Ok((Value::Compo(Self::map(mapobj)?), sz))
+        Ok((Value::Compo(Self::map(mapobj)?), m))
     }
 
     pub fn is_list(&self) -> bool {
@@ -421,7 +423,7 @@ impl CompoItem {
                 let mut bsz = 0usize;
                 let mut list = VecDeque::with_capacity(len);
                 for v in src.iter() {
-                    bsz += v.val_size();
+                    bsz = add_size_saturating(bsz, v.val_size());
                     list.push_back(v.clone());
                 }
                 (Compo::List(list), len, bsz)
@@ -431,7 +433,8 @@ impl CompoItem {
                 let mut bsz = 0usize;
                 let mut map = BTreeMap::new();
                 for (k, v) in src.iter() {
-                    bsz += k.len() + v.val_size();
+                    bsz = add_size_saturating(bsz, k.len());
+                    bsz = add_size_saturating(bsz, v.val_size());
                     map.insert(k.clone(), v.clone());
                 }
                 (Compo::Map(map), len, bsz)
@@ -473,7 +476,7 @@ impl CompoItem {
                 let mut src_bsz = 0usize;
                 for v in src.iter() {
                     v.check_scalar()?;
-                    src_bsz += v.val_size();
+                    src_bsz = add_size_saturating(src_bsz, v.val_size());
                 }
                 l.extend(src);
                 Ok((src_len, src_bsz))
@@ -485,7 +488,8 @@ impl CompoItem {
                 let mut src_bsz = 0usize;
                 for (k, v) in src.iter() {
                     v.check_scalar()?;
-                    src_bsz += k.len() + v.val_size();
+                    src_bsz = add_size_saturating(src_bsz, k.len());
+                    src_bsz = add_size_saturating(src_bsz, v.val_size());
                     if !m.contains_key(k) {
                         add += 1;
                     }
@@ -556,7 +560,7 @@ impl CompoItem {
         let mut bsz = 0usize;
         let mut keys = VecDeque::with_capacity(map.len());
         for k in map.keys() {
-            bsz += k.len();
+            bsz = add_size_saturating(bsz, k.len());
             keys.push_back(Value::Bytes(k.clone()));
         }
         Ok((Value::Compo(Self::list(keys)?), map.len(), bsz))
@@ -573,10 +577,94 @@ impl CompoItem {
         let mut bsz = 0usize;
         let mut values = VecDeque::with_capacity(map.len());
         for v in map.values() {
-            bsz += v.val_size();
+            bsz = add_size_saturating(bsz, v.val_size());
             values.push_back(v.clone());
         }
         Ok((Value::Compo(Self::list(values)?), map.len(), bsz))
+    }
+
+    pub fn content_eq(&self, other: &Self) -> VmrtRes<bool> {
+        if self.ptr_eq(other) {
+            return Ok(true);
+        }
+        match (self.list_ref(), other.list_ref()) {
+            (Ok(lhs), Ok(rhs)) => {
+                if lhs.len() != rhs.len() {
+                    return Ok(false);
+                }
+                for (l, r) in lhs.iter().zip(rhs.iter()) {
+                    if !value_content_eq(l, r)? {
+                        return Ok(false);
+                    }
+                }
+                return Ok(true);
+            }
+            (Err(_), Err(_)) => {}
+            _ => return Ok(false),
+        }
+
+        let lhs = self.map_ref()?;
+        let rhs = other.map_ref()?;
+        if lhs.len() != rhs.len() {
+            return Ok(false);
+        }
+        for (key, lval) in lhs.iter() {
+            let Some(rval) = rhs.get(key) else {
+                return Ok(false);
+            };
+            if !value_content_eq(lval, rval)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn compare_fee(&self, other: &Self, container_header_fee: usize) -> usize {
+        if self.ptr_eq(other) {
+            return container_header_fee;
+        }
+        match (self.list_ref(), other.list_ref()) {
+            (Ok(lhs), Ok(rhs)) => {
+                if lhs.len() != rhs.len() {
+                    return container_header_fee;
+                }
+                let mut fee = container_header_fee;
+                for (l, r) in lhs.iter().zip(rhs.iter()) {
+                    fee = add_size_saturating(fee, value_compare_fee(l, r, container_header_fee));
+                    if fee == usize::MAX {
+                        break;
+                    }
+                }
+                return fee;
+            }
+            (Err(_), Err(_)) => {}
+            _ => return container_header_fee,
+        }
+
+        let Ok(lhs) = self.map_ref() else {
+            return container_header_fee;
+        };
+        let Ok(rhs) = other.map_ref() else {
+            return container_header_fee;
+        };
+        if lhs.len() != rhs.len() {
+            return container_header_fee;
+        }
+        let mut fee = container_header_fee;
+        for (key, lval) in lhs.iter() {
+            fee = add_size_saturating(fee, key.len());
+            if fee == usize::MAX {
+                break;
+            }
+            let Some(rval) = rhs.get(key) else {
+                break;
+            };
+            fee = add_size_saturating(fee, value_compare_fee(lval, rval, container_header_fee));
+            if fee == usize::MAX {
+                break;
+            }
+        }
+        fee
     }
 
     pub fn head(&mut self) -> VmrtRes<Value> {
@@ -610,6 +698,10 @@ mod compo_tests {
 
         let err =
             CompoItem::list(VecDeque::from([Value::Compo(CompoItem::new_map())])).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+
+        let err =
+            CompoItem::list(VecDeque::from([Value::handle(7u32)])).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);
     }
 
@@ -650,6 +742,15 @@ mod compo_tests {
         )
         .unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);
+
+        let err = compo
+            .insert(
+                &SpaceCap::new(1),
+                Value::Bytes(vec![2]),
+                Value::handle(9u32),
+        )
+        .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CastBeValueFail);
     }
 
     #[test]
@@ -677,5 +778,31 @@ mod compo_tests {
         let src = CompoItem::list(VecDeque::from([Value::U16(2)])).unwrap();
         dst.merge(&cap, src).unwrap();
         assert!(Value::Compo(dst).check_func_argv().is_ok());
+    }
+
+    #[test]
+    fn compo_equality_uses_shared_identity() {
+        let compo = CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap();
+        let shared = compo.clone();
+        let rebuilt = CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap();
+
+        assert_eq!(compo, shared);
+        assert_ne!(compo, rebuilt);
+        assert_eq!(Value::Compo(compo), Value::Compo(shared));
+        assert_ne!(Value::Compo(rebuilt.clone()), Value::Compo(CompoItem::copy(&rebuilt)));
+    }
+
+    #[test]
+    fn compo_content_eq_uses_value_semantics_with_ptr_fast_path() {
+        let shared = CompoItem::list(VecDeque::from([Value::U8(1), Value::Bytes(vec![2, 3])])).unwrap();
+        let cloned = shared.clone();
+        let rebuilt = CompoItem::list(VecDeque::from([Value::U8(1), Value::Bytes(vec![2, 3])])).unwrap();
+        let diff = CompoItem::list(VecDeque::from([Value::U8(1), Value::Bytes(vec![2, 4])])).unwrap();
+
+        assert!(shared.content_eq(&cloned).unwrap());
+        assert!(shared.content_eq(&rebuilt).unwrap());
+        assert!(!shared.content_eq(&diff).unwrap());
+        assert_eq!(shared.compare_fee(&cloned, 16), 16);
+        assert!(shared.compare_fee(&rebuilt, 16) > 16);
     }
 }

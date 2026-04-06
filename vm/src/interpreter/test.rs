@@ -3,10 +3,10 @@ mod bounds_tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::machine::VmHost;
+    use crate::machine::{DeferCallbacks, DeferredEntry, VmHost};
     use crate::rt::{ExecCtx, GasExtra, GasTable, ItrErr, ItrErrCode, SpaceCap, VmrtErr, VmrtRes};
     use crate::space::{CtcKVMap, GKVMap, Heap, Stack};
-    use crate::value::{CompoItem, TupleItem, Value, ValueTy, REF_DUP_SIZE, RESERVED_U256_TYPE_ID};
+    use crate::value::{CompoItem, TupleItem, Value, ValueTy};
     use crate::{ContractAddress, ContractEdition, ContractSto};
     use field::Address;
     use sys::{XError, XRet};
@@ -34,7 +34,8 @@ mod bounds_tests {
         host: &mut H,
     ) -> VmrtRes<CallExit> {
         host.set_test_gas(*gas_usable);
-        let mut gas_use = basis::interface::GasUse::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
+        let mut defer_callbacks = DeferCallbacks::default();
         let res = super::execute_code(
             pc,
             codes,
@@ -50,6 +51,7 @@ mod bounds_tests {
             &mut gas_use,
             global_map,
             memory_map,
+            &mut defer_callbacks,
             host,
         );
         *gas_usable = host.test_gas();
@@ -102,6 +104,11 @@ mod bounds_tests {
             Ok(())
         }
 
+        fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
+            let _ = gas;
+            Ok(())
+        }
+
         fn contract_edition(&mut self, _addr: &ContractAddress) -> Option<ContractEdition> {
             None
         }
@@ -123,27 +130,40 @@ mod bounds_tests {
             Ok(())
         }
 
-        fn srest(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+        fn sstat(&mut self, _gst: &GasExtra, _cap: &SpaceCap, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.srest_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
             }
         }
 
-        fn sload(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
+        fn sload(&mut self, _gst: &GasExtra, _cap: &SpaceCap, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
             match &self.sload_res {
                 Some(v) => Ok(v.clone()),
                 None => itr_err_code!(ItrErrCode::StorageError),
             }
         }
 
-        fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtErr {
+        fn sdel(&mut self, _gst: &GasExtra, _cap: &SpaceCap, _cadr: &Address, _key: Value) -> VmrtRes<i64> {
             itr_err_code!(ItrErrCode::StorageError)
         }
 
-        fn ssave(
+        fn snew(
             &mut self,
             _gst: &GasExtra,
+            _cap: &SpaceCap,
+            _cadr: &Address,
+            _key: Value,
+            _val: Value,
+            _period: Value,
+        ) -> VmrtRes<i64> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn sedit(
+            &mut self,
+            _gst: &GasExtra,
+            _cap: &SpaceCap,
             _cadr: &Address,
             _key: Value,
             _val: Value,
@@ -154,6 +174,18 @@ mod bounds_tests {
         fn srent(
             &mut self,
             _gst: &GasExtra,
+            _cap: &SpaceCap,
+            _cadr: &Address,
+            _key: Value,
+            _period: Value,
+        ) -> VmrtRes<i64> {
+            itr_err_code!(ItrErrCode::StorageError)
+        }
+
+        fn srecv(
+            &mut self,
+            _gst: &GasExtra,
+            _cap: &SpaceCap,
             _cadr: &Address,
             _key: Value,
             _period: Value,
@@ -165,7 +197,10 @@ mod bounds_tests {
     fn run_call_opcode_gas(exec: ExecCtx, codes: Vec<u8>) -> i64 {
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
-        let mut host = DummyHost::default();
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
         let mut heap = Heap::new(64);
@@ -246,7 +281,10 @@ mod bounds_tests {
 
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
-        let mut host = DummyHost::default();
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
 
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
@@ -278,62 +316,17 @@ mod bounds_tests {
     }
 
     #[test]
-    fn execute_code_rejects_reserved_type_id_for_tis_and_cto() {
-        use crate::rt::Bytecode;
-
-        for inst in [Bytecode::TIS, Bytecode::CTO] {
-            let codes = vec![
-                Bytecode::P0 as u8,
-                inst as u8,
-                RESERVED_U256_TYPE_ID,
-                Bytecode::END as u8,
-            ];
-
-            let mut pc: usize = 0;
-            let mut gas: i64 = 1000;
-            let mut host = DummyHost::default();
-
-            let mut operands = Stack::new(256);
-            let mut locals = Stack::new(256);
-            let mut heap = Heap::new(64);
-            let mut global_map = GKVMap::new(20);
-            let mut memory_map = CtcKVMap::new(12);
-
-            let cadr = ContractAddress::default();
-
-            let res = execute_code(
-                &mut pc,
-                &codes,
-                ExecCtx::main(),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &cadr,
-                &cadr,
-                &mut gas,
-                &GasTable::new(1),
-                &GasExtra::new(1),
-                &SpaceCap::new(1),
-                &mut global_map,
-                &mut memory_map,
-                &mut host,
-            );
-
-            assert!(
-                matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))),
-                "instruction {:?} should fail with InstParamsErr",
-                inst
-            );
-        }
-    }
-
-    #[test]
     fn execute_code_rejects_unknown_type_id_for_tis_and_cto() {
         use crate::rt::Bytecode;
 
-        for raw in [12u8] {
+        for raw in [7u8, 10u8, 12u8] {
             for inst in [Bytecode::TIS, Bytecode::CTO] {
-                let codes = vec![Bytecode::P0 as u8, inst as u8, raw, Bytecode::END as u8];
+                let codes = vec![
+                    Bytecode::P0 as u8,
+                    inst as u8,
+                    raw,
+                    Bytecode::END as u8,
+                ];
 
                 let mut pc: usize = 0;
                 let mut gas: i64 = 1000;
@@ -375,6 +368,7 @@ mod bounds_tests {
         }
     }
 
+
     #[test]
     fn execute_code_rejects_cto_targets_outside_cast_set() {
         use crate::rt::Bytecode;
@@ -383,6 +377,7 @@ mod bounds_tests {
             ValueTy::Nil,
             ValueTy::HeapSlice,
             ValueTy::Tuple,
+            ValueTy::Handle,
             ValueTy::Compo,
         ];
         for ty in non_castable_targets {
@@ -481,6 +476,10 @@ mod bounds_tests {
         );
         assert_eq!(
             run(Value::Compo(CompoItem::new_list()), ValueTy::Compo).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            run(Value::handle(7u32), ValueTy::Handle).unwrap(),
             Value::Bool(true)
         );
     }
@@ -599,6 +598,16 @@ mod bounds_tests {
         );
         assert!(matches!(
             run(Bytecode::CTO, Value::Tuple(args), ValueTy::Tuple),
+            Err(ItrErr(ItrErrCode::InstParamsErr, _))
+        ));
+
+        let handle = Value::handle(7u32);
+        assert_eq!(
+            run(Bytecode::TIS, handle.clone(), ValueTy::Handle).unwrap(),
+            Value::Bool(true)
+        );
+        assert!(matches!(
+            run(Bytecode::CTO, handle, ValueTy::Handle),
             Err(ItrErr(ItrErrCode::InstParamsErr, _))
         ));
 
@@ -735,11 +744,12 @@ mod bounds_tests {
     }
 
     #[test]
-    fn eq_tuple_uses_pointer_identity_and_reference_compare_fee() {
+    fn eq_tuple_uses_content_compare_and_ptr_fast_path_gas() {
         use crate::rt::Bytecode;
 
-        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
-        let distinct = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let payload = vec![9u8; 64];
+        let shared = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload.clone())]).unwrap();
+        let distinct = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload)]).unwrap();
 
         let shared_gas = run_with_setup(
             vec![Bytecode::EQ as u8, Bytecode::END as u8],
@@ -759,11 +769,16 @@ mod bounds_tests {
         );
         let gst = GasTable::new(1);
         let gex = GasExtra::new(1);
-        let expected = gst.gas(Bytecode::EQ as u8)
+        let compare_fee = value_compare_fee(
+            &Value::Tuple(shared.clone()),
+            &Value::Tuple(shared.clone()),
+            gex.container_cmp_header_fee,
+        );
+        let shared_expected = gst.gas(Bytecode::EQ as u8)
             + gst.gas(Bytecode::END as u8)
-            + gex.stack_cmp(REF_DUP_SIZE * 2);
-        assert_eq!(shared_gas, expected);
-        assert_eq!(distinct_gas, expected);
+            + gex.stack_cmp(compare_fee);
+        assert_eq!(shared_gas, shared_expected);
+        assert!(distinct_gas > shared_gas);
 
         let run_result = |rhs: Value| -> Value {
             let mut pc: usize = 0;
@@ -799,15 +814,16 @@ mod bounds_tests {
         };
 
         assert_eq!(run_result(Value::Tuple(shared.clone())), Value::Bool(true));
-        assert_eq!(run_result(Value::Tuple(distinct)), Value::Bool(false));
+        assert_eq!(run_result(Value::Tuple(distinct)), Value::Bool(true));
     }
 
     #[test]
-    fn xlg_eq_tuple_uses_pointer_identity_and_reference_compare_fee() {
+    fn xlg_eq_tuple_uses_content_compare_and_ptr_fast_path_gas() {
         use crate::rt::Bytecode;
 
-        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
-        let distinct = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let payload = vec![9u8; 64];
+        let shared = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload.clone())]).unwrap();
+        let distinct = TupleItem::new(vec![Value::Bytes(payload.clone()), Value::Bytes(payload)]).unwrap();
         let mark = (2 << 5) | 0;
 
         let run = |local_v: Value, stack_v: Value| -> (Value, i64) {
@@ -848,19 +864,65 @@ mod bounds_tests {
 
         let gst = GasTable::new(1);
         let gex = GasExtra::new(1);
-        let expected = gst.gas(Bytecode::XLG as u8)
+        let compare_fee = value_compare_fee(
+            &Value::Tuple(shared.clone()),
+            &Value::Tuple(shared.clone()),
+            gex.container_cmp_header_fee,
+        );
+        let shared_expected = gst.gas(Bytecode::XLG as u8)
             + gst.gas(Bytecode::END as u8)
-            + gex.stack_cmp(REF_DUP_SIZE * 2);
+            + gex.stack_cmp(compare_fee);
 
         let (out_shared, gas_shared) = run(Value::Tuple(shared.clone()), Value::Tuple(shared.clone()));
         let (out_distinct, gas_distinct) = run(Value::Tuple(shared), Value::Tuple(distinct));
         assert_eq!(out_shared, Value::Bool(true));
-        assert_eq!(out_distinct, Value::Bool(false));
-        assert_eq!(gas_shared, expected);
-        assert_eq!(gas_distinct, expected);
+        assert_eq!(out_distinct, Value::Bool(true));
+        assert_eq!(gas_shared, shared_expected);
+        assert!(gas_distinct > gas_shared);
     }
 
     #[test]
+    fn size_rejects_tuple_compo_handle_and_heapslice() {
+        use crate::rt::Bytecode;
+
+        let run_err = |input: Value| -> ItrErrCode {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            operands.push(input).unwrap();
+            execute_code(
+                &mut pc,
+                &[Bytecode::SIZE as u8, Bytecode::END as u8],
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap_err()
+            .0
+        };
+
+        assert_eq!(run_err(Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap())), ItrErrCode::ItemNoSize);
+        assert_eq!(run_err(Value::Compo(CompoItem::list(std::collections::VecDeque::from([Value::U8(1)])).unwrap())), ItrErrCode::ItemNoSize);
+        assert_eq!(run_err(Value::handle(7u32)), ItrErrCode::ItemNoSize);
+        assert_eq!(run_err(Value::HeapSlice((0, 1))), ItrErrCode::ItemNoSize);
+    }
+
     fn xop_marks_execute_with_assignment_semantics() {
         use crate::rt::Bytecode;
 
@@ -1045,7 +1107,7 @@ mod bounds_tests {
             let mut memory_map = CtcKVMap::new(12);
 
             let cadr = ContractAddress::default();
-            let codes = vec![Bytecode::SREST as u8, Bytecode::END as u8];
+            let codes = vec![Bytecode::SSTAT as u8, Bytecode::END as u8];
 
             execute_code(
                 &mut pc,
@@ -1076,7 +1138,7 @@ mod bounds_tests {
         );
 
         let gst = GasTable::new(1);
-        let expect = gst.gas(Bytecode::SREST as u8) + gst.gas(Bytecode::END as u8);
+        let expect = gst.gas(Bytecode::SSTAT as u8) + gst.gas(Bytecode::END as u8);
         assert_eq!(gas_u8, expect);
     }
 
@@ -1087,7 +1149,10 @@ mod bounds_tests {
 
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
-        let mut host = DummyHost::default();
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
 
         let mut operands = Stack::new(256);
         let mut locals = Stack::new(256);
@@ -1122,9 +1187,123 @@ mod bounds_tests {
 
         let expect = gas_table.gas(Bytecode::NTENV as u8)
             + NativeEnv::gas(idx).unwrap()
-            + gas_extra.ntfunc_bytes(Address::SIZE)
+            + gas_extra.nt_bytes(Address::SIZE)
             + gas_table.gas(Bytecode::END as u8);
         assert_eq!(1000 - gas, expect);
+    }
+
+    #[test]
+    fn ntreg_defer_registers_current_contract() {
+        use crate::machine::DeferCallbacks;
+        use crate::native::NativeCtl;
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
+
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let mut defer_callbacks = DeferCallbacks::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
+
+        let cadr = ContractAddress::from_unchecked(Address::create_contract([7u8; 20]));
+        let codes = vec![
+            Bytecode::PNIL as u8,
+            Bytecode::NTCTL as u8,
+            NativeCtl::idx_defer,
+            Bytecode::END as u8,
+        ];
+
+        let mut bindings = FrameBindings::contract(cadr.clone(), cadr.clone(), Vec::<Address>::new().into());
+        let mut intent_state = crate::frame::IntentScopeState::default();
+        super::execute_code_in_frame(
+            &mut pc,
+            &codes,
+            ExecCtx::external(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &mut bindings,
+            &mut intent_state,
+            &cadr.to_addr(),
+            &cadr.to_addr(),
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut gas_use,
+            &mut global_map,
+            &mut memory_map,
+            &mut crate::machine::IntentRuntime::default(),
+            &mut defer_callbacks,
+            &mut host,
+        )
+        .unwrap();
+
+        assert_eq!(
+            defer_callbacks.drain_lifo(),
+            vec![DeferredEntry {
+                addr: cadr,
+                intent_scope: Some(None),
+            }]
+        );
+    }
+
+    #[test]
+    fn ntreg_defer_requires_contract_context() {
+        use crate::machine::DeferCallbacks;
+        use crate::native::NativeCtl;
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
+
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let mut defer_callbacks = DeferCallbacks::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
+
+        let main = Address::create_privakey([3u8; 20]);
+        let codes = vec![
+            Bytecode::PNIL as u8,
+            Bytecode::NTCTL as u8,
+            NativeCtl::idx_defer,
+            Bytecode::END as u8,
+        ];
+
+        let err = super::execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &main,
+            &main,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut gas_use,
+            &mut global_map,
+            &mut memory_map,
+            &mut defer_callbacks,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::DeferredError);
+        assert!(err.1.contains("contract context"), "unexpected error: {}", err.1);
     }
 
     #[test]
@@ -2017,122 +2196,6 @@ mod bounds_tests {
         assert_eq!(gas_9, gas_8 + 1);
     }
 
-    #[test]
-    fn sdel_charges_storage_delete_min_dynamic_gas() {
-        use crate::rt::Bytecode;
-
-        struct SdelOkHost {
-            gas_remaining: i64,
-        }
-        impl TestGasHost for SdelOkHost {
-            fn set_test_gas(&mut self, gas: i64) {
-                self.gas_remaining = gas;
-            }
-            fn test_gas(&self) -> i64 {
-                self.gas_remaining
-            }
-        }
-        impl VmHost for SdelOkHost {
-            fn height(&self) -> u64 {
-                1
-            }
-            fn main_entry_bindings(&self) -> FrameBindings {
-                FrameBindings::root(Address::default(), Arc::<[Address]>::from(vec![]))
-            }
-            fn gas_remaining(&self) -> i64 {
-                self.gas_remaining
-            }
-            fn gas_charge(&mut self, gas: i64) -> VmrtErr {
-                if gas < 0 {
-                    return itr_err_fmt!(ItrErrCode::GasError, "gas cost invalid: {}", gas);
-                }
-                self.gas_remaining -= gas;
-                if self.gas_remaining < 0 {
-                    return itr_err_code!(ItrErrCode::OutOfGas);
-                }
-                Ok(())
-            }
-            fn contract_edition(&mut self, _addr: &ContractAddress) -> Option<ContractEdition> {
-                None
-            }
-            fn contract(&mut self, _addr: &ContractAddress) -> Option<ContractSto> {
-                None
-            }
-            fn action_call(&mut self, _kid: u16, _body: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
-                unreachable!()
-            }
-            fn log_push(&mut self, _cadr: &Address, _items: Vec<Value>) -> VmrtErr {
-                unreachable!()
-            }
-            fn srest(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
-                unreachable!()
-            }
-            fn sload(&mut self, _cadr: &Address, _key: &Value) -> VmrtRes<Value> {
-                unreachable!()
-            }
-            fn sdel(&mut self, _cadr: &Address, _key: Value) -> VmrtErr {
-                Ok(())
-            }
-            fn ssave(
-                &mut self,
-                _gst: &GasExtra,
-                _cadr: &Address,
-                _key: Value,
-                _val: Value,
-            ) -> VmrtRes<i64> {
-                unreachable!()
-            }
-            fn srent(
-                &mut self,
-                _gst: &GasExtra,
-                _cadr: &Address,
-                _key: Value,
-                _period: Value,
-            ) -> VmrtRes<i64> {
-                unreachable!()
-            }
-        }
-
-        let mut pc: usize = 0;
-        let mut gas: i64 = 1000;
-        let gas_table = GasTable::new(1);
-        let gas_extra = GasExtra::new(1);
-        let mut host = SdelOkHost { gas_remaining: 0 };
-
-        let mut operands = Stack::new(256);
-        operands.push(Value::Bytes(vec![1u8])).unwrap();
-        let mut locals = Stack::new(256);
-        let mut heap = Heap::new(64);
-        let mut global_map = GKVMap::new(20);
-        let mut memory_map = CtcKVMap::new(12);
-        let cadr = ContractAddress::default();
-        let codes = vec![Bytecode::SDEL as u8, Bytecode::END as u8];
-
-        execute_code(
-            &mut pc,
-            &codes,
-            ExecCtx::main(),
-            &mut operands,
-            &mut locals,
-            &mut heap,
-            &cadr,
-            &cadr,
-            &mut gas,
-            &gas_table,
-            &gas_extra,
-            &SpaceCap::new(1),
-            &mut global_map,
-            &mut memory_map,
-            &mut host,
-        )
-        .unwrap();
-
-        let expect = gas_table.gas(Bytecode::SDEL as u8)
-            + gas_table.gas(Bytecode::END as u8)
-            + gas_extra.storage_del();
-        assert_eq!(1000 - gas, expect);
-        assert_eq!(gas_extra.storage_del(), 16);
-    }
 
     #[test]
     fn keys_and_clone_compo_bytes_include_map_key_bytes() {
@@ -2375,6 +2438,54 @@ mod bounds_tests {
         .unwrap_err();
 
         assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+    }
+
+    #[test]
+    fn unpack_rejects_nested_container_over_cap() {
+        use crate::rt::Bytecode;
+        use std::collections::VecDeque;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        let mut locals = Stack::new(256);
+        locals.alloc(1).unwrap();
+
+        let mut operands = Stack::new(256);
+        let nested = Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1), Value::U8(2)])).unwrap());
+        let args = Value::Tuple(TupleItem::new(vec![nested]).unwrap());
+        operands.push(args).unwrap();
+        operands.push(Value::U8(0)).unwrap();
+
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let codes = vec![Bytecode::UNPACK as u8, Bytecode::END as u8];
+        let err = execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &cap,
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
     }
 
     #[test]

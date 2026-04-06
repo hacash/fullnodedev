@@ -221,7 +221,7 @@ mod hacds {
         act.metadata.decimal = Uint1::from(8);
         act.metadata.ticket = BytesW1::from(b"HACDS".to_vec()).unwrap();
         act.metadata.name = BytesW1::from(b"HACD Pieces".to_vec()).unwrap();
-        act.protocol_fee = Amount::mei(1);
+        act.protocol_cost = Amount::mei(1);
         curl_trs_1(vec![Box::new(act)]);
     }
 }

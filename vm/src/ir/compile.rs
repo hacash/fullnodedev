@@ -18,8 +18,8 @@ fn compile_block_into(inst: Bytecode, list: &[Box<dyn IRNode>], codes: &mut Vec<
     let is_expr = inst == Bytecode::IRBLOCKR;
     if is_expr {
         match list.last() {
-            None => return itr_err_fmt!(ComplieError, "block expression cannot be empty"),
-            Some(last) if !last.hasretval() => return itr_err_fmt!(ComplieError, "block expression must return a value"),
+            None => return itr_err_fmt!(CompileError, "block expression cannot be empty"),
+            Some(last) if !last.hasretval() => return itr_err_fmt!(CompileError, "block expression must return a value"),
             _ => {},
         }
     }
@@ -77,22 +77,22 @@ struct CodeChunk {
 
 fn decode_inst_len(codes: &[u8], at: usize) -> VmrtRes<usize> {
     if at >= codes.len() {
-        return itr_err_fmt!(ComplieError, "decode instruction overflow");
+        return itr_err_fmt!(CompileError, "decode instruction overflow");
     }
     let inst: Bytecode = std_mem_transmute!(codes[at]);
     if let IRBREAK | IRCONTINUE = inst {
         if at + 3 > codes.len() {
-            return itr_err_fmt!(ComplieError, "loop control placeholder overflow");
+            return itr_err_fmt!(CompileError, "loop control placeholder overflow");
         }
         return Ok(3);
     }
     let meta = inst.metadata();
     if !meta.valid {
-        return itr_err_fmt!(ComplieError, "invalid instruction {:?}", inst);
+        return itr_err_fmt!(CompileError, "invalid instruction {:?}", inst);
     }
     let mut end = at + 1 + meta.param as usize;
     if end > codes.len() {
-        return itr_err_fmt!(ComplieError, "instruction params overflow");
+        return itr_err_fmt!(CompileError, "instruction params overflow");
     }
     match inst {
         PBUF => {
@@ -101,7 +101,7 @@ fn decode_inst_len(codes: &[u8], at: usize) -> VmrtRes<usize> {
         }
         PBUFL => {
             if at + 3 > codes.len() {
-                return itr_err_fmt!(ComplieError, "PBUFL params overflow");
+                return itr_err_fmt!(CompileError, "PBUFL params overflow");
             }
             let l = u16::from_be_bytes(codes[at + 1..at + 3].try_into().unwrap()) as usize;
             end += l;
@@ -109,7 +109,7 @@ fn decode_inst_len(codes: &[u8], at: usize) -> VmrtRes<usize> {
         _ => {}
     }
     if end > codes.len() {
-        return itr_err_fmt!(ComplieError, "instruction payload overflow");
+        return itr_err_fmt!(CompileError, "instruction payload overflow");
     }
     Ok(end - at)
 }
@@ -148,7 +148,7 @@ fn rewrite_while_loop_ctrl(body: &[u8], cond_len: usize) -> VmrtRes<Vec<u8>> {
                 LoopCtrl::Continue => -((cond_len + pos + JIL * 2) as i32),
             };
             if offset < i16::MIN as i32 || offset > i16::MAX as i32 {
-                return itr_err_fmt!(ComplieError, "while loop control jump overflow: {}", offset);
+                return itr_err_fmt!(CompileError, "while loop control jump overflow: {}", offset);
             }
             out.push(JMPSL as u8);
             out.extend_from_slice(&(offset as i16).to_be_bytes());
@@ -179,7 +179,7 @@ fn compile_while(x: IRNRef, y: IRNRef) -> VmrtRes<Vec<u8>> {
     let alls_l = body_l + cond.len() + JIL;
     // check code len
     if body_l > MAXL || alls_l > MAXL {
-        return itr_err_fmt!(ComplieError, "compiled IR code is too long")
+        return itr_err_fmt!(CompileError, "compiled IR code is too long")
     }
     // condition
     let mut codes = Vec::with_capacity(cond.len() + 1 + 2 + body.len() + 1 + 2);
@@ -213,7 +213,7 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     y.codegen_into(&mut if_br)?;
     let is_expr = btcd == Bytecode::IRIFR;
     if is_expr && !y.hasretval() {
-        return itr_err_fmt!(ComplieError, "if expression branch must return a value");
+        return itr_err_fmt!(CompileError, "if expression branch must return a value");
     }
     // IRBLOCK already discards return values internally.
     if !is_expr && y.hasretval() && !is_stmt_block(y) {
@@ -222,7 +222,7 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     let mut el_br = Vec::new();
     z.codegen_into(&mut el_br)?;
     if is_expr && !z.hasretval() {
-        return itr_err_fmt!(ComplieError, "if expression branch must return a value");
+        return itr_err_fmt!(CompileError, "if expression branch must return a value");
     }
     if !is_expr && z.hasretval() && !is_stmt_block(z) {
         el_br.push(POP as u8); // pop inst
@@ -231,7 +231,7 @@ fn compile_if(btcd: Bytecode, x: IRNRef, y: IRNRef, z: IRNRef) -> VmrtRes<Vec<u8
     let el_l = el_br.len() + JIL;
     // check code len
     if if_l > MAXL || el_l > MAXL {
-        return itr_err_fmt!(ComplieError, "compiled IR code is too long")
+        return itr_err_fmt!(CompileError, "compiled IR code is too long")
     }
     let mut codes = Vec::with_capacity(
         cond.len() + 1 + 2 + el_br.len() + 1 + 2 + if_br.len()

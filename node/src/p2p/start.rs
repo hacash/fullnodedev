@@ -1,24 +1,15 @@
 
-
 impl P2PManage {
 
     pub async fn start(this: Arc<P2PManage>, worker: Worker) -> Rerr {
+        this.start_peer_table_loop();
 
-        // start p2p listen
-        // let p2p = this.clone();
-        // tokio::spawn(async move{
-        //     P2PManage::server_listen(p2p).await
-        // });
-        
-        // connect boot nodes
         let p2p = this.clone();
         tokio::spawn(async move{
             asleep(0.25).await;
-            // println!("&&&& connect_boot_nodes");
-            let _ = p2p.connect_stable_then_boot().await;
+            let _ = crate::core::connect_stable_then_boot(&p2p).await;
         });
 
-        // do once find nodes
         if this.cnf.find_nodes {
             let p2p = this.clone();
             tokio::spawn(async move{
@@ -27,11 +18,8 @@ impl P2PManage {
             });
         }
 
-        // event loop
-        // this.event_loop().await;
-        let _ = P2PManage::event_loop(this, worker).await;
+        let _ = crate::core::event_loop(this, worker).await;
         Ok(())
     }
-
 
 }

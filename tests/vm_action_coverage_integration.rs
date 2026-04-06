@@ -24,7 +24,7 @@ mod action_coverage {
     use vm::build_codes;
     use vm::contract::{Abst, Contract, Func};
     use vm::lang::lang_to_bytecode;
-    use vm::machine::{self, Machine, Resoure};
+    use vm::machine::{self, Executor, Runtime};
     use vm::rt::{AbstCall, Bytecode, Bytecode::*, CodeConf, CodeType, SpaceCap, calc_func_sign};
     use vm::value::Value;
     use vm::{ContractAddrListW1, ContractAddress, ContractAddressW1, ContractSto, VMState};
@@ -88,7 +88,7 @@ mod action_coverage {
             }
         }
         let height = ctx.env().block.height;
-        let mut machine = Machine::create(Resoure::create(height));
+        let mut machine = Executor::from_runtime(Runtime::create(height));
         let rv = machine.main_call(ctx, CodeType::Bytecode, codes.into())?;
         Ok(rv)
     }
@@ -597,7 +597,7 @@ mod action_coverage {
     fn deploy_with_construct_function() {
         let _guard = test_guard();
         set_vm_assigner(Some(|height| {
-            Box::new(vm::global_machine_manager().assign(height))
+            Box::new(vm::global_runtime_pool().checkout(height))
         }));
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
@@ -640,15 +640,15 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_top_only_with_guard_rejects_multiple_non_guard_actions() {
+    fn deploy_top_only_can_with_guard_rejects_multiple_non_guard_actions() {
         let _guard = test_guard();
         let main = main_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         let err =
-            protocol::action::analyze_tx_action_set_for_tx(tx.ty(), tx.actions()).unwrap_err();
-        assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
+            protocol::action::precheck_tx_actions(tx.ty(), tx.actions()).unwrap_err();
+        assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{err}");
     }
 
     #[test]
@@ -1219,7 +1219,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn ctx_action_call_rejects_top_only_with_guard_action() {
+    fn ctx_action_call_rejects_top_only_can_with_guard_action() {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
@@ -1233,18 +1233,18 @@ mod action_coverage {
 
         let body = ContractDeploy::new().serialize()[2..].to_vec();
         let err = ctx.action_call(ContractDeploy::KIND, body).unwrap_err();
-        assert!(err.contains("TOP_ONLY_WITH_GUARD"), "{err}");
+        assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{err}");
     }
 
     // ═══════════════════════════════════════════════════
-    // EnvCoinbaseAddr tests
+    // EnvBlockAuthorAddr tests
     // ═══════════════════════════════════════════════════
 
     #[test]
-    fn env_coinbase_addr_returns_block_coinbase() {
+    fn env_author_addr_returns_block_author() {
         let _guard = test_guard();
         let main = main_addr();
-        let coinbase = alt_addr();
+        let author = alt_addr();
         let tx = make_tx(3, main, vec![], 17);
         let mut ctx = make_ctx(
             1,
@@ -1253,20 +1253,20 @@ mod action_coverage {
             Box::new(MemLogs::default()),
         );
         ctx.env.chain.fast_sync = true;
-        ctx.env.block.coinbase = coinbase;
+        ctx.env.block.author = author;
 
-        let act = EnvCoinbaseAddr::new();
+        let act = EnvBlockAuthorAddr::new();
         let (gas, res) = act.execute(&mut ctx).unwrap();
         assert!(gas > 0);
         assert_eq!(
             res,
-            coinbase.to_vec(),
-            "EnvCoinbaseAddr should return coinbase address"
+            author.to_vec(),
+            "EnvBlockAuthorAddr should return author address"
         );
     }
 
     #[test]
-    fn env_coinbase_addr_default_is_zero() {
+    fn env_author_addr_default_is_zero() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
@@ -1278,7 +1278,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let act = EnvCoinbaseAddr::new();
+        let act = EnvBlockAuthorAddr::new();
         let (_, res) = act.execute(&mut ctx).unwrap();
         assert_eq!(res, Address::default().to_vec());
     }
@@ -1348,7 +1348,7 @@ mod action_coverage {
         let _guard = test_guard();
         init_action_registry();
         let main = main_addr();
-        let coinbase = alt_addr();
+        let author = alt_addr();
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(TxMessage::new())).unwrap();
         let mut ctx = make_ctx_from_tx(
@@ -1357,20 +1357,20 @@ mod action_coverage {
             Box::new(StateMem::default()),
             Box::new(MemLogs::default()),
         );
-        ctx.env.block.coinbase = coinbase;
+        ctx.env.block.author = author;
 
         let script = format!(
             r#"
             var h = block_height()
             assert h == 777
-            var m = tx_main_address()
+            var m = tx_main_addr()
             assert m == {main}
-            var cb = block_coinbase_address()
-            assert cb == {coinbase}
+            var cb = block_author_addr()
+            assert cb == {author}
             return 0
             "#,
             main = main.to_readable(),
-            coinbase = coinbase.to_readable(),
+            author = author.to_readable(),
         );
         let codes = lang_to_bytecode(&script).unwrap();
         assert!(codes.contains(&(Bytecode::ACTENV as u8)));
@@ -1612,7 +1612,7 @@ mod action_coverage {
     }
 
     // ═══════════════════════════════════════════════════
-    // ViewDiamondInscNum tests
+    // ViewDiaInscNum tests
     // ═══════════════════════════════════════════════════
 
     #[test]
@@ -1628,7 +1628,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let mut act = ViewDiamondInscNum::new();
+        let mut act = ViewDiaInscNum::new();
         act.diamond = DiamondName::from_readable(b"AAAAAA").unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("not found"), "{err}");
@@ -1636,10 +1636,10 @@ mod action_coverage {
 
     #[test]
     fn view_diamond_insc_num_serialize_roundtrip() {
-        let mut act = ViewDiamondInscNum::new();
+        let mut act = ViewDiaInscNum::new();
         act.diamond = DiamondName::from_readable(b"WTYUIA").unwrap();
         let bytes = act.serialize();
-        let mut act2 = ViewDiamondInscNum::new();
+        let mut act2 = ViewDiaInscNum::new();
         act2.parse(&bytes).unwrap();
         assert_eq!(act, act2);
     }
@@ -1667,14 +1667,14 @@ mod action_coverage {
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
-        let mut act = ViewDiamondInscNum::new();
+        let mut act = ViewDiaInscNum::new();
         act.diamond = diamond;
         let (_, res) = act.execute(&mut ctx).unwrap();
         assert_eq!(res, vec![2]);
     }
 
     // ═══════════════════════════════════════════════════
-    // ViewDiamondInscGet tests
+    // ViewDiaInscGet tests
     // ═══════════════════════════════════════════════════
 
     #[test]
@@ -1690,7 +1690,7 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
 
-        let mut act = ViewDiamondInscGet::new();
+        let mut act = ViewDiaInscGet::new();
         act.diamond = DiamondName::from_readable(b"AAAAAA").unwrap();
         act.inscidx = Uint1::from(0);
         let err = act.execute(&mut ctx).unwrap_err();
@@ -1720,7 +1720,7 @@ mod action_coverage {
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
-        let mut act = ViewDiamondInscGet::new();
+        let mut act = ViewDiaInscGet::new();
         act.diamond = diamond;
         act.inscidx = Uint1::from(1);
         let (_, res) = act.execute(&mut ctx).unwrap();
@@ -1750,7 +1750,7 @@ mod action_coverage {
         .unwrap();
         CoreState::wrap(StateOperat::state(&mut ctx)).diamond_set(&diamond, &dia);
 
-        let mut act = ViewDiamondInscGet::new();
+        let mut act = ViewDiaInscGet::new();
         act.diamond = diamond;
         act.inscidx = Uint1::from(1); // overflow: only idx 0 exists
         let err = act.execute(&mut ctx).unwrap_err();
@@ -2199,9 +2199,15 @@ mod action_coverage {
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         let caddr = contract_addr(&main, 1);
-        let err = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, "nonexistent"))
+        let err = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr.clone(), "nonexistent"))
             .unwrap_err();
         assert!(err.contains("CallNotExist"), "{err}");
+
+        let sig = vm::rt::calc_func_sign("f");
+        let selector = format!("0x{}", hex::encode(sig));
+        let callres = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, selector))
+            .unwrap();
+        assert_eq!(callres.ret_val, Value::U8(0));
     }
 
     #[test]
@@ -2257,7 +2263,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_rejects_negative_protocol_fee() {
+    fn deploy_rejects_negative_protocol_cost() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);

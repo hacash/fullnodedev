@@ -10,11 +10,12 @@ include! {"block_hasher.rs"}
 include! {"action_creater.rs"}
 include! {"action_hooker.rs"}
 include! {"vm_assigner.rs"}
-// include!{"server_router.rs"}
+include!{"prelude_tx.rs"}
 
 pub struct SetupBuilder {
     block_hasher: Option<FnBlockHasherFunc>,
     vm_assigner: Option<FnVmAssignFunc>,
+    prelude_tx_codec: Option<PreludeTxCodec>,
     action_registers: Vec<ActionRegisterItem>,
     action_hooks: Vec<FnActionHookFunc>,
 }
@@ -22,6 +23,7 @@ pub struct SetupBuilder {
 pub struct SetupRegistryData {
     block_hasher: FnBlockHasherFunc,
     pub(crate) vm_assigner: Option<FnVmAssignFunc>,
+    pub(crate) prelude_tx_codec: Option<PreludeTxCodec>,
     action_codecs: HashMap<u16, ActionCodec>,
     action_hooks: Vec<FnActionHookFunc>,
 }
@@ -33,6 +35,7 @@ impl SetupBuilder {
         Self {
             block_hasher: None,
             vm_assigner: None,
+            prelude_tx_codec: None,
             action_registers: vec![],
             action_hooks: vec![],
         }
@@ -50,6 +53,15 @@ impl SetupBuilder {
 
     pub fn action_register(self, register: fn(SetupBuilder) -> SetupBuilder) -> Self {
         register(self)
+    }
+
+    pub fn prelude_tx_codec(
+        mut self,
+        create: FnPreludeTxCreateFunc,
+        json_decode: FnPreludeTxJsonDecodeFunc,
+    ) -> Self {
+        self.prelude_tx_codec = Some(PreludeTxCodec { create, json_decode });
+        self
     }
 
     pub fn register_codec(
@@ -84,6 +96,7 @@ impl SetupBuilder {
         Ok(Arc::new(SetupRegistryData {
             block_hasher,
             vm_assigner: self.vm_assigner,
+            prelude_tx_codec: self.prelude_tx_codec,
             action_codecs,
             action_hooks: self.action_hooks,
         }))

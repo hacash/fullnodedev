@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+use crate::rt::SpaceCap;
+use crate::value::checked_value_output_len;
+
 const ASCII_ERR_OK: u16 = 0;
 const ASCII_ERR_FORMAT: u16 = 1;
 const ASCII_ERR_INVALID_CHAR: u16 = 2;
@@ -7,6 +10,7 @@ const ASCII_ERR_EMPTY: u16 = 3;
 const ASCII_ERR_DUP_KEY: u16 = 4;
 const ASCII_ERR_OVERFLOW: u16 = 5;
 const ASCII_ERR_HEX_ODD: u16 = 6;
+const ASCII_ERR_SPACE_CAP: u16 = 7;
 
 const ASCII_CLASS_ALNUM: u8 = 1;
 const ASCII_CLASS_IDENT: u8 = 2;
@@ -19,7 +23,8 @@ const ASCII_CLASS_UPPER: u8 = 7;
 const KV_FLAG_ALLOW_OUTER_WS: u8 = 1 << 0;
 const KV_FLAG_ALLOW_INNER_WS: u8 = 1 << 1;
 const KV_FLAG_ALLOW_EMPTY_DOC: u8 = 1 << 2;
-const KV_FLAG_REJECT_DUP_KEY: u8 = 1 << 3;
+/// After `kv_sep`, a leading `"` starts a quoted value: raw bytes until closing `"`; `\\` and `\"` only.
+const KV_FLAG_QUOTED_VALUE: u8 = 1 << 3;
 const KV_FLAG_LOWER_KEYS: u8 = 1 << 4;
 const KV_FLAG_LOWER_VALUES: u8 = 1 << 5;
 
@@ -69,15 +74,15 @@ fn ascii_is_base58(ch: u8) -> bool {
         || matches!(ch, b'm'..=b'z')
 }
 
-fn ascii_class_contains(class_id: u8, ch: u8) -> VmrtRes<bool> {
+fn class_byte_predicate(class_id: u8) -> VmrtRes<fn(u8) -> bool> {
     Ok(match class_id {
-        ASCII_CLASS_ALNUM => ch.is_ascii_alphanumeric(),
-        ASCII_CLASS_IDENT => ch.is_ascii_alphanumeric() || ch == b'_',
-        ASCII_CLASS_DEC => ch.is_ascii_digit(),
-        ASCII_CLASS_HEX => ch.is_ascii_hexdigit(),
-        ASCII_CLASS_BASE58 => ascii_is_base58(ch),
-        ASCII_CLASS_LOWER => ch.is_ascii_lowercase(),
-        ASCII_CLASS_UPPER => ch.is_ascii_uppercase(),
+        ASCII_CLASS_ALNUM => |ch| ch.is_ascii_alphanumeric(),
+        ASCII_CLASS_IDENT => |ch| ch.is_ascii_alphanumeric() || ch == b'_',
+        ASCII_CLASS_DEC => |ch| ch.is_ascii_digit(),
+        ASCII_CLASS_HEX => |ch| ch.is_ascii_hexdigit(),
+        ASCII_CLASS_BASE58 => ascii_is_base58,
+        ASCII_CLASS_LOWER => |ch| ch.is_ascii_lowercase(),
+        ASCII_CLASS_UPPER => |ch| ch.is_ascii_uppercase(),
         _ => return itr_err_fmt!(NativeFuncError, "unsupported ascii class {}", class_id),
     })
 }
@@ -137,10 +142,87 @@ fn tuple_errno_map(errno: u16, map: BTreeMap<Vec<u8>, Value>) -> VmrtRes<Value> 
     make_tuple(vec![Value::U16(errno), Value::Compo(CompoItem::map(map)?)])
 }
 
+/// Upper bound on sum of (key bytes + value bytes) for any map under `cap` (each key/value <= value_size, at most compo_length pairs).
+fn max_kv_map_payload_bytes(cap: &SpaceCap) -> Option<usize> {
+    cap.compo_length
+        .checked_mul(2)?
+        .checked_mul(cap.value_size)
+}
+
+/// Returns `Some(ASCII_ERR_SPACE_CAP)` if map violates SpaceCap (entry count, per-key/value size, or aggregate payload).
+fn validate_kv_map_against_space_cap(cap: &SpaceCap, map: &BTreeMap<Vec<u8>, Value>) -> Option<u16> {
+    if map.len() > cap.compo_length {
+        return Some(ASCII_ERR_SPACE_CAP);
+    }
+    let max_total = max_kv_map_payload_bytes(cap);
+    let mut total = 0usize;
+    for (k, v) in map {
+        let Value::Bytes(b) = v else {
+            return Some(ASCII_ERR_SPACE_CAP);
+        };
+        if checked_value_output_len(&cap, k.len()).is_err() || checked_value_output_len(&cap, b.len()).is_err() {
+            return Some(ASCII_ERR_SPACE_CAP);
+        }
+        let add = match k.len().checked_add(b.len()) {
+            Some(x) => x,
+            None => return Some(ASCII_ERR_SPACE_CAP),
+        };
+        total = match total.checked_add(add) {
+            Some(x) => x,
+            None => return Some(ASCII_ERR_SPACE_CAP),
+        };
+        if let Some(m) = max_total {
+            if total > m {
+                return Some(ASCII_ERR_SPACE_CAP);
+            }
+        }
+    }
+    None
+}
+
+fn tuple_errno_map_ok_kv(cap: &SpaceCap, map: BTreeMap<Vec<u8>, Value>) -> VmrtRes<Value> {
+    if let Some(errno) = validate_kv_map_against_space_cap(cap, &map) {
+        return tuple_errno_map(errno, BTreeMap::new());
+    }
+    let v = tuple_errno_map(ASCII_ERR_OK, map)?;
+    v.check_container_cap(cap)?;
+    Ok(v)
+}
+
 fn lowercase_ascii_vec_in_place(buf: &mut [u8]) {
     for ch in buf {
         *ch = ascii_to_lower(*ch);
     }
+}
+
+/// `start` points at opening `"`. Returns decoded bytes and index past closing `"`. No class check inside.
+fn parse_quoted_ascii_value(raw: &[u8], start: usize) -> Result<(Vec<u8>, usize), u16> {
+    if raw.get(start) != Some(&b'"') {
+        return Err(ASCII_ERR_FORMAT);
+    }
+    let mut i = start + 1;
+    let mut out = Vec::new();
+    while i < raw.len() {
+        match raw[i] {
+            b'"' => return Ok((out, i + 1)),
+            b'\\' => {
+                if i + 1 >= raw.len() {
+                    return Err(ASCII_ERR_FORMAT);
+                }
+                match raw[i + 1] {
+                    b'"' => out.push(b'"'),
+                    b'\\' => out.push(b'\\'),
+                    _ => return Err(ASCII_ERR_FORMAT),
+                }
+                i += 2;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    Err(ASCII_ERR_FORMAT)
 }
 
 fn ascii_validate_transform(_: u64, buf: &[u8]) -> VmrtRes<Value> {
@@ -182,9 +264,10 @@ fn ascii_validate_transform(_: u64, buf: &[u8]) -> VmrtRes<Value> {
         );
     }
 
+    let class_ok = class_byte_predicate(class_id)?;
     let mut out = Vec::with_capacity(data.len());
     for &ch in data {
-        if !ascii_class_contains(class_id, ch)? {
+        if !class_ok(ch) {
             return tuple_errno_bytes(ASCII_ERR_INVALID_CHAR, vec![]);
         }
         out.push(match (to_lower, to_upper) {
@@ -284,7 +367,7 @@ fn ascii_hex_lower(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     let mut out = Vec::with_capacity(buf.len());
     for &ch in buf {
         let lowered = ascii_to_lower(ch);
-        if !ascii_class_contains(ASCII_CLASS_HEX, lowered)? {
+        if !lowered.is_ascii_hexdigit() {
             return tuple_errno_bytes(ASCII_ERR_INVALID_CHAR, vec![]);
         }
         out.push(lowered);
@@ -294,14 +377,18 @@ fn ascii_hex_lower(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 
 fn ascii_base58_validate_or_echo(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     for &ch in buf {
-        if !ascii_class_contains(ASCII_CLASS_BASE58, ch)? {
+        if !ascii_is_base58(ch) {
             return tuple_errno_bytes(ASCII_ERR_INVALID_CHAR, vec![]);
         }
     }
     tuple_errno_bytes(ASCII_ERR_OK, buf.to_vec())
 }
 
-fn ascii_parse_flat_kv(_: u64, buf: &[u8]) -> VmrtRes<Value> {
+fn ascii_parse_flat_kv(hei: u64, buf: &[u8]) -> VmrtRes<Value> {
+    parse_flat_kv_impl(&SpaceCap::new(hei), buf)
+}
+
+fn parse_flat_kv_impl(cap: &SpaceCap, buf: &[u8]) -> VmrtRes<Value> {
     let (spec, raw) = decode_prefixed_u64(buf, "ascii_parse_flat_kv")?;
     let parts = spec.to_be_bytes();
     let open = parts[0];
@@ -310,11 +397,15 @@ fn ascii_parse_flat_kv(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     let close = parts[3];
     let key_class = parts[4];
     let value_class = parts[5];
-    let flags = parts[7];
-
-    for class_id in [key_class, value_class] {
-        let _ = ascii_class_contains(class_id, b'a')?;
+    if parts[6] != 0 {
+        return itr_err_fmt!(
+            NativeFuncError,
+            "ascii_parse_flat_kv spec byte 6 must be 0"
+        );
     }
+    let flags = parts[7];
+    let key_ok = class_byte_predicate(key_class)?;
+    let value_ok = class_byte_predicate(value_class)?;
     if open == 0 || kv_sep == 0 || pair_sep == 0 || close == 0 {
         return itr_err_fmt!(
             NativeFuncError,
@@ -337,7 +428,7 @@ fn ascii_parse_flat_kv(_: u64, buf: &[u8]) -> VmrtRes<Value> {
     let allow_outer_ws = flags & KV_FLAG_ALLOW_OUTER_WS != 0;
     let allow_inner_ws = flags & KV_FLAG_ALLOW_INNER_WS != 0;
     let allow_empty_doc = flags & KV_FLAG_ALLOW_EMPTY_DOC != 0;
-    let reject_dup_key = flags & KV_FLAG_REJECT_DUP_KEY != 0;
+    let quoted_value = flags & KV_FLAG_QUOTED_VALUE != 0;
     let lower_keys = flags & KV_FLAG_LOWER_KEYS != 0;
     let lower_values = flags & KV_FLAG_LOWER_VALUES != 0;
 
@@ -376,11 +467,11 @@ fn ascii_parse_flat_kv(_: u64, buf: &[u8]) -> VmrtRes<Value> {
             if map.is_empty() && !allow_empty_doc {
                 return tuple_errno_map(ASCII_ERR_EMPTY, BTreeMap::new());
             }
-            return tuple_errno_map(ASCII_ERR_OK, map);
+            return tuple_errno_map_ok_kv(&cap, map);
         }
 
         let key_start = i;
-        while i < raw.len() && ascii_class_contains(key_class, raw[i])? {
+        while i < raw.len() && key_ok(raw[i]) {
             i += 1;
         }
         if i == key_start {
@@ -407,20 +498,38 @@ fn ascii_parse_flat_kv(_: u64, buf: &[u8]) -> VmrtRes<Value> {
             }
         }
 
-        let value_start = i;
-        while i < raw.len() && ascii_class_contains(value_class, raw[i])? {
-            i += 1;
-        }
-        if i == value_start {
-            return tuple_errno_map(ASCII_ERR_INVALID_CHAR, BTreeMap::new());
-        }
-        let mut value = raw[value_start..i].to_vec();
+        let mut value = if quoted_value && i < raw.len() && raw[i] == b'"' {
+            match parse_quoted_ascii_value(raw, i) {
+                Ok((v, next_i)) => {
+                    i = next_i;
+                    v
+                }
+                Err(errno) => return tuple_errno_map(errno, BTreeMap::new()),
+            }
+        } else {
+            let value_start = i;
+            while i < raw.len() && value_ok(raw[i]) {
+                i += 1;
+            }
+            if i == value_start {
+                return tuple_errno_map(ASCII_ERR_INVALID_CHAR, BTreeMap::new());
+            }
+            raw[value_start..i].to_vec()
+        };
         if lower_values {
             lowercase_ascii_vec_in_place(&mut value);
         }
 
-        if reject_dup_key && map.contains_key(&key) {
+        if checked_value_output_len(&cap, key.len()).is_err()
+            || checked_value_output_len(&cap, value.len()).is_err()
+        {
+            return tuple_errno_map(ASCII_ERR_SPACE_CAP, BTreeMap::new());
+        }
+        if map.contains_key(&key) {
             return tuple_errno_map(ASCII_ERR_DUP_KEY, BTreeMap::new());
+        }
+        if map.len() >= cap.compo_length {
+            return tuple_errno_map(ASCII_ERR_SPACE_CAP, BTreeMap::new());
         }
         map.insert(key, Value::Bytes(value));
 
@@ -446,7 +555,7 @@ fn ascii_parse_flat_kv(_: u64, buf: &[u8]) -> VmrtRes<Value> {
             if i != raw.len() {
                 return tuple_errno_map(ASCII_ERR_FORMAT, BTreeMap::new());
             }
-            return tuple_errno_map(ASCII_ERR_OK, map);
+            return tuple_errno_map_ok_kv(&cap, map);
         }
         return tuple_errno_map(ASCII_ERR_FORMAT, BTreeMap::new());
     }
@@ -455,6 +564,7 @@ fn ascii_parse_flat_kv(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 #[cfg(test)]
 mod ascii_native_tests {
     use super::*;
+    use crate::rt::SpaceCap;
 
     fn tuple_items(v: Value) -> Vec<Value> {
         let Value::Tuple(tp) = v else {
@@ -531,5 +641,80 @@ mod ascii_native_tests {
         let map = map.map_ref().unwrap();
         assert_eq!(map.get(b"id".as_slice()).unwrap(), &Value::Bytes(b"key123".to_vec()));
         assert_eq!(map.get(b"ab9".as_slice()).unwrap(), &Value::Bytes(b"Z1".to_vec()));
+    }
+
+    #[test]
+    fn parse_flat_kv_quoted_value_comma_and_escape() {
+        let spec = u64::from_be_bytes([
+            b'{',
+            b';',
+            b',',
+            b'}',
+            ASCII_CLASS_ALNUM,
+            ASCII_CLASS_ALNUM,
+            0,
+            KV_FLAG_ALLOW_OUTER_WS | KV_FLAG_ALLOW_INNER_WS | KV_FLAG_QUOTED_VALUE,
+        ]);
+        let mut input = spec.to_be_bytes().to_vec();
+        input.extend_from_slice(br#"{x;"a,b",y;z}"#);
+        let res = tuple_items(ascii_parse_flat_kv(0, &input).unwrap());
+        assert_eq!(res[0], Value::U16(ASCII_ERR_OK));
+        let Value::Compo(map) = &res[1] else {
+            panic!("must be map");
+        };
+        let map = map.map_ref().unwrap();
+        assert_eq!(map.get(b"x".as_slice()).unwrap(), &Value::Bytes(b"a,b".to_vec()));
+        assert_eq!(map.get(b"y".as_slice()).unwrap(), &Value::Bytes(b"z".to_vec()));
+
+        let mut esc = spec.to_be_bytes().to_vec();
+        esc.extend_from_slice(&[b'{', b'k', b';', b'"', b'a', b'\\', b'"', b'b', b'"', b'}']);
+        let res2 = tuple_items(ascii_parse_flat_kv(0, &esc).unwrap());
+        let Value::Compo(m2) = &res2[1] else {
+            panic!("must be map");
+        };
+        let m2 = m2.map_ref().unwrap();
+        assert_eq!(m2.get(b"k".as_slice()).unwrap(), &Value::Bytes(vec![b'a', b'"', b'b']));
+
+        let mut empty = spec.to_be_bytes().to_vec();
+        empty.extend_from_slice(&[b'{', b'x', b';', b'"', b'"', b'}']);
+        let res3 = tuple_items(ascii_parse_flat_kv(0, &empty).unwrap());
+        let Value::Compo(m3) = &res3[1] else {
+            panic!("must be map");
+        };
+        let m3 = m3.map_ref().unwrap();
+        assert_eq!(m3.get(b"x".as_slice()).unwrap(), &Value::Bytes(b"".to_vec()));
+    }
+
+    fn spec_kv_flags(kv_flags: u8) -> u64 {
+        u64::from_be_bytes([
+            b'{',
+            b';',
+            b',',
+            b'}',
+            ASCII_CLASS_ALNUM,
+            ASCII_CLASS_ALNUM,
+            0,
+            kv_flags,
+        ])
+    }
+
+    #[test]
+    fn parse_flat_kv_rejects_over_compo_length() {
+        let mut cap = SpaceCap::new(1);
+        cap.compo_length = 1;
+        let mut input = spec_kv_flags(KV_FLAG_ALLOW_OUTER_WS | KV_FLAG_ALLOW_INNER_WS).to_be_bytes().to_vec();
+        input.extend_from_slice(b"{a;b,c;d}");
+        let res = tuple_items(parse_flat_kv_impl(&cap, &input).unwrap());
+        assert_eq!(res[0], Value::U16(ASCII_ERR_SPACE_CAP));
+    }
+
+    #[test]
+    fn parse_flat_kv_rejects_key_over_value_size() {
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = 2;
+        let mut input = spec_kv_flags(KV_FLAG_ALLOW_OUTER_WS | KV_FLAG_ALLOW_INNER_WS).to_be_bytes().to_vec();
+        input.extend_from_slice(b"{abc;d}");
+        let res = tuple_items(parse_flat_kv_impl(&cap, &input).unwrap());
+        assert_eq!(res[0], Value::U16(ASCII_ERR_SPACE_CAP));
     }
 }

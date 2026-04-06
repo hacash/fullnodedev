@@ -75,15 +75,21 @@ pub struct RecentBlockInfo {
 
 
 pub fn create_recent_block_info(blk: &dyn BlockRead) -> RecentBlockInfo {
-    let coinbase = blk.coinbase_transaction().expect("block must have coinbase");
+    let ptx = blk.prelude_transaction().expect("block must have prelude");
+    let miner = ptx.author().unwrap_or_default();
+    let message = ptx
+        .block_message()
+        .map(|msg| msg.to_readable_left())
+        .unwrap_or_else(|| s!(""));
+    let reward = ptx.block_reward().cloned().unwrap_or_else(Amount::zero);
     RecentBlockInfo {
         height:  blk.height().uint(),
         hash:    blk.hash(),
         prev:    blk.prevhash().clone(),
         txs:     blk.transaction_count().uint(), // transaction_count
-        miner:   coinbase.main(),
-        message: coinbase.message().to_readable_left(),
-        reward:  coinbase.reward().clone(),
+        miner,
+        message,
+        reward,
         time:    blk.timestamp().uint(),
         arrive:  curtimes(),
     }

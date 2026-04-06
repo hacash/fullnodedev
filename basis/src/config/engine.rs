@@ -19,9 +19,10 @@ pub struct EngineConf {
     pub vmlog_data_dir: PathBuf, // vmlog state
     pub show_miner_name: bool,
     // block logs
-    pub vmlogs_enable: bool,
-    pub vmlogs_open_height: u64,
-    pub vmlogs_can_delete: bool,
+    pub vm_log_enable: bool,
+    pub vm_log_open_height: u64,
+    pub vm_log_can_delete: bool,
+    pub vm_log_delete_auth_hash: String,
     // dev count
     pub dev_count_switch: usize,
     // data service
@@ -61,7 +62,7 @@ impl EngineConf {
     // Coinbase used by non-block external execution contexts (mempool check/sandbox).
     // If this node has miner enabled and a configured reward address, use that address;
     // otherwise keep zero-address semantics.
-    pub fn external_exec_coinbase(&self) -> Address {
+    pub fn external_exec_author(&self) -> Address {
         if self.miner_enable && self.miner_reward_address != Address::default() {
             return self.miner_reward_address
         }
@@ -100,9 +101,10 @@ impl EngineConf {
             dev_count_switch: 0,
             show_miner_name: false,
             // logs
-            vmlogs_enable: false,
-            vmlogs_open_height: 0,
-            vmlogs_can_delete: false,
+            vm_log_enable: false,
+            vm_log_open_height: 0,
+            vm_log_can_delete: false,
+            vm_log_delete_auth_hash: String::new(),
             //
             diamond_form: ini_must_bool(sec_server, "diamond_form", true),
             recent_blocks: ini_must_bool(sec_server, "recent_blocks", false),
@@ -141,10 +143,11 @@ impl EngineConf {
         cnf.dev_count_switch = ini_must_u64(sec_mint, "dev_count_switch", 0) as usize;
         cnf.show_miner_name = ini_must_bool(sec_mint, "show_miner_name", false);
 
-        let sec_vmlog = &ini_section(ini, "vmlog");
-        cnf.vmlogs_enable = ini_must_bool(sec_vmlog, "enable", false);
-        cnf.vmlogs_can_delete = ini_must_bool(sec_vmlog, "can_delete", false);
-        cnf.vmlogs_open_height = ini_must_u64(sec_vmlog, "open_height", 0) as u64;
+        let sec_vm = &ini_section(ini, "vm");
+        cnf.vm_log_enable = ini_must_bool(sec_vm, "log_enable", false);
+        cnf.vm_log_can_delete = ini_must_bool(sec_vm, "log_can_delete", false);
+        cnf.vm_log_open_height = ini_must_u64(sec_vm, "log_open_height", 0) as u64;
+        cnf.vm_log_delete_auth_hash = ini_must(sec_vm, "log_delete_auth_hash", "");
 
         // HAC miner
         let sec_miner = &ini_section(ini, "miner");
@@ -192,14 +195,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn external_exec_coinbase_returns_zero_when_miner_disabled() {
+    fn external_exec_author_returns_zero_when_miner_disabled() {
         let ini = IniObj::new();
         let cnf = EngineConf::new(&ini, 1);
-        assert_eq!(cnf.external_exec_coinbase(), Address::default());
+        assert_eq!(cnf.external_exec_author(), Address::default());
     }
 
     #[test]
-    fn external_exec_coinbase_returns_miner_reward_when_enabled() {
+    fn external_exec_author_returns_miner_reward_when_enabled() {
         let reward = "1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9".to_owned();
         let mut ini = IniObj::new();
         ini.insert(
@@ -211,7 +214,7 @@ mod tests {
         );
         let cnf = EngineConf::new(&ini, 1);
         assert_eq!(
-            cnf.external_exec_coinbase(),
+            cnf.external_exec_author(),
             Address::from_readable(&reward).unwrap()
         );
     }

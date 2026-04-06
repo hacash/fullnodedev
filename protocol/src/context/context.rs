@@ -113,6 +113,8 @@ impl<'a> ContextInst<'a> {
 
     #[inline]
     fn bind_tx(&mut self, txr: &dyn TransactionRead) {
+        // SAFETY: `txr` is borrowed from the caller for the entire lifetime of this bound context.
+        // We only store it while the context is executing that tx and replace it on the next bind/reset.
         self.txr = unsafe {
             std::mem::transmute::<&dyn TransactionRead, &'static dyn TransactionRead>(txr)
         };
@@ -124,16 +126,19 @@ impl<'a> ContextInst<'a> {
         Box::new((
             self.tex_ledger.clone(),
             self.psh.keys().cloned().collect::<HashSet<Address>>(),
+            self.gas.rebated_checkpoint(),
         ))
     }
 
     fn restore_volatile_inner(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>)>() else {
+        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>, i64)>() else {
             return;
         };
-        let (tex, keys) = *snap;
+        let (tex, keys, rebated) = *snap;
         self.tex_ledger = tex;
         self.psh.retain(|k, _| keys.contains(k));
+        // On AST rollback, keep gas_charge effects but roll back gas_rebate to avoid refundable-gas replay.
+        self.gas.restore_rebated(rebated);
     }
 
     fn addr_resolve(&self, ptr: &AddrOrPtr) -> Ret<Address> {
@@ -225,21 +230,28 @@ impl Context for ContextInst<'_> {
         self.txr
     }
 
-    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(GasUse, Box<dyn Any>)> {
+    fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
         self.ensure_vm_assigned()?;
-        let old = self.exec_from;
-        self.exec_from = ExecFrom::Call;
-        let ret = unsafe {
+        unsafe {
             let ctx = self as *mut Self;
             let Some(vm) = (*ctx).vm.as_deref_mut() else {
-                self.exec_from = old;
                 return xerrf!("vm state invalid after assign")
             };
-            // Re-entry must observe the same VM instance while also passing the same context as host.
+            // SAFETY: we must re-enter the same VM instance while also passing the same context as host.
+            // `vm` is not moved during this call, `ctx` stays at a stable address, and neither reference escapes.
             vm.call(&mut *ctx as &mut dyn Context, req)
-        };
-        self.exec_from = old;
-        ret
+        }
+    }
+
+    fn vm_current_intent_scope(&mut self) -> Option<Option<usize>> {
+        self.vm_mut().and_then(|vm| vm.current_intent_scope())
+    }
+
+    fn vm_runtime_config(&mut self) -> Option<Box<dyn Any>> {
+        if self.ensure_vm_assigned().is_err() {
+            return None;
+        }
+        self.vm_mut().and_then(|vm| vm.runtime_config())
     }
 
     fn vm_snapshot_volatile(&mut self) -> Option<Box<dyn Any>> {
@@ -252,9 +264,9 @@ impl Context for ContextInst<'_> {
         }
     }
 
-    fn vm_restore_but_keep_warmup(&mut self) {
+    fn vm_rollback_volatile_preserve_warm_and_gas(&mut self) {
         if let Some(vm) = self.vm_mut() {
-            vm.restore_but_keep_warmup();
+            vm.rollback_volatile_preserve_warm_and_gas();
         }
     }
 
@@ -270,6 +282,10 @@ impl Context for ContextInst<'_> {
 
     fn gas_charge(&mut self, gas: i64) -> Rerr {
         self.gas.charge(gas)
+    }
+
+    fn gas_rebate(&mut self, gas: i64) -> Rerr {
+        self.gas.rebate(gas)
     }
 
     fn gas_initialize(&mut self, budget: i64) -> Rerr {
@@ -302,5 +318,19 @@ impl Context for ContextInst<'_> {
 
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
         self.p2sh_insert(adr, p2sh)
+    }
+
+    fn run_deferred_phase(&mut self) -> Rerr {
+        if self.vm.is_some() {
+            unsafe {
+                let ctx = self as *mut Self;
+                let vm = (*ctx).vm.as_mut().unwrap();
+                // SAFETY: deferred replay must use the same live VM instance and the same context object.
+                // The VM stays owned by this context for the duration of the call and no alias escapes.
+                vm.drain_deferred(&mut *ctx)
+            }
+        } else {
+            Ok(())
+        }
     }
 }

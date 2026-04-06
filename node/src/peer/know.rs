@@ -1,4 +1,3 @@
-
 pub const KNOWLEDGE_SIZE: usize = 32;
 pub type KnowKey = [u8; KNOWLEDGE_SIZE];
 
@@ -14,15 +13,15 @@ struct KnowledgeInner {
     set: std::collections::HashSet<KnowKey>,
 }
 
-
 impl Knowledge {
     pub fn new(sz: usize) -> Knowledge {
-        Knowledge{
+        Knowledge {
             size: sz,
-            data: KnowledgeInner{
-                order: VecDeque::with_capacity(sz+1),
-                set: std::collections::HashSet::with_capacity(sz*2+1),
-            }.into(),
+            data: KnowledgeInner {
+                order: VecDeque::with_capacity(sz + 1),
+                set: std::collections::HashSet::with_capacity(sz * 2 + 1),
+            }
+            .into(),
         }
     }
 
@@ -46,10 +45,4 @@ impl Knowledge {
     pub fn check(&self, key: &KnowKey) -> bool {
         self.data.lock().unwrap().set.contains(key)
     }
-
-
-
-
-
-
 }

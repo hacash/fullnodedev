@@ -67,16 +67,12 @@ impl BlockRead for BlockV1 {
         self.transactions.as_list()
     }
 
-    fn coinbase_transaction(&self) ->  Ret<&dyn TransactionRead> {
+    fn prelude_transaction(&self) -> Ret<&dyn TransactionRead> {
         let txs = self.transactions();
-        if txs.len() < 1 {
-            return errf!("block must have coinbase tx")
+        if txs.is_empty() {
+            return errf!("block must have prelude tx")
         }
-        let cbtx = &txs[0];
-        if cbtx.ty() != TransactionCoinbase::TYPE {
-            return errf!("block first tx must be coinbase")
-        }
-        Ok(cbtx.as_read())
+        Ok(txs[0].as_read())
     }
 }
 
@@ -88,16 +84,17 @@ impl BlockExec for BlockV1 {
             block: BlkInfo {
                 height: self.height().uint(),
                 hash: self.hash(),
-                coinbase: Address::default(),
+                author: Address::default(),
             },
             tx: TxInfo::default(),
         };
-        // coinbase 
-        let cbtx = self.coinbase_transaction()?;
-        let base_addr = cbtx.main();
-        env.block.coinbase = base_addr.clone();
+        let ptx = self.prelude_transaction()?;
+        let fee_receiver = ptx.fee_receiver();
+        if let Some(author) = ptx.author() {
+            env.block.author = author;
+        }
         // create ctx
-        let mut ctxobj = context::ContextInst::new(env, state, logs, cbtx);
+        let mut ctxobj = context::ContextInst::new(env, state, logs, ptx);
         let ctx = &mut ctxobj;
         let txs = self.transactions();
         let mut total_fee = Amount::zero();
@@ -107,9 +104,8 @@ impl BlockExec for BlockV1 {
             tx.execute(ctx)?; // do exec
             total_fee = total_fee.add_mode_u64(&tx.fee_got())?; // add fee
         }
-        // add fee
-        if total_fee.is_positive() { // amt > 0
-            operate::hac_add(ctx, &base_addr, &total_fee)?;
+        if let Some(fee_receiver) = fee_receiver.filter(|_| total_fee.is_positive()) {
+            operate::hac_add(ctx, &fee_receiver, &total_fee)?;
         }
         Ok(ctxobj.release())
 

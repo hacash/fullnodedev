@@ -1,5 +1,4 @@
 
-// #[derive(Clone)]
 pub struct PeerMngInst {
     p2p: Arc<P2PManage>,
 }
@@ -11,7 +10,6 @@ impl PeerMngInst {
         }
     }
 }
-
 
 
 impl PeerManage for PeerMngInst {
@@ -34,19 +32,17 @@ impl P2PManage {
             return p
         }
         for pr in &pubps {
-            if pr.id == p.id {
-                return p
+            if Arc::ptr_eq(pr, &p) || pr.key == p.key {
+                return pr.clone()
             }
         }
-        // the first one
         pubps[0].clone()
     }
 
     fn broadcast_message(p2p: Arc<P2PManage>, delay: u64, key: KnowKey, ty: u16, body: Vec<u8>) {
         tokio::spawn(async move {
             if delay > 0 {
-                // may sleep to avoid duplicate broadcasts
-                asleep(delay as f32).await; 
+                asleep(delay as f32).await;
             }
             p2p.broadcast_unaware(&key, ty, body).await;
         });

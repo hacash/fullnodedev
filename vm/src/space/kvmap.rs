@@ -10,7 +10,7 @@ use crate::value::Value;
 macro_rules! memories_kvmap_define {
     ($class:ident, $er1:expr, $er2:expr) => {
         #[allow(dead_code)]
-        #[derive(Default, Clone)]
+        #[derive(Default, Clone, Debug)]
         pub struct $class {
             limit: usize,
             datas: HashMap<Vec<u8>, Value>,
@@ -72,8 +72,23 @@ macro_rules! memories_kvmap_define {
                 })
             }
 
+            pub fn remove(&mut self, k: &Value) -> VmrtErr {
+                self.datas.remove(&Self::key(k)?);
+                Ok(())
+            }
+
             pub fn contains_key(&self, k: &Value) -> VmrtRes<bool> {
                 Ok(self.datas.contains_key(&Self::key(k)?))
+            }
+
+            pub fn len(&self) -> usize {
+                self.datas.len()
+            }
+
+            pub fn keys_sorted(&self) -> Vec<Vec<u8>> {
+                let mut keys = self.datas.keys().cloned().collect::<Vec<_>>();
+                keys.sort_unstable();
+                keys
             }
         }
     };
@@ -130,6 +145,14 @@ impl CtcKVMap {
             Some(mem) => mem.get(key),
             None => Ok(Value::Nil),
         }
+    }
+
+    pub fn remove(&mut self, addr: &Address, key: &Value) -> VmrtErr {
+        Self::check_addr(addr)?;
+        if let Some(mem) = self.datas.get_mut(addr) {
+            mem.remove(key)?;
+        }
+        Ok(())
     }
 }
 

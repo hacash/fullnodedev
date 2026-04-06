@@ -6,7 +6,10 @@ fn diamond(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let staptr = read_mint_state(ctx);
     let state = CoreStateRead::wrap(staptr.as_ref().as_ref());
     if number > 0 {
-        let Some(dian) = state.diamond_name(&DiamondNumber::from(number)) else {
+        let Ok(dian) = DiamondNumber::from_usize(number as usize) else {
+            return api_error("diamond number error");
+        };
+        let Some(dian) = state.diamond_name(&dian) else {
             return api_error("cannot find diamond");
         };
         name = dian.to_readable();

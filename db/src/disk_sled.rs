@@ -11,7 +11,14 @@ pub struct DiskKV {
 impl DiskKV {
 
     pub fn open(dir: &Path) -> Self {
-        Self { ldb: sled::open(dir).unwrap() }
+        let mut cfg = sled::Config::new().path(dir);
+        if db_sled_small_machine_enabled() {
+            cfg = cfg
+                .cache_capacity(32 * 1024 * 1024) // 32MB
+                .mode(sled::Mode::LowSpace)
+                .flush_every_ms(Some(1000));
+        }
+        Self { ldb: cfg.open().unwrap() }
     }
 
 }
@@ -64,4 +71,3 @@ impl DiskDB for DiskKV {
     }
 
 }
-

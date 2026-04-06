@@ -9,7 +9,7 @@ use sys::*;
 
 use super::component::*;
 use super::config::*;
-pub use super::component::GasUse;
+pub use super::component::VmGasBuckets;
 
 include! {"peer.rs"}
 include! {"txpool.rs"}

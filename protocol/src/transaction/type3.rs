@@ -190,15 +190,19 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
         return errf!("tx type {} ano_mark must be zero", prep.txty);
     }
     mark_tx_exist(ctx, &prep.hx, prep.blkhei);
-    tx_gas_initialize(ctx)?;
+    let gas_initialized = tx_gas_initialize(ctx)?;
     for action in tx.actions() {
         ctx.exec_from_set(ExecFrom::Top);
         let (ret_gas, _retv) = action.execute(ctx)?;
         ctx.gas_charge(extra9_surcharge(action.extra9(), ret_gas) as i64)?;
     }
-    // Upper layers roll back failed transaction state, so refund is only executed on success and cannot leave inconsistent state behind.
-    ctx.gas_refund()?;
     super::tex::do_settlement(ctx)?;
+    ctx.run_deferred_phase()?;
+    // Commit semantics: gas settlement/statistics are committed only on the tx success path.
+    // Upper layers roll back failed transaction state, so refund is only executed on success and cannot leave inconsistent state behind.
+    if gas_initialized {
+        ctx.gas_refund()?;
+    }
     operate::hac_sub(ctx, &prep.main, &prep.fee)?;
     Ok(())
 }
@@ -206,18 +210,21 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
 
 
 // init gas
-pub fn tx_gas_initialize(ctx: &mut dyn Context) -> Rerr {
+pub fn tx_gas_initialize(ctx: &mut dyn Context) -> Ret<bool> {
     let tx = ctx.tx();
     let txty = tx.ty();
     let Some(gas_max_byte) = tx.gas_max_byte() else {
         return errf!("tx type {} gas_max must exist", txty);
     };
-    if gas_max_byte == 0 {
-        return errf!("tx type {} gas_max must be non-zero", txty);
-    }
     let budget = decode_gas_budget(gas_max_byte.min(TX_GAS_BUDGET_CAP_BYTE));
     if budget <= 0 {
-        return errf!("gas budget invalid");
+        // `gas_max=0` is intentional and means "do not initialize tx gas".
+        // This is valid because not every action path consumes gas. Callers must not
+        // reinterpret this branch as an invalid transaction; if a later action actually
+        // charges gas, the execution path will fail with the normal "gas not initialized"
+        // error at the first real gas use.
+        return Ok(false);
     }
-    ctx.gas_initialize(budget)
+    ctx.gas_initialize(budget)?;
+    Ok(true)
 }

@@ -66,6 +66,23 @@ impl PartialOrd for Amount {
 }
 
 
+impl Amount {
+    fn parse_check_canonical(unit: u8, dist: i8, byte: &[u8]) -> Ret<()> {
+        let rbtl = byte.len();
+        if rbtl > 1 && bytes_is_zero(byte)  {
+            return errf!("multi-byte amount cannot be all zero")
+        }
+        if rbtl > 1 && byte[0] == 0 {
+            return errf!("amount leading zero byte is not canonical")
+        }
+        if bytes_is_zero(byte) && (unit != 0 || dist != 0 || !byte.is_empty()) {
+            // Not reporting an error is for compatibility with historical blocks.
+            println!("amount semantic zero is not canonical")
+        }
+        Ok(())
+    }
+}
+
 impl Parse for Amount {
     fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
         let unit = bufeatone(&buf)?;
@@ -84,13 +101,7 @@ impl Parse for Amount {
         if dist != 0 && rbtl == 0 {
             return errf!("dist and byte zero mismatch")
         }
-        if rbtl > 1 && bytes_is_zero(&byte)  {
-            return errf!("multi-byte amount cannot be all zero")
-        }
-        if bytes_is_zero(&byte) && (unit != 0 || dist != 0 || !byte.is_empty()) {
-            println!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte={:?})", unit, dist, byte)
-            // return errf!("amount parse: semantic zero in non-canonical form (unit={}, dist={}, byte_len={})", self.unit, self.dist, self.byte.len())
-        }
+        Self::parse_check_canonical(unit, dist, &byte)?;
         self.unit = unit;
         self.dist = dist;
         self.byte = byte;

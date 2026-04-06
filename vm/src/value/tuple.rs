@@ -60,7 +60,14 @@ impl TupleItem {
     }
 
     pub fn val_size(&self) -> usize {
-        self.items.iter().map(Value::val_size).sum()
+        let mut sum = 0usize;
+        for item in self.items.iter() {
+            sum = add_size_saturating(sum, item.val_size());
+            if sum == usize::MAX {
+                break;
+            }
+        }
+        sum
     }
 
     pub fn length(&self, cap: &SpaceCap) -> VmrtRes<Value> {
@@ -87,10 +94,42 @@ impl TupleItem {
         let mut bsz = 0usize;
         let mut items = std::collections::VecDeque::with_capacity(len);
         for item in self.items.iter().cloned() {
-            bsz += item.val_size();
+            bsz = add_size_saturating(bsz, item.val_size());
             items.push_back(item);
         }
         Ok((Value::Compo(CompoItem::list(items)?), len, bsz))
+    }
+
+    pub fn content_eq(&self, other: &Self) -> VmrtRes<bool> {
+        if self.ptr_eq(other) {
+            return Ok(true);
+        }
+        if self.len() != other.len() {
+            return Ok(false);
+        }
+        for (lhs, rhs) in self.as_slice().iter().zip(other.as_slice().iter()) {
+            if !value_content_eq(lhs, rhs)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn compare_fee(&self, other: &Self, container_header_fee: usize) -> usize {
+        if self.ptr_eq(other) {
+            return container_header_fee;
+        }
+        if self.len() != other.len() {
+            return container_header_fee;
+        }
+        let mut fee = container_header_fee;
+        for (lhs, rhs) in self.as_slice().iter().zip(other.as_slice().iter()) {
+            fee = add_size_saturating(fee, value_compare_fee(lhs, rhs, container_header_fee));
+            if fee == usize::MAX {
+                break;
+            }
+        }
+        fee
     }
 
     pub fn to_string(&self) -> String {
@@ -176,6 +215,25 @@ mod tuple_tests {
         let rebuilt = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
         assert!(tuple.ptr_eq(&cloned));
         assert!(!tuple.ptr_eq(&rebuilt));
+    }
+
+    #[test]
+    fn tuple_content_eq_uses_value_semantics_with_ptr_fast_path() {
+        let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let cloned = shared.clone();
+        let rebuilt = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
+        let diff = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 4])]).unwrap();
+
+        assert!(shared.content_eq(&cloned).unwrap());
+        assert!(shared.content_eq(&rebuilt).unwrap());
+        assert!(!shared.content_eq(&diff).unwrap());
+        assert_eq!(shared.compare_fee(&cloned, 16), 16);
+        assert_eq!(
+            shared.compare_fee(&rebuilt, 16),
+            16
+                + value_compare_fee(&Value::U8(7), &Value::U8(7), 16)
+                + value_compare_fee(&Value::Bytes(vec![1, 2, 3]), &Value::Bytes(vec![1, 2, 3]), 16)
+        );
     }
 
     #[test]

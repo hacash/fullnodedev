@@ -6,13 +6,12 @@ pub(super) struct Cursor {
 }
 
 impl Cursor {
-    pub(super) fn new(mut tokens: Vec<Token>) -> Self {
-        tokens.push(Token::Partition('}'));
+    pub(super) fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, idx: 0 }
     }
 
     pub(super) fn at_end(&self) -> bool {
-        self.idx >= self.tokens.len().saturating_sub(1)
+        self.idx >= self.tokens.len()
     }
 
     pub(super) fn peek(&self) -> Option<&Token> {
@@ -21,7 +20,7 @@ impl Cursor {
 
     pub(super) fn next(&mut self) -> Ret<Token> {
         if self.idx >= self.tokens.len() {
-            return errf!("syntax_v2: unexpected end of token stream");
+            return errf!("syntax: unexpected end of token stream");
         }
         let token = self.tokens[self.idx].clone();
         self.idx += 1;

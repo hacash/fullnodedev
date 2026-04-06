@@ -29,6 +29,9 @@ pub struct ExecCtx {
     pub call_depth: usize,
 }
 
+pub type BoundIntentId = Option<usize>;
+pub type IntentScope = Option<BoundIntentId>;
+
 #[derive(Debug, Clone)]
 pub enum CallExit {
     Abort,
@@ -63,6 +66,7 @@ pub struct FrameBindings {
     pub code_owner: Option<ContractAddress>,
     pub state_this: Option<ContractAddress>,
     pub context_addr: Address,
+    pub intent_scope: IntentScope,
     pub lib_table: Arc<[Address]>,
 }
 
@@ -72,6 +76,7 @@ impl FrameBindings {
             code_owner: None,
             state_this: None,
             context_addr,
+            intent_scope: None,
             lib_table,
         }
     }
@@ -85,8 +90,14 @@ impl FrameBindings {
             context_addr: state_this.to_addr(),
             state_this: Some(state_this),
             code_owner: Some(code_owner),
+            intent_scope: None,
             lib_table,
         }
+    }
+
+    pub fn with_intent_scope(mut self, intent_scope: IntentScope) -> Self {
+        self.intent_scope = intent_scope;
+        self
     }
 
     pub fn next_after_call(
@@ -97,12 +108,13 @@ impl FrameBindings {
         lib_table: Arc<[Address]>,
     ) -> Self {
         if switch_context {
-            Self::contract(anchor, code_owner, lib_table)
+            Self::contract(anchor, code_owner, lib_table).with_intent_scope(self.intent_scope)
         } else {
             Self {
                 code_owner: Some(code_owner),
                 state_this: self.state_this.clone(),
                 context_addr: self.context_addr,
+                intent_scope: self.intent_scope,
                 lib_table,
             }
         }

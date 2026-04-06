@@ -6,7 +6,7 @@
 
 
 
-/// Helper: generates the type-specific method (call for func, gas for env).
+/// Helper: generates the type-specific dispatch method.
 macro_rules! native_dispatch_method {
     (func, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
         pub fn call(hei: u64, idx: u8, v: &[u8]) -> VmrtRes<(Value, i64)> {
@@ -22,18 +22,12 @@ macro_rules! native_dispatch_method {
             }
         }
     };
-    (env, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
-        pub fn gas(idx: u8) -> VmrtRes<i64> {
-            match idx {
-                $( $v => Ok($gas), )+
-                _ => return itr_err_fmt!($ErrCode, "not find native env idx {}", idx),
-            }
-        }
-    };
+    (ctl, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {};
+    (env, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {};
 }
 
-/// Unified macro for NativeFunc / NativeEnv.
-/// Pass `func` for pure functions (generates `call()`), `env` for context reads (generates `gas()`).
+/// Unified macro for native func / ctl / env metadata.
+/// `func` additionally generates `call()`, while `ctl/env` keep runtime dispatch outside this macro.
 macro_rules! native_func_env_define {
     ( $kind:ident, $EnumName:ident, $ErrCode:ident,
       $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+ ) => {
@@ -63,6 +57,17 @@ impl $EnumName {
     }
 
     native_dispatch_method!($kind, $EnumName, $ErrCode, $( $name = $v, $argv_len, $gas, $rty )+);
+
+    pub const fn gas_of(&self) -> i64 {
+        match self {
+            $( Self::$name => $gas, )+
+            Self::Null => 0,
+        }
+    }
+
+    pub fn gas(idx: u8) -> VmrtRes<i64> {
+        Ok(Self::try_from_u8(idx)?.gas_of())
+    }
 
     pub fn name(&self) -> &'static str {
         match self {

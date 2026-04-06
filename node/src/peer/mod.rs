@@ -6,14 +6,12 @@ use std::time::SystemTime;
 
 use tokio::net::tcp::*;
 use tokio::net::*;
-use tokio::sync::Notify;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 
-use basis::interface::*;
 use field::*;
 use sys::*;
 
 use super::p2p::*;
-use super::*;
 
 pub const PEER_KEY_SIZE: usize = 16;
 pub type PeerKey = [u8; PEER_KEY_SIZE];

@@ -77,6 +77,14 @@ fn build_maincall_hac_transfer(to: &Address, mei: u64) -> ContractMainCall {
     ContractMainCall::from_bytecode(lang_to_bytecode(&script).unwrap()).unwrap()
 }
 
+fn build_vm_defer_call(lib_idx: u8, func_name: &str) -> ContractMainCall {
+    let sig = vm::rt::calc_func_sign(func_name);
+    let mut codes = vec![vm::rt::Bytecode::PNIL as u8, vm::rt::Bytecode::CALLEXT as u8, lib_idx];
+    codes.extend_from_slice(&sig);
+    codes.push(vm::rt::Bytecode::END as u8);
+    ContractMainCall::from_bytecode(codes).unwrap()
+}
+
 unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::ContextInst<'a> {
     unsafe { &mut *(ctx as *mut dyn Context as *mut protocol::context::ContextInst<'a>) }
 }
@@ -609,7 +617,7 @@ fn test_ast_nested_if_select_else_path_commits_expected_layers() {
 }
 
 #[test]
-fn test_ast_tx_gasmax_zero_is_rejected_before_execution() {
+fn test_ast_tx_gasmax_zero_skips_init_and_fails_on_first_real_gas_use() {
     let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -635,7 +643,7 @@ fn test_ast_tx_gasmax_zero_is_rejected_before_execution() {
 
     ctx.exec_from_set(ExecFrom::Top);
     let err = tx.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("gas_max must be non-zero"), "{}", err);
+    assert!(err.contains("gas not initialized"), "{}", err);
 }
 
 #[test]
@@ -674,14 +682,17 @@ fn test_ast_nested_item_snapshot_gas_consumption_is_exact() {
 }
 
 #[test]
-fn test_tx_without_ast_allows_nonzero_gasmax() {
+fn test_tx_without_ast_allows_nonzero_gasmax_when_topology_is_valid() {
     let mut tx = TransactionType3::default();
     tx.fee = Amount::unit238(1_000_000);
     tx.addrlist =
         AddrOrList::Val1(Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap());
     tx.ty = Uint1::from(TransactionType3::TYPE);
     tx.gas_max = Uint1::from(17);
-    tx.actions.push(Box::new(TxMessage::new())).unwrap();
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    act.hacash = Amount::zhu(1);
+    tx.actions.push(Box::new(act)).unwrap();
 
     let main = tx.main();
     let mut env = Env::default();
@@ -934,7 +945,7 @@ fn test_ast_tree_depth_limit_6_rejects_7th_level() {
     let lvl2 = AstSelect::create_list(vec![Box::new(lvl3)]);
     let lvl1 = AstSelect::create_list(vec![Box::new(lvl2)]);
 
-    let err = check_action_ast_tree_depth(&lvl1).unwrap_err();
+    let err = precheck_runtime_action(TransactionType3::TYPE, &lvl1, ExecFrom::Top).unwrap_err();
     assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
     assert_eq!(ast_state_get_u8(&mut ctx, 105), None);
 }
@@ -2102,7 +2113,7 @@ impl VM for AstDeepDelayVm {
         }
     }
 
-    fn restore_but_keep_warmup(&mut self) {
+    fn rollback_volatile_preserve_warm_and_gas(&mut self) {
         self.clean_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.volatile.store(0, std::sync::atomic::Ordering::SeqCst);
@@ -2112,7 +2123,7 @@ impl VM for AstDeepDelayVm {
         &mut self,
         _: &mut dyn Context,
         req: Box<dyn std::any::Any>,
-    ) -> XRet<(GasUse, Box<dyn std::any::Any>)> {
+    ) -> XRet<(VmGasBuckets, Box<dyn std::any::Any>)> {
         let Ok(data) = req.downcast::<Vec<u8>>() else {
             return xerrf!("deep delay vm payload type mismatch");
         };
@@ -2130,7 +2141,7 @@ impl VM for AstDeepDelayVm {
         if should_fail {
             return xerr_rf!("deep delay vm forced fail");
         }
-        Ok((GasUse::default(), Box::new(Vec::<u8>::new())))
+        Ok((VmGasBuckets::default(), Box::new(Vec::<u8>::new())))
     }
 }
 
@@ -2358,7 +2369,7 @@ impl VM for AstBugAssumeVm {
         &mut self,
         _: &mut dyn Context,
         req: Box<dyn std::any::Any>,
-    ) -> XRet<(GasUse, Box<dyn std::any::Any>)> {
+    ) -> XRet<(VmGasBuckets, Box<dyn std::any::Any>)> {
         let Ok(data) = req.downcast::<Vec<u8>>() else {
             return xerrf!("ast bug assume vm payload type mismatch");
         };
@@ -2378,9 +2389,9 @@ impl VM for AstBugAssumeVm {
         self.burned
             .fetch_add(gas_cost, std::sync::atomic::Ordering::SeqCst);
         Ok((
-            GasUse {
+            VmGasBuckets {
                 compute: gas_cost,
-                ..GasUse::default()
+                ..VmGasBuckets::default()
             },
             Box::new(Vec::<u8>::new()),
         ))
@@ -2473,7 +2484,7 @@ impl AstTestBugVmCall {
 }
 
 #[test]
-fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
+fn test_ast_vm_assumption_fail_child_then_success_child_reports_only_success_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -2502,7 +2513,7 @@ fn test_ast_bug_assumption_fail_child_then_success_child_burn_gap() {
 }
 
 #[test]
-fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
+fn test_ast_vm_assumption_min_zero_keeps_failed_vm_branch_unreported_in_mock_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -2524,7 +2535,7 @@ fn test_ast_bug_assumption_min_zero_allows_failed_vm_branch_without_burn() {
 }
 
 #[test]
-fn test_ast_bug_control_all_success_children_no_burn_gap() {
+fn test_ast_vm_assumption_all_success_children_match_mock_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -2556,7 +2567,7 @@ fn test_ast_bug_control_all_success_children_no_burn_gap() {
 }
 
 #[test]
-fn test_ast_bug_control_min_zero_success_child_charged() {
+fn test_ast_vm_assumption_min_zero_success_child_updates_mock_burn() {
     let mut tx = TransactionType2::default();
     tx.fee = Amount::unit238(1000);
     tx.addrlist =
@@ -2700,7 +2711,7 @@ fn test_ast_vm_delay_init_depth6_revert_and_fault_channels() {
         vec![Box::new(lvl3), Box::new(AstTestSet::create_by(233, 233))],
     );
 
-    let err = check_action_ast_tree_depth(&root).unwrap_err();
+    let err = precheck_runtime_action(TransactionType3::TYPE, &root, ExecFrom::Top).unwrap_err();
     assert!(err.contains("ast tree depth 7 exceeded max 6"), "{}", err);
 
     // precheck rejects the whole root AST node before execution
@@ -3613,7 +3624,7 @@ fn test_ast_if_cond_partial_failure_with_maincall_rolls_back_and_runs_else() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3662,7 +3673,7 @@ fn test_ast_select_nested_mixed_maincall_p2sh_vm_failure_isolated() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3716,7 +3727,7 @@ fn test_ast_deep_maincall_if_select_if_commits_expected_state() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
 
     let (mock_vm, counter) = MockVM::create();
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
@@ -3774,13 +3785,13 @@ fn test_ast_real_maincall_and_p2sh_transfer_failure_isolated_by_outer_select() {
     let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1_730_000_301);
     tx.gas_max = Uint1::from(17);
     let mut env = Env::default();
-    env.block.height = 1;
+    env.block.height = protocol::upgrade::ONLINE_OPEN_HEIGHT;
     env.tx = create_tx_info(&tx);
     env.chain.fast_sync = false;
 
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_initialize(10000).unwrap();
-    ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
+    ctx.test_set_vm(Box::new(vm::global_runtime_pool().checkout(1)));
     let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
     protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(11)).unwrap();
 
@@ -3825,13 +3836,13 @@ fn test_ast_deep_real_maincall_and_p2sh_transfer_commit_expected_balances() {
     let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1_730_000_302);
     tx.gas_max = Uint1::from(17);
     let mut env = Env::default();
-    env.block.height = 1;
+    env.block.height = protocol::upgrade::ONLINE_OPEN_HEIGHT;
     env.tx = create_tx_info(&tx);
     env.chain.fast_sync = false;
 
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_initialize(10000).unwrap();
-    ctx.test_set_vm(Box::new(vm::global_machine_manager().assign(1)));
+    ctx.test_set_vm(Box::new(vm::global_runtime_pool().checkout(1)));
     let (scriptmh, prove) = build_p2sh_unlock_prove("return 0");
     protocol::operate::hac_add(&mut ctx, &scriptmh, &Amount::mei(9)).unwrap();
 
@@ -4023,7 +4034,7 @@ fn test_ast_if_invalid_cond_select_runs_else_no_cond_leak() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
     let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     ctx.gas_initialize(10000).unwrap();
 
@@ -4058,7 +4069,7 @@ fn test_ast_select_direct_child_mutate_all_fail_recovers_all_channels() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
@@ -4193,7 +4204,7 @@ fn test_ast_if_cond_mutate_all_fail_recovers_and_commits_else() {
 
     let mut env = Env::default();
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
-    env.chain.fast_sync = false; // keep check_action_scope enabled
+    env.chain.fast_sync = false; // keep runtime level precheck enabled
     let logs = Box::new(AstTestLogs::new());
     let logs_ptr = logs.as_ref() as *const AstTestLogs;
     let (mock_vm, counter) = MockVM::create();
