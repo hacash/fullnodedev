@@ -64,6 +64,7 @@ impl CallFrame {
                     // Validate local argv boundary before resolving/loading any callee so
                     // malformed input cannot warm caches via either Invoke or Splice.
                     curr_mut!().oprnds.peek()?.check_func_argv()?;
+                    curr_mut!().oprnds.peek()?.check_boundary_value_cap(&r.warm.space_cap)?;
                     curr_mut!().oprnds.peek()?.check_container_cap(&r.warm.space_cap)?;
                     let mut plan = r.plan_user_call(host, &spec, &curr_bindings)?;
                     plan.next_bindings.intent_scope = curr!().intent_state.current_scope();

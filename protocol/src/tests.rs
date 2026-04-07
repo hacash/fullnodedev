@@ -13,17 +13,13 @@ static INIT: Once = Once::new();
 
 fn init_test_registry() {
     INIT.call_once(|| {
-        let builder =
-            crate::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff));
-        let registry = builder
-            .register_codec(
-                &[TestExtEnvReadOnly::KIND],
-                action_env_try_create,
-                action_env_try_json_decode,
-            )
-            .build()
-            .unwrap();
-        crate::setup::install_once(registry).unwrap();
+        let mut setup = crate::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff));
+        setup.action_codec(
+            &[TestExtEnvReadOnly::KIND],
+            action_env_try_create,
+            action_env_try_json_decode,
+        );
+        crate::setup::install_once(setup).unwrap();
     });
 }
 
@@ -126,9 +122,9 @@ fn init_action_env_test_registry() {
 }
 
 #[test]
-fn test_setup_builder_uses_default_sha3_block_hasher() {
-    let registry = crate::setup::SetupBuilder::new().build().unwrap();
-    let _guard = crate::setup::install_scoped_for_test(registry);
+fn test_setup_default_uses_sha3_block_hasher() {
+    let registry = crate::setup::ProtocolSetup::default();
+    let _guard = crate::setup::install_test_scope(registry);
     assert_eq!(
         crate::setup::do_block_hash(1, b"abc"),
         sys::calculate_hash(b"abc")

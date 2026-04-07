@@ -2294,6 +2294,29 @@ mod bounds_tests {
     }
 
     #[test]
+    fn zero_length_byte_slice_ops_are_allowed() {
+        let mut v = Value::Bytes(vec![1, 2, 3]);
+        v.cutleft(0).unwrap();
+        assert_eq!(v, Value::Bytes(vec![]));
+
+        let mut v = Value::Bytes(vec![1, 2, 3]);
+        v.cutright(0).unwrap();
+        assert_eq!(v, Value::Bytes(vec![]));
+
+        let mut v = Value::Bytes(vec![1, 2, 3]);
+        v.cutout(Value::U8(0), Value::U8(2)).unwrap();
+        assert_eq!(v, Value::Bytes(vec![]));
+
+        let mut v = Value::Bytes(vec![1, 2, 3]);
+        v.dropleft(0).unwrap();
+        assert_eq!(v, Value::Bytes(vec![1, 2, 3]));
+
+        let mut v = Value::Bytes(vec![1, 2, 3]);
+        v.dropright(0).unwrap();
+        assert_eq!(v, Value::Bytes(vec![1, 2, 3]));
+    }
+
+    #[test]
     fn unpack_rejects_oversize_list_value_by_spacecap() {
         use crate::rt::Bytecode;
         use std::collections::VecDeque;

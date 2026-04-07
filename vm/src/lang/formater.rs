@@ -795,7 +795,7 @@ impl<'a> Formater<'a> {
                         _ => unreachable!(),
                     });
                 }
-                CU8 | CU16 | CU32 | CU64 | CU128 | CBUF | RET | ERR | AST | PRT => {
+                CU8 | CU16 | CU32 | CU64 | CU128 | CBYTES | RET | ERR | AST | PRT => {
                     let literal = self.literal_from_node(&*s.subx);
                     let substr = match &literal {
                         Some(lit) => lit.text.clone(),
@@ -859,7 +859,7 @@ impl<'a> Formater<'a> {
                                 format!("{}{} as u128", pre, operand)
                             }
                         }
-                        CBUF => format!("{}{} as bytes", pre, operand),
+                        CBYTES => format!("{}{} as bytes", pre, operand),
                         RET | ERR | AST | PRT => {
                             let meta = s.inst.metadata();
                             format!("{}{} {}", pre, meta.intro, substr)
@@ -1199,7 +1199,18 @@ impl<'a> Formater<'a> {
                     substr.clone()
                 );
                 match ValueTy::build(node.para) {
-                    Ok(ty @ (ValueTy::Bool | ValueTy::Address)) => format!("{} as {}", operand, ty.name()),
+                    Ok(ValueTy::Bool) => format!("{} as bool", operand),
+                    Ok(ValueTy::Address) => {
+                        let source_compatible = Syntax::extract_literal_value(&*node.subx)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|mut value| value.cast_addr().is_ok());
+                        maybe!(
+                            source_compatible,
+                            format!("{} as address", operand),
+                            format!("{}({}, {})", meta.intro, node.para, substr)
+                        )
+                    }
                     Ok(
                         ValueTy::U8
                         | ValueTy::U16

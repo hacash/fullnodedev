@@ -1,3 +1,4 @@
+
 pub struct MsgHandler {
     pub(crate) engine: Arc<dyn Engine>,
     pub(crate) txpool: Arc<dyn TxPool>,
@@ -11,6 +12,8 @@ pub struct MsgHandler {
     pub(crate) knows: Knowledge,
 
     pub(crate) inserting: Arc<StdMutex<bool>>,
+    exts_by_ty: StdMutex<HashMap<u16, Arc<dyn NodeP2PExtension>>>,
+    exts_all: StdMutex<Vec<Arc<dyn NodeP2PExtension>>>,
 }
 
 impl MsgHandler {
@@ -27,6 +30,8 @@ impl MsgHandler {
             sync_tracker: SyncTracker::new(),
             knows: Knowledge::new(200),
             inserting: Arc::new(StdMutex::new(false)),
+            exts_by_ty: StdMutex::new(HashMap::new()),
+            exts_all: StdMutex::new(vec![]),
         }
     }
 
@@ -37,6 +42,51 @@ impl MsgHandler {
     pub fn set_p2p_mng(&self, mng: Box<dyn PeerManage>) {
         let mut mymng = self.p2pmng.lock().unwrap();
         *mymng = Some(mng);
+    }
+
+    pub fn register_p2p_extension(&self, tys: Vec<u16>, ext: Arc<dyn NodeP2PExtension>) -> Rerr {
+        if tys.is_empty() {
+            return errf!("empty p2p extension message types")
+        }
+        {
+            let mut map = self.exts_by_ty.lock().unwrap();
+            for ty in &tys {
+                if is_inner_msg_ty(*ty) {
+                    return errf!("message type {} is reserved by node", ty)
+                }
+                if map.contains_key(ty) {
+                    return errf!("message type {} already registered", ty)
+                }
+            }
+            for ty in tys {
+                map.insert(ty, ext.clone());
+            }
+        }
+        let mut all = self.exts_all.lock().unwrap();
+        if !all.iter().any(|cur| Arc::ptr_eq(cur, &ext)) {
+            all.push(ext);
+        }
+        Ok(())
+    }
+
+    fn extensions(&self) -> Vec<Arc<dyn NodeP2PExtension>> {
+        self.exts_all.lock().unwrap().clone()
+    }
+
+    fn extension_for(&self, ty: u16) -> Option<Arc<dyn NodeP2PExtension>> {
+        self.exts_by_ty.lock().unwrap().get(&ty).cloned()
+    }
+
+    pub fn broadcast_p2p_extension_message(&self, key: Hash, ty: u16, body: Vec<u8>) -> Rerr {
+        if is_inner_msg_ty(ty) {
+            return errf!("message type {} is reserved by node", ty)
+        }
+        let p2p = self.p2pmng.lock().unwrap();
+        let Some(p2p) = p2p.as_ref() else {
+            return errf!("p2p manager not initialized")
+        };
+        p2p.broadcast_message(0, key.into_array(), ty, body);
+        Ok(())
     }
 
     pub async fn submit_transaction(&self, body: Vec<u8>) {
@@ -61,13 +111,23 @@ impl MsgHandler {
         let _ = peer.send_msg(MSG_REQ_STATUS, vec![]).await;
         let eng = self.engine.clone();
         let txp = self.txpool.clone();
-        if let Err(e) = self.engine.minter().p2p_on_connect(peer, eng, txp) {
+        if let Err(e) = self.engine.minter().p2p_on_connect(peer.clone(), eng.clone(), txp.clone()) {
             println!("minter p2p on connect error: {}", e)
+        }
+        let peer_ext: Arc<dyn NPeer> = peer;
+        for ext in self.extensions() {
+            if let Err(e) = ext.on_connect(peer_ext.clone(), eng.clone(), txp.clone()) {
+                println!("p2p extension on connect error: {}", e)
+            }
         }
     }
 
     pub async fn on_disconnect(&self, peer: Arc<Peer>) {
         self.sync_tracker.clear_peer(&peer);
+        let peer_ext: Arc<dyn NPeer> = peer;
+        for ext in self.extensions() {
+            ext.on_disconnect(peer_ext.clone());
+        }
     }
 
     pub async fn on_message(&self, peer: Arc<Peer>, ty: u16, body: Vec<u8>) {
@@ -80,7 +140,17 @@ impl MsgHandler {
             MSG_REQ_BLOCK =>      { self.send_blocks(peer, body).await; },
             MSG_REQ_STATUS =>     { self.send_status(peer).await; },
             MSG_STATUS =>         { self.receive_status(peer, body).await; },
-            _ => (),
+            _ => {
+                let ext = self.extension_for(ty);
+                if let Some(ext) = ext {
+                    let peer_ext: Arc<dyn NPeer> = peer;
+                    let eng = self.engine.clone();
+                    let txp = self.txpool.clone();
+                    if let Err(e) = ext.on_message(peer_ext, eng, txp, ty, body) {
+                        println!("p2p extension on message {} error: {}", ty, e)
+                    }
+                }
+            },
         };
     }
 

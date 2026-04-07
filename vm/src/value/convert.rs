@@ -32,15 +32,9 @@ pub(crate) fn buf_to_uint(buf: &[u8]) -> VmrtRes<Value> {
 fn buf_to_u128(buf: &[u8]) -> VmrtRes<u128> {
     const U128_BYTES: usize = std::mem::size_of::<u128>();
     let raw = trim_leading_zero_bytes(buf);
-    let sz = raw.len();
-    if sz > U128_BYTES {
+    let Some(out) = fit_be_bytes::<U128_BYTES>(raw) else {
         return itr_err_fmt!(CastFail, "cannot cast 0x{} to u128", hex::encode(buf));
-    }
-    if sz == 0 {
-        return Ok(0);
-    }
-    let mut out = [0u8; U128_BYTES];
-    out[U128_BYTES - sz..].copy_from_slice(raw);
+    };
     Ok(u128::from_be_bytes(out))
 }
 
@@ -97,6 +91,9 @@ impl Value {
         self.extract_uint_cast("u128")
     }
 
+    /// Runtime truthiness used by control flow, logical ops, and explicit `as bool` casts.
+    /// This is intentionally broader than canonical bool byte decoding used by
+    /// `Value::type_from(ValueTy::Bool, ..)` and `Parse for Value`.
     pub fn extract_bool(&self) -> VmrtRes<bool> {
         if let Some(n) = self.uint_u128_opt() {
             return Ok(n != 0);
@@ -114,13 +111,7 @@ impl Value {
         if self.ty().is_uint() {
             return Ok(self.clone());
         }
-        match self {
-            Nil => Ok(U8(0)),
-            Bool(b) => Ok(U8(maybe!(b, 1, 0))),
-            Bytes(buf) => buf_to_uint(buf),
-            Address(a) => buf_to_uint(a.as_ref()),
-            _ => itr_err_fmt!(CastFail, "cannot cast {:?} to uint", self),
-        }
+        itr_err_fmt!(CastFail, "cannot cast {:?} to uint", self)
     }
 
     fn to_u128(&self) -> VmrtRes<u128> {

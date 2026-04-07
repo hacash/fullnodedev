@@ -11,7 +11,6 @@ pub enum Value {
     U32(u32),                //           4
     U64(u64),                //           5
     U128(u128),              //           6
-    // U256(u256), ...       //           7 (reserved)
     Bytes(Vec<u8>),          //           8
     Address(field::Address), //           9
     // reserved              //           10
@@ -304,23 +303,33 @@ impl Value {
     /* pub fn _____deval(&self, heap: &Heap) -> VmrtRes<Vec<u8>> { match self { Compo(..) => itr_err_code!(CompoToSerialize), HeapSlice((s, l)) => { match heap.do_read(*s as usize, *l as usize)? { Bytes(buf) => Ok(buf), _ => never!() } } _ => Ok(self.raw()) } } */
 
 
+    pub(crate) fn scalar_bytes(&self) -> Option<Vec<u8>> {
+        match self {
+            Nil => Some(vec![]),
+            Bool(n) => Some(vec![encode_canonical_bool_byte(*n)]),
+            U8(n) => Some(n.to_be_bytes().into()),
+            U16(n) => Some(n.to_be_bytes().into()),
+            U32(n) => Some(n.to_be_bytes().into()),
+            U64(n) => Some(n.to_be_bytes().into()),
+            U128(n) => Some(n.to_be_bytes().into()),
+            Bytes(buf) => Some(buf.clone()),
+            Address(a) => Some(a.serialize()),
+            _ => None,
+        }
+    }
+
     pub fn raw(&self) -> Vec<u8> {
+        if let Some(bytes) = self.scalar_bytes() {
+            return bytes;
+        }
         match &self {
-            Nil => vec![],
-            Bool(n) => vec![maybe!(n, 1, 0)],
-            U8(n) =>   n.to_be_bytes().into(),
-            U16(n) =>  n.to_be_bytes().into(),
-            U32(n) =>  n.to_be_bytes().into(),
-            U64(n) =>  n.to_be_bytes().into(),
-            U128(n) => n.to_be_bytes().into(),
-            Bytes(buf) => buf.clone(),
-            Address(a) => a.serialize(),
             // ptr
             HeapSlice((s, l)) => vec![s.to_be_bytes(), l.to_be_bytes()].concat(),
             // not support
             Tuple(..) => "{tuple value ...}".to_owned().into_bytes(),
             Compo(..) => "{compo value ...}".to_owned().into_bytes(),
             Handle(..) => "{handle value ...}".to_owned().into_bytes(),
+            _ => unreachable!(),
 
         }
     }

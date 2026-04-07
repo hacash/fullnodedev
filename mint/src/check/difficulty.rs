@@ -239,6 +239,12 @@ mod difficulty_tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    fn scoped_protocol_setup() -> protocol::setup::TestSetupScopeGuard {
+        let mut setup = crate::setup::new_standard_mint_setup(x16rs::block_hash).unwrap();
+        setup.seal().unwrap();
+        protocol::setup::install_test_scope(setup)
+    }
+
     struct CountingStore {
         reads: AtomicUsize,
         blocks: HashMap<u64, Vec<u8>>,
@@ -284,11 +290,7 @@ mod difficulty_tests {
 
     #[test]
     fn req_cycle_block_reads_disk_once_after_cache_warmup() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let dgnr = DifficultyGnr::new(MintConf::new(&IniObj::new()));
         let mut blocks = HashMap::new();
         blocks.insert(288, build_intro(288, 1000, LOWEST_DIFFICULTY));
@@ -325,11 +327,7 @@ mod difficulty_tests {
 
     #[test]
     fn weighted_window_prefers_memory_cache_before_store() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let dgnr = new_test_dgnr();
         let mut blocks = HashMap::new();
         let upgrade_height = test_upgrade_height(&dgnr);
@@ -356,11 +354,7 @@ mod difficulty_tests {
 
     #[test]
     fn weighted_window_clamps_to_half_and_double() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let prevdiff = LOWEST_DIFFICULTY - 1024;
         let dgnr_fast = new_test_dgnr();
         let upgrade_height = test_upgrade_height(&dgnr_fast);
@@ -397,11 +391,7 @@ mod difficulty_tests {
 
     #[test]
     fn weighted_window_scales_with_config_changes() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let prevdiff = LOWEST_DIFFICULTY - 1024;
         let cases = [
             (288u64, 4u64, 300u64),
@@ -435,11 +425,7 @@ mod difficulty_tests {
 
     #[test]
     fn weighted_window_keeps_target_when_observed_equals_expected() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let prevdiff = LOWEST_DIFFICULTY - 1024;
         let dgnr = new_test_dgnr_with(120, 5, 60, 9);
         let next_height = dgnr.window_blocks() + 2;
@@ -456,11 +442,7 @@ mod difficulty_tests {
 
     #[test]
     fn weighted_window_latest_groups_have_larger_impact_than_oldest_groups() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let prevdiff = LOWEST_DIFFICULTY - 1024;
         let dgnr = new_test_dgnr();
         let next_height = dgnr.window_blocks() + 2;
@@ -495,11 +477,7 @@ mod difficulty_tests {
 
     #[test]
     fn weighted_window_uses_real_parent_time_for_last_group() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let prevdiff = LOWEST_DIFFICULTY - 1024;
         let dgnr = new_test_dgnr();
         let next_height = dgnr.window_blocks() + 2;

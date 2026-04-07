@@ -273,11 +273,11 @@ mod sandbox_parse_tests {
     }
 
     #[test]
-    fn parse_sandbox_params_reports_reserved_type_names() {
+    fn parse_sandbox_params_reports_unknown_type_names() {
         let err_u256 = parse_sandbox_params("1:u256").unwrap_err();
-        assert!(err_u256.contains("reserved for future expansion"));
+        assert!(err_u256.contains("unknown type 'u256'"));
         let err_uint = parse_sandbox_params("1:uint").unwrap_err();
-        assert!(err_uint.contains("explicit width"));
+        assert!(err_uint.contains("unknown type 'uint'"));
     }
 
     #[test]

@@ -1,4 +1,3 @@
-use protocol::setup::SetupBuilder;
 use crate::TransactionCoinbase;
 use basis::interface::Transaction;
 use field::{Field, FromJSON};
@@ -15,8 +14,8 @@ fn decode_mainnet_prelude_tx(json: &str) -> Ret<Box<dyn Transaction>> {
     Ok(Box::new(tx))
 }
 
-pub fn extend_standard_mint_stack(builder: SetupBuilder) -> SetupBuilder {
-    builder
-        .prelude_tx_codec(create_mainnet_prelude_tx, decode_mainnet_prelude_tx)
-        .action_register(crate::action::register)
+pub fn register_protocol_extensions(setup: &mut protocol::setup::ProtocolSetup) {
+    setup.tx_codec(TransactionCoinbase::TYPE, create_mainnet_prelude_tx, decode_mainnet_prelude_tx);
+    crate::action::register(setup)
 }
+

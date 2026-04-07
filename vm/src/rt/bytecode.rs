@@ -61,7 +61,7 @@ pub enum Bytecode {
     CU64 = 0x33,  // &      cast u64
     CU128 = 0x34, // &      cast u128
     ________________53 = 0x35,
-    CBUF = 0x36,  // &      cast buf
+    CBYTES = 0x36,  // &      cast bytes
     CTO = 0x37,   // *&     cast to
     TNIL = 0x38,  // &   is nil push Bool(true)
     TLIST = 0x39, // &   is compo list push Bool(true)
@@ -374,7 +374,7 @@ bytecode_metadata_define! {
     CU32       : 0, 1, 1,     cast_u32
     CU64       : 0, 1, 1,     cast_u64
     CU128      : 0, 1, 1,     cast_u128
-    CBUF       : 0, 1, 1,     cast_bytes
+    CBYTES     : 0, 1, 1,     cast_bytes
     CTO        : 1, 1, 1,     cast_to
     TNIL       : 0, 1, 1,     type_is_nil
     TLIST      : 0, 1, 1,     type_is_list

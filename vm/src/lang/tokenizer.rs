@@ -40,7 +40,7 @@ impl Tokenizer<'_> {
             // address
             return Ok(addr);
         }
-        // maybe uint
+        // maybe integer
         Ok(Integer(match s.parse::<u128>() {
             Ok(u) => u,
             _ => return errf!("integer type parse failed for '{}'", s),
@@ -178,7 +178,7 @@ impl Tokenizer<'_> {
         }
 
         // Check for type suffix format: number + type (e.g., 100u8, 1000_u64)
-        let type_suffixes = ["u8", "u16", "u32", "u64", "u128", "u256", "uint"];
+        let type_suffixes = ["u8", "u16", "u32", "u64", "u128"];
         let mut num_part = s.clone();
         let mut suffix_kw: Option<KwTy> = None;
 
@@ -188,12 +188,6 @@ impl Tokenizer<'_> {
                 let without_underscores: String =
                     without_suffix.chars().filter(|c| *c != '_').collect();
                 if !without_underscores.is_empty() && without_underscores.parse::<u128>().is_ok() {
-                    if ValueTy::is_reserved_type_name(suffix) {
-                        return Err(format!(
-                            "integer suffix '{}' is reserved for future expansion and is not supported yet",
-                            suffix
-                        ));
-                    }
                     num_part = without_underscores;
                     if let Ok(kw) = KwTy::build(suffix) {
                         suffix_kw = Some(kw);

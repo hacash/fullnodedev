@@ -1,67 +1,73 @@
-fn check_scalar_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
-    match value {
-        Nil | Bool(..) | U8(..) | U16(..) | U32(..) | U64(..) | U128(..) | Bytes(..)
-        | Address(..) => Ok(()),
-        _ => itr_err_code!(ec),
+fn is_scalar_value(value: &Value) -> bool {
+    matches!(
+        value,
+        Nil | Bool(..) | U8(..) | U16(..) | U32(..) | U64(..) | U128(..) | Bytes(..) | Address(..)
+    )
+}
+
+fn check_scalar_as(value: &Value, ec: ItrErrCode) -> VmrtErr {
+    if is_scalar_value(value) {
+        Ok(())
+    } else {
+        itr_err_code!(ec)
     }
 }
 
-fn check_func_tuple_item_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
+fn check_func_tuple_item(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
         HeapSlice(..) | Tuple(..) => itr_err_code!(ec),
         Compo(..) | Handle(..) => Ok(()),
-        _ => check_scalar_ec(value, ec),
+        _ => check_scalar_as(value, ec),
     }
 }
 
-fn check_func_boundary_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
+fn check_func_boundary(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
         HeapSlice(..) => itr_err_code!(ec),
         Tuple(tuple) => {
             for item in tuple.as_slice() {
-                check_func_tuple_item_ec(item, ec)?;
+                check_func_tuple_item(item, ec)?;
             }
             Ok(())
         }
-        // Top-level Compo is a normal single argument/return value, not an argv wrapper.
         Compo(..) | Handle(..) => Ok(()),
-        _ => check_scalar_ec(value, ec),
+        _ => check_scalar_as(value, ec),
     }
 }
 
-fn check_vm_boundary_compo_ec(compo: &CompoItem, ec: ItrErrCode) -> VmrtErr {
+fn check_vm_boundary_compo(compo: &CompoItem, ec: ItrErrCode) -> VmrtErr {
     if let Ok(list) = compo.list_ref() {
         for item in list {
-            check_scalar_ec(item, ec)?;
+            check_scalar_as(item, ec)?;
         }
         return Ok(());
     }
     for value in compo.map_ref()?.values() {
-        check_scalar_ec(value, ec)?;
+        check_scalar_as(value, ec)?;
     }
     Ok(())
 }
 
-fn check_vm_tuple_item_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
+fn check_vm_tuple_item(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
         HeapSlice(..) | Tuple(..) | Handle(..) => itr_err_code!(ec),
-        Compo(compo) => check_vm_boundary_compo_ec(compo, ec),
-        _ => check_scalar_ec(value, ec),
+        Compo(compo) => check_vm_boundary_compo(compo, ec),
+        _ => check_scalar_as(value, ec),
     }
 }
 
-fn check_vm_boundary_ec(value: &Value, ec: ItrErrCode) -> VmrtErr {
+fn check_vm_boundary(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
         HeapSlice(..) => itr_err_code!(ec),
         Tuple(tuple) => {
             for item in tuple.as_slice() {
-                check_vm_tuple_item_ec(item, ec)?;
+                check_vm_tuple_item(item, ec)?;
             }
             Ok(())
         }
-        Compo(compo) => check_vm_boundary_compo_ec(compo, ec),
+        Compo(compo) => check_vm_boundary_compo(compo, ec),
         Handle(..) => itr_err_code!(ec),
-        _ => check_scalar_ec(value, ec),
+        _ => check_scalar_as(value, ec),
     }
 }
 
@@ -70,7 +76,37 @@ impl Value {
         if matches!(self, Nil) {
             return itr_err_code!(nil_ec);
         }
-        check_scalar_ec(self, CastBeValueFail)
+        check_scalar_as(self, CastBeValueFail)
+    }
+
+    pub fn check_boundary_value_cap(&self, cap: &SpaceCap) -> VmrtErr {
+        match self {
+            Tuple(tuple) => {
+                for item in tuple.as_slice() {
+                    item.check_boundary_value_cap(cap)?;
+                }
+                Ok(())
+            }
+            Compo(compo) => {
+                if let Ok(list) = compo.list_ref() {
+                    for item in list {
+                        item.check_boundary_value_cap(cap)?;
+                    }
+                    return Ok(());
+                }
+                for (key, value) in compo.map_ref()? {
+                    if key.len() > cap.value_size {
+                        return itr_err_code!(OutOfValueSize);
+                    }
+                    value.check_boundary_value_cap(cap)?;
+                }
+                Ok(())
+            }
+            _ => {
+                self.clone().valid(cap)?;
+                Ok(())
+            }
+        }
     }
 
     pub(crate) fn extract_bytes_len_with_error_code(&self, ec: ItrErrCode) -> VmrtRes<usize> {
@@ -87,16 +123,9 @@ impl Value {
     }
 
     fn extract_bytes_with_error_code(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
-        match self {
-            Bool(b) => Ok(vec![maybe!(b, 1, 0)]),
-            U8(n) => Ok(n.to_be_bytes().into()),
-            U16(n) => Ok(n.to_be_bytes().into()),
-            U32(n) => Ok(n.to_be_bytes().into()),
-            U64(n) => Ok(n.to_be_bytes().into()),
-            U128(n) => Ok(n.to_be_bytes().into()),
-            Bytes(b) => Ok(b.clone()),
-            Address(a) => Ok(a.to_vec()),
-            _ => itr_err_code!(ec),
+        match self.scalar_bytes() {
+            Some(bytes) => Ok(bytes),
+            None => itr_err_code!(ec),
         }
     }
 
@@ -113,11 +142,11 @@ impl Value {
     }
 
     pub fn check_scalar(&self) -> VmrtErr {
-        check_scalar_ec(self, CastBeValueFail)
+        check_scalar_as(self, CastBeValueFail)
     }
 
     pub fn check_tuple_item(&self) -> VmrtErr {
-        check_func_tuple_item_ec(self, CastBeValueFail)
+        check_func_tuple_item(self, CastBeValueFail)
     }
 
     pub fn extract_call_data(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
@@ -135,7 +164,7 @@ impl Value {
     }
 
     pub fn check_func_argv(&self) -> VmrtErr {
-        check_func_boundary_ec(self, CastBeFnArgvFail)?;
+        check_func_boundary(self, CastBeFnArgvFail)?;
         if let Tuple(tuple) = self {
             if tuple.len() > crate::MAX_FUNC_PARAM_LEN {
                 return itr_err_fmt!(
@@ -149,11 +178,11 @@ impl Value {
     }
 
     pub fn check_func_retv(&self) -> VmrtErr {
-        check_func_boundary_ec(self, CastBeFnRetvFail)
+        check_func_boundary(self, CastBeFnRetvFail)
     }
 
     pub fn check_vm_boundary_argv(&self) -> VmrtErr {
-        check_vm_boundary_ec(self, CastBeFnArgvFail)?;
+        check_vm_boundary(self, CastBeFnArgvFail)?;
         if let Tuple(tuple) = self {
             if tuple.len() > crate::MAX_FUNC_PARAM_LEN {
                 return itr_err_fmt!(
@@ -174,7 +203,7 @@ impl Value {
             Value::Handle(..) => {
                 itr_err_fmt!(CastBeFnRetvFail, "return type Handle is not supported")
             }
-            _ => check_vm_boundary_ec(self, CastBeFnRetvFail),
+            _ => check_vm_boundary(self, CastBeFnRetvFail),
         }
     }
 
@@ -282,5 +311,21 @@ mod canbe_tests {
         cap.compo_length = 1;
         let err = tuple.check_container_cap(&cap).unwrap_err();
         assert_eq!(err.0, ItrErrCode::OutOfCompoLen);
+    }
+
+    #[test]
+    fn boundary_value_cap_rejects_oversize_scalar_and_map_key() {
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = 2;
+
+        let err = Value::Bytes(vec![0u8; 3]).check_boundary_value_cap(&cap).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(vec![0u8; 3], Value::U8(1));
+        let err = Value::Compo(CompoItem::map(map).unwrap())
+            .check_boundary_value_cap(&cap)
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
     }
 }

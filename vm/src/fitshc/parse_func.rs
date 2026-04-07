@@ -8,13 +8,6 @@ use crate::value::ValueTy;
 use sys::*;
 use sys::{Ret, errf};
 
-fn reserved_parse_type_error(name: &str) -> Option<String> {
-    match name {
-        "u256" | "uint" => Some(ValueTy::reserved_type_error(name)),
-        _ => None,
-    }
-}
-
 fn parse_type(state: &mut ParseState) -> Ret<Option<ValueTy>> {
     if state.idx >= state.max {
         return Ok(None);
@@ -32,14 +25,9 @@ fn parse_type(state: &mut ParseState) -> Ret<Option<ValueTy>> {
             KwTy::Bool => Some(ValueTy::Bool),
             KwTy::Tuple => Some(ValueTy::Tuple),
             KwTy::List | KwTy::Map => Some(ValueTy::Compo),
-            KwTy::U256 => return Err(ValueTy::reserved_type_error("u256")),
-            KwTy::Uint => return Err(ValueTy::reserved_type_error("uint")),
             _ => None,
         }
     } else if let Identifier(tn) = tk {
-        if let Some(err) = reserved_parse_type_error(tn) {
-            return Err(err);
-        }
         match tn.as_str() {
             "u8" => Some(ValueTy::U8),
             "u16" => Some(ValueTy::U16),
@@ -247,20 +235,20 @@ mod parse_func_tests {
     }
 
     #[test]
-    fn parse_function_reports_reserved_argument_type() {
+    fn parse_function_rejects_unknown_argument_type() {
         let err = match parse_sig("function probe(a: u256) { return a }") {
-            Ok(_) => panic!("expected reserved type error"),
+            Ok(_) => panic!("expected unknown type error"),
             Err(err) => err,
         };
-        assert!(err.contains("reserved for future expansion"), "{}", err);
+        assert!(err.contains("function argument parse failed"), "{}", err);
     }
 
     #[test]
-    fn parse_function_reports_reserved_return_type() {
+    fn parse_function_rejects_unknown_return_type() {
         let err = match parse_sig("function probe() -> uint { return 1 }") {
-            Ok(_) => panic!("expected reserved type error"),
+            Ok(_) => panic!("expected unknown type error"),
             Err(err) => err,
         };
-        assert!(err.contains("reserved for future expansion"), "{}", err);
+        assert!(err.contains("function return type parse failed"), "{}", err);
     }
 }

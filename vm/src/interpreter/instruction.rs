@@ -4,7 +4,7 @@ fn locop_arithmetic<F>(x: &mut Value, y: &mut Value, f: F) -> VmrtErr
 where
     F: FnOnce(&Value, &Value) -> VmrtRes<Value>,
 {
-    let (lx, ry) = Value::normalize_arithmetic_pair(x, y)?;
+    let (lx, ry) = Value::arithmetic_args2(x, y)?;
     let v = f(&lx, &ry)?;
     *x = v;
     Ok(())
@@ -24,7 +24,7 @@ fn locop_arithmetic3<F>(x: &mut Value, y: &mut Value, z: &mut Value, f: F) -> Vm
 where
     F: FnOnce(&Value, &Value, &Value) -> VmrtRes<Value>,
 {
-    let (lx, my, rz) = Value::normalize_arithmetic_triple(x, y, z)?;
+    let (lx, my, rz) = Value::arithmetic_args3(x, y, z)?;
     let v = f(&lx, &my, &rz)?;
     *x = v;
     Ok(())
@@ -44,7 +44,7 @@ fn locop_arithmetic4<F>(x: &mut Value, y: &mut Value, z: &mut Value, w: &mut Val
 where
     F: FnOnce(&Value, &Value, &Value, &Value) -> VmrtRes<Value>,
 {
-    let (lx, my, rz, qw) = Value::normalize_arithmetic_quad(x, y, z, w)?;
+    let (lx, my, rz, qw) = Value::arithmetic_args4(x, y, z, w)?;
     let v = f(&lx, &my, &rz, &qw)?;
     *x = v;
     Ok(())
@@ -146,8 +146,8 @@ fn check_failed_tip1(op: &str, x: &Value) -> String {
 }
 
 #[inline]
-fn cast_u128_to_uint_tpl(tpl: &Value, out: u128, err: impl Fn() -> ItrErr) -> VmrtRes<Value> {
-    Ok(match tpl {
+fn cast_uint_like_sample(sample: &Value, out: u128, err: impl Fn() -> ItrErr) -> VmrtRes<Value> {
+    Ok(match sample {
         U8(..) => Value::U8(u8::try_from(out).map_err(|_| err())?),
         U16(..) => Value::U16(u16::try_from(out).map_err(|_| err())?),
         U32(..) => Value::U32(u32::try_from(out).map_err(|_| err())?),
@@ -506,20 +506,27 @@ fn cmp_u256(ahi: u128, alo: u128, bhi: u128, blo: u128) -> std::cmp::Ordering {
     ahi.cmp(&bhi).then(alo.cmp(&blo))
 }
 
-fn cast_uint_like(tpl: &Value, out: u128, op: &str, x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    cast_u128_to_uint_tpl(tpl, out, || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z)))
+fn cast_uint_result1(sample: &Value, out: u128, op: &str, x: &Value) -> VmrtRes<Value> {
+    cast_uint_like_sample(sample, out, || ItrErr::new(Arithmetic, &check_failed_tip1(op, x)))
 }
 
-fn cast_uint_like2(tpl: &Value, out: u128, op: &str, x: &Value, y: &Value) -> VmrtRes<Value> {
-    cast_u128_to_uint_tpl(tpl, out, || ItrErr::new(Arithmetic, &check_failed_tip(op, x, y)))
+fn cast_uint_result2(sample: &Value, out: u128, op: &str, x: &Value, y: &Value) -> VmrtRes<Value> {
+    cast_uint_like_sample(sample, out, || ItrErr::new(Arithmetic, &check_failed_tip(op, x, y)))
 }
 
-fn cast_uint_like1(tpl: &Value, out: u128, op: &str, x: &Value) -> VmrtRes<Value> {
-    cast_u128_to_uint_tpl(tpl, out, || ItrErr::new(Arithmetic, &check_failed_tip1(op, x)))
+fn cast_uint_result3(
+    sample: &Value,
+    out: u128,
+    op: &str,
+    x: &Value,
+    y: &Value,
+    z: &Value,
+) -> VmrtRes<Value> {
+    cast_uint_like_sample(sample, out, || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z)))
 }
 
-fn cast_uint_like4(
-    tpl: &Value,
+fn cast_uint_result4(
+    sample: &Value,
     out: u128,
     op: &str,
     x: &Value,
@@ -527,7 +534,7 @@ fn cast_uint_like4(
     z: &Value,
     w: &Value,
 ) -> VmrtRes<Value> {
-    cast_u128_to_uint_tpl(tpl, out, || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w)))
+    cast_uint_like_sample(sample, out, || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w)))
 }
 
 fn round_half_up_div_u256_by_u128(
@@ -618,7 +625,7 @@ fn absdiff_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
 fn sqrt_floor_checked(x: &Value) -> VmrtRes<Value> {
     let n = x.extract_u128()?;
     let out = n.isqrt();
-    cast_uint_like1(x, out, "sqrt", x)
+    cast_uint_result1(x, out, "sqrt", x)
 }
 
 fn sqrt_up_checked(x: &Value) -> VmrtRes<Value> {
@@ -632,7 +639,7 @@ fn sqrt_up_checked(x: &Value) -> VmrtRes<Value> {
     } else {
         f.checked_add(1).ok_or_else(err)?
     };
-    cast_uint_like1(x, out, "sqrt_up", x)
+    cast_uint_result1(x, out, "sqrt_up", x)
 }
 
 fn addmod_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -641,14 +648,14 @@ fn addmod_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let b = y.extract_u128()?;
     let modu = require_nonzero_u128(z.extract_u128()?, err)?;
     let out = add_mod_u128(a, b, modu);
-    cast_uint_like(x, out, "add_mod", x, y, z)
+    cast_uint_result3(x, out, "add_mod", x, y, z)
 }
 
 fn mulmod_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let err = || ItrErr::new(Arithmetic, &check_failed_tip3("mul_mod", x, y, z));
     let modu = require_nonzero_u128(z.extract_u128()?, err)?;
     let out = mul_mod_u128(x.extract_u128()?, y.extract_u128()?, modu);
-    cast_uint_like(x, out, "mul_mod", x, y, z)
+    cast_uint_result3(x, out, "mul_mod", x, y, z)
 }
 
 fn muldiv_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -656,7 +663,7 @@ fn muldiv_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let div = require_nonzero_u128(z.extract_u128()?, err)?;
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
     let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
-    cast_uint_like(x, quo, "mul_div", x, y, z)
+    cast_uint_result3(x, quo, "mul_div", x, y, z)
 }
 
 fn muladd_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -668,7 +675,7 @@ fn muladd_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
         true,
         err,
     )?;
-    cast_uint_like(x, lo, "mul_add", x, y, z)
+    cast_uint_result3(x, lo, "mul_add", x, y, z)
 }
 
 fn muldivup_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -677,7 +684,7 @@ fn muldivup_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
     let (quo, rem) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
     let quo = ceil_quot_if_rem_u128(quo, rem, err)?;
-    cast_uint_like(x, quo, "mul_div_up", x, y, z)
+    cast_uint_result3(x, quo, "mul_div_up", x, y, z)
 }
 
 fn mul_shr_impl(x: &Value, y: &Value, z: &Value, op: &'static str, ceil_dropped: bool) -> VmrtRes<Value> {
@@ -691,7 +698,7 @@ fn mul_shr_impl(x: &Value, y: &Value, z: &Value, op: &'static str, ceil_dropped:
     if ceil_dropped && dropped {
         out = out.checked_add(1).ok_or_else(err)?;
     }
-    cast_uint_like(x, out, op, x, y, z)
+    cast_uint_result3(x, out, op, x, y, z)
 }
 
 fn mulshr_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -710,7 +717,7 @@ fn rpow_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
         return Err(err());
     }
     if n == 0 {
-        return cast_uint_like(x, base, "rpow", x, y, z);
+        return cast_uint_result3(x, base, "rpow", x, y, z);
     }
     let mut bas = x.extract_u128()?;
     let mut out = if n & 1 == 1 { bas } else { base };
@@ -721,7 +728,7 @@ fn rpow_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
             out = mul_div_half_up(out, bas, base, "rpow", x, y, z)?;
         }
     }
-    cast_uint_like(x, out, "rpow", x, y, z)
+    cast_uint_result3(x, out, "rpow", x, y, z)
 }
 
 fn clamp_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -733,7 +740,7 @@ fn clamp_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
         return Err(err());
     }
     let out = xv.clamp(lo, hi);
-    cast_uint_like(x, out, "clamp", x, y, z)
+    cast_uint_result3(x, out, "clamp", x, y, z)
 }
 
 fn satadd_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
@@ -749,7 +756,7 @@ fn divup_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
     let div = require_nonzero_u128(y.extract_u128()?, err)?;
     let num = x.extract_u128()?;
     let quo = ceil_div_u128(num, div, err)?;
-    cast_uint_like2(x, quo, "div_up", x, y)
+    cast_uint_result2(x, quo, "div_up", x, y)
 }
 
 fn divround_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
@@ -762,7 +769,7 @@ fn divround_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
     if rem >= threshold {
         quo = quo.checked_add(1).ok_or_else(err)?;
     }
-    cast_uint_like2(x, quo, "div_round", x, y)
+    cast_uint_result2(x, quo, "div_round", x, y)
 }
 
 fn mulsub_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -774,7 +781,7 @@ fn mulsub_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
         false,
         err,
     )?;
-    cast_uint_like(x, lo, "mul_sub", x, y, z)
+    cast_uint_result3(x, lo, "mul_sub", x, y, z)
 }
 
 fn muldivround_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -783,7 +790,7 @@ fn muldivround_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
     let quo = round_half_up_div_u256_by_u128(hi, lo, div, "mul_div_round", x, y, z)
         .map_err(|_| err())?;
-    cast_uint_like(x, quo, "mul_div_round", x, y, z)
+    cast_uint_result3(x, quo, "mul_div_round", x, y, z)
 }
 
 fn muladddiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
@@ -797,7 +804,7 @@ fn muladddiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Valu
         true,
         err,
     )?;
-    cast_uint_like4(x, quo, "mul_add_div", x, y, z, w)
+    cast_uint_result4(x, quo, "mul_add_div", x, y, z, w)
 }
 
 fn mulsubdiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
@@ -811,7 +818,7 @@ fn mulsubdiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Valu
         false,
         err,
     )?;
-    cast_uint_like4(x, quo, "mul_sub_div", x, y, z, w)
+    cast_uint_result4(x, quo, "mul_sub_div", x, y, z, w)
 }
 
 fn mul3div_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
@@ -820,7 +827,7 @@ fn mul3div_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value>
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
     let (hi, lo) = mul_u256_u128_to_u256_checked(hi, lo, z.extract_u128()?).ok_or_else(err)?;
     let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
-    cast_uint_like4(x, quo, "mul3_div", x, y, z, w)
+    cast_uint_result4(x, quo, "mul3_div", x, y, z, w)
 }
 
 fn devscaled_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -833,7 +840,7 @@ fn devscaled_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let diff = xv.abs_diff(reference);
     let (hi, lo) = mul_wide_u128(diff, z.extract_u128()?);
     let (quo, _) = div_u256_by_u128_to_u128(hi, lo, reference).ok_or_else(err)?;
-    cast_uint_like(x, quo, "dev_scaled", x, y, z)
+    cast_uint_result3(x, quo, "dev_scaled", x, y, z)
 }
 
 fn withinbps_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
@@ -852,7 +859,7 @@ fn wavg2_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
     let (rhs_hi, rhs_lo) = mul_wide_u128(z.extract_u128()?, wy);
     let (num_hi, num_lo) = add_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).ok_or_else(err)?;
     let (quo, _) = div_u256_by_u128_to_u128(num_hi, num_lo, denom).ok_or_else(err)?;
-    cast_uint_like4(x, quo, "wavg2", x, y, z, w)
+    cast_uint_result4(x, quo, "wavg2", x, y, z, w)
 }
 
 fn lerp_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
@@ -872,7 +879,7 @@ fn lerp_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
     } else {
         start.checked_sub(part).ok_or_else(err)?
     };
-    cast_uint_like4(x, out, "lerp", x, y, z, w)
+    cast_uint_result4(x, out, "lerp", x, y, z, w)
 }
 
 // the value is must within u32
@@ -912,8 +919,7 @@ fn min_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
 
 fn unary_inc(x: &mut Value, n: u8) -> VmrtErr {
     if !x.is_uint() {
-        let v = x.to_uint()?;
-        *x = v;
+        return itr_err_fmt!(Arithmetic, "cannot do arithmetic with {:?}", x);
     }
     x.inc(n)
         .map_err(|ItrErr(_, msg)| ItrErr::new(Arithmetic, &msg))
@@ -921,8 +927,7 @@ fn unary_inc(x: &mut Value, n: u8) -> VmrtErr {
 
 fn unary_dec(x: &mut Value, n: u8) -> VmrtErr {
     if !x.is_uint() {
-        let v = x.to_uint()?;
-        *x = v;
+        return itr_err_fmt!(Arithmetic, "cannot do arithmetic with {:?}", x);
     }
     x.dec(n)
         .map_err(|ItrErr(_, msg)| ItrErr::new(Arithmetic, &msg))
@@ -1056,7 +1061,7 @@ mod shift_u64_tests {
         heap.write(0, Value::Bytes(vec![1, 2, 3])).unwrap();
         let hs = Value::HeapSlice((0, 2));
 
-        assert!(Value::normalize_arithmetic_pair(&hs, &Value::U8(1)).is_err());
+        assert!(Value::arithmetic_args2(&hs, &Value::U8(1)).is_err());
         assert!(lgc_equal(&hs, &Value::HeapSlice((0, 2))).is_err());
         assert!(lgc_not_equal(&hs, &Value::HeapSlice((0, 3))).is_err());
         assert!(lgc_equal(&hs, &Value::Bytes(vec![1, 2])).is_err());

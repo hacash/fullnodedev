@@ -18,6 +18,21 @@ fn defer_extract_intent_handle_id(argv: &Value) -> VmrtRes<usize> {
     extract_intent_handle_id_with_error(argv, DeferredError, "defer requires intent handle")
 }
 
+fn defer_intent_scope(
+    argv: &Value,
+    caddr: &crate::ContractAddress,
+    intents: &crate::machine::IntentRuntime,
+) -> VmrtRes<Option<Option<usize>>> {
+    if argv.is_nil() {
+        return Ok(Some(None));
+    }
+    let id = defer_extract_intent_handle_id(argv)?;
+    intents
+        .ensure_owner(caddr, id)
+        .map_err(|e| ItrErr::new(DeferredError, &e.1))?;
+    Ok(Some(Some(id)))
+}
+
 pub fn call_defer(
     exec: ExecCtx,
     bindings: &FrameBindings,
@@ -31,15 +46,7 @@ pub fn call_defer(
     let Some(caddr) = bindings.state_this.clone() else {
         return itr_err_fmt!(DeferredError, "defer requires contract context");
     };
-    let intent_scope = if argv.is_nil() {
-        Some(None)
-    } else {
-        let id = defer_extract_intent_handle_id(&argv)?;
-        intents
-            .ensure_owner(&caddr, id)
-            .map_err(|e| ItrErr::new(DeferredError, &e.1))?;
-        Some(Some(id))
-    };
+    let intent_scope = defer_intent_scope(&argv, &caddr, intents)?;
     deferred_registry.register(crate::machine::DeferredEntry {
         addr: caddr,
         intent_scope,

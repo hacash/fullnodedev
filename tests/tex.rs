@@ -6,6 +6,7 @@ mod tex {
     use field::*;
     use mint::action::{AssetCreate, ASSET_ALIVE_HEIGHT};
     use protocol::{action::*, tex::*};
+    use std::sync::Once;
     use sys::*;
     use vm::contract::*;
 
@@ -82,16 +83,25 @@ mod tex {
         ]);
     }
 
+    fn init_setup_once() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash).unwrap();
+            mint::setup::register_protocol_extensions(&mut setup).unwrap();
+            protocol::setup::install_once(setup).unwrap();
+        });
+    }
+
     #[test]
     fn asset_create_serial_unlocks_at_minsri_on_first_allowed_height() {
         use mint::genesis;
         use protocol::state::CoreState;
-        use testkit::sim::integration::{make_ctx_from_tx, make_stub_tx, scoped_setup, test_guard, vm_main_addr};
+        use testkit::sim::integration::{make_ctx_from_tx, make_stub_tx, test_guard, vm_main_addr};
         use testkit::sim::logs::MemLogs;
         use testkit::sim::state::FlatMemState as StateMem;
 
         let _guard = test_guard();
-        let _setup = scoped_setup(None);
+        init_setup_once();
         let main = vm_main_addr();
         let height = ASSET_ALIVE_HEIGHT;
         let tx = make_stub_tx(3, main, vec![main], 17);

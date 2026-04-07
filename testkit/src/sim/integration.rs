@@ -1,7 +1,6 @@
 use basis::interface::{Logs, State, TransactionRead};
 use field::{Address, Amount};
 use protocol::context::ContextInst;
-use protocol::setup::ScopedSetupGuard;
 use protocol::transaction::create_tx_info;
 use std::cell::RefCell;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -11,9 +10,7 @@ use crate::sim::tx::{StubTx, StubTxBuilder};
 
 pub fn test_guard() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
 }
 
 pub fn vm_main_addr() -> Address {
@@ -49,25 +46,18 @@ pub fn make_ctx_from_tx<'a>(
 }
 
 thread_local! {
-    static TEST_SETUP_SCOPE: RefCell<Option<ScopedSetupGuard>> = const { RefCell::new(None) };
+    static TEST_SETUP_SCOPE: RefCell<Option<protocol::setup::TestSetupScopeGuard>> = const { RefCell::new(None) };
 }
 
-fn build_basic_registry(
-    vm_assigner: Option<protocol::setup::FnVmAssignFunc>,
-) -> protocol::setup::SetupRegistry {
-    let mut builder = mint::setup::extend_standard_mint_stack(
-        protocol::setup::standard_protocol_builder(x16rs::block_hash),
-    );
+pub fn scoped_setup(vm_assigner: Option<protocol::setup::FnVmAssignFunc>) -> protocol::setup::TestSetupScopeGuard {
+    let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
+    mint::setup::register_protocol_extensions(&mut setup);
     if let Some(assigner) = vm_assigner {
-        builder = vm::setup::extend_standard_vm_stack(builder).vm_assigner(assigner);
+        vm::action::register(&mut setup);
+        setup.action_hook(vm::hook::try_action_hook);
+        setup.set_vm_assigner(assigner);
     }
-    builder
-        .build()
-        .unwrap_or_else(|e| panic!("build scoped setup failed: {}", e))
-}
-
-pub fn scoped_setup(vm_assigner: Option<protocol::setup::FnVmAssignFunc>) -> ScopedSetupGuard {
-    protocol::setup::install_scoped_for_test(build_basic_registry(vm_assigner))
+    protocol::setup::install_test_scope(setup)
 }
 
 pub fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
@@ -75,4 +65,12 @@ pub fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
     TEST_SETUP_SCOPE.with(|cell| {
         *cell.borrow_mut() = Some(guard);
     });
+}
+
+pub fn disable_vm_setup() {
+    set_vm_assigner(None)
+}
+
+pub fn enable_default_vm_setup() {
+    set_vm_assigner(Some(|height| Box::new(vm::global_runtime_pool().checkout(height))))
 }

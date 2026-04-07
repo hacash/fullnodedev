@@ -187,9 +187,6 @@ macro_rules! action_register {
                 _ => Ok(None)
             }
         }
-        pub fn register(builder: SetupBuilder) -> SetupBuilder {
-            builder.register_codec(ACTION_CODEC_KINDS, try_create, try_json_decode)
-        }
     };
 }
 

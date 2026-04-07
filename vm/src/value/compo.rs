@@ -561,6 +561,7 @@ impl CompoItem {
         let mut keys = VecDeque::with_capacity(map.len());
         for k in map.keys() {
             bsz = add_size_saturating(bsz, k.len());
+            Value::Bytes(k.clone()).can_get_size()?;
             keys.push_back(Value::Bytes(k.clone()));
         }
         Ok((Value::Compo(Self::list(keys)?), map.len(), bsz))
@@ -804,5 +805,13 @@ mod compo_tests {
         assert!(!shared.content_eq(&diff).unwrap());
         assert_eq!(shared.compare_fee(&cloned, 16), 16);
         assert!(shared.compare_fee(&rebuilt, 16) > 16);
+    }
+
+    #[test]
+    fn keys_with_stats_rejects_key_that_cannot_be_materialized_as_value_bytes() {
+        let mut map = BTreeMap::new();
+        map.insert(vec![0u8; u16::MAX as usize], Value::U8(1));
+        let err = CompoItem::map(map).unwrap().keys_with_stats().unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
     }
 }

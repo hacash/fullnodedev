@@ -3,16 +3,15 @@ pub const ACTIVE_UINT_BITS: [u16; 5] = [8, 16, 32, 64, 128];
 pub const ACTIVE_UINT_BYTES: [usize; 5] = [1, 2, 4, 8, 16];
 pub const ACTIVE_UINT_MAX_BYTES: usize = 16;
 
-pub const RESERVED_U256_TYPE_ID: u8 = 7;
-pub const RESERVED_U256_BITS: u16 = 256;
-pub const RESERVED_U256_BYTES: usize = 32;
-
 
 #[inline(always)]
 pub fn buf_is_empty_or_all_zero(buf: &[u8]) -> bool {
     buf.is_empty() || buf.iter().all(|&b| b == 0)
 }
 
+/// Canonical bool byte decoding for typed/raw byte representations only.
+/// This is intentionally stricter than runtime truthiness (`Value::extract_bool`),
+/// which is used by control flow and explicit `as bool` coercions.
 #[inline(always)]
 pub fn decode_canonical_bool_byte(byte: u8) -> Option<bool> {
     match byte {
@@ -23,9 +22,30 @@ pub fn decode_canonical_bool_byte(byte: u8) -> Option<bool> {
 }
 
 #[inline(always)]
+pub fn encode_canonical_bool_byte(value: bool) -> u8 {
+    maybe!(value, 1, 0)
+}
+
+#[inline(always)]
 pub fn trim_leading_zero_bytes(buf: &[u8]) -> &[u8] {
     let first_nz = buf.iter().position(|b| *b != 0).unwrap_or(buf.len());
     &buf[first_nz..]
+}
+
+#[inline(always)]
+pub fn fit_be_bytes<const N: usize>(buf: &[u8]) -> Option<[u8; N]> {
+    if buf.len() <= N {
+        let mut out = [0u8; N];
+        out[N - buf.len()..].copy_from_slice(buf);
+        return Some(out);
+    }
+    let cut = buf.len() - N;
+    if buf[..cut].iter().any(|b| *b != 0) {
+        return None;
+    }
+    let mut out = [0u8; N];
+    out.copy_from_slice(&buf[cut..]);
+    Some(out)
 }
 
 #[inline(always)]

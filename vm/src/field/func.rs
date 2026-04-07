@@ -88,27 +88,26 @@ impl FuncArgvTypes {
     pub fn check_params(&self, v: &mut Value) -> VmrtErr {
         let ec = CallArgvTypeFail;
         let types = self.param_types().map_ire(ec)?;
-        let tn = types.len();
-        match tn {
-            0 => Ok(()),
-            1 => v.cast_param(types[0]),
-            _ => {
+        match types.as_slice() {
+            [] => Ok(()),
+            [ty] => v.cast_param(*ty),
+            tys => {
                 // Typed multi-parameter ABI accepts only Tuple packing; plain Compo values,
                 // including List, stay ordinary single values unless user code unpacks them.
                 let Value::Tuple(tuple) = v else {
                     return itr_err_code!(CallArgvTypeFail);
                 };
                 let mut items = tuple.to_vec();
-                if items.len() != tn {
+                if items.len() != tys.len() {
                     return itr_err_fmt!(
                         CallArgvTypeFail,
                         "param length invalid: expected {} but got {}",
-                        tn,
+                        tys.len(),
                         items.len()
                     );
                 }
-                for (idx, item) in items.iter_mut().enumerate() {
-                    item.cast_param(types[idx])?;
+                for (item, ty) in items.iter_mut().zip(tys.iter().copied()) {
+                    item.cast_param(ty)?;
                 }
 
                 *v = Value::Tuple(
@@ -289,6 +288,26 @@ mod code_stuff_tests {
         let mut argv = Value::U8(7);
         tys.check_params(&mut argv).unwrap();
         assert_eq!(argv, Value::U16(7));
+    }
+
+    #[test]
+    fn check_params_single_rejects_cross_family_implicit_casts() {
+        let addr = field::Address::create_contract([1u8; 20]);
+        let mut argv = Value::Bytes(addr.serialize());
+        let err = FuncArgvTypes::from_types(None, vec![ValueTy::Address])
+            .unwrap()
+            .check_params(&mut argv)
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+        assert_eq!(argv, Value::Bytes(addr.serialize()));
+
+        let mut flag = Value::U8(1);
+        let err = FuncArgvTypes::from_types(None, vec![ValueTy::Bool])
+            .unwrap()
+            .check_params(&mut flag)
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+        assert_eq!(flag, Value::U8(1));
     }
 
     #[test]

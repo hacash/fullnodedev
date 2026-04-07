@@ -92,10 +92,10 @@ unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::Context
 fn init_setup_once() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        protocol::setup::install_builder(mint::setup::extend_standard_mint_stack(
-            protocol::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff)),
-        ))
-        .unwrap();
+        let mut setup = protocol::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff))
+            .unwrap();
+        mint::setup::register_protocol_extensions(&mut setup).unwrap();
+        protocol::setup::install_once(setup).unwrap();
     });
 }
 

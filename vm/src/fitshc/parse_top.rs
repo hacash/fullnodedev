@@ -69,7 +69,7 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
 /// Represents a parsed top-level constant value
 #[derive(Debug, Clone)]
 pub enum ConstValue {
-    /// Unsigned integer: u8, u16, u32, u64, u128, u256
+    /// Unsigned integer constant stored as u128
     Uint(u128),
     /// Boolean: true or false
     Bool(bool),

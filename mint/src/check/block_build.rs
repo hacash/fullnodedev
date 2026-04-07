@@ -188,6 +188,12 @@ mod tests {
 
     use std::collections::HashMap;
 
+    fn scoped_protocol_setup() -> protocol::setup::TestSetupScopeGuard {
+        let mut setup = crate::setup::new_standard_mint_setup(x16rs::block_hash).unwrap();
+        setup.seal().unwrap();
+        protocol::setup::install_test_scope(setup)
+    }
+
     struct DummyStore;
     impl Store for DummyStore {
         fn status(&self) -> ChainStatus {
@@ -420,11 +426,7 @@ mod tests {
 
     #[test]
     fn packing_next_block_merkle_matches_hash_with_fee() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
 
         let (engine, tp) = build_engine(make_prev_blk(99, 1, LOWEST_DIFFICULTY));
         let minter = HacashMinter::create(&IniObj::default());
@@ -437,11 +439,7 @@ mod tests {
 
     #[test]
     fn packing_next_block_keeps_legacy_non_boundary_difficulty_before_upgrade() {
-        let _setup = protocol::setup::install_scoped_for_test(
-            protocol::setup::standard_protocol_builder(x16rs::block_hash)
-                .build()
-                .unwrap(),
-        );
+        let _setup = scoped_protocol_setup();
         let prevdiff = LOWEST_DIFFICULTY - 123;
         let prev_blk = make_prev_blk(100, 10_000, prevdiff);
         let (engine, tp) = build_engine(prev_blk);

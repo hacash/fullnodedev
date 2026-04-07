@@ -494,8 +494,8 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 CU16 => ops.peek()?.cast_u16()?,
                 CU32 => ops.peek()?.cast_u32()?,
                 CU64 => ops.peek()?.cast_u64()?,
-                CU128 => ops.peek()?.cast_u128()?, /* CU256 => ops.peek()?.cast_u256()?, */
-                CBUF => ops.peek()?.cast_buf()?,
+                CU128 => ops.peek()?.cast_u128()?,
+                CBYTES => ops.peek()?.cast_bytes()?,
                 CTO => {
                     let ty = parse_cto_target_ty_param(pu8!())?;
                     ops.peek()?.cast_to(ty as u8)?;

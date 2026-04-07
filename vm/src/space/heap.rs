@@ -167,7 +167,7 @@ impl Heap {
         self.read_uint(uty as u16, seg as u16)
     }
 
-    /* 3   bit = u8 u16 u32 u64 u128 u256 5+8 bit = seg max 64 (u8:64, u16:128, u32:256, u64:512) */
+    /* 3 bit = u8 u16 u32 u64 u128; remaining 13 bits encode the segment */
     pub fn read_ul(&self, mark: u16) -> VmrtRes<Value> {
         // upper 3 bits indicate uint type; remaining 13 bits indicate segment shift by 13 (5+8) explicitly to avoid precedence ambiguity
         let uty = mark >> 13;

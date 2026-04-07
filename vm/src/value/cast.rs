@@ -9,15 +9,11 @@ fn cast_uint_name(bits: u16) -> &'static str {
         32 => "U32",
         64 => "U64",
         128 => "U128",
-        256 => "U256",
         _ => "UINT",
     }
 }
 
 fn ensure_active_uint_bits(bits: u16) -> VmrtErr {
-    if bits == RESERVED_U256_BITS {
-        return itr_err_fmt!(CastFail, "U256 is reserved but not enabled");
-    }
     if ACTIVE_UINT_BITS.contains(&bits) {
         return Ok(());
     }
@@ -36,18 +32,7 @@ fn bytes_width_err(buf: &[u8], bits: u16) -> ItrErr {
 }
 
 fn bytes_to_fixed_width<const N: usize>(buf: &[u8], bits: u16) -> VmrtRes<[u8; N]> {
-    if buf.len() <= N {
-        let mut out = [0u8; N];
-        out[N - buf.len()..].copy_from_slice(buf);
-        return Ok(out);
-    }
-    let cut = buf.len() - N;
-    if buf[..cut].iter().any(|b| *b != 0) {
-        return Err(bytes_width_err(buf, bits));
-    }
-    let mut out = [0u8; N];
-    out.copy_from_slice(&buf[cut..]);
-    Ok(out)
+    fit_be_bytes::<N>(buf).ok_or_else(|| bytes_width_err(buf, bits))
 }
 
 fn bytes_to_uint_width(buf: &[u8], bits: u16) -> VmrtRes<Value> {
@@ -66,91 +51,92 @@ fn arith_uint_bits(v: &Value) -> Option<u16> {
     v.ty().uint_bits()
 }
 
-pub fn cast_arithmetic(x: &mut Value, y: &mut Value) -> VmrtErr {
-    let (Some(lb), Some(rb)) = (arith_uint_bits(x), arith_uint_bits(y)) else {
-        return itr_err_fmt!(
-            CastFail,
-            "cannot do arithmetic cast between type {:?} and {:?}",
-            x,
-            y
-        );
-    };
-    let tb = lb.max(rb);
-    if lb < tb {
-        x.cast_to_uint_width(tb)?;
-    }
-    if rb < tb {
-        y.cast_to_uint_width(tb)?;
-    }
-    Ok(())
-}
-
-pub fn cast_arithmetic3(x: &mut Value, y: &mut Value, z: &mut Value) -> VmrtErr {
-    let (Some(xb), Some(yb), Some(zb)) =
-        (arith_uint_bits(x), arith_uint_bits(y), arith_uint_bits(z))
-    else {
-        return itr_err_fmt!(
-            CastFail,
-            "cannot do arithmetic cast between type {:?}, {:?} and {:?}",
-            x,
-            y,
-            z
-        );
-    };
-    let tb = xb.max(yb).max(zb);
-    if xb < tb {
-        x.cast_to_uint_width(tb)?;
-    }
-    if yb < tb {
-        y.cast_to_uint_width(tb)?;
-    }
-    if zb < tb {
-        z.cast_to_uint_width(tb)?;
-    }
-    Ok(())
-}
-
-pub fn cast_arithmetic4(x: &mut Value, y: &mut Value, z: &mut Value, w: &mut Value) -> VmrtErr {
-    let (Some(xb), Some(yb), Some(zb), Some(wb)) = (
-        arith_uint_bits(x),
-        arith_uint_bits(y),
-        arith_uint_bits(z),
-        arith_uint_bits(w),
-    ) else {
-        return itr_err_fmt!(
-            CastFail,
-            "cannot do arithmetic cast between type {:?}, {:?}, {:?} and {:?}",
-            x,
-            y,
-            z,
-            w
-        );
-    };
-    let tb = xb.max(yb).max(zb).max(wb);
-    if xb < tb {
-        x.cast_to_uint_width(tb)?;
-    }
-    if yb < tb {
-        y.cast_to_uint_width(tb)?;
-    }
-    if zb < tb {
-        z.cast_to_uint_width(tb)?;
-    }
-    if wb < tb {
-        w.cast_to_uint_width(tb)?;
-    }
-    Ok(())
+fn arithmetic_cast_err(values: &[&Value]) -> ItrErr {
+    ItrErr::new(
+        CastFail,
+        &format!(
+            "cannot do arithmetic cast between {}",
+            values
+                .iter()
+                .map(|v| format!("{:?}", v))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    )
 }
 
 impl Value {
-    pub(crate) fn normalize_arithmetic_pair(x: &Value, y: &Value) -> VmrtRes<(Value, Value)> {
+    pub(crate) fn cast_same_uint_width2(x: &mut Value, y: &mut Value) -> VmrtErr {
+        let (Some(lb), Some(rb)) = (arith_uint_bits(x), arith_uint_bits(y)) else {
+            return Err(arithmetic_cast_err(&[x, y]));
+        };
+        let tb = lb.max(rb);
+        if lb < tb {
+            x.cast_to_uint_width(tb)?;
+        }
+        if rb < tb {
+            y.cast_to_uint_width(tb)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cast_same_uint_width3(x: &mut Value, y: &mut Value, z: &mut Value) -> VmrtErr {
+        let (Some(xb), Some(yb), Some(zb)) =
+            (arith_uint_bits(x), arith_uint_bits(y), arith_uint_bits(z))
+        else {
+            return Err(arithmetic_cast_err(&[x, y, z]));
+        };
+        let tb = xb.max(yb).max(zb);
+        if xb < tb {
+            x.cast_to_uint_width(tb)?;
+        }
+        if yb < tb {
+            y.cast_to_uint_width(tb)?;
+        }
+        if zb < tb {
+            z.cast_to_uint_width(tb)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cast_same_uint_width4(
+        x: &mut Value,
+        y: &mut Value,
+        z: &mut Value,
+        w: &mut Value,
+    ) -> VmrtErr {
+        let (Some(xb), Some(yb), Some(zb), Some(wb)) = (
+            arith_uint_bits(x),
+            arith_uint_bits(y),
+            arith_uint_bits(z),
+            arith_uint_bits(w),
+        ) else {
+            return Err(arithmetic_cast_err(&[x, y, z, w]));
+        };
+        let tb = xb.max(yb).max(zb).max(wb);
+        if xb < tb {
+            x.cast_to_uint_width(tb)?;
+        }
+        if yb < tb {
+            y.cast_to_uint_width(tb)?;
+        }
+        if zb < tb {
+            z.cast_to_uint_width(tb)?;
+        }
+        if wb < tb {
+            w.cast_to_uint_width(tb)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn arithmetic_args2(x: &Value, y: &Value) -> VmrtRes<(Value, Value)> {
         let mut lx = x.to_uint()?;
         let mut ry = y.to_uint()?;
-        cast_arithmetic(&mut lx, &mut ry)?;
+        Self::cast_same_uint_width2(&mut lx, &mut ry)?;
         Ok((lx, ry))
     }
 
-    pub(crate) fn normalize_arithmetic_triple(
+    pub(crate) fn arithmetic_args3(
         x: &Value,
         y: &Value,
         z: &Value,
@@ -158,11 +144,11 @@ impl Value {
         let mut lx = x.to_uint()?;
         let mut my = y.to_uint()?;
         let mut rz = z.to_uint()?;
-        cast_arithmetic3(&mut lx, &mut my, &mut rz)?;
+        Self::cast_same_uint_width3(&mut lx, &mut my, &mut rz)?;
         Ok((lx, my, rz))
     }
 
-    pub(crate) fn normalize_arithmetic_quad(
+    pub(crate) fn arithmetic_args4(
         x: &Value,
         y: &Value,
         z: &Value,
@@ -172,7 +158,7 @@ impl Value {
         let mut my = y.to_uint()?;
         let mut rz = z.to_uint()?;
         let mut qw = w.to_uint()?;
-        cast_arithmetic4(&mut lx, &mut my, &mut rz, &mut qw)?;
+        Self::cast_same_uint_width4(&mut lx, &mut my, &mut rz, &mut qw)?;
         Ok((lx, my, rz, qw))
     }
 
@@ -227,7 +213,7 @@ impl Value {
         self.cast_to_uint_width(128)
     }
 
-    pub fn cast_buf(&mut self) -> VmrtErr {
+    pub fn cast_bytes(&mut self) -> VmrtErr {
         if matches!(self, Bytes(..)) {
             return Ok(());
         }
@@ -256,7 +242,7 @@ impl Value {
             U32 => self.cast_u32(),
             U64 => self.cast_u64(),
             U128 => self.cast_u128(),
-            Bytes => self.cast_buf(),
+            Bytes => self.cast_bytes(),
             Address => self.cast_addr(),
             _ => itr_err_code!(CastFail),
         }
@@ -274,19 +260,23 @@ impl Value {
         )
     }
 
+    fn map_boundary_cast_error(expect: ValueTy, actual: ValueTy, err: ItrErr) -> ItrErr {
+        let ItrErr(_, msg) = err;
+        if msg.is_empty() {
+            Self::fn_boundary_type_fail(expect, actual)
+        } else {
+            ItrErr::new(CallArgvTypeFail, &msg)
+        }
+    }
+
     pub fn cast_param(&mut self, ty: ValueTy) -> VmrtErr {
         let actual = self.ty();
         if ty == actual {
             return Ok(());
         }
         if ty.is_uint() && actual.is_uint() {
-            return self.cast_to_ty(ty).map_err(|ItrErr(_, msg)| {
-                if msg.is_empty() {
-                    Self::fn_boundary_type_fail(ty, actual)
-                } else {
-                    ItrErr::new(CallArgvTypeFail, &msg)
-                }
-            });
+            return self.cast_to_ty(ty)
+                .map_err(|err| Self::map_boundary_cast_error(ty, actual, err));
         }
         Err(Self::fn_boundary_type_fail(ty, actual))
     }
@@ -321,6 +311,13 @@ mod cast_tests {
         let err = v.cast_param(ValueTy::Bool).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
         assert_eq!(v, Value::U8(0));
+    }
+
+    #[test]
+    fn runtime_bool_truthiness_is_broader_than_canonical_bool_bytes() {
+        let mut flag = Value::U8(2);
+        flag.cast_bool().unwrap();
+        assert_eq!(flag, Value::Bool(true));
     }
 
     #[test]
