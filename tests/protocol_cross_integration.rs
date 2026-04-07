@@ -3,7 +3,6 @@ use basis::interface::*;
 use field::*;
 use protocol::action::*;
 use protocol::transaction::*;
-use std::sync::Once;
 use sys::*;
 
 use testkit::sim::context::make_ctx_with_default_tx;
@@ -90,13 +89,10 @@ unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::Context
 }
 
 fn init_setup_once() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let mut setup = protocol::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff))
-            .unwrap();
-        mint::setup::register_protocol_extensions(&mut setup).unwrap();
-        protocol::setup::install_once(setup).unwrap();
-    });
+    testkit::sim::integration::ensure_standard_protocol_setup_for_tests(
+        |_, stuff| sys::calculate_hash(stuff),
+        true,
+    );
 }
 
 static AST_TEST_GLOBAL_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
@@ -635,7 +631,7 @@ fn test_ast_tx_gasmax_zero_skips_init_and_fails_on_first_real_gas_use() {
     env.chain.fast_sync = true;
     env.tx = create_tx_info(&tx);
     init_setup_once();
-    let mut ctx = testkit_make_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
     let mut state = protocol::state::CoreState::wrap(ctx.state());
     let mut bls = state.balance(&tx.main()).unwrap_or_default();
     bls.hacash = Amount::unit238(5_000_000_000);
@@ -699,7 +695,7 @@ fn test_tx_without_ast_allows_nonzero_gasmax_when_topology_is_valid() {
     env.chain.fast_sync = true;
     env.tx = create_tx_info(&tx);
     init_setup_once();
-    let mut ctx = testkit_make_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
 
     let mut state = protocol::state::CoreState::wrap(ctx.state());
     let mut bls = state.balance(&main).unwrap_or_default();

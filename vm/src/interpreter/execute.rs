@@ -388,7 +388,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 let v = ops.pop()?.valid(cap)?;
                 let vlen = v.val_size();
                 let k = ops.pop()?;
-                let klen = k.extract_key_bytes()?.len();
+                let klen = $store.key_len(&k)?;
                 let is_new = !$store.contains_key(&k)?;
                 gas_resource!(stack_write, klen);
                 gas_resource!(stack_write, vlen);

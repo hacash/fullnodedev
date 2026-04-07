@@ -6,21 +6,16 @@ use crate::transaction::*;
 use basis::component::*;
 use basis::interface::*;
 use field::*;
-use std::sync::Once;
 use sys::*;
 
-static INIT: Once = Once::new();
-
-fn init_test_registry() {
-    INIT.call_once(|| {
-        let mut setup = crate::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff));
-        setup.action_codec(
-            &[TestExtEnvReadOnly::KIND],
-            action_env_try_create,
-            action_env_try_json_decode,
-        );
-        crate::setup::install_once(setup);
-    });
+fn install_test_registry() -> crate::setup::TestSetupScopeGuard {
+    let mut setup = crate::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff));
+    setup.action_codec(
+        &[TestExtEnvReadOnly::KIND],
+        action_env_try_create,
+        action_env_try_json_decode,
+    );
+    crate::setup::install_test_scope(setup)
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -118,7 +113,7 @@ fn action_env_try_json_decode(kind: u16, json: &str) -> Ret<Option<Box<dyn Actio
 }
 
 fn init_action_env_test_registry() {
-    init_test_registry();
+    let _guard = install_test_registry();
 }
 
 #[test]
@@ -463,7 +458,7 @@ fn build_depth_7_ast_select() -> AstSelect {
 
 #[test]
 fn test_transaction_json_full_cycle() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     // 1. Create a TransactionType2 with some actions
     let mut tx = TransactionType2::default();
@@ -514,7 +509,7 @@ fn test_transaction_json_full_cycle() {
 
 #[test]
 fn test_block_json_full_cycle() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     // 1. Create a BlockV1
     let mut block = BlockV1::default();
@@ -568,7 +563,7 @@ fn test_block_json_full_cycle() {
 
 #[test]
 fn test_block_prelude_transaction_must_return_tx0() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     let mut block = BlockV1::default();
 
@@ -592,7 +587,7 @@ fn test_block_prelude_transaction_must_return_tx0() {
 
 #[test]
 fn test_block_execute_must_credit_reward_and_fees_to_default_prelude() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     let miner_acc = Account::create_by("protocol-default-prelude-main").unwrap();
     let miner = Address::from(*miner_acc.address());
@@ -644,7 +639,7 @@ fn test_block_execute_must_credit_reward_and_fees_to_default_prelude() {
 
 #[test]
 fn test_ctx_action_call_must_check_req_sign() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -678,7 +673,7 @@ fn test_ctx_action_call_must_check_req_sign() {
 
 #[test]
 fn test_tx_execute_must_verify_signature_before_actions() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -709,7 +704,7 @@ fn test_tx_execute_must_verify_signature_before_actions() {
 
 #[test]
 fn test_tx_execute_must_reject_action_count_over_max() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -738,7 +733,7 @@ fn test_tx_execute_must_reject_action_count_over_max() {
 
 #[test]
 fn test_tx_execute_must_reject_invalid_top_only_can_with_guard_before_any_action_runs() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -897,7 +892,7 @@ fn test_precheck_runtime_action_rejects_guard_from_action_call() {
 
 #[test]
 fn test_tx_execute_fast_sync_ast_depth_precheck_rejects_7th_level() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -924,7 +919,7 @@ fn test_tx_execute_fast_sync_ast_depth_precheck_rejects_7th_level() {
 
 #[test]
 fn test_ctx_action_call_rejects_ast_action_even_in_fast_sync() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -950,7 +945,7 @@ fn test_ctx_action_call_rejects_ast_action_even_in_fast_sync() {
 
 #[test]
 fn test_tx_req_sign_must_be_privakey_address() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::transaction::TransactionType2;
 
@@ -970,7 +965,7 @@ fn test_tx_req_sign_must_be_privakey_address() {
 
 #[test]
 fn test_tx_execute_must_reject_nonzero_gas_max_on_type1() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1003,7 +998,7 @@ fn test_tx_execute_must_reject_nonzero_gas_max_on_type1() {
 
 #[test]
 fn test_tx_execute_must_reject_nonzero_ano_mark_on_type2() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1035,7 +1030,7 @@ fn test_tx_execute_must_reject_nonzero_ano_mark_on_type2() {
 
 #[test]
 fn test_tx_execute_must_reject_nonzero_ano_mark_on_type3() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     let main_acc = Account::create_by("protocol-type3-ano-mark-main").unwrap();
     let main = Address::from(*main_acc.address());
@@ -1068,7 +1063,7 @@ fn test_tx_execute_must_reject_nonzero_ano_mark_on_type3() {
 
 #[test]
 fn test_type3_fee_got_does_not_burn_from_action_mark() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     let mut tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
@@ -1146,7 +1141,7 @@ fn build_type3_gas_ctx(budget: i64) -> (ContextInst<'static>, Address) {
 
 #[test]
 fn test_type3_top_level_action_local_burn_factor_is_applied() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     let plain_used = run_type3_top_level_gas_case(false);
     let burn_used = run_type3_top_level_gas_case(true);
@@ -1157,7 +1152,7 @@ fn test_type3_top_level_action_local_burn_factor_is_applied() {
 
 #[test]
 fn test_ast_select_revert_restores_failed_child_only() {
-    init_test_registry();
+    let _guard = install_test_registry();
     let tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
         Amount::unit238(1000),
@@ -1200,7 +1195,7 @@ fn test_ast_select_revert_restores_failed_child_only() {
 
 #[test]
 fn test_ast_if_fault_fast_fails_without_whole_node_recover() {
-    init_test_registry();
+    let _guard = install_test_registry();
     let tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
         Amount::unit238(1000),
@@ -1301,7 +1296,7 @@ fn test_gas_init_after_settle_errors_without_reprecharge() {
 
 #[test]
 fn test_ctx_action_call_actenv_does_not_require_tx_main_signature() {
-    init_test_registry();
+    let _guard = install_test_registry();
     init_action_env_test_registry();
 
     use crate::context::ContextInst;
@@ -1326,7 +1321,7 @@ fn test_ctx_action_call_actenv_does_not_require_tx_main_signature() {
 
 #[test]
 fn test_tx_req_sign_must_collect_nested_ast_child_actions() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::transaction::TransactionType2;
 
@@ -1359,7 +1354,7 @@ fn test_precheck_runtime_action_rejects_ast_leaf_from_action_call() {
 
 #[test]
 fn test_tx_req_sign_astif_must_collect_cond_if_else_and_filter_scriptmh() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::transaction::TransactionType2;
 
@@ -1404,7 +1399,7 @@ fn test_precheck_tx_actions_rejects_top_only_can_with_guard_plus_guard_only_ast_
 
 #[test]
 fn test_ast_select_min_failure_is_revert() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1445,7 +1440,7 @@ fn test_ast_select_min_failure_is_revert() {
 
 #[test]
 fn test_ast_if_rethrow_preserves_revert_kind() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1502,7 +1497,7 @@ fn test_precheck_tx_actions_rejects_top_only_can_with_guard_plus_non_guard_ast_w
 
 #[test]
 fn test_tx_execute_rejects_type2_ast_leaf_action() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1537,7 +1532,7 @@ fn test_tx_execute_rejects_type2_ast_leaf_action() {
 
 #[test]
 fn test_balance_floor_empty_and_duplicate_asset_rejected() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1578,7 +1573,7 @@ fn test_balance_floor_empty_and_duplicate_asset_rejected() {
 
 #[test]
 fn test_balance_floor_success_and_insufficient() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1629,7 +1624,7 @@ fn test_balance_floor_success_and_insufficient() {
 
 #[test]
 fn test_ctx_action_call_must_reject_trailing_bytes() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     use crate::context::ContextInst;
     use crate::state::EmptyLogs;
@@ -1657,7 +1652,7 @@ fn test_ctx_action_call_must_reject_trailing_bytes() {
 
 #[test]
 fn test_action_json_create_must_reject_kind_mismatch() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     let json = r#"{"kind":14}"#;
     let err = crate::action::action_json_create(HacToTrs::KIND, json).unwrap_err();
@@ -1666,7 +1661,7 @@ fn test_action_json_create_must_reject_kind_mismatch() {
 
 #[test]
 fn test_complex_json_structure() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     // Test a very complex transaction with many actions
     let mut tx = TransactionType1::default();
@@ -1691,7 +1686,7 @@ fn test_complex_json_structure() {
 
 #[test]
 fn test_transaction_base58check_format_roundtrip() {
-    init_test_registry();
+    let _guard = install_test_registry();
 
     // Round-trip with Base58Check format (Address outputs bare, no b58: prefix)
     let mut tx = TransactionType2::default();

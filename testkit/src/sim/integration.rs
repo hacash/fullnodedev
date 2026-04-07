@@ -3,7 +3,7 @@ use field::{Address, Amount};
 use protocol::context::ContextInst;
 use protocol::transaction::create_tx_info;
 use std::cell::RefCell;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Mutex, MutexGuard, Once, OnceLock};
 
 use crate::sim::context::make_ctx_with_logs;
 use crate::sim::tx::{StubTx, StubTxBuilder};
@@ -49,6 +49,12 @@ thread_local! {
     static TEST_SETUP_SCOPE: RefCell<Option<protocol::setup::TestSetupScopeGuard>> = const { RefCell::new(None) };
 }
 
+fn set_scoped_setup_guard(guard: protocol::setup::TestSetupScopeGuard) {
+    TEST_SETUP_SCOPE.with(|cell| {
+        *cell.borrow_mut() = Some(guard);
+    });
+}
+
 pub fn scoped_setup(vm_assigner: Option<protocol::setup::FnVmAssignFunc>) -> protocol::setup::TestSetupScopeGuard {
     let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
     mint::setup::register_protocol_extensions(&mut setup);
@@ -60,15 +66,38 @@ pub fn scoped_setup(vm_assigner: Option<protocol::setup::FnVmAssignFunc>) -> pro
     protocol::setup::install_test_scope(setup)
 }
 
-pub fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
-    let guard = scoped_setup(assigner);
-    TEST_SETUP_SCOPE.with(|cell| {
-        *cell.borrow_mut() = Some(guard);
+pub fn ensure_standard_protocol_setup_for_tests(
+    block_hasher: protocol::setup::FnBlockHasherFunc,
+    include_vm_extensions: bool,
+) {
+    static GLOBAL_SETUP_ONCE: Once = Once::new();
+    GLOBAL_SETUP_ONCE.call_once(|| {
+        let mut setup = protocol::setup::new_standard_protocol_setup(block_hasher);
+        mint::setup::register_protocol_extensions(&mut setup);
+        if include_vm_extensions {
+            vm::setup::register_protocol_extensions(&mut setup);
+        }
+        protocol::setup::install_once(setup);
     });
+
+    let mut scoped = protocol::setup::new_standard_protocol_setup(block_hasher);
+    mint::setup::register_protocol_extensions(&mut scoped);
+    if include_vm_extensions {
+        vm::setup::register_protocol_extensions(&mut scoped);
+    }
+    set_scoped_setup_guard(protocol::setup::install_test_scope(scoped));
+}
+
+pub fn enable_mint_setup() {
+    set_scoped_setup_guard(scoped_setup(None));
+}
+
+pub fn set_vm_assigner(assigner: Option<protocol::setup::FnVmAssignFunc>) {
+    set_scoped_setup_guard(scoped_setup(assigner));
 }
 
 pub fn disable_vm_setup() {
-    set_vm_assigner(None)
+    enable_mint_setup()
 }
 
 pub fn enable_default_vm_setup() {

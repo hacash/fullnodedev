@@ -189,8 +189,8 @@ mod tests {
     use std::collections::HashMap;
 
     fn scoped_protocol_setup() -> protocol::setup::TestSetupScopeGuard {
-        let mut setup = crate::setup::new_standard_mint_setup(x16rs::block_hash).unwrap();
-        setup.seal().unwrap();
+        let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
+        crate::setup::register_protocol_extensions(&mut setup);
         protocol::setup::install_test_scope(setup)
     }
 

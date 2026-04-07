@@ -251,8 +251,9 @@ mod hook_arg_tests {
                 main,
                 addrs: vec![main, p2sh_addr],
             };
-            let mut p2sh_code = Address::default().as_bytes().to_vec();
+            let mut p2sh_code = p2sh_addr.as_bytes().to_vec();
             p2sh_code.push(0); // empty ContractAddressW1 list
+            p2sh_code.extend_from_slice(&[crate::Bytecode::END as u8]);
             let mut env = Env::default();
             env.tx.ty = 3;
             env.tx.main = main;

@@ -34,11 +34,11 @@ macro_rules! memories_kvmap_define {
             }
 
             fn key(k: &Value) -> VmrtRes<Vec<u8>> {
-                let key = k.extract_key_bytes()?;
-                if key.is_empty() {
-                    return itr_err_fmt!($er1, "key {} cannot be empty", k);
-                }
-                Ok(key)
+                k.extract_key_bytes_with_error_code($er1)
+            }
+
+            pub fn key_len(&self, k: &Value) -> VmrtRes<usize> {
+                Ok(Self::key(k)?.len())
             }
 
             pub fn put(&mut self, k: Value, v: Value) -> VmrtErr {
@@ -181,5 +181,31 @@ mod kvmap_tests {
             .put(key.clone(), Value::U8(9))
             .unwrap_err();
         assert!(matches!(err, ItrErr(OutOfMemory, _)));
+    }
+
+    #[test]
+    fn gkvmap_rejects_nil_and_empty_keys() {
+        let mut g = GKVMap::new(2);
+
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            let err = g.put(key.clone(), Value::U8(1)).unwrap_err();
+            assert_eq!(err.0, ItrErrCode::GlobalError);
+            assert!(g.get(&key).is_err());
+            assert!(g.contains_key(&key).is_err());
+            assert!(g.remove(&key).is_err());
+        }
+    }
+
+    #[test]
+    fn mkvmap_rejects_nil_and_empty_keys() {
+        let mut m = MKVMap::new(2);
+
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            let err = m.put(key.clone(), Value::U8(1)).unwrap_err();
+            assert_eq!(err.0, ItrErrCode::MemoryError);
+            assert!(m.get(&key).is_err());
+            assert!(m.contains_key(&key).is_err());
+            assert!(m.remove(&key).is_err());
+        }
     }
 }

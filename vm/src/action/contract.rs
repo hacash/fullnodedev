@@ -519,7 +519,7 @@ mod contract_test {
     use field::{Address, Amount, Uint4};
     use protocol::context::decode_gas_budget;
     use protocol::transaction::TransactionType3;
-    use std::sync::Once;
+    use std::cell::RefCell;
     use testkit::sim::context::make_ctx_with_state;
     use testkit::sim::state::FlatMemState as StateMem;
     use testkit::sim::tx::StubTxBuilder;
@@ -532,13 +532,17 @@ mod contract_test {
         ContractAddress::calculate(base, &Uint4::from(nonce))
     }
 
+    thread_local! {
+        static VM_TEST_SETUP_SCOPE: RefCell<Option<protocol::setup::TestSetupScopeGuard>> = const { RefCell::new(None) };
+    }
+
     fn init_vm_assigner_once() {
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            let mut setup = crate::setup::new_standard_vm_setup(|_, stuff| sys::calculate_hash(stuff))
-                .unwrap();
-            setup.seal().unwrap();
-            protocol::setup::install_once(setup).unwrap();
+        let mut setup = protocol::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff));
+        mint::setup::register_protocol_extensions(&mut setup);
+        crate::setup::register_protocol_extensions(&mut setup);
+        let guard = protocol::setup::install_test_scope(setup);
+        VM_TEST_SETUP_SCOPE.with(|cell| {
+            *cell.borrow_mut() = Some(guard);
         });
     }
 

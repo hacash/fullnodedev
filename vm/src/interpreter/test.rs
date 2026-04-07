@@ -2512,6 +2512,61 @@ mod bounds_tests {
     }
 
     #[test]
+    fn insert_gput_and_mput_reject_empty_keys() {
+        use crate::rt::Bytecode;
+
+        let run = |codes: Vec<u8>, setup: fn(&mut Stack)| {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            setup(&mut operands);
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap_err()
+        };
+
+        let insert_err = run(vec![Bytecode::INSERT as u8, Bytecode::END as u8], |ops| {
+            ops.push(Value::Compo(CompoItem::new_map())).unwrap();
+            ops.push(Value::Bytes(vec![])).unwrap();
+            ops.push(Value::U8(7)).unwrap();
+        });
+        assert_eq!(insert_err.0, ItrErrCode::CastBeKeyFail);
+
+        let gput_err = run(vec![Bytecode::GPUT as u8, Bytecode::END as u8], |ops| {
+            ops.push(Value::Bytes(vec![])).unwrap();
+            ops.push(Value::U8(7)).unwrap();
+        });
+        assert_eq!(gput_err.0, ItrErrCode::GlobalError);
+
+        let mput_err = run(vec![Bytecode::MPUT as u8, Bytecode::END as u8], |ops| {
+            ops.push(Value::Bytes(vec![])).unwrap();
+            ops.push(Value::U8(7)).unwrap();
+        });
+        assert_eq!(mput_err.0, ItrErrCode::MemoryError);
+    }
+
+    #[test]
     fn compiler_generated_multi_param_prelude_accepts_list_sequence() {
         let codes = crate::lang::lang_to_bytecode("param { a b }\nend").unwrap();
 

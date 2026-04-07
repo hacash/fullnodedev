@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod action_coverage {
-    use std::sync::Once;
-
     use basis::component::ExecFrom;
     use basis::interface::ActExec;
     use basis::interface::{Context, Logs, State, StateOperat, Transaction, TransactionRead};
@@ -14,8 +12,9 @@ mod action_coverage {
     use protocol::transaction::TransactionType3;
     use sys::{Account, Ret, XRet};
     use testkit::sim::integration::{
-        enable_default_vm_setup, make_ctx_from_tx, make_stub_tx as make_tx, set_vm_assigner,
-        test_guard, vm_alt_addr as alt_addr, vm_main_addr as main_addr,
+        enable_default_vm_setup, make_ctx_from_tx as base_make_ctx_from_tx,
+        make_stub_tx as make_tx, set_vm_assigner, test_guard, vm_alt_addr as alt_addr,
+        vm_main_addr as main_addr,
     };
     use testkit::sim::logs::MemLogs;
     use testkit::sim::state::FlatMemState as StateMem;
@@ -32,17 +31,24 @@ mod action_coverage {
     // ─── Test infrastructure ───
 
     fn init_action_registry() {
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            let mut setup = vm::setup::new_standard_vm_setup(|_, stuff| sys::calculate_hash(stuff))
-                .unwrap();
-            setup.seal().unwrap();
-            protocol::setup::install_once(setup).unwrap();
-        });
+        testkit::sim::integration::ensure_standard_protocol_setup_for_tests(
+            |_, stuff| sys::calculate_hash(stuff),
+            true,
+        );
     }
 
     fn contract_addr(main: &Address, nonce: u32) -> ContractAddress {
         ContractAddress::calculate(main, &Uint4::from(nonce))
+    }
+
+    fn make_ctx_from_tx<'a>(
+        height: u64,
+        tx: &'a dyn TransactionRead,
+        state: Box<dyn State>,
+        logs: Box<dyn Logs>,
+    ) -> protocol::context::ContextInst<'a> {
+        init_action_registry();
+        base_make_ctx_from_tx(height, tx, state, logs)
     }
 
     fn make_ctx<'a>(
