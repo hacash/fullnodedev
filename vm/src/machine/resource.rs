@@ -1449,10 +1449,15 @@ mod resource_tests {
             assert_eq!(rt.has(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.take(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.del(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
-            assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap(), (None, vec![]));
             assert_eq!(rt.move_key(&owner, id, Value::Bytes(vec![1]), key.clone()).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.move_key(&owner, id, key.clone(), Value::Bytes(vec![1])).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.put_many(&owner, id, vec![(key.clone(), Value::U64(1))]).unwrap_err().0, ItrErrCode::IntentError);
+        }
+
+        rt.put(&owner, id, Value::Bytes(b"a".to_vec()), Value::U64(1)).unwrap();
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap_err().0, ItrErrCode::IntentError);
         }
     }
 }

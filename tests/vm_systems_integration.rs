@@ -16,6 +16,13 @@ use vm::rt::{Bytecode, CodeType, FnSign, calc_func_sign};
 use vm::value::Value;
 use vm::{ContractAddress, ContractSto, VMState, VmLog};
 
+fn init_setup_once() {
+    testkit::sim::integration::ensure_standard_protocol_setup_for_tests(
+        |_, stuff| sys::calculate_hash(stuff),
+        true,
+    );
+}
+
 fn contract_addr(main: &Address, nonce: u32) -> ContractAddress {
     ContractAddress::calculate(main, &Uint4::from(nonce))
 }
@@ -217,6 +224,7 @@ fn loader_reports_library_index_overflow() {
 #[test]
 fn deploy_rejects_missing_library_contract() {
     let _guard = test_guard();
+    init_setup_once();
 
     let main = main_addr();
     let missing = contract_addr(&main, 7001);
@@ -248,6 +256,7 @@ fn deploy_rejects_missing_library_contract() {
 #[test]
 fn deploy_rejects_nested_parent_inherits_before_runtime() {
     let _guard = test_guard();
+    init_setup_once();
 
     let main = main_addr();
     let a = contract_addr(&main, 7101);
@@ -301,6 +310,7 @@ fn deploy_rejects_nested_parent_inherits_before_runtime() {
 #[test]
 fn deploy_rejects_missing_library_function_at_precheck() {
     let _guard = test_guard();
+    init_setup_once();
 
     let main = main_addr();
     let lib = contract_addr(&main, 7201);

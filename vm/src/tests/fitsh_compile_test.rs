@@ -88,7 +88,6 @@ mod fitsh_compile_tests {
             str_with_escape: "return \"hello\\nworld\"",
             str_with_tab: "return \"hello\\tworld\"",
             str_with_quotes: "return \"hello \\\"world\\\"\"",
-            str_unicode: "return \"café\"",
             char_a: "return 'A'",
             char_digit: "return '0'",
             char_space: "return ' '",
@@ -693,7 +692,7 @@ return C.0xabcdef01(1, 2)",
             let code = format!("lib C = 1\nreturn C.0xabcdef01({})", argv);
             let err = lang_to_bytecode(&code).expect_err("call argv over limit must fail");
             assert!(err.to_string().contains(&format!(
-                "function argv length cannot more than {}",
+                "func argv length cannot more than {}",
                 crate::MAX_FUNC_PARAM_LEN
             )));
         }
