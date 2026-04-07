@@ -8,8 +8,6 @@ pub fn default_block_hasher(_: u64, stuff: &[u8]) -> [u8; H32] {
 }
 
 pub fn do_block_hash(height: u64, stuff: &[u8]) -> [u8; H32] {
-    match get_registry() {
-        Ok(registry) => (registry.block_hasher)(height, stuff),
-        Err(e) => panic!("protocol setup missing: {}", e),
-    }
+    let registry = current_setup();
+    (registry.block_hasher)(height, stuff)
 }

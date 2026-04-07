@@ -173,10 +173,14 @@ impl IntentRuntime {
     }
 
     fn validate_non_nil_scalar(val: &Value) -> VmrtErr {
-        if val.is_nil() {
-            return itr_err_fmt!(ItrErrCode::IntentError, "intent value cannot be nil");
-        }
         val.check_non_nil_scalar(ItrErrCode::IntentError)
+            .map_err(|ItrErr(_, msg)| {
+                if val.is_nil() {
+                    ItrErr::new(ItrErrCode::IntentError, "intent value cannot be nil")
+                } else {
+                    ItrErr::new(ItrErrCode::IntentError, &msg)
+                }
+            })
     }
 
     fn extract_intent_key_bytes(&self, key: &Value) -> VmrtRes<Vec<u8>> {
@@ -203,34 +207,17 @@ impl IntentRuntime {
         Ok(())
     }
 
-    fn validate_uint(value: &Value, msg: &str) -> VmrtErr {
-        if !value.is_uint() {
-            return itr_err_fmt!(ItrErrCode::IntentError, "{}", msg);
+    fn uint_add_checked_with_msg(left: &Value, right: &Value, msg: &str) -> VmrtRes<Value> {
+        if !left.is_uint() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent value must be uint");
         }
-        Ok(())
-    }
-
-    fn cast_uint_pair_same_width(left: &Value, right: &Value) -> VmrtRes<(Value, Value)> {
-        let lb = left
-            .ty()
-            .uint_bits()
-            .ok_or_else(|| ItrErr::new(ItrErrCode::IntentError, "intent value must be uint"))?;
-        let rb = right
-            .ty()
-            .uint_bits()
-            .ok_or_else(|| ItrErr::new(ItrErrCode::IntentError, "intent delta must be uint"))?;
-        let width = lb.max(rb);
+        if !right.is_uint() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent delta must be uint");
+        }
         let mut lx = left.clone();
         let mut ry = right.clone();
-        lx.cast_to_uint_width(width)
+        Value::cast_same_uint_width2(&mut lx, &mut ry)
             .map_err(|ItrErr(_, msg)| ItrErr::new(ItrErrCode::IntentError, &msg))?;
-        ry.cast_to_uint_width(width)
-            .map_err(|ItrErr(_, msg)| ItrErr::new(ItrErrCode::IntentError, &msg))?;
-        Ok((lx, ry))
-    }
-
-    fn uint_add_checked_with_msg(left: &Value, right: &Value, msg: &str) -> VmrtRes<Value> {
-        let (lx, ry) = Self::cast_uint_pair_same_width(left, right)?;
         match (lx, ry) {
             (Value::U8(a), Value::U8(b)) => a.checked_add(b).map(Value::U8),
             (Value::U16(a), Value::U16(b)) => a.checked_add(b).map(Value::U16),
@@ -243,7 +230,16 @@ impl IntentRuntime {
     }
 
     fn uint_sub_checked(left: &Value, right: &Value) -> VmrtRes<Value> {
-        let (lx, ry) = Self::cast_uint_pair_same_width(left, right)?;
+        if !left.is_uint() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent value must be uint");
+        }
+        if !right.is_uint() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent delta must be uint");
+        }
+        let mut lx = left.clone();
+        let mut ry = right.clone();
+        Value::cast_same_uint_width2(&mut lx, &mut ry)
+            .map_err(|ItrErr(_, msg)| ItrErr::new(ItrErrCode::IntentError, &msg))?;
         match (lx, ry) {
             (Value::U8(a), Value::U8(b)) => a.checked_sub(b).map(Value::U8),
             (Value::U16(a), Value::U16(b)) => a.checked_sub(b).map(Value::U16),
@@ -296,13 +292,17 @@ impl IntentRuntime {
         target_err: &str,
         overflow_err: &str,
     ) -> VmrtRes<Value> {
-        Self::validate_uint(&delta, delta_err)?;
+        if !delta.is_uint() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "{}", delta_err);
+        }
         self.validate_intent_key(&key)?;
         let base = {
             let entry = self.require_ref(owner, id)?;
             if entry.data.contains_key(&key)? {
                 let existing = entry.data.get(&key)?;
-                Self::validate_uint(&existing, target_err)?;
+                if !existing.is_uint() {
+                    return itr_err_fmt!(ItrErrCode::IntentError, "{}", target_err);
+                }
                 existing
             } else {
                 missing_base.ok_or_else(Self::key_not_found)?
@@ -362,21 +362,14 @@ impl IntentRuntime {
     }
 
     pub fn take(&mut self, owner: &ContractAddress, id: usize, key: &Value) -> VmrtRes<Value> {
-        let val = self.get(owner, id, key)?;
-        if val.is_nil() {
-            return Err(Self::key_not_found());
-        }
+        let val = self.require(owner, id, key)?;
         self.require_mut(owner, id)?.data.remove(key)?;
         Ok(val)
     }
 
     pub fn del(&mut self, owner: &ContractAddress, id: usize, key: &Value) -> VmrtErr {
-        self.validate_intent_key(key)?;
-        let entry = self.require_mut(owner, id)?;
-        if !entry.data.contains_key(key)? {
-            return Err(Self::key_not_found());
-        }
-        entry.data.remove(key)
+        self.require(owner, id, key)?;
+        self.require_mut(owner, id)?.data.remove(key)
     }
 
     pub fn has(&self, owner: &ContractAddress, id: usize, key: &Value) -> VmrtRes<bool> {
@@ -437,7 +430,8 @@ impl IntentRuntime {
     }
 
     pub fn require_absent(&self, owner: &ContractAddress, id: usize, key: &Value) -> VmrtErr {
-        if self.has(owner, id, key)? {
+        self.validate_intent_key(key)?;
+        if self.require_ref(owner, id)?.data.contains_key(key)? {
             return itr_err_fmt!(ItrErrCode::IntentError, "intent key already exists");
         }
         Ok(())
@@ -469,20 +463,13 @@ impl IntentRuntime {
         key: Value,
         val: &Value,
     ) -> VmrtRes<usize> {
-        self.validate_intent_key(&key)?;
         let new_bytes = match val {
             Value::Bytes(buf) => buf.clone(),
             _ => return itr_err_fmt!(ItrErrCode::IntentError, "intent append value must be Bytes"),
         };
-        let mut buf = {
-            let entry = self.require_ref(owner, id)?;
-            if !entry.data.contains_key(&key)? {
-                return Err(Self::key_not_found());
-            }
-            match entry.data.get(&key)? {
-                Value::Bytes(buf) => buf,
-                _ => return itr_err_fmt!(ItrErrCode::IntentError, "intent append target must be Bytes"),
-            }
+        let mut buf = match self.require(owner, id, &key)? {
+            Value::Bytes(buf) => buf,
+            _ => return itr_err_fmt!(ItrErrCode::IntentError, "intent append target must be Bytes"),
         };
         buf.extend_from_slice(&new_bytes);
         self.check_size_limit(buf.len(), "appended value")?;
@@ -516,14 +503,18 @@ impl IntentRuntime {
         key: Value,
         delta: Value,
     ) -> VmrtRes<Value> {
-        Self::validate_uint(&delta, "intent sub delta must be uint")?;
+        if !delta.is_uint() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent sub delta must be uint");
+        }
         self.validate_intent_key(&key)?;
         let entry = self.require_mut(owner, id)?;
         if !entry.data.contains_key(&key)? {
             return Err(Self::key_not_found());
         }
         let existing = entry.data.get(&key)?;
-        Self::validate_uint(&existing, "intent sub target must be uint")?;
+        if !existing.is_uint() {
+            return itr_err_fmt!(ItrErrCode::IntentError, "intent sub target must be uint");
+        }
         let val = Self::uint_sub_checked(&existing, &delta)?;
         entry.data.put(key, val.clone())?;
         Ok(val)
@@ -571,12 +562,7 @@ impl IntentRuntime {
         expected: &Value,
     ) -> VmrtRes<Option<Value>> {
         Self::validate_non_nil_scalar(expected)?;
-        self.validate_intent_key(key)?;
-        let entry = self.require_mut(owner, id)?;
-        let existing = entry.data.get(key)?;
-        if existing.is_nil() {
-            return Err(Self::key_not_found());
-        }
+        let existing = self.require(owner, id, key)?;
         if existing != *expected {
             return Ok(None); // Mismatch
         }

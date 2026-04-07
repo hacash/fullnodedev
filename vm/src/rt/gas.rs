@@ -71,7 +71,7 @@ impl GasTable {
         use Bytecode::*;
         let mut gst = Self { table : [2; 256] };
         gst.set(1,  &[P0, P1, P2, P3, PU8, PNBUF, PNIL, PTRUE, PFALSE, 
-            CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
+            CU8, CU16, CU32, CU64, CU128, CBYTES, CTO, TID, TIS, TNIL, TMAP, TLIST, 
             POP, NOP, NT, END, RET, ABT, ERR, AST, PRT]);
         gst.set(2,  &[]); // all other bytecode
         gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]);

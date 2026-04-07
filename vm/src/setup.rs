@@ -1,8 +1,5 @@
-use protocol::setup::SetupBuilder;
-
-pub fn extend_standard_vm_stack(builder: SetupBuilder) -> SetupBuilder {
-    builder
-        .action_register(crate::action::register)
-        .action_hooker(crate::hook::try_action_hook)
-        .vm_assigner(|height| Box::new(crate::global_runtime_pool().checkout(height)))
+pub fn register_protocol_extensions(setup: &mut protocol::setup::ProtocolSetup) {
+    crate::action::register(setup);
+    setup.action_hook(crate::hook::try_action_hook);
+    setup.set_vm_assigner(|height| Box::new(crate::global_runtime_pool().checkout(height)));
 }

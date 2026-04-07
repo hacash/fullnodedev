@@ -14,7 +14,7 @@ pub enum CompiledCode {
 }
 
 /// Parse a constant value string into an IRNode
-/// Format: "type:value" where type is uint, bool, bytes, address, or string
+/// Format: "type:value" where type is the internal constant tag such as uint, bool, bytes, address, or string
 fn parse_const_value(value_str: &str) -> Ret<Box<dyn IRNode>> {
     if value_str.starts_with("uint:") {
         let num_str = &value_str[5..];

@@ -1,7 +1,7 @@
-use std::any::*;
+use std::any::Any;
 use std::cell::RefCell;
-use std::collections::*;
-use std::sync::*;
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 
 use basis::interface::*;
 use sys::*;
@@ -10,116 +10,84 @@ include! {"block_hasher.rs"}
 include! {"action_creater.rs"}
 include! {"action_hooker.rs"}
 include! {"vm_assigner.rs"}
-include!{"prelude_tx.rs"}
+include! {"tx_codec.rs"}
 
-pub struct SetupBuilder {
-    block_hasher: Option<FnBlockHasherFunc>,
-    vm_assigner: Option<FnVmAssignFunc>,
-    prelude_tx_codec: Option<PreludeTxCodec>,
-    action_registers: Vec<ActionRegisterItem>,
-    action_hooks: Vec<FnActionHookFunc>,
-}
-
-pub struct SetupRegistryData {
+pub struct ProtocolSetup {
     block_hasher: FnBlockHasherFunc,
     pub(crate) vm_assigner: Option<FnVmAssignFunc>,
-    pub(crate) prelude_tx_codec: Option<PreludeTxCodec>,
+    pub(crate) tx_codecs: HashMap<u8, TxCodec>,
     action_codecs: HashMap<u16, ActionCodec>,
     action_hooks: Vec<FnActionHookFunc>,
 }
 
-pub type SetupRegistry = Arc<SetupRegistryData>;
-
-impl SetupBuilder {
-    pub fn new() -> Self {
-        Self {
-            block_hasher: None,
-            vm_assigner: None,
-            prelude_tx_codec: None,
-            action_registers: vec![],
-            action_hooks: vec![],
-        }
+impl ProtocolSetup {
+    pub fn set_block_hasher(&mut self, f: FnBlockHasherFunc) {
+        self.block_hasher = f;
     }
 
-    pub fn block_hasher(mut self, f: FnBlockHasherFunc) -> Self {
-        self.block_hasher = Some(f);
-        self
-    }
-
-    pub fn vm_assigner(mut self, f: FnVmAssignFunc) -> Self {
+    pub fn set_vm_assigner(&mut self, f: FnVmAssignFunc) {
         self.vm_assigner = Some(f);
-        self
     }
 
-    pub fn action_register(self, register: fn(SetupBuilder) -> SetupBuilder) -> Self {
-        register(self)
+    pub fn tx_codec(
+        &mut self,
+        ty: u8,
+        create: FnTxCreateFunc,
+        json_decode: FnTxJsonDecodeFunc,
+    ) {
+        self.tx_codecs.insert(
+            ty,
+            TxCodec {
+                create,
+                json_decode,
+            },
+        );
     }
 
-    pub fn prelude_tx_codec(
-        mut self,
-        create: FnPreludeTxCreateFunc,
-        json_decode: FnPreludeTxJsonDecodeFunc,
-    ) -> Self {
-        self.prelude_tx_codec = Some(PreludeTxCodec { create, json_decode });
-        self
-    }
-
-    pub fn register_codec(
-        mut self,
+    pub fn action_codec(
+        &mut self,
         kinds: &'static [u16],
         create: ActCreateFun,
         json_decode: ActJSONDecodeFun,
-    ) -> Self {
-        self.action_registers
-            .push(ActionRegisterItem::new(kinds, create, json_decode));
-        self
-    }
-
-    pub fn action_hooker(mut self, f: FnActionHookFunc) -> Self {
-        self.action_hooks.push(f);
-        self
-    }
-
-    pub fn build(self) -> Ret<SetupRegistry> {
-        let block_hasher = self.block_hasher.unwrap_or(default_block_hasher);
-        let mut action_codecs = HashMap::<u16, ActionCodec>::new();
-        for (gid, reg) in self.action_registers.iter().enumerate() {
-            if reg.kinds.is_empty() {
-                return errf!("action register {} has empty kind list", gid);
-            }
-            for kind in reg.kinds {
-                if action_codecs.insert(*kind, reg.codec).is_some() {
-                    return errf!("action kind {} conflict in register {}", kind, gid);
-                }
-            }
+    ) {
+        let codec = ActionCodec {
+            create,
+            json_decode,
+        };
+        for kind in kinds {
+            self.action_codecs.insert(*kind, codec);
         }
-        Ok(Arc::new(SetupRegistryData {
-            block_hasher,
-            vm_assigner: self.vm_assigner,
-            prelude_tx_codec: self.prelude_tx_codec,
-            action_codecs,
-            action_hooks: self.action_hooks,
-        }))
     }
+
+    pub fn action_hook(&mut self, f: FnActionHookFunc) {
+        self.action_hooks.push(f);
+    }
+
 }
 
-impl Default for SetupBuilder {
+impl Default for ProtocolSetup {
     fn default() -> Self {
-        Self::new()
+        Self {
+            block_hasher: default_block_hasher,
+            vm_assigner: None,
+            tx_codecs: HashMap::new(),
+            action_codecs: HashMap::new(),
+            action_hooks: vec![],
+        }
     }
 }
 
-static GLOBAL_SETUP_REGISTRY: OnceLock<SetupRegistry> = OnceLock::new();
+static GLOBAL_SETUP_REGISTRY: OnceLock<Arc<ProtocolSetup>> = OnceLock::new();
 
 thread_local! {
-    static SCOPED_SETUP_REGISTRY: RefCell<Option<SetupRegistry>> = const { RefCell::new(None) };
+    static SCOPED_SETUP_REGISTRY: RefCell<Option<Arc<ProtocolSetup>>> = const { RefCell::new(None) };
 }
 
-pub struct ScopedSetupGuard {
-    old: Option<SetupRegistry>,
+pub struct TestSetupScopeGuard {
+    old: Option<Arc<ProtocolSetup>>,
 }
 
-impl Drop for ScopedSetupGuard {
+impl Drop for TestSetupScopeGuard {
     fn drop(&mut self) {
         let old = self.old.take();
         SCOPED_SETUP_REGISTRY.with(|cell| {
@@ -128,39 +96,33 @@ impl Drop for ScopedSetupGuard {
     }
 }
 
-pub fn install_once(registry: SetupRegistry) -> Rerr {
-    if GLOBAL_SETUP_REGISTRY.set(registry).is_err() {
-        return errf!("setup registry already installed");
-    }
-    Ok(())
+pub fn install_once(registry: ProtocolSetup) {
+    GLOBAL_SETUP_REGISTRY
+        .set(Arc::new(registry))
+        .unwrap_or_else(|_| panic!("protocol setup already installed"));
 }
 
-pub fn install_builder(builder: SetupBuilder) -> Rerr {
-    install_once(builder.build()?)
+pub fn install_test_scope(registry: ProtocolSetup) -> TestSetupScopeGuard {
+    let old = SCOPED_SETUP_REGISTRY.with(|cell| cell.replace(Some(Arc::new(registry))));
+    TestSetupScopeGuard { old }
 }
 
-pub fn standard_protocol_builder(block_hasher: FnBlockHasherFunc) -> SetupBuilder {
-    SetupBuilder::new()
-        .block_hasher(block_hasher)
-        .action_register(crate::action::register)
-        .action_register(crate::tex::register)
-}
-
-pub fn install_standard_protocol_stack(block_hasher: FnBlockHasherFunc) -> Rerr {
-    install_builder(standard_protocol_builder(block_hasher))
-}
-
-pub fn install_scoped_for_test(registry: SetupRegistry) -> ScopedSetupGuard {
-    let old = SCOPED_SETUP_REGISTRY.with(|cell| cell.replace(Some(registry)));
-    ScopedSetupGuard { old }
-}
-
-pub fn get_registry() -> Ret<SetupRegistry> {
+pub fn current_setup() -> Arc<ProtocolSetup> {
     if let Some(scoped) = SCOPED_SETUP_REGISTRY.with(|cell| cell.borrow().as_ref().cloned()) {
-        return Ok(scoped);
+        return scoped;
     }
-    let Some(global) = GLOBAL_SETUP_REGISTRY.get() else {
-        return errf!("setup registry not installed");
-    };
-    Ok(global.clone())
+    GLOBAL_SETUP_REGISTRY
+        .get()
+        .unwrap_or_else(|| panic!("protocol setup not installed"))
+        .clone()
 }
+
+pub fn new_standard_protocol_setup(block_hasher: FnBlockHasherFunc) -> ProtocolSetup {
+    let mut setup = ProtocolSetup::default();
+    setup.set_block_hasher(block_hasher);
+    crate::transaction::register(&mut setup);
+    crate::action::register(&mut setup);
+    crate::tex::register(&mut setup);
+    setup
+}
+

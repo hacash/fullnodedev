@@ -101,8 +101,6 @@ keyword_define! {
     U32       : "u32"
     U64       : "u64"
     U128      : "u128"
-    U256      : "u256"
-    Uint      : "uint"
     Bytes     : "bytes"
     Address   : "address"
     List      : "list"

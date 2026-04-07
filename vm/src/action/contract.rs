@@ -535,12 +535,10 @@ mod contract_test {
     fn init_vm_assigner_once() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            protocol::setup::install_builder(
-                crate::setup::extend_standard_vm_stack(
-                    protocol::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff)),
-                ),
-            )
-            .unwrap();
+            let mut setup = crate::setup::new_standard_vm_setup(|_, stuff| sys::calculate_hash(stuff))
+                .unwrap();
+            setup.seal().unwrap();
+            protocol::setup::install_once(setup).unwrap();
         });
     }
 

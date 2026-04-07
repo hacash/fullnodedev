@@ -680,6 +680,9 @@ fn validate_vm_entry_param(
     if let Some(param) = param {
         param.check_vm_boundary_argv().map_err(XError::from)?;
         param
+            .check_boundary_value_cap(&runtime.warm.space_cap)
+            .map_err(XError::from)?;
+        param
             .check_container_cap(&runtime.warm.space_cap)
             .map_err(XError::from)?;
     }
@@ -695,6 +698,14 @@ fn validate_vm_entry_return(kind: EntryKind, rv: &Value, err_msg: &str) -> XRerr
 #[cfg(test)]
 mod entry_tests {
     use super::*;
+
+    #[test]
+    fn validate_vm_entry_param_rejects_oversize_scalar_value() {
+        let mut runtime = Runtime::create(1);
+        runtime.warm.space_cap.value_size = 2;
+        let exec = ExecCtx::main();
+        assert!(validate_vm_entry_param(&runtime, &exec, Some(&Value::Bytes(vec![0u8; 3]))).is_err());
+    }
 
     #[test]
     fn check_vm_return_value_faults_handle_inside_tuple() {

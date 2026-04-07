@@ -5,9 +5,9 @@ use mint::action::*;
 use protocol::context::ContextInst;
 use protocol::state::CoreState;
 use protocol::transaction::*;
+use std::sync::Once;
 use sys::Account;
 use testkit::sim::context::make_ctx_with_state;
-use testkit::sim::integration::scoped_setup;
 use testkit::sim::state::ForkableMemState;
 
 const TEST_HEIGHT: u64 = protocol::upgrade::ONLINE_OPEN_HEIGHT;
@@ -24,8 +24,13 @@ fn make_ctx<'a>(height: u64, tx: &'a dyn TransactionRead) -> ContextInst<'a> {
     make_ctx_with_state(env, Box::new(ForkableMemState::default()), tx)
 }
 
-fn test_setup() -> protocol::setup::ScopedSetupGuard {
-    scoped_setup(None)
+fn init_setup_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let mut setup = mint::setup::new_standard_mint_setup(x16rs::block_hash).unwrap();
+        setup.seal().unwrap();
+        protocol::setup::install_once(setup).unwrap();
+    });
 }
 
 fn seed_balance(ctx: &mut dyn Context, addr: &Address, mei: u64) {
@@ -106,7 +111,7 @@ fn balance_amount(ctx: &mut dyn Context, addr: &Address) -> Amount {
 
 #[test]
 fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
-    let _setup = test_setup();
+    init_setup_once();
     let main_acc = Account::create_by("diamond-inscription-append-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_000);
@@ -167,7 +172,7 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
 
 #[test]
 fn diamond_inscription_readable_content_type_boundary_is_100() {
-    let _setup = test_setup();
+    init_setup_once();
     let main_acc = Account::create_by("diamond-inscription-readable-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_010);
@@ -202,7 +207,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
 
 #[test]
 fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
-    let _setup = test_setup();
+    init_setup_once();
     let main_acc = Account::create_by("diamond-inscription-clear-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_011);
@@ -239,7 +244,7 @@ fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
 
 #[test]
 fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
-    let _setup = test_setup();
+    init_setup_once();
     let main_acc = Account::create_by("diamond-inscription-edit-main").unwrap();
     let main = addr_of(&main_acc);
     let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1_730_000_001);
@@ -286,7 +291,7 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
 
 #[test]
 fn diamond_inscription_move_charges_by_target_append_rule_only() {
-    let _setup = test_setup();
+    init_setup_once();
     let from_acc = Account::create_by("diamond-inscription-move-from").unwrap();
     let to_acc = Account::create_by("diamond-inscription-move-to").unwrap();
     let from = addr_of(&from_acc);
@@ -334,7 +339,7 @@ fn diamond_inscription_move_charges_by_target_append_rule_only() {
 
 #[test]
 fn diamond_inscription_move_is_free_when_target_has_less_than_ten() {
-    let _setup = test_setup();
+    init_setup_once();
     let from_acc = Account::create_by("diamond-inscription-move-free-from").unwrap();
     let to_acc = Account::create_by("diamond-inscription-move-free-to").unwrap();
     let from = addr_of(&from_acc);
@@ -366,7 +371,7 @@ fn diamond_inscription_move_is_free_when_target_has_less_than_ten() {
 
 #[test]
 fn diamond_inscription_rejects_non_privakey_owner() {
-    let _setup = test_setup();
+    init_setup_once();
     let owner = Address::create_scriptmh([7u8; 20]);
     let tx = TransactionType2::new_by(owner, Amount::mei(1), 1_730_000_004);
     let diamond = DiamondName::from_readable(b"VYHWEH").unwrap();

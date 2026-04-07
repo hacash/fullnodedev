@@ -3,8 +3,8 @@ use basis::interface::{Context, State};
 use field::{Address, Amount, Field, Uint4};
 use sys::{Ret, XRet};
 use testkit::sim::integration::{
-    make_ctx_from_tx as make_ctx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
-    vm_main_addr as main_addr,
+    disable_vm_setup, enable_default_vm_setup, make_ctx_from_tx as make_ctx,
+    make_stub_tx as make_tx, test_guard, vm_main_addr as main_addr,
 };
 use testkit::sim::logs::MemLogs;
 use testkit::sim::state::FlatMemState as StateMem;
@@ -76,7 +76,7 @@ fn execute_deploy(
 #[test]
 fn setup_vm_run_rejects_low_tx_type() {
     let _guard = test_guard();
-    set_vm_assigner(None);
+    disable_vm_setup();
 
     let main = main_addr();
     let tx = make_tx(2, main, vec![], 17);
@@ -99,9 +99,10 @@ fn setup_vm_run_rejects_low_tx_type() {
 }
 
 #[test]
+#[should_panic(expected = "vm not initialized")]
 fn setup_vm_run_requires_registered_assigner() {
     let _guard = test_guard();
-    set_vm_assigner(None);
+    disable_vm_setup();
 
     let main = main_addr();
     let tx = make_tx(3, main, vec![], 17);
@@ -112,22 +113,17 @@ fn setup_vm_run_requires_registered_assigner() {
         Box::new(MemLogs::default()),
     );
 
-    let err = machine::run_main_entry(
+    let _ = machine::run_main_entry(
         &mut ctx,
         CodeType::Bytecode as u8,
         vec![Bytecode::END as u8],
-    )
-    .unwrap_err();
-
-    assert!(err.contains("vm not initialized"), "{err}");
+    );
 }
 
 #[test]
 fn setup_vm_run_without_gas_init_reports_run_out() {
     let _guard = test_guard();
-    set_vm_assigner(Some(|height| {
-        Box::new(vm::global_runtime_pool().checkout(height))
-    }));
+    enable_default_vm_setup();
 
     let main = main_addr();
     let tx = make_tx(3, main, vec![], 0);
@@ -147,15 +143,13 @@ fn setup_vm_run_without_gas_init_reports_run_out() {
 
     assert!(err.contains("gas not initialized"), "{err}");
 
-    set_vm_assigner(None);
+    disable_vm_setup();
 }
 
 #[test]
 fn setup_vm_run_executes_after_assigner_registered() {
     let _guard = test_guard();
-    set_vm_assigner(Some(|height| {
-        Box::new(vm::global_runtime_pool().checkout(height))
-    }));
+    enable_default_vm_setup();
 
     let main = main_addr();
     let tx = make_tx(3, main, vec![], 17);
@@ -180,7 +174,7 @@ fn setup_vm_run_executes_after_assigner_registered() {
     assert!(gas_used.total() > 0);
     assert!(!rv.extract_bool().unwrap());
 
-    set_vm_assigner(None);
+    disable_vm_setup();
 }
 
 #[test]

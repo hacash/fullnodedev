@@ -33,6 +33,14 @@ impl HNoder for HacashNode {
         self.runtime.txpool()
     }
 
+    fn register_p2p_extension(&self, tys: Vec<u16>, ext: Arc<dyn NodeP2PExtension>) -> Rerr {
+        self.runtime.register_p2p_extension(tys, ext)
+    }
+
+    fn broadcast_p2p_extension_message(&self, key: Hash, ty: u16, body: Vec<u8>) -> Rerr {
+        self.runtime.broadcast_p2p_extension_message(key, ty, body)
+    }
+
     fn all_peer_prints(&self) -> Vec<String> {
         self.runtime.all_peer_prints()
     }

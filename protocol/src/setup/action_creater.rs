@@ -35,7 +35,7 @@ impl ActionRegisterItem {
 }
 
 pub fn do_action_create(kind: u16, buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> {
-    let registry = get_registry()?;
+    let registry = current_setup();
     let Some(codec) = registry.action_codecs.get(&kind).copied() else {
         return errf!("action kind {} not found", kind);
     };
@@ -46,7 +46,7 @@ pub fn do_action_create(kind: u16, buf: &[u8]) -> Ret<(Box<dyn Action>, usize)> 
 }
 
 pub fn do_action_json_decode(kind: u16, json: &str) -> ActJSONDecodeRes {
-    let registry = get_registry()?;
+    let registry = current_setup();
     let Some(codec) = registry.action_codecs.get(&kind).copied() else {
         return Ok(None);
     };

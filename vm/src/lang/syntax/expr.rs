@@ -142,12 +142,6 @@ impl Syntax {
 
     fn parse_integer_with_suffix_literal(&mut self, n: u128, kw: KwTy) -> Ret<Box<dyn IRNode>> {
         let num_node = push_num(n);
-        if let Some(name) = Self::reserved_type_name(&Token::Keyword(kw)) {
-            return Err(format!(
-                "integer suffix '{}' is reserved for future expansion and is not supported yet",
-                name
-            ));
-        }
         let token = Token::Keyword(kw);
         let Some((ty, inst)) = Self::parse_uint_suffix_cast(&token) else {
             return Ok(num_node);
@@ -271,12 +265,6 @@ impl Syntax {
                 self.cursor.next()?;
                 left.checkretval()?;
                 let token = self.cursor.next()?;
-                if let Some(name) = Self::reserved_type_name(&token) {
-                    return Err(format!(
-                        "<as> target type '{}' is reserved for future expansion and is not supported yet",
-                        name
-                    ));
-                }
                 let Some(target_ty) = Self::parse_scalar_value_ty(&token) else {
                     return errf!("<as> expression format invalid");
                 };
@@ -309,12 +297,6 @@ impl Syntax {
                         Self::build_is_node(source, ty)
                     }
                     _ => {
-                        if let Some(name) = Self::reserved_type_name(&token) {
-                            return Err(format!(
-                                "<is> target type '{}' is reserved for future expansion and is not supported yet",
-                                name
-                            ));
-                        }
                         let Some(ty) = Self::parse_scalar_value_ty(&token).or_else(|| {
                             maybe!(token == Token::Keyword(KwTy::Nil), Some(ValueTy::Nil), None)
                         }) else {
@@ -352,14 +334,6 @@ impl Syntax {
             .map(|ir| ir.as_text().clone())
     }
 
-    fn reserved_type_name(token: &Token) -> Option<&'static str> {
-        match token {
-            Token::Keyword(KwTy::U256) => Some("u256"),
-            Token::Keyword(KwTy::Uint) => Some("uint"),
-            _ => None,
-        }
-    }
-
     fn parse_scalar_value_ty(token: &Token) -> Option<ValueTy> {
         match token {
             Token::Keyword(KwTy::Bool) => Some(ValueTy::Bool),
@@ -395,7 +369,7 @@ impl Syntax {
             ValueTy::U32 => push_single(Bytecode::CU32, left),
             ValueTy::U64 => push_single(Bytecode::CU64, left),
             ValueTy::U128 => push_single(Bytecode::CU128, left),
-            ValueTy::Bytes => push_single(Bytecode::CBUF, left),
+            ValueTy::Bytes => push_single(Bytecode::CBYTES, left),
             _ => never!(),
         }
     }
@@ -440,7 +414,7 @@ impl Syntax {
                 CU32 => Some(ValueTy::U32),
                 CU64 => Some(ValueTy::U64),
                 CU128 => Some(ValueTy::U128),
-                CBUF => Some(ValueTy::Bytes),
+                CBYTES => Some(ValueTy::Bytes),
                 _ => None,
             };
         }
@@ -473,7 +447,7 @@ impl Syntax {
         Some(params.para[header_len..].to_vec())
     }
 
-    pub(super) fn extract_literal_value(node: &dyn IRNode) -> Ret<Option<Value>> {
+    pub(crate) fn extract_literal_value(node: &dyn IRNode) -> Ret<Option<Value>> {
         use Bytecode::*;
         if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
             return Ok(Some(match leaf.inst {
@@ -515,7 +489,7 @@ impl Syntax {
                 CU32 => value.cast_u32(),
                 CU64 => value.cast_u64(),
                 CU128 => value.cast_u128(),
-                CBUF => value.cast_buf(),
+                CBYTES => value.cast_bytes(),
                 _ => return Ok(None),
             };
             if cast.is_err() {
@@ -571,7 +545,7 @@ impl Syntax {
             ValueTy::U32 => literal.cast_u32()?,
             ValueTy::U64 => literal.cast_u64()?,
             ValueTy::U128 => literal.cast_u128()?,
-            ValueTy::Bytes => literal.cast_buf()?,
+            ValueTy::Bytes => literal.cast_bytes()?,
             ValueTy::Address => literal.cast_addr()?,
             _ => {}
         }

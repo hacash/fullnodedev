@@ -299,7 +299,7 @@ fn vm_itr_err_code_revert_mapping_is_strict() {
         CodeTypeError,
         InheritError,
         LibraryError,
-        ComplieError,
+        CompileError,
         ContractAddrErr,
         ContractUpgradeErr,
         CodeError,

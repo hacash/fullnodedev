@@ -137,6 +137,7 @@ impl Frame {
 
     pub fn check_output_type(&self, v: &mut Value, cap: &SpaceCap) -> VmrtErr {
         v.check_func_retv()?;
+        v.check_boundary_value_cap(cap)?;
         v.check_container_cap(cap)?;
         match &self.types {
             Some(ty) => ty.check_output(v),
@@ -166,6 +167,7 @@ impl Frame {
             if let Some(vtys) = &fnobj.agvty {
                 vtys.check_params(&mut argv)?;
             }
+            argv.check_boundary_value_cap(cap)?;
             argv.check_container_cap(cap)?;
             self.oprnds.push(argv.clone())?;
         }
@@ -223,6 +225,7 @@ impl Frame {
         cap: &SpaceCap,
     ) -> VmrtErr {
         param.check_func_argv()?;
+        param.check_boundary_value_cap(cap)?;
         param.check_container_cap(cap)?;
         let caller_output = match &self.types {
             Some(types) => types
@@ -291,6 +294,42 @@ impl Frame {
 #[cfg(test)]
 mod frame_boundary_tests {
     use super::*;
+
+    #[test]
+    fn prepare_rejects_stray_value_for_zero_arg_typed_function() {
+        let mut res = Runtime::create(1);
+        let mut frame = Frame::new(&mut res);
+        let fnobj = FnObj::plain(
+            CodeType::Bytecode,
+            vec![Bytecode::END as u8],
+            0,
+            Some(FuncArgvTypes::from_types(None, vec![]).unwrap()),
+        );
+        let owner = ContractAddress::default();
+        let bindings = FrameBindings::contract(owner.clone(), owner, Vec::<field::Address>::new().into());
+        let err = frame
+            .prepare(
+                ExecCtx::main(),
+                bindings,
+                &fnobj,
+                1,
+                &res.warm.gas_extra,
+                Some(Value::U8(7)),
+                &res.warm.space_cap,
+            )
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+    }
+
+    #[test]
+    fn check_output_type_rejects_oversize_scalar_value() {
+        let frame = Frame::default();
+        let mut retv = Value::Bytes(vec![0u8; 3]);
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = 2;
+        let err = frame.check_output_type(&mut retv, &cap).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+    }
 
     #[test]
     fn check_output_type_rejects_heapslice_without_declared_output_type() {

@@ -67,10 +67,9 @@ impl Parse for Value {
             ValueTy::Nil     => (0, Nil),
             ValueTy::Bool    => {
                 let b = buf_to_uint!(u8, buf, 1);
-                let Some(b) = decode_canonical_bool_byte(b) else {
-                    return errf!("value bool invalid")
-                };
-                (1, Bool(b))
+                let value = Value::type_from(ValueTy::Bool, vec![b])
+                    .map_err(|_| "value bool invalid".to_owned())?;
+                (1, value)
             },
             ValueTy::U8      => (1, U8(buf_to_uint!(u8, buf, 1))),
             ValueTy::U16     => (2,   U16(buf_to_uint!(u16,  buf,  2))),
@@ -116,7 +115,7 @@ impl Serialize for Value {
                 out
             }
             _ => {
-                let buf = self.raw();
+                let buf = self.scalar_bytes().expect("non-scalar values are rejected above");
                 let mut out = Vec::with_capacity(1 + buf.len());
                 out.push(self.ty_num());
                 out.extend_from_slice(&buf);
@@ -138,7 +137,7 @@ impl Serialize for Value {
                 );
                 1 + 2 + buf.len()
             }
-            _ => 1 + self.raw().len(),
+            _ => 1 + self.scalar_bytes().expect("non-scalar values are rejected above").len(),
         }
     }
 }
@@ -275,5 +274,20 @@ mod field_tests {
         assert_eq!(parse(&[ValueTy::Bool as u8, 0]).unwrap(), Value::Bool(false));
         assert_eq!(parse(&[ValueTy::Bool as u8, 1]).unwrap(), Value::Bool(true));
         assert!(parse(&[ValueTy::Bool as u8, 2]).is_err());
+    }
+
+    #[test]
+    fn scalar_bytes_keep_serialize_size_and_extract_bytes_aligned() {
+        let values = [
+            Value::Nil,
+            Value::Bool(true),
+            Value::U32(7),
+            Value::Bytes(vec![1, 2, 3]),
+            Value::Address(field::Address::create_contract([3u8; 20])),
+        ];
+        for value in values {
+            assert_eq!(value.scalar_bytes().unwrap(), value.extract_bytes().unwrap());
+            assert_eq!(<Value as Serialize>::size(&value), <Value as Serialize>::serialize(&value).len());
+        }
     }
 }

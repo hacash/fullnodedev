@@ -566,22 +566,16 @@ fn concat_func_args(mut args: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
 }
 
 fn pack_call_args(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {
-    let len = subs.len();
-    Ok(match len {
-        0 => push_nil(),
-        1 => subs.pop().unwrap(),
-        2..=crate::MAX_FUNC_PARAM_LEN => {
+    match crate::value::classify_call_args_len(subs.len()).map_err(|e| e.to_string())? {
+        crate::value::CallArgsPack::Nil => Ok(push_nil()),
+        crate::value::CallArgsPack::Raw => Ok(subs.pop().unwrap()),
+        crate::value::CallArgsPack::Tuple => {
+            let len = subs.len();
             subs.push(push_num(len as u128));
             subs.push(push_inst(Bytecode::PACKTUPLE));
-            Box::new(Syntax::build_irlist(subs)?)
+            Ok(Box::new(Syntax::build_irlist(subs)?))
         }
-        _ => {
-            return errf!(
-                "function argv length cannot more than {}",
-                crate::MAX_FUNC_PARAM_LEN
-            );
-        }
-    })
+    }
 }
 
 fn pack_explicit_tuple(mut subs: Vec<Box<dyn IRNode>>) -> Ret<Box<dyn IRNode>> {

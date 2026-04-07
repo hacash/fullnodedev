@@ -70,12 +70,10 @@ impl<'a> ContextInst<'a> {
         if self.vm.is_some() {
             return Ok(());
         }
-        let Some(assign) = crate::setup::get_registry()
-            .ok()
-            .and_then(|reg| reg.vm_assigner)
-        else {
-            return errf!("{}", self.vm_unavailable_error());
-        };
+        let registry = crate::setup::current_setup();
+        let assign = registry
+            .vm_assigner
+            .unwrap_or_else(|| panic!("{}", self.vm_unavailable_error()));
         self.vm = Some(assign(self.env.block.height));
         Ok(())
     }

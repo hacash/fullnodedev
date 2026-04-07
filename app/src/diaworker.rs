@@ -249,7 +249,8 @@ fn deal_diamond_mining_results(
     };
     let hsrts = rates_to_show(nonce_rates);
     flush!(
-        "{} {}, {} {}, {}.        \r",
+        "[{}] {} {}, {} {}, {}.        \r",
+        deal_number,
         most.nonce_start,
         total_nonce_space,
         diastr,
@@ -529,7 +530,7 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
     // println!("mining next num: {} {}", &mining_num, &next_num);
     if next_num == 1 {
         // println!("get latest: next_num == 1");
-        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_ptr().block().hash();
+        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_hash();
         MINING_DIAMOND_NUM.store(next_num, Relaxed);
         return; // first mining
     }

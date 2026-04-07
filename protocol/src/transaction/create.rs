@@ -1,76 +1,27 @@
-
-
-
-
-macro_rules! transaction_register {
-    ( $( $tty:ident )+ ) => {
-
-        fn transaction_create_builtin(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
-            let ty = bufeatone(buf)?;
-            match ty {
-                $(
-                    <$tty>::TYPE => {
-                        let (trs, sk) = <$tty>::create(buf)?;
-                        Ok((Box::new(trs), sk))
-                    },
-                )+
-                _ => errf!("transaction type '{}' not found", ty)
-            }
-        }
-
-        fn try_json_decode_builtin(ty: u8, json: &str) -> Ret<Option<Box<dyn Transaction>>> {
-            match ty {
-                $(
-                    <$tty>::TYPE => {
-                        let mut trs = <$tty>::default();
-                        trs.from_json(json)?;
-                        Ok(Some(Box::new(trs)))
-                    },
-                )+
-                _ => Ok(None)
-            }
-        }
-
-        pub fn transaction_create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
-            let ty = bufeatone(buf)?;
-            if ty == 0 {
-                if let Ok(reg) = crate::setup::get_registry() {
-                    if let Some(codec) = &reg.prelude_tx_codec {
-                        return (codec.create)(buf)
-                    }
-                }
-            }
-            transaction_create_builtin(buf)
-        }
-
-        pub fn try_json_decode(ty: u8, json: &str) -> Ret<Option<Box<dyn Transaction>>> {
-            if ty == 0 {
-                if let Ok(reg) = crate::setup::get_registry() {
-                    if let Some(codec) = &reg.prelude_tx_codec {
-                        return (codec.json_decode)(json).map(Some)
-                    }
-                }
-            }
-            try_json_decode_builtin(ty, json)
-        }
-
-        pub fn transaction_json_decode(json: &str) -> Ret<Option<Box<dyn Transaction>>> {
-            let obj = json_decode_object(json)?;
-            let ty_str = obj.get("ty")
-                .ok_or_else(|| "transaction object JSON must have 'ty'".to_string())?;
-            let ty = ty_str.parse::<u8>().map_err(|_| format!("invalid transaction type: {}", ty_str))?;
-            try_json_decode(ty, json)
-        }
-
+pub fn transaction_create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
+    let ty = bufeatone(buf)?;
+    let registry = crate::setup::current_setup();
+    let Some(codec) = registry.tx_codecs.get(&ty).copied() else {
+        return errf!("transaction type '{}' not found", ty);
     };
+    (codec.create)(buf)
 }
 
-
-// Trs list
-combi_dynvec!{ DynVecTransaction, 
-    Uint4, Transaction, transaction_create, transaction_json_decode
+pub fn try_json_decode(ty: u8, json: &str) -> Ret<Option<Box<dyn Transaction>>> {
+    let registry = crate::setup::current_setup();
+    let Some(codec) = registry.tx_codecs.get(&ty).copied() else {
+        return Ok(None);
+    };
+    (codec.json_decode)(json).map(Some)
 }
 
-
-
-
+pub fn transaction_json_decode(json: &str) -> Ret<Option<Box<dyn Transaction>>> {
+    let obj = json_decode_object(json)?;
+    let ty_str = obj
+        .get("ty")
+        .ok_or_else(|| "transaction object JSON must have 'ty'".to_string())?;
+    let ty = ty_str
+        .parse::<u8>()
+        .map_err(|_| format!("invalid transaction type: {}", ty_str))?;
+    try_json_decode(ty, json)
+}

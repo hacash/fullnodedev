@@ -14,8 +14,8 @@ mod action_coverage {
     use protocol::transaction::TransactionType3;
     use sys::{Account, Ret, XRet};
     use testkit::sim::integration::{
-        make_ctx_from_tx, make_stub_tx as make_tx, set_vm_assigner, test_guard,
-        vm_alt_addr as alt_addr, vm_main_addr as main_addr,
+        enable_default_vm_setup, make_ctx_from_tx, make_stub_tx as make_tx, set_vm_assigner,
+        test_guard, vm_alt_addr as alt_addr, vm_main_addr as main_addr,
     };
     use testkit::sim::logs::MemLogs;
     use testkit::sim::state::FlatMemState as StateMem;
@@ -34,10 +34,10 @@ mod action_coverage {
     fn init_action_registry() {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            protocol::setup::install_builder(vm::setup::extend_standard_vm_stack(
-                protocol::setup::standard_protocol_builder(|_, stuff| sys::calculate_hash(stuff)),
-            ))
-            .unwrap();
+            let mut setup = vm::setup::new_standard_vm_setup(|_, stuff| sys::calculate_hash(stuff))
+                .unwrap();
+            setup.seal().unwrap();
+            protocol::setup::install_once(setup).unwrap();
         });
     }
 
@@ -596,9 +596,7 @@ mod action_coverage {
     #[test]
     fn deploy_with_construct_function() {
         let _guard = test_guard();
-        set_vm_assigner(Some(|height| {
-            Box::new(vm::global_runtime_pool().checkout(height))
-        }));
+        enable_default_vm_setup();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
         let mut ctx = make_ctx(

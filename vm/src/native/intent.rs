@@ -58,6 +58,21 @@ fn extract_intent_handle_id(argv: &Value, name: &str) -> VmrtRes<usize> {
     extract_intent_handle_id_with_error(argv, ItrErrCode::IntentError, &err_msg)
 }
 
+fn optional_intent_binding(
+    argv: &Value,
+    intents: &crate::machine::IntentRuntime,
+    name: &str,
+) -> VmrtRes<BoundIntentId> {
+    if argv.is_nil() {
+        return Ok(None);
+    }
+    let id = extract_intent_handle_id(argv, name)?;
+    if !intents.exists(id) {
+        return itr_err_fmt!(ItrErrCode::IntentError, "intent {} not found", id);
+    }
+    Ok(Some(id))
+}
+
 fn owned_bound_intent(
     bindings: &FrameBindings,
     intent_state: &crate::frame::IntentScopeState,
@@ -70,40 +85,39 @@ fn owned_bound_intent(
     Ok((owner, id))
 }
 
+fn tuple_argv_error(name: &str, expect: usize) -> ItrErr {
+    ItrErr::new(
+        ItrErrCode::IntentError,
+        &format!("native ctl '{}' requires {} arguments", name, expect),
+    )
+}
+
 fn ctl_expect_tuple(argv: Value, name: &str, expect: usize) -> VmrtRes<Vec<Value>> {
     let Value::Tuple(args) = argv else {
-        return itr_err_fmt!(
-            ItrErrCode::IntentError,
-            "native ctl '{}' requires {} arguments",
-            name,
-            expect
-        );
+        return Err(tuple_argv_error(name, expect));
     };
     if args.len() != expect {
-        return itr_err_fmt!(
-            ItrErrCode::IntentError,
-            "native ctl '{}' requires {} arguments",
-            name,
-            expect
-        );
+        return Err(tuple_argv_error(name, expect));
     }
     Ok(args.to_vec())
 }
 
+fn list_argv_error(name: &str) -> ItrErr {
+    ItrErr::new(
+        ItrErrCode::IntentError,
+        &format!("native ctl '{}' requires list argument", name),
+    )
+}
+
 fn ctl_expect_list(argv: Value, name: &str) -> VmrtRes<Vec<Value>> {
-    let compo = argv.compo_ref().map_err(|_| {
-        ItrErr::new(
-            ItrErrCode::IntentError,
-            &format!("native ctl '{}' requires list argument", name),
-        )
-    })?;
-    let list = compo.list_ref().map_err(|_| {
-        ItrErr::new(
-            ItrErrCode::IntentError,
-            &format!("native ctl '{}' requires list argument", name),
-        )
-    })?;
+    let compo = argv.compo_ref().map_err(|_| list_argv_error(name))?;
+    let list = compo.list_ref().map_err(|_| list_argv_error(name))?;
     Ok(list.iter().cloned().collect())
+}
+
+fn ctl_expect_pair(argv: Value, name: &str) -> VmrtRes<(Value, Value)> {
+    let mut items = ctl_expect_tuple(argv, name, 2)?.into_iter();
+    Ok((items.next().unwrap(), items.next().unwrap()))
 }
 
 fn ctl_expect_kv_list(argv: Value, name: &str) -> VmrtRes<Vec<(Value, Value)>> {
@@ -140,6 +154,21 @@ fn ctl_expect_u32(value: &Value, name: &str, label: &str) -> VmrtRes<u32> {
             &format!("native ctl '{}' requires {} uint-family argument convertible to u32", name, label),
         )
     })
+}
+
+fn ctl_expect_optional_bytes<'a>(value: &'a Value, name: &str, label: &str) -> VmrtRes<Option<&'a Value>> {
+    if value.is_nil() {
+        return Ok(None);
+    }
+    if matches!(value, Value::Bytes(_)) {
+        return Ok(Some(value));
+    }
+    itr_err_fmt!(
+        ItrErrCode::IntentError,
+        "native ctl '{}' requires {} bytes argument",
+        name,
+        label
+    )
 }
 
 fn ctl_put_kv_list(
@@ -209,15 +238,7 @@ intent_stack_fn!(call_intent_use, |exec, cap, _bindings, intent_state, intents, 
             cap.intent_bind_depth
         );
     }
-    let binding: BoundIntentId = if argv.is_nil() {
-        None
-    } else {
-        let id = extract_intent_handle_id(&argv, "intent_use")?;
-        if !intents.exists(id) {
-            return itr_err_fmt!(ItrErrCode::IntentError, "intent {} not found", id);
-        }
-        Some(id)
-    };
+    let binding = optional_intent_binding(&argv, intents, "intent_use")?;
     intent_state.push(binding);
     Ok((Value::Nil, NativeCtl::intent_use.gas_of()))
 });
@@ -234,8 +255,8 @@ intent_pop_fn!(call_intent_pop, |exec, _bindings, intent_state, argv| {
 intent_std_fn!(call_intent_put, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_put")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_put")?;
-    let items = ctl_expect_tuple(argv, "intent_put", 2)?;
-    intents.put(&owner, id, items[0].clone(), items[1].clone())?;
+    let (key, val) = ctl_expect_pair(argv, "intent_put")?;
+    intents.put(&owner, id, key, val)?;
     Ok((Value::Nil, NativeCtl::intent_put.gas_of()))
 });
 
@@ -325,10 +346,10 @@ intent_std_fn!(call_intent_keys, |exec, bindings, intent_state, intents, argv| {
 
 intent_std_fn!(call_intent_get_or, |exec, bindings, intent_state, intents, argv| {
     ctl_require_non_pure(exec, "intent_get_or")?;
-    let items = ctl_expect_tuple(argv, "intent_get_or", 2)?;
+    let (key, def) = ctl_expect_pair(argv, "intent_get_or")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_get_or")?;
     Ok((
-        intents.get_or(&owner, id, &items[0], items[1].clone())?,
+        intents.get_or(&owner, id, &key, def)?,
         NativeCtl::intent_get_or.gas_of(),
     ))
 });
@@ -344,31 +365,31 @@ intent_std_fn!(call_intent_require, |exec, bindings, intent_state, intents, argv
 
 intent_std_fn!(call_intent_require_eq, |exec, bindings, intent_state, intents, argv| {
     ctl_require_non_pure(exec, "intent_require_eq")?;
-    let items = ctl_expect_tuple(argv, "intent_require_eq", 2)?;
+    let (key, expected) = ctl_expect_pair(argv, "intent_require_eq")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_require_eq")?;
     Ok((
-        intents.require_eq(&owner, id, &items[0], &items[1])?,
+        intents.require_eq(&owner, id, &key, &expected)?,
         NativeCtl::intent_require_eq.gas_of(),
     ))
 });
 
 intent_std_fn!(call_intent_take_or, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_take_or")?;
-    let items = ctl_expect_tuple(argv, "intent_take_or", 2)?;
+    let (key, def) = ctl_expect_pair(argv, "intent_take_or")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_take_or")?;
-    let val = if intents.has(&owner, id, &items[0])? {
-        intents.take(&owner, id, &items[0])?
+    let val = if intents.has(&owner, id, &key)? {
+        intents.take(&owner, id, &key)?
     } else {
-        items[1].clone()
+        def
     };
     Ok((val, NativeCtl::intent_take_or.gas_of()))
 });
 
 intent_std_fn!(call_intent_replace, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_replace")?;
-    let items = ctl_expect_tuple(argv, "intent_replace", 2)?;
+    let (key, val) = ctl_expect_pair(argv, "intent_replace")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_replace")?;
-    let old = intents.replace(&owner, id, items[0].clone(), items[1].clone())?;
+    let old = intents.replace(&owner, id, key, val)?;
     Ok((old, NativeCtl::intent_replace.gas_of()))
 });
 
@@ -382,17 +403,17 @@ intent_std_fn!(call_intent_destroy, |exec, bindings, intent_state, intents, argv
 
 intent_std_fn!(call_intent_put_if_absent, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_put_if_absent")?;
-    let items = ctl_expect_tuple(argv, "intent_put_if_absent", 2)?;
+    let (key, val) = ctl_expect_pair(argv, "intent_put_if_absent")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_put_if_absent")?;
     Ok((
-        Value::Bool(intents.put_if_absent(&owner, id, items[0].clone(), items[1].clone())?),
+        Value::Bool(intents.put_if_absent(&owner, id, key, val)?),
         NativeCtl::intent_put_if_absent.gas_of(),
     ))
 });
 
 intent_std_fn!(call_intent_replace_if, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_replace_if")?;
-    let items = ctl_expect_tuple(argv, "intent_replace_if", 3)?;
+    let items = ctl_expect_tuple(argv,"intent_replace_if", 3)?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_replace_if")?;
     Ok((
         Value::Bool(intents.replace_if(
@@ -408,39 +429,39 @@ intent_std_fn!(call_intent_replace_if, |exec, bindings, intent_state, intents, a
 
 intent_std_fn!(call_intent_append, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_append")?;
-    let items = ctl_expect_tuple(argv, "intent_append", 2)?;
+    let (key, val) = ctl_expect_pair(argv, "intent_append")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_append")?;
     Ok((
-        Value::U64(intents.append(&owner, id, items[0].clone(), &items[1])? as u64),
+        Value::U64(intents.append(&owner, id, key, &val)? as u64),
         NativeCtl::intent_append.gas_of(),
     ))
 });
 
 intent_std_fn!(call_intent_inc, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_inc")?;
-    let items = ctl_expect_tuple(argv, "intent_inc", 2)?;
+    let (key, delta) = ctl_expect_pair(argv, "intent_inc")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_inc")?;
     Ok((
-        intents.inc(&owner, id, items[0].clone(), items[1].clone())?,
+        intents.inc(&owner, id, key, delta)?,
         NativeCtl::intent_inc.gas_of(),
     ))
 });
 
 intent_std_fn!(call_intent_del_if, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_del_if")?;
-    let items = ctl_expect_tuple(argv, "intent_del_if", 2)?;
+    let (key, expected) = ctl_expect_pair(argv, "intent_del_if")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_del_if")?;
     Ok((
-        Value::Bool(intents.del_if(&owner, id, items[0].clone(), items[1].clone())?),
+        Value::Bool(intents.del_if(&owner, id, key, expected)?),
         NativeCtl::intent_del_if.gas_of(),
     ))
 });
 
 intent_std_fn!(call_intent_take_if, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_take_if")?;
-    let items = ctl_expect_tuple(argv, "intent_take_if", 2)?;
+    let (key, expected) = ctl_expect_pair(argv, "intent_take_if")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_take_if")?;
-    let (hit, val) = intents.take_if(&owner, id, items[0].clone(), items[1].clone())?;
+    let (hit, val) = intents.take_if(&owner, id, key, expected)?;
     Ok((
         Value::Tuple(TupleItem::new(vec![Value::Bool(hit), val])?),
         NativeCtl::intent_take_if.gas_of(),
@@ -472,10 +493,10 @@ intent_std_fn!(call_intent_destroy_if_empty, |exec, bindings, intent_state, inte
 
 intent_std_fn!(call_intent_keys_page, |exec, bindings, intent_state, intents, argv| {
     ctl_require_non_pure(exec, "intent_keys_page")?;
-    let items = ctl_expect_tuple(argv, "intent_keys_page", 2)?;
+    let (cursor_arg, limit_arg) = ctl_expect_pair(argv, "intent_keys_page")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_keys_page")?;
-    let cursor = ctl_expect_u32(&items[0], "intent_keys_page", "cursor")? as usize;
-    let limit = ctl_expect_u32(&items[1], "intent_keys_page", "limit")? as usize;
+    let cursor = ctl_expect_u32(&cursor_arg, "intent_keys_page", "cursor")? as usize;
+    let limit = ctl_expect_u32(&limit_arg, "intent_keys_page", "limit")? as usize;
     let (next, keys) = intents.keys_page(&owner, id, cursor, limit)?;
     let list = Value::Compo(CompoItem::list(
         keys.into_iter().map(Value::Bytes).collect::<VecDeque<_>>(),
@@ -492,19 +513,10 @@ intent_std_fn!(call_intent_keys_page, |exec, bindings, intent_state, intents, ar
 
 intent_std_fn!(call_intent_keys_after, |exec, bindings, intent_state, intents, argv| {
     ctl_require_non_pure(exec, "intent_keys_after")?;
-    let items = ctl_expect_tuple(argv, "intent_keys_after", 2)?;
+    let (after_key, limit_arg) = ctl_expect_pair(argv, "intent_keys_after")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_keys_after")?;
-    let limit = ctl_expect_u32(&items[1], "intent_keys_after", "limit")? as usize;
-    let start = if items[0].is_nil() {
-        None
-    } else if let Value::Bytes(_) = &items[0] {
-        Some(&items[0])
-    } else {
-        return itr_err_fmt!(
-            ItrErrCode::IntentError,
-            "native ctl 'intent_keys_after' requires after_key bytes argument"
-        );
-    };
+    let limit = ctl_expect_u32(&limit_arg, "intent_keys_after", "limit")? as usize;
+    let start = ctl_expect_optional_bytes(&after_key, "intent_keys_after", "after_key")?;
     let (next, keys) = intents.keys_after(&owner, id, start, limit)?;
     let list = Value::Compo(CompoItem::list(
         keys.into_iter().map(Value::Bytes).collect::<VecDeque<_>>(),
@@ -557,28 +569,28 @@ intent_std_fn!(call_intent_put_flat_kv, |exec, bindings, intent_state, intents, 
 
 intent_std_fn!(call_intent_rename, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_rename")?;
-    let items = ctl_expect_tuple(argv, "intent_rename", 2)?;
+    let (from_key, to_key) = ctl_expect_pair(argv, "intent_rename")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_rename")?;
-    intents.move_key(&owner, id, items[0].clone(), items[1].clone())?;
+    intents.move_key(&owner, id, from_key, to_key)?;
     Ok((Value::Nil, NativeCtl::intent_rename.gas_of()))
 });
 
 intent_std_fn!(call_intent_add, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_add")?;
-    let items = ctl_expect_tuple(argv, "intent_add", 2)?;
+    let (key, delta) = ctl_expect_pair(argv, "intent_add")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_add")?;
     Ok((
-        intents.add(&owner, id, items[0].clone(), items[1].clone())?,
+        intents.add(&owner, id, key, delta)?,
         NativeCtl::intent_add.gas_of(),
     ))
 });
 
 intent_std_fn!(call_intent_sub, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_sub")?;
-    let items = ctl_expect_tuple(argv, "intent_sub", 2)?;
+    let (key, delta) = ctl_expect_pair(argv, "intent_sub")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_sub")?;
     Ok((
-        intents.sub(&owner, id, items[0].clone(), items[1].clone())?,
+        intents.sub(&owner, id, key, delta)?,
         NativeCtl::intent_sub.gas_of(),
     ))
 });
@@ -662,15 +674,10 @@ intent_std_fn!(call_intent_consume_many, |exec, bindings, intent_state, intents,
 
 intent_std_fn!(call_intent_put_if_absent_or_match, |exec, bindings, intent_state, intents, argv| {
     ctl_require_edit(exec, "intent_put_if_absent_or_match")?;
-    let items = ctl_expect_tuple(argv, "intent_put_if_absent_or_match", 2)?;
+    let (key, val) = ctl_expect_pair(argv, "intent_put_if_absent_or_match")?;
     let (owner, id) = owned_bound_intent(bindings, intent_state, intents, "intent_put_if_absent_or_match")?;
     Ok((
-        Value::Bool(intents.put_if_absent_or_match(
-            &owner,
-            id,
-            items[0].clone(),
-            items[1].clone(),
-        )?),
+        Value::Bool(intents.put_if_absent_or_match(&owner, id, key, val)?),
         NativeCtl::intent_put_if_absent_or_match.gas_of(),
     ))
 });

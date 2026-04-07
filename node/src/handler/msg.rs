@@ -11,6 +11,13 @@ pub const MSG_BLOCK:               u16 = 6;
 pub const MSG_TX_SUBMIT:           u16 = basis::P2P_MSG_TX_SUBMIT;
 pub const MSG_BLOCK_DISCOVER:      u16 = 8;
 
+
+pub fn is_inner_msg_ty(ty: u16) -> bool {
+    ty < 2048
+}
+
+
+
 pub enum BlockTxArrive {
     Block(Option<Arc<Peer>>, Vec<u8>),
     Tx(Option<Arc<Peer>>, Vec<u8>),

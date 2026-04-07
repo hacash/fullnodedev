@@ -304,16 +304,12 @@ mod tests {
     }
 
     #[test]
-    fn syntax_reports_reserved_types_in_as_and_is() {
+    fn syntax_rejects_unknown_types_and_suffixes() {
         let err_as = parse("return 1 as u256").unwrap_err().to_string();
-        assert!(err_as.contains("reserved for future expansion"), "{}", err_as);
+        assert!(err_as.contains("<as> expression format invalid"), "{}", err_as);
         let err_is = parse("return 1 is uint").unwrap_err().to_string();
-        assert!(err_is.contains("reserved for future expansion"), "{}", err_is);
-    }
-
-    #[test]
-    fn syntax_reports_reserved_integer_suffixes() {
+        assert!(err_is.contains("<is> expression format invalid"), "{}", err_is);
         let err = parse("return 1u256").unwrap_err().to_string();
-        assert!(err.contains("integer suffix 'u256'"), "{}", err);
+        assert!(err.contains("unsupported keyword 'u256'"), "{}", err);
     }
 }

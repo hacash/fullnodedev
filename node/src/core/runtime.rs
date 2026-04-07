@@ -5,6 +5,7 @@ use crate::core::transport::TransportAdapter;
 pub struct NodeRuntime {
     pub(super) engine: Arc<dyn Engine>,
     pub(super) txpool: Arc<dyn TxPool>,
+    pub(super) msghdl: Arc<MsgHandler>,
     pub(super) protocol: ProtocolAdapter,
     pub(super) transport: TransportAdapter,
     pub(super) tasks: Arc<TaskGroup>,
@@ -23,6 +24,7 @@ impl NodeRuntime {
         Self {
             engine,
             txpool,
+            msghdl,
             protocol,
             transport,
             tasks: TaskGroup::new(),
@@ -49,6 +51,14 @@ impl NodeRuntime {
 
     pub fn txpool(&self) -> Arc<dyn TxPool> {
         self.txpool.clone()
+    }
+
+    pub fn register_p2p_extension(&self, tys: Vec<u16>, ext: Arc<dyn NodeP2PExtension>) -> Rerr {
+        self.msghdl.register_p2p_extension(tys, ext)
+    }
+
+    pub fn broadcast_p2p_extension_message(&self, key: Hash, ty: u16, body: Vec<u8>) -> Rerr {
+        self.msghdl.broadcast_p2p_extension_message(key, ty, body)
     }
 
     pub fn all_peer_prints(&self) -> Vec<String> {
