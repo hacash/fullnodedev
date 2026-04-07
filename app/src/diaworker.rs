@@ -153,7 +153,8 @@ fn deal_diamond_mining_results(
     let most_diastr = String::from_utf8(most_dia_str.to_vec()).unwrap();
     let hsrts = rates_to_show(total_nonce_space as f64 / (total_use_secs / recv_count as f64));
     flush!(
-        "{} {}, {} {}, {}.        \r",
+        "[{}] {} {}, {} {}, {}.        \r",
+        deal_number,
         most.nonce_start,
         total_nonce_space,
         diastr,

@@ -38,7 +38,8 @@ pub fn install_standard_fullnode_stack() -> Rerr {
     let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
     mint::setup::register_protocol_extensions(&mut setup);
     vm::setup::register_protocol_extensions(&mut setup);
-    protocol::setup::install_once(setup)
+    protocol::setup::install_once(setup);
+    Ok(())
 }
 
 pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {

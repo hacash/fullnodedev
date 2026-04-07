@@ -1,6 +1,6 @@
 pub fn transaction_create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
     let ty = bufeatone(buf)?;
-    let registry = crate::setup::current_setup()?;
+    let registry = crate::setup::current_setup();
     let Some(codec) = registry.tx_codecs.get(&ty).copied() else {
         return errf!("transaction type '{}' not found", ty);
     };
@@ -8,7 +8,7 @@ pub fn transaction_create(buf: &[u8]) -> Ret<(Box<dyn Transaction>, usize)> {
 }
 
 pub fn try_json_decode(ty: u8, json: &str) -> Ret<Option<Box<dyn Transaction>>> {
-    let registry = crate::setup::current_setup()?;
+    let registry = crate::setup::current_setup();
     let Some(codec) = registry.tx_codecs.get(&ty).copied() else {
         return Ok(None);
     };

@@ -19,7 +19,7 @@ fn init_test_registry() {
             action_env_try_create,
             action_env_try_json_decode,
         );
-        crate::setup::install_once(setup).unwrap();
+        crate::setup::install_once(setup);
     });
 }
 

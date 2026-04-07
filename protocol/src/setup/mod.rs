@@ -21,16 +21,6 @@ pub struct ProtocolSetup {
 }
 
 impl ProtocolSetup {
-    pub fn new(block_hasher: FnBlockHasherFunc) -> Self {
-        Self {
-            block_hasher,
-            vm_assigner: None,
-            tx_codecs: HashMap::new(),
-            action_codecs: HashMap::new(),
-            action_hooks: vec![],
-        }
-    }
-
     pub fn set_block_hasher(&mut self, f: FnBlockHasherFunc) {
         self.block_hasher = f;
     }
@@ -77,7 +67,13 @@ impl ProtocolSetup {
 
 impl Default for ProtocolSetup {
     fn default() -> Self {
-        Self::new(default_block_hasher)
+        Self {
+            block_hasher: default_block_hasher,
+            vm_assigner: None,
+            tx_codecs: HashMap::new(),
+            action_codecs: HashMap::new(),
+            action_hooks: vec![],
+        }
     }
 }
 
@@ -100,11 +96,10 @@ impl Drop for TestSetupScopeGuard {
     }
 }
 
-pub fn install_once(registry: ProtocolSetup) -> Rerr {
-    if GLOBAL_SETUP_REGISTRY.set(Arc::new(registry)).is_err() {
-        return errf!("setup registry already installed");
-    }
-    Ok(())
+pub fn install_once(registry: ProtocolSetup) {
+    GLOBAL_SETUP_REGISTRY
+        .set(Arc::new(registry))
+        .unwrap_or_else(|_| panic!("protocol setup already installed"));
 }
 
 pub fn install_test_scope(registry: ProtocolSetup) -> TestSetupScopeGuard {
@@ -112,18 +107,19 @@ pub fn install_test_scope(registry: ProtocolSetup) -> TestSetupScopeGuard {
     TestSetupScopeGuard { old }
 }
 
-pub fn current_setup() -> Ret<Arc<ProtocolSetup>> {
+pub fn current_setup() -> Arc<ProtocolSetup> {
     if let Some(scoped) = SCOPED_SETUP_REGISTRY.with(|cell| cell.borrow().as_ref().cloned()) {
-        return Ok(scoped);
+        return scoped;
     }
-    let Some(global) = GLOBAL_SETUP_REGISTRY.get() else {
-        return errf!("setup registry not installed");
-    };
-    Ok(global.clone())
+    GLOBAL_SETUP_REGISTRY
+        .get()
+        .unwrap_or_else(|| panic!("protocol setup not installed"))
+        .clone()
 }
 
 pub fn new_standard_protocol_setup(block_hasher: FnBlockHasherFunc) -> ProtocolSetup {
-    let mut setup = ProtocolSetup::new(block_hasher);
+    let mut setup = ProtocolSetup::default();
+    setup.set_block_hasher(block_hasher);
     crate::transaction::register(&mut setup);
     crate::action::register(&mut setup);
     crate::tex::register(&mut setup);

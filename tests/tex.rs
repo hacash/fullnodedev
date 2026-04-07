@@ -88,7 +88,7 @@ mod tex {
         INIT.call_once(|| {
             let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash).unwrap();
             mint::setup::register_protocol_extensions(&mut setup).unwrap();
-            protocol::setup::install_once(setup).unwrap();
+            protocol::setup::install_once(setup);
         });
     }
 
