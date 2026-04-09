@@ -785,7 +785,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     *peek = heap.read(peek, n)?.valid(cap)?;
                 }
                 HWRITE => hwrite!(ops_pop_to_u16!()),
-                HGROW => gas_add!(resource, raw, heap.grow(pu8!())?),
+                HGROW => gas_add!(resource, raw, heap.grow(pu8!(), gst)?),
                 // storage
                 SSTAT => {
                     nsr!();
@@ -920,7 +920,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     } else {
                         0
                     };
-                    gas_add!(compute, raw, exp_bits * 2 + 1);
+                    gas_add!(compute, raw, gst.rpow_extra(exp_bits));
                     triop_arithmetic(ops, rpow_checked)?
                 }
                 CLAMP => triop_arithmetic(ops, clamp_checked)?,
@@ -958,9 +958,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 // other
                 NT => return itr_err_code!(InstNeverTouch), // never touch
                 NOP => {}                                   // do nothing
-                BURN => {
-                    gas_add!(resource, raw, pu16!());
-                }
+                BURN => gas_add!(resource, raw, gst.burn_extra(pu16!() as i64)),
                 // exit
                 RET => return Ok(Step::Exit(Return)), // func return <DATA>
                 END => return Ok(Step::Exit(Finish)), // func end

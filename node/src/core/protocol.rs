@@ -285,6 +285,7 @@ pub(crate) async fn handle_new_tx(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer>>,
         return
     };
     let hxfe = txpkg.tx().hash_with_fee();
+    // println!("handle_new_tx: {:?}", hxfe.to_hex());
     let (already, knowkey) = check_know(&hdl.knows, &hxfe, peer.clone());
     if already {
         return
@@ -303,7 +304,10 @@ pub(crate) async fn handle_new_tx(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer>>,
     if let Err(..) = minter.tx_submit(hdl.engine.as_read(), &txpkg) {
         return
     }
-    let _ = hdl.txpool.insert_by(txpkg, &|tx| minter.tx_pool_group(tx));
+    let res = hdl.txpool.insert_by(txpkg, &|tx| minter.tx_pool_group(tx));
+    if let Err(..) = res {
+        return
+    }
     let p2p = hdl.p2pmng.lock().unwrap();
     let p2p = p2p.as_ref().unwrap();
     p2p.broadcast_message(0, knowkey, MSG_TX_SUBMIT, txdatas);
@@ -322,6 +326,8 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
     let blkhei = blkhead.height().uint();
     let blkhx = blkhead.hash();
     let (already, knowkey) = check_know(&hdl.knows, &blkhx, peer.clone());
+    // println!("knows: {:?}", hdl.knows);
+    // println!("handle_new_block {} already: {}", blkhx.to_hex(), already);
     if already {
         return
     }
@@ -377,7 +383,7 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
     let engptr = eng.clone();
     let txpool = hdl.txpool.clone();
     let inserting = hdl.inserting.clone();
-    let _res = tokio::task::spawn_blocking(move || {
+    let res = tokio::task::spawn_blocking(move || {
         let _lk = inserting.lock().unwrap();
         print!("block {} ...{}...{} txs{:2} insert at {} {}",
             blkhei, hex::encode(&hxstrt), hex::encode(&hxtail), txs, &ctshow()[11..], mshow);
@@ -391,6 +397,9 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
         }
         r
     }).await.unwrap();
+    if res.is_err() {
+        return
+    }
     let p2p = hdl.p2pmng.lock().unwrap();
     let p2p = p2p.as_ref().unwrap();
     p2p.broadcast_message(0, knowkey, MSG_BLOCK_DISCOVER, body);

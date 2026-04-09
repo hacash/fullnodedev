@@ -988,7 +988,7 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            heap.grow(1).unwrap();
+            heap.grow(1, &GasExtra::new(1)).unwrap();
             heap.write(0, Value::Bytes(vec![0u8; 16])).unwrap();
             let mut global_map = GKVMap::new(20);
             let mut memory_map = CtcKVMap::new(12);
@@ -2041,7 +2041,7 @@ mod bounds_tests {
             operands.push(Value::HeapSlice((1, 2))).unwrap();
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            heap.grow(1).unwrap();
+            heap.grow(1, &GasExtra::new(1)).unwrap();
             heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
             let mut global_map = GKVMap::new(20);
             let mut memory_map = CtcKVMap::new(12);
@@ -2076,7 +2076,7 @@ mod bounds_tests {
             operands.push(Value::HeapSlice((1, 2))).unwrap();
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            heap.grow(1).unwrap();
+            heap.grow(1, &GasExtra::new(1)).unwrap();
             heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
             let mut global_map = GKVMap::new(20);
             let mut memory_map = CtcKVMap::new(12);
@@ -2120,7 +2120,7 @@ mod bounds_tests {
                 vec![Bytecode::HREAD as u8, Bytecode::END as u8],
                 DummyHost::default(),
                 |ops, _locals, heap, _global_map, _memory_map, _cadr| {
-                    heap.grow(1).unwrap();
+                    heap.grow(1, &GasExtra::new(1)).unwrap();
                     ops.push(Value::U16(0)).unwrap(); // start
                     ops.push(Value::U16(len)).unwrap(); // len
                 },
@@ -2139,7 +2139,7 @@ mod bounds_tests {
                 vec![Bytecode::HWRITE as u8, Bytecode::END as u8],
                 DummyHost::default(),
                 |ops, _locals, heap, _global_map, _memory_map, _cadr| {
-                    heap.grow(1).unwrap();
+                    heap.grow(1, &GasExtra::new(1)).unwrap();
                     ops.push(Value::U16(0)).unwrap(); // start
                     ops.push(v).unwrap(); // value
                 },

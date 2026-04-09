@@ -939,7 +939,8 @@ mod shift_u64_tests {
 
     fn test_heap() -> Heap {
         let mut h = Heap::new(64);
-        h.grow(1).unwrap();
+        let gst = GasExtra::new(1);
+        h.grow(1, &gst).unwrap();
         h
     }
 

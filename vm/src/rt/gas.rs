@@ -149,9 +149,15 @@ pub struct GasExtra {
     compo_item_copy_div: i64,
     ntfunc_div: i64,
     act_div: i64,
+    burn_div: i64,
+    rpow_exp_bit_mul: i64,
+    rpow_exp_base: i64,
+    heap_grow_exp_segments: usize,
+    heap_grow_linear_seg_gas: u64,
 }
 
 impl GasExtra {
+
     pub fn new(_hei: u64) -> Self {
         use protocol::context::*;
         Self {
@@ -184,10 +190,15 @@ impl GasExtra {
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
-            compile_div:        10,
-            contract_div:       50,
+            compile_div:        16,
+            contract_div:       64,
             ntfunc_div:         16,
             act_div:            12,
+            burn_div:            1,
+            rpow_exp_bit_mul:    2,
+            rpow_exp_base:       1,
+            heap_grow_exp_segments: 8,
+            heap_grow_linear_seg_gas: 256,
             // Compo
             compo_byte_div:     40,
             compo_item_read_div: 4,
@@ -287,6 +298,38 @@ impl GasExtra {
     #[inline(always)]
     pub fn contract_bytes(&self, len: usize) -> i64 {
         Self::div_op(len, self.contract_div)
+    }
+
+    #[inline(always)]
+    pub fn burn_extra(&self, raw: i64) -> i64 {
+        Self::div_op(raw.max(0) as usize, self.burn_div)
+    }
+
+    #[inline(always)]
+    pub fn rpow_extra(&self, exp_bits: i64) -> i64 {
+        exp_bits
+            .saturating_mul(self.rpow_exp_bit_mul)
+            .saturating_add(self.rpow_exp_base)
+    }
+
+    #[inline(always)]
+    pub fn heap_grow_gas(&self, oldseg: usize, seg: usize, limit: usize) -> VmrtRes<i64> {
+        if oldseg + seg > limit {
+            return Err(ItrErr::new(OutOfHeap, "out of heap"));
+        }
+        // Gas is an abstraction of space usage: the first 8 segments are charged exponentially (2,4,8,16,32,64,128,256), then linear 256 per segment. Price is based on existing heap size so multiple HGROW(1) cannot bypass.
+        let mut gas: u64 = 0;
+        for s in oldseg..(oldseg + seg) {
+            let add = if s < self.heap_grow_exp_segments {
+                1u64.checked_shl((s + 1) as u32).unwrap_or(u64::MAX)
+            } else {
+                self.heap_grow_linear_seg_gas
+            };
+            gas = gas
+                .checked_add(add)
+                .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
+        }
+        Ok(gas as i64)
     }
 
 }

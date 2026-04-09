@@ -35,6 +35,9 @@ action_define! { AssetCreate, 16,
         }
         // check meta
         amd.issuer.check_version()?;
+        if amd.issuer == BLACKHOLE_ADDR {
+            return xerr!("issuer cannot be blackhole address")
+        }
         let tl = amd.ticket.length();
         let nl = amd.name.length();
         if tl < 1 || tl > 8 {
@@ -88,7 +91,6 @@ action_define! { AssetCreate, 16,
         let mut bls = sta.balance(&amd.issuer).unwrap_or_default();
         bls.asset_set(asset_obj)?;
         sta.balance_set(&amd.issuer, &bls);
-        blackhole_engulf(&mut sta, &amd.issuer);
         // ok finish
         Ok(vec![])
     })

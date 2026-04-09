@@ -243,7 +243,8 @@ mod canbe_tests {
     #[test]
     fn heapslice_ext_call_data_reads_heap_bytes_only_here() {
         let mut heap = Heap::new(64);
-        heap.grow(1).unwrap();
+        let gst = GasExtra::new(1);
+        heap.grow(1, &gst).unwrap();
         heap.write(0, Value::Bytes(vec![1, 2, 3, 4])).unwrap();
         let hs = Value::HeapSlice((1, 2));
 
