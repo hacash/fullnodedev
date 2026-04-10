@@ -923,59 +923,6 @@ mod bounds_tests {
         assert_eq!(run_err(Value::HeapSlice((0, 1))), ItrErrCode::ItemNoSize);
     }
 
-    fn xop_marks_execute_with_assignment_semantics() {
-        use crate::rt::Bytecode;
-
-        let run = |mark: u8, local_init: Value, rhs: Value| -> Value {
-            let mut pc: usize = 0;
-            let mut gas: i64 = 1000;
-            let mut host = DummyHost::default();
-
-            let mut operands = Stack::new(256);
-            let mut locals = Stack::new(256);
-            let mut heap = Heap::new(64);
-            let mut global_map = GKVMap::new(20);
-            let mut memory_map = CtcKVMap::new(12);
-            let cadr = ContractAddress::default();
-            let codes = vec![Bytecode::XOP as u8, mark, Bytecode::END as u8];
-
-            let idx = (mark & 0b0011_1111) as u16;
-            locals.alloc((idx + 1) as u8).unwrap();
-            for i in 0..=idx {
-                locals.save(i, Value::U8(0)).unwrap();
-            }
-            locals.save(idx, local_init).unwrap();
-            operands.push(rhs).unwrap();
-
-            execute_code(
-                &mut pc,
-                &codes,
-                ExecCtx::main(),
-                &mut operands,
-                &mut locals,
-                &mut heap,
-                &cadr,
-                &cadr,
-                &mut gas,
-                &GasTable::new(1),
-                &GasExtra::new(1),
-                &SpaceCap::new(1),
-                &mut global_map,
-                &mut memory_map,
-                &mut host,
-            )
-            .unwrap();
-
-            locals.load(idx as usize).unwrap()
-        };
-
-        assert_eq!(run((0 << 6) | 0, Value::U8(2), Value::U8(3)), Value::U8(5)); // +=
-        assert_eq!(run((1 << 6) | 1, Value::U8(9), Value::U8(4)), Value::U8(5)); // -= (idx=1)
-        assert_eq!(run((2 << 6) | 0, Value::U8(3), Value::U8(4)), Value::U8(12)); // *=
-        assert_eq!(run((3 << 6) | 0, Value::U8(12), Value::U8(3)), Value::U8(4));
-        // /=
-    }
-
     #[test]
     fn hreadul_charges_dynamic_read_bytes() {
         use crate::rt::Bytecode;

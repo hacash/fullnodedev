@@ -109,7 +109,7 @@ impl CallFrame {
                 CalcCall(selector) => {
                     let owner = curr!()
                         .bindings
-                        .code_owner
+                        .code_contract
                         .clone()
                         .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid))?;
                     let calcfn = r.resolve_local_calcfn(host, &owner, selector)?;

@@ -711,7 +711,7 @@ mod machine_file_test {
         let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(2));
         let contract_base = crate::ContractAddress::calculate(&base_addr, &Uint4::from(3));
 
-        // Build an inheritance chain: Child -> Parent -> Base. The key trick is: `super.f()` moves code_owner to Parent, while state_addr stays Child. Then inside Parent.f(), `this.g()` must resolve in state_addr (Child), `self.g()` in code_owner (Parent), and `super.g()` in Parent's direct base (Base).
+        // Build an inheritance chain: Child -> Parent -> Base. The key trick is: `super.f()` moves code_contract to Parent, while this_contract stays Child. Then inside Parent.f(), `this.g()` must resolve in this_contract (Child), `self.g()` in code_contract (Parent), and `super.g()` in Parent's direct base (Base).
 
         let base = Contract::new().func(Func::new("g").unwrap().fitsh("return 3").unwrap());
 
@@ -993,7 +993,7 @@ mod machine_file_test {
     }
 
     #[test]
-    fn abst_this_and_self_follow_state_addr_and_code_owner() {
+    fn abst_this_and_self_follow_this_contract_and_code_contract() {
         let base_addr = test_base_addr();
         let contract_child = test_contract(&base_addr, 28);
         let contract_parent = test_contract(&base_addr, 29);
@@ -1901,7 +1901,7 @@ end",
         );
         assert!(
             res.is_ok(),
-            "new-frame calls should resolve callee lib lookups on code_owner: {res:?}"
+            "new-frame calls should resolve callee lib lookups on code_contract: {res:?}"
         );
     }
 

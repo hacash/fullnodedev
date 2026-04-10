@@ -263,7 +263,7 @@ impl Frame {
         let context_addr = self.bindings.context_addr;
         let current_addr = self
             .bindings
-            .code_owner
+            .code_contract
             .as_ref()
             .map(ContractAddress::to_addr)
             .unwrap_or(context_addr);
@@ -424,7 +424,7 @@ mod splice_prepare_tests {
                 &res.warm.space_cap,
             )
             .unwrap();
-        assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);
+        assert_eq!(frame.bindings.code_contract.as_ref().unwrap(), &owner);
         assert_eq!(frame.exec, ExecCtx::view());
         assert_eq!(frame.pc, 0);
         assert_eq!(frame.locals.len(), 1);

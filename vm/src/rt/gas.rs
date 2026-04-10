@@ -177,7 +177,7 @@ impl GasExtra {
             // Space alloc
             memory_key_cost:    20,
             global_key_cost:    32,
-            storege_value_base_size: 22,
+            storege_value_base_size: 20,
             storage_key_cost: 1024,
             storage_edit_mul:    4,
             // other
@@ -478,7 +478,7 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.new_contract_load, 32);
         assert_eq!(gst.storage_key_cost, 1024);
         assert_eq!(gst.storage_edit_mul, 4);
-        assert_eq!(gst.storege_value_base_size, 22);
+        assert_eq!(gst.storege_value_base_size, 20);
     }
 
     #[test]
@@ -527,14 +527,14 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.log_bytes(0), 0);
         assert_eq!(gst.log_bytes(37), 37);
 
-        assert_eq!(gst.storage_read(0), 22);
-        assert_eq!(gst.storage_read(7), 29);
-        assert_eq!(gst.storage_read(8), 30);
-        assert_eq!(gst.storage_write(0), 44);
-        assert_eq!(gst.storage_write(5), 54);
-        assert_eq!(gst.storage_write(6), 56);
+        assert_eq!(gst.storage_read(0), 20);
+        assert_eq!(gst.storage_read(7), 27);
+        assert_eq!(gst.storage_read(8), 28);
+        assert_eq!(gst.storage_write(0), 40);
+        assert_eq!(gst.storage_write(5), 50);
+        assert_eq!(gst.storage_write(6), 52);
         assert_eq!(gst.compile_bytes(0), 0);
-        assert_eq!(gst.compile_bytes(15), 2);
-        assert_eq!(gst.compile_bytes(16), 2);
+        assert_eq!(gst.compile_bytes(15), 1);
+        assert_eq!(gst.compile_bytes(16), 1);
     }
 }

@@ -68,7 +68,7 @@ impl Copy for ContractEdition {}
 
 // Contract Edit
 combi_struct!{ ContractEdit,
-	expect_revision: Uint2
+	new_revision: Uint2
 	inherit_add:  ContractAddrListW1
 	inherit_replace_at: ContractAddrReplaceAtList
 	library_add:  ContractAddrListW1
@@ -232,8 +232,13 @@ impl ContractSto {
 		let Some(next_rev) = old_rev.checked_add(1) else {
 			return itr_err_fmt!(ContractError, "contract revision overflow");
 		};
-		if edit.expect_revision.uint() != next_rev {
-			return itr_err_fmt!(ContractError, "contract revision mismatch: expected {} but got {}", edit.expect_revision.uint(), next_rev);
+		if edit.new_revision.uint() != next_rev {
+			return itr_err_fmt!(
+				ContractError,
+				"contract revision mismatch: requested new_revision {} but next revision must be {}",
+				edit.new_revision.uint(),
+				next_rev
+			);
 		}
 
 		let edit_empty = edit.inherit_add.length() == 0

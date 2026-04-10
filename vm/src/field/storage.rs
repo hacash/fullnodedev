@@ -320,8 +320,8 @@ impl VMState<'_> {
         if next_blocks > cap.storage_live_max_blocks() {
             return itr_err_fmt!(
                 StoragePeriodErr,
-                "live periods max is {}",
-                cap.storage_live_max_periods
+                "live block budget exceeded, max {} blocks",
+                cap.storage_live_max_blocks()
             );
         }
         let next_credit = (v.live_credit.uint() as u64)
@@ -359,8 +359,8 @@ impl VMState<'_> {
         if next_blocks > cap.storage_recv_max_blocks() {
             return itr_err_fmt!(
                 StoragePeriodErr,
-                "recover periods max is {}",
-                cap.storage_recv_max_periods
+                "recover block budget exceeded, max {} blocks",
+                cap.storage_recv_max_blocks()
             );
         }
         let next_credit = (v.recover_credit.uint() as u64)

@@ -53,9 +53,9 @@ impl Contract {
         self.ctrt
     }
 
-    pub fn into_edit(self, expect_revision: u16) -> ContractEdit {
+    pub fn into_edit(self, new_revision: u16) -> ContractEdit {
         let mut edit = ContractEdit::new();
-        edit.expect_revision = Uint2::from(expect_revision);
+        edit.new_revision = Uint2::from(new_revision);
         edit.inherit_add = self.ctrt.inherit;
         edit.library_add = self.ctrt.library;
         edit.abstcalls = self.ctrt.abstcalls;
@@ -68,23 +68,24 @@ impl Contract {
         txfee: &Amount,
         payload_bytes: usize,
         charged_bytes: usize,
+        periods: u64,
     ) -> Amount {
         if charged_bytes == 0 {
             return Amount::zero();
         }
-        // CLI print helper: conservative estimate to reduce "protocol_cost too small" rejection. Real validation still uses on-chain tx fee purity.
+        // CLI print helper: conservative estimate to reduce "protocol_cost too small" rejection. Real validation still uses on-chain tx fee purity with a floor clamp.
         const TX_SIZE_ESTIMATE_BASE_BYTES: u128 = 220;
         const SAFETY_NUM: u128 = 120; // +20% headroom
         const SAFETY_DEN: u128 = 100;
         let fee238 = txfee.to_238_u128().unwrap_or(0);
         let tx_size_est = TX_SIZE_ESTIMATE_BASE_BYTES.saturating_add(payload_bytes as u128);
         let mut fee_purity = fee238 / tx_size_est.max(1);
-        if fee238 > 0 && fee_purity == 0 {
-            fee_purity = 1;
+        if fee_purity < CONTRACT_STORE_LOWEST_FEE_PURITY as u128 {
+            fee_purity = CONTRACT_STORE_LOWEST_FEE_PURITY as u128;
         }
         let need = fee_purity
             .saturating_mul(charged_bytes as u128)
-            .saturating_mul(CONTRACT_STORE_PERM_PERIODS as u128);
+            .saturating_mul(periods as u128);
         let need = need
             .saturating_mul(SAFETY_NUM)
             .saturating_add(SAFETY_DEN - 1)
@@ -97,10 +98,10 @@ impl Contract {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         act.contract = self.ctrt.clone();
-        act.construct_call = Bool::new(self.argv.length() > 0);
+        act.construct_must = Bool::new(true);
         act.construct_argv = self.argv.clone();
         let bytes = act.contract.size();
-        act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes);
+        act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes, CONTRACT_STORE_PERM_PERIODS);
         // print
         curl_trs_2(vec![Box::new(act)], fee);
     }
@@ -109,14 +110,17 @@ impl Contract {
         self.testnet_deploy_print_by_nonce(fee, 0)
     }
 
-    pub fn testnet_update_print(&self, cadr: Address, fee: &str, expect_revision: u16) {
+    pub fn testnet_update_print(&self, cadr: Address, fee: &str, new_revision: u16) {
         let txfee = Amount::from(fee).unwrap();
         let mut act = ContractUpdate::new();
-        act.edit = self.clone().into_edit(expect_revision);
+        act.edit = self.clone().into_edit(new_revision);
         act.address = cadr;
-        // On-chain update fee is charged by positive delta bytes only; helper uses edit size as estimate.
+        // On-chain update fee = expansion fee (perm periods, may be zero) + edited-bytes fee (edit periods).
+        // Helper conservatively estimates from serialized edit bytes because old/new contract delta is unknown here.
         let bytes = act.edit.size();
-        act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes);
+        let expand_fee = Self::estimate_protocol_cost(&txfee, bytes, bytes, CONTRACT_STORE_PERM_PERIODS);
+        let edit_fee = Self::estimate_protocol_cost(&txfee, bytes, bytes, CONTRACT_STORE_EDIT_PERIODS);
+        act.protocol_cost = expand_fee.add_mode_u128(&edit_fee).unwrap();
         // print
         curl_trs_2(vec![Box::new(act)], fee);
     }

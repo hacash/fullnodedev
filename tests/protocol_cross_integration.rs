@@ -76,14 +76,6 @@ fn build_maincall_hac_transfer(to: &Address, mei: u64) -> ContractMainCall {
     ContractMainCall::from_bytecode(lang_to_bytecode(&script).unwrap()).unwrap()
 }
 
-fn build_vm_defer_call(lib_idx: u8, func_name: &str) -> ContractMainCall {
-    let sig = vm::rt::calc_func_sign(func_name);
-    let mut codes = vec![vm::rt::Bytecode::PNIL as u8, vm::rt::Bytecode::CALLEXT as u8, lib_idx];
-    codes.extend_from_slice(&sig);
-    codes.push(vm::rt::Bytecode::END as u8);
-    ContractMainCall::from_bytecode(codes).unwrap()
-}
-
 unsafe fn ctx_inst<'a>(ctx: &mut dyn Context) -> &mut protocol::context::ContextInst<'a> {
     unsafe { &mut *(ctx as *mut dyn Context as *mut protocol::context::ContextInst<'a>) }
 }

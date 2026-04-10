@@ -4,8 +4,8 @@ mod action_coverage {
     use basis::interface::ActExec;
     use basis::interface::{Context, Logs, State, StateOperat, Transaction, TransactionRead};
     use field::{
-        Address, Amount, BytesW1, BytesW2, DiamondInscript, DiamondName, DiamondSto, Field, Hash,
-        Inscripts, Parse, Readable, Serialize, Uint1, Uint2, Uint4,
+        Address, Amount, Bool, BytesW1, BytesW2, DiamondInscript, DiamondName, DiamondSto, Field,
+        Hash, Inscripts, Parse, Readable, Serialize, Uint1, Uint2, Uint4,
     };
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
@@ -72,6 +72,11 @@ mod action_coverage {
 
     fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
         Contract::new()
+            .syst(
+                Abst::new(AbstCall::Construct)
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .func(
                 Func::new(func_name)
                     .unwrap()
@@ -131,6 +136,7 @@ mod action_coverage {
         act.nonce = Uint4::from(nonce);
         // Provide generous protocol fee to cover any contract size
         act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_must = Bool::new(true);
         act.contract = contract;
         act.execute(ctx)
     }
@@ -469,6 +475,10 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
 
         let sto = make_external_contract("f", "return 0");
         execute_deploy(&mut ctx, 1, sto).unwrap();
@@ -844,6 +854,7 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(77u32);
         act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_must = Bool::new(true);
         let over = SpaceCap::new(1).value_size + 1;
         act.construct_argv = BytesW2::from(vec![0xAB; over]).unwrap();
         act.contract = make_external_contract("f", "return 0");
@@ -853,7 +864,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_accepts_construct_argv_at_spacecap_limit() {
+    fn deploy_allows_missing_construct_when_construct_must_false() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
@@ -869,6 +880,48 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(78u32);
         act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_must = Bool::new(false);
+        act.contract = Contract::new()
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+        act.execute(&mut ctx).unwrap();
+
+        let caddr = contract_addr(&main, 78);
+        assert!(
+            VMState::wrap(StateOperat::state(&mut ctx))
+                .contract(&caddr)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn deploy_accepts_construct_argv_at_spacecap_limit() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
+
+        let mut act = ContractDeploy::new();
+        act.nonce = Uint4::from(78u32);
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_must = Bool::new(true);
         let cap = SpaceCap::new(1).value_size;
         act.construct_argv = BytesW2::from(vec![0xCD; cap]).unwrap();
         act.contract = make_external_contract("f", "return 0");
@@ -899,6 +952,7 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(79u32);
         act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_must = Bool::new(true);
         act.contract = make_external_contract("f", "return 0");
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("requires tx type >= 3"), "{err}");
@@ -1000,7 +1054,7 @@ mod action_coverage {
         // Add self as inherit via edit
         act.edit.inherit_add = ContractAddrListW1::from_list(vec![caddr.clone()]).unwrap();
         // Revision 0 -> next is 1
-        act.edit.expect_revision = Uint2::from(1u16);
+        act.edit.new_revision = Uint2::from(1u16);
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("inherit itself"), "{err}");
     }
@@ -1021,7 +1075,7 @@ mod action_coverage {
         let mut act = ContractUpdate::new();
         act.address = caddr.to_addr();
         act.protocol_cost = Amount::zero();
-        act.edit.expect_revision = Uint2::from(1u16);
+        act.edit.new_revision = Uint2::from(1u16);
         act.edit.library_add = ContractAddrListW1::from_list(vec![missing_lib]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
@@ -1065,11 +1119,182 @@ mod action_coverage {
         let mut act = ContractUpdate::new();
         act.address = root.to_addr();
         act.protocol_cost = Amount::zero();
-        act.edit.expect_revision = Uint2::from(1u16);
+        act.edit.new_revision = Uint2::from(1u16);
         act.edit.inherit_add = ContractAddrListW1::from_list(vec![parent]).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
             err.contains("inherit parent") && err.contains("cannot have parent inherit"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn update_rejects_missing_append_hook_explicitly() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let caddr = contract_addr(&main, 1);
+        let mut state = StateMem::default();
+        insert_contract(
+            &mut state,
+            &caddr,
+            &Contract::new()
+                .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+                .func(
+                    Func::new("f")
+                        .unwrap()
+                        .external()
+                        .fitsh("return 0")
+                        .unwrap(),
+                )
+                .into_sto(),
+        );
+
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
+
+        let edit = Contract::new()
+            .func(
+                Func::new("g")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_edit(1);
+
+        let mut act = ContractUpdate::new();
+        act.address = caddr.to_addr();
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.edit = edit;
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(
+            err.contains("abst call Append not found in") || err.contains("Append") && err.contains("not found in"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn update_rejects_missing_change_hook_explicitly() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let caddr = contract_addr(&main, 1);
+        let parent = contract_addr(&main, 2);
+        let mut state = StateMem::default();
+        insert_contract(
+            &mut state,
+            &parent,
+            &Contract::new()
+                .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+                .func(Func::new("f1").unwrap().fitsh("return 1").unwrap())
+                .into_sto(),
+        );
+        insert_contract(
+            &mut state,
+            &caddr,
+            &Contract::new()
+                .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+                .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
+                .inh(parent.to_addr())
+                .into_sto(),
+        );
+
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
+
+        let edit = Contract::new()
+            .func(Func::new("f1").unwrap().fitsh("return 2").unwrap())
+            .into_edit(1);
+
+        let mut act = ContractUpdate::new();
+        act.address = caddr.to_addr();
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.edit = edit;
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(
+            err.contains("abst call Change not found in") || err.contains("Change") && err.contains("not found in"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn update_uses_edit_periods_for_min_protocol_fee() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let caddr = contract_addr(&main, 1);
+        let mut state = StateMem::default();
+        insert_contract(
+            &mut state,
+            &caddr,
+            &Contract::new()
+                .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+                .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
+                .into_sto(),
+        );
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(1, &tx, Box::new(state), Box::new(MemLogs::default()));
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
+
+        let edit = Contract::new()
+            .func(
+                Func::new("grow")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_edit(1);
+        let old_size = Contract::new()
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+            .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
+            .into_sto()
+            .size();
+        let new_size = old_size + edit.size();
+        let delta_bytes = new_size.saturating_sub(old_size);
+        let edit_bytes = edit.size();
+        let fee_purity = ctx
+            .tx()
+            .fee_purity()
+            .max(vm::action::CONTRACT_STORE_LOWEST_FEE_PURITY as u64) as u128;
+        let _expected = Amount::coin_u128(
+            fee_purity
+                .saturating_mul(delta_bytes as u128)
+                .saturating_mul(vm::action::CONTRACT_STORE_PERM_PERIODS as u128)
+                .saturating_add(
+                    fee_purity
+                        .saturating_mul(edit_bytes as u128)
+                        .saturating_mul(vm::action::CONTRACT_STORE_EDIT_PERIODS as u128),
+                ),
+            field::UNIT_238,
+        );
+
+        let mut act = ContractUpdate::new();
+        act.address = caddr.to_addr();
+        act.protocol_cost = Amount::zero();
+        act.edit = edit;
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(
+            err.contains("protocol fee must be at least")
+                && err.contains("expand_bytes=14")
+                && err.contains("expand_periods=10000")
+                && err.contains("edit_bytes=25")
+                && err.contains("edit_periods=100"),
             "{err}"
         );
     }
@@ -2165,6 +2390,10 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
 
         // Deploy a contract
         let sto = make_external_contract("greet", "return 0");
@@ -2198,6 +2427,10 @@ mod action_coverage {
         );
         ctx.env.chain.fast_sync = true;
         fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
 
         let sto = make_external_contract("f", "return 0");
         execute_deploy(&mut ctx, 1, sto).unwrap();
@@ -2243,17 +2476,23 @@ mod action_coverage {
     fn multiple_deploys_different_nonces() {
         let _guard = test_guard();
         let main = main_addr();
-        let tx = make_tx(3, main, vec![], 17);
-        let mut ctx = make_ctx(
-            1,
-            &tx,
-            Box::new(StateMem::default()),
-            Box::new(MemLogs::default()),
-        );
-        ctx.env.chain.fast_sync = true;
-        fund_main_addr(&mut ctx);
+        let mut state: Box<dyn State> = Box::new(StateMem::default());
 
         for nonce in 1..=5u32 {
+            let tx = make_tx(3, main, vec![], 17);
+            let mut ctx = make_ctx(
+                1,
+                &tx,
+                state,
+                Box::new(MemLogs::default()),
+            );
+            ctx.env.chain.fast_sync = true;
+            fund_main_addr(&mut ctx);
+            let budget = protocol::context::decode_gas_budget(
+                17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+            );
+            ctx.gas_initialize(budget).unwrap();
+
             let sto = make_external_contract("f", "return 0");
             execute_deploy(&mut ctx, nonce, sto).unwrap();
             let caddr = contract_addr(&main, nonce);
@@ -2263,6 +2502,8 @@ mod action_coverage {
                     .is_some(),
                 "contract with nonce {nonce} should exist"
             );
+            let (next_state, _logs) = ctx.release();
+            state = next_state;
         }
     }
 
@@ -2282,6 +2523,7 @@ mod action_coverage {
         let sto = make_external_contract("f", "return 0");
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(1u32);
+        act.construct_must = Bool::new(true);
         // Create a negative amount: 0 - 1 mei
         let neg_amt = Amount::zero()
             .sub(&Amount::mei(1), field::AmtMode::BIGINT)
