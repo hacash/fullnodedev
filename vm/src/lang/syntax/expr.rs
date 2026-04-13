@@ -33,6 +33,7 @@ impl Syntax {
             Token::Identifier(id) => self.parse_identifier_expr(id),
             Token::Keyword(KwTy::This) => self.parse_identifier_expr("this".to_string()),
             Token::Keyword(KwTy::Self_) => self.parse_identifier_expr("self".to_string()),
+            Token::Keyword(KwTy::Upper) => self.parse_identifier_expr("upper".to_string()),
             Token::Keyword(KwTy::Super) => self.parse_identifier_expr("super".to_string()),
             Token::Keyword(KwTy::Tuple) => self.parse_identifier_expr("tuple".to_string()),
             Token::Integer(n) => Ok(push_num(n)),

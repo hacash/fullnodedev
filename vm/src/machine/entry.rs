@@ -206,7 +206,7 @@ pub fn run_main_entry(
     ctx: &mut dyn Context,
     codeconf: u8,
     payload: Vec<u8>,
-) -> Ret<(VmGasBuckets, Value)> {
+) -> XRet<(VmGasBuckets, Value)> {
     // Bytecode verification is intentionally handled by upper-layer action validators before calling run_main_entry.
     ensure_vm_run_ready(ctx)?;
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::Main {
@@ -214,7 +214,7 @@ pub fn run_main_entry(
         codes: Arc::from(payload),
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
-        return errf!("vm call return type mismatch");
+        return xerr!("vm call return type mismatch");
     };
     Ok((cost, *rv))
 }
@@ -240,7 +240,7 @@ pub fn run_p2sh_entry(
     codeconf: u8,
     payload: Vec<u8>,
     param: Value,
-) -> Ret<(VmGasBuckets, Value)> {
+) -> XRet<(VmGasBuckets, Value)> {
     // Canonical P2SH payload validation still happens in upper-layer action validators,
     // but this raw host-facing helper also revalidates the parsed payload to avoid trusting forged blobs.
     ensure_vm_run_ready(ctx)?;
@@ -266,7 +266,7 @@ pub fn run_p2sh_entry(
         param,
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
-        return errf!("vm call return type mismatch");
+        return xerr!("vm call return type mismatch");
     };
     Ok((cost, *rv))
 }
@@ -276,7 +276,7 @@ pub fn run_abst_entry(
     target: AbstCall,
     payload: Address,
     param: Value,
-) -> Ret<(VmGasBuckets, Value)> {
+) -> XRet<(VmGasBuckets, Value)> {
     ensure_vm_run_ready(ctx)?;
     let intent_scope = ctx.vm_current_intent_scope();
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::Abst {
@@ -286,7 +286,7 @@ pub fn run_abst_entry(
         param,
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
-        return errf!("vm call return type mismatch");
+        return xerr!("vm call return type mismatch");
     };
     Ok((cost, *rv))
 }
@@ -324,7 +324,7 @@ impl Machine {
             .resolve_abstfn(host, &contract_addr, cty)
             .map_err(XError::from)?
         else {
-            return Err(XError::fault(format!("abst call {:?} not found in {}", cty, adr)));
+            return xerr!(format!("abst call {:?} not found in {}", cty, adr));
         };
         let rv = self.do_call(
             runtime,
@@ -604,7 +604,7 @@ impl Executor {
                 cost.compute += delta;
             }
             if cost.total() <= 0 {
-                Err(XError::fault(format!("{:?} gas cost invalid: {}", entry.kind, cost.total())))
+                xerr!(format!("{:?} gas cost invalid: {}", entry.kind, cost.total()))
             } else {
                 Ok(cost)
             }

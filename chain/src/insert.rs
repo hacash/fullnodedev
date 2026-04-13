@@ -121,7 +121,9 @@ fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
         if is_open_vmlog(eng, new_root.logs().height()) {
             new_root.logs().write_to_disk();
         }
-        eng.scaner.roll(new_root.block(), new_root.state(), eng.disk.clone());
+        if not_rebuild {
+            eng.scaner.roll(new_root.block(), new_root.state(), eng.disk.clone());
+        }
         // Keep the old root alive until after state/logs are committed.
         // See InsertResult::old_root_hold comment for the rationale.
         let _old_root_hold = old_root_hold;

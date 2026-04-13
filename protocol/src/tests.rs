@@ -1843,6 +1843,138 @@ fn test_tex_zhu_condition_accepts_exact_one_zhu() {
 }
 
 #[test]
+fn test_tex_action_rejects_call_context_even_in_fast_sync() {
+    let _guard = install_test_registry();
+    use crate::tex::*;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    let acc = Account::create_by_password("tex_call_ctx_guard").unwrap();
+    let addr = Address::from(*acc.address());
+
+    let mut act = TexCellAct::create_by(addr);
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100)))
+        .unwrap();
+    act.do_sign(&acc).unwrap();
+
+    ctx.exec_from_set(ExecFrom::Call);
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(
+        err.contains("TexCellAct can only run in TOP context"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_tex_diamond_settlement_assigns_fifo_across_interleaved_actions() {
+    let _guard = install_test_registry();
+    use crate::tex::*;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+
+    let pay1_acc = Account::create_by_password("tex_fifo_pay_1").unwrap();
+    let pay2_acc = Account::create_by_password("tex_fifo_pay_2").unwrap();
+    let get1_acc = Account::create_by_password("tex_fifo_get_1").unwrap();
+    let get2_acc = Account::create_by_password("tex_fifo_get_2").unwrap();
+    let pay1 = Address::from(*pay1_acc.address());
+    let pay2 = Address::from(*pay2_acc.address());
+    let get1 = Address::from(*get1_acc.address());
+    let get2 = Address::from(*get2_acc.address());
+    let settlement = field::ADDRESS_ONEX.clone();
+
+    let dia_a = DiamondName::from_readable(b"KKKKVA").unwrap();
+    let dia_b = DiamondName::from_readable(b"HYXYHY").unwrap();
+    let dia_c = DiamondName::from_readable(b"UETWNK").unwrap();
+
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+
+        let mut bls1 = state.balance(&pay1).unwrap_or_default();
+        bls1.diamond = DiamondNumberAuto::from_diamond(&DiamondNumber::from(2u32));
+        state.balance_set(&pay1, &bls1);
+
+        let mut bls2 = state.balance(&pay2).unwrap_or_default();
+        bls2.diamond = DiamondNumberAuto::from_diamond(&DiamondNumber::from(1u32));
+        state.balance_set(&pay2, &bls2);
+
+        for (name, owner) in [
+            (dia_a.clone(), pay1),
+            (dia_b.clone(), pay1),
+            (dia_c.clone(), pay2),
+        ] {
+            let mut dia = DiamondSto::new();
+            dia.status = DIAMOND_STATUS_NORMAL;
+            dia.address = owner;
+            state.diamond_set(&name, &dia);
+        }
+    }
+
+    let mut act_pay1 = TexCellAct::create_by(pay1);
+    act_pay1
+        .add_cell(Box::new(CellTrsDiaPay::new(
+            DiamondNameListMax200::from_list_checked(vec![dia_b.clone(), dia_a.clone()]).unwrap(),
+        )))
+        .unwrap();
+    act_pay1.do_sign(&pay1_acc).unwrap();
+
+    let mut act_get1 = TexCellAct::create_by(get1);
+    act_get1
+        .add_cell(Box::new(CellTrsDiaGet::new(DiamondNumber::from(1u32))))
+        .unwrap();
+    act_get1.do_sign(&get1_acc).unwrap();
+
+    let mut act_pay2 = TexCellAct::create_by(pay2);
+    act_pay2
+        .add_cell(Box::new(CellTrsDiaPay::new(
+            DiamondNameListMax200::from_list_checked(vec![dia_c.clone()]).unwrap(),
+        )))
+        .unwrap();
+    act_pay2.do_sign(&pay2_acc).unwrap();
+
+    let mut act_get2 = TexCellAct::create_by(get2);
+    act_get2
+        .add_cell(Box::new(CellTrsDiaGet::new(DiamondNumber::from(2u32))))
+        .unwrap();
+    act_get2.do_sign(&get2_acc).unwrap();
+
+    for act in [&act_pay1, &act_get1, &act_pay2, &act_get2] {
+        ctx.exec_from_set(ExecFrom::Top);
+        act.execute(&mut ctx).unwrap();
+    }
+
+    {
+        let state = crate::state::CoreState::wrap(ctx.state());
+        assert_eq!(state.diamond(&dia_a).unwrap().address, settlement);
+        assert_eq!(state.diamond(&dia_b).unwrap().address, settlement);
+        assert_eq!(state.diamond(&dia_c).unwrap().address, settlement);
+        assert_eq!(state.balance(&get1).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
+        assert_eq!(state.balance(&get2).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
+    }
+    assert_eq!(ctx.tex_ledger().dia, 0);
+
+    crate::tex::do_settlement(&mut ctx).unwrap();
+
+    let state = crate::state::CoreState::wrap(ctx.state());
+    assert_eq!(state.diamond(&dia_b).unwrap().address, get1);
+    assert_eq!(state.diamond(&dia_a).unwrap().address, get2);
+    assert_eq!(state.diamond(&dia_c).unwrap().address, get2);
+    assert_eq!(state.balance(&pay1).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
+    assert_eq!(state.balance(&pay2).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
+    assert_eq!(state.balance(&get1).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(1u32));
+    assert_eq!(state.balance(&get2).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(2u32));
+    assert_eq!(state.balance(&settlement).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
+}
+
+#[test]
 fn test_address_bare_base58check_in_protocol() {
     // Verify Address can parse from JSON with bare base58check (no b58: prefix)
     let addr_str = "1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS";

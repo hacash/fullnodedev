@@ -693,19 +693,20 @@ impl IntentRuntime {
         if limit == 0 {
             return itr_err_fmt!(ItrErrCode::IntentError, "intent keys from limit must be positive");
         }
+        let start_key = match start {
+            None => None,
+            Some(key) => Some(self.extract_intent_key_bytes(key)?),
+        };
         let keys = self.keys_sorted(owner, id)?;
         if keys.is_empty() {
             return Ok((None, vec![]));
         }
-        let from = match start {
+        let from = match start_key {
             None => 0usize,
-            Some(key) => {
-                let key = self.extract_intent_key_bytes(key)?;
-                match keys.binary_search(&key) {
-                    Ok(i) => i + 1,
-                    Err(i) => i,
-                }
-            }
+            Some(key) => match keys.binary_search(&key) {
+                Ok(i) => i + 1,
+                Err(i) => i,
+            },
         };
         let end = from.saturating_add(limit).min(keys.len());
         let page = keys[from..end].to_vec();
@@ -1449,7 +1450,7 @@ mod resource_tests {
             assert_eq!(rt.has(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.take(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.del(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
-            assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap(), (None, vec![]));
+            assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.move_key(&owner, id, Value::Bytes(vec![1]), key.clone()).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.move_key(&owner, id, key.clone(), Value::Bytes(vec![1])).unwrap_err().0, ItrErrCode::IntentError);
             assert_eq!(rt.put_many(&owner, id, vec![(key.clone(), Value::U64(1))]).unwrap_err().0, ItrErrCode::IntentError);

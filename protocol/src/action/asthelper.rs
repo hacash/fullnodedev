@@ -12,7 +12,8 @@ pub fn ast_exec_item<T>(
     let snap = CtxSnapshot::begin_ast_item(ctx)?;
     match exec(ctx) {
         Ok((child_gas, ret)) => {
-            // AST child returned-gas follows the same delta-only extra9 rule as other returned-gas charge sites.
+            // AST child returned-gas follows the same delta-only extra9 surcharge rule as other
+            // Type3 composition charge sites. The AST control node itself is not extra9-bearing.
             ctx.gas_charge(extra9_surcharge(child_extra9, child_gas) as i64)?;
             snap.commit(ctx);
             Ok(ret)
@@ -146,7 +147,7 @@ mod tests {
     ) -> Ret<XRet<Vec<u8>>> {
         Ok(ast_exec_item(ctx, false, |ctx| {
             ctx.state().set(vec![key], vec![val]);
-            Err(XError::fault("ast test unrecoverable fail"))
+            xerr!("ast test unrecoverable fail")
         }))
     }
 

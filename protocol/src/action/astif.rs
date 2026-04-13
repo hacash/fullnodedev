@@ -8,7 +8,7 @@ action_define! { AstIf, 26,
     },
     (self, "Asset if-else execute".to_owned()),
     (self, ctx, gas {
-        gas = 0; // control-flow node: all gas consumed via ctx
+        gas = 0; // control-flow node: all gas consumed via ctx; this wrapper itself is extra9=false
         let mut exec_from = enter_exec_from(ctx, ExecFrom::Ast);
         let ctx = exec_from.ctx();
         // Failed branches bubble up directly; only recoverable child items roll back their own snapshots.

@@ -386,16 +386,20 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         macro_rules! kvput_inner {
             ($store:expr, $key_cost:expr) => {{
                 let v = ops.pop()?.valid(cap)?;
-                let vlen = v.val_size();
                 let k = ops.pop()?;
                 let klen = $store.key_len(&k)?;
-                let is_new = !$store.contains_key(&k)?;
                 gas_resource!(stack_write, klen);
-                gas_resource!(stack_write, vlen);
-                if is_new {
-                    gas_add!(resource, raw, $key_cost);
+                if matches!(v, Value::Nil) {
+                    $store.remove(&k)?;
+                } else {
+                    let vlen = v.val_size();
+                    let is_new = !$store.contains_key(&k)?;
+                    gas_resource!(stack_write, vlen);
+                    if is_new {
+                        gas_add!(resource, raw, $key_cost);
+                    }
+                    $store.put(k, v)?;
                 }
-                $store.put(k, v)?;
             }};
         }
 

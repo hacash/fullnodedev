@@ -10,6 +10,9 @@ action_define! { TexCellAct, 22,
     },
     (self, format!("Execute {} tex cells by {}", self.cells.length(), self.addr)),
     (self, ctx, _gas {
+        if ctx.exec_from() != ExecFrom::Top {
+            return xerrf!("TexCellAct can only run in TOP context, got {}", ctx.exec_from())
+        }
         self.addr.must_privakey()?;
         // Check signature on the standalone TEX bundle.
         let thx = self.get_sign_stuff();

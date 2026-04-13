@@ -1763,6 +1763,228 @@ mod bounds_tests {
     }
 
     #[test]
+    fn mput_nil_removes_existing_key() {
+        use crate::rt::Bytecode;
+
+        let key = Value::Bytes(vec![0x71u8]);
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        memory_map
+            .entry_mut(&cadr)
+            .unwrap()
+            .put(key.clone(), Value::U8(7))
+            .unwrap();
+        operands.push(key.clone()).unwrap();
+        operands.push(Value::Nil).unwrap();
+
+        execute_code(
+            &mut pc,
+            &[Bytecode::MPUT as u8, Bytecode::END as u8],
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap();
+
+        assert_eq!(memory_map.get(&cadr, &key).unwrap(), Value::Nil);
+        assert_eq!(memory_map.entry_mut(&cadr).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn gput_nil_removes_existing_key() {
+        use crate::rt::Bytecode;
+
+        let key = Value::Bytes(vec![0x72u8]);
+        let mut global_map = GKVMap::new(20);
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        global_map.put(key.clone(), Value::U8(9)).unwrap();
+        operands.push(key.clone()).unwrap();
+        operands.push(Value::Nil).unwrap();
+
+        execute_code(
+            &mut pc,
+            &[Bytecode::GPUT as u8, Bytecode::END as u8],
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap();
+
+        assert_eq!(global_map.get(&key).unwrap(), Value::Nil);
+        assert_eq!(global_map.len(), 0);
+    }
+
+    #[test]
+    fn gput_nil_on_missing_key_does_not_consume_slot() {
+        use crate::rt::Bytecode;
+
+        let key = Value::Bytes(vec![0x73u8]);
+        let run = || {
+            let mut global_map = GKVMap::new(1);
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+
+            operands.push(key.clone()).unwrap();
+            operands.push(Value::Nil).unwrap();
+            execute_code(
+                &mut pc,
+                &[Bytecode::GPUT as u8, Bytecode::END as u8],
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap();
+            global_map
+        };
+
+        let mut global_map = run();
+        assert_eq!(global_map.len(), 0);
+        global_map.put(Value::Bytes(vec![0x74u8]), Value::U8(1)).unwrap();
+        assert_eq!(global_map.len(), 1);
+    }
+
+    #[test]
+    fn mput_nil_on_missing_key_does_not_consume_slot() {
+        use crate::rt::Bytecode;
+
+        let key = Value::Bytes(vec![0x75u8]);
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(1);
+        let cadr = ContractAddress::default();
+
+        operands.push(key.clone()).unwrap();
+        operands.push(Value::Nil).unwrap();
+        execute_code(
+            &mut pc,
+            &[Bytecode::MPUT as u8, Bytecode::END as u8],
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap();
+
+        let mem = memory_map.entry_mut(&cadr).unwrap();
+        assert_eq!(mem.len(), 0);
+        mem.put(Value::Bytes(vec![0x76u8]), Value::U8(1)).unwrap();
+        assert_eq!(mem.len(), 1);
+    }
+
+    #[test]
+    fn gput_nil_then_reinsert_counts_as_new_key() {
+        use crate::rt::Bytecode;
+
+        let key = Value::Bytes(vec![0x77u8]);
+        let run = |clear_first: bool| -> i64 {
+            run_with_setup(
+                vec![Bytecode::GPUT as u8, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, global_map, _memory_map, _cadr| {
+                    global_map.put(key.clone(), Value::U8(1)).unwrap();
+                    if clear_first {
+                        global_map.remove(&key).unwrap();
+                    }
+                    ops.push(key.clone()).unwrap();
+                    ops.push(Value::U8(9)).unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run(true), run(false) + 32);
+    }
+
+    #[test]
+    fn mput_nil_then_reinsert_counts_as_new_key() {
+        use crate::rt::Bytecode;
+
+        let key = Value::Bytes(vec![0x78u8]);
+        let run = |clear_first: bool| -> i64 {
+            run_with_setup(
+                vec![Bytecode::MPUT as u8, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, memory_map, cadr| {
+                    let mem = memory_map.entry_mut(cadr).unwrap();
+                    mem.put(key.clone(), Value::U8(1)).unwrap();
+                    if clear_first {
+                        mem.remove(&key).unwrap();
+                    }
+                    ops.push(key.clone()).unwrap();
+                    ops.push(Value::U8(9)).unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run(true), run(false) + 20);
+    }
+
+    #[test]
     fn mput_charges_key_bytes_by_stack_write_div() {
         use crate::rt::Bytecode;
 

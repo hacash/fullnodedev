@@ -471,6 +471,15 @@ mod fitsh_compile_tests {
             func_nested_2: "return size(buf_left_drop(3, buf_right(5, \"hello world\")))",
             func_nested_3: "return head(append(list { 1 }, head(list { 2 3 })))",
         );
+
+        assert_compile_err!(
+            func_memory_put_has_no_return_value: "return memory_put(\"key\", \"value\")",
+            func_global_put_has_no_return_value: "return global_put(\"key\", \"value\")",
+            func_memory_put_cannot_initialize_var: "var x = memory_put(\"key\", \"value\")\nreturn 1",
+            func_global_put_cannot_initialize_var: "var x = global_put(\"key\", \"value\")\nreturn 1",
+            func_memory_put_cannot_assert: "assert memory_put(\"key\", \"value\")\nreturn 1",
+            func_global_put_cannot_assert: "assert global_put(\"key\", \"value\")\nreturn 1"
+        );
     }
 
     // ========================================================================= 13. FUNCTION CALLS =========================================================================
@@ -482,8 +491,11 @@ mod fitsh_compile_tests {
             call_this: "return this.func(1)",
             call_self: "return self.func(1)",
             call_super: "return super.func(1)",
+            call_upper: "return upper.func(1)",
             call_self_view: "return self:view_ok()",
+            call_upper_view: "return upper:view_ok()",
             call_self_pure: "return self::pure_ok()",
+            call_upper_pure: "return upper::pure_ok()",
             callself_short: "return self.func(1)",
             callselfview_short: "return self:view_ok()",
             callselfpure_short: "return self::pure_ok()",

@@ -220,6 +220,7 @@ impl Syntax {
             KwTy::Dot => match id.as_str() {
                 "this" => CallSpec::invoke(CallTarget::This, EffectMode::Edit, sig),
                 "self" => CallSpec::invoke(CallTarget::Self_, EffectMode::Edit, sig),
+                "upper" => CallSpec::invoke(CallTarget::Upper, EffectMode::Edit, sig),
                 "super" => CallSpec::invoke(CallTarget::Super, EffectMode::Edit, sig),
                 _ => CallSpec::callext(self.link_lib(&id)?, sig),
             },
@@ -227,6 +228,7 @@ impl Syntax {
                 let effect = maybe!(sep == KwTy::DColon, EffectMode::Pure, EffectMode::View);
                 match id.as_str() {
                     "self" => CallSpec::invoke(CallTarget::Self_, effect, sig),
+                    "upper" => CallSpec::invoke(CallTarget::Upper, effect, sig),
                     "this" | "super" => {
                         return errf!("call expression after identifier format invalid");
                     }
