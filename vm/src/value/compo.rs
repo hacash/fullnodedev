@@ -6,6 +6,10 @@ enum Compo {
 
 impl PartialEq for Compo {
     fn eq(&self, _: &Self) -> bool {
+        // Intentionally not VM semantic equality.
+        // `Compo` lives behind `CompoItem(Rc<UnsafeCell<_>>)` and Rust `==` must not be treated
+        // as contract-visible value comparison. VM content equality is implemented separately via
+        // `value_content_eq` / `CompoItem::content_eq`.
         false
     }
 }
@@ -258,6 +262,9 @@ impl Debug for CompoItem {
 
 impl PartialEq for CompoItem {
     fn eq(&self, other: &Self) -> bool {
+        // Intentionally pointer identity, not VM semantic equality.
+        // This supports runtime/ref semantics and cheap identity checks. Any contract-visible
+        // comparison must use `value_content_eq` / `CompoItem::content_eq` instead.
         self.ptr_eq(other)
     }
 }

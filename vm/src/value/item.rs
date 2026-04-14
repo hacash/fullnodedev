@@ -55,6 +55,14 @@ pub(crate) fn add_size_saturating(total: usize, add: usize) -> usize {
     total.checked_add(add).unwrap_or(usize::MAX)
 }
 
+// VM/runtime semantic equality. Use this for contract-visible value comparison.
+// IMPORTANT: this is intentionally different from Rust `PartialEq` on `Value`.
+// - uint values compare by numeric value across widths (e.g. U8(1) == U64(1))
+// - Tuple/Compo compare by content
+// - Handle/HeapSlice and some cross-type comparisons are invalid and return an error
+// Therefore, do NOT infer VM-level bugs from raw Rust `==` on `Value`/`CompoItem`
+// without first checking whether the surrounding code needs identity semantics or
+// true VM semantic equality.
 pub(crate) fn value_content_eq(lhs: &Value, rhs: &Value) -> VmrtRes<bool> {
     if lhs.is_uint() && rhs.is_uint() {
         return Ok(lhs.extract_u128()? == rhs.extract_u128()?);

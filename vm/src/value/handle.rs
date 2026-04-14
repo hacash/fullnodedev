@@ -38,6 +38,8 @@ impl fmt::Debug for HandleItem {
 
 impl PartialEq for HandleItem {
     fn eq(&self, other: &Self) -> bool {
+        // Intentionally pointer identity. Handles are runtime references, and VM semantic value
+        // equality does not treat them as comparable content values.
         self.ptr_eq(other)
     }
 }

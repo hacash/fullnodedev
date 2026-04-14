@@ -216,11 +216,9 @@ pub(crate) async fn event_loop(p2p: Arc<P2PManage>, mut worker: Worker) -> Rerr 
     let server_listener = match p2p.server().await {
         Ok(l) => l,
         Err(ref e) => {
-            println!(
-                "\n[Error] p2p failed to bind port {}: {}\n",
-                p2p.cnf.listen, e
-            );
-            return errf!("p2p failed to bind port {}: {}", p2p.cnf.listen, e);
+            let e = format!("p2p failed to bind port {}: {}", p2p.cnf.listen, e);
+            println!("\n[P2P Error] {}\n", e);
+            return Err(e);
         }
     };
     let shutdown = p2p.shutdown.clone();
