@@ -16,7 +16,8 @@ fn impl_packing_next_block(
     let nexthei = oldblk.height().uint() + 1;
     if this.difficulty.is_upgrade_height(nexthei) || nexthei % mtcnf.difficulty_adjust_blocks == 0 {
         let sto = engine.store();
-        let (difn, ..) = this.next_difficulty(oldblk.as_read(), sto.as_ref(), None);
+        let src = StoreBlockIntroSource::new(sto.as_ref());
+        let (difn, ..) = this.next_difficulty(oldblk.as_read(), &src);
         newdifn = Uint4::from(difn);
     }
     // create coinbase tx

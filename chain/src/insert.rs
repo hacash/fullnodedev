@@ -32,20 +32,41 @@ struct InsertResult {
     block: BlkPkg,
 }
 
-fn build_fork_trace(anchor: &ChunkRef, root_height: u64) -> Ret<ForkTrace> {
-    let anchor_height = anchor.height();
-    if root_height > anchor_height {
-        return errf!("fork trace root height {} exceeds anchor {}", root_height, anchor_height);
+struct InsertBlockIntroSource<'a> {
+    store: &'a dyn Store,
+    anchor: ChunkRef,
+    root_height: u64,
+}
+
+impl<'a> InsertBlockIntroSource<'a> {
+    fn new(store: &'a dyn Store, anchor: ChunkRef, root_height: u64) -> Self {
+        Self { store, anchor, root_height }
     }
-    let mut blocks: Vec<Arc<dyn BlockRead>> = Vec::with_capacity((anchor_height - root_height + 1) as usize);
-    for hei in (root_height..=anchor_height).rev() {
-        let Some(node) = Roller::ancestor_at(anchor, hei) else {
-            return errf!("fork trace block {} not found", hei);
-        };
-        let blk: Arc<dyn BlockRead> = node.block();
-        blocks.push(blk);
+}
+
+impl BlockIntroSource for InsertBlockIntroSource<'_> {
+    fn block_intro(&self, hei: u64) -> Option<Box<dyn BlockRead>> {
+        if hei > self.root_height {
+            let blk = Roller::ancestor_at(&self.anchor, hei)?.block();
+            return Some(Box::new(protocol::block::BlockIntro {
+                head: protocol::block::BlockHead {
+                    version: blk.version().clone(),
+                    height: blk.height().clone(),
+                    timestamp: blk.timestamp().clone(),
+                    prevhash: blk.prevhash().clone(),
+                    mrklroot: blk.mrklroot().clone(),
+                    transaction_count: blk.transaction_count().clone(),
+                },
+                meta: protocol::block::BlockMeta {
+                    nonce: blk.nonce().clone(),
+                    difficulty: blk.difficulty().clone(),
+                    witness_stage: Fixed2::default(),
+                },
+            }));
+        }
+        let (_, blkdts) = self.store.block_data_by_height(&BlockHeight::from(hei))?;
+        protocol::block::BlockIntro::build(&blkdts).ok().map(|v| Box::new(v) as Box<dyn BlockRead>)
     }
-    Ok(ForkTrace::new(anchor.hash().clone(), root_height, blocks))
 }
 
 fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<InsertResult> {
@@ -72,9 +93,9 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();
-        let trace = build_fork_trace(&parent, old_root_height)?;
+        let src = InsertBlockIntroSource::new(eng.store.as_ref(), parent.clone(), old_root_height);
         // Stage 4: minter pre-exec block gate.
-        eng.minter.blk_verify(blk.block_read(), parent_blk, eng.store.as_ref(), Some(&trace))?;
+        eng.minter.blk_verify(blk.block_read(), parent_blk, &src)?;
         // Stage 5: generic structural block gate.
         block_verify(&eng.cnf, blk.block_read(), blk.data().len(), parent_blk)?;
     }
