@@ -49,14 +49,14 @@ fn impl_blk_arrive(
     if this.difficulty.is_upgrade_height(curhei) {
         let canonical_prev = sto.block_hash(&BlockHeight::from(curhei - 1));
         if canonical_prev.as_ref() == Some(curblkhead.prevhash()) {
-            let prevdiff = this.difficulty.req_block_intro(curhei - 1, curhei, sto).1;
+            let prevdiff = this.difficulty.req_block_intro(curhei - 1, curhei, sto, None).1;
             let max_target_hash = scaled_target_hash(prevdiff, 2);
             if hash_bigger_than(cblkhx.as_ref(), &max_target_hash) {
                 return errf!("block found height {} PoW hashrates check failed", curhei)
             }
         }
     } else if curhei % blkspan == 0 {
-        let (_, difnum, _) = this.difficulty.req_cycle_block(curhei - 1, sto);
+        let (_, difnum, _) = this.difficulty.req_cycle_block(curhei - 1, sto, None);
         let bign = u32_to_biguint(difnum).mul(4usize); // max is 4 times
         let mindiffhx = biguint_to_hash(&bign);
         if hash_bigger_than(cblkhx.as_ref(), &mindiffhx) {
@@ -66,7 +66,7 @@ fn impl_blk_arrive(
         biddings.mark_block_arrival(curhei, cblkhx);
         return Ok(())
     } else {
-        let (_, difnum, diffhx) = this.difficulty.req_cycle_block(curhei, sto);
+        let (_, difnum, diffhx) = this.difficulty.req_cycle_block(curhei, sto, None);
         if difnum != curdifnum {
             return errf!("block found height {} PoW difficulty check failed: expected {} but got {}", curhei, difnum, curdifnum)
         }

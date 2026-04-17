@@ -1,4 +1,4 @@
-fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn BlockRead, sto: &dyn Store) -> Rerr {
+fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn BlockRead, sto: &dyn Store, trc: Option<&ForkTrace>) -> Rerr {
     let curhei = curblk.height().uint(); // u64
     let smaxh = this.cnf.sync_maxh;
     if smaxh > 0 && curhei > smaxh {
@@ -16,7 +16,7 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
         return Ok(()) // not check, compatible history code
     }
     let curn = curblk.difficulty().uint(); // u32
-    let (tarn, tarhx, _tarbign) = this.next_difficulty(prevblk, sto);
+    let (tarn, tarhx, _tarbign) = this.next_difficulty(prevblk, sto, trc);
     if tarn != curn {
         return errf!("height {} PoW difficulty check failed: expected {} but got {}", curhei, tarn, curn)
     }

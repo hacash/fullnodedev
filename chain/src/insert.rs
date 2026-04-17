@@ -32,6 +32,22 @@ struct InsertResult {
     block: BlkPkg,
 }
 
+fn build_fork_trace(anchor: &ChunkRef, root_height: u64) -> Ret<ForkTrace> {
+    let anchor_height = anchor.height();
+    if root_height > anchor_height {
+        return errf!("fork trace root height {} exceeds anchor {}", root_height, anchor_height);
+    }
+    let mut blocks: Vec<Arc<dyn BlockRead>> = Vec::with_capacity((anchor_height - root_height + 1) as usize);
+    for hei in (root_height..=anchor_height).rev() {
+        let Some(node) = Roller::ancestor_at(anchor, hei) else {
+            return errf!("fork trace block {} not found", hei);
+        };
+        let blk: Arc<dyn BlockRead> = node.block();
+        blocks.push(blk);
+    }
+    Ok(ForkTrace::new(anchor.hash().clone(), root_height, blocks))
+}
+
 fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<InsertResult> {
     let orgi = blk.origin();
     let fast_sync = (eng.cnf.fast_sync && orgi == BlkOrigin::Sync) || orgi == BlkOrigin::Rebuild;
@@ -56,8 +72,9 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();
+        let trace = build_fork_trace(&parent, old_root_height)?;
         // Stage 4: minter pre-exec block gate.
-        eng.minter.blk_verify(blk.block_read(), parent_blk, eng.store.as_ref())?;
+        eng.minter.blk_verify(blk.block_read(), parent_blk, eng.store.as_ref(), Some(&trace))?;
         // Stage 5: generic structural block gate.
         block_verify(&eng.cnf, blk.block_read(), blk.data().len(), parent_blk)?;
     }
