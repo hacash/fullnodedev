@@ -14,10 +14,11 @@ fn impl_packing_next_block(
         newdifn = Uint4::from(LOWEST_DIFFICULTY);
     }
     let nexthei = oldblk.height().uint() + 1;
+    let nextts = curtimes();
     if this.difficulty.is_upgrade_height(nexthei) || nexthei % mtcnf.difficulty_adjust_blocks == 0 {
         let sto = engine.store();
         let src = StoreBlockIntroSource::new(sto.as_ref());
-        let (difn, ..) = this.next_difficulty(oldblk.as_read(), &src);
+        let (difn, ..) = this.next_difficulty(oldblk.as_read(), nextts, &src);
         newdifn = Uint4::from(difn);
     }
     // create coinbase tx
@@ -31,7 +32,7 @@ fn impl_packing_next_block(
         head: BlockHead {
             version: Uint1::from(1),
             height: BlockHeight::from(nexthei),
-            timestamp: Timestamp::from(curtimes()),
+            timestamp: Timestamp::from(nextts),
             prevhash: prevhash,
             mrklroot: Hash::default(),
             transaction_count: Uint4::default(),

@@ -11,6 +11,7 @@ pub enum RetBlkFound {
 }
 
 pub trait BlockIntroSource: Send + Sync {
+    fn cache_height_limit(&self) -> u64;
     fn block_intro(&self, hei: u64) -> Option<Box<dyn BlockRead>>;
 }
 

@@ -47,7 +47,20 @@ fn impl_blk_arrive(
     }
 
     let src = StoreBlockIntroSource::new(sto);
-    if this.difficulty.is_upgrade_height(curhei) {
+    if this.difficulty.is_asert_height(curhei) {
+        let canonical_prev = sto.block_hash(&BlockHeight::from(curhei - 1));
+        if canonical_prev.as_ref() == Some(curblkhead.prevhash()) {
+            let prevdiff = this.difficulty.req_block_intro(curhei - 1, &src).1;
+            let prevblkt = this.difficulty.req_block_intro(curhei - 1, &src).0;
+            let target = this.difficulty.target_asert(prevdiff, prevblkt, curhei, curblkhead.timestamp().uint(), &src);
+            if target.num != curdifnum {
+                return errf!("block found height {} PoW difficulty check failed: expected {} but got {}", curhei, target.num, curdifnum)
+            }
+            if hash_bigger_than(cblkhx.as_ref(), &target.hash) {
+                return errf!("block found height {} PoW hashrates check failed", curhei)
+            }
+        }
+    } else if this.difficulty.is_upgrade_height(curhei) {
         let canonical_prev = sto.block_hash(&BlockHeight::from(curhei - 1));
         if canonical_prev.as_ref() == Some(curblkhead.prevhash()) {
             let prevdiff = this.difficulty.req_block_intro(curhei - 1, &src).1;
