@@ -117,7 +117,7 @@ impl Peer {
             writer_tx,
             writer_closed: false.into(),
             close_notify: Arc::new(Notify::new()),
-            knows: Knowledge::new(50),
+            knows: Knowledge::new(500),
         };
         let pptr = Arc::new(peer);
         Peer::spawn_writer(pptr.clone(), write_half, writer_rx);

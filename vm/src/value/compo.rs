@@ -6,6 +6,10 @@ enum Compo {
 
 impl PartialEq for Compo {
     fn eq(&self, _: &Self) -> bool {
+        // Intentionally not VM semantic equality.
+        // `Compo` lives behind `CompoItem(Rc<UnsafeCell<_>>)` and Rust `==` must not be treated
+        // as contract-visible value comparison. VM content equality is implemented separately via
+        // `value_content_eq` / `CompoItem::content_eq`.
         false
     }
 }
@@ -258,6 +262,9 @@ impl Debug for CompoItem {
 
 impl PartialEq for CompoItem {
     fn eq(&self, other: &Self) -> bool {
+        // Intentionally pointer identity, not VM semantic equality.
+        // This supports runtime/ref semantics and cheap identity checks. Any contract-visible
+        // comparison must use `value_content_eq` / `CompoItem::content_eq` instead.
         self.ptr_eq(other)
     }
 }
@@ -813,5 +820,33 @@ mod compo_tests {
         map.insert(vec![0u8; u16::MAX as usize], Value::U8(1));
         let err = CompoItem::map(map).unwrap().keys_with_stats().unwrap_err();
         assert_eq!(err.0, ItrErrCode::OutOfValueSize);
+    }
+
+    #[test]
+    fn compo_map_rejects_nil_and_empty_keys() {
+        let cap = SpaceCap::new(1);
+        let mut compo = CompoItem::new_map();
+
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            let err = compo.insert(&cap, key.clone(), Value::U8(1)).unwrap_err();
+            assert_eq!(err.0, ItrErrCode::CastBeKeyFail);
+            assert!(matches!(compo.haskey(key.clone()), Err(ItrErr(ItrErrCode::CastBeKeyFail, _))));
+            assert!(matches!(compo.itemget(key.clone()), Err(ItrErr(ItrErrCode::CastBeKeyFail, _))));
+            assert!(matches!(compo.remove(key), Err(ItrErr(ItrErrCode::CastBeKeyFail, _))));
+        }
+    }
+
+    #[test]
+    fn pack_map_rejects_nil_and_empty_keys() {
+        let cap = SpaceCap::new(1);
+
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            let mut ops = Stack::new(16);
+            ops.push(key).unwrap();
+            ops.push(Value::U8(1)).unwrap();
+            ops.push(Value::U16(2)).unwrap();
+            let err = CompoItem::pack_map(&cap, &mut ops).unwrap_err();
+            assert_eq!(err.0, ItrErrCode::CastBeKeyFail);
+        }
     }
 }

@@ -213,7 +213,14 @@ pub(crate) async fn event_loop(p2p: Arc<P2PManage>, mut worker: Worker) -> Rerr 
     let mut findnodes_tkr = new_ticker(52 * 60 * 4).await;
     let mut checkpeer_tkr = new_ticker(53 * 3).await;
     let mut boostndes_tkr = new_ticker(54 * 5).await;
-    let server_listener = p2p.server().await;
+    let server_listener = match p2p.server().await {
+        Ok(l) => l,
+        Err(ref e) => {
+            let e = format!("p2p failed to bind port {}: {}", p2p.cnf.listen, e);
+            println!("\n[P2P Error] {}\n", e);
+            return Err(e);
+        }
+    };
     let shutdown = p2p.shutdown.clone();
     loop {
         tokio::select! {

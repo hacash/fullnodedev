@@ -36,7 +36,7 @@ fn ctl_require_non_pure(exec: ExecCtx, name: &str) -> VmrtErr {
 }
 
 fn ctl_contract_owner(bindings: &FrameBindings, name: &str) -> VmrtRes<crate::ContractAddress> {
-    bindings.state_this.clone().ok_or_else(|| {
+    bindings.this_contract.clone().ok_or_else(|| {
         ItrErr::new(
             ItrErrCode::IntentError,
             &format!("intent '{}' only allowed in contract context", name),

@@ -504,6 +504,19 @@ mod machine_file_test {
                     )
                     .unwrap(),
             )
+            .func(
+                Func::new("run_bad_empty")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        var iid = intent_new("pg")
+                        intent_use(iid)
+                        return intent_keys_after("", 1)
+                        "##,
+                    )
+                    .unwrap(),
+            )
             .into_sto();
         let mut ext_state = StateMem::default();
         {
@@ -528,15 +541,26 @@ mod machine_file_test {
         assert_eq!(ok_items[0], Value::Nil);
 
         let bad = run_main_script_raw(
-            base_addr,
-            vec![contract],
-            ext_state,
+            base_addr.clone(),
+            vec![contract.clone()],
+            ext_state.clone(),
             r##"
                 lib C = 0
                 return C.run_bad()
             "##,
         );
         assert_err_contains(bad, "requires after_key bytes argument");
+
+        let bad_empty = run_main_script_raw(
+            base_addr,
+            vec![contract],
+            ext_state,
+            r##"
+                lib C = 0
+                return C.run_bad_empty()
+            "##,
+        );
+        assert!(bad_empty.is_err(), "empty-intent invalid after_key must still fail");
     }
 
     #[test]
@@ -711,7 +735,7 @@ mod machine_file_test {
         let contract_parent = crate::ContractAddress::calculate(&base_addr, &Uint4::from(2));
         let contract_base = crate::ContractAddress::calculate(&base_addr, &Uint4::from(3));
 
-        // Build an inheritance chain: Child -> Parent -> Base. The key trick is: `super.f()` moves code_owner to Parent, while state_addr stays Child. Then inside Parent.f(), `this.g()` must resolve in state_addr (Child), `self.g()` in code_owner (Parent), and `super.g()` in Parent's direct base (Base).
+        // Build an inheritance chain: Child -> Parent -> Base. The key trick is: `super.f()` moves code_contract to Parent, while this_contract stays Child. Then inside Parent.f(), `this.g()` must resolve in this_contract (Child), `self.g()` in code_contract (Parent), and `super.g()` in Parent's direct base (Base).
 
         let base = Contract::new().func(Func::new("g").unwrap().fitsh("return 3").unwrap());
 
@@ -788,6 +812,181 @@ mod machine_file_test {
         assert!(
             !rv.extract_bool().unwrap(),
             "main call should return success (nil/0)"
+        );
+    }
+
+    #[test]
+    fn callupper_uses_code_owner_then_parent_chain() {
+        let base_addr = test_base_addr();
+        let contract_child = test_contract(&base_addr, 4);
+        let contract_parent = test_contract(&base_addr, 5);
+        let contract_base = test_contract(&base_addr, 6);
+
+        let base = Contract::new().func(Func::new("g").unwrap().fitsh("return 3").unwrap());
+        let parent = Contract::new()
+            .inh(contract_base.to_addr())
+            .func(Func::new("g").unwrap().fitsh("return 2").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .fitsh(
+                        r##"
+                        return this.g() * 10000 + self.g() * 100 + call edit upper.g() * 10 + super.g()
+                        "##,
+                    )
+                    .unwrap(),
+            );
+        let child = Contract::new()
+            .inh(contract_parent.to_addr())
+            .func(Func::new("g").unwrap().fitsh("return 1").unwrap())
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        assert super.f() == 10223
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            );
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_base, &base.into_sto());
+            vmsta.contract_set_sync_edition(&contract_parent, &parent.into_sto());
+            vmsta.contract_set_sync_edition(&contract_child, &child.into_sto());
+        }
+
+        let script = r##"
+            lib C = 0
+            return C.run()
+        "##;
+        let res = run_main_script(base_addr, vec![contract_child], ext_state, script);
+        assert!(
+            res.is_ok(),
+            "upper should resolve on code_owner first, then parent chain: {res:?}"
+        );
+    }
+
+    #[test]
+    fn callupper_falls_back_to_parent_when_code_owner_lacks_match() {
+        let base_addr = test_base_addr();
+        let contract_child = test_contract(&base_addr, 7);
+        let contract_parent = test_contract(&base_addr, 8);
+        let contract_base = test_contract(&base_addr, 9);
+
+        let base = Contract::new().func(Func::new("h").unwrap().fitsh("return 7").unwrap());
+        let parent = Contract::new()
+            .inh(contract_base.to_addr())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .fitsh(
+                        r##"
+                        return call edit upper.h()
+                        "##,
+                    )
+                    .unwrap(),
+            );
+        let child = Contract::new()
+            .inh(contract_parent.to_addr())
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        assert super.f() == 7
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            );
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_base, &base.into_sto());
+            vmsta.contract_set_sync_edition(&contract_parent, &parent.into_sto());
+            vmsta.contract_set_sync_edition(&contract_child, &child.into_sto());
+        }
+
+        let script = r##"
+            lib C = 0
+            return C.run()
+        "##;
+        let res = run_main_script(base_addr, vec![contract_child], ext_state, script);
+        assert!(
+            res.is_ok(),
+            "upper should fall back into the code_owner parent chain when owner lacks the selector: {res:?}"
+        );
+    }
+
+    #[test]
+    fn codecall_upper_uses_code_owner_chain_not_this_contract() {
+        let base_addr = test_base_addr();
+        let contract_entry = test_contract(&base_addr, 10);
+        let contract_code = test_contract(&base_addr, 11);
+        let contract_base = test_contract(&base_addr, 12);
+
+        let base_sto = Contract::new()
+            .func(Func::new("g").unwrap().fitsh("return 3").unwrap())
+            .into_sto();
+        let code_sto = Contract::new()
+            .inh(contract_base.to_addr())
+            .func(Func::new("g").unwrap().fitsh("return 2").unwrap())
+            .func(
+                Func::new("probe_upper")
+                    .unwrap()
+                    .fitsh(
+                        r##"
+                        return this.g() * 10000 + self.g() * 100 + call edit upper.g() * 10 + super.g()
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+        let entry_sto = Contract::new()
+            .lib(contract_code.to_addr())
+            .func(Func::new("g").unwrap().fitsh("return 1").unwrap())
+            .func(
+                Func::new("run")
+                    .unwrap()
+                    .external()
+                    .fitsh(
+                        r##"
+                        lib Code = 0
+                        codecall Code.probe_upper
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_base, &base_sto);
+            vmsta.contract_set_sync_edition(&contract_code, &code_sto);
+            vmsta.contract_set_sync_edition(&contract_entry, &entry_sto);
+        }
+
+        let res = run_main_script(
+            base_addr,
+            vec![contract_entry],
+            ext_state,
+            r##"
+                lib C = 0
+                assert C.run() == 10223
+                return 0
+            "##,
+        );
+        assert!(
+            res.is_ok(),
+            "codecall upper should use the code_owner chain, not this_contract inheritance: {res:?}"
         );
     }
 
@@ -993,7 +1192,7 @@ mod machine_file_test {
     }
 
     #[test]
-    fn abst_this_and_self_follow_state_addr_and_code_owner() {
+    fn abst_this_and_self_follow_this_contract_and_code_contract() {
         let base_addr = test_base_addr();
         let contract_child = test_contract(&base_addr, 28);
         let contract_parent = test_contract(&base_addr, 29);
@@ -1901,7 +2100,7 @@ end",
         );
         assert!(
             res.is_ok(),
-            "new-frame calls should resolve callee lib lookups on code_owner: {res:?}"
+            "new-frame calls should resolve callee lib lookups on code_contract: {res:?}"
         );
     }
 
@@ -2085,7 +2284,7 @@ end",
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
         let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
         let (mut machine, mut runtime) = new_test_machine();
-        runtime.warm.space_cap.call_depth = 1;
+        runtime.warm.space_cap.call_depth = 2;
 
         let err = machine
             .main_call(&mut runtime, &mut host, CodeType::Bytecode, main_codes.into())

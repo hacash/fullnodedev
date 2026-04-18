@@ -16,6 +16,13 @@ use vm::rt::{Bytecode, CodeType, FnSign, calc_func_sign};
 use vm::value::Value;
 use vm::{ContractAddress, ContractSto, VMState, VmLog};
 
+fn init_setup_once() {
+    testkit::sim::integration::ensure_standard_protocol_setup_for_tests(
+        |_, stuff| sys::calculate_hash(stuff),
+        true,
+    );
+}
+
 fn contract_addr(main: &Address, nonce: u32) -> ContractAddress {
     ContractAddress::calculate(main, &Uint4::from(nonce))
 }
@@ -27,6 +34,7 @@ fn insert_contract(state: &mut dyn State, addr: &ContractAddress, sto: &Contract
 
 fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
     Contract::new()
+        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
         .func(
             Func::new(func_name)
                 .unwrap()
@@ -69,6 +77,7 @@ fn execute_deploy(
     let mut act = ContractDeploy::new();
     act.nonce = Uint4::from(nonce);
     act.protocol_cost = Amount::zero();
+    act.construct_must = field::Bool::new(true);
     act.contract = contract;
     act.execute(ctx)
 }
@@ -217,6 +226,7 @@ fn loader_reports_library_index_overflow() {
 #[test]
 fn deploy_rejects_missing_library_contract() {
     let _guard = test_guard();
+    init_setup_once();
 
     let main = main_addr();
     let missing = contract_addr(&main, 7001);
@@ -248,6 +258,7 @@ fn deploy_rejects_missing_library_contract() {
 #[test]
 fn deploy_rejects_nested_parent_inherits_before_runtime() {
     let _guard = test_guard();
+    init_setup_once();
 
     let main = main_addr();
     let a = contract_addr(&main, 7101);
@@ -301,6 +312,7 @@ fn deploy_rejects_nested_parent_inherits_before_runtime() {
 #[test]
 fn deploy_rejects_missing_library_function_at_precheck() {
     let _guard = test_guard();
+    init_setup_once();
 
     let main = main_addr();
     let lib = contract_addr(&main, 7201);
@@ -391,6 +403,70 @@ fn loader_enforces_max_loaded_contracts() {
 
     let err = execute_main_bytecode(&mut ctx, codes).unwrap_err();
     assert!(err.contains("OutOfLoadContract"), "{err}");
+}
+
+#[test]
+fn update_parent_keeps_child_cache_valid_by_reloading_parent_logic() {
+    let _guard = test_guard();
+
+    let main = main_addr();
+    let child = contract_addr(&main, 4001);
+    let parent = contract_addr(&main, 4002);
+
+    let parent_v1 = Contract::new()
+        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+        .func(Func::new("f").unwrap().fitsh("return 1").unwrap())
+        .into_sto();
+    let child_sto = Contract::new()
+        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+        .inh(parent.to_addr())
+        .func(
+            Func::new("run")
+                .unwrap()
+                .external()
+                .fitsh("return super.f()")
+                .unwrap(),
+        )
+        .into_sto();
+
+    let mut state = StateMem::default();
+    insert_contract(&mut state, &parent, &parent_v1);
+    insert_contract(&mut state, &child, &child_sto);
+
+    let tx1 = make_tx(3, main, vec![child.to_addr()], 17);
+    let mut ctx1 = make_ctx(1, &tx1, Box::new(state), Box::new(MemLogs::default()));
+
+    let codes = lang_to_bytecode(
+        r##"
+        lib C = 0
+        assert C.run() == 1
+        return 0
+    "##,
+    )
+    .unwrap();
+    execute_main_bytecode(&mut ctx1, codes).unwrap();
+
+    let parent_v2 = Contract::new()
+        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+        .func(Func::new("f").unwrap().fitsh("return 2").unwrap())
+        .into_sto();
+    insert_contract(basis::interface::StateOperat::state(&mut ctx1), &parent, &parent_v2);
+    let (state_after_update, _logs) = ctx1.release();
+
+    let tx2 = make_tx(3, main, vec![child.to_addr()], 17);
+    let mut ctx2 = make_ctx(1, &tx2, state_after_update, Box::new(MemLogs::default()));
+    execute_main_bytecode(
+        &mut ctx2,
+        lang_to_bytecode(
+            r##"
+            lib C = 0
+            assert C.run() == 2
+            return 0
+        "##,
+        )
+        .unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]

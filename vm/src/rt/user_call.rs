@@ -101,25 +101,25 @@ impl CallSpec {
 
     pub fn resolve_anchor(&self, bindings: &FrameBindings) -> VmrtRes<ContractAddress> {
         self.resolve_anchor_from(
-            bindings.state_this.as_ref(),
-            bindings.code_owner.as_ref(),
+            bindings.this_contract.as_ref(),
+            bindings.code_contract.as_ref(),
             &bindings.lib_table,
         )
     }
 
     pub fn resolve_anchor_from(
         &self,
-        state_this: Option<&ContractAddress>,
-        code_owner: Option<&ContractAddress>,
+        this_contract: Option<&ContractAddress>,
+        code_contract: Option<&ContractAddress>,
         lib_table: &[Address],
     ) -> VmrtRes<ContractAddress> {
         use ItrErrCode::*;
         let (src, _) = self.anchor_semantics();
         match src {
-            AnchorSource::StateThis => state_this
+            AnchorSource::StateThis => this_contract
                 .cloned()
                 .ok_or_else(|| ItrErr::code(CallInvalid)),
-            AnchorSource::CodeOwner => code_owner
+            AnchorSource::CodeOwner => code_contract
                 .cloned()
                 .ok_or_else(|| ItrErr::code(CallInvalid)),
             AnchorSource::Lib(lib) => {

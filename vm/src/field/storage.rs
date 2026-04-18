@@ -175,10 +175,7 @@ impl VMState<'_> {
             StorageError,
             format!("storage must be in effective address but got {}", cadr),
         )?;
-        let k = key.extract_key_bytes()?;
-        if k.is_empty() {
-            return itr_err_code!(StorageKeyInvalid);
-        }
+        let k = key.extract_key_bytes_with_error_code(StorageKeyInvalid)?;
         if k.len() > key_max {
             return itr_err_fmt!(
                 StorageKeyInvalid,
@@ -323,8 +320,8 @@ impl VMState<'_> {
         if next_blocks > cap.storage_live_max_blocks() {
             return itr_err_fmt!(
                 StoragePeriodErr,
-                "live periods max is {}",
-                cap.storage_live_max_periods
+                "live block budget exceeded, max {} blocks",
+                cap.storage_live_max_blocks()
             );
         }
         let next_credit = (v.live_credit.uint() as u64)
@@ -362,8 +359,8 @@ impl VMState<'_> {
         if next_blocks > cap.storage_recv_max_blocks() {
             return itr_err_fmt!(
                 StoragePeriodErr,
-                "recover periods max is {}",
-                cap.storage_recv_max_periods
+                "recover block budget exceeded, max {} blocks",
+                cap.storage_recv_max_blocks()
             );
         }
         let next_credit = (v.recover_credit.uint() as u64)
@@ -855,6 +852,26 @@ mod storage_field_tests {
         assert_eq!(settled.charge.uint(), 3, "access should trigger settlement and persist new charge height");
         assert_eq!(settled.live_credit.uint(), 0);
         assert_eq!(settled.recover_credit.uint(), 2);
+    }
+
+    #[test]
+    fn storage_rejects_nil_and_empty_keys_across_entry_points() {
+        let gst = test_gas();
+        let cap = test_cap();
+        let addr = test_addr();
+
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            let mut state = StateMem::default();
+            let mut vmsta = VMState::wrap(&mut state);
+
+            assert_eq!(vmsta.sstat(&gst, &cap, 1, &addr, &key).unwrap_err().0, ItrErrCode::StorageKeyInvalid);
+            assert_eq!(vmsta.sload(&gst, &cap, 1, &addr, &key).unwrap_err().0, ItrErrCode::StorageKeyInvalid);
+            assert_eq!(vmsta.snew(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1]), Value::U64(1)).unwrap_err().0, ItrErrCode::StorageKeyInvalid);
+            assert_eq!(vmsta.sedit(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1])).unwrap_err().0, ItrErrCode::StorageKeyInvalid);
+            assert_eq!(vmsta.srent(&gst, &cap, 1, &addr, key.clone(), Value::U64(1)).unwrap_err().0, ItrErrCode::StorageKeyInvalid);
+            assert_eq!(vmsta.srecv(&gst, &cap, 1, &addr, key.clone(), Value::U64(1)).unwrap_err().0, ItrErrCode::StorageKeyInvalid);
+            assert_eq!(vmsta.sdel(&gst, &cap, 1, &addr, key.clone()).unwrap_err().0, ItrErrCode::StorageKeyInvalid);
+        }
     }
 
 }

@@ -1,18 +1,29 @@
-// pub const CONTRACT_STORE_FEE_MUL: u64 = 50;
+/*
+    Permanent storage pricing reference:
+    - 0.0002 HAC / 200 bytes = 0.000001 HAC per byte
+    - 1600 bytes * 10000 periods ~= 8 HAC total permanent protocol cost
+    - 10000 periods ~= 9.51 years when one period = 100 blocks
+*/
 pub const CONTRACT_STORE_PERM_PERIODS: u64 = 10_000;
+pub const CONTRACT_STORE_EDIT_PERIODS: u64 = 100;
 
-macro_rules! vmsto {
-    ($ctx: expr) => {
-        VMState::wrap($ctx.state())
-    };
-}
+/*
+    Minimum protocol fee purity floor, in unit-238 per tx byte.
+    10000:238 == 100:244 == 0.000001 HAC per byte.
+*/
+pub const CONTRACT_STORE_LOWEST_FEE_PURITY: i64 = 10000;
+
+macro_rules! vmsto { ($ctx: expr) => {
+    VMState::wrap($ctx.state())
+}}
+
 
 action_define! { ContractDeploy, 40,
     ActScope::TOP_ONLY_CAN_WITH_GUARD, 3, false, [],
     {
         protocol_cost: Amount
         nonce: Uint4
-        construct_call: Bool
+        construct_must: Bool
         construct_argv: BytesW2 // checked by SpaceCap::value_size at runtime
         _marks_:   Fixed4 // zero
         contract: ContractSto
@@ -38,17 +49,24 @@ action_define! { ContractDeploy, 40,
             return xerrf!("contract revision must be 0 on deploy")
         }
         precheck_contract_store(&caddr, &self.contract, &gst, ctx)?;
+        if self.contract.size() == 0 {
+            return xerrf!("contract content cannot be empty");
+        }
         let charge_bytes = self.contract.size();
         // spend protocol fee
-        check_sub_contract_protocol_cost(ctx, &self.protocol_cost, charge_bytes)?;
-        // save the contract
+        check_sub_contract_protocol_cost(
+            ctx,
+            &self.protocol_cost,
+            charge_bytes,
+            contract_store_perm_periods(hei),
+        )?;
+        // save the contract first; tx-level rollback owns final unwind if Construct fails.
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
         let cargv = self.construct_argv.to_vec();
         if cargv.len() > cap.value_size {
             return xerrf!("construct argv size overflow")
         }
-        // call construct only when explicitly enabled by action flag
-        if self.construct_call.check() {
+        if self.construct_must.check() {
             let _ = run_abst_entry(
                 ctx,
                 AbstCall::Construct,
@@ -84,29 +102,54 @@ action_define! { ContractUpdate, 41,
         };
         // apply edit (in memory)
         let mut new_contract = contract.clone();
-        let (_did_append, mut did_change) = new_contract.apply_edit(&self.edit, hei, &cap, &gst)?;
+        let (_did_append, did_structural_change) = new_contract.apply_edit(&self.edit, hei, &cap, &gst)?;
         precheck_contract_store(&caddr, &new_contract, &gst, ctx)?;
-        did_change |= effective_userfn_lookup_changed(
+        if new_contract.size() == 0 {
+            return xerrf!("contract content cannot be empty");
+        }
+        let did_effective_lookup_change = effective_userfn_lookup_changed(
             &mut vmsto!(ctx),
             &caddr,
             &contract,
             &new_contract,
         )?;
-        // spend protocol fee only when storage grows
+        // Final dispatch is driven by whether any existing visible selector semantics changed.
+        // Purely additive edits (e.g. inherit/library append, or new local funcs with no shadowing)
+        // stay Append; structural replacements or selector-owner changes are Change.
+        let is_change = did_structural_change || did_effective_lookup_change;
+        // spend protocol fee: expansion fee (may be zero) + edited-bytes fee
         let old_size = contract.size();
         let new_size = new_contract.size();
         let delta_bytes = new_size.saturating_sub(old_size);
-        check_sub_contract_protocol_cost(ctx, &self.protocol_cost, delta_bytes)?;
-        // Append is valid only when each newly exposed selector was absent from self and every inherited parent before the update; if any parent-visible selector is shadowed, it is Change.
-        let sys = maybe!(did_change, Change, Append); // Change or Append
-        // Authorization is intentionally delegated to the contract's Change/Append hook; this action does not add a separate owner gate.
-        // Run Change/Append hook on the current on-chain contract; commit the updated contract only after hook success.
-        let _ = run_abst_entry(
-            ctx,
-            sys,
-            caddr.to_addr(),
-            Value::Nil,
-        )?;
+        let edit_bytes = self.edit.size();
+        let expand_periods = contract_store_perm_periods(hei);
+        let edit_periods = contract_store_edit_periods(hei);
+        let expand_fee = calc_contract_protocol_cost_min_with_periods(ctx, delta_bytes, expand_periods)?;
+        let edit_fee = calc_contract_protocol_cost_min_with_periods(ctx, edit_bytes, edit_periods)?;
+        let total_fee = expand_fee.add_mode_u128(&edit_fee)?;
+        let pcost = &self.protocol_cost;
+        if pcost.is_negative() {
+            return xerrf!("protocol fee cannot be negative");
+        }
+        if *pcost < total_fee {
+            return xerrf!(
+                "protocol fee must be at least {} (expand_bytes={}, expand_periods={}, edit_bytes={}, edit_periods={}) but got {}",
+                &total_fee,
+                delta_bytes,
+                expand_periods,
+                edit_bytes,
+                edit_periods,
+                &self.protocol_cost
+            );
+        }
+        if !pcost.is_zero() {
+            let maddr = ctx.env().tx.main;
+            operate::hac_sub(ctx, &maddr, pcost)?;
+        }
+        let sys = maybe!(is_change, Change, Append); // Change or Append
+        // Authorization is intentionally delegated to the current contract's Change/Append hook.
+        // Run the selected hook on the current on-chain contract; failure means the update is not allowed.
+        let _ = run_abst_entry(ctx, sys, caddr.to_addr(), Value::Nil)?;
         // save the new
         vmsto!(ctx).contract_set_sync_edition(&caddr, &new_contract);
         let caddr_real = caddr.to_addr();
@@ -118,24 +161,14 @@ action_define! { ContractUpdate, 41,
 /**************************************/
 
 fn check_contract_self_reference(root_addr: &ContractAddress, root_contract: &ContractSto) -> Rerr {
-    if root_contract
-        .inherit
-        .as_list()
-        .iter()
-        .any(|a| a == root_addr)
-    {
-        return errf!("contract cannot inherit itself {}", root_addr.to_readable());
+    macro_rules! any_same { ($key: ident) => {
+        root_contract.$key.as_list().iter().any(|a| a == root_addr)
+    }}
+    if any_same!(inherit) {
+        return errf!("contract cannot inherit itself {}", root_addr.to_readable())
     }
-    if root_contract
-        .library
-        .as_list()
-        .iter()
-        .any(|a| a == root_addr)
-    {
-        return errf!(
-            "contract cannot link itself as library {}",
-            root_addr.to_readable()
-        );
+    if any_same!(library) {
+        return errf!("contract cannot link itself as library {}", root_addr.to_readable())
     }
     Ok(())
 }
@@ -448,6 +481,7 @@ fn check_sub_contract_protocol_cost(
     ctx: &mut dyn Context,
     pfee: &Amount,
     charge_bytes: usize,
+    periods: u64,
 ) -> Rerr {
     if pfee.is_negative() {
         return errf!("protocol fee cannot be negative");
@@ -455,15 +489,14 @@ fn check_sub_contract_protocol_cost(
     if charge_bytes == 0 {
         return Ok(());
     }
-    let min_fee = calc_contract_protocol_cost_min(ctx, charge_bytes)?;
+    let min_fee = calc_contract_protocol_cost_min_with_periods(ctx, charge_bytes, periods)?;
     let maddr = ctx.env().tx.main;
-    // check fee
     if pfee < &min_fee {
         return errf!(
             "protocol fee must be at least {} (bytes={}, periods={}) but got {}",
             &min_fee,
             charge_bytes,
-            contract_store_perm_periods(ctx.env().block.height),
+            periods,
             pfee
         );
     }
@@ -473,16 +506,31 @@ fn check_sub_contract_protocol_cost(
 
 #[inline(always)]
 fn contract_store_perm_periods(_hei: u64) -> u64 {
-    // Keep this as a function to make future fork-by-height tuning low-coupling.
     CONTRACT_STORE_PERM_PERIODS
 }
 
-fn calc_contract_protocol_cost_min(ctx: &dyn Context, charge_bytes: usize) -> Ret<Amount> {
+#[inline(always)]
+fn contract_store_edit_periods(_hei: u64) -> u64 {
+    CONTRACT_STORE_EDIT_PERIODS
+}
+
+#[inline(always)]
+fn effective_contract_fee_purity(ctx: &dyn Context) -> u64 {
+    ctx.tx()
+        .fee_purity()
+        .max(CONTRACT_STORE_LOWEST_FEE_PURITY as u64)
+}
+
+fn calc_contract_protocol_cost_min_with_periods(
+    ctx: &dyn Context,
+    charge_bytes: usize,
+    periods: u64,
+) -> Ret<Amount> {
     if charge_bytes == 0 {
         return Ok(Amount::zero());
     }
-    let periods = contract_store_perm_periods(ctx.env().block.height) as u128;
-    let fee_purity = ctx.tx().fee_purity() as u128; // unit-238 per tx byte
+    let fee_purity = effective_contract_fee_purity(ctx) as u128; // unit-238 per tx byte
+    let periods = periods as u128;
     if periods == 0 || fee_purity == 0 {
         return errf!(
             "contract protocol fee calculate failed: periods={} fee_purity={}",
@@ -519,7 +567,7 @@ mod contract_test {
     use field::{Address, Amount, Uint4};
     use protocol::context::decode_gas_budget;
     use protocol::transaction::TransactionType3;
-    use std::sync::Once;
+    use std::cell::RefCell;
     use testkit::sim::context::make_ctx_with_state;
     use testkit::sim::state::FlatMemState as StateMem;
     use testkit::sim::tx::StubTxBuilder;
@@ -532,13 +580,17 @@ mod contract_test {
         ContractAddress::calculate(base, &Uint4::from(nonce))
     }
 
+    thread_local! {
+        static VM_TEST_SETUP_SCOPE: RefCell<Option<protocol::setup::TestSetupScopeGuard>> = const { RefCell::new(None) };
+    }
+
     fn init_vm_assigner_once() {
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            let mut setup = crate::setup::new_standard_vm_setup(|_, stuff| sys::calculate_hash(stuff))
-                .unwrap();
-            setup.seal().unwrap();
-            protocol::setup::install_once(setup).unwrap();
+        let mut setup = protocol::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff));
+        mint::setup::register_protocol_extensions(&mut setup);
+        crate::setup::register_protocol_extensions(&mut setup);
+        let guard = protocol::setup::install_test_scope(setup);
+        VM_TEST_SETUP_SCOPE.with(|cell| {
+            *cell.borrow_mut() = Some(guard);
         });
     }
 
@@ -580,8 +632,8 @@ mod contract_test {
 
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
-        act.protocol_cost = Amount::unit238(10_000_000);
-        act.construct_call = Bool::new(true);
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_must = Bool::new(true);
         act.contract = deploy_contract;
         let _ = act.execute(&mut ctx)?;
         Ok(())
@@ -625,7 +677,7 @@ mod contract_test {
 
         let mut act = ContractUpdate::new();
         act.address = target.to_addr();
-        act.protocol_cost = Amount::unit238(10_000_000);
+        act.protocol_cost = Amount::coin(10000, 244);
         act.edit = edit;
         let _ = act.execute(&mut ctx)?;
         Ok(())

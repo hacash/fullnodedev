@@ -263,7 +263,7 @@ impl Frame {
         let context_addr = self.bindings.context_addr;
         let current_addr = self
             .bindings
-            .code_owner
+            .code_contract
             .as_ref()
             .map(ContractAddress::to_addr)
             .unwrap_or(context_addr);
@@ -296,7 +296,7 @@ mod frame_boundary_tests {
     use super::*;
 
     #[test]
-    fn prepare_rejects_stray_value_for_zero_arg_typed_function() {
+    fn prepare_zero_arg_typed_function_allows_passthrough_argv() {
         let mut res = Runtime::create(1);
         let mut frame = Frame::new(&mut res);
         let fnobj = FnObj::plain(
@@ -307,7 +307,7 @@ mod frame_boundary_tests {
         );
         let owner = ContractAddress::default();
         let bindings = FrameBindings::contract(owner.clone(), owner, Vec::<field::Address>::new().into());
-        let err = frame
+        frame
             .prepare(
                 ExecCtx::main(),
                 bindings,
@@ -317,8 +317,8 @@ mod frame_boundary_tests {
                 Some(Value::U8(7)),
                 &res.warm.space_cap,
             )
-            .unwrap_err();
-        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
+            .unwrap();
+        assert_eq!(frame.call_argv, Value::U8(7));
     }
 
     #[test]
@@ -424,7 +424,7 @@ mod splice_prepare_tests {
                 &res.warm.space_cap,
             )
             .unwrap();
-        assert_eq!(frame.bindings.code_owner.as_ref().unwrap(), &owner);
+        assert_eq!(frame.bindings.code_contract.as_ref().unwrap(), &owner);
         assert_eq!(frame.exec, ExecCtx::view());
         assert_eq!(frame.pc, 0);
         assert_eq!(frame.locals.len(), 1);

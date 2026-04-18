@@ -240,7 +240,7 @@ mod parse_func_tests {
             Ok(_) => panic!("expected unknown type error"),
             Err(err) => err,
         };
-        assert!(err.contains("function argument parse failed"), "{}", err);
+        assert!(err.contains("unknown type"), "{}", err);
     }
 
     #[test]
@@ -249,6 +249,6 @@ mod parse_func_tests {
             Ok(_) => panic!("expected unknown type error"),
             Err(err) => err,
         };
-        assert!(err.contains("function return type parse failed"), "{}", err);
+        assert!(err.contains("unknown return type"), "{}", err);
     }
 }

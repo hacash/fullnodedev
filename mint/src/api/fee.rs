@@ -1,3 +1,7 @@
+// `burn90` is kept here only as a backward-compatible query alias for `extra9`.
+// Its estimate semantics depend on tx type:
+// - tx_type < 3: legacy extra9 fee split / burn behavior
+// - tx_type >= 3: Type3 delta-only returned-gas surcharge behavior
 fn fee_average(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let unit = q_string(&req, "unit", "fin");
     let consumption = req.query_u64("consumption", 0);

@@ -63,8 +63,8 @@ impl EntryKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FrameBindings {
-    pub code_owner: Option<ContractAddress>,
-    pub state_this: Option<ContractAddress>,
+    pub code_contract: Option<ContractAddress>,
+    pub this_contract: Option<ContractAddress>,
     pub context_addr: Address,
     pub intent_scope: IntentScope,
     pub lib_table: Arc<[Address]>,
@@ -73,8 +73,8 @@ pub struct FrameBindings {
 impl FrameBindings {
     pub fn root(context_addr: Address, lib_table: Arc<[Address]>) -> Self {
         Self {
-            code_owner: None,
-            state_this: None,
+            code_contract: None,
+            this_contract: None,
             context_addr,
             intent_scope: None,
             lib_table,
@@ -82,14 +82,14 @@ impl FrameBindings {
     }
 
     pub fn contract(
-        state_this: ContractAddress,
-        code_owner: ContractAddress,
+        this_contract: ContractAddress,
+        code_contract: ContractAddress,
         lib_table: Arc<[Address]>,
     ) -> Self {
         Self {
-            context_addr: state_this.to_addr(),
-            state_this: Some(state_this),
-            code_owner: Some(code_owner),
+            context_addr: this_contract.to_addr(),
+            this_contract: Some(this_contract),
+            code_contract: Some(code_contract),
             intent_scope: None,
             lib_table,
         }
@@ -104,15 +104,15 @@ impl FrameBindings {
         &self,
         switch_context: bool,
         anchor: ContractAddress,
-        code_owner: ContractAddress,
+        code_contract: ContractAddress,
         lib_table: Arc<[Address]>,
     ) -> Self {
         if switch_context {
-            Self::contract(anchor, code_owner, lib_table).with_intent_scope(self.intent_scope)
+            Self::contract(anchor, code_contract, lib_table).with_intent_scope(self.intent_scope)
         } else {
             Self {
-                code_owner: Some(code_owner),
-                state_this: self.state_this.clone(),
+                code_contract: Some(code_contract),
+                this_contract: self.this_contract.clone(),
                 context_addr: self.context_addr,
                 intent_scope: self.intent_scope,
                 lib_table,
@@ -163,7 +163,8 @@ impl ExecCtx {
     }
 
     pub fn ensure_call_depth(self, cap: &SpaceCap) -> VmrtErr {
-        if self.call_depth > cap.call_depth {
+        // call_depth start from 0, so use >= 
+        if self.call_depth >= cap.call_depth {
             return itr_err_code!(OutOfCallDepth);
         }
         Ok(())

@@ -942,11 +942,16 @@ contract Child {
 
 | Function | Description |
 |----------|-------------|
-| `memory_put(key, value)` | Put into memory |
+| `memory_put(key, value)` | Put into memory; `memory_put(key, nil)` clears the key. Statement-only, no return value. |
 | `memory_get(key)` | Get from memory |
-| `global_put(key, value)` | Global storage |
+| `global_put(key, value)` | Global temp storage; `global_put(key, nil)` clears the key. Statement-only, no return value. |
 | `global_get(key)` | Global get |
 | `heap_grow(n)` | Grow heap |
+
+TEX note:
+- `TexCellAct` is top-level only; it must not execute from runtime `CALL` context.
+- TEX conditions observe the current in-tx state at the action point, before final TEX settlement.
+- TEX diamond `get` claims quantity only; final names are assigned later at settlement in FIFO order across the whole transaction.
 | `heap_write(offset, data)` | Write to heap |
 | `heap_read(offset, len)` | Read from heap |
 

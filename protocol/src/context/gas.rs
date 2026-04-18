@@ -1,6 +1,6 @@
 
-// Returned-gas charging in this channel intentionally accounts only for the extra9 delta; 
-// plain actions add no returned-gas charge here by design.
+// Returned-gas charging in this channel intentionally accounts only for the extra9 delta.
+// For current Type3/AST/runtime charge sites, plain actions add no returned-gas charge here by design.
 #[inline(always)]
 pub(crate) fn extra9_surcharge(extra9: bool, gas: u32) -> u32 {
     maybe!( extra9,

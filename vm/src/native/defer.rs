@@ -24,6 +24,8 @@ fn defer_intent_scope(
     intents: &crate::machine::IntentRuntime,
 ) -> VmrtRes<Option<Option<usize>>> {
     if argv.is_nil() {
+        // defer(nil) intentionally records an explicit unbound scope for the deferred callback;
+        // it does not mutate or clear the currently active intent stack in the caller frame.
         return Ok(Some(None));
     }
     let id = defer_extract_intent_handle_id(argv)?;
@@ -43,7 +45,7 @@ pub fn call_defer(
     if exec.effect != EffectMode::Edit {
         return itr_err_fmt!(DeferredError, "defer not allowed in non-edit mode");
     }
-    let Some(caddr) = bindings.state_this.clone() else {
+    let Some(caddr) = bindings.this_contract.clone() else {
         return itr_err_fmt!(DeferredError, "defer requires contract context");
     };
     let intent_scope = defer_intent_scope(&argv, &caddr, intents)?;

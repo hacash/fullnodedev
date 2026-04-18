@@ -10,6 +10,10 @@ pub enum RetBlkFound {
     Reject,
 }
 
+pub trait BlockIntroSource: Send + Sync {
+    fn block_intro(&self, hei: u64) -> Option<Box<dyn BlockRead>>;
+}
+
 /// Returned when low-bid shadow storage is full; discover must not broadcast this block.
 pub const LOW_BID_CACHE_FULL_ERR: &str = "mint.low_bid.cache_full";
 
@@ -33,7 +37,7 @@ pub trait Minter : Send + Sync {
     // Header quick gate. Runs after height/root/head checks and before full block parse.
     fn blk_arrive(&self, _: &dyn BlockRead, _: &Vec<u8>, _: &dyn Store) -> Rerr { Ok(()) }
     // Full pre-exec block check. Runs before generic block verification and block execution.
-    fn blk_verify(&self, _: &dyn BlockRead, _prev: &dyn BlockRead, _: &dyn Store) -> Rerr { Ok(()) }
+    fn blk_verify(&self, _: &dyn BlockRead, _prev: &dyn BlockRead, _: &dyn BlockIntroSource) -> Rerr { Ok(()) }
     // Final gate. Runs after block execution and before forktree insertion.
     fn blk_insert(&self, _: &BlkPkg, _sub: &dyn State, _prev: &dyn State) -> Rerr { Ok(()) }
     // Stable-root callback. Runs after root/head roll is fully committed.

@@ -3,6 +3,27 @@ const DIFFICULTY_UPGRADE_EPOCH: u64 = 2563; // 738144 height
 
 type CachedBlockIntro = (u64, u32, [u8; HXS]); // (time, diffnum, diffhash)
 
+pub(crate) struct StoreBlockIntroSource<'a> {
+    store: &'a dyn Store,
+}
+
+impl<'a> StoreBlockIntroSource<'a> {
+    pub(crate) fn new(store: &'a dyn Store) -> Self {
+        Self { store }
+    }
+}
+
+impl BlockIntroSource for StoreBlockIntroSource<'_> {
+    fn block_intro(&self, hei: u64) -> Option<Box<dyn BlockRead>> {
+        if hei == 0 {
+            return Some(Box::new(genesis::genesis_block().intro.clone()));
+        }
+        let (_, blkdts) = self.store.block_data_by_height(&BlockHeight::from(hei))?;
+        BlockIntro::build(&blkdts).ok().map(|v| Box::new(v) as Box<dyn BlockRead>)
+    }
+}
+
+
 #[derive(Clone)]
 pub struct DifficultyGnr {
     cnf: MintConf,
@@ -66,44 +87,15 @@ impl DifficultyGnr {
         self.cache_block_intro(blk)
     }
 
-    fn genesis_cache_item(&self) -> CachedBlockIntro {
-        let time = genesis::genesis_block().timestamp().uint();
-        let diff = genesis::genesis_block().difficulty().uint();
-        (time, diff, u32_to_hash(diff))
-    }
-
-    fn req_block_intro(&self, hei: u64, reqhei: u64, sto: &dyn Store) -> CachedBlockIntro {
-        if hei == 0 {
-            return self.genesis_cache_item()
-        }
-        let root_height = sto.status().root_height.uint();
+    fn req_block_intro(&self, hei: u64, src: &dyn BlockIntroSource) -> CachedBlockIntro {
         {
             let cache = self.block_caches.lock().unwrap();
             if let Some(blk_time) = cache.get(&hei) {
-                if hei > root_height || reqhei <= root_height {
-                    return *blk_time;
-                }
+                return *blk_time;
             }
         }
-        let Some((hx, blkdts)) = sto.block_data_by_height(&BlockHeight::from(hei)) else {
-            self.log_cycle_block_miss(reqhei, hei, self.cnf.difficulty_adjust_blocks, sto);
-            panic!(
-                "difficulty block missing: request_height={} block_height={}",
-                reqhei,
-                hei,
-            );
-        };
-        let intro = match BlockIntro::build(&blkdts) {
-            Ok(v) => v,
-            Err(e) => {
-                self.log_cycle_block_parse_failure(reqhei, hei, self.cnf.difficulty_adjust_blocks, &hx, &blkdts, &e);
-                panic!(
-                    "difficulty block parse failed: request_height={} block_height={} hash={}",
-                    reqhei,
-                    hei,
-                    hx.half(),
-                );
-            }
+        let Some(intro) = src.block_intro(hei) else {
+            panic!("difficulty block missing: block_height={}", hei);
         };
         let diffcty = intro.difficulty().uint();
         let item = (intro.timestamp().uint(), diffcty, u32_to_hash(diffcty));
@@ -133,7 +125,7 @@ impl DifficultyGnr {
         prevdiff: u32,
         prevblkt: u64,
         hei: u64,
-        sto: &dyn Store,
+        src: &dyn BlockIntroSource,
     ) -> DifficultyTarget {
         if let Some((cached_hei, cached_diff, cached_time, cached_hash, cached_target)) = &*self.last_target_cache.lock().unwrap() {
             if *cached_hei == hei && *cached_diff == prevdiff && *cached_time == prevblkt {
@@ -145,14 +137,14 @@ impl DifficultyGnr {
         let mut expected: u128 = 0;
         let group_target = (self.cnf.each_block_target_time * self.group_blocks()) as u128;
         let mut bound = hei - self.window_blocks() - 1;
-        let mut prev_time = self.req_block_intro(bound, hei, sto).0;
+        let mut prev_time = self.req_block_intro(bound, src).0;
         let last_group = self.window_groups() - 1;
         for i in 0..self.window_groups() {
             let next_time = if i == last_group {
                 prevblkt
             } else {
                 bound += self.group_blocks();
-                self.req_block_intro(bound, hei, sto).0
+                self.req_block_intro(bound, src).0
             };
             let weight = (i + 1) as u128;
             observed += (next_time.saturating_sub(prev_time) as u128) * weight;
@@ -166,46 +158,6 @@ impl DifficultyGnr {
         target
     }
 
-    fn log_cycle_block_miss(&self, reqhei: u64, cylhei: u64, cylnum: u64, sto: &dyn Store) {
-        let stat = sto.status();
-        let has_cycle_hash = sto.block_hash(&BlockHeight::from(cylhei));
-        let prev_hash = cylhei
-            .checked_sub(1)
-            .and_then(|hei| sto.block_hash(&BlockHeight::from(hei)));
-        let next_hash = sto.block_hash(&BlockHeight::from(cylhei + 1));
-        eprintln!(
-            "[Difficulty] cycle block lookup failed req_height={} cycle_height={} cycle_blocks={} root_height={} last_height={} cycle_hash={} prev_hash={} next_hash={} thread={:?}",
-            reqhei,
-            cylhei,
-            cylnum,
-            stat.root_height.uint(),
-            stat.last_height.uint(),
-            has_cycle_hash.as_ref().map(|v| format!("{}", v.half())).unwrap_or_else(|| "<missing>".to_string()),
-            prev_hash.as_ref().map(|v| format!("{}", v.half())).unwrap_or_else(|| "<missing>".to_string()),
-            next_hash.as_ref().map(|v| format!("{}", v.half())).unwrap_or_else(|| "<missing>".to_string()),
-            std::thread::current().id(),
-        );
-    }
-
-    fn log_cycle_block_parse_failure(
-        &self,
-        reqhei: u64,
-        cylhei: u64,
-        cylnum: u64,
-        hx: &Hash,
-        blkdts: &[u8],
-        err: &String,
-    ) {
-        eprintln!(
-            "[Difficulty] cycle block parse failed req_height={} cycle_height={} cycle_blocks={} hash={} data_len={} err={}",
-            reqhei,
-            cylhei,
-            cylnum,
-            hx.half(),
-            blkdts.len(),
-            err,
-        );
-    }
 
     pub fn target(
         &self,
@@ -213,24 +165,24 @@ impl DifficultyGnr {
         prevdiff: u32,
         prevblkt: u64,
         hei: u64,
-        sto: &dyn Store,
+        src: &dyn BlockIntroSource,
     ) -> (u32, [u8; 32], BigUint) {
         if mcnf.is_mainnet() && !self.is_upgrade_height(hei) {
-            return self.target_legacy(mcnf, prevdiff, prevblkt, hei, sto).into_tuple()
+            return self.target_legacy(mcnf, prevdiff, prevblkt, hei, src).into_tuple()
         }
         if self.use_bootstrap_rule(hei) {
             return self.target_bootstrap().into_tuple()
         }
-        self.target_weighted_sliding(prevdiff, prevblkt, hei, sto).into_tuple()
+        self.target_weighted_sliding(prevdiff, prevblkt, hei, src).into_tuple()
     }
 }
 
 impl HacashMinter {
-    fn next_difficulty(&self, prev: &dyn BlockRead, sto: &dyn Store) -> (u32, [u8; 32], BigUint) {
+    fn next_difficulty(&self, prev: &dyn BlockRead, src: &dyn BlockIntroSource) -> (u32, [u8; 32], BigUint) {
         let pdif = prev.difficulty().uint();
         let ptim = prev.timestamp().uint();
         let nhei = prev.height().uint() + 1;
-        self.difficulty.target(&self.cnf, pdif, ptim, nhei, sto)
+        self.difficulty.target(&self.cnf, pdif, ptim, nhei, src)
     }
 }
 
@@ -240,8 +192,8 @@ mod difficulty_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn scoped_protocol_setup() -> protocol::setup::TestSetupScopeGuard {
-        let mut setup = crate::setup::new_standard_mint_setup(x16rs::block_hash).unwrap();
-        setup.seal().unwrap();
+        let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
+        crate::setup::register_protocol_extensions(&mut setup);
         protocol::setup::install_test_scope(setup)
     }
 
@@ -299,8 +251,9 @@ mod difficulty_tests {
             blocks,
         };
 
-        let first = dgnr.req_cycle_block(288, &store);
-        let second = dgnr.req_cycle_block(288, &store);
+        let src = StoreBlockIntroSource::new(&store);
+        let first = dgnr.req_cycle_block(288, &src);
+        let second = dgnr.req_cycle_block(288, &src);
 
         assert_eq!(first, second);
         assert_eq!(store.reads.load(Ordering::SeqCst), 1);
@@ -347,7 +300,8 @@ mod difficulty_tests {
             dgnr.cache_block_intro(&intro);
         }
         let reads_before = store.reads.load(Ordering::SeqCst);
-        let _ = dgnr.req_block_intro(upgrade_height - 1, upgrade_height, &store);
+        let src = StoreBlockIntroSource::new(&store);
+        let _ = dgnr.req_block_intro(upgrade_height - 1, &src);
         let reads_after = store.reads.load(Ordering::SeqCst);
         assert_eq!(reads_before, reads_after);
     }
@@ -370,7 +324,7 @@ mod difficulty_tests {
             blocks: fast_blocks,
         };
         let prev_target = u32_to_biguint(prevdiff);
-        let fast_target = dgnr_fast.target_weighted_sliding(prevdiff, 10_000 + dgnr_fast.window_blocks(), upgrade_height, &fast_store).big;
+        let fast_target = dgnr_fast.target_weighted_sliding(prevdiff, 10_000 + dgnr_fast.window_blocks(), upgrade_height, &fast_store, None).big;
         assert!(fast_target <= prev_target.clone());
         assert!(fast_target >= prev_target.clone() / BigUint::from(2u8));
 
@@ -384,7 +338,7 @@ mod difficulty_tests {
             reads: AtomicUsize::new(0),
             blocks: slow_blocks,
         };
-        let slow_target = dgnr_slow.target_weighted_sliding(prevdiff, 10_000 + dgnr_slow.window_blocks() * 10_000, upgrade_height, &slow_store).big;
+        let slow_target = dgnr_slow.target_weighted_sliding(prevdiff, 10_000 + dgnr_slow.window_blocks() * 10_000, upgrade_height, &slow_store, None).big;
         assert!(slow_target >= prev_target.clone());
         assert!(slow_target <= prev_target * BigUint::from(2u8));
     }
@@ -413,7 +367,7 @@ mod difficulty_tests {
                 blocks,
             };
             let prev_time = 50_000 + dgnr.window_blocks() * target_time;
-            let target = dgnr.target_weighted_sliding(prevdiff, prev_time, next_height, &store);
+            let target = dgnr.target_weighted_sliding(prevdiff, prev_time, next_height, &store, None);
             let prev_target = u32_to_biguint(prevdiff);
             assert!(target.big <= prev_target.clone() * BigUint::from(2u8));
             assert!(target.big >= prev_target.clone() / BigUint::from(2u8));
@@ -436,7 +390,7 @@ mod difficulty_tests {
         }
         let store = CountingStore { reads: AtomicUsize::new(0), blocks };
         let prev_time = 1000 + dgnr.window_blocks() * dgnr.cnf.each_block_target_time;
-        let target = dgnr.target_weighted_sliding(prevdiff, prev_time, next_height, &store);
+        let target = dgnr.target_weighted_sliding(prevdiff, prev_time, next_height, &store, None);
         assert_eq!(target.num, prevdiff);
     }
 
@@ -467,8 +421,8 @@ mod difficulty_tests {
         let newest_store = CountingStore { reads: AtomicUsize::new(0), blocks: newest_blocks };
         let prev_time_oldest = base_time + dgnr.window_blocks() * dgnr.cnf.each_block_target_time;
         let prev_time_newest = prev_time_oldest + dgnr.cnf.each_block_target_time;
-        let oldest = dgnr.target_weighted_sliding(prevdiff, prev_time_oldest, next_height, &oldest_store);
-        let newest = dgnr.target_weighted_sliding(prevdiff, prev_time_newest, next_height, &newest_store);
+        let oldest = dgnr.target_weighted_sliding(prevdiff, prev_time_oldest, next_height, &oldest_store, None);
+        let newest = dgnr.target_weighted_sliding(prevdiff, prev_time_newest, next_height, &newest_store, None);
         let prev_target = u32_to_biguint(prevdiff);
         let oldest_delta = if oldest.big > prev_target { oldest.big.clone() - prev_target.clone() } else { prev_target.clone() - oldest.big.clone() };
         let newest_delta = if newest.big > prev_target { newest.big.clone() - prev_target.clone() } else { prev_target.clone() - newest.big.clone() };
@@ -489,8 +443,8 @@ mod difficulty_tests {
         let store = CountingStore { reads: AtomicUsize::new(0), blocks };
         let canonical_prev = 10_000 + dgnr.window_blocks() * dgnr.cnf.each_block_target_time;
         let side_prev = canonical_prev + dgnr.cnf.each_block_target_time * 3;
-        let canonical = dgnr.target_weighted_sliding(prevdiff, canonical_prev, next_height, &store);
-        let side = dgnr.target_weighted_sliding(prevdiff, side_prev, next_height, &store);
+        let canonical = dgnr.target_weighted_sliding(prevdiff, canonical_prev, next_height, &store, None);
+        let side = dgnr.target_weighted_sliding(prevdiff, side_prev, next_height, &store, None);
         assert!(side.big > canonical.big);
     }
 }

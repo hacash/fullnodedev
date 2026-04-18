@@ -9,7 +9,7 @@ action_define! { AstSelect, 25,
     (self, format!("Execute select {} to {} in {} actions",
         *self.exe_min, *self.exe_max, self.actions.length())),
     (self, ctx, gas {
-        gas = 0; // control-flow node: all gas consumed via ctx
+        gas = 0; // control-flow node: all gas consumed via ctx; this wrapper itself is extra9=false
         let mut exec_from = enter_exec_from(ctx, ExecFrom::Ast);
         let ctx = exec_from.ctx();
         let slt_min = *self.exe_min as usize;

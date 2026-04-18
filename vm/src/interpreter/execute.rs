@@ -386,16 +386,20 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         macro_rules! kvput_inner {
             ($store:expr, $key_cost:expr) => {{
                 let v = ops.pop()?.valid(cap)?;
-                let vlen = v.val_size();
                 let k = ops.pop()?;
-                let klen = k.extract_key_bytes()?.len();
-                let is_new = !$store.contains_key(&k)?;
+                let klen = $store.key_len(&k)?;
                 gas_resource!(stack_write, klen);
-                gas_resource!(stack_write, vlen);
-                if is_new {
-                    gas_add!(resource, raw, $key_cost);
+                if matches!(v, Value::Nil) {
+                    $store.remove(&k)?;
+                } else {
+                    let vlen = v.val_size();
+                    let is_new = !$store.contains_key(&k)?;
+                    gas_resource!(stack_write, vlen);
+                    if is_new {
+                        gas_add!(resource, raw, $key_cost);
+                    }
+                    $store.put(k, v)?;
                 }
-                $store.put(k, v)?;
             }};
         }
 
@@ -785,7 +789,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     *peek = heap.read(peek, n)?.valid(cap)?;
                 }
                 HWRITE => hwrite!(ops_pop_to_u16!()),
-                HGROW => gas_add!(resource, raw, heap.grow(pu8!())?),
+                HGROW => gas_add!(resource, raw, heap.grow(pu8!(), gst)?),
                 // storage
                 SSTAT => {
                     nsr!();
@@ -920,7 +924,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     } else {
                         0
                     };
-                    gas_add!(compute, raw, exp_bits * 2 + 1);
+                    gas_add!(compute, raw, gst.rpow_extra(exp_bits));
                     triop_arithmetic(ops, rpow_checked)?
                 }
                 CLAMP => triop_arithmetic(ops, clamp_checked)?,
@@ -958,9 +962,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 // other
                 NT => return itr_err_code!(InstNeverTouch), // never touch
                 NOP => {}                                   // do nothing
-                BURN => {
-                    gas_add!(resource, raw, pu16!());
-                }
+                BURN => gas_add!(resource, raw, gst.burn_extra(pu16!() as i64)),
                 // exit
                 RET => return Ok(Step::Exit(Return)), // func return <DATA>
                 END => return Ok(Step::Exit(Finish)), // func end

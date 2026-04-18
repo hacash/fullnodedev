@@ -1,4 +1,4 @@
-pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context) -> Rerr {
+pub fn try_action_hook(kid: u16, action: &dyn Any, ctx: &mut dyn Context) -> XRerr {
     use AbstCall::*;
 
     match kid {
@@ -24,7 +24,7 @@ fn coin_asset_transfer_call(
     abstto: AbstCall,
     action: &dyn Any,
     ctx: &mut dyn Context,
-) -> Rerr {
+) -> XRerr {
     let addrs = &ctx.env().tx.addrs;
     let mut from = ctx.env().tx.main;
     let mut to = from.clone();
@@ -151,7 +151,7 @@ mod hook_arg_tests {
     use field::{Address, Amount, Hash};
     use protocol::context::EmptyState;
     use std::sync::{Arc, Weak};
-    use sys::{XError, XRet};
+    use sys::XRet;
 
     #[derive(Default)]
     struct NoopLogs;
@@ -251,8 +251,9 @@ mod hook_arg_tests {
                 main,
                 addrs: vec![main, p2sh_addr],
             };
-            let mut p2sh_code = Address::default().as_bytes().to_vec();
+            let mut p2sh_code = p2sh_addr.as_bytes().to_vec();
             p2sh_code.push(0); // empty ContractAddressW1 list
+            p2sh_code.extend_from_slice(&[crate::Bytecode::END as u8]);
             let mut env = Env::default();
             env.tx.ty = 3;
             env.tx.main = main;
@@ -316,7 +317,7 @@ mod hook_arg_tests {
         }
         fn vm_call(&mut self, req: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
             let Ok(req) = req.downcast::<crate::machine::EntryRequest>() else {
-                return Err(XError::fault("vm call req type mismatch".to_owned()));
+                return xerr!("vm call req type mismatch");
             };
             let (param, intent_scope) = match *req {
                 crate::machine::EntryRequest::Main { .. } => (Value::Nil, None),

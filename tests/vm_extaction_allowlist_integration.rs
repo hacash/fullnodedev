@@ -188,6 +188,6 @@ mod tests {
         );
 
         let err = res.unwrap_err();
-        assert_eq!(err.0, ItrErrCode::ActCallError);
+        assert_eq!(err.0, ItrErrCode::InstParamsErr);
     }
 }

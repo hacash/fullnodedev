@@ -91,27 +91,7 @@ impl Heap {
         })
     }
 
-    fn calc_grow_gas(&self, seg: usize) -> VmrtRes<i64> {
-        let oldseg = self.datas.len() / Self::SEGLEN;
-        if oldseg + seg > self.limit {
-            return itr_err_code!(OutOfHeap);
-        }
-        // Gas is an abstraction of space usage: the first 8 segments are charged exponentially (2,4,8,16,32,64,128,256), then linear 256 per segment. Price is based on existing heap size so multiple HGROW(1) cannot bypass.
-        let mut gas: u64 = 0;
-        for s in oldseg..(oldseg + seg) {
-            let add = if s < 8 {
-                1u64.checked_shl((s + 1) as u32).unwrap_or(u64::MAX)
-            } else {
-                Self::SEGLEN as u64
-            };
-            gas = gas
-                .checked_add(add)
-                .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
-        }
-        Ok(gas as i64)
-    }
-
-    pub fn grow(&mut self, seg: u8) -> VmrtRes<i64> {
+    pub fn grow(&mut self, seg: u8, gas_extra: &GasExtra) -> VmrtRes<i64> {
         let seg = seg as usize;
         if seg < 1 {
             return itr_err_fmt!(HeapError, "heap grow cannot be empty");
@@ -119,7 +99,8 @@ impl Heap {
         if seg > 16 {
             return itr_err_fmt!(HeapError, "heap grow cannot exceed 16");
         }
-        let gas = self.calc_grow_gas(seg)?;
+        let oldseg = self.datas.len() / Self::SEGLEN;
+        let gas = gas_extra.heap_grow_gas(oldseg, seg, self.limit)?;
         let newsz = self.datas.len() + seg * Self::SEGLEN;
         self.datas.resize(newsz, 0u8);
         Ok(gas)
@@ -182,16 +163,16 @@ mod heaptest {
 
     #[test]
     fn calc_grow_gas_matches_doc_examples() {
+        assert_eq!(GasExtra::new(1).heap_grow_gas(0, 1, 64).unwrap(), 2);
+        assert_eq!(GasExtra::new(1).heap_grow_gas(0, 8, 64).unwrap(), 510);
+        assert_eq!(GasExtra::new(1).heap_grow_gas(0, 10, 64).unwrap(), 1022);
+
         let mut heap = Heap::default();
         heap.limit = 64;
-        assert_eq!(heap.calc_grow_gas(1).unwrap(), 2);
-        assert_eq!(heap.calc_grow_gas(8).unwrap(), 510);
-        assert_eq!(heap.calc_grow_gas(10).unwrap(), 1022);
-
         // price depends on existing heap size (cannot bypass by splitting calls)
-        assert_eq!(heap.grow(1).unwrap(), 2);
-        assert_eq!(heap.grow(1).unwrap(), 4);
-        assert_eq!(heap.grow(1).unwrap(), 8);
+        assert_eq!(heap.grow(1, &GasExtra::new(1)).unwrap(), 2);
+        assert_eq!(heap.grow(1, &GasExtra::new(1)).unwrap(), 4);
+        assert_eq!(heap.grow(1, &GasExtra::new(1)).unwrap(), 8);
     }
 
     #[test]

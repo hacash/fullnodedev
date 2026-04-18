@@ -75,10 +75,17 @@ fn do_synchronize(this: &ChainEngine, datas: Arc<Vec<u8>>, ori: BlkOrigin) -> Re
         // do roll
         loop {
             let Ok(rid) = ridcv.recv() else { break };
+            let origin = rid.block.origin();
+            let root_roll_blk = rid.root_change.as_ref().map(|root| root.block());
             if let Err(e) = roll_by(this, rid) {
                 let _ = errch2.send(format!("do roll failed: {}", e));
                 drop(ridcv);
                 break
+            }
+            if let Some(root_blk) = root_roll_blk {
+                if origin == BlkOrigin::Discover || origin == BlkOrigin::Sync {
+                    this.minter.blk_root_roll(root_blk.as_read(), this.store.as_ref());
+                }
             }
         }
     });

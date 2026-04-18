@@ -275,7 +275,7 @@ mod fitshc_compile_tests {
             contract demo {
                 deploy {
                     nonce: 1,,;;
-                    call_construct: false,,;
+                    construct_must: false,,;
                 }
                 function external run() -> u8 { return 1 }
             }

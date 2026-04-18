@@ -2,8 +2,11 @@ use field::*;
 use std::env;
 use std::fs;
 use std::path::Path;
-use vm::action::CONTRACT_STORE_PERM_PERIODS;
-use vm::action::ContractDeploy;
+use vm::action::{
+    CONTRACT_STORE_LOWEST_FEE_PURITY,
+    CONTRACT_STORE_PERM_PERIODS,
+    ContractDeploy,
+};
 use vm::fitshc::compiler::compile;
 // use sys::*;
 use basis::interface::*;
@@ -14,29 +17,46 @@ use sys::{Account, curtimes};
 fn estimate_protocol_cost_auto(
     txfee: &Amount,
     nonce: Uint4,
-    call_construct: Bool,
+    construct_must: Bool,
     argv: BytesW2,
     sto: &vm::ContractSto,
+) -> Amount {
+    estimate_protocol_cost_auto_with_periods(
+        txfee,
+        nonce,
+        construct_must,
+        argv,
+        sto,
+        sto.size() as u128,
+        CONTRACT_STORE_PERM_PERIODS,
+    )
+}
+
+fn estimate_protocol_cost_auto_with_periods(
+    txfee: &Amount,
+    nonce: Uint4,
+    construct_must: Bool,
+    argv: BytesW2,
+    sto: &vm::ContractSto,
+    charge_bytes: u128,
+    periods: u64,
 ) -> Amount {
     const SAFETY_NUM: u128 = 103; // +3% headroom
     const SAFETY_DEN: u128 = 100;
     const MAX_ITERS: usize = 6;
-    let charge_bytes = sto.size() as u128;
     if charge_bytes == 0 {
         return Amount::zero();
     }
-    let fee238 = txfee.to_238_u128().unwrap_or(0);
     let mut cur = Amount::unit238(1);
     let mut best_need: u128 = 0;
     for _ in 0..MAX_ITERS {
         let mut act = ContractDeploy::default();
         act.protocol_cost = cur.clone();
         act.nonce = nonce;
-        act.construct_call = call_construct;
+        act.construct_must = construct_must;
         act.construct_argv = argv.clone();
         act.contract = sto.clone();
 
-        // Use a signed dummy tx to estimate real tx size (therefore fee_purity) more accurately.
         let acc = Account::create_by_password("123456").unwrap();
         let addr = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let mut tx = TransactionType3::new_by(addr, txfee.clone(), curtimes());
@@ -44,13 +64,13 @@ fn estimate_protocol_cost_auto(
         tx.gas_max = Uint1::from(8);
         tx.fill_sign(&acc).unwrap();
 
-        let mut fee_purity = tx.fee_purity() as u128; // base fee price(:238) / tx_size
-        if fee238 > 0 && fee_purity == 0 {
-            fee_purity = 1;
+        let mut fee_purity = tx.fee_purity() as u128;
+        if fee_purity < CONTRACT_STORE_LOWEST_FEE_PURITY as u128 {
+            fee_purity = CONTRACT_STORE_LOWEST_FEE_PURITY as u128;
         }
         let mut need = fee_purity
             .saturating_mul(charge_bytes)
-            .saturating_mul(CONTRACT_STORE_PERM_PERIODS as u128);
+            .saturating_mul(periods as u128);
         need = need
             .saturating_mul(SAFETY_NUM)
             .saturating_add(SAFETY_DEN - 1)
@@ -148,11 +168,11 @@ fn main() {
     println!("Generated: {}", map_file.display());
 
     // Deploy
-    let (d_fee, d_nonce, d_call_construct, d_argv) = if let Some(info) = deploy_opt {
+    let (d_fee, d_nonce, d_construct_must, d_argv) = if let Some(info) = deploy_opt {
         (
             info.protocol_cost,
             info.nonce,
-            info.call_construct,
+            info.construct_must,
             info.construct_argv,
         )
     } else {
@@ -164,17 +184,17 @@ fn main() {
 
     let nonce_val = args.get(3).and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
     let nonce = d_nonce.unwrap_or(Uint4::from(nonce_val));
-    let call_construct = d_call_construct.unwrap_or_else(|| Bool::new(false));
+    let construct_must = d_construct_must.unwrap_or_else(|| Bool::new(true));
 
     let argv = d_argv.unwrap_or_default();
     let protocol_cost = d_fee.unwrap_or_else(|| {
-        estimate_protocol_cost_auto(&txfee, nonce, call_construct, argv.clone(), &sto)
+        estimate_protocol_cost_auto(&txfee, nonce, construct_must, argv.clone(), &sto)
     });
 
     let mut action = ContractDeploy::default();
     action.protocol_cost = protocol_cost;
     action.nonce = nonce;
-    action.construct_call = call_construct;
+    action.construct_must = construct_must;
     action.construct_argv = argv;
     action.contract = sto;
 

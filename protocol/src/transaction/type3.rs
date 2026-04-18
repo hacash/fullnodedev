@@ -43,6 +43,8 @@ impl TransactionRead for TransactionType3 {
     }
 
     fn fee_got(&self) -> Amount {
+        // Type3 does not use the legacy extra9 fee-split / burn path.
+        // Miner-side fee view stays equal to the full transaction fee.
         self.fee.clone()
     }
 
@@ -194,6 +196,8 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
     for action in tx.actions() {
         ctx.exec_from_set(ExecFrom::Top);
         let (ret_gas, _retv) = action.execute(ctx)?;
+        // Type3 applies extra9 only as a delta-only returned-gas surcharge here;
+        // it does not reuse legacy fee-split semantics.
         ctx.gas_charge(extra9_surcharge(action.extra9(), ret_gas) as i64)?;
     }
     super::tex::do_settlement(ctx)?;

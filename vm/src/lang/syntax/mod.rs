@@ -310,6 +310,6 @@ mod tests {
         let err_is = parse("return 1 is uint").unwrap_err().to_string();
         assert!(err_is.contains("<is> expression format invalid"), "{}", err_is);
         let err = parse("return 1u256").unwrap_err().to_string();
-        assert!(err.contains("unsupported keyword 'u256'"), "{}", err);
+        assert!(err.contains("integer type parse failed"), "{}", err);
     }
 }

@@ -28,7 +28,7 @@ impl MsgHandler {
             blktxch: Some(rx).into(),
             doing_sync: AtomicU64::new(0),
             sync_tracker: SyncTracker::new(),
-            knows: Knowledge::new(200),
+            knows: Knowledge::new(2000),
             inserting: Arc::new(StdMutex::new(false)),
             exts_by_ty: StdMutex::new(HashMap::new()),
             exts_all: StdMutex::new(vec![]),

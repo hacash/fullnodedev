@@ -32,6 +32,43 @@ struct InsertResult {
     block: BlkPkg,
 }
 
+struct InsertBlockIntroSource<'a> {
+    store: &'a dyn Store,
+    anchor: ChunkRef,
+    root_height: u64,
+}
+
+impl<'a> InsertBlockIntroSource<'a> {
+    fn new(store: &'a dyn Store, anchor: ChunkRef, root_height: u64) -> Self {
+        Self { store, anchor, root_height }
+    }
+}
+
+impl BlockIntroSource for InsertBlockIntroSource<'_> {
+    fn block_intro(&self, hei: u64) -> Option<Box<dyn BlockRead>> {
+        if hei > self.root_height {
+            let blk = Roller::ancestor_at(&self.anchor, hei)?.block();
+            return Some(Box::new(protocol::block::BlockIntro {
+                head: protocol::block::BlockHead {
+                    version: blk.version().clone(),
+                    height: blk.height().clone(),
+                    timestamp: blk.timestamp().clone(),
+                    prevhash: blk.prevhash().clone(),
+                    mrklroot: blk.mrklroot().clone(),
+                    transaction_count: blk.transaction_count().clone(),
+                },
+                meta: protocol::block::BlockMeta {
+                    nonce: blk.nonce().clone(),
+                    difficulty: blk.difficulty().clone(),
+                    witness_stage: Fixed2::default(),
+                },
+            }));
+        }
+        let (_, blkdts) = self.store.block_data_by_height(&BlockHeight::from(hei))?;
+        protocol::block::BlockIntro::build(&blkdts).ok().map(|v| Box::new(v) as Box<dyn BlockRead>)
+    }
+}
+
 fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<InsertResult> {
     let orgi = blk.origin();
     let fast_sync = (eng.cnf.fast_sync && orgi == BlkOrigin::Sync) || orgi == BlkOrigin::Rebuild;
@@ -56,8 +93,9 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         }
         let parent_block = parent.block();
         let parent_blk = parent_block.as_read();
+        let src = InsertBlockIntroSource::new(eng.store.as_ref(), parent.clone(), old_root_height);
         // Stage 4: minter pre-exec block gate.
-        eng.minter.blk_verify(blk.block_read(), parent_blk, eng.store.as_ref())?;
+        eng.minter.blk_verify(blk.block_read(), parent_blk, &src)?;
         // Stage 5: generic structural block gate.
         block_verify(&eng.cnf, blk.block_read(), blk.data().len(), parent_blk)?;
     }
@@ -121,7 +159,9 @@ fn roll_by(eng: &ChainEngine, rid: InsertResult) -> Rerr {
         if is_open_vmlog(eng, new_root.logs().height()) {
             new_root.logs().write_to_disk();
         }
-        eng.scaner.roll(new_root.block(), new_root.state(), eng.disk.clone());
+        if not_rebuild {
+            eng.scaner.roll(new_root.block(), new_root.state(), eng.disk.clone());
+        }
         // Keep the old root alive until after state/logs are committed.
         // See InsertResult::old_root_hold comment for the rationale.
         let _old_root_hold = old_root_hold;

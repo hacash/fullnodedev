@@ -206,7 +206,7 @@ pub fn run_main_entry(
     ctx: &mut dyn Context,
     codeconf: u8,
     payload: Vec<u8>,
-) -> Ret<(VmGasBuckets, Value)> {
+) -> XRet<(VmGasBuckets, Value)> {
     // Bytecode verification is intentionally handled by upper-layer action validators before calling run_main_entry.
     ensure_vm_run_ready(ctx)?;
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::Main {
@@ -214,9 +214,25 @@ pub fn run_main_entry(
         codes: Arc::from(payload),
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
-        return errf!("vm call return type mismatch");
+        return xerr!("vm call return type mismatch");
     };
     Ok((cost, *rv))
+}
+
+fn extract_p2sh_witness(param: &Value) -> Ret<Vec<u8>> {
+    match param {
+        Value::Bytes(witness) => Ok(witness.clone()),
+        Value::Tuple(items) => {
+            let Some(first) = items.as_slice().first() else {
+                return errf!("p2sh param tuple is empty");
+            };
+            let Value::Bytes(witness) = first else {
+                return errf!("p2sh witness must be the first tuple item as bytes");
+            };
+            Ok(witness.clone())
+        }
+        _ => errf!("p2sh param must be bytes or a tuple starting with witness bytes"),
+    }
 }
 
 pub fn run_p2sh_entry(
@@ -224,17 +240,25 @@ pub fn run_p2sh_entry(
     codeconf: u8,
     payload: Vec<u8>,
     param: Value,
-) -> Ret<(VmGasBuckets, Value)> {
-    // Lock script verification is intentionally handled by upper-layer action validators before calling run_p2sh_entry.
+) -> XRet<(VmGasBuckets, Value)> {
+    // Canonical P2SH payload validation still happens in upper-layer action validators,
+    // but this raw host-facing helper also revalidates the parsed payload to avoid trusting forged blobs.
     ensure_vm_run_ready(ctx)?;
+    let hei = ctx.env().block.height;
+    let (gst, _) = peek_vm_runtime_limits(ctx, hei);
+    let codeconf = CodeConf::parse(codeconf)?;
+    let witness = BytesW2::from(extract_p2sh_witness(&param)?)?;
     let payload = ByteView::from_arc(Arc::from(payload));
     let payload_ref = payload.as_slice();
     let (state_addr, mv1) = Address::create(payload_ref)?;
+    state_addr.must_scriptmh()?;
     let (libs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
     let mv = mv1 + mv2;
+    let codes = BytesW2::from(payload_ref[mv..].to_vec())?;
+    crate::action::P2SHScriptProve::verify_unlock_inputs(hei, &gst, &libs, codeconf, &codes, &witness)?;
     let intent_scope = ctx.vm_current_intent_scope();
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::P2sh {
-        code_type: CodeConf::parse(codeconf)?.code_type(),
+        code_type: codeconf.code_type(),
         state_addr,
         libs: libs.into_list(),
         codes: payload.slice(mv, payload.len())?,
@@ -242,7 +266,7 @@ pub fn run_p2sh_entry(
         param,
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
-        return errf!("vm call return type mismatch");
+        return xerr!("vm call return type mismatch");
     };
     Ok((cost, *rv))
 }
@@ -252,7 +276,7 @@ pub fn run_abst_entry(
     target: AbstCall,
     payload: Address,
     param: Value,
-) -> Ret<(VmGasBuckets, Value)> {
+) -> XRet<(VmGasBuckets, Value)> {
     ensure_vm_run_ready(ctx)?;
     let intent_scope = ctx.vm_current_intent_scope();
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::Abst {
@@ -262,7 +286,7 @@ pub fn run_abst_entry(
         param,
     }))?;
     let Ok(rv) = rv.downcast::<Value>() else {
-        return errf!("vm call return type mismatch");
+        return xerr!("vm call return type mismatch");
     };
     Ok((cost, *rv))
 }
@@ -300,7 +324,7 @@ impl Machine {
             .resolve_abstfn(host, &contract_addr, cty)
             .map_err(XError::from)?
         else {
-            return Err(XError::fault(format!("abst call {:?} not found in {}", cty, adr)));
+            return xerr!(format!("abst call {:?} not found in {}", cty, adr));
         };
         let rv = self.do_call(
             runtime,
@@ -580,7 +604,7 @@ impl Executor {
                 cost.compute += delta;
             }
             if cost.total() <= 0 {
-                Err(XError::fault(format!("{:?} gas cost invalid: {}", entry.kind, cost.total())))
+                xerr!(format!("{:?} gas cost invalid: {}", entry.kind, cost.total()))
             } else {
                 Ok(cost)
             }
@@ -698,6 +722,160 @@ fn validate_vm_entry_return(kind: EntryKind, rv: &Value, err_msg: &str) -> XRerr
 #[cfg(test)]
 mod entry_tests {
     use super::*;
+    use basis::component::{Env, ExecFrom, TexLedger};
+    use basis::interface::{Context, Logs, State, StateOperat, TransactionRead};
+    use field::{AddrOrPtr, Amount, Hash};
+    use protocol::context::EmptyState;
+    use std::sync::{Arc, Weak};
+    use sys::XRet;
+
+    #[derive(Default)]
+    struct NoopLogs;
+    impl Logs for NoopLogs {}
+
+    #[derive(Default)]
+    struct DummyState;
+    impl State for DummyState {
+        fn fork_sub(&self, _: Weak<Box<dyn State>>) -> Box<dyn State> {
+            Box::new(Self)
+        }
+        fn merge_sub(&mut self, _: Box<dyn State>) {}
+        fn detach(&mut self) {}
+        fn clone_state(&self) -> Box<dyn State> {
+            Box::new(Self)
+        }
+    }
+
+    #[derive(Debug, Clone, Default)]
+    struct DummyTx {
+        main: Address,
+        addrs: Vec<Address>,
+    }
+
+    impl field::Serialize for DummyTx {
+        fn size(&self) -> usize {
+            0
+        }
+        fn serialize(&self) -> Vec<u8> {
+            vec![]
+        }
+    }
+
+    impl basis::interface::TxExec for DummyTx {}
+
+    impl TransactionRead for DummyTx {
+        fn ty(&self) -> u8 {
+            3
+        }
+        fn hash(&self) -> Hash {
+            Hash::default()
+        }
+        fn hash_with_fee(&self) -> Hash {
+            Hash::default()
+        }
+        fn main(&self) -> Address {
+            self.main
+        }
+        fn addrs(&self) -> Vec<Address> {
+            self.addrs.clone()
+        }
+        fn fee(&self) -> &Amount {
+            Amount::zero_ref()
+        }
+        fn fee_purity(&self) -> u64 {
+            1
+        }
+        fn gas_max_byte(&self) -> Option<u8> {
+            Some(1)
+        }
+    }
+
+    struct CaptureCtx {
+        env: Env,
+        tx: DummyTx,
+        state: Box<dyn State>,
+        logs: NoopLogs,
+        tex: TexLedger,
+        calls: usize,
+        exec_from: ExecFrom,
+    }
+
+    impl CaptureCtx {
+        fn new(main: Address) -> Self {
+            let tx = DummyTx {
+                main,
+                addrs: vec![main],
+            };
+            let mut env = Env::default();
+            env.tx.ty = 3;
+            env.tx.main = main;
+            env.tx.addrs = tx.addrs.clone();
+            Self {
+                env,
+                tx,
+                state: Box::new(DummyState),
+                logs: NoopLogs,
+                tex: TexLedger::default(),
+                calls: 0,
+                exec_from: ExecFrom::Top,
+            }
+        }
+    }
+
+    impl StateOperat for CaptureCtx {
+        fn state(&mut self) -> &mut dyn State {
+            self.state.as_mut()
+        }
+        fn state_fork(&mut self) -> Arc<Box<dyn State>> {
+            Arc::new(Box::new(EmptyState {}))
+        }
+        fn state_merge(&mut self, _: Arc<Box<dyn State>>) {}
+        fn state_recover(&mut self, _: Arc<Box<dyn State>>) {}
+    }
+
+    impl Context for CaptureCtx {
+        fn action_call(&mut self, _: u16, _: Vec<u8>) -> XRet<(u32, Vec<u8>)> {
+            Ok((0, vec![]))
+        }
+        fn exec_from(&self) -> ExecFrom {
+            self.exec_from
+        }
+        fn exec_from_set(&mut self, from: ExecFrom) {
+            self.exec_from = from;
+        }
+        fn env(&self) -> &Env {
+            &self.env
+        }
+        fn addr(&self, ptr: &AddrOrPtr) -> Ret<Address> {
+            ptr.real(&self.env.tx.addrs)
+        }
+        fn check_sign(&mut self, _: &Address) -> Rerr {
+            Ok(())
+        }
+        fn tx(&self) -> &dyn TransactionRead {
+            &self.tx
+        }
+        fn vm_call(&mut self, _: Box<dyn Any>) -> XRet<(VmGasBuckets, Box<dyn Any>)> {
+            self.calls += 1;
+            Ok((VmGasBuckets { compute: 1, resource: 0, storage: 0 }, Box::new(Value::Nil)))
+        }
+        fn vm_current_intent_scope(&mut self) -> IntentScope {
+            None
+        }
+        fn tex_ledger(&mut self) -> &mut TexLedger {
+            &mut self.tex
+        }
+        fn logs(&mut self) -> &mut dyn Logs {
+            &mut self.logs
+        }
+    }
+
+    fn valid_p2sh_payload(state_addr: Address, libs: ContractAddressW1, codes: Vec<u8>) -> Vec<u8> {
+        let mut payload = state_addr.as_bytes().to_vec();
+        payload.extend_from_slice(&libs.serialize());
+        payload.extend_from_slice(&codes);
+        payload
+    }
 
     #[test]
     fn validate_vm_entry_param_rejects_oversize_scalar_value() {
@@ -715,5 +893,97 @@ mod entry_tests {
         let err = check_vm_return_value(&rv, "main call").unwrap_err();
         assert!(err.is_fault());
         assert!(err.to_string().contains("cannot cross VM boundary"));
+    }
+
+    #[test]
+    fn run_p2sh_entry_rejects_non_scriptmh_state_addr_before_vm_dispatch() {
+        let main = Address::create_privakey([1u8; 20]);
+        let mut ctx = CaptureCtx::new(main);
+        let payload = valid_p2sh_payload(
+            Address::create_privakey([2u8; 20]),
+            ContractAddressW1::from_list(vec![]).unwrap(),
+            vec![Bytecode::END as u8],
+        );
+        let param = Value::Tuple(TupleItem::new(vec![Value::Bytes(vec![])]).unwrap());
+
+        let err = run_p2sh_entry(
+            &mut ctx,
+            CodeConf::from_type(CodeType::Bytecode).raw(),
+            payload,
+            param,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("is not SCRIPTMH type"), "{err}");
+        assert_eq!(ctx.calls, 0);
+    }
+
+    #[test]
+    fn run_p2sh_entry_rejects_duplicate_libs_before_vm_dispatch() {
+        let main = Address::create_privakey([1u8; 20]);
+        let mut ctx = CaptureCtx::new(main);
+        let lib = ContractAddress::from_unchecked(Address::create_contract([9u8; 20]));
+        let libs = ContractAddressW1::from_list(vec![lib.clone(), lib]).unwrap();
+        let payload = valid_p2sh_payload(
+            Address::create_scriptmh([2u8; 20]),
+            libs,
+            vec![Bytecode::END as u8],
+        );
+        let param = Value::Tuple(TupleItem::new(vec![Value::Bytes(vec![])]).unwrap());
+
+        let err = run_p2sh_entry(
+            &mut ctx,
+            CodeConf::from_type(CodeType::Bytecode).raw(),
+            payload,
+            param,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("duplicate"), "{err}");
+        assert_eq!(ctx.calls, 0);
+    }
+
+    #[test]
+    fn run_p2sh_entry_rejects_malformed_witness_param_before_vm_dispatch() {
+        let main = Address::create_privakey([1u8; 20]);
+        let mut ctx = CaptureCtx::new(main);
+        let payload = valid_p2sh_payload(
+            Address::create_scriptmh([2u8; 20]),
+            ContractAddressW1::from_list(vec![]).unwrap(),
+            vec![Bytecode::END as u8],
+        );
+        let param = Value::Tuple(TupleItem::new(vec![Value::U8(7)]).unwrap());
+
+        let err = run_p2sh_entry(
+            &mut ctx,
+            CodeConf::from_type(CodeType::Bytecode).raw(),
+            payload,
+            param,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("witness must be the first tuple item as bytes"), "{err}");
+        assert_eq!(ctx.calls, 0);
+    }
+
+    #[test]
+    fn run_p2sh_entry_rejects_invalid_code_before_vm_dispatch() {
+        let main = Address::create_privakey([1u8; 20]);
+        let mut ctx = CaptureCtx::new(main);
+        let payload = valid_p2sh_payload(
+            Address::create_scriptmh([2u8; 20]),
+            ContractAddressW1::from_list(vec![]).unwrap(),
+            vec![],
+        );
+        let param = Value::Tuple(TupleItem::new(vec![Value::Bytes(vec![])]).unwrap());
+
+        assert!(run_p2sh_entry(
+            &mut ctx,
+            CodeConf::from_type(CodeType::Bytecode).raw(),
+            payload,
+            param,
+        )
+        .is_err());
+        assert_eq!(ctx.calls, 0);
     }
 }

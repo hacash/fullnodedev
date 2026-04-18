@@ -942,11 +942,16 @@ contract Child {
 
 | 函数 | 说明 |
 |------|------|
-| `memory_put(key, value)` | 写入内存 |
+| `memory_put(key, value)` | 写入内存；`memory_put(key, nil)` 会清空该 key。仅可作语句使用，不返回值。 |
 | `memory_get(key)` | 从内存读取 |
-| `global_put(key, value)` | 全局存储 |
+| `global_put(key, value)` | 全局临时存储；`global_put(key, nil)` 会清空该 key。仅可作语句使用，不返回值。 |
 | `global_get(key)` | 全局读取 |
 | `heap_grow(n)` | 扩展堆 |
+
+TEX 说明：
+- `TexCellAct` 只能在交易顶层执行，不能从运行时 `CALL` 上下文触发。
+- TEX 条件检查的是当前交易内、当前动作执行点的状态，发生在最终 TEX 清算之前。
+- TEX 的钻石 `get` 只声明数量；最终具体钻石名会在清算阶段按整笔交易的 FIFO 顺序分配。
 | `heap_write(offset, data)` | 写入堆 |
 | `heap_read(offset, len)` | 从堆读取 |
 

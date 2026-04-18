@@ -5,9 +5,9 @@ use mint::action::*;
 use protocol::context::ContextInst;
 use protocol::state::CoreState;
 use protocol::transaction::*;
-use std::sync::Once;
 use sys::Account;
 use testkit::sim::context::make_ctx_with_state;
+use testkit::sim::integration::enable_mint_setup;
 use testkit::sim::state::ForkableMemState;
 
 const TEST_HEIGHT: u64 = protocol::upgrade::ONLINE_OPEN_HEIGHT;
@@ -25,12 +25,7 @@ fn make_ctx<'a>(height: u64, tx: &'a dyn TransactionRead) -> ContextInst<'a> {
 }
 
 fn init_setup_once() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let mut setup = mint::setup::new_standard_mint_setup(x16rs::block_hash).unwrap();
-        setup.seal().unwrap();
-        protocol::setup::install_once(setup).unwrap();
-    });
+    enable_mint_setup();
 }
 
 fn seed_balance(ctx: &mut dyn Context, addr: &Address, mei: u64) {

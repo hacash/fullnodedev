@@ -6,7 +6,6 @@ mod tex {
     use field::*;
     use mint::action::{AssetCreate, ASSET_ALIVE_HEIGHT};
     use protocol::{action::*, tex::*};
-    use std::sync::Once;
     use sys::*;
     use vm::contract::*;
 
@@ -84,12 +83,7 @@ mod tex {
     }
 
     fn init_setup_once() {
-        static INIT: Once = Once::new();
-        INIT.call_once(|| {
-            let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash).unwrap();
-            mint::setup::register_protocol_extensions(&mut setup).unwrap();
-            protocol::setup::install_once(setup);
-        });
+        testkit::sim::integration::enable_mint_setup();
     }
 
     #[test]

@@ -58,6 +58,8 @@ macro_rules! transaction_define_legacy {
 
             fn fee_got(&self) -> Amount {
                 let mut gfee = self.fee().clone();
+                // Legacy Type1/Type2 extra9 semantics: any top-level extra9 action lowers
+                // the miner-side fee view by one unit level. Type3 does not use this path.
                 if self.actions().iter().any(|a| a.extra9()) && gfee.unit() > 1 {
                     gfee = gfee.unit_sub(1).unwrap();
                 }
@@ -280,6 +282,8 @@ fn mark_tx_exist(ctx: &mut dyn Context, hx: &Hash, blkhei: u64) {
     state.tx_exist_set(hx, &BlockHeight::from(blkhei));
 }
 
+// Legacy Type1/Type2 extra9 burned-fee accounting. This records the fee delta
+// created by `fee_got()` and is not part of Type3 returned-gas surcharge semantics.
 fn record_legacy_extra9_burn_fee(
     ctx: &mut dyn Context,
     fee: &Amount,
@@ -323,6 +327,8 @@ fn do_tx_execute_legacy<T: Transaction + LegacyTransactionRead>(
     mark_tx_exist(ctx, &prep.hx, prep.blkhei);
     for action in tx.actions() {
         ctx.exec_from_set(ExecFrom::Top);
+        // Legacy top-level execution ignores returned gas. Legacy extra9 fee semantics
+        // are handled through `fee_got()` / `record_legacy_extra9_burn_fee()` instead.
         let (_ret_gas, _retv) = action.execute(ctx)?;
     }
     super::tex::do_settlement(ctx)?;

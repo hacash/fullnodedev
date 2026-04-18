@@ -113,6 +113,10 @@ impl Roller {
         Ok((root_change, head_change))
     }
 
+    pub(crate) fn ancestor_at(from: &ChunkRef, parent_hei: u64) -> Option<ChunkRef> {
+        Self::trace_parent(from.clone(), parent_hei)
+    }
+
     fn trace_parent(mut seek: ChunkRef, parent_hei: u64) -> Option<ChunkRef> {
         if parent_hei > seek.height() {
             return None;

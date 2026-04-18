@@ -16,7 +16,8 @@ fn impl_packing_next_block(
     let nexthei = oldblk.height().uint() + 1;
     if this.difficulty.is_upgrade_height(nexthei) || nexthei % mtcnf.difficulty_adjust_blocks == 0 {
         let sto = engine.store();
-        let (difn, ..) = this.next_difficulty(oldblk.as_read(), sto.as_ref());
+        let src = StoreBlockIntroSource::new(sto.as_ref());
+        let (difn, ..) = this.next_difficulty(oldblk.as_read(), &src);
         newdifn = Uint4::from(difn);
     }
     // create coinbase tx
@@ -189,8 +190,8 @@ mod tests {
     use std::collections::HashMap;
 
     fn scoped_protocol_setup() -> protocol::setup::TestSetupScopeGuard {
-        let mut setup = crate::setup::new_standard_mint_setup(x16rs::block_hash).unwrap();
-        setup.seal().unwrap();
+        let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
+        crate::setup::register_protocol_extensions(&mut setup);
         protocol::setup::install_test_scope(setup)
     }
 

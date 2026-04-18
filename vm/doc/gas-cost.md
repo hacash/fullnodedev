@@ -181,7 +181,7 @@ SSAVE pricing semantics:
 
 1 period = 100 blocks
 
-- (32+byte)/1: every period (32 is base bytes, byte = value_byte)
+- (20+byte)/1: every period (20 is base bytes, byte = value_byte)
 
 #### Contract load
 
@@ -218,12 +218,12 @@ dynamic = 40 / 8 = 5
 total = 37 gas
 ```
 
-2) SSAVE (value_byte = 80, renew/new-key includes 1 period rent; if new-key add +256)
+2) SSAVE (value_byte = 80, renew/new-key includes 1 period rent; if new-key add +1024)
 ```
 base = 64
 dynamic_write = 80 / 6 = 13
-rent = (32 + 80) * 1 = 112
-total = 64 + 13 + 112 = 189 gas
+rent = (20 + 80) * 1 = 100
+total = 64 + 13 + 100 = 177 gas
 ```
 
 3) LOG2 (value_byte = 100)
@@ -245,7 +245,7 @@ Assumptions and notes:
 - Contract load cost: `32 * new_loads + sum(floor(contract_bytes_i / 64))` (integer truncation per loaded contract).
 - `SSAVE` has two typical pricing cases:
   - **Normal write**: `64 + value_byte/6`
-  - **New / expired-recreate / auto-renew triggered**: on top of normal write, add `rent_one_period = 32 + value_byte`; for new/recreate also add `storage_key_cost=256`.
+  - **New / expired-recreate / auto-renew triggered**: on top of normal write, add `rent_one_period = 20 + value_byte`; for new/recreate also add `storage_key_cost=1024`.
 
 > In the table, `value_byte=8` corresponds to `U64`-like balances/reserves. If you store `Bytes(32)` (e.g. hash/commitment), replace `8` with `32` and recompute.
 

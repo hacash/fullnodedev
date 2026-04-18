@@ -46,11 +46,12 @@ fn source_map_recovery_records_symbols() {
 
     let mut opt = PrintOption::new("    ", 0);
     opt.map = Some(&source_map);
+    opt.trim_root_block = true;
     opt.call_short_syntax = true;
     let printed = Formater::new(&opt).print(&ir_block);
-    assert!(printed.contains("call edit Fund.deposit("));
-    assert!(printed.contains("call pure use(2).audit("));
-    assert!(printed.contains("call edit this.notify("));
+    assert!(printed.contains("ext(2).deposit(tuple(total, increment))"));
+    assert!(printed.contains("ext(2)::audit(increment)"));
+    assert!(printed.contains("this.notify(total)"));
     assert!(printed.contains("var total $0 ="));
     assert!(printed.contains("let increment $1 ="));
 }

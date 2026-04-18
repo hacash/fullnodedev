@@ -133,12 +133,19 @@ impl Value {
         self.extract_bytes_with_error_code(CastBeBytesFail)
     }
 
-    pub fn extract_key_bytes(&self) -> VmrtRes<Vec<u8>> {
-        let ec = CastBeKeyFail;
-        match self {
-            Bool(..) => itr_err_code!(ec),
-            _ => self.extract_bytes_with_error_code(ec),
+    pub(crate) fn extract_key_bytes_with_error_code(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
+        let key = match self {
+            Bool(..) => return itr_err_code!(ec),
+            _ => self.extract_bytes_with_error_code(ec)?,
+        };
+        if key.is_empty() {
+            return itr_err_code!(ec);
         }
+        Ok(key)
+    }
+
+    pub fn extract_key_bytes(&self) -> VmrtRes<Vec<u8>> {
+        self.extract_key_bytes_with_error_code(CastBeKeyFail)
     }
 
     pub fn check_scalar(&self) -> VmrtErr {
@@ -236,7 +243,8 @@ mod canbe_tests {
     #[test]
     fn heapslice_ext_call_data_reads_heap_bytes_only_here() {
         let mut heap = Heap::new(64);
-        heap.grow(1).unwrap();
+        let gst = GasExtra::new(1);
+        heap.grow(1, &gst).unwrap();
         heap.write(0, Value::Bytes(vec![1, 2, 3, 4])).unwrap();
         let hs = Value::HeapSlice((1, 2));
 
@@ -296,6 +304,20 @@ mod canbe_tests {
                 .check_scalar()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn extract_key_bytes_rejects_empty_and_bool_keys() {
+        let nil_err = Value::Nil.extract_key_bytes().unwrap_err();
+        assert_eq!(nil_err.0, ItrErrCode::CastBeKeyFail);
+
+        let empty_err = Value::Bytes(vec![]).extract_key_bytes().unwrap_err();
+        assert_eq!(empty_err.0, ItrErrCode::CastBeKeyFail);
+
+        let bool_err = Value::Bool(true).extract_key_bytes().unwrap_err();
+        assert_eq!(bool_err.0, ItrErrCode::CastBeKeyFail);
+
+        assert_eq!(Value::Bytes(vec![1]).extract_key_bytes().unwrap(), vec![1]);
     }
 
     #[test]

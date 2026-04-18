@@ -64,8 +64,8 @@ impl Minter for HacashMinter {
         impl_blk_arrive(self, curblk, body, sto)
     }
 
-    fn blk_verify(&self, curblk: &dyn BlockRead, prevblk: &dyn BlockRead, sto: &dyn Store) -> Rerr {
-        impl_blk_verify(self, curblk, prevblk, sto)
+    fn blk_verify(&self, curblk: &dyn BlockRead, prevblk: &dyn BlockRead, src: &dyn BlockIntroSource) -> Rerr {
+        impl_blk_verify(self, curblk, prevblk, src)
     }
 
     fn blk_insert(&self, curblk: &BlkPkg, sta: &dyn State, prev: &dyn State) -> Rerr {

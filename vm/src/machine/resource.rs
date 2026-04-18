@@ -184,12 +184,7 @@ impl IntentRuntime {
     }
 
     fn extract_intent_key_bytes(&self, key: &Value) -> VmrtRes<Vec<u8>> {
-        let key_bytes = key
-            .extract_key_bytes()
-            .map_err(|ItrErr(_, msg)| ItrErr::new(ItrErrCode::IntentError, &msg))?;
-        if key_bytes.is_empty() {
-            return itr_err_fmt!(ItrErrCode::IntentError, "intent key cannot be empty");
-        }
+        let key_bytes = key.extract_key_bytes_with_error_code(ItrErrCode::IntentError)?;
         self.check_size_limit(key_bytes.len(), "key")?;
         Ok(key_bytes)
     }
@@ -698,19 +693,20 @@ impl IntentRuntime {
         if limit == 0 {
             return itr_err_fmt!(ItrErrCode::IntentError, "intent keys from limit must be positive");
         }
+        let start_key = match start {
+            None => None,
+            Some(key) => Some(self.extract_intent_key_bytes(key)?),
+        };
         let keys = self.keys_sorted(owner, id)?;
         if keys.is_empty() {
             return Ok((None, vec![]));
         }
-        let from = match start {
+        let from = match start_key {
             None => 0usize,
-            Some(key) => {
-                let key = self.extract_intent_key_bytes(key)?;
-                match keys.binary_search(&key) {
-                    Ok(i) => i + 1,
-                    Err(i) => i,
-                }
-            }
+            Some(key) => match keys.binary_search(&key) {
+                Ok(i) => i + 1,
+                Err(i) => i,
+            },
         };
         let end = from.saturating_add(limit).min(keys.len());
         let page = keys[from..end].to_vec();
@@ -1440,5 +1436,29 @@ mod resource_tests {
         let (next3, page3) = rt.keys_after(&owner, id, Some(&next_val2), 2).unwrap();
         assert_eq!(page3, vec![b"e".to_vec()]);
         assert_eq!(next3, None);
+    }
+
+    #[test]
+    fn intent_rejects_nil_and_empty_keys() {
+        let owner = ContractAddress::from_unchecked(Address::create_contract([2u8; 20]));
+        let mut rt = IntentRuntime::new(100, 16, 1280, 128);
+        let id = rt.create(owner.clone(), b"test".to_vec()).unwrap();
+
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            assert_eq!(rt.put(&owner, id, key.clone(), Value::U64(1)).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.get(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.has(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.take(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.del(&owner, id, &key).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.move_key(&owner, id, Value::Bytes(vec![1]), key.clone()).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.move_key(&owner, id, key.clone(), Value::Bytes(vec![1])).unwrap_err().0, ItrErrCode::IntentError);
+            assert_eq!(rt.put_many(&owner, id, vec![(key.clone(), Value::U64(1))]).unwrap_err().0, ItrErrCode::IntentError);
+        }
+
+        rt.put(&owner, id, Value::Bytes(b"a".to_vec()), Value::U64(1)).unwrap();
+        for key in [Value::Nil, Value::Bytes(vec![])] {
+            assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap_err().0, ItrErrCode::IntentError);
+        }
     }
 }

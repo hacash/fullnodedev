@@ -155,58 +155,59 @@ AST item attempts always consume the fixed try cost, so any AST path that actual
 
 The only AST paths that can succeed without child gas usage are true no-op paths that never attempt a child, such as an empty `0/0` select.
 
-### 6.6 `burn_90` × AST / VM / P2SH charging matrix
+### 6.6 `extra9` × AST / VM / P2SH charging matrix
 
 The following combinations are intentional and should be understood as different charging channels, not as inconsistent execution.
 
-- `AstSelect` / `AstIf` child attempt in a `burn_90` transaction: the fixed AST try cost `40` is charged as shared context gas without an extra `burn_90` multiplier, while successful child returned gas is charged through the AST returned-gas path and therefore uses the `burn_90` multiplier rule.
-- `AstSelect` / `AstIf` child = `ContractMainCall` in a `burn_90` transaction: total charge is `40` try cost + VM shared runtime gas/min-call gas + multiplied child returned gas for the `ContractMainCall` action body size.
-- top-level `ContractMainCall` in a `burn_90` transaction: the top-level transaction loop still ignores returned gas, so only VM shared runtime gas is charged at execution time; `burn_90` still affects transaction fee classification and gas purity pricing at settlement.
-- `ContractMainCall` -> VM `EXTACTION` -> `burn_90` transfer action in a non-`burn_90` transaction: the runtime-created child action applies its own returned-gas `burn_90` multiplier, but transaction-level fee classification does not change because the serialized transaction did not statically contain a `burn_90` action.
-- `ContractMainCall` -> VM `EXTACTION` inside an already `burn_90` transaction: `burn_90` multiplier is an OR rule, not a stacked rule; the same returned-gas item is multiplied once, not twice.
+- For legacy Type1/Type2 transactions, `extra9` is a fee-settlement property: if any top-level serialized action has `extra9=true`, `fee_got()` is reduced by one unit level and the burned delta is recorded in legacy accounting.
+- For Type3 transactions, `extra9` is not a transaction-wide fee classification. It is a delta-only returned-gas surcharge used only at charge sites that actually consume returned gas.
+- `AstSelect` / `AstIf` child attempt in Type3: the fixed AST try cost `40` is charged as shared context gas; on child success, returned gas is additionally charged through the AST returned-gas path using `extra9_surcharge(child.extra9(), child_gas)`.
+- `AstSelect` / `AstIf` child = `ContractMainCall` in Type3: total charge is `40` try cost + VM shared runtime gas/min-call gas + any AST returned-gas surcharge from the child action result.
+- top-level `ContractMainCall` in Type3: the top-level Type3 loop charges `extra9_surcharge(action.extra9(), ret_gas)`, while VM shared runtime gas is consumed directly through the context gas ledger.
+- runtime-created actions (`EXTACTION` / host ACTION path) in Type3 use the same delta-only `extra9` surcharge rule at their returned-gas charge site; they do not retroactively rewrite transaction fee settlement.
 - transfer hooks that enter P2SH or contract abstract calls consume shared VM/runtime gas directly; they are not recharged again through an AST returned-gas path unless they themselves create a nested AST child action that succeeds.
 - P2SH and abstract hook execution may be rolled back by AST item rollback at the state/log/volatile layer, but any runtime gas spent in those hook calls remains consumed.
 
-## 7. `burn_90` Semantics
+## 7. `extra9` semantics by transaction type
 
-### 7.1 Static transaction classification
+### 7.1 Legacy Type1/Type2
 
-Transaction `burn_90` is determined statically from the serialized top-level action list.
+Legacy Type1/Type2 transactions treat `extra9` as a top-level fee-settlement property.
 
-- If any serialized action reports `burn_90() == true`, the whole transaction is a `burn_90` transaction.
-- AST nodes therefore aggregate `burn_90()` from their serialized descendants.
-- This aggregation is static and does not depend on which branch is actually taken at runtime.
+- If any serialized top-level action reports `extra9() == true`, `tx.fee_got()` is reduced by one unit level when possible.
+- The block fee receiver gets `fee_got()`, not the full `fee()`.
+- The burned difference `fee - fee_got` is recorded in `tx_fee_burn90_238` legacy accounting.
+- Legacy top-level execution still ignores action returned gas.
 
-This is intentional because transaction fee classification must be decidable from transaction bytes before execution finishes.
+These are transaction-level properties and are evaluated from the serialized top-level action list.
 
-### 7.2 Effect on fee settlement
+### 7.2 Type3
 
-When a transaction is statically classified as `burn_90`:
+Type3 does not reuse the legacy `burn90` fee-split model.
 
-- `tx.fee_got()` is reduced by the protocol burn rule
-- miner fee receipt changes accordingly
-- gas purity pricing uses that transaction-level fee view
+- `tx.fee_got()` stays equal to the full transaction fee.
+- Miner fee receipt is therefore unchanged by `extra9` on Type3.
+- Gas purity pricing for Type3 uses the normal full-fee view.
+- `extra9` only affects returned-gas charge sites that explicitly call `extra9_surcharge(...)`.
+- The current surcharge is delta-only: `extra9_surcharge(true, gas) == gas * 9`, while plain actions add `0` returned-gas charge at that site.
 
-These are transaction-level properties, not branch-local runtime properties.
+### 7.3 AST / runtime returned-gas charging
 
-### 7.3 Effect on AST and runtime action charging
+For current Type3 composition layers, returned-gas charging happens only where returned gas is explicitly consumed:
 
-At AST and runtime `EXTACTION` charge sites, child returned gas is multiplied when either of these is true:
+- Type3 top-level transaction loop
+- AST child success path
+- runtime-created action (`EXTACTION`) path
 
-- the transaction is statically `burn_90`
-- the current child action itself is `burn_90`
-
-The current multiplier is `10x`.
-
-This multiplier is applied at child returned-gas charge sites, not inside `action.execute()`.
+At those sites, `extra9` means “apply the +9x delta surcharge for this returned-gas item”. It does not create a transaction-wide Type3 fee classification.
 
 ### 7.4 VM boundary
 
-`ContractMainCall` itself reports `burn_90 == false`.
+`ContractMainCall` itself reports `extra9 == false`.
 
-If its bytecode later performs runtime `EXTACTION`, the called runtime action still applies its own returned-gas multiplier rules, but transaction-level `burn_90` classification remains the static property of the serialized transaction action tree.
+If its bytecode later performs runtime `EXTACTION`, the called runtime action still applies its own returned-gas surcharge rule at that call site, but transaction-level fee settlement remains whatever the transaction type already defines.
 
-Dynamic runtime calls do not rewrite transaction fee classification after the transaction has been formed.
+Dynamic runtime calls do not rewrite transaction fee settlement after the transaction has been formed.
 
 ## 8. Signature Semantics
 
@@ -268,14 +269,15 @@ It is not available in:
 
 This is an important boundary when designing AST + VM combinations.
 
-### 9.4 Non-bug patterns around `burn_90` and VM
+### 9.4 Non-bug patterns around `extra9` and VM
 
 The following outcomes are intentional protocol semantics and should not be treated as bugs by reviewers.
 
-- unreachable AST branches and later `AstSelect` children still contribute to static `burn_90` and static `req_sign` aggregation because those properties are defined from serialized transaction structure, not from the eventual runtime path.
+- unreachable AST branches and later `AstSelect` children still contribute to static `req_sign` aggregation because signature requirements are defined from serialized transaction structure, not from the eventual runtime path.
+- Legacy Type1/Type2 `extra9` fee semantics are decided from serialized top-level actions; current Type3 returned-gas surcharge semantics are local to the charge site that actually consumes returned gas.
 - AST rollback restores branch-local state but does not refund gas and does not cool VM warmup/cache state, so failed VM/P2SH branches can still make later branches cheaper to load.
-- top-level action execution and nested AST / VM `EXTACTION` execution intentionally differ in returned-gas handling because the top-level transaction loop discards returned gas while composition layers consume it.
-- dynamic runtime VM behavior cannot retroactively rewrite transaction fee classification, miner fee split, or transaction pre-signature requirements after transaction bytes have been signed and broadcast.
+- top-level legacy execution and nested AST / VM `EXTACTION` execution intentionally differ in returned-gas handling because the legacy top-level transaction loop discards returned gas while Type3 composition layers may consume it.
+- dynamic runtime VM behavior cannot retroactively rewrite legacy fee settlement, current Type3 fee settlement, or transaction pre-signature requirements after transaction bytes have been signed and broadcast.
 
 ## 10. P2SH and Action Hook Interaction
 
@@ -314,7 +316,7 @@ These hook paths are not equivalent to `ContractMainCall` main-mode execution:
 When authoring AST transactions, the following rules are part of the protocol semantics.
 
 - `AstSelect` is an ordered trial list, not a parallel chooser.
-- `exe_max` stops later children from executing, but later serialized children still contribute to static transaction metadata such as `burn_90` and `req_sign`.
+- `exe_max` stops later children from executing, but later serialized children still contribute to static metadata such as transaction signatures; legacy Type1/Type2 fee semantics also continue to depend on serialized top-level actions.
 - `AstIf.cond` is success-driven, not value-driven; branch choice depends on success vs revert, not on returned bytes.
 - `AstSelect` success is provisional until the whole node succeeds; failing `exe_min` rolls back earlier successful children in that node.
 - AST rollback is state rollback only; it is not gas refund and not warmup refund.
@@ -328,7 +330,7 @@ AST in this protocol is a deterministic transaction-composition layer with the f
 
 - Runtime path selection is reversible for state, logs, and VM volatile business memory.
 - Gas and VM warmup are monotonic across the full transaction.
-- Transaction-level fee classification and signature requirements are static from serialized transaction bytes.
+- Transaction signatures are static from serialized transaction bytes, while fee semantics depend on transaction family: legacy Type1/Type2 use top-level serialized extra9 actions and Type3 uses explicit returned-gas charge sites.
 - VM main calls, P2SH hooks, and abstract hooks each keep their own execution-mode boundaries inside AST.
 
 These rules define the intended AST business semantics and must be used as the standard reference when reasoning about AST behavior.
