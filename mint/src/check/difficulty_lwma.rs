@@ -56,7 +56,7 @@ impl DifficultyGnr {
 
     fn asert_upgrade_height(&self) -> u64 {
         if self.cnf.is_mainnet() {
-            ASERT_UPGRADE_EPOCH * self.cnf.difficulty_adjust_blocks
+            ASERT_UPGRADE_HEIGHT
         } else {
             self.window_blocks() + 2
         }
@@ -537,45 +537,43 @@ mod difficulty_tests {
     }
 
     #[test]
-    fn asert_uses_explicit_parent_difficulty_for_easing_cap() {
+    fn asert_start_block_uses_fixed_target_without_parent_cap() {
         let _setup = scoped_protocol_setup();
         let dgnr = new_test_dgnr();
         let upgrade_height = dgnr.asert_upgrade_height();
-        let anchor_height = upgrade_height - 1;
         let prevdiff = 0xf0ff_ffff;
-        let mut blocks = HashMap::new();
-        blocks.insert(anchor_height - 1, build_intro(anchor_height - 1, 1_000, LOWEST_DIFFICULTY - 100_000));
-        blocks.insert(anchor_height, build_intro(anchor_height, 1_300, LOWEST_DIFFICULTY - 900_000));
-        let src = TestIntroSource::new(u64::MAX, blocks);
+        let src = TestIntroSource::new(0, HashMap::new());
 
         let target = dgnr.target_asert(prevdiff, 1_300, upgrade_height, 100_000_000, &src);
-        let eased_big = u32_to_biguint(prevdiff) * BigUint::from(ASERT_EASING_MAX_SCALE);
 
-        assert_eq!(target.big, eased_big);
+        assert_eq!(target.num, ASERT_START_TARGET_NUM);
+        assert_eq!(target.hash, u32_to_hash(ASERT_START_TARGET_NUM));
+        assert_eq!(target.big, u32_to_biguint(ASERT_START_TARGET_NUM));
     }
 
     #[test]
-    fn asert_anchor_lookup_bypasses_cache_above_root_height() {
+    fn legacy_difficulty_stays_active_through_738653() {
+        let _setup = scoped_protocol_setup();
+        let dgnr = new_test_dgnr();
+        assert!(!dgnr.is_asert_height(738653));
+        assert!(dgnr.is_asert_height(738654));
+    }
+
+    #[test]
+    fn asert_followup_uses_candidate_block_time() {
         let _setup = scoped_protocol_setup();
         let dgnr = new_test_dgnr();
         let upgrade_height = dgnr.asert_upgrade_height();
-        let anchor_height = upgrade_height - 1;
-        let prevdiff = LOWEST_DIFFICULTY - 50_000;
+        let prevdiff = ASERT_START_TARGET_NUM;
 
-        let mut first_blocks = HashMap::new();
-        first_blocks.insert(anchor_height - 1, build_intro(anchor_height - 1, 1_000, prevdiff));
-        first_blocks.insert(anchor_height, build_intro(anchor_height, 1_300, LOWEST_DIFFICULTY - 700_000));
-        let first = TestIntroSource::new(anchor_height - 1, first_blocks);
-        let _ = dgnr.req_block_intro(anchor_height, &first);
+        let mut blocks = HashMap::new();
+        blocks.insert(upgrade_height - 1, build_intro(upgrade_height - 1, 1_000, LOWEST_DIFFICULTY - 700_000));
+        blocks.insert(upgrade_height, build_intro(upgrade_height, 1_600, ASERT_START_TARGET_NUM));
+        let src = TestIntroSource::new(upgrade_height, blocks);
 
-        let mut second_blocks = HashMap::new();
-        second_blocks.insert(anchor_height - 1, build_intro(anchor_height - 1, 1_000, prevdiff));
-        second_blocks.insert(anchor_height, build_intro(anchor_height, 1_300, LOWEST_DIFFICULTY - 300_000));
-        let second = TestIntroSource::new(anchor_height - 1, second_blocks);
+        let fast_target = dgnr.target_asert(prevdiff, 1_600, upgrade_height + 1, 1_900, &src);
+        let slow_target = dgnr.target_asert(prevdiff, 1_600, upgrade_height + 1, 100_000_000, &src);
 
-        let first_target = dgnr.target_asert(prevdiff, 1_300, upgrade_height, 1_600, &first);
-        let second_target = dgnr.target_asert(prevdiff, 1_300, upgrade_height, 1_600, &second);
-
-        assert_ne!(first_target.num, second_target.num);
+        assert!(slow_target.big > fast_target.big);
     }
 }

@@ -1,4 +1,5 @@
-const ASERT_UPGRADE_EPOCH: u64 = 2566; // 739008 height
+const ASERT_UPGRADE_HEIGHT: u64 = 738654;
+const ASERT_START_TARGET_NUM: u32 = 0xe9cf_ffff;
 
 const ASERT_HALF_LIFE: i64 = 10800;
 const ASERT_RADIX_BITS: u32 = 16;
@@ -11,7 +12,7 @@ const ASERT_EASING_MAX_SCALE: u8 = 2;
 
 impl DifficultyGnr {
     fn asert_anchor_height(&self) -> u64 {
-        self.asert_upgrade_height().saturating_sub(1)
+        self.asert_upgrade_height()
     }
 
     fn target_asert(
@@ -22,16 +23,18 @@ impl DifficultyGnr {
         blkt: u64,
         src: &dyn BlockIntroSource,
     ) -> DifficultyTarget {
+        let upgrade_hei = self.asert_upgrade_height();
+        if hei == upgrade_hei {
+            return DifficultyTarget::from_num(ASERT_START_TARGET_NUM)
+        }
         let anchor_hei = self.asert_anchor_height();
-        let (anchor_time, anchor_diff, _) = self.req_block_intro(anchor_hei, src);
-        let anchor_parent_time = if anchor_hei == 0 {
-            anchor_time
-        } else {
-            self.req_block_intro(anchor_hei - 1, src).0
-        };
-        let time_delta = blkt as i128 - anchor_parent_time as i128;
-        let height_delta = hei as i128 - anchor_hei as i128;
-        let exponent = ((time_delta - self.cnf.each_block_target_time as i128 * (height_delta + 1)) * ASERT_RADIX as i128) / ASERT_HALF_LIFE as i128;
+        let anchor_time = self.req_block_intro(anchor_hei, src).0;
+        let anchor_target = u32_to_biguint(ASERT_START_TARGET_NUM);
+        let eval_time = blkt as i128;
+        let eval_hei = hei as i128;
+        let time_delta = eval_time - anchor_time as i128;
+        let height_delta = eval_hei - anchor_hei as i128;
+        let exponent = ((time_delta - self.cnf.each_block_target_time as i128 * height_delta) * ASERT_RADIX as i128) / ASERT_HALF_LIFE as i128;
         let num_shifts = exponent >> ASERT_RADIX_BITS;
         let frac = (exponent - (num_shifts << ASERT_RADIX_BITS)) as u128;
         let frac2 = frac * frac;
@@ -40,7 +43,7 @@ impl DifficultyGnr {
         let prev_target = u32_to_biguint(prevdiff);
         let ease_target = prev_target * BigUint::from(ASERT_EASING_MAX_SCALE);
         let max_target = u32_to_biguint(LOWEST_DIFFICULTY);
-        let mut next_target = u32_to_biguint(anchor_diff) * BigUint::from(factor);
+        let mut next_target = anchor_target * BigUint::from(factor);
         if num_shifts < 0 {
             next_target >>= (-num_shifts) as usize;
         } else if num_shifts > 0 {

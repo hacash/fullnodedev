@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,12 +60,22 @@ pub struct ApiExecCtx {
 }
 
 pub type ApiHandlerFn = fn(&ApiExecCtx, ApiRequest) -> ApiResponse;
+pub type ApiHandlerAsyncFn = fn(
+    ApiExecCtx,
+    ApiRequest,
+) -> Pin<Box<dyn Future<Output = ApiResponse> + Send + 'static>>;
+
+#[derive(Clone)]
+pub enum ApiHandler {
+    Sync(ApiHandlerFn),
+    Async(ApiHandlerAsyncFn),
+}
 
 #[derive(Clone)]
 pub struct ApiRoute {
     pub method: ApiMethod,
     pub path: String,
-    pub handler: ApiHandlerFn,
+    pub handler: ApiHandler,
 }
 
 impl ApiRoute {
@@ -71,7 +83,7 @@ impl ApiRoute {
         Self {
             method: ApiMethod::Get,
             path: path.to_owned(),
-            handler,
+            handler: ApiHandler::Sync(handler),
         }
     }
 
@@ -79,7 +91,15 @@ impl ApiRoute {
         Self {
             method: ApiMethod::Post,
             path: path.to_owned(),
-            handler,
+            handler: ApiHandler::Sync(handler),
+        }
+    }
+
+    pub fn get_async(path: &str, handler: ApiHandlerAsyncFn) -> Self {
+        Self {
+            method: ApiMethod::Get,
+            path: path.to_owned(),
+            handler: ApiHandler::Async(handler),
         }
     }
 }

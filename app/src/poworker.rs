@@ -400,12 +400,23 @@ fn deal_block_mining_results(
     if hash_more_power(&most.result_hash, most_hash) {
         *most_hash = most.result_hash.clone();
     }
-    // print hashrates
+    // print hashrate
     let tarhx: [u8; HASH_WIDTH] = most.target_hash.clone().try_into().unwrap();
     let target_rates = hash_to_rates(&tarhx, TARGET_BLOCK_TIME);
-    let nonce_rates = total_nonce_space as f64 / (total_use_secs / recv_count as f64);
-    let mut mnper = nonce_rates / target_rates;
-    if mnper > 1.0 {
+    let avg_use_secs = total_use_secs / recv_count as f64;
+    let nonce_rates = if avg_use_secs.is_finite() && avg_use_secs > 0.0 {
+        total_nonce_space as f64 / avg_use_secs
+    } else {
+        0.0
+    };
+    let mut mnper = if target_rates.is_finite() && target_rates > 0.0 {
+        nonce_rates / target_rates
+    } else {
+        0.0
+    };
+    if !mnper.is_finite() || mnper < 0.0 {
+        mnper = 0.0;
+    } else if mnper > 1.0 {
         mnper = 1.0;
     }
     let hac1day = mnper * ONEDAY_BLOCK_NUM * block_reward_number(deal_hei) as f64;
