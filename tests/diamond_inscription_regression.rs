@@ -285,6 +285,112 @@ fn diamond_inscription_edit_requires_a_over_100_protocol_cost() {
 }
 
 #[test]
+fn diamond_inscription_edit_allows_sponsor_main_with_owner_signature() {
+    init_setup_once();
+    let owner_acc = Account::create_by("diamond-inscription-edit-owner").unwrap();
+    let payer_acc = Account::create_by("diamond-inscription-edit-payer").unwrap();
+    let owner = addr_of(&owner_acc);
+    let payer = addr_of(&payer_acc);
+    let mut tx = TransactionType2::new_by(payer, Amount::mei(1), 1_730_000_005);
+    tx.fill_sign(&payer_acc).unwrap();
+    tx.fill_sign(&owner_acc).unwrap();
+
+    let diamond = DiamondName::from_readable(b"HYXYHZ").unwrap();
+    let expect_cost = calc_edit_inscription_protocol_cost(100);
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
+    seed_balance(&mut ctx, &payer, 1_000_000);
+    seed_diamond(&mut ctx, diamond, owner, 1, 0, 100);
+
+    let mut act = DiaInscEdit::new();
+    act.diamond = diamond;
+    act.index = Uint1::from(0);
+    act.protocol_cost = expect_cost.clone();
+    act.engraved_type = Uint1::from(1);
+    act.engraved_content = BytesW1::from_str("edited").unwrap();
+    act.execute(&mut ctx).unwrap();
+
+    let dia = CoreState::wrap(ctx.state()).diamond(&diamond).unwrap();
+    assert_eq!(dia.inscripts.as_list()[0].content.to_readable_or_hex(), "edited".to_owned());
+    assert_eq!(balance_amount(&mut ctx, &payer), Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap());
+}
+
+#[test]
+fn diamond_inscription_edit_rejects_missing_owner_signature_under_sponsor_mode() {
+    init_setup_once();
+    let owner_acc = Account::create_by("diamond-inscription-edit-owner-miss-sign").unwrap();
+    let payer_acc = Account::create_by("diamond-inscription-edit-payer-only").unwrap();
+    let owner = addr_of(&owner_acc);
+    let payer = addr_of(&payer_acc);
+    let mut tx = TransactionType2::new_by(payer, Amount::mei(1), 1_730_000_006);
+    tx.fill_sign(&payer_acc).unwrap();
+
+    let diamond = DiamondName::from_readable(b"HXVMEK").unwrap();
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
+    seed_balance(&mut ctx, &payer, 1_000_000);
+    seed_diamond(&mut ctx, diamond, owner, 1, 0, 100);
+
+    let mut act = DiaInscEdit::new();
+    act.diamond = diamond;
+    act.index = Uint1::from(0);
+    act.protocol_cost = calc_edit_inscription_protocol_cost(100);
+    act.engraved_type = Uint1::from(1);
+    act.engraved_content = BytesW1::from_str("edited").unwrap();
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("signature") || err.contains("failed"), "{}", err);
+}
+
+#[test]
+fn diamond_inscription_drop_allows_sponsor_main_with_owner_signature() {
+    init_setup_once();
+    let owner_acc = Account::create_by("diamond-inscription-drop-owner").unwrap();
+    let payer_acc = Account::create_by("diamond-inscription-drop-payer").unwrap();
+    let owner = addr_of(&owner_acc);
+    let payer = addr_of(&payer_acc);
+    let mut tx = TransactionType2::new_by(payer, Amount::mei(1), 1_730_000_007);
+    tx.fill_sign(&payer_acc).unwrap();
+    tx.fill_sign(&owner_acc).unwrap();
+
+    let diamond = DiamondName::from_readable(b"BSZNWT").unwrap();
+    let expect_cost = calc_drop_inscription_protocol_cost(100);
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
+    seed_balance(&mut ctx, &payer, 1_000_000);
+    seed_diamond(&mut ctx, diamond, owner, 1, 0, 100);
+
+    let mut act = DiaInscDrop::new();
+    act.diamond = diamond;
+    act.index = Uint1::from(0);
+    act.protocol_cost = expect_cost.clone();
+    act.execute(&mut ctx).unwrap();
+
+    let dia = CoreState::wrap(ctx.state()).diamond(&diamond).unwrap();
+    assert_eq!(dia.inscripts.length(), 0);
+    assert_eq!(balance_amount(&mut ctx, &payer), Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap());
+}
+
+#[test]
+fn diamond_inscription_drop_rejects_missing_owner_signature_under_sponsor_mode() {
+    init_setup_once();
+    let owner_acc = Account::create_by("diamond-inscription-drop-owner-miss-sign").unwrap();
+    let payer_acc = Account::create_by("diamond-inscription-drop-payer-only").unwrap();
+    let owner = addr_of(&owner_acc);
+    let payer = addr_of(&payer_acc);
+    let mut tx = TransactionType2::new_by(payer, Amount::mei(1), 1_730_000_008);
+    tx.fill_sign(&payer_acc).unwrap();
+
+    let diamond = DiamondName::from_readable(b"VYHWEH").unwrap();
+    let mut ctx = make_ctx(TEST_HEIGHT, tx.as_read());
+    seed_balance(&mut ctx, &payer, 1_000_000);
+    seed_diamond(&mut ctx, diamond, owner, 1, 0, 100);
+
+    let mut act = DiaInscDrop::new();
+    act.diamond = diamond;
+    act.index = Uint1::from(0);
+    act.protocol_cost = calc_drop_inscription_protocol_cost(100);
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("signature") || err.contains("failed"), "{}", err);
+}
+
+#[test]
 fn diamond_inscription_move_charges_by_target_append_rule_only() {
     init_setup_once();
     let from_acc = Account::create_by("diamond-inscription-move-from").unwrap();

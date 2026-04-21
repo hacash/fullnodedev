@@ -4,8 +4,9 @@ mod action_coverage {
     use basis::interface::ActExec;
     use basis::interface::{Context, Logs, State, StateOperat, Transaction, TransactionRead};
     use field::{
-        Address, Amount, Bool, BytesW1, BytesW2, DiamondInscript, DiamondName, DiamondSto, Field,
-        Hash, Inscripts, Parse, Readable, Serialize, Uint1, Uint2, Uint4,
+        Address, Amount, BlockHeight, Bool, BytesW1, BytesW2, DiamondInscript, DiamondName,
+        DiamondNumber, DiamondSmelt, DiamondSto, Field, Fixed8, Hash, Inscripts, Parse,
+        Readable, Serialize, Uint1, Uint2, Uint4,
     };
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
@@ -144,6 +145,48 @@ mod action_coverage {
     fn fund_main_addr(ctx: &mut dyn Context) {
         let main = ctx.env().tx.main;
         protocol::operate::hac_add(ctx, &main, &Amount::mei(1000)).unwrap();
+    }
+
+    fn seed_diamond_for_insc_edit(
+        ctx: &mut dyn Context,
+        diamond: DiamondName,
+        owner: Address,
+        insc_num: usize,
+        average_bid_burn_mei: u16,
+    ) {
+        let mut inscripts = Inscripts::default();
+        for i in 0..insc_num {
+            let one = DiamondInscript::create_by(
+                1,
+                BytesW1::from(format!("ins{}", i).into_bytes()).unwrap(),
+            );
+            inscripts.push(one).unwrap();
+        }
+        let mut state = CoreState::wrap(StateOperat::state(ctx));
+        state.diamond_set(
+            &diamond,
+            &DiamondSto {
+                status: Uint1::from(1u8),
+                address: owner,
+                prev_engraved_height: BlockHeight::from(1),
+                inscripts,
+            },
+        );
+        state.diamond_smelt_set(
+            &diamond,
+            &DiamondSmelt {
+                diamond,
+                number: DiamondNumber::from(1),
+                born_height: BlockHeight::from(1),
+                born_hash: Hash::default(),
+                prev_hash: Hash::default(),
+                miner_address: owner,
+                bid_fee: Amount::zero(),
+                nonce: Fixed8::default(),
+                average_bid_burn: Uint2::from(average_bid_burn_mei),
+                life_gene: Hash::default(),
+            },
+        );
     }
 
     // ═══════════════════════════════════════════════════
@@ -438,6 +481,72 @@ mod action_coverage {
         let act = ContractMainCall::from_bytecode(lang_to_bytecode("return 0").unwrap()).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("AST") && err.contains("CALL"), "{err}");
+    }
+
+    #[test]
+    fn maincall_hacd_insc_edit_succeeds_for_signed_owner_main() {
+        let _guard = test_guard();
+        let main_acc = Account::create_by("vm-hacd-insc-edit-owner").unwrap();
+        let main = Address::from(*main_acc.address());
+        let mut tx = make_tx3(main, 17);
+        tx.fill_sign(&main_acc).unwrap();
+        let mut ctx = make_ctx_from_tx(
+            300,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+
+        let diamond = DiamondName::from_readable(b"HYXYHY").unwrap();
+        seed_diamond_for_insc_edit(&mut ctx, diamond, main, 1, 100);
+
+        let script = format!(
+            r#"
+            hacd_insc_edit(0x{}, 0, mei_to_hac(1), 1, 0x06656469746564)
+            return 0
+        "#,
+            hex::encode(diamond.serialize())
+        );
+        let rv = execute_main_bytecode(&mut ctx, lang_to_bytecode(&script).unwrap()).unwrap();
+        assert!(!rv.extract_bool().unwrap());
+
+        let dia = CoreState::wrap(StateOperat::state(&mut ctx)).diamond(&diamond).unwrap();
+        assert_eq!(*dia.inscripts.as_list()[0].engraved_type, 1);
+        assert_eq!(dia.inscripts.as_list()[0].content.to_readable_or_hex(), "edited");
+    }
+
+    #[test]
+    fn maincall_hacd_insc_edit_rejects_missing_owner_signature_under_sponsor_mode() {
+        let _guard = test_guard();
+        let owner_acc = Account::create_by("vm-hacd-insc-edit-real-owner").unwrap();
+        let payer_acc = Account::create_by("vm-hacd-insc-edit-payer-only").unwrap();
+        let owner = Address::from(*owner_acc.address());
+        let payer = Address::from(*payer_acc.address());
+        let mut tx = make_tx3(payer, 17);
+        tx.fill_sign(&payer_acc).unwrap();
+        let mut ctx = make_ctx_from_tx(
+            300,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+
+        let diamond = DiamondName::from_readable(b"WTYUIA").unwrap();
+        seed_diamond_for_insc_edit(&mut ctx, diamond, owner, 1, 100);
+
+        let script = format!(
+            r#"
+            hacd_insc_edit(0x{}, 0, mei_to_hac(1), 1, 0x06656469746564)
+            return 0
+        "#,
+            hex::encode(diamond.serialize())
+        );
+        let err = execute_main_bytecode(&mut ctx, lang_to_bytecode(&script).unwrap()).unwrap_err();
+        assert!(err.contains("signature") || err.contains("failed"), "{err}");
     }
 
     #[test]

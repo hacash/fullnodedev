@@ -793,6 +793,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 // storage
                 SSTAT => {
                     nsr!();
+                    // SSTAT returns only a fixed-size status tuple, so it does not add SLOAD's value-return storage_read(vlen) surcharge here.
                     let v = {
                         let k = ops.peek()?;
                         host.sstat(gst, cap, context_addr, k)?

@@ -142,18 +142,18 @@ fn check_inscription_index(
 }
 
 #[inline]
-fn load_owned_diamond_for_inscription_index(
+fn load_diamond_owner_for_inscription_index(
     state: &mut CoreState,
-    owner: &Address,
     diamond: &DiamondName,
     idx: usize,
     pending_height: u64,
-) -> XRet<DiamondSto> {
-    let diasto = check_diamond_status_for_inscription(state, owner, diamond)?;
+) -> XRet<(DiamondSto, Address)> {
+    let diasto = load_diamond_for_inscription(state, diamond)?;
+    let owner = diasto.address.clone();
     let insc_len = diasto.inscripts.length();
     check_inscription_index(diamond, idx, insc_len, "")?;
     check_inscription_cooldown(*diasto.prev_engraved_height, pending_height, diamond)?;
-    Ok(diasto)
+    Ok((diasto, owner))
 }
 
 #[inline]
@@ -351,20 +351,19 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> XRet<V
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
     check_protocol_cost(pfee)?;
+    // fee payer must sign via tx.main signature already bound to tx execution
     ctx.check_sign(&main_addr)?;
     // check inscription content
     check_inscription_content(*this.engraved_type, &this.engraved_content)?;
     let idx = *this.index as usize;
     let pdhei = env.block.height;
-    // check diamond
+    // check diamond owner signature and status/index/cooldown
+    let (mut diasto, owner) = {
+        let mut state = CoreState::wrap(ctx.state());
+        load_diamond_owner_for_inscription_index(&mut state, &this.diamond, idx, pdhei)?
+    };
+    ctx.check_sign(&owner)?;
     let mut state = CoreState::wrap(ctx.state());
-    let mut diasto = load_owned_diamond_for_inscription_index(
-        &mut state,
-        &main_addr,
-        &this.diamond,
-        idx,
-        pdhei,
-    )?;
     // protocol cost: average_bid_burn / 100
     let avg_bid_burn_mei = load_diamond_average_bid_burn_mei(&mut state, &this.diamond)?;
     let cost = calc_edit_inscription_protocol_cost(avg_bid_burn_mei);
@@ -505,18 +504,17 @@ fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> XRet<V
     let main_addr = env.tx.main;
     let pfee = &this.protocol_cost;
     check_protocol_cost(pfee)?;
+    // fee payer must sign via tx.main signature already bound to tx execution
     ctx.check_sign(&main_addr)?;
     let idx = *this.index as usize;
     let pdhei = env.block.height;
-    // check diamond
+    // check diamond owner signature and status/index/cooldown
+    let (mut diasto, owner) = {
+        let mut state = CoreState::wrap(ctx.state());
+        load_diamond_owner_for_inscription_index(&mut state, &this.diamond, idx, pdhei)?
+    };
+    ctx.check_sign(&owner)?;
     let mut state = CoreState::wrap(ctx.state());
-    let mut diasto = load_owned_diamond_for_inscription_index(
-        &mut state,
-        &main_addr,
-        &this.diamond,
-        idx,
-        pdhei,
-    )?;
     // cost: average_bid_burn / 50
     let avg_bid_burn_mei = load_diamond_average_bid_burn_mei(&mut state, &this.diamond)?;
     let cost = calc_drop_inscription_protocol_cost(avg_bid_burn_mei);

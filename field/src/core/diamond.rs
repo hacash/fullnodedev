@@ -66,17 +66,25 @@ impl Serialize for DiamondName {
 impl_field_only_new! {DiamondName}
 
 impl ToJSON for DiamondName {
-    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
-        self.0.to_json_fmt(fmt)
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        format!("\"{}\"", self.name())
     }
 }
 
 impl FromJSON for DiamondName {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let mut raw = Fixed6::new();
-        raw.from_json(json)?;
-        Self::check_bytes(raw.as_ref())?;
-        self.0 = raw;
+        let raw = json_expect_quoted_decoded(json)?;
+        let trimmed = raw.trim();
+        if let Ok(dia) = Self::from_readable(trimmed.as_bytes()) {
+            self.0 = dia.0;
+            return Ok(());
+        }
+        let data = json_decode_binary(json)?;
+        if data.len() != Self::SIZE {
+            return errf!("DiamondName size mismatch: expected {} but got {}", Self::SIZE, data.len());
+        }
+        Self::check_bytes(&data)?;
+        self.0 = Fixed6::from(data.try_into().unwrap());
         Ok(())
     }
 }
