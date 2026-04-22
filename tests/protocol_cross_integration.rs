@@ -1047,6 +1047,60 @@ fn test_tex_cell_json_must_use_cellid() {
 }
 
 #[test]
+fn test_tex_action_rejects_ast_context_even_in_fast_sync() {
+    use protocol::tex::*;
+
+    let mut env = Env::default();
+    env.tx.main = field::ADDRESS_ONEX.clone();
+    env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
+    let mut ctx = build_tex_ctx_with_state(env, Box::new(TestMemState::default()));
+    let acc = Account::create_by_password("cross_tex_ast_ctx_guard").unwrap();
+    let addr = Address::from(*acc.address());
+
+    let mut act = TexCellAct::create_by(addr);
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100))).unwrap();
+    act.do_sign(&acc).unwrap();
+
+    ctx.exec_from_set(ExecFrom::Ast);
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("TOP") && err.contains("AST"), "{err}");
+}
+
+#[test]
+fn test_p2sh_prove_rejects_call_context_even_in_fast_sync() {
+    let mut tx = TransactionType3::new_by(field::ADDRESS_ONEX.clone(), Amount::unit238(1000), 1_730_000_300);
+    tx.gas_max = Uint1::from(17);
+    let mut env = Env::default();
+    env.block.height = protocol::upgrade::ONLINE_OPEN_HEIGHT;
+    env.tx = create_tx_info(&tx);
+    env.chain.fast_sync = true;
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.gas_initialize(10000).unwrap();
+
+    let (_scriptmh, act) = build_p2sh_unlock_prove("return 0");
+    ctx.exec_from_set(ExecFrom::Call);
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("P2SHScriptProve can only run in TOP context"), "{err}");
+}
+
+#[test]
+fn test_p2sh_prove_rejects_ast_context_even_in_fast_sync() {
+    let mut tx = TransactionType3::new_by(field::ADDRESS_ONEX.clone(), Amount::unit238(1000), 1_730_000_300);
+    tx.gas_max = Uint1::from(17);
+    let mut env = Env::default();
+    env.block.height = protocol::upgrade::ONLINE_OPEN_HEIGHT;
+    env.tx = create_tx_info(&tx);
+    env.chain.fast_sync = true;
+    let mut ctx = build_ast_ctx_with_state(env, Box::new(AstTestState::default()), &tx);
+    ctx.gas_initialize(10000).unwrap();
+
+    let (_scriptmh, act) = build_p2sh_unlock_prove("return 0");
+    ctx.exec_from_set(ExecFrom::Ast);
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("P2SHScriptProve can only run in TOP context"), "{err}");
+}
+
+#[test]
 fn test_tex_action_signature_rejects_payload_tamper() {
     use protocol::tex::*;
 

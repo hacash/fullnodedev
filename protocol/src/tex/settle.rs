@@ -6,7 +6,7 @@ pub fn do_settlement(ctx: &mut dyn Context) -> Rerr {
     // Then execute state mutations without holding `&mut TexLedger` to avoid borrow cycles.
     let mut diamond_trs: Vec<(Address, DiamondNameListMax200)> = vec![];
     {
-        let t = ctx.tex_ledger();
+        let t = ctx.tex_ledger_mut_top()?;
         if t.zhu != 0 || t.sat != 0 || t.dia != 0 {
             return errf!("coin settlement check failed");
         }

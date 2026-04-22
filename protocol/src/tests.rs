@@ -116,6 +116,16 @@ fn init_action_env_test_registry() {
     let _guard = install_test_registry();
 }
 
+struct DummyP2sh;
+impl P2sh for DummyP2sh {
+    fn code_stuff(&self) -> &[u8] {
+        b""
+    }
+    fn witness(&self) -> &[u8] {
+        b""
+    }
+}
+
 #[test]
 fn test_setup_default_uses_sha3_block_hasher() {
     let registry = crate::setup::ProtocolSetup::default();
@@ -1807,7 +1817,7 @@ fn test_tex_zhu_get_accepts_fractional_hac_balance() {
         state.balance_set(&field::ADDRESS_ONEX, &bls);
     }
 
-    ctx.tex_ledger().zhu = 1;
+    ctx.tex_ledger_mut_top().unwrap().zhu = 1;
     CellTrsZhuGet::new(Fold64::from(1).unwrap())
         .execute(&mut ctx, &field::ADDRESS_ONEX)
         .unwrap();
@@ -1843,6 +1853,70 @@ fn test_tex_zhu_condition_accepts_exact_one_zhu() {
 }
 
 #[test]
+fn test_tex_ledger_direct_write_rejects_call_context() {
+    let _guard = install_test_registry();
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    ctx.exec_from_set(ExecFrom::Call);
+    let err = ctx.tex_ledger_mut_top().err().unwrap();
+    assert!(err.contains("tex ledger write only allowed in TOP context"), "{err}");
+}
+
+#[test]
+fn test_tex_ledger_direct_write_rejects_ast_context() {
+    let _guard = install_test_registry();
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    ctx.exec_from_set(ExecFrom::Ast);
+    let err = ctx.tex_ledger_mut_top().err().unwrap();
+    assert!(err.contains("tex ledger write only allowed in TOP context"), "{err}");
+}
+
+#[test]
+fn test_p2sh_set_rejects_call_context() {
+    let _guard = install_test_registry();
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    ctx.exec_from_set(ExecFrom::Call);
+    let err = ctx
+        .p2sh_set(Address::create_scriptmh([7u8; 20]), Box::new(DummyP2sh))
+        .unwrap_err();
+    assert!(err.contains("p2sh_set only allowed in TOP context"), "{err}");
+}
+
+#[test]
+fn test_p2sh_set_rejects_ast_context() {
+    let _guard = install_test_registry();
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    ctx.exec_from_set(ExecFrom::Ast);
+    let err = ctx
+        .p2sh_set(Address::create_scriptmh([8u8; 20]), Box::new(DummyP2sh))
+        .unwrap_err();
+    assert!(err.contains("p2sh_set only allowed in TOP context"), "{err}");
+}
+
+#[test]
 fn test_tex_action_rejects_call_context_even_in_fast_sync() {
     let _guard = install_test_registry();
     use crate::tex::*;
@@ -1862,6 +1936,33 @@ fn test_tex_action_rejects_call_context_even_in_fast_sync() {
     act.do_sign(&acc).unwrap();
 
     ctx.exec_from_set(ExecFrom::Call);
+    let err = act.execute(&mut ctx).unwrap_err();
+    assert!(
+        err.contains("TexCellAct can only run in TOP context"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_tex_action_rejects_ast_context_even_in_fast_sync() {
+    let _guard = install_test_registry();
+    use crate::tex::*;
+
+    let tx = TransactionType2::new_by(
+        field::ADDRESS_ONEX.clone(),
+        Amount::unit238(1000),
+        1730000000,
+    );
+    let mut ctx = build_tex_test_ctx(&tx);
+    let acc = Account::create_by_password("tex_ast_ctx_guard").unwrap();
+    let addr = Address::from(*acc.address());
+
+    let mut act = TexCellAct::create_by(addr);
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100)))
+        .unwrap();
+    act.do_sign(&acc).unwrap();
+
+    ctx.exec_from_set(ExecFrom::Ast);
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(
         err.contains("TexCellAct can only run in TOP context"),

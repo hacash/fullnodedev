@@ -27,7 +27,7 @@ macro_rules! define_cell_trs_zhu {
                 let amt = Amount::zhu(zhu);
                 $zhu_op(ctx, taradr, &amt)?;
                 // tex add
-                let tex = ctx.tex_ledger();
+                let tex = ctx.tex_ledger_mut_top()?;
                 let Some(zhures) = tex.zhu.$state_op(zhu as i64) else {
                     return errf!("cell state coin zhu overflow");
                 };
@@ -78,7 +78,7 @@ macro_rules! define_cell_trs_sat {
                 if satnum > i64::MAX as u64 {
                     return errf!("cell sat too large");
                 }
-                let tex = ctx.tex_ledger();
+                let tex = ctx.tex_ledger_mut_top()?;
                 let Some(satres) = tex.sat.$state_op(satnum as i64) else {
                     return errf!("cell state coin sat overflow");
                 };
@@ -124,7 +124,7 @@ impl CellExec for CellTrsDiaPay {
         self.diamonds.check()?;
         do_diamonds_transfer(&self.diamonds, taradr, &SETTLEMENT_ADDR, ctx)?;
         // tex add
-        let tex = ctx.tex_ledger();
+        let tex = ctx.tex_ledger_mut_top()?;
         tex.record_diamond_pay(self.diamonds.clone())
     }
 }
@@ -159,7 +159,7 @@ impl CellExec for CellTrsDiaGet {
         // Diamond get is quantity-only by design.
         // TEX settles diamonds as fungible units before final name assignment.
         // tex add
-        let tex = ctx.tex_ledger();
+        let tex = ctx.tex_ledger_mut_top()?;
         tex.record_diamond_get(taradr, self.dianum.uint() as usize)
     }
 }
@@ -198,7 +198,7 @@ macro_rules! define_cell_trs_asset {
                     $asset_op(state, taradr, &self.asset)?;
                 }
                 // tex add
-                let tex = ctx.tex_ledger();
+                let tex = ctx.tex_ledger_mut_top()?;
                 let rcd = tex.assets.entry(self.asset.serial).or_insert(0);
                 let Some(assetres) = rcd.$state_op(self.asset.amount.uint() as i128) else {
                     return errf!("cell state asset <{}> overflow", self.asset.serial.uint());

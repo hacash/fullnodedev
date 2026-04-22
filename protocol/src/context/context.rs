@@ -155,6 +155,9 @@ impl<'a> ContextInst<'a> {
     }
 
     fn p2sh_insert(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
+        if self.exec_from != ExecFrom::Top {
+            return errf!("p2sh_set only allowed in TOP context, got {}", self.exec_from)
+        }
         adr.must_scriptmh()?;
         if self.psh.contains_key(&adr) {
             return errf!("p2sh '{}' already proved in current tx", adr);
@@ -296,8 +299,15 @@ impl Context for ContextInst<'_> {
         self.restore_volatile_inner(snap)
     }
 
-    fn tex_ledger(&mut self) -> &mut TexLedger {
-        &mut self.tex_ledger
+    fn tex_ledger(&self) -> &TexLedger {
+        &self.tex_ledger
+    }
+
+    fn tex_ledger_mut_top(&mut self) -> Ret<&mut TexLedger> {
+        if self.exec_from != ExecFrom::Top {
+            return errf!("tex ledger write only allowed in TOP context, got {}", self.exec_from)
+        }
+        Ok(&mut self.tex_ledger)
     }
 
     fn logs(&mut self) -> &mut dyn Logs {
