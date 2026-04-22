@@ -281,6 +281,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             compute: base_gas,
             ..VmGasBuckets::default()
         };
+        let mut step_gas_rebate = 0i64;
 
         macro_rules! gas_add {
             ($kind:ident, raw, $n:expr) => {{
@@ -818,13 +819,19 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     nsw!();
                     let v = ops.pop()?.valid(cap)?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.sedit(gst, cap, context_addr, k, v)?);
+                    let (fee, rebate) = host.sedit(gst, cap, context_addr, k, v)?;
+                    gas_add!(storage, raw, fee);
+                    step_gas_rebate = step_gas_rebate
+                        .checked_add(rebate)
+                        .ok_or_else(|| ItrErr::new(ItrErrCode::GasError, "gas refund overflow"))?;
                 }
                 SDEL => {
                     nsw!();
                     let k = ops.pop()?;
                     let refund = host.sdel(gst, cap, context_addr, k)?;
-                    host.gas_rebate(refund)?;
+                    step_gas_rebate = step_gas_rebate
+                        .checked_add(refund)
+                        .ok_or_else(|| ItrErr::new(ItrErrCode::GasError, "gas refund overflow"))?;
                 }
                 SNEW => {
                     nsw!();
@@ -1004,6 +1011,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         // reduce gas for use
         let step_total = check_add_gas_use(gas_use, &step_gas_use, gst)?;
         host.gas_charge(step_total)?;
+        host.gas_rebate(step_gas_rebate)?;
         match step {
             Ok(Step::Exit(exit)) => return Ok(exit),
             Ok(Step::Continue) => {}

@@ -1326,7 +1326,7 @@ mod resource_tests {
             unreachable!()
         }
 
-        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<(i64, i64)> {
             unreachable!()
         }
 

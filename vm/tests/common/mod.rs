@@ -113,7 +113,7 @@ impl VmHost for TestVmHost<'_> {
         addr: &FieldAddress,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64> {
+    ) -> VmrtRes<(i64, i64)> {
         let _ = (gst, cap, addr, key, val);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }

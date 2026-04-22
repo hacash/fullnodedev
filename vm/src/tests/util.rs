@@ -96,7 +96,7 @@ impl VmHost for TestVmHost<'_> {
         addr: &Address,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64> {
+    ) -> VmrtRes<(i64, i64)> {
         let hei = self.ctx.env().block.height;
         crate::VMState::wrap(self.ctx.state()).sedit(gst, cap, hei, addr, key, val)
     }

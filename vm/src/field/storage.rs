@@ -153,6 +153,24 @@ fn refund_for_live_credit(credit: u64, storage_period: u64) -> i64 {
     u64_to_i64_sat(credit.saturating_div(storage_period))
 }
 
+#[inline(always)]
+fn credit_cap_for_blocks(unit: u64, blocks: u64, tip: &str) -> VmrtRes<u64> {
+    let credit = (unit as u128)
+        .checked_mul(blocks as u128)
+        .ok_or_else(|| ItrErr::new(StorageError, tip))?;
+    if credit > u64::MAX as u128 {
+        return itr_err_fmt!(StorageError, "{}", tip);
+    }
+    Ok(credit as u64)
+}
+
+#[inline(always)]
+fn clamp_credit_to_cap(credit: u64, cap: u64) -> (u64, u64) {
+    let next = credit.min(cap);
+    let trimmed = credit.saturating_sub(next);
+    (next, trimmed)
+}
+
 /* * */
 inst_state_define! { VMState,
 
@@ -268,7 +286,7 @@ impl VMState<'_> {
         cadr: &Address,
         k: Value,
         v: Value,
-    ) -> VmrtRes<i64> {
+    ) -> VmrtRes<(i64, i64)> {
         v.check_non_nil_scalar(StorageNilNotAllowed)?;
         let val_len = v.can_get_size()? as usize;
         let max_val = cap.value_size;
@@ -289,9 +307,17 @@ impl VMState<'_> {
         }
         old.data = v;
         old.charge = BlockHeight::from(curhei);
-        self.ctrtkvdb_set(&sk, &old);
         let unit = ValueSto::unit_for(gst, &old.data)?;
-        Ok(u64_to_i64_sat(unit).saturating_mul(gst.storage_edit_mul))
+        let live_cap = credit_cap_for_blocks(unit, cap.storage_live_max_blocks(), "live credit cap overflow")?;
+        let recover_cap = credit_cap_for_blocks(unit, cap.storage_recv_max_blocks(), "recover credit cap overflow")?;
+        let (live_credit, trimmed_live) = clamp_credit_to_cap(old.live_credit.uint() as u64, live_cap);
+        let (recover_credit, _) = clamp_credit_to_cap(old.recover_credit.uint() as u64, recover_cap);
+        old.live_credit = Uint4::from(ValueSto::credit_u32(live_credit, "edit live credit overflow")?);
+        old.recover_credit = Uint4::from(ValueSto::credit_u32(recover_credit, "edit recover credit overflow")?);
+        self.ctrtkvdb_set(&sk, &old);
+        let fee = u64_to_i64_sat(unit).saturating_mul(gst.storage_edit_mul);
+        let rebate = refund_for_live_credit(trimmed_live, cap.storage_period);
+        Ok((fee, rebate))
     }
 
     fn srent(
@@ -654,6 +680,127 @@ mod storage_field_tests {
             vmsta.sload(&gst, &cap, 1, &addr, &key).unwrap(),
             Value::Bytes(vec![7, 7, 7, 7])
         );
+    }
+
+    #[test]
+    fn sedit_shrink_clamps_live_to_cap_and_rebates_trimmed_live_only() {
+        let mut state = StateMem::default();
+        let mut vmsta = VMState::wrap(&mut state);
+        let gst = test_gas();
+        let mut cap = test_cap();
+        cap.storage_period = 10;
+        cap.storage_live_max_periods = 2;
+        cap.storage_recv_max_periods = 2;
+        let addr = test_addr();
+        let key = Value::Bytes(b"k9a".to_vec());
+
+        vmsta.snew(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1, 2, 3, 4]), Value::U64(1)).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
+        sto.live_credit = Uint4::from(400);
+        sto.recover_credit = Uint4::from(15);
+        vmsta.ctrtkvdb_set(&sk, &sto);
+
+        let (fee, rebate) = vmsta
+            .sedit(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![9]))
+            .unwrap();
+        assert_eq!(fee, 1);
+        assert_eq!(rebate, refund_for_live_credit(380, cap.storage_period));
+
+        let sto = vmsta.ctrtkvdb(&sk).unwrap();
+        assert_eq!(sto.live_credit.uint(), 20);
+        assert_eq!(sto.recover_credit.uint(), 15);
+        let stat = vmsta.sstat(&gst, &cap, 1, &addr, &key).unwrap();
+        let Value::Tuple(items) = stat else { panic!("expected tuple") };
+        assert_eq!(items.to_vec(), vec![Value::U64(cap.storage_live_max_blocks()), Value::U64(15)]);
+    }
+
+    #[test]
+    fn sedit_shrink_burns_trimmed_recover_without_rebate() {
+        let mut state = StateMem::default();
+        let mut vmsta = VMState::wrap(&mut state);
+        let gst = test_gas();
+        let mut cap = test_cap();
+        cap.storage_period = 10;
+        cap.storage_live_max_periods = 3;
+        cap.storage_recv_max_periods = 2;
+        let addr = test_addr();
+        let key = Value::Bytes(b"k9b".to_vec());
+
+        vmsta.snew(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1, 2, 3, 4]), Value::U64(1)).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
+        sto.live_credit = Uint4::from(25);
+        sto.recover_credit = Uint4::from(200);
+        vmsta.ctrtkvdb_set(&sk, &sto);
+
+        let (_, rebate) = vmsta
+            .sedit(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![7]))
+            .unwrap();
+        assert_eq!(rebate, 0);
+
+        let sto = vmsta.ctrtkvdb(&sk).unwrap();
+        assert_eq!(sto.live_credit.uint(), 25);
+        assert_eq!(sto.recover_credit.uint(), 20);
+        let stat = vmsta.sstat(&gst, &cap, 1, &addr, &key).unwrap();
+        let Value::Tuple(items) = stat else { panic!("expected tuple") };
+        assert_eq!(items.to_vec(), vec![Value::U64(25), Value::U64(cap.storage_recv_max_blocks())]);
+    }
+
+    #[test]
+    fn sedit_grow_shortens_life_without_forcing_top_up() {
+        let mut state = StateMem::default();
+        let mut vmsta = VMState::wrap(&mut state);
+        let gst = test_gas();
+        let mut cap = test_cap();
+        cap.storage_period = 10;
+        let addr = test_addr();
+        let key = Value::Bytes(b"k9c".to_vec());
+
+        vmsta.snew(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1]), Value::U64(1)).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
+        sto.live_credit = Uint4::from(20);
+        sto.recover_credit = Uint4::from(20);
+        vmsta.ctrtkvdb_set(&sk, &sto);
+
+        let (_, rebate) = vmsta
+            .sedit(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1, 2, 3, 4, 5]))
+            .unwrap();
+        assert_eq!(rebate, 0);
+
+        let stat = vmsta.sstat(&gst, &cap, 1, &addr, &key).unwrap();
+        let Value::Tuple(items) = stat else { panic!("expected tuple") };
+        assert_eq!(items.to_vec(), vec![Value::U64(4), Value::U64(4)]);
+    }
+
+    #[test]
+    fn sedit_shrink_at_cap_has_no_rebate() {
+        let mut state = StateMem::default();
+        let mut vmsta = VMState::wrap(&mut state);
+        let gst = test_gas();
+        let mut cap = test_cap();
+        cap.storage_period = 10;
+        cap.storage_live_max_periods = 2;
+        cap.storage_recv_max_periods = 2;
+        let addr = test_addr();
+        let key = Value::Bytes(b"k9d".to_vec());
+
+        vmsta.snew(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1, 2, 3, 4]), Value::U64(1)).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
+        sto.live_credit = Uint4::from(20);
+        sto.recover_credit = Uint4::from(20);
+        vmsta.ctrtkvdb_set(&sk, &sto);
+
+        let (_, rebate) = vmsta
+            .sedit(&gst, &cap, 1, &addr, key.clone(), Value::Bytes(vec![1]))
+            .unwrap();
+        assert_eq!(rebate, 0);
+
+        let sto = vmsta.ctrtkvdb(&sk).unwrap();
+        assert_eq!(sto.live_credit.uint(), 20);
+        assert_eq!(sto.recover_credit.uint(), 20);
     }
 
     #[test]

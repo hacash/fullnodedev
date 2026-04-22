@@ -104,7 +104,7 @@ mod tests {
             addr: &Address,
             key: vm::value::Value,
             val: vm::value::Value,
-        ) -> VmrtRes<i64> {
+        ) -> VmrtRes<(i64, i64)> {
             let _ = (gst, cap, addr, key, val);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }

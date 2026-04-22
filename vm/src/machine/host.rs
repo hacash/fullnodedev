@@ -49,7 +49,7 @@ pub trait VmHost {
         addr: &Address,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64>;
+    ) -> VmrtRes<(i64, i64)>;
     fn srent(
         &mut self,
         gst: &GasExtra,
@@ -145,7 +145,7 @@ impl<T: Context + ?Sized> VmHost for T {
         addr: &Address,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64> {
+    ) -> VmrtRes<(i64, i64)> {
         let hei = self.env().block.height;
         crate::VMState::wrap(self.state()).sedit(gst, cap, hei, addr, key, val)
     }

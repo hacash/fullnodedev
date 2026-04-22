@@ -61,12 +61,15 @@ mod bounds_tests {
     #[derive(Default)]
     struct DummyHost {
         gas_remaining: i64,
+        gas_rebated: i64,
         act_res: Vec<u8>,
         act_gas: u32,
         act_err: Option<String>,
         act_body: Vec<u8>,
         srest_res: Option<Value>,
         sload_res: Option<Value>,
+        sdel_res: Option<i64>,
+        sedit_res: Option<(i64, i64)>,
         log_calls: usize,
     }
 
@@ -105,7 +108,10 @@ mod bounds_tests {
         }
 
         fn gas_rebate(&mut self, gas: i64) -> VmrtErr {
-            let _ = gas;
+            self.gas_rebated = self
+                .gas_rebated
+                .checked_add(gas)
+                .ok_or_else(|| ItrErr::new(ItrErrCode::GasError, "gas refund overflow"))?;
             Ok(())
         }
 
@@ -145,7 +151,10 @@ mod bounds_tests {
         }
 
         fn sdel(&mut self, _gst: &GasExtra, _cap: &SpaceCap, _cadr: &Address, _key: Value) -> VmrtRes<i64> {
-            itr_err_code!(ItrErrCode::StorageError)
+            match self.sdel_res {
+                Some(v) => Ok(v),
+                None => itr_err_code!(ItrErrCode::StorageError),
+            }
         }
 
         fn snew(
@@ -167,8 +176,11 @@ mod bounds_tests {
             _cadr: &Address,
             _key: Value,
             _val: Value,
-        ) -> VmrtRes<i64> {
-            itr_err_code!(ItrErrCode::StorageError)
+        ) -> VmrtRes<(i64, i64)> {
+            match self.sedit_res {
+                Some(v) => Ok(v),
+                None => itr_err_code!(ItrErrCode::StorageError),
+            }
         }
 
         fn srent(
@@ -233,6 +245,17 @@ mod bounds_tests {
     where
         F: FnOnce(&mut Stack, &mut Stack, &mut Heap, &mut GKVMap, &mut CtcKVMap, &ContractAddress),
     {
+        run_with_setup_host(codes, host, setup).0
+    }
+
+    fn run_with_setup_host<F>(
+        codes: Vec<u8>,
+        host: DummyHost,
+        setup: F,
+    ) -> (i64, DummyHost)
+    where
+        F: FnOnce(&mut Stack, &mut Stack, &mut Heap, &mut GKVMap, &mut CtcKVMap, &ContractAddress),
+    {
         let mut pc: usize = 0;
         let mut gas: i64 = 1000;
         let mut host = host;
@@ -270,7 +293,7 @@ mod bounds_tests {
             &mut host,
         )
         .unwrap();
-        1000 - gas
+        (1000 - gas, host)
     }
 
     #[test]
@@ -2365,6 +2388,109 @@ mod bounds_tests {
         assert_eq!(gas_9, gas_8 + 1);
     }
 
+    #[test]
+    fn sedit_rebate_is_applied_after_step_charge_succeeds() {
+        use crate::rt::Bytecode;
+
+        let (_gas_used, host) = run_with_setup_host(
+            vec![Bytecode::SEDIT as u8, Bytecode::END as u8],
+            DummyHost {
+                sedit_res: Some((7, 5)),
+                ..Default::default()
+            },
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                ops.push(Value::U8(1)).unwrap();
+                ops.push(Value::Bytes(vec![8])).unwrap();
+            },
+        );
+
+        assert_eq!(host.gas_rebated, 5);
+    }
+
+    #[test]
+    fn sedit_rebate_is_not_applied_when_step_runs_out_of_gas() {
+        use crate::rt::Bytecode;
+
+        let codes = vec![Bytecode::SEDIT as u8, Bytecode::END as u8];
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1;
+        let mut host = DummyHost {
+            gas_remaining: 1,
+            sedit_res: Some((10, 6)),
+            ..Default::default()
+        };
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+        operands.push(Value::U8(1)).unwrap();
+        operands.push(Value::Bytes(vec![8])).unwrap();
+
+        let res = execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        );
+
+        assert!(matches!(res, Err(ItrErr(ItrErrCode::OutOfGas, _))));
+        assert_eq!(host.gas_rebated, 0);
+    }
+
+    #[test]
+    fn sdel_rebate_is_not_applied_when_step_runs_out_of_gas() {
+        use crate::rt::Bytecode;
+
+        let codes = vec![Bytecode::SDEL as u8, Bytecode::END as u8];
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1;
+        let mut host = DummyHost {
+            gas_remaining: 1,
+            sdel_res: Some(9),
+            ..Default::default()
+        };
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+        operands.push(Value::U8(1)).unwrap();
+
+        let res = execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        );
+
+        assert!(matches!(res, Err(ItrErr(ItrErrCode::OutOfGas, _))));
+        assert_eq!(host.gas_rebated, 0);
+    }
 
     #[test]
     fn keys_and_clone_compo_bytes_include_map_key_bytes() {

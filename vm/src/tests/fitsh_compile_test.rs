@@ -931,7 +931,7 @@ return C.0xabcdef01(1, 2)",
                     addr: &Address,
                     key: Value,
                     val: Value,
-                ) -> VmrtRes<i64> {
+                ) -> VmrtRes<(i64, i64)> {
                     let _ = (gst, cap, addr, key, val);
                     Err(ItrErr::code(ItrErrCode::StorageError))
                 }
