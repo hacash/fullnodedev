@@ -170,7 +170,7 @@ mod action_call_tests {
         let def = search_act_by_id(DiaInscEdit::IDX, &ACTION_DEFS)
             .expect("DiaInscEdit must exist in ACTION_DEFS");
         assert_eq!(def.1, "hacd_insc_edit");
-        assert_eq!(def.3, 5);
+        assert_eq!(def.3, 4);
     }
 
     #[test]

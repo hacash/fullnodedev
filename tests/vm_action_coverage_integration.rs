@@ -4,7 +4,7 @@ mod action_coverage {
     use basis::interface::ActExec;
     use basis::interface::{Context, Logs, State, StateOperat, Transaction, TransactionRead};
     use field::{
-        Address, Amount, BlockHeight, Bool, BytesW1, BytesW2, DiamondInscript, DiamondName,
+        Address, Amount, BlockHeight, BytesW1, BytesW2, DiamondInscript, DiamondName,
         DiamondNumber, DiamondSmelt, DiamondSto, Field, Fixed8, Hash, Inscripts, Parse,
         Readable, Serialize, Uint1, Uint2, Uint4,
     };
@@ -137,7 +137,6 @@ mod action_coverage {
         act.nonce = Uint4::from(nonce);
         // Provide generous protocol fee to cover any contract size
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         act.contract = contract;
         act.execute(ctx)
     }
@@ -963,7 +962,6 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(77u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         let over = SpaceCap::new(1).value_size + 1;
         act.construct_argv = BytesW2::from(vec![0xAB; over]).unwrap();
         act.contract = make_external_contract("f", "return 0");
@@ -973,7 +971,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_allows_missing_construct_when_construct_must_false() {
+    fn deploy_allows_missing_construct_when_construct_argv_empty() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
@@ -989,7 +987,6 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(78u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(false);
         act.contract = Contract::new()
             .func(
                 Func::new("f")
@@ -1006,6 +1003,80 @@ mod action_coverage {
             VMState::wrap(StateOperat::state(&mut ctx))
                 .contract(&caddr)
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn deploy_rejects_non_empty_construct_argv_without_construct() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+
+        let mut act = ContractDeploy::new();
+        act.nonce = Uint4::from(79u32);
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_argv = BytesW2::from(vec![0xEE]).unwrap();
+        act.contract = Contract::new()
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(
+            err.contains("construct argv provided but Construct hook not found"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn deploy_auto_runs_construct_when_present() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
+
+        let mut act = ContractDeploy::new();
+        act.nonce = Uint4::from(80u32);
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.contract = Contract::new()
+            .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 1").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(
+            err.contains("Construct") && err.contains("return error code 1"),
+            "{err}"
         );
     }
 
@@ -1028,15 +1099,23 @@ mod action_coverage {
         ctx.gas_initialize(budget).unwrap();
 
         let mut act = ContractDeploy::new();
-        act.nonce = Uint4::from(78u32);
+        act.nonce = Uint4::from(81u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         let cap = SpaceCap::new(1).value_size;
         act.construct_argv = BytesW2::from(vec![0xCD; cap]).unwrap();
-        act.contract = make_external_contract("f", "return 0");
+        act.contract = Contract::new()
+            .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
         act.execute(&mut ctx).unwrap();
 
-        let caddr = contract_addr(&main, 78);
+        let caddr = contract_addr(&main, 81);
         assert!(
             VMState::wrap(StateOperat::state(&mut ctx))
                 .contract(&caddr)
@@ -1059,9 +1138,8 @@ mod action_coverage {
         fund_main_addr(&mut ctx);
 
         let mut act = ContractDeploy::new();
-        act.nonce = Uint4::from(79u32);
+        act.nonce = Uint4::from(82u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         act.contract = make_external_contract("f", "return 0");
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("requires tx type >= 3"), "{err}");
@@ -2632,7 +2710,6 @@ mod action_coverage {
         let sto = make_external_contract("f", "return 0");
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(1u32);
-        act.construct_must = Bool::new(true);
         // Create a negative amount: 0 - 1 mei
         let neg_amt = Amount::zero()
             .sub(&Amount::mei(1), field::AmtMode::BIGINT)

@@ -23,7 +23,6 @@ action_define! { ContractDeploy, 40,
     {
         protocol_cost: Amount
         nonce: Uint4
-        construct_must: Bool
         construct_argv: BytesW2 // checked by SpaceCap::value_size at runtime
         _marks_:   Fixed4 // zero
         contract: ContractSto
@@ -48,7 +47,14 @@ action_define! { ContractDeploy, 40,
         if self.contract.metas.revision.uint() != 0 {
             return xerrf!("contract revision must be 0 on deploy")
         }
-        precheck_contract_store(&caddr, &self.contract, &gst, ctx)?;
+        let has_construct = precheck_contract_store(&caddr, &self.contract, &gst, ctx)?;
+        let cargv = self.construct_argv.to_vec();
+        if cargv.len() > cap.value_size {
+            return xerrf!("construct argv size overflow")
+        }
+        if !has_construct && !cargv.is_empty() {
+            return xerrf!("construct argv provided but Construct hook not found")
+        }
         if self.contract.size() == 0 {
             return xerrf!("contract content cannot be empty");
         }
@@ -62,11 +68,7 @@ action_define! { ContractDeploy, 40,
         )?;
         // save the contract first; tx-level rollback owns final unwind if Construct fails.
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
-        let cargv = self.construct_argv.to_vec();
-        if cargv.len() > cap.value_size {
-            return xerrf!("construct argv size overflow")
-        }
-        if self.construct_must.check() {
+        if has_construct {
             let _ = run_abst_entry(
                 ctx,
                 AbstCall::Construct,
@@ -103,7 +105,7 @@ action_define! { ContractUpdate, 41,
         // apply edit (in memory)
         let mut new_contract = contract.clone();
         let (_did_append, did_structural_change) = new_contract.apply_edit(&self.edit, hei, &cap, &gst)?;
-        precheck_contract_store(&caddr, &new_contract, &gst, ctx)?;
+        let _ = precheck_contract_store(&caddr, &new_contract, &gst, ctx)?;
         if new_contract.size() == 0 {
             return xerrf!("contract content cannot be empty");
         }
@@ -173,27 +175,24 @@ fn check_contract_self_reference(root_addr: &ContractAddress, root_contract: &Co
     Ok(())
 }
 
-fn precheck_contract_links_and_calls(
-    ctx: &mut dyn Context,
-    root_addr: &ContractAddress,
-    root_contract: &ContractSto,
-    gst: &GasExtra,
-) -> Rerr {
-    let mut vmsta = VMState::wrap(ctx.state());
-    check_link_contracts_exist(&mut vmsta, root_addr, root_contract)?;
-    check_inherits_direct_parents_flat(&mut vmsta, root_addr, root_contract)?;
-    check_static_call_targets(&mut vmsta, root_addr, root_contract, gst)?;
-    Ok(())
-}
-
 fn precheck_contract_store(
     root_addr: &ContractAddress,
     root_contract: &ContractSto,
     gst: &GasExtra,
     ctx: &mut dyn Context,
-) -> Rerr {
+) -> Ret<bool> {
     check_contract_self_reference(root_addr, root_contract)?;
-    precheck_contract_links_and_calls(ctx, root_addr, root_contract, gst)
+    let mut vmsta = VMState::wrap(ctx.state());
+    check_link_contracts_exist(&mut vmsta, root_addr, root_contract)?;
+    check_inherits_direct_parents_flat(&mut vmsta, root_addr, root_contract)?;
+    let has_construct = detect_effective_abst_presence(
+        &mut vmsta,
+        root_addr,
+        root_contract,
+        AbstCall::Construct,
+    )?;
+    check_static_call_targets(&mut vmsta, root_addr, root_contract, gst)?;
+    Ok(has_construct)
 }
 
 fn load_contract_for_check(
@@ -210,6 +209,24 @@ fn load_contract_for_check(
         Some(c) => Ok(c),
         None => errf!("{} contract {} does not exist", role, addr.to_readable()),
     }
+}
+
+fn detect_effective_abst_presence(
+    vmsta: &mut VMState,
+    root_addr: &ContractAddress,
+    root_contract: &ContractSto,
+    abst: AbstCall,
+) -> Ret<bool> {
+    if root_contract.have_abst_call(abst) {
+        return Ok(true);
+    }
+    for parent in root_contract.inherit.as_list() {
+        let sto = load_contract_for_check(vmsta, root_addr, root_contract, parent, "inherit")?;
+        if sto.have_abst_call(abst) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn check_link_contracts_exist(
@@ -596,6 +613,7 @@ mod contract_test {
 
     fn run_deploy_with_preloaded(
         nonce: u32,
+        construct_argv: Vec<u8>,
         preload: Vec<(ContractAddress, ContractSto)>,
         deploy_contract: ContractSto,
     ) -> Ret<()> {
@@ -633,7 +651,7 @@ mod contract_test {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
+        act.construct_argv = BytesW2::from(construct_argv)?;
         act.contract = deploy_contract;
         let _ = act.execute(&mut ctx)?;
         Ok(())
@@ -694,7 +712,7 @@ mod contract_test {
             .into_sto();
         let child = Contract::new().inh(parent_addr.to_addr()).into_sto();
 
-        let err = run_deploy_with_preloaded(child_nonce, vec![(parent_addr, parent)], child)
+        let err = run_deploy_with_preloaded(child_nonce, vec![], vec![(parent_addr, parent)], child)
             .expect_err("inherited parent Construct should execute and fail deploy");
         assert!(
             err.contains("Construct") && err.contains("return error code 1"),
@@ -716,7 +734,7 @@ mod contract_test {
             .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
             .into_sto();
 
-        let res = run_deploy_with_preloaded(child_nonce, vec![(parent_addr, parent)], child);
+        let res = run_deploy_with_preloaded(child_nonce, vec![], vec![(parent_addr, parent)], child);
         assert!(res.is_ok(), "local Construct must override inherited one");
     }
 
@@ -733,6 +751,7 @@ mod contract_test {
 
         let err = run_deploy_with_preloaded(
             child_nonce,
+            vec![],
             vec![(grand_addr, grand), (parent_addr, parent)],
             child,
         )
@@ -744,7 +763,7 @@ mod contract_test {
     }
 
     #[test]
-    fn deploy_without_any_construct_returns_not_find() {
+    fn deploy_allows_missing_construct_when_construct_argv_empty() {
         let main = test_main_addr();
         let parent_addr = test_contract(&main, 38);
         let child_nonce = 39;
@@ -752,10 +771,62 @@ mod contract_test {
         let parent = Contract::new().into_sto();
         let child = Contract::new().inh(parent_addr.to_addr()).into_sto();
 
-        let err = run_deploy_with_preloaded(child_nonce, vec![(parent_addr, parent)], child)
-            .expect_err("deploy should fail when Construct is absent");
+        let res = run_deploy_with_preloaded(child_nonce, vec![], vec![(parent_addr, parent)], child);
+        assert!(res.is_ok(), "deploy should allow missing Construct when argv is empty");
+    }
+
+    #[test]
+    fn deploy_rejects_non_empty_construct_argv_without_construct() {
+        let main = test_main_addr();
+        let parent_addr = test_contract(&main, 40);
+        let child_nonce = 41;
+
+        let parent = Contract::new().into_sto();
+        let child = Contract::new().inh(parent_addr.to_addr()).into_sto();
+
+        let err = run_deploy_with_preloaded(
+            child_nonce,
+            vec![0xAA],
+            vec![(parent_addr, parent)],
+            child,
+        )
+        .expect_err("deploy should reject non-empty construct argv without Construct");
         assert!(
-            err.contains("Construct") && err.contains("not found"),
+            err.contains("construct argv provided but Construct hook not found"),
+            "unexpected deploy error: {err}"
+        );
+    }
+
+    #[test]
+    fn deploy_construct_auto_runs_when_local_present() {
+        let child_nonce = 44;
+        let child = Contract::new()
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 1").unwrap())
+            .into_sto();
+
+        let err = run_deploy_with_preloaded(child_nonce, vec![], vec![], child)
+            .expect_err("local Construct should auto-run");
+        assert!(
+            err.contains("Construct") && err.contains("return error code 1"),
+            "unexpected deploy error: {err}"
+        );
+    }
+
+    #[test]
+    fn deploy_construct_auto_runs_when_inherited_present() {
+        let main = test_main_addr();
+        let parent_addr = test_contract(&main, 45);
+        let child_nonce = 46;
+
+        let parent = Contract::new()
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 1").unwrap())
+            .into_sto();
+        let child = Contract::new().inh(parent_addr.to_addr()).into_sto();
+
+        let err = run_deploy_with_preloaded(child_nonce, vec![], vec![(parent_addr, parent)], child)
+            .expect_err("inherited Construct should auto-run");
+        assert!(
+            err.contains("Construct") && err.contains("return error code 1"),
             "unexpected deploy error: {err}"
         );
     }

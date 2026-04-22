@@ -275,11 +275,27 @@ mod fitshc_compile_tests {
             contract demo {
                 deploy {
                     nonce: 1,,;;
-                    construct_must: false,,;
+                    construct_argv: 0x0102,,;
                 }
                 function external run() -> u8 { return 1 }
             }
         "#;
         assert!(fitshc_compile(src).is_ok(), "fitshc compile should succeed");
+    }
+
+    #[test]
+    fn rejects_construct_must_in_deploy_block() {
+        let src = r#"
+            contract demo {
+                deploy {
+                    construct_must: false
+                }
+                function external run() -> u8 { return 1 }
+            }
+        "#;
+        let err = fitshc_compile(src)
+            .err()
+            .expect("fitshc compile should reject construct_must");
+        assert!(err.to_string().contains("unknown deploy field 'construct_must'"));
     }
 }
