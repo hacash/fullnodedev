@@ -1190,7 +1190,7 @@ fn check_fitsh_ir_roundtrip(script: &str, keywords: &[&str]) {
 
 #[test]
 fn fitsh_ir_roundtrip_suite() {
-    let scripts: [(&str, &[&str]); 3] = [
+    let scripts: [(&str, &[&str]); 4] = [
         (
             r##"
                 lib HacSwap = 1: VFE6Zu4Wwee1vjEkQLxgVbv3c6Ju9iTaa
@@ -1247,6 +1247,19 @@ fn fitsh_ir_roundtrip_suite() {
                 print result
             "##,
             &["$0 = 42", "$1 =", "print ", "$2 * $0"],
+        ),
+        (
+            r##"
+                bind dv = dev_scaled(10001, 10000, 3)
+                bind dvf = dev_scaled_floor(10001, 10000, 3)
+                bind ok = within_bps(10001, 10000, 1, 3)
+                bind px = lerp(101, 100, 1, 2)
+                print dv
+                print dvf
+                print ok
+                print px
+            "##,
+            &["dev_scaled", "dev_scaled_floor", "within_bps", "lerp"],
         ),
     ];
 

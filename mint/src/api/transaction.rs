@@ -75,27 +75,31 @@ fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let signature = q_bool(&req, "signature", false);
     let description = q_bool(&req, "description", false);
 
+    let api_error_create_transaction = |errmsg: &str| {
+        ApiResponse::json(json!({"ret":1,"err":errmsg,"error":errmsg}).to_string())
+    };
+
     let Ok(txjsondts) = body_data_may_hex(&req) else {
-        return api_error("transaction json body invalid");
+        return api_error_create_transaction("transaction json body invalid");
     };
     let Ok(jsonstr) = std::str::from_utf8(&txjsondts) else {
-        return api_error("transaction json body invalid");
+        return api_error_create_transaction("transaction json body invalid");
     };
     let Ok(jsonv) = serde_json::from_str::<serde_json::Value>(jsonstr) else {
-        return api_error("transaction json body invalid");
+        return api_error_create_transaction("transaction json body invalid");
     };
 
     let Some(main_addr) = jsonv["main_address"].as_str() else {
-        return api_error("address format invalid");
+        return api_error_create_transaction("address format invalid");
     };
     let Ok(main_addr) = Address::from_readable(main_addr) else {
-        return api_error("address format invalid");
+        return api_error_create_transaction("address format invalid");
     };
     let Some(fee) = jsonv["fee"].as_str() else {
-        return api_error("amount format invalid");
+        return api_error_create_transaction("amount format invalid");
     };
     let Ok(fee) = Amount::from(fee) else {
-        return api_error("amount format invalid");
+        return api_error_create_transaction("amount format invalid");
     };
 
     let mut tx = TransactionType2::new_by(main_addr, fee, curtimes());
@@ -104,14 +108,15 @@ fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
 
     let Some(acts) = jsonv["actions"].as_array() else {
-        return api_error("actions format invalid");
+        return api_error_create_transaction("actions format invalid");
     };
     for act in acts {
-        let Ok(a) = action_from_json(&act.to_string()) else {
-            return api_error("push action failed");
+        let a = match action_from_json(&act.to_string()) {
+            Ok(v) => v,
+            Err(e) => return api_error_create_transaction(&format!("push action failed: {}", e)),
         };
-        if tx.push_action(a).is_err() {
-            return api_error("push action failed");
+        if let Err(e) = tx.push_action(a) {
+            return api_error_create_transaction(&format!("push action failed: {}", e));
         }
     }
 

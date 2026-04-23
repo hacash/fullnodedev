@@ -315,6 +315,7 @@ irfn_define! {
     rpow
     clamp
     dev_scaled
+    dev_scaled_floor
     div_up
     div_round
     sat_add

@@ -221,30 +221,26 @@ macro_rules! define_diamond_name_list {
         impl_field_only_new! {$class}
 
         impl ToJSON for $class {
-            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
-                let mut res = String::from("[");
-                for i in 0..self.lists.len() {
-                    if i > 0 {
-                        res.push(',');
-                    }
-                    res.push_str(&self.lists[i].to_json_fmt(fmt));
-                }
-                res.push(']');
-                res
+            fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+                format!("\"{}\"", self.splitstr())
             }
         }
 
         impl FromJSON for $class {
             fn from_json(&mut self, json_str: &str) -> Ret<()> {
-                let items = json_split_array(json_str)?;
-                let mut lists = Vec::with_capacity(items.len());
-                for item in items {
-                    let mut obj = DiamondName::new();
-                    obj.from_json(item)?;
-                    lists.push(obj);
-                }
-                let count = <$nty>::from_usize(lists.len())?;
-                let tmp = Self { count, lists };
+                let tmp = if json_str.trim().starts_with('[') {
+                    let items = json_split_array(json_str)?;
+                    let mut lists = Vec::with_capacity(items.len());
+                    for item in items {
+                        let mut obj = DiamondName::new();
+                        obj.from_json(item)?;
+                        lists.push(obj);
+                    }
+                    let count = <$nty>::from_usize(lists.len())?;
+                    Self { count, lists }
+                } else {
+                    Self::from_readable(&json_expect_quoted_decoded(json_str)?)?
+                };
                 tmp.check()?;
                 self.count = tmp.count;
                 self.lists = tmp.lists;

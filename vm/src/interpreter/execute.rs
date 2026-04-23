@@ -296,6 +296,14 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 gas_add!(resource, $f $(, $arg)*);
             }};
         }
+        macro_rules! rebate_add {
+            ($n:expr) => {{
+                let add = $n;
+                step_gas_rebate = step_gas_rebate
+                    .checked_add(add)
+                    .ok_or_else(|| ItrErr::new(ItrErrCode::GasError, "gas refund overflow"))?;
+            }};
+        }
 
         macro_rules! actcall { ($act_kind: expr) => {{
             let act_kind = $act_kind;
@@ -821,17 +829,13 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     let k = ops.pop()?;
                     let (fee, rebate) = host.sedit(gst, cap, context_addr, k, v)?;
                     gas_add!(storage, raw, fee);
-                    step_gas_rebate = step_gas_rebate
-                        .checked_add(rebate)
-                        .ok_or_else(|| ItrErr::new(ItrErrCode::GasError, "gas refund overflow"))?;
+                    rebate_add!(rebate);
                 }
                 SDEL => {
                     nsw!();
                     let k = ops.pop()?;
                     let refund = host.sdel(gst, cap, context_addr, k)?;
-                    step_gas_rebate = step_gas_rebate
-                        .checked_add(refund)
-                        .ok_or_else(|| ItrErr::new(ItrErrCode::GasError, "gas refund overflow"))?;
+                    rebate_add!(refund);
                 }
                 SNEW => {
                     nsw!();
@@ -937,6 +941,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 }
                 CLAMP => triop_arithmetic(ops, clamp_checked)?,
                 DEVSCALED => triop_arithmetic(ops, devscaled_checked)?,
+                DEVSCALEDFLOOR => triop_arithmetic(ops, devscaled_floor_checked)?,
                 MULADDDIV => quadop_arithmetic(ops, muladddiv_checked)?,
                 MULSUBDIV => quadop_arithmetic(ops, mulsubdiv_checked)?,
                 MUL3DIV => quadop_arithmetic(ops, mul3div_checked)?,

@@ -185,6 +185,7 @@ mod fitsh_compile_tests {
             op_mul_sub: "return mul_sub(5, 4, 6)",
             op_mul_div_round: "return mul_div_round(5, 10, 6)",
             op_dev_scaled: "return dev_scaled(10100, 10000, 10000)",
+            op_dev_scaled_floor: "return dev_scaled_floor(10100, 10000, 10000)",
             op_mul_add_div: "return mul_add_div(2, 3, 4, 5)",
             op_mul_sub_div: "return mul_sub_div(9, 8, 6, 3)",
             op_mul3_div: "return mul3_div(3, 4, 5, 6)",
@@ -223,6 +224,9 @@ mod fitsh_compile_tests {
             rt_logical: "return true && false || true",
             rt_concat: "return \"a\" ++ \"b\"",
             rt_quad_finance: "return mul_add_div(2, 3, 4, 5)",
+            rt_finance_curve: "return lerp(101, 100, 1, 2)",
+            rt_finance_guard: "return within_bps(10001, 10000, 1, 3)",
+            rt_finance_deviation_floor: "return dev_scaled_floor(10001, 10000, 3)",
         );
     }
 

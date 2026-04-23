@@ -9,7 +9,7 @@
 // - 6: POW, ADDMOD, CLAMP - extra branches or triple operands without full mul-div path.
 // - 8: MULADD, MULSUB - one multiply plus add/sub.
 // - 10: MULMOD, MULSHR - multiply then mod or shift.
-// - 12: MULDIV*, MULSHRUP, DEVSCALED - multiply then divide/round.
+// - 12: MULDIV*, MULSHRUP, DEVSCALED* - multiply then divide/round.
 // - 14: MULADDDIV, MULSUBDIV, WITHINBPS, LERP - four operands, one divide.
 // - 16: WAVG2, MUL3DIV - four operands with extra multiply or sum path.
 // - 32: RPOW - high base like storage reads; extra per exponent in execute.
@@ -45,7 +45,7 @@ impl GasTable {
         // Arithmetic: triple-operand mul pipeline
         gst.set(8, &[MULADD, MULSUB]);
         gst.set(10, &[MULMOD, MULSHR]);
-        gst.set(12, &[MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED]);
+        gst.set(12, &[MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED, DEVSCALEDFLOOR]);
         // Arithmetic: four-operand
         gst.set(14, &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
         gst.set(16, &[WAVG2, MUL3DIV]);
@@ -421,7 +421,7 @@ mod gas_budget_codec_tests {
                 12,
                 vec![
                     MTAKE, CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP, MULDIVROUND,
-                    MULSHRUP, DEVSCALED,
+                    MULSHRUP, DEVSCALED, DEVSCALEDFLOOR,
                 ],
             ),
             (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
