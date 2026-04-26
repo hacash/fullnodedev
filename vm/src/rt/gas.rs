@@ -34,6 +34,7 @@ impl GasTable {
 
     pub fn new(_hei: u64) -> Self {
         let mut gst = Self { table: [1; 256] };
+        gst.set(2, &[BRL, BRS, BRSL, BRSLN]);
         gst.set(2, &[AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
         gst.set(3, &[BSHR, BSHL, BXOR, BOR, BAND]);
         // Arithmetic: binary (see module doc ladder)
@@ -50,8 +51,10 @@ impl GasTable {
         gst.set(14, &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
         gst.set(16, &[WAVG2, MUL3DIV]);
         // Other
+        gst.set(4, &[INSERT, REMOVE, HEAD, BACK, APPEND]);
         gst.set(5, &[MGET, GGET, NEWLIST, NEWMAP]);
-        gst.set(8, &[PACKLIST, PACKMAP, PACKTUPLE]);
+        gst.set(6, &[CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK]);
+        gst.set(8, &[CLONE, MERGE, PACKLIST, PACKMAP, PACKTUPLE]);
         gst.set(10, &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
         gst.set(12, &[MTAKE, CALLUSEVIEW, CALLUSEPURE]);
         gst.set(16, &[NTENV, NTCTL, NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
@@ -132,7 +135,8 @@ pub struct GasExtra {
     pub storege_value_base_size: i64,
     pub storage_key_cost: i64,
     pub storage_edit_mul: i64,
-    pub container_cmp_header_fee: usize,
+    pub container_cmp_header: usize,
+    stack_move_item: i64,
     // Dynamic, resource-based gas parameters.
     stack_copy_div: i64,
     stack_write_div: i64,
@@ -153,7 +157,7 @@ pub struct GasExtra {
     rpow_exp_bit_mul: i64,
     rpow_exp_base: i64,
     heap_grow_exp_segments: usize,
-    heap_grow_linear_seg_gas: u64,
+    heap_grow_linear_seg: u64,
 }
 
 impl GasExtra {
@@ -181,12 +185,13 @@ impl GasExtra {
             storage_key_cost: 1024,
             storage_edit_mul:    4,
             // other
-            container_cmp_header_fee: 12,
+            container_cmp_header: 12,
             // Dynamic divisors (byte/N, item/N)
             stack_copy_div:     32,
             stack_write_div:    28,
             stack_cmp_div:      24,
             stack_op_div:       20,
+            stack_move_item: 1,
             heap_read_div:      16,
             heap_write_div:     12,
             log_div:             1,
@@ -198,7 +203,7 @@ impl GasExtra {
             rpow_exp_bit_mul:    2,
             rpow_exp_base:       1,
             heap_grow_exp_segments: 8,
-            heap_grow_linear_seg_gas: 256,
+            heap_grow_linear_seg: 256,
             // Compo
             compo_byte_div:     40,
             compo_item_read_div: 4,
@@ -233,6 +238,14 @@ impl GasExtra {
     #[inline(always)]
     pub fn stack_op(&self, len: usize) -> i64 {
         Self::div_op(len, self.stack_op_div)
+    }
+
+    #[inline(always)]
+    pub fn stack_move_items(&self, n: usize) -> i64 {
+        if n == 0 {
+            return 0;
+        }
+        self.stack_move_item.saturating_mul(n as i64)
     }
 
     #[inline(always)]
@@ -323,7 +336,7 @@ impl GasExtra {
             let add = if s < self.heap_grow_exp_segments {
                 1u64.checked_shl((s + 1) as u32).unwrap_or(u64::MAX)
             } else {
-                self.heap_grow_linear_seg_gas
+                self.heap_grow_linear_seg
             };
             gas = gas
                 .checked_add(add)
@@ -400,16 +413,23 @@ mod gas_budget_codec_tests {
             (
                 2,
                 vec![
-                    AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD, SUB, MAX, MIN, INC, DEC,
+                    BRL, BRS, BRSL, BRSLN, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD, SUB, MAX,
+                    MIN, INC, DEC,
                 ],
             ),
             (3, vec![BSHR, BSHL, BXOR, BOR, BAND]),
-            (4, vec![MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]),
+            (
+                4,
+                vec![
+                    MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF, INSERT, REMOVE,
+                    HEAD, BACK, APPEND,
+                ],
+            ),
             (5, vec![MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP]),
-            (6, vec![POW, ADDMOD, CLAMP]),
+            (6, vec![POW, ADDMOD, CLAMP, CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK]),
             (
                 8,
-                vec![MULADD, MULSUB, PACKLIST, PACKMAP, PACKTUPLE],
+                vec![MULADD, MULSUB, CLONE, MERGE, PACKLIST, PACKMAP, PACKTUPLE],
             ),
             (
                 10,

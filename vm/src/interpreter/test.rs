@@ -795,7 +795,7 @@ mod bounds_tests {
         let compare_fee = value_compare_fee(
             &Value::Tuple(shared.clone()),
             &Value::Tuple(shared.clone()),
-            gex.container_cmp_header_fee,
+            gex.container_cmp_header,
         );
         let shared_expected = gst.gas(Bytecode::EQ as u8)
             + gst.gas(Bytecode::END as u8)
@@ -890,7 +890,7 @@ mod bounds_tests {
         let compare_fee = value_compare_fee(
             &Value::Tuple(shared.clone()),
             &Value::Tuple(shared.clone()),
-            gex.container_cmp_header_fee,
+            gex.container_cmp_header,
         );
         let shared_expected = gst.gas(Bytecode::XLG as u8)
             + gst.gas(Bytecode::END as u8)
@@ -2049,6 +2049,77 @@ mod bounds_tests {
         let gas_small = run(Value::U8(1), Value::U8(2));
         let gas_large = run(Value::Bytes(vec![0u8; 64]), Value::Bytes(vec![0u8; 64]));
         assert_eq!(gas_large, gas_small, "REV should not meter dynamic bytes");
+    }
+
+    #[test]
+    fn popn_gas_increases_by_one_per_item() {
+        use crate::rt::Bytecode;
+
+        let run = |n: u8| -> i64 {
+            run_with_setup(
+                vec![Bytecode::POPN as u8, n, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                    ops.push(Value::U8(1)).unwrap();
+                    ops.push(Value::U8(2)).unwrap();
+                    ops.push(Value::U8(3)).unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run(2), run(1) + 1);
+    }
+
+    #[test]
+    fn roll_gas_increases_by_one_per_moved_item() {
+        use crate::rt::Bytecode;
+
+        let run_roll = |n: u8| -> i64 {
+            run_with_setup(
+                vec![Bytecode::ROLL as u8, n, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                    ops.push(Value::U8(1)).unwrap();
+                    ops.push(Value::U8(2)).unwrap();
+                    ops.push(Value::U8(3)).unwrap();
+                    ops.push(Value::U8(4)).unwrap();
+                },
+            )
+        };
+        let run_roll0 = || -> i64 {
+            run_with_setup(
+                vec![Bytecode::ROLL0 as u8, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                    ops.push(Value::U8(1)).unwrap();
+                    ops.push(Value::U8(2)).unwrap();
+                    ops.push(Value::U8(3)).unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run_roll(2), run_roll(1) + 1);
+        assert_eq!(run_roll(0), run_roll0());
+    }
+
+    #[test]
+    fn rev_gas_increases_by_one_per_item() {
+        use crate::rt::Bytecode;
+
+        let run = |n: u8| -> i64 {
+            run_with_setup(
+                vec![Bytecode::REV as u8, n, Bytecode::END as u8],
+                DummyHost::default(),
+                |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                    ops.push(Value::U8(1)).unwrap();
+                    ops.push(Value::U8(2)).unwrap();
+                    ops.push(Value::U8(3)).unwrap();
+                    ops.push(Value::U8(4)).unwrap();
+                },
+            )
+        };
+
+        assert_eq!(run(3), run(2) + 1);
     }
 
     #[test]

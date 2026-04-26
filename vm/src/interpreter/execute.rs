@@ -296,6 +296,11 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 gas_add!(resource, $f $(, $arg)*);
             }};
         }
+        macro_rules! gas_resource_raw {
+            ($n:expr) => {{
+                gas_add!(resource, raw, $n);
+            }};
+        }
         macro_rules! rebate_add {
             ($n:expr) => {{
                 let add = $n;
@@ -320,7 +325,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             }
             let (bgasu, cres) = host.action_call(kid, actbody).map_err(|e|
                 ItrErr::new(maybe!(e.is_revert(), ActCallRevert, ActCallError), e.as_str()))?;
-            gas_add!(resource, raw, bgasu);
+            gas_resource_raw!(bgasu);
             if have_retv {
                 let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
                 gas_resource!(act_bytes, resv.val_size());
@@ -405,7 +410,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     let is_new = !$store.contains_key(&k)?;
                     gas_resource!(stack_write, vlen);
                     if is_new {
-                        gas_add!(resource, raw, $key_cost);
+                        gas_resource_raw!($key_cost);
                     }
                     $store.put(k, v)?;
                 }
@@ -544,12 +549,25 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     ops.pop()?;
                 } // drop
                 POPN => {
-                    ops.popn(pu8!())?;
+                    let n = pu8!();
+                    gas_resource_raw!(gst.stack_move_items(n as usize));
+                    ops.popn(n)?;
                 }
-                ROLL0 => ops.roll(0)?,
-                ROLL => ops.roll(pu8!())?,
+                ROLL0 => {
+                    gas_resource_raw!(gst.stack_move_items(1));
+                    ops.roll(0)?;
+                }
+                ROLL => {
+                    let n = pu8!();
+                    gas_resource_raw!(gst.stack_move_items(n as usize + 1));
+                    ops.roll(n)?;
+                }
                 SWAP => ops.swap()?,
-                REV => ops.reverse(pu8!())?, // reverse
+                REV => {
+                    let n = pu8!();
+                    gas_resource_raw!(gst.stack_move_items(n as usize));
+                    ops.reverse(n)?;
+                } // reverse
                 // CHOOSE expects stack order [..., cond, yes, no] and keeps
                 // exactly one chosen branch value on stack top.
                 CHOOSE => {
@@ -745,7 +763,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 UNPACK => {
                     let i = ops.pop()?.extract_u8()?;
                     let items = ops.peek()?.clone_unpack_items()?;
-                    gas_add!(resource, raw, unpack_seq(i, locals, items, gst, cap)?);
+                    gas_resource_raw!(unpack_seq(i, locals, items, gst, cap)?);
                     ops.pop()?; // pop argv wrapper after unpack
                 }
                 // locals, logs, heap, global_map & memory_map
@@ -778,7 +796,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     gas_resource!(stack_write, vlen);
                     locals.save(ops_pop_to_u16!(), v)?;
                 }
-                ALLOC => gas_add!(resource, raw, gst.one_local_alloc * locals.alloc(pu8!())? as i64),
+                ALLOC => gas_resource_raw!(gst.one_local_alloc * locals.alloc(pu8!())? as i64),
                 GET0 | GET1 | GET2 | GET3 => local_get!(instbyte - GET0 as u8),
                 LOG1 | LOG2 | LOG3 | LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
                 HSLICE => {
@@ -798,7 +816,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     *peek = heap.read(peek, n)?.valid(cap)?;
                 }
                 HWRITE => hwrite!(ops_pop_to_u16!()),
-                HGROW => gas_add!(resource, raw, heap.grow(pu8!(), gst)?),
+                HGROW => gas_resource_raw!(heap.grow(pu8!(), gst)?),
                 // storage
                 SSTAT => {
                     nsr!();
@@ -975,7 +993,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 // other
                 NT => return itr_err_code!(InstNeverTouch), // never touch
                 NOP => {}                                   // do nothing
-                BURN => gas_add!(resource, raw, gst.burn_extra(pu16!() as i64)),
+                BURN => gas_resource_raw!(gst.burn_extra(pu16!() as i64)),
                 // exit
                 RET => return Ok(Step::Exit(Return)), // func return <DATA>
                 END => return Ok(Step::Exit(Finish)), // func end

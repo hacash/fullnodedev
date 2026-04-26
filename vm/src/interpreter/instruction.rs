@@ -213,7 +213,7 @@ fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
 }
 
 fn lgc_compare_fee(x: &Value, y: &Value, gas_extra: &GasExtra) -> usize {
-    value_compare_fee(x, y, gas_extra.container_cmp_header_fee)
+    value_compare_fee(x, y, gas_extra.container_cmp_header)
 }
 
 fn lgc_equal(x: &Value, y: &Value) -> VmrtRes<Value> {
