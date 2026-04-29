@@ -156,8 +156,8 @@ pub enum Bytecode {
     MGET = 0x92,     // &     memory get
     MPUT = 0x93,     // a,b   memory put
     MTAKE = 0x94,    // &     memory take
-    ________________148 = 0x95,
-    ________________149 = 0x96,
+    SGET = 0x95,     // &     status get
+    SPUT = 0x96,     // a,b   status put
     ________________151 = 0x97,
     ________________152 = 0x98,
     SSTAT = 0x99, // &       storage info
@@ -453,6 +453,8 @@ bytecode_metadata_define! {
     MPUT       : 0, 2, 0,     memory_put
     MGET       : 0, 1, 1,     memory_get
     MTAKE      : 0, 1, 1,     memory_take
+    SPUT       : 0, 2, 0,     status_put
+    SGET       : 0, 1, 1,     status_get
 
     SSTAT      : 0, 1, 1,     storage_stat
     SLOAD      : 0, 1, 1,     storage_load

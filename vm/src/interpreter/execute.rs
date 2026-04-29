@@ -228,7 +228,6 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     deferred_registry: &mut DeferredRegistry,
     host: &mut H,
 ) -> VmrtRes<CallExit> {
-
     use Bytecode::*;
     use CallExit::*;
     use ItrErrCode::*;
@@ -243,19 +242,74 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     // let codelen = codes.len();
     // let tail = codelen;
 
-    macro_rules! nsr { () => { if exec.effect == EffectMode::Pure { return itr_err_code!(InstDisabled); } }; } // not read in pure mode
-    macro_rules! nsw { () => { if matches!(exec.effect, EffectMode::Pure | EffectMode::View) { return itr_err_code!(InstDisabled); } }; } // not write in view/pure mode
-    macro_rules! pu8 { () => { itrparamu8!(codes, *pc) }; }
-    macro_rules! pty { () => { ops.peek()?.ty() }; }
-    macro_rules! ptyn { () => { ops.peek()?.ty_num() }; }
-    macro_rules! pu8_as_u16 { () => { pu8!() as u16 }; }
-    macro_rules! pu16 { () => { itrparamu16!(codes, *pc) }; }
-    macro_rules! pbuf { () => { itrparambuf!(codes, *pc) }; }
-    macro_rules! pbufl { () => { itrparambufl!(codes, *pc) }; }
-    macro_rules! ops_pop_to_u16 { () => { ops.pop()?.extract_u16()? }; }
-    macro_rules! ops_peek_to_u16 { () => { ops.peek()?.extract_u16()? }; }
-    macro_rules! check_compo_type { ($m: ident) => { match ops.compo() { Ok(c) => c.$m(), _ => false, } }; }
-    
+    macro_rules! nsr {
+        () => {
+            if exec.effect == EffectMode::Pure {
+                return itr_err_code!(InstDisabled);
+            }
+        };
+    } // not read in pure mode
+    macro_rules! nsw {
+        () => {
+            if matches!(exec.effect, EffectMode::Pure | EffectMode::View) {
+                return itr_err_code!(InstDisabled);
+            }
+        };
+    } // not write in view/pure mode
+    macro_rules! pu8 {
+        () => {
+            itrparamu8!(codes, *pc)
+        };
+    }
+    macro_rules! pty {
+        () => {
+            ops.peek()?.ty()
+        };
+    }
+    macro_rules! ptyn {
+        () => {
+            ops.peek()?.ty_num()
+        };
+    }
+    macro_rules! pu8_as_u16 {
+        () => {
+            pu8!() as u16
+        };
+    }
+    macro_rules! pu16 {
+        () => {
+            itrparamu16!(codes, *pc)
+        };
+    }
+    macro_rules! pbuf {
+        () => {
+            itrparambuf!(codes, *pc)
+        };
+    }
+    macro_rules! pbufl {
+        () => {
+            itrparambufl!(codes, *pc)
+        };
+    }
+    macro_rules! ops_pop_to_u16 {
+        () => {
+            ops.pop()?.extract_u16()?
+        };
+    }
+    macro_rules! ops_peek_to_u16 {
+        () => {
+            ops.peek()?.extract_u16()?
+        };
+    }
+    macro_rules! check_compo_type {
+        ($m: ident) => {
+            match ops.compo() {
+                Ok(c) => c.$m(),
+                _ => false,
+            }
+        };
+    }
+
     enum Step {
         Continue,
         Exit(CallExit),
@@ -273,8 +327,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         *pc += 1; // next
 
         // debug_print_stack(ops, locals, pc, instruction);
-        
-        
+
         // gas
         let base_gas = gas_table.gas(instbyte);
         let mut step_gas_use = VmGasBuckets {
@@ -310,34 +363,40 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             }};
         }
 
-        macro_rules! actcall { ($act_kind: expr) => {{
-            let act_kind = $act_kind;
-            let idx = pu8!();
-            let pass_body = act_pass_body(act_kind);
-            let have_retv = act_have_retv(act_kind);
-            ensure_act_allowed(exec, act_kind, idx)?;
-            let kid = u16::from_be_bytes([instbyte, idx]);
-            let mut actbody = vec![];
-            if pass_body {
-                let mut bdv = ops.peek()?.extract_call_data(heap)?;
-                actbody.append(&mut bdv);
-                gas_resource!(act_bytes, actbody.len());
-            }
-            let (bgasu, cres) = host.action_call(kid, actbody).map_err(|e|
-                ItrErr::new(maybe!(e.is_revert(), ActCallRevert, ActCallError), e.as_str()))?;
-            gas_resource_raw!(bgasu);
-            if have_retv {
-                let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
-                gas_resource!(act_bytes, resv.val_size());
+        macro_rules! actcall {
+            ($act_kind: expr) => {{
+                let act_kind = $act_kind;
+                let idx = pu8!();
+                let pass_body = act_pass_body(act_kind);
+                let have_retv = act_have_retv(act_kind);
+                ensure_act_allowed(exec, act_kind, idx)?;
+                let kid = u16::from_be_bytes([instbyte, idx]);
+                let mut actbody = vec![];
                 if pass_body {
-                    *ops.peek()? = resv;
-                } else {
-                    ops.push(resv)?;
+                    let mut bdv = ops.peek()?.extract_call_data(heap)?;
+                    actbody.append(&mut bdv);
+                    gas_resource!(act_bytes, actbody.len());
                 }
-            } else {
-                ops.pop()?;
-            }
-        }}}
+                let (bgasu, cres) = host.action_call(kid, actbody).map_err(|e| {
+                    ItrErr::new(
+                        maybe!(e.is_revert(), ActCallRevert, ActCallError),
+                        e.as_str(),
+                    )
+                })?;
+                gas_resource_raw!(bgasu);
+                if have_retv {
+                    let resv = Value::type_from(act_retv_type(act_kind, idx)?, cres)?.valid(cap)?;
+                    gas_resource!(act_bytes, resv.val_size());
+                    if pass_body {
+                        *ops.peek()? = resv;
+                    } else {
+                        ops.push(resv)?;
+                    }
+                } else {
+                    ops.pop()?;
+                }
+            }};
+        }
 
         macro_rules! local_get {
             ($idx: expr) => {{
@@ -366,7 +425,10 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             () => {{
                 if ops.datas.len() >= 2 {
                     let l = ops.datas.len();
-                    gas_resource!(stack_cmp, lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1], gst));
+                    gas_resource!(
+                        stack_cmp,
+                        lgc_compare_fee(&ops.datas[l - 2], &ops.datas[l - 1], gst)
+                    );
                 }
             }};
         }
@@ -492,7 +554,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
                 }
                 // native env (VM context read, forbidden in Pure mode)
-                NTENV  => {
+                NTENV => {
                     let nt_idx = pu8!();
                     let (r, g) = call_ntenv(exec, bindings, context_addr, nt_idx)?;
                     finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
@@ -616,7 +678,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     gas_resource!(stack_op, outlen);
                     ops.peek()?.cutout(l, o)?;
                 }
-                LEFT  => peek_op_gas!(cutleft(pu8_as_u16!())),
+                LEFT => peek_op_gas!(cutleft(pu8_as_u16!())),
                 RIGHT => peek_op_gas!(cutright(pu8_as_u16!())),
                 LDROP => peek_op_gas!(dropleft(pu8_as_u16!())),
                 RDROP => peek_op_gas!(dropright(pu8_as_u16!())),
@@ -634,7 +696,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                         Tuple(args) => match args.to_list_with_stats(cap) {
                             Ok(v) => v,
                             Err(ItrErr(CastBeValueFail, msg)) => {
-                                return Err(ItrErr::new(CastFail, &msg))
+                                return Err(ItrErr::new(CastFail, &msg));
                             }
                             Err(e) => return Err(e),
                         },
@@ -686,14 +748,13 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                         Some(c) => {
                             let len = c.len();
                             let bsz = match c.list_ref() {
-                                Ok(l) => l.iter().fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
-                                Err(_) => c
-                                    .map_ref()?
+                                Ok(l) => l
                                     .iter()
-                                    .fold(0usize, |acc, (k, v)| {
-                                        let acc = add_size_saturating(acc, k.len());
-                                        add_size_saturating(acc, v.val_size())
-                                    }),
+                                    .fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
+                                Err(_) => c.map_ref()?.iter().fold(0usize, |acc, (k, v)| {
+                                    let acc = add_size_saturating(acc, k.len());
+                                    add_size_saturating(acc, v.val_size())
+                                }),
                             };
                             (len, bsz)
                         }
@@ -745,14 +806,13 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                         let compo = ops.compo()?;
                         let len = compo.len();
                         let bsz = match compo.list_ref() {
-                            Ok(l) => l.iter().fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
-                            Err(_) => compo
-                                .map_ref()?
+                            Ok(l) => l
                                 .iter()
-                                .fold(0usize, |acc, (k, v)| {
-                                    let acc = add_size_saturating(acc, k.len());
-                                    add_size_saturating(acc, v.val_size())
-                                }),
+                                .fold(0usize, |acc, v| add_size_saturating(acc, v.val_size())),
+                            Err(_) => compo.map_ref()?.iter().fold(0usize, |acc, (k, v)| {
+                                let acc = add_size_saturating(acc, k.len());
+                                add_size_saturating(acc, v.val_size())
+                            }),
                         };
                         (len, bsz, compo.copy())
                     };
@@ -841,6 +901,16 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     }
                     *ops.peek()? = v;
                 }
+                SGET => {
+                    nsr!();
+                    let v = {
+                        let k = ops.peek()?;
+                        host.sget(gst, cap, context_addr, k)?
+                    }
+                    .valid(cap)?;
+                    gas_add!(storage, raw, host.sget_gas(gst, &v));
+                    *ops.peek()? = v;
+                }
                 SEDIT => {
                     nsw!();
                     let v = ops.pop()?.valid(cap)?;
@@ -873,6 +943,13 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     let t = ops.pop()?;
                     let k = ops.pop()?;
                     gas_add!(storage, raw, host.srent(gst, cap, context_addr, k, t)?);
+                }
+                SPUT => {
+                    nsw!();
+                    let v = ops.pop()?.valid(cap)?;
+                    let k = ops.pop()?;
+                    gas_add!(storage, raw, host.sput_gas(gst, &k, &v)?);
+                    host.sput(gst, cap, context_addr, k, v)?;
                 }
                 // global_map & memory_map
                 GPUT => kvput!(global_map, gst.global_key_cost),
@@ -983,12 +1060,12 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     *ops.peek()? = v;
                 }
                 // workflow control
-                JMPL  => jump!(codes, *pc, 2),
-                JMPS  => ostjump!(codes, *pc, 1),
+                JMPL => jump!(codes, *pc, 2),
+                JMPS => ostjump!(codes, *pc, 1),
                 JMPSL => ostjump!(codes, *pc, 2),
-                BRL   => branch!(ops, codes, *pc, 2),
-                BRS   => ostbranch!(ops, codes, *pc, 1),
-                BRSL  => ostbranch!(ops, codes, *pc, 2),
+                BRL => branch!(ops, codes, *pc, 2),
+                BRS => ostbranch!(ops, codes, *pc, 1),
+                BRSL => ostbranch!(ops, codes, *pc, 2),
                 BRSLN => ostbranchex!(ops, codes, *pc, 2, false),
                 // other
                 NT => return itr_err_code!(InstNeverTouch), // never touch
@@ -999,8 +1076,10 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 END => return Ok(Step::Exit(Finish)), // func end
                 ERR => return Ok(Step::Exit(Throw)),  // throw <ERROR>
                 ABT => return Ok(Step::Exit(Abort)),  // panic
-                AST => if !ops.pop()?.extract_bool()? {
-                    return Ok(Step::Exit(Abort));
+                AST => {
+                    if !ops.pop()?.extract_bool()? {
+                        return Ok(Step::Exit(Abort));
+                    }
                 } // assert(..)
                 PRT => debug_print_value(context_addr, current_addr, exec, ops.pop()?),
                 #[cfg(feature = "calcfunc")]
@@ -1014,7 +1093,8 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     return Ok(Step::Exit(CalcCall(selector)));
                 }
                 // call
-                CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {
+                CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS
+                | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {
                     let plen = instruction.metadata().param as usize;
                     let end = *pc + plen;
                     if end > codes.len() {
@@ -1043,7 +1123,6 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         // next
     }
 }
-
 
 #[inline(always)]
 fn check_add_gas_use(
@@ -1078,9 +1157,9 @@ fn check_add_gas_use(
         }
         Ok(())
     };
-    check_limit("compute",  next_gas_use.compute,  gst.compute_limit)?;
+    check_limit("compute", next_gas_use.compute, gst.compute_limit)?;
     check_limit("resource", next_gas_use.resource, gst.resource_limit)?;
-    check_limit("storage",  next_gas_use.storage,  gst.storage_limit)?;
+    check_limit("storage", next_gas_use.storage, gst.storage_limit)?;
     *gas_use = next_gas_use;
     Ok(step_total)
 }
@@ -1098,14 +1177,8 @@ fn debug_print_stack(ops: &Stack, lcs: &Stack, pc: &usize, inst: Bytecode) {
     );
 }
 
-
 #[allow(unused)]
-fn debug_print_value(
-    _ctx: &field::Address,
-    _cur: &field::Address,
-    _exec: ExecCtx,
-    _val: Value,
-) {
+fn debug_print_value(_ctx: &field::Address, _cur: &field::Address, _exec: ExecCtx, _val: Value) {
     debug_println!(
         "{}-{} {} {:?} => {:?}",
         _ctx.prefix(7),

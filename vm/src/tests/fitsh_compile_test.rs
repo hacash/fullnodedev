@@ -445,6 +445,8 @@ mod fitsh_compile_tests {
             func_storage_recv: "storage_recv(\"key\", 100)\nreturn 1",
             func_memory_put: "memory_put(\"key\", \"value\")\nreturn 1",
             func_memory_get: "return memory_get(\"key\")",
+            func_status_put: "status_put(\"key\", \"value\")\nreturn 1",
+            func_status_get: "return status_get(\"key\")",
             func_global_put: "global_put(\"key\", \"value\")\nreturn 1",
             func_global_get: "return global_get(\"key\")",
             func_heap_grow: "heap_grow(10)\nreturn 1",
@@ -479,10 +481,13 @@ mod fitsh_compile_tests {
         assert_compile_err!(
             func_memory_put_has_no_return_value: "return memory_put(\"key\", \"value\")",
             func_global_put_has_no_return_value: "return global_put(\"key\", \"value\")",
+            func_status_put_has_no_return_value: "return status_put(\"key\", \"value\")",
             func_memory_put_cannot_initialize_var: "var x = memory_put(\"key\", \"value\")\nreturn 1",
             func_global_put_cannot_initialize_var: "var x = global_put(\"key\", \"value\")\nreturn 1",
+            func_status_put_cannot_initialize_var: "var x = status_put(\"key\", \"value\")\nreturn 1",
             func_memory_put_cannot_assert: "assert memory_put(\"key\", \"value\")\nreturn 1",
-            func_global_put_cannot_assert: "assert global_put(\"key\", \"value\")\nreturn 1"
+            func_global_put_cannot_assert: "assert global_put(\"key\", \"value\")\nreturn 1",
+            func_status_put_cannot_assert: "assert status_put(\"key\", \"value\")\nreturn 1"
         );
     }
 
@@ -898,6 +903,16 @@ return C.0xabcdef01(1, 2)",
                     let lgdt = crate::VmLog::new(*addr, items)?;
                     self.ctx.logs().push(&lgdt);
                     Ok(())
+                }
+
+                fn sget(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
+                    let _ = (gst, cap, addr, key);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
+                }
+
+                fn sput(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value, val: Value) -> VmrtRes<()> {
+                    let _ = (gst, cap, addr, key, val);
+                    Err(ItrErr::code(ItrErrCode::StorageError))
                 }
 
                 fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {

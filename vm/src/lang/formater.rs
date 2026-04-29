@@ -526,16 +526,17 @@ impl<'a> Formater<'a> {
         self.format_call_args(&args_list)
     }
 
-    fn format_memory_put(&self, node: &dyn IRNode) -> Option<String> {
+    fn format_kv_put(&self, node: &dyn IRNode) -> Option<String> {
         use Bytecode::*;
         let double = node.as_any().downcast_ref::<IRNodeDouble>()?;
         let code: Bytecode = std_mem_transmute!(node.bytecode());
-        if code != MPUT {
-            return None;
-        }
+        let meta = match code {
+            MPUT => MPUT.metadata(),
+            SPUT => SPUT.metadata(),
+            _ => return None,
+        };
         let key = self.print_inline(&*double.subx);
         let value = self.print_inline(&*double.suby);
-        let meta = MPUT.metadata();
         Some(format!(
             "{}{}({}, {})",
             self.line_prefix(),
@@ -1605,7 +1606,7 @@ impl<'a> Formater<'a> {
         if let Some(pss) = node.as_any().downcast_ref::<IRNodeParam2Single>() {
             return self.print_param2_single(pss);
         }
-        if let Some(line) = self.format_memory_put(node) {
+        if let Some(line) = self.format_kv_put(node) {
             return line;
         }
         if let Some(line) = self.format_array_block(node) {
