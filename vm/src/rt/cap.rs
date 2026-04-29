@@ -22,7 +22,7 @@ pub struct SpaceCap {
     pub status_pure_size: usize, // 128
 
     pub contract_size: usize, // 65535 * 2
-    pub function_size: usize, // 65535 / 4
+    pub function_size: usize, // 65535 / 2
     pub inherit: usize,       // 12
     pub library: usize,       // 100
     pub reentry_level: u32,   // 1, ACTION re-entry level limit
@@ -55,7 +55,7 @@ impl SpaceCap {
             kv_key_size: 128,
             status_pure_size: 128,
             contract_size: U16M * 2, // 65535*2
-            function_size: U16M / 4, // 65535/4
+            function_size: U16M / 2, // 65535/2
             inherit: 12,
             library: 100,
             reentry_level: 1, // allow 1 re-entry (2 call layers total)
