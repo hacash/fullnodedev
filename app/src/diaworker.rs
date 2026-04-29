@@ -146,7 +146,7 @@ pub fn diaworker() {
         #[cfg(feature = "ocl")]
         {
             // Initialize OpenCL
-            println!("\n[Start] Create GPU block miner worker");
+            println!("\n[Start] Create GPU diamond miner worker");
             for (thrid, opencl_thread) in opencl_resources.into_iter().enumerate() {
                 let opencl_clone = Arc::new(opencl_thread);
                 let cnf2 = cnf.clone();
@@ -309,7 +309,6 @@ fn run_diamond_worker_thread(
     loop {
         let ctn = Instant::now();
         // println!("- nonce_start: {}", nonce_start);
-
         let mut result = do_diamond_group_mining(
             current_mining_number,
             &current_mining_block_hash,
@@ -318,6 +317,7 @@ fn run_diamond_worker_thread(
             nonce_start,
             nonce_space,
         );
+        // println!("do_diamond_group_mining: {:?}", &result);
         let use_secs = Instant::now().duration_since(ctn).as_millis() as f64 / 1000.0;
         result.use_secs = use_secs;
         result_ch_tx.send(result).unwrap(); // channel send
@@ -531,7 +531,7 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
     // println!("mining next num: {} {}", &mining_num, &next_num);
     if next_num == 1 {
         // println!("get latest: next_num == 1");
-        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_ptr().block().hash();
+        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_hash();
         MINING_DIAMOND_NUM.store(next_num, Relaxed);
         return; // first mining
     }
