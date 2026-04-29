@@ -242,12 +242,7 @@ fn deal_diamond_mining_results(
     // print hashrates
     let diastr = String::from_utf8(most.dia_str.to_vec()).unwrap();
     let most_diastr = String::from_utf8(most_dia_str.to_vec()).unwrap();
-    let nonce_rates = if cnf.useopencl {
-        total_nonce_space as f64 / (total_use_secs / vene as f64)
-    } else {
-        total_nonce_space as f64 / (total_use_secs / recv_count as f64)
-    };
-    let hsrts = rates_to_show(nonce_rates);
+    let hsrts = rates_to_show(total_nonce_space as f64 / (total_use_secs / recv_count as f64));
     flush!(
         "[{}] {} {}, {} {}, {}.        \r",
         deal_number,
@@ -307,7 +302,7 @@ fn run_diamond_worker_thread(
 
     loop {
         let ctn = Instant::now();
-        let current_nonce_space = nonce_space;
+        // println!("- nonce_start: {}", nonce_start);
 
         let mut result = do_diamond_group_mining(
             current_mining_number,
@@ -315,20 +310,17 @@ fn run_diamond_worker_thread(
             &rwd_addr,
             &custom_nonce,
             nonce_start,
-            current_nonce_space,
+            nonce_space,
         );
         let use_secs = Instant::now().duration_since(ctn).as_millis() as f64 / 1000.0;
         result.use_secs = use_secs;
         result_ch_tx.send(result).unwrap(); // channel send
-        let ns = nonce_start.checked_add(current_nonce_space);
+        let ns = nonce_start.checked_add(nonce_space);
         if let None = ns {
             break; // u64 nonce end
         }
         nonce_start = ns.unwrap();
-        if use_secs > 0.0 {
-            nonce_space = (current_nonce_space as f64 * MINING_INTERVAL / use_secs) as u64;
-            nonce_space = nonce_space.max(1);
-        }
+        nonce_space = (nonce_space as f64 / use_secs * MINING_INTERVAL) as u64;
 
         // check next
         if current_mining_number < MINING_DIAMOND_NUM.load(Relaxed) {
@@ -530,7 +522,7 @@ fn pull_and_push_diamond(cnf: &DiaWorkConf) {
     // println!("mining next num: {} {}", &mining_num, &next_num);
     if next_num == 1 {
         // println!("get latest: next_num == 1");
-        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_hash();
+        *MINING_DIAMOND_STUFF.write().unwrap() = genesis_block_ptr().block().hash();
         MINING_DIAMOND_NUM.store(next_num, Relaxed);
         return; // first mining
     }
