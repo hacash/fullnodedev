@@ -156,8 +156,8 @@ pub enum Bytecode {
     MGET = 0x92,     // &     memory get
     MPUT = 0x93,     // a,b   memory put
     MTAKE = 0x94,    // &     memory take
-    ________________148 = 0x95,
-    ________________149 = 0x96,
+    SGET = 0x95,     // &     status get
+    SPUT = 0x96,     // a,b   status put
     ________________151 = 0x97,
     ________________152 = 0x98,
     SSTAT = 0x99, // &       storage info
@@ -215,16 +215,16 @@ pub enum Bytecode {
     MULSHRUP    = 0xcb,         // a,b,c+ ceil((x*y)/2^z)
     ________________212 = 0xcc, // reserved
     ________________213 = 0xcd, // reserved
-    CLAMP       = 0xce,         // a,b,c+ clamp(x, lo, hi)
-    DEVSCALED   = 0xcf,         // a,b,c+ abs(x-b)*c/b
-    ________________214 = 0xd0, // reserved
+    CLAMP          = 0xce,         // a,b,c+ clamp(x, lo, hi)
+    DEVSCALED      = 0xcf,         // a,b,c+ ceil(abs(x-b)*scale/b)
+    DEVSCALEDFLOOR = 0xd0,         // a,b,c+ floor(abs(x-b)*scale/b)
     // arithmetic: four-input composites
     MULADDDIV   = 0xd1,         // a,b,c,d+ ((x*y)+z)/d
     MULSUBDIV   = 0xd2,         // a,b,c,d+ ((x*y)-z)/d
     MUL3DIV     = 0xd3,         // a,b,c,d+ (a*b*c)/d
-    WITHINBPS   = 0xd4,         // a,b,c,d+ abs(a-b)*d <= b*c
+    WITHINBPS   = 0xd4,         // a,b,c,d+ abs(a-b)*scale <= b*tolerance
     WAVG2       = 0xd5,         // a,b,c,d+ (a*b+c*d)/(b+d)
-    LERP        = 0xd6,         // a,b,c,d+ linear interpolation
+    LERP        = 0xd6,         // a,b,c,d+ (a*(d-c)+b*c)/d
     ________________215 = 0xd7,
     ________________216 = 0xd8,
     ________________217 = 0xd9,
@@ -453,6 +453,8 @@ bytecode_metadata_define! {
     MPUT       : 0, 2, 0,     memory_put
     MGET       : 0, 1, 1,     memory_get
     MTAKE      : 0, 1, 1,     memory_take
+    SPUT       : 0, 2, 0,     status_put
+    SGET       : 0, 1, 1,     status_get
 
     SSTAT      : 0, 1, 1,     storage_stat
     SLOAD      : 0, 1, 1,     storage_load
@@ -505,9 +507,10 @@ bytecode_metadata_define! {
     MULDIVROUND : 0, 3, 1,     mul_div_round
     MULSHR      : 0, 3, 1,     mul_shr
     MULSHRUP    : 0, 3, 1,     mul_shr_up
-    CLAMP       : 0, 3, 1,     clamp
-    DEVSCALED   : 0, 3, 1,     dev_scaled
-    MULADDDIV   : 0, 4, 1,     mul_add_div
+    CLAMP          : 0, 3, 1,     clamp
+    DEVSCALED      : 0, 3, 1,     dev_scaled
+    DEVSCALEDFLOOR : 0, 3, 1,     dev_scaled_floor
+    MULADDDIV      : 0, 4, 1,     mul_add_div
     MULSUBDIV   : 0, 4, 1,     mul_sub_div
     MUL3DIV     : 0, 4, 1,     mul3_div
     WITHINBPS   : 0, 4, 1,     within_bps

@@ -77,7 +77,6 @@ fn execute_deploy(
     let mut act = ContractDeploy::new();
     act.nonce = Uint4::from(nonce);
     act.protocol_cost = Amount::zero();
-    act.construct_must = field::Bool::new(true);
     act.contract = contract;
     act.execute(ctx)
 }

@@ -239,10 +239,16 @@ fn deal_diamond_mining_results(
     if diamond_more_power(&most.dia_str, most_dia_str) {
         *most_dia_str = most.dia_str.clone();
     }
-    // print hashrates
+    // print hashrate
     let diastr = String::from_utf8(most.dia_str.to_vec()).unwrap();
     let most_diastr = String::from_utf8(most_dia_str.to_vec()).unwrap();
-    let hsrts = rates_to_show(total_nonce_space as f64 / (total_use_secs / recv_count as f64));
+    let avg_use_secs = total_use_secs / recv_count as f64;
+    let nonce_rates = if avg_use_secs.is_finite() && avg_use_secs > 0.0 {
+        total_nonce_space as f64 / avg_use_secs
+    } else {
+        0.0
+    };
+    let hashrate_show = rates_to_show(nonce_rates);
     flush!(
         "[{}] {} {}, {} {}, {}.        \r",
         deal_number,
@@ -250,7 +256,7 @@ fn deal_diamond_mining_results(
         total_nonce_space,
         diastr,
         most_diastr,
-        hsrts
+        hashrate_show
     );
 
     // print next
@@ -320,7 +326,10 @@ fn run_diamond_worker_thread(
             break; // u64 nonce end
         }
         nonce_start = ns.unwrap();
-        nonce_space = (nonce_space as f64 / use_secs * MINING_INTERVAL) as u64;
+        if use_secs.is_finite() && use_secs > 0.0 {
+            nonce_space = (nonce_space as f64 / use_secs * MINING_INTERVAL) as u64;
+        }
+        nonce_space = nonce_space.max(1);
 
         // check next
         if current_mining_number < MINING_DIAMOND_NUM.load(Relaxed) {

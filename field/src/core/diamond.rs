@@ -66,17 +66,25 @@ impl Serialize for DiamondName {
 impl_field_only_new! {DiamondName}
 
 impl ToJSON for DiamondName {
-    fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
-        self.0.to_json_fmt(fmt)
+    fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+        format!("\"{}\"", self.name())
     }
 }
 
 impl FromJSON for DiamondName {
     fn from_json(&mut self, json: &str) -> Ret<()> {
-        let mut raw = Fixed6::new();
-        raw.from_json(json)?;
-        Self::check_bytes(raw.as_ref())?;
-        self.0 = raw;
+        let raw = json_expect_quoted_decoded(json)?;
+        let trimmed = raw.trim();
+        if let Ok(dia) = Self::from_readable(trimmed.as_bytes()) {
+            self.0 = dia.0;
+            return Ok(());
+        }
+        let data = json_decode_binary(json)?;
+        if data.len() != Self::SIZE {
+            return errf!("DiamondName size mismatch: expected {} but got {}", Self::SIZE, data.len());
+        }
+        Self::check_bytes(&data)?;
+        self.0 = Fixed6::from(data.try_into().unwrap());
         Ok(())
     }
 }
@@ -213,30 +221,26 @@ macro_rules! define_diamond_name_list {
         impl_field_only_new! {$class}
 
         impl ToJSON for $class {
-            fn to_json_fmt(&self, fmt: &JSONFormater) -> String {
-                let mut res = String::from("[");
-                for i in 0..self.lists.len() {
-                    if i > 0 {
-                        res.push(',');
-                    }
-                    res.push_str(&self.lists[i].to_json_fmt(fmt));
-                }
-                res.push(']');
-                res
+            fn to_json_fmt(&self, _fmt: &JSONFormater) -> String {
+                format!("\"{}\"", self.splitstr())
             }
         }
 
         impl FromJSON for $class {
             fn from_json(&mut self, json_str: &str) -> Ret<()> {
-                let items = json_split_array(json_str)?;
-                let mut lists = Vec::with_capacity(items.len());
-                for item in items {
-                    let mut obj = DiamondName::new();
-                    obj.from_json(item)?;
-                    lists.push(obj);
-                }
-                let count = <$nty>::from_usize(lists.len())?;
-                let tmp = Self { count, lists };
+                let tmp = if json_str.trim().starts_with('[') {
+                    let items = json_split_array(json_str)?;
+                    let mut lists = Vec::with_capacity(items.len());
+                    for item in items {
+                        let mut obj = DiamondName::new();
+                        obj.from_json(item)?;
+                        lists.push(obj);
+                    }
+                    let count = <$nty>::from_usize(lists.len())?;
+                    Self { count, lists }
+                } else {
+                    Self::from_readable(&json_expect_quoted_decoded(json_str)?)?
+                };
                 tmp.check()?;
                 self.count = tmp.count;
                 self.lists = tmp.lists;

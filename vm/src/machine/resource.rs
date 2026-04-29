@@ -114,7 +114,7 @@ impl IntentRuntime {
             next_gen,
             IntentEntry {
                 kind,
-                data: MKVMap::new(self.key_limit),
+                data: MKVMap::with_key_max(self.key_limit, self.key_limit),
             },
         );
         Ok(next_gen)
@@ -1049,8 +1049,8 @@ impl Runtime {
                 ..Default::default()
             },
             volatile: VolatileState {
-                global_map: GKVMap::new(cap.global),
-                memory_map: CtcKVMap::new(cap.memory),
+                global_map: GKVMap::with_key_max(cap.global, cap.kv_key_size),
+                memory_map: CtcKVMap::with_key_max(cap.memory, cap.kv_key_size),
                 intents: IntentRuntime::new(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key),
                 deferred_registry: DeferredRegistry::new(),
             },
@@ -1080,8 +1080,8 @@ impl Runtime {
         self.cfg_height = height;
         self.next_upgrade = Self::next_upgrade_after(height);
         // rebuild
-        self.volatile.global_map.reset(cap.global);
-        self.volatile.memory_map.reset(cap.memory);
+        self.volatile.global_map.reset_with_key_max(cap.global, cap.kv_key_size);
+        self.volatile.memory_map.reset_with_key_max(cap.memory, cap.kv_key_size);
         self.volatile.intents.reset(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key);
         self.warm.space_cap = cap;
         self.warm.gas_extra = GasExtra::new(height);
@@ -1302,6 +1302,14 @@ mod resource_tests {
             unreachable!()
         }
 
+        fn sget(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
+            unreachable!()
+        }
+
+        fn sput(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtErr {
+            unreachable!()
+        }
+
         fn sstat(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
@@ -1326,7 +1334,7 @@ mod resource_tests {
             unreachable!()
         }
 
-        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<(i64, i64)> {
             unreachable!()
         }
 

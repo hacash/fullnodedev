@@ -16,7 +16,7 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
         return Ok(()) // not check, compatible history code
     }
     let curn = curblk.difficulty().uint(); // u32
-    let (tarn, tarhx, _tarbign) = this.next_difficulty(prevblk, src);
+    let (tarn, tarhx, _tarbign) = this.next_difficulty(prevblk, curblk.timestamp().uint(), src);
     if tarn != curn {
         return errf!("height {} PoW difficulty check failed: expected {} but got {}", curhei, tarn, curn)
     }

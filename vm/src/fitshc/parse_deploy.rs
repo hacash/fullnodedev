@@ -1,7 +1,7 @@
 use super::state::ParseState;
 use crate::Token::*;
 use crate::rt::*;
-use field::{Amount, Bool, BytesW2, Uint4};
+use field::{Amount, BytesW2, Uint4};
 use sys::*;
 use sys::{Ret, errf};
 
@@ -9,7 +9,6 @@ use sys::{Ret, errf};
 pub struct DeployInfo {
     pub protocol_cost: Option<Amount>,
     pub nonce: Option<Uint4>,
-    pub construct_must: Option<Bool>,
     pub construct_argv: Option<BytesW2>,
     pub matches: bool,
 }
@@ -97,37 +96,6 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
             } else {
                 return errf!("expected nonce integer");
             }
-        } else if key == "construct_must" {
-            let val = match state.current() {
-                Some(Keyword(KwTy::True)) => {
-                    state.advance();
-                    true
-                }
-                Some(Keyword(KwTy::False)) => {
-                    state.advance();
-                    false
-                }
-                Some(Identifier(v)) => {
-                    let b = match v.as_str() {
-                        "true" | "1" => true,
-                        "false" | "0" => false,
-                        _ => return errf!("expected bool at construct_must"),
-                    };
-                    state.advance();
-                    b
-                }
-                Some(Integer(v)) => {
-                    let b = match *v {
-                        0 => false,
-                        1 => true,
-                        _ => return errf!("expected 0/1 at construct_must"),
-                    };
-                    state.advance();
-                    b
-                }
-                _ => return errf!("expected bool at construct_must"),
-            };
-            info.construct_must = Some(Bool::new(val));
         } else if key == "construct_argv" {
             // Support hex string
             if let Some(Bytes(v)) = state.current() {

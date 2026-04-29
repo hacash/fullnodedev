@@ -3,6 +3,7 @@ use std::collections::*;
 use std::sync::*;
 
 use dyn_clone::*;
+use num_bigint::BigUint;
 
 use field::*;
 use sys::*;

@@ -862,8 +862,11 @@ mod entry_tests {
         fn vm_current_intent_scope(&mut self) -> IntentScope {
             None
         }
-        fn tex_ledger(&mut self) -> &mut TexLedger {
-            &mut self.tex
+        fn tex_ledger(&self) -> &TexLedger {
+            &self.tex
+        }
+        fn tex_ledger_mut_top(&mut self) -> Ret<&mut TexLedger> {
+            Ok(&mut self.tex)
         }
         fn logs(&mut self) -> &mut dyn Logs {
             &mut self.logs

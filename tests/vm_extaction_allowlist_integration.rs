@@ -69,17 +69,58 @@ mod tests {
             Ok(())
         }
 
-        fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
+        fn sget(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: &vm::value::Value,
+        ) -> VmrtRes<vm::value::Value> {
             let _ = (gst, cap, addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
-        fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &vm::value::Value) -> VmrtRes<vm::value::Value> {
+        fn sput(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: vm::value::Value,
+            val: vm::value::Value,
+        ) -> VmrtRes<()> {
+            let _ = (gst, cap, addr, key, val);
+            Err(ItrErr::code(ItrErrCode::StorageError))
+        }
+
+        fn sstat(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: &vm::value::Value,
+        ) -> VmrtRes<vm::value::Value> {
             let _ = (gst, cap, addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
 
-        fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: vm::value::Value) -> VmrtRes<i64> {
+        fn sload(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: &vm::value::Value,
+        ) -> VmrtRes<vm::value::Value> {
+            let _ = (gst, cap, addr, key);
+            Err(ItrErr::code(ItrErrCode::StorageError))
+        }
+
+        fn sdel(
+            &mut self,
+            gst: &GasExtra,
+            cap: &SpaceCap,
+            addr: &Address,
+            key: vm::value::Value,
+        ) -> VmrtRes<i64> {
             let _ = (gst, cap, addr, key);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }
@@ -104,7 +145,7 @@ mod tests {
             addr: &Address,
             key: vm::value::Value,
             val: vm::value::Value,
-        ) -> VmrtRes<i64> {
+        ) -> VmrtRes<(i64, i64)> {
             let _ = (gst, cap, addr, key, val);
             Err(ItrErr::code(ItrErrCode::StorageError))
         }

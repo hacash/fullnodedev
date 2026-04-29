@@ -76,6 +76,10 @@ impl Minter for HacashMinter {
         self.difficulty.cache_root_block_intro(rootblk)
     }
 
+    fn preview_next_difficulty(&self, prev: &dyn BlockRead, blkt: u64, src: &dyn BlockIntroSource) -> Option<(u32, [u8; 32], BigUint)> {
+        Some(self.next_difficulty(prev, blkt, src))
+    }
+
     // <dyn Block> == BlockV1
     fn packing_next_block(&self, eng: &dyn EngineRead, tp: &dyn TxPool) -> Box<dyn Any> {
         impl_packing_next_block(self, eng, tp)

@@ -1,8 +1,7 @@
-
 #[derive(Debug, Clone, Default)]
 pub struct SpaceCap {
     pub loaded_contract: usize, // 20
-    pub call_depth: usize, // 32
+    pub call_depth: usize,      // 32
 
     pub value_size: usize, // 1280
     pub tuple_length: usize,
@@ -17,19 +16,20 @@ pub struct SpaceCap {
 
     pub heap_segment: usize, // 64: 256 * 64 = 16kb
 
-    pub global: usize, // 20
-    pub memory: usize, // 16
+    pub global: usize,           // 20
+    pub memory: usize,           // 16
+    pub kv_key_size: usize,      // 128
+    pub status_pure_size: usize, // 128
 
     pub contract_size: usize, // 65535 * 2
-    pub function_size: usize, // 65535 / 4
-    pub inherit: usize, // 12
-    pub library: usize, // 100
-    pub reentry_level: u32, // 1, ACTION re-entry level limit
+    pub function_size: usize, // 65535 / 2
+    pub inherit: usize,       // 12
+    pub library: usize,       // 100
+    pub reentry_level: u32,   // 1, ACTION re-entry level limit
 
     pub intent_bind_depth: usize, // 10
-    pub intent_new: usize, // 200, total creation limit
-    pub intent_key: usize, // max keys per intent, same as compo_length
-
+    pub intent_new: usize,        // 200, total creation limit
+    pub intent_key: usize,        // max keys per intent, same as compo_length
 }
 
 impl SpaceCap {
@@ -52,8 +52,10 @@ impl SpaceCap {
             heap_segment: 64,
             global: 20,
             memory: 16,
+            kv_key_size: 128,
+            status_pure_size: 128,
             contract_size: U16M * 2, // 65535*2
-            function_size: U16M / 4, // 65535/4
+            function_size: U16M / 2, // 65535/2
             inherit: 12,
             library: 100,
             reentry_level: 1, // allow 1 re-entry (2 call layers total)
@@ -65,12 +67,14 @@ impl SpaceCap {
 
     #[inline(always)]
     pub fn storage_live_max_blocks(&self) -> u64 {
-        self.storage_period.saturating_mul(self.storage_live_max_periods)
+        self.storage_period
+            .saturating_mul(self.storage_live_max_periods)
     }
 
     #[inline(always)]
     pub fn storage_recv_max_blocks(&self) -> u64 {
-        self.storage_period.saturating_mul(self.storage_recv_max_periods)
+        self.storage_period
+            .saturating_mul(self.storage_recv_max_periods)
     }
 }
 
@@ -83,7 +87,8 @@ mod cap_tests {
 
     fn max_storage_unit(cap: &SpaceCap, gst: &GasExtra) -> u64 {
         let value = Value::Bytes(vec![0u8; cap.value_size]);
-        (value.can_get_size().unwrap() as u64).saturating_add(gst.storege_value_base_size.max(0) as u64)
+        (value.can_get_size().unwrap() as u64)
+            .saturating_add(gst.storege_value_base_size.max(0) as u64)
     }
 
     #[test]

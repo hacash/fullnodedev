@@ -9,9 +9,9 @@ use testkit::sim::tx::DummyTx;
 use vm::ContractAddress;
 use vm::IRNode;
 use vm::interpreter::execute_code;
-use vm::machine::DeferCallbacks;
 use vm::ir::{convert_ir_to_bytecode, parse_ir_block};
 use vm::lang::*;
+use vm::machine::DeferCallbacks;
 use vm::machine::VmHost;
 use vm::rt::Bytecode::*;
 use vm::rt::FrameBindings;
@@ -78,17 +78,58 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
-    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+    fn sget(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &FieldAddress,
+        key: &Value,
+    ) -> VmrtRes<Value> {
         let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: &Value) -> VmrtRes<Value> {
+    fn sput(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &FieldAddress,
+        key: Value,
+        val: Value,
+    ) -> VmrtRes<()> {
+        let _ = (gst, cap, addr, key, val);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn sstat(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &FieldAddress,
+        key: &Value,
+    ) -> VmrtRes<Value> {
         let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
 
-    fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &FieldAddress, key: Value) -> VmrtRes<i64> {
+    fn sload(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &FieldAddress,
+        key: &Value,
+    ) -> VmrtRes<Value> {
+        let _ = (gst, cap, addr, key);
+        Err(ItrErr::code(ItrErrCode::StorageError))
+    }
+
+    fn sdel(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &FieldAddress,
+        key: Value,
+    ) -> VmrtRes<i64> {
         let _ = (gst, cap, addr, key);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }
@@ -113,7 +154,7 @@ impl VmHost for TestVmHost<'_> {
         addr: &FieldAddress,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64> {
+    ) -> VmrtRes<(i64, i64)> {
         let _ = (gst, cap, addr, key, val);
         Err(ItrErr::code(ItrErrCode::StorageError))
     }

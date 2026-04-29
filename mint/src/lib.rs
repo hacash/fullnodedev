@@ -36,7 +36,8 @@ include! {"check/block_build.rs"}
 include! {"check/block_arrive.rs"}
 include! {"check/bidding.rs"}
 include! {"check/initialize.rs"}
-include! {"check/difficulty.rs"}
 include! {"check/difficulty_old.rs"}
+include! {"check/difficulty_lwma.rs"}
+include! {"check/difficulty_asert.rs"}
 include! {"check/block_accept.rs"}
 include! {"minter.rs"}

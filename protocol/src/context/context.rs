@@ -121,20 +121,14 @@ impl<'a> ContextInst<'a> {
     }
 
     fn snapshot_volatile_inner(&self) -> Box<dyn Any> {
-        Box::new((
-            self.tex_ledger.clone(),
-            self.psh.keys().cloned().collect::<HashSet<Address>>(),
-            self.gas.rebated_checkpoint(),
-        ))
+        Box::new(self.gas.rebated_checkpoint())
     }
 
     fn restore_volatile_inner(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<(TexLedger, HashSet<Address>, i64)>() else {
+        let Ok(snap) = snap.downcast::<i64>() else {
             return;
         };
-        let (tex, keys, rebated) = *snap;
-        self.tex_ledger = tex;
-        self.psh.retain(|k, _| keys.contains(k));
+        let rebated = *snap;
         // On AST rollback, keep gas_charge effects but roll back gas_rebate to avoid refundable-gas replay.
         self.gas.restore_rebated(rebated);
     }
@@ -161,6 +155,9 @@ impl<'a> ContextInst<'a> {
     }
 
     fn p2sh_insert(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
+        if self.exec_from != ExecFrom::Top {
+            return errf!("p2sh_set only allowed in TOP context, got {}", self.exec_from)
+        }
         adr.must_scriptmh()?;
         if self.psh.contains_key(&adr) {
             return errf!("p2sh '{}' already proved in current tx", adr);
@@ -302,8 +299,15 @@ impl Context for ContextInst<'_> {
         self.restore_volatile_inner(snap)
     }
 
-    fn tex_ledger(&mut self) -> &mut TexLedger {
-        &mut self.tex_ledger
+    fn tex_ledger(&self) -> &TexLedger {
+        &self.tex_ledger
+    }
+
+    fn tex_ledger_mut_top(&mut self) -> Ret<&mut TexLedger> {
+        if self.exec_from != ExecFrom::Top {
+            return errf!("tex ledger write only allowed in TOP context, got {}", self.exec_from)
+        }
+        Ok(&mut self.tex_ledger)
     }
 
     fn logs(&mut self) -> &mut dyn Logs {

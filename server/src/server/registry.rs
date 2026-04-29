@@ -51,6 +51,14 @@ fn api_resp_to_axum(resp: ApiResponse) -> Response {
     (status, headers, resp.body).into_response()
 }
 
+fn route_request(headers: HeaderMap, query: HashMap<String, String>, body: Vec<u8>) -> ApiRequest {
+    ApiRequest {
+        query,
+        headers: map_headers(&headers),
+        body,
+    }
+}
+
 fn route_handler_exec(
     handler: ApiHandlerFn,
     ctx: &ApiCtx,
@@ -58,38 +66,55 @@ fn route_handler_exec(
     query: HashMap<String, String>,
     body: Vec<u8>,
 ) -> Response {
-    let req = ApiRequest {
-        query,
-        headers: map_headers(&headers),
-        body,
-    };
+    let req = route_request(headers, query, body);
     let exec = api_exec_ctx(ctx);
     api_resp_to_axum(handler(&exec, req))
 }
 
+async fn route_handler_exec_async(
+    handler: ApiHandlerAsyncFn,
+    ctx: ApiCtx,
+    headers: HeaderMap,
+    query: HashMap<String, String>,
+    body: Vec<u8>,
+) -> Response {
+    let req = route_request(headers, query, body);
+    let exec = api_exec_ctx(&ctx);
+    api_resp_to_axum(handler(exec, req).await)
+}
+
 fn build_method_router(route: ApiRoute) -> MethodRouter<ApiCtx> {
-    match route.method {
-        ApiMethod::Get => {
-            let handler = route.handler;
-            get(
-                move |State(ctx): State<ApiCtx>,
-                      headers: HeaderMap,
-                      Query(query): Query<HashMap<String, String>>| async move {
-                    route_handler_exec(handler, &ctx, headers, query, vec![])
-                },
-            )
-        }
-        ApiMethod::Post => {
-            let handler = route.handler;
-            post(
-                move |State(ctx): State<ApiCtx>,
-                      headers: HeaderMap,
-                      Query(query): Query<HashMap<String, String>>,
-                      body: Bytes| async move {
-                    route_handler_exec(handler, &ctx, headers, query, body.to_vec())
-                },
-            )
-        }
+    match (route.method, route.handler) {
+        (ApiMethod::Get, ApiHandler::Sync(handler)) => get(
+            move |State(ctx): State<ApiCtx>,
+                  headers: HeaderMap,
+                  Query(query): Query<HashMap<String, String>>| async move {
+                route_handler_exec(handler, &ctx, headers, query, vec![])
+            },
+        ),
+        (ApiMethod::Get, ApiHandler::Async(handler)) => get(
+            move |State(ctx): State<ApiCtx>,
+                  headers: HeaderMap,
+                  Query(query): Query<HashMap<String, String>>| async move {
+                route_handler_exec_async(handler, ctx, headers, query, vec![]).await
+            },
+        ),
+        (ApiMethod::Post, ApiHandler::Sync(handler)) => post(
+            move |State(ctx): State<ApiCtx>,
+                  headers: HeaderMap,
+                  Query(query): Query<HashMap<String, String>>,
+                  body: Bytes| async move {
+                route_handler_exec(handler, &ctx, headers, query, body.to_vec())
+            },
+        ),
+        (ApiMethod::Post, ApiHandler::Async(handler)) => post(
+            move |State(ctx): State<ApiCtx>,
+                  headers: HeaderMap,
+                  Query(query): Query<HashMap<String, String>>,
+                  body: Bytes| async move {
+                route_handler_exec_async(handler, ctx, headers, query, body.to_vec()).await
+            },
+        ),
     }
 }
 
@@ -106,4 +131,83 @@ pub fn merge_registered_services(
         }
     }
     rtr
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::Future;
+    use std::pin::Pin;
+
+    struct DummyEngine;
+    impl EngineRead for DummyEngine {}
+    impl Engine for DummyEngine {}
+
+    struct DummyNode {
+        engine: Arc<dyn Engine>,
+    }
+
+    impl HNoder for DummyNode {
+        fn engine(&self) -> Arc<dyn Engine> {
+            self.engine.clone()
+        }
+    }
+
+    fn test_ctx() -> ApiCtx {
+        let engine: Arc<dyn Engine> = Arc::new(DummyEngine);
+        let hnoder: Arc<dyn HNoder> = Arc::new(DummyNode {
+            engine: engine.clone(),
+        });
+        ApiCtx {
+            engine,
+            hcshnd: hnoder,
+            blocks: Arc::default(),
+            miner_worker_notice_count: Arc::default(),
+            launch_time: 0,
+            blocks_max: 4,
+        }
+    }
+
+    fn sync_handler(_: &ApiExecCtx, _: ApiRequest) -> ApiResponse {
+        ApiResponse::json("{\"ret\":0,\"kind\":\"sync\"}".to_owned())
+    }
+
+    fn async_handler(
+        _: ApiExecCtx,
+        _: ApiRequest,
+    ) -> Pin<Box<dyn Future<Output = ApiResponse> + Send + 'static>> {
+        Box::pin(async {
+            ApiResponse::json("{\"ret\":0,\"kind\":\"async\"}".to_owned())
+        })
+    }
+
+    #[test]
+    fn sync_and_async_handlers_both_execute() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            let ctx = test_ctx();
+            let sync_resp = route_handler_exec(
+                sync_handler,
+                &ctx,
+                HeaderMap::new(),
+                HashMap::new(),
+                vec![],
+            );
+            let async_resp = route_handler_exec_async(
+                async_handler,
+                ctx,
+                HeaderMap::new(),
+                HashMap::new(),
+                vec![],
+            )
+            .await;
+
+            assert_eq!(sync_resp.status(), StatusCode::OK);
+            assert_eq!(async_resp.status(), StatusCode::OK);
+        });
+    }
 }

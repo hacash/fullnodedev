@@ -11,6 +11,7 @@ pub enum RetBlkFound {
 }
 
 pub trait BlockIntroSource: Send + Sync {
+    fn cache_height_limit(&self) -> u64;
     fn block_intro(&self, hei: u64) -> Option<Box<dyn BlockRead>>;
 }
 
@@ -45,6 +46,7 @@ pub trait Minter : Send + Sync {
 
     // block build
     fn block_reward(&self, _: u64) -> u64 { 0 }
+    fn preview_next_difficulty(&self, _: &dyn BlockRead, _: u64, _: &dyn BlockIntroSource) -> Option<(u32, [u8; 32], BigUint)> { None }
     fn packing_next_block(&self, _: &dyn EngineRead, _: &dyn TxPool) -> Box<dyn Any> { never!() } // BlockV1
 
     // runtime

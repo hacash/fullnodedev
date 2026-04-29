@@ -45,6 +45,10 @@ impl<'a> InsertBlockIntroSource<'a> {
 }
 
 impl BlockIntroSource for InsertBlockIntroSource<'_> {
+    fn cache_height_limit(&self) -> u64 {
+        self.root_height
+    }
+
     fn block_intro(&self, hei: u64) -> Option<Box<dyn BlockRead>> {
         if hei > self.root_height {
             let blk = Roller::ancestor_at(&self.anchor, hei)?.block();

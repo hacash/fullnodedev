@@ -45,7 +45,7 @@ fn tex_check_asset_serial(ctx: &mut dyn Context, serial: Fold64) -> Rerr {
     if !exist {
         return errf!("tex asset <{}> does not exist", serial.uint());
     }
-    ctx.tex_ledger().asset_checked.insert(serial);
+    ctx.tex_ledger_mut_top()?.asset_checked.insert(serial);
     Ok(())
 }
 

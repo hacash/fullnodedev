@@ -213,7 +213,7 @@ fn lgc_equal_bool(x: &Value, y: &Value) -> VmrtRes<bool> {
 }
 
 fn lgc_compare_fee(x: &Value, y: &Value, gas_extra: &GasExtra) -> usize {
-    value_compare_fee(x, y, gas_extra.container_cmp_header_fee)
+    value_compare_fee(x, y, gas_extra.container_cmp_header)
 }
 
 fn lgc_equal(x: &Value, y: &Value) -> VmrtRes<Value> {
@@ -464,6 +464,44 @@ fn div_u256_by_u128_to_u128(hi: u128, lo: u128, d: u128) -> Option<(u128, u128)>
     Some((quo, rem))
 }
 
+fn div_u256_by_u129_to_u128(
+    n_hi: u128,
+    n_lo: u128,
+    d_hi: u128,
+    d_lo: u128,
+) -> Option<(u128, u128, u128)> {
+    if d_hi > 1 || (d_hi == 0 && d_lo == 0) {
+        return None;
+    }
+    if d_hi == 0 {
+        let (quo, rem) = div_u256_by_u128_to_u128(n_hi, n_lo, d_lo)?;
+        return Some((quo, 0, rem));
+    }
+    let mut quo = 0u128;
+    let mut rem_hi = 0u128;
+    let mut rem_lo = 0u128;
+    for shift in (0..256).rev() {
+        let next_bit = if shift >= 128 {
+            (n_hi >> (shift - 128)) & 1
+        } else {
+            (n_lo >> shift) & 1
+        };
+        let carry = rem_lo >> 127;
+        rem_hi = (rem_hi << 1) | carry;
+        rem_lo = (rem_lo << 1) | next_bit;
+        if cmp_u256(rem_hi, rem_lo, d_hi, d_lo).is_ge() {
+            let (new_hi, new_lo) = sub_u256(rem_hi, rem_lo, d_hi, d_lo)?;
+            rem_hi = new_hi;
+            rem_lo = new_lo;
+            if shift >= 128 {
+                return None;
+            }
+            quo |= 1u128 << shift;
+        }
+    }
+    Some((quo, rem_hi, rem_lo))
+}
+
 fn shr_u256_to_u128(hi: u128, lo: u128, shift: u32) -> Option<(u128, bool)> {
     match shift {
         0 => {
@@ -566,6 +604,31 @@ fn mul_div_half_up(
 ) -> VmrtRes<u128> {
     let (hi, lo) = mul_wide_u128(lhs, rhs);
     round_half_up_div_u256_by_u128(hi, lo, d, op, x, y, z)
+}
+
+fn weighted_sum_div_u128(
+    lhs: u128,
+    lhs_weight: u128,
+    rhs: u128,
+    rhs_weight: u128,
+    denom: u128,
+) -> Option<(u128, u128)> {
+    if denom == 0 {
+        return None;
+    }
+    let (lhs_hi, lhs_lo) = mul_wide_u128(lhs, lhs_weight);
+    let (rhs_hi, rhs_lo) = mul_wide_u128(rhs, rhs_weight);
+    let (num_hi, num_lo) = add_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo)?;
+    div_u256_by_u128_to_u128(num_hi, num_lo, denom)
+}
+
+fn scaled_abs_diff_div_u128(x: u128, reference: u128, scale: u128) -> Option<(u128, u128)> {
+    if reference == 0 || scale == 0 {
+        return None;
+    }
+    let diff = x.abs_diff(reference);
+    let (hi, lo) = mul_wide_u128(diff, scale);
+    div_u256_by_u128_to_u128(hi, lo, reference)
 }
 
 fn saturating_uint_add(x: &Value, y: &Value) -> VmrtRes<Value> {
@@ -690,14 +753,16 @@ fn muldivup_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
 fn mul_shr_impl(x: &Value, y: &Value, z: &Value, op: &'static str, ceil_dropped: bool) -> VmrtRes<Value> {
     let err = || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z));
     let shift = z.extract_u128()?;
-    if shift > 255 {
-        return Err(err());
-    }
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
-    let (mut out, dropped) = shr_u256_to_u128(hi, lo, shift as u32).ok_or_else(err)?;
-    if ceil_dropped && dropped {
-        out = out.checked_add(1).ok_or_else(err)?;
-    }
+    let out = if shift >= 256 {
+        if ceil_dropped && (hi != 0 || lo != 0) { 1 } else { 0 }
+    } else {
+        let (mut out, dropped) = shr_u256_to_u128(hi, lo, shift as u32).ok_or_else(err)?;
+        if ceil_dropped && dropped {
+            out = out.checked_add(1).ok_or_else(err)?;
+        }
+        out
+    };
     cast_uint_result3(x, out, op, x, y, z)
 }
 
@@ -830,36 +895,58 @@ fn mul3div_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value>
     cast_uint_result4(x, quo, "mul3_div", x, y, z, w)
 }
 
+fn devscaled_floor_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("dev_scaled_floor", x, y, z));
+    let (quo, _) = scaled_abs_diff_div_u128(x.extract_u128()?, y.extract_u128()?, z.extract_u128()?)
+        .ok_or_else(err)?;
+    cast_uint_result3(x, quo, "dev_scaled_floor", x, y, z)
+}
+
 fn devscaled_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let err = || ItrErr::new(Arithmetic, &check_failed_tip3("dev_scaled", x, y, z));
-    let xv = x.extract_u128()?;
-    let reference = y.extract_u128()?;
-    if reference == 0 {
-        return Err(err());
-    }
-    let diff = xv.abs_diff(reference);
-    let (hi, lo) = mul_wide_u128(diff, z.extract_u128()?);
-    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, reference).ok_or_else(err)?;
-    cast_uint_result3(x, quo, "dev_scaled", x, y, z)
+    let (quo, rem) = scaled_abs_diff_div_u128(x.extract_u128()?, y.extract_u128()?, z.extract_u128()?)
+        .ok_or_else(err)?;
+    let out = ceil_quot_if_rem_u128(quo, rem, err)?;
+    cast_uint_result3(x, out, "dev_scaled", x, y, z)
 }
 
 fn withinbps_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
-    let diff = x.extract_u128()?.abs_diff(y.extract_u128()?);
-    let (lhs_hi, lhs_lo) = mul_wide_u128(diff, w.extract_u128()?);
-    let (rhs_hi, rhs_lo) = mul_wide_u128(y.extract_u128()?, z.extract_u128()?);
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("within_bps", x, y, z, w));
+    let value = x.extract_u128()?;
+    let reference = y.extract_u128()?;
+    let tolerance = z.extract_u128()?;
+    let scale = w.extract_u128()?;
+    if reference == 0 || scale == 0 {
+        return Err(err());
+    }
+    let diff = value.abs_diff(reference);
+    let (lhs_hi, lhs_lo) = mul_wide_u128(diff, scale);
+    let (rhs_hi, rhs_lo) = mul_wide_u128(reference, tolerance);
     Ok(Value::bool(cmp_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).is_le()))
 }
 
 fn wavg2_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
     let err = || ItrErr::new(Arithmetic, &check_failed_tip4("wavg2", x, y, z, w));
+    let lhs = x.extract_u128()?;
+    let rhs = z.extract_u128()?;
     let wx = y.extract_u128()?;
     let wy = w.extract_u128()?;
-    let denom = require_nonzero_u128(wx.checked_add(wy).ok_or_else(err)?, err)?;
-    let (lhs_hi, lhs_lo) = mul_wide_u128(x.extract_u128()?, wx);
-    let (rhs_hi, rhs_lo) = mul_wide_u128(z.extract_u128()?, wy);
-    let (num_hi, num_lo) = add_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).ok_or_else(err)?;
-    let (quo, _) = div_u256_by_u128_to_u128(num_hi, num_lo, denom).ok_or_else(err)?;
-    cast_uint_result4(x, quo, "wavg2", x, y, z, w)
+    let (den_hi, den_lo) = add_u256_u128(0, wx, wy).ok_or_else(err)?;
+    if den_hi == 0 && den_lo == 0 {
+        return Err(err());
+    }
+    if lhs == rhs {
+        return cast_uint_result4(x, lhs, "wavg2", x, y, z, w);
+    }
+    let (base, diff, diff_weight) = if lhs < rhs {
+        (lhs, rhs - lhs, wy)
+    } else {
+        (rhs, lhs - rhs, wx)
+    };
+    let (part_hi, part_lo) = mul_wide_u128(diff, diff_weight);
+    let (part, _, _) = div_u256_by_u129_to_u128(part_hi, part_lo, den_hi, den_lo).ok_or_else(err)?;
+    let out = base.checked_add(part).ok_or_else(err)?;
+    cast_uint_result4(x, out, "wavg2", x, y, z, w)
 }
 
 fn lerp_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
@@ -871,15 +958,10 @@ fn lerp_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
     if base == 0 || weight > base {
         return Err(err());
     }
-    let delta = end.abs_diff(start);
-    let (hi, lo) = mul_wide_u128(delta, weight);
-    let (part, _) = div_u256_by_u128_to_u128(hi, lo, base).ok_or_else(err)?;
-    let out = if end >= start {
-        start.checked_add(part).ok_or_else(err)?
-    } else {
-        start.checked_sub(part).ok_or_else(err)?
-    };
-    cast_uint_result4(x, out, "lerp", x, y, z, w)
+    let left_weight = base - weight;
+    let (quo, _) = weighted_sum_div_u128(start, left_weight, end, weight, base)
+        .ok_or_else(err)?;
+    cast_uint_result4(x, quo, "lerp", x, y, z, w)
 }
 
 // the value is must within u32
@@ -1201,6 +1283,15 @@ mod shift_u64_tests {
             Value::U64(100)
         );
         assert_eq!(
+            devscaled_floor_checked(&Value::U64(10001), &Value::U64(10000), &Value::U64(3))
+                .unwrap(),
+            Value::U64(0)
+        );
+        assert_eq!(
+            devscaled_checked(&Value::U64(10001), &Value::U64(10000), &Value::U64(3)).unwrap(),
+            Value::U64(1)
+        );
+        assert_eq!(
             withinbps_checked(
                 &Value::U64(10050),
                 &Value::U64(10000),
@@ -1211,6 +1302,16 @@ mod shift_u64_tests {
             Value::Bool(true)
         );
         assert_eq!(
+            withinbps_checked(
+                &Value::U64(10061),
+                &Value::U64(10000),
+                &Value::U64(60),
+                &Value::U64(10000),
+            )
+            .unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
             wavg2_checked(
                 &Value::U64(100),
                 &Value::U64(1),
@@ -1219,6 +1320,36 @@ mod shift_u64_tests {
             )
             .unwrap(),
             Value::U64(250)
+        );
+        assert_eq!(
+            wavg2_checked(
+                &Value::U64(101),
+                &Value::U64(1),
+                &Value::U64(100),
+                &Value::U64(1),
+            )
+            .unwrap(),
+            Value::U64(100)
+        );
+        assert_eq!(
+            wavg2_checked(
+                &Value::U64(7),
+                &Value::U128(u128::MAX),
+                &Value::U64(7),
+                &Value::U64(1),
+            )
+            .unwrap(),
+            Value::U64(7)
+        );
+        assert_eq!(
+            wavg2_checked(
+                &Value::U128(10),
+                &Value::U128(u128::MAX),
+                &Value::U128(14),
+                &Value::U64(2),
+            )
+            .unwrap(),
+            Value::U128(10)
         );
         assert_eq!(
             lerp_checked(
@@ -1239,6 +1370,88 @@ mod shift_u64_tests {
             )
             .unwrap(),
             Value::U64(175)
+        );
+        assert_eq!(
+            lerp_checked(&Value::U64(0), &Value::U64(1), &Value::U64(1), &Value::U64(2)).unwrap(),
+            Value::U64(0)
+        );
+        assert_eq!(
+            lerp_checked(&Value::U64(1), &Value::U64(0), &Value::U64(1), &Value::U64(2)).unwrap(),
+            Value::U64(0)
+        );
+        assert_eq!(
+            lerp_checked(&Value::U64(101), &Value::U64(100), &Value::U64(1), &Value::U64(2)).unwrap(),
+            wavg2_checked(&Value::U64(101), &Value::U64(1), &Value::U64(100), &Value::U64(1))
+                .unwrap()
+        );
+        assert_eq!(
+            lerp_checked(&Value::U64(7), &Value::U64(9), &Value::U64(0), &Value::U64(5)).unwrap(),
+            Value::U64(7)
+        );
+        assert_eq!(
+            lerp_checked(&Value::U64(7), &Value::U64(9), &Value::U64(5), &Value::U64(5)).unwrap(),
+            Value::U64(9)
+        );
+    }
+
+    #[test]
+    fn finance_guard_and_curve_ops_reject_invalid_params() {
+        assert!(devscaled_checked(&Value::U64(1), &Value::U64(0), &Value::U64(10)).is_err());
+        assert!(devscaled_checked(&Value::U64(1), &Value::U64(1), &Value::U64(0)).is_err());
+        assert!(devscaled_floor_checked(&Value::U64(1), &Value::U64(0), &Value::U64(10)).is_err());
+        assert!(devscaled_floor_checked(&Value::U64(1), &Value::U64(1), &Value::U64(0)).is_err());
+        assert!(withinbps_checked(&Value::U64(1), &Value::U64(0), &Value::U64(1), &Value::U64(10)).is_err());
+        assert!(withinbps_checked(&Value::U64(1), &Value::U64(1), &Value::U64(1), &Value::U64(0)).is_err());
+        assert!(lerp_checked(&Value::U64(1), &Value::U64(2), &Value::U64(1), &Value::U64(0)).is_err());
+        assert!(lerp_checked(&Value::U64(1), &Value::U64(2), &Value::U64(3), &Value::U64(2)).is_err());
+    }
+
+    #[test]
+    fn within_bps_allows_tolerance_over_scale() {
+        assert_eq!(
+            withinbps_checked(&Value::U64(1), &Value::U64(1), &Value::U64(11), &Value::U64(10)).unwrap(),
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn mul_shr_large_shift_has_defined_zero_or_one_semantics() {
+        assert_eq!(
+            mulshr_checked(&Value::U64(3), &Value::U64(5), &Value::U16(256)).unwrap(),
+            Value::U64(0)
+        );
+        assert_eq!(
+            mulshr_checked(&Value::U64(3), &Value::U64(5), &Value::U16(300)).unwrap(),
+            Value::U64(0)
+        );
+        assert_eq!(
+            mulshrup_checked(&Value::U64(3), &Value::U64(5), &Value::U16(256)).unwrap(),
+            Value::U64(1)
+        );
+        assert_eq!(
+            mulshrup_checked(&Value::U64(0), &Value::U64(5), &Value::U16(300)).unwrap(),
+            Value::U64(0)
+        );
+    }
+
+    #[test]
+    fn dev_scaled_matches_within_bps_thresholds() {
+        let x = Value::U64(10001);
+        let reference = Value::U64(10000);
+        let scale = Value::U64(3);
+        let tol_ok = Value::U64(1);
+        let tol_bad = Value::U64(0);
+        assert_eq!(
+            devscaled_checked(&x, &reference, &scale).unwrap(),
+            Value::U64(1)
+        );
+        assert_eq!(
+            withinbps_checked(&x, &reference, &tol_ok, &scale).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            withinbps_checked(&x, &reference, &tol_bad, &scale).unwrap(),
+            Value::Bool(false)
         );
     }
 }

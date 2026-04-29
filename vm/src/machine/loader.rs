@@ -304,6 +304,14 @@ mod loader_tests {
             unreachable!()
         }
 
+        fn sget(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
+            unreachable!()
+        }
+
+        fn sput(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtErr {
+            unreachable!()
+        }
+
         fn sstat(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: &Value) -> VmrtRes<Value> {
             unreachable!()
         }
@@ -328,7 +336,7 @@ mod loader_tests {
             unreachable!()
         }
 
-        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<i64> {
+        fn sedit(&mut self, _: &GasExtra, _: &SpaceCap, _: &Address, _: Value, _: Value) -> VmrtRes<(i64, i64)> {
             unreachable!()
         }
 

@@ -32,7 +32,10 @@ pub trait Context: StateOperat {
     fn snapshot_volatile(&self) -> Box<dyn Any> { Box::new(()) }
     fn restore_volatile(&mut self, _: Box<dyn Any>) {}
     // tex
-    fn tex_ledger(&mut self) -> &mut TexLedger;
+    fn tex_ledger(&self) -> &TexLedger;
+    fn tex_ledger_mut_top(&mut self) -> Ret<&mut TexLedger> {
+        errf!("context tex ledger write not supported")
+    }
     // log
     fn logs(&mut self) -> &mut dyn Logs;
     // p2sh

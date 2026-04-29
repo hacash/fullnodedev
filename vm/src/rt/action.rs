@@ -1,3 +1,4 @@
+use mint::action::DiaInscEdit;
 use protocol::action::*;
 use super::action::*;
 
@@ -14,7 +15,7 @@ fn action_kind_name(act_kind: Bytecode) -> &'static str {
     }
 }
 
-pub const ACTION_DEFS: [ActionDefTy; 13] = [
+pub const ACTION_DEFS: [ActionDefTy; 14] = [
     (HacToTrs::IDX,      "transfer_hac_to",         ValueTy::Nil, 2),
     (HacFromTrs::IDX,    "transfer_hac_from",       ValueTy::Nil, 2),
     (HacFromToTrs::IDX,  "transfer_hac_from_to",    ValueTy::Nil, 3),
@@ -25,6 +26,7 @@ pub const ACTION_DEFS: [ActionDefTy; 13] = [
     (DiaToTrs::IDX,      "transfer_hacd_to",        ValueTy::Nil, 2),
     (DiaFromTrs::IDX,    "transfer_hacd_from",      ValueTy::Nil, 2),
     (DiaFromToTrs::IDX,  "transfer_hacd_from_to",   ValueTy::Nil, 3),
+    (DiaInscEdit::IDX,   "hacd_insc_edit",          ValueTy::Nil, 5),
     (AssetToTrs::IDX,    "transfer_asset_to",       ValueTy::Nil, 2),
     (AssetFromTrs::IDX,  "transfer_asset_from",     ValueTy::Nil, 2),
     (AssetFromToTrs::IDX,"transfer_asset_from_to",  ValueTy::Nil, 3),
@@ -161,6 +163,14 @@ mod action_call_tests {
             .expect("EnvBlockAuthorAddr must exist in ACTION_ENV_DEFS");
         assert_eq!(def.1, "block_author_addr");
         assert!(ensure_act_allowed(ExecCtx::main(), Bytecode::ACTENV, env_id).is_ok());
+    }
+
+    #[test]
+    fn hacd_insc_edit_action_def_is_registered() {
+        let def = search_act_by_id(DiaInscEdit::IDX, &ACTION_DEFS)
+            .expect("DiaInscEdit must exist in ACTION_DEFS");
+        assert_eq!(def.1, "hacd_insc_edit");
+        assert_eq!(def.3, 5);
     }
 
     #[test]

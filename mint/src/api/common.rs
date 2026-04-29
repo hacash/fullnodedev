@@ -30,26 +30,6 @@ static MINER_PENDING_BLOCK: LazyLock<Arc<Mutex<VecDeque<MinerBlockStuff>>>> =
 
 static MINER_PACKING_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-static BLOCK_NOTIFIER: LazyLock<(Mutex<u64>, std::sync::Condvar)> =
-    LazyLock::new(|| (Mutex::new(0), std::sync::Condvar::new()));
-
-struct MWNCount {
-    count: Arc<Mutex<u64>>,
-}
-
-impl MWNCount {
-    fn new(c: Arc<Mutex<u64>>) -> Self {
-        *c.lock().unwrap() += 1;
-        Self { count: c }
-    }
-}
-
-impl Drop for MWNCount {
-    fn drop(&mut self) {
-        *self.count.lock().unwrap() -= 1;
-    }
-}
-
 fn api_error(errmsg: &str) -> ApiResponse {
     ApiResponse::json(json!({"ret":1,"err":errmsg}).to_string())
 }
@@ -181,12 +161,6 @@ fn update_miner_pending_block(block: BlockV1, cbtx: crate::TransactionCoinbase) 
     if stfs.len() > 3 {
         stfs.pop_back();
     }
-    
-    // Notify miner_notice that a new block is ready to be mined
-    let (lock, cvar) = &*BLOCK_NOTIFIER;
-    let mut lasthei = lock.lock().unwrap();
-    *lasthei = stfs[0].height.uint();
-    cvar.notify_all();
 }
 
 fn miner_reset_next_new_block(engine: Arc<dyn Engine>, txpool: &dyn TxPool) {
@@ -348,6 +322,7 @@ fn query_hashrate(ctx: &ApiExecCtx) -> serde_json::Map<String, Value> {
         json!({
             "rate": tg_rate,
             "show": tg_show,
+            "unit": "H/s",
             "hash": hex::encode(&tg_hash),
             "difn": tg_difn,
         }),
@@ -357,6 +332,7 @@ fn query_hashrate(ctx: &ApiExecCtx) -> serde_json::Map<String, Value> {
         json!({
             "rate": rt_rate,
             "show": rt_show,
+            "unit": "H/s",
         }),
     );
     data
@@ -366,8 +342,8 @@ fn query_hashrate(ctx: &ApiExecCtx) -> serde_json::Map<String, Value> {
 fn get_blk_rate(ctx: &ApiExecCtx, hei: u64) -> Ret<u128> {
     let difn = load_block_by_height(ctx, hei)?.block().difficulty().uint();
     let mtcnf = ctx.engine.minter().config().downcast::<MintConf>().unwrap();
-    let tms = mtcnf.each_block_target_time as f64 * 1000.0;
-    Ok(u32_to_rates(difn, tms) as u128)
+    let secs = mtcnf.each_block_target_time as f64;
+    Ok(u32_to_rates(difn, secs) as u128)
 }
 
 

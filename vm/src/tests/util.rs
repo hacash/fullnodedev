@@ -61,6 +61,16 @@ impl VmHost for TestVmHost<'_> {
         Ok(())
     }
 
+    fn sget(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
+        let _ = gst;
+        crate::VMState::wrap(self.ctx.state()).sget(cap, addr, key)
+    }
+
+    fn sput(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value, val: Value) -> VmrtErr {
+        let _ = gst;
+        crate::VMState::wrap(self.ctx.state()).sput(cap, addr, key, val)
+    }
+
     fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
         let hei = self.ctx.env().block.height;
         crate::VMState::wrap(self.ctx.state()).sstat(gst, cap, hei, addr, key)
@@ -96,7 +106,7 @@ impl VmHost for TestVmHost<'_> {
         addr: &Address,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64> {
+    ) -> VmrtRes<(i64, i64)> {
         let hei = self.ctx.env().block.height;
         crate::VMState::wrap(self.ctx.state()).sedit(gst, cap, hei, addr, key, val)
     }

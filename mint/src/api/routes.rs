@@ -44,7 +44,7 @@ fn routes() -> Vec<ApiRoute> {
         ),
         R::get("/query/latest", latest),
         R::get("/query/supply", supply),
-        R::get("/query/miner/notice", miner_notice),
+        R::get_async("/query/miner/notice", miner_notice),
         R::get("/query/miner/pending", miner_pending),
         R::get("/submit/miner/success", miner_success),
         R::get("/query/diamondminer/init", diamondminer_init),

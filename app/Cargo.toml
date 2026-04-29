@@ -23,5 +23,6 @@ ocl = { version = "0.19.7", optional = true }
 ocl = ["dep:ocl"]
 
 [dev-dependencies]
+x16rs-sys = "0.1.1"
 testkit = { path = "../testkit" }
 

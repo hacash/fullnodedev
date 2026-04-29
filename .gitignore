@@ -6,6 +6,7 @@ vscode-*/
 */tests/*.md
 *.bnk/
 *_bnk/
+*_bnk.*
 vendor/
 
 dist/

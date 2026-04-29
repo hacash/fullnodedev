@@ -4,8 +4,9 @@ mod action_coverage {
     use basis::interface::ActExec;
     use basis::interface::{Context, Logs, State, StateOperat, Transaction, TransactionRead};
     use field::{
-        Address, Amount, Bool, BytesW1, BytesW2, DiamondInscript, DiamondName, DiamondSto, Field,
-        Hash, Inscripts, Parse, Readable, Serialize, Uint1, Uint2, Uint4,
+        Address, Amount, BlockHeight, BytesW1, BytesW2, DiamondInscript, DiamondName,
+        DiamondNumber, DiamondSmelt, DiamondSto, Field, Fixed8, Hash, Inscripts, Parse,
+        Readable, Serialize, Uint1, Uint2, Uint4,
     };
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
@@ -136,7 +137,6 @@ mod action_coverage {
         act.nonce = Uint4::from(nonce);
         // Provide generous protocol fee to cover any contract size
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         act.contract = contract;
         act.execute(ctx)
     }
@@ -144,6 +144,48 @@ mod action_coverage {
     fn fund_main_addr(ctx: &mut dyn Context) {
         let main = ctx.env().tx.main;
         protocol::operate::hac_add(ctx, &main, &Amount::mei(1000)).unwrap();
+    }
+
+    fn seed_diamond_for_insc_edit(
+        ctx: &mut dyn Context,
+        diamond: DiamondName,
+        owner: Address,
+        insc_num: usize,
+        average_bid_burn_mei: u16,
+    ) {
+        let mut inscripts = Inscripts::default();
+        for i in 0..insc_num {
+            let one = DiamondInscript::create_by(
+                1,
+                BytesW1::from(format!("ins{}", i).into_bytes()).unwrap(),
+            );
+            inscripts.push(one).unwrap();
+        }
+        let mut state = CoreState::wrap(StateOperat::state(ctx));
+        state.diamond_set(
+            &diamond,
+            &DiamondSto {
+                status: Uint1::from(1u8),
+                address: owner,
+                prev_engraved_height: BlockHeight::from(1),
+                inscripts,
+            },
+        );
+        state.diamond_smelt_set(
+            &diamond,
+            &DiamondSmelt {
+                diamond,
+                number: DiamondNumber::from(1),
+                born_height: BlockHeight::from(1),
+                born_hash: Hash::default(),
+                prev_hash: Hash::default(),
+                miner_address: owner,
+                bid_fee: Amount::zero(),
+                nonce: Fixed8::default(),
+                average_bid_burn: Uint2::from(average_bid_burn_mei),
+                life_gene: Hash::default(),
+            },
+        );
     }
 
     // ═══════════════════════════════════════════════════
@@ -438,6 +480,72 @@ mod action_coverage {
         let act = ContractMainCall::from_bytecode(lang_to_bytecode("return 0").unwrap()).unwrap();
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("AST") && err.contains("CALL"), "{err}");
+    }
+
+    #[test]
+    fn maincall_hacd_insc_edit_succeeds_for_signed_owner_main() {
+        let _guard = test_guard();
+        let main_acc = Account::create_by("vm-hacd-insc-edit-owner").unwrap();
+        let main = Address::from(*main_acc.address());
+        let mut tx = make_tx3(main, 17);
+        tx.fill_sign(&main_acc).unwrap();
+        let mut ctx = make_ctx_from_tx(
+            300,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+
+        let diamond = DiamondName::from_readable(b"HYXYHY").unwrap();
+        seed_diamond_for_insc_edit(&mut ctx, diamond, main, 1, 100);
+
+        let script = format!(
+            r#"
+            hacd_insc_edit(0x{}, 0, mei_to_hac(1), 1, 0x06656469746564)
+            return 0
+        "#,
+            hex::encode(diamond.serialize())
+        );
+        let rv = execute_main_bytecode(&mut ctx, lang_to_bytecode(&script).unwrap()).unwrap();
+        assert!(!rv.extract_bool().unwrap());
+
+        let dia = CoreState::wrap(StateOperat::state(&mut ctx)).diamond(&diamond).unwrap();
+        assert_eq!(*dia.inscripts.as_list()[0].engraved_type, 1);
+        assert_eq!(dia.inscripts.as_list()[0].content.to_readable_or_hex(), "edited");
+    }
+
+    #[test]
+    fn maincall_hacd_insc_edit_rejects_missing_owner_signature_under_sponsor_mode() {
+        let _guard = test_guard();
+        let owner_acc = Account::create_by("vm-hacd-insc-edit-real-owner").unwrap();
+        let payer_acc = Account::create_by("vm-hacd-insc-edit-payer-only").unwrap();
+        let owner = Address::from(*owner_acc.address());
+        let payer = Address::from(*payer_acc.address());
+        let mut tx = make_tx3(payer, 17);
+        tx.fill_sign(&payer_acc).unwrap();
+        let mut ctx = make_ctx_from_tx(
+            300,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+
+        let diamond = DiamondName::from_readable(b"WTYUIA").unwrap();
+        seed_diamond_for_insc_edit(&mut ctx, diamond, owner, 1, 100);
+
+        let script = format!(
+            r#"
+            hacd_insc_edit(0x{}, 0, mei_to_hac(1), 1, 0x06656469746564)
+            return 0
+        "#,
+            hex::encode(diamond.serialize())
+        );
+        let err = execute_main_bytecode(&mut ctx, lang_to_bytecode(&script).unwrap()).unwrap_err();
+        assert!(err.contains("signature") || err.contains("failed"), "{err}");
     }
 
     #[test]
@@ -854,7 +962,6 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(77u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         let over = SpaceCap::new(1).value_size + 1;
         act.construct_argv = BytesW2::from(vec![0xAB; over]).unwrap();
         act.contract = make_external_contract("f", "return 0");
@@ -864,7 +971,7 @@ mod action_coverage {
     }
 
     #[test]
-    fn deploy_allows_missing_construct_when_construct_must_false() {
+    fn deploy_allows_missing_construct_when_construct_argv_empty() {
         let _guard = test_guard();
         let main = main_addr();
         let tx = make_tx(3, main, vec![], 17);
@@ -880,7 +987,6 @@ mod action_coverage {
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(78u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(false);
         act.contract = Contract::new()
             .func(
                 Func::new("f")
@@ -897,6 +1003,80 @@ mod action_coverage {
             VMState::wrap(StateOperat::state(&mut ctx))
                 .contract(&caddr)
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn deploy_rejects_non_empty_construct_argv_without_construct() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+
+        let mut act = ContractDeploy::new();
+        act.nonce = Uint4::from(79u32);
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.construct_argv = BytesW2::from(vec![0xEE]).unwrap();
+        act.contract = Contract::new()
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(
+            err.contains("construct argv provided but Construct hook not found"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn deploy_auto_runs_construct_when_present() {
+        let _guard = test_guard();
+        let main = main_addr();
+        let tx = make_tx(3, main, vec![], 17);
+        let mut ctx = make_ctx(
+            1,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
+        ctx.env.chain.fast_sync = true;
+        fund_main_addr(&mut ctx);
+        let budget = protocol::context::decode_gas_budget(
+            17u8.min(protocol::context::TX_GAS_BUDGET_CAP_BYTE),
+        );
+        ctx.gas_initialize(budget).unwrap();
+
+        let mut act = ContractDeploy::new();
+        act.nonce = Uint4::from(80u32);
+        act.protocol_cost = Amount::coin(10000, 244);
+        act.contract = Contract::new()
+            .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 1").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(
+            err.contains("Construct") && err.contains("return error code 1"),
+            "{err}"
         );
     }
 
@@ -919,15 +1099,23 @@ mod action_coverage {
         ctx.gas_initialize(budget).unwrap();
 
         let mut act = ContractDeploy::new();
-        act.nonce = Uint4::from(78u32);
+        act.nonce = Uint4::from(81u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         let cap = SpaceCap::new(1).value_size;
         act.construct_argv = BytesW2::from(vec![0xCD; cap]).unwrap();
-        act.contract = make_external_contract("f", "return 0");
+        act.contract = Contract::new()
+            .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+            .func(
+                Func::new("f")
+                    .unwrap()
+                    .external()
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
+            .into_sto();
         act.execute(&mut ctx).unwrap();
 
-        let caddr = contract_addr(&main, 78);
+        let caddr = contract_addr(&main, 81);
         assert!(
             VMState::wrap(StateOperat::state(&mut ctx))
                 .contract(&caddr)
@@ -950,9 +1138,8 @@ mod action_coverage {
         fund_main_addr(&mut ctx);
 
         let mut act = ContractDeploy::new();
-        act.nonce = Uint4::from(79u32);
+        act.nonce = Uint4::from(82u32);
         act.protocol_cost = Amount::coin(10000, 244);
-        act.construct_must = Bool::new(true);
         act.contract = make_external_contract("f", "return 0");
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.contains("requires tx type >= 3"), "{err}");
@@ -2523,7 +2710,6 @@ mod action_coverage {
         let sto = make_external_contract("f", "return 0");
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(1u32);
-        act.construct_must = Bool::new(true);
         // Create a negative amount: 0 - 1 mei
         let neg_amt = Amount::zero()
             .sub(&Amount::mei(1), field::AmtMode::BIGINT)

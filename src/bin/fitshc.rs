@@ -17,14 +17,12 @@ use sys::{Account, curtimes};
 fn estimate_protocol_cost_auto(
     txfee: &Amount,
     nonce: Uint4,
-    construct_must: Bool,
     argv: BytesW2,
     sto: &vm::ContractSto,
 ) -> Amount {
     estimate_protocol_cost_auto_with_periods(
         txfee,
         nonce,
-        construct_must,
         argv,
         sto,
         sto.size() as u128,
@@ -35,7 +33,6 @@ fn estimate_protocol_cost_auto(
 fn estimate_protocol_cost_auto_with_periods(
     txfee: &Amount,
     nonce: Uint4,
-    construct_must: Bool,
     argv: BytesW2,
     sto: &vm::ContractSto,
     charge_bytes: u128,
@@ -53,7 +50,6 @@ fn estimate_protocol_cost_auto_with_periods(
         let mut act = ContractDeploy::default();
         act.protocol_cost = cur.clone();
         act.nonce = nonce;
-        act.construct_must = construct_must;
         act.construct_argv = argv.clone();
         act.contract = sto.clone();
 
@@ -168,15 +164,10 @@ fn main() {
     println!("Generated: {}", map_file.display());
 
     // Deploy
-    let (d_fee, d_nonce, d_construct_must, d_argv) = if let Some(info) = deploy_opt {
-        (
-            info.protocol_cost,
-            info.nonce,
-            info.construct_must,
-            info.construct_argv,
-        )
+    let (d_fee, d_nonce, d_argv) = if let Some(info) = deploy_opt {
+        (info.protocol_cost, info.nonce, info.construct_argv)
     } else {
-        (None, None, None, None)
+        (None, None, None)
     };
 
     let fee_str = args.get(2).map(|s| s.as_str()).unwrap_or("1:248");
@@ -184,17 +175,15 @@ fn main() {
 
     let nonce_val = args.get(3).and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
     let nonce = d_nonce.unwrap_or(Uint4::from(nonce_val));
-    let construct_must = d_construct_must.unwrap_or_else(|| Bool::new(true));
 
     let argv = d_argv.unwrap_or_default();
     let protocol_cost = d_fee.unwrap_or_else(|| {
-        estimate_protocol_cost_auto(&txfee, nonce, construct_must, argv.clone(), &sto)
+        estimate_protocol_cost_auto(&txfee, nonce, argv.clone(), &sto)
     });
 
     let mut action = ContractDeploy::default();
     action.protocol_cost = protocol_cost;
     action.nonce = nonce;
-    action.construct_must = construct_must;
     action.construct_argv = argv;
     action.contract = sto;
 

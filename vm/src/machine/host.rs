@@ -30,8 +30,41 @@ pub trait VmHost {
     fn log_push(&mut self, addr: &Address, items: Vec<Value>) -> VmrtErr;
 
     // Storage
-    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value>;
-    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value>;
+    fn sget_gas(&mut self, gst: &GasExtra, value: &Value) -> i64 {
+        crate::VMState::status_get_gas(gst, value)
+    }
+    fn sput_gas(&mut self, gst: &GasExtra, key: &Value, value: &Value) -> VmrtRes<i64> {
+        crate::VMState::status_put_gas(gst, key, value)
+    }
+    fn sget(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: &Value,
+    ) -> VmrtRes<Value>;
+    fn sput(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: Value,
+        val: Value,
+    ) -> VmrtErr;
+    fn sstat(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: &Value,
+    ) -> VmrtRes<Value>;
+    fn sload(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: &Value,
+    ) -> VmrtRes<Value>;
     fn sdel(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: Value) -> VmrtRes<i64>;
     fn snew(
         &mut self,
@@ -49,7 +82,7 @@ pub trait VmHost {
         addr: &Address,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64>;
+    ) -> VmrtRes<(i64, i64)>;
     fn srent(
         &mut self,
         gst: &GasExtra,
@@ -110,12 +143,45 @@ impl<T: Context + ?Sized> VmHost for T {
         Ok(())
     }
 
-    fn sstat(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
+    fn sget(
+        &mut self,
+        _gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: &Value,
+    ) -> VmrtRes<Value> {
+        crate::VMState::wrap(self.state()).sget(cap, addr, key)
+    }
+
+    fn sput(
+        &mut self,
+        _gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: Value,
+        val: Value,
+    ) -> VmrtErr {
+        crate::VMState::wrap(self.state()).sput(cap, addr, key, val)
+    }
+
+    fn sstat(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: &Value,
+    ) -> VmrtRes<Value> {
         let hei = self.env().block.height;
         crate::VMState::wrap(self.state()).sstat(gst, cap, hei, addr, key)
     }
 
-    fn sload(&mut self, gst: &GasExtra, cap: &SpaceCap, addr: &Address, key: &Value) -> VmrtRes<Value> {
+    fn sload(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        addr: &Address,
+        key: &Value,
+    ) -> VmrtRes<Value> {
         let hei = self.env().block.height;
         crate::VMState::wrap(self.state()).sload(gst, cap, hei, addr, key)
     }
@@ -145,7 +211,7 @@ impl<T: Context + ?Sized> VmHost for T {
         addr: &Address,
         key: Value,
         val: Value,
-    ) -> VmrtRes<i64> {
+    ) -> VmrtRes<(i64, i64)> {
         let hei = self.env().block.height;
         crate::VMState::wrap(self.state()).sedit(gst, cap, hei, addr, key, val)
     }

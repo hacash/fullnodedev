@@ -294,6 +294,8 @@ irfn_define! {
     memory_put
     memory_get
     memory_take
+    status_put
+    status_get
 
     storage_new
     storage_recv
@@ -315,6 +317,7 @@ irfn_define! {
     rpow
     clamp
     dev_scaled
+    dev_scaled_floor
     div_up
     div_round
     sat_add
