@@ -5,32 +5,42 @@ use std::io::{Read, Write};
 use ocl::enums::{ProgramInfoResult, ProgramInfo};
 use ocl::{Buffer, Context, Device, EventList, Kernel, Platform, Program, Queue};
 
+#[allow(dead_code)]
 struct OpenCLResources {
     program: Program,
     queue: Queue,
     buffer_best_nonces: Buffer::<u32>,
+    buffer_best_nonces_diamond: Buffer::<u64>,
     buffer_global_hashes: Buffer::<u8>,
     buffer_global_order: Buffer::<u32>,
     buffer_best_hashes: Buffer::<u8>,
 }
 
-fn initialize_opencl(cnf: &PoWorkConf) -> Vec<OpenCLResources> {
-    if cnf.localsize != 256 {
+fn initialize_opencl(
+    diamond_mining: bool,
+    opencldir: &String,
+    platformid: &u32,
+    deviceids: &String,
+    workgroups: &u32,
+    localsize: &u32,
+    unitsize: &u32,
+) -> Vec<OpenCLResources> {
+    if *localsize != 256 {
         eprintln!(
             "[Warn] OpenCL local_size={} is incompatible with kernel fixed local arrays(256), fallback to CPU miner.",
-            cnf.localsize
+            localsize
         );
         return Vec::new();
     }
 
     // Binary file location
-    let kernel_file = format!(r"{}x16rs_main.cl", cnf.opencldir);
+    let kernel_file = if diamond_mining { format!(r"{}x16rs_diamond.cl", opencldir) } else { format!(r"{}x16rs_main.cl", opencldir) };
     let kernel_path = Path::new(&kernel_file);
 
     // Context creation for OpenCL instance
     let platforms = Platform::list();
     let platform = platforms
-        .get(cnf.platformid as usize)
+        .get(*platformid as usize)
         .expect("The specified platform id is invalid")
         .clone();
 
@@ -41,7 +51,7 @@ fn initialize_opencl(cnf: &PoWorkConf) -> Vec<OpenCLResources> {
     println!("Manufacturer: {}", vendor);
     println!("Version: {}", version);
 
-    let mut cnf_devices: Vec<u32> = cnf.deviceids.split(',')
+    let mut cnf_devices: Vec<u32> = deviceids.split(',')
         .filter(|s| !s.trim().is_empty())
         .filter_map(|s| s.trim().parse::<u32>().ok())
         .collect();
@@ -62,7 +72,7 @@ fn initialize_opencl(cnf: &PoWorkConf) -> Vec<OpenCLResources> {
         devices.push(device);
     }
 
-    let num_work_items = cnf.workgroups * cnf.localsize;
+    let num_work_items = workgroups * localsize;
     let global_work_size = num_work_items;
 
     let mut opencl_resource_devices = Vec::with_capacity(devices.len() as usize);
@@ -80,12 +90,12 @@ fn initialize_opencl(cnf: &PoWorkConf) -> Vec<OpenCLResources> {
             .build()
             .expect("Can't create OpenCL context");
 
-        if !Path::new(&cnf.opencldir).is_dir() {
-            panic!("OpenCL dir not found: {}", cnf.opencldir);
+        if !Path::new(&opencldir).is_dir() {
+            panic!("OpenCL dir not found: {}", opencldir);
         }
 
         let device_name = device.name().expect("Can't get device name");
-        let binary_file = format!(r"{}{}_{}.bin", cnf.opencldir, device_name, cnf_devices[idx]);
+        let binary_file = format!(r"{}{}_{}{}.bin", opencldir, device_name, cnf_devices[idx], if diamond_mining { "_diamonds" } else { "" });
         let binary_path = Path::new(&binary_file);
 
         // Check if kernel was changed since last time (and need recompile)
@@ -120,7 +130,7 @@ fn initialize_opencl(cnf: &PoWorkConf) -> Vec<OpenCLResources> {
         } else {
             println!("Compiling...");
             // Compile from source
-            compile_program_from_source(&context, &device, &kernel_path, &binary_path, cnf.opencldir.clone())
+            compile_program_from_source(&context, &device, &kernel_path, &binary_path, opencldir.clone())
         };
         
         // Create new queue
@@ -133,25 +143,31 @@ fn initialize_opencl(cnf: &PoWorkConf) -> Vec<OpenCLResources> {
             buffer_best_nonces: Buffer::<u32>::builder()
                 .queue(queue.clone())
                 .flags(ocl::core::MEM_WRITE_ONLY)
-                .len(cnf.workgroups)
+                .len(*workgroups)
                 .build()
                 .expect("Can't create buffer_best_nonces"),
+            buffer_best_nonces_diamond: Buffer::<u64>::builder()
+                .queue(queue.clone())
+                .flags(ocl::core::MEM_WRITE_ONLY)
+                .len(*workgroups)
+                .build()
+                .expect("Can't create buffer_best_nonces_diamond"),
             buffer_global_hashes: Buffer::<u8>::builder()
                 .queue(queue.clone())
                 .flags(ocl::core::MEM_READ_WRITE)
-                .len(HASH_WIDTH * cnf.unitsize as usize * global_work_size as usize)
+                .len(HASH_WIDTH * *unitsize as usize * global_work_size as usize)
                 .build()
                 .expect("Can't create buffer_global_hashes"),
             buffer_global_order: Buffer::<u32>::builder()
                 .queue(queue.clone())
                 .flags(ocl::core::MEM_READ_WRITE)
-                .len(cnf.unitsize as usize * global_work_size as usize)
+                .len(*unitsize as usize * global_work_size as usize)
                 .build()
                 .expect("Can't create buffer_global_order"),
             buffer_best_hashes: Buffer::<u8>::builder()
                 .queue(queue.clone())
                 .flags(ocl::core::MEM_WRITE_ONLY)
-                .len(HASH_WIDTH * cnf.workgroups as usize )
+                .len(HASH_WIDTH * *workgroups as usize )
                 .build()
                 .expect("Can't create buffer_best_hashes")
         });
@@ -216,71 +232,3 @@ fn compile_program_from_source(
     program
 }
 
-fn do_group_block_mining_opencl(
-    opencl: &OpenCLResources,
-    height: u64,
-    block_intro: Vec<u8>,
-    nonce_start: u32,
-    num_work_groups: u32,
-    local_work_size: u32,
-    unit_size: u32,
-) -> (u32, [u8; 32]) {
-    let mut most_nonce = 0u32;
-    let mut most_hash = [255u8; 32];
-    let global_work_size = num_work_groups * local_work_size;
-    let repeat = x16rs::block_hash_repeat(height) as u32;
-
-    let buffer_block_intro = Buffer::<u8>::builder()
-        .queue(opencl.queue.clone())
-        .flags(ocl::core::MEM_READ_ONLY)
-        .len(block_intro.len())
-        .copy_host_slice(&block_intro)
-        .build()
-        .expect("Unable to create buffer_block_intro");
-
-    let kernel = Kernel::builder()
-        .program(&opencl.program)
-        .name("x16rs_main")
-        .queue(opencl.queue.clone())
-        .global_work_size(global_work_size)
-        .local_work_size(local_work_size)
-        .arg(&buffer_block_intro)
-        .arg(nonce_start)
-        .arg(repeat)
-        .arg(unit_size)
-        .arg(&opencl.buffer_global_hashes)
-        .arg(&opencl.buffer_global_order)
-        .arg(&opencl.buffer_best_hashes)
-        .arg(&opencl.buffer_best_nonces)
-        .build()
-        .unwrap();
-
-    let mut kernel_event = EventList::new();
-    unsafe {
-        kernel.cmd().enew(&mut kernel_event).enq().expect("Unable to queue OpenCL kernel");
-    }
-
-    let mut hashes = vec![0u8; opencl.buffer_best_hashes.len()];
-    opencl.buffer_best_hashes
-        .read(&mut hashes)
-        .ewait(&kernel_event)
-        .enq()
-        .expect("Can't read buffer_best_hashes");
-
-    let mut nonces = vec![0u32; opencl.buffer_best_nonces.len()];
-    opencl.buffer_best_nonces
-        .read(&mut nonces)
-        .ewait(&kernel_event)
-        .enq()
-        .expect("Can't read buffer_best_nonces");
-
-    for i in 0..num_work_groups as usize {
-        let hash_bytes = &hashes[i * 32..(i * 32) + 32];
-        if hash_more_power(hash_bytes, &most_hash) {
-            most_hash.copy_from_slice(hash_bytes);
-            most_nonce = nonces[i];
-        }
-    }
-    
-    (most_nonce, most_hash)
-}
