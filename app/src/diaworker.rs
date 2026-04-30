@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicU32, Ordering::*};
 use std::sync::{RwLock, mpsc};
+#[cfg(feature = "ocl")]
+use std::sync::Arc;
 
 use std::thread::*;
 use std::time::*;
@@ -14,6 +16,10 @@ use mint::genesis::*;
 use sys::*;
 
 include! {"util.rs"}
+#[cfg(feature = "ocl")]
+include! {"opencl_common.rs"}
+#[cfg(feature = "ocl")]
+include! {"opencl_dia.rs"}
 
 /*************************************/
 
@@ -23,16 +29,33 @@ pub struct DiaWorkConf {
     pub supervene: u32, // cpu core
     pub bidaddr: Address,
     pub rewardaddr: Address,
+    pub useopencl: bool, // use opencl miner
+    pub workgroups: u32, // opencl work groups
+    pub localsize: u32, // opencl work units per work group
+    pub unitsize: u32, // opencl hashes per work unit
+    pub opencldir: String, // opencl source dir
+    pub debug: u32, // enable debug mode
+    pub platformid: u32, // opencl platform id
+    pub deviceids: String, // opencl device id list
 }
 
 impl DiaWorkConf {
     pub fn new(ini: &IniObj) -> DiaWorkConf {
         let sec = &ini_section(ini, "default"); // default = root
+        let sec_gpu = &ini_section(ini, "gpu");
         let cnf = DiaWorkConf {
             rpcaddr: ini_must(sec, "connect", "127.0.0.1:8081"),
             supervene: ini_must_u64(sec, "supervene", 2) as u32,
             bidaddr: Address::default(),
             rewardaddr: Address::default(),
+            useopencl: ini_must_bool(sec_gpu, "use_opencl", false) as bool,
+            workgroups: ini_must_u64(sec_gpu, "work_groups", 1024) as u32,
+            localsize: ini_must_u64(sec_gpu, "local_size", 256) as u32,
+            unitsize: ini_must_u64(sec_gpu, "unit_size", 128) as u32,
+            opencldir: ini_must(sec_gpu, "opencl_dir", "opencl/"),
+            debug: ini_must_u64(sec_gpu, "debug", 0) as u32,
+            platformid: ini_must_u64(sec_gpu, "platform_id", 0) as u32,
+            deviceids: ini_must(sec_gpu, "device_ids", "")
         };
         cnf
     }
@@ -81,29 +104,97 @@ pub fn diaworker() {
     // init
     load_init(&mut cnf);
 
+    // Initialize OpenCL
+    #[cfg(feature = "ocl")]
+    let opencl_resources: Vec<OpenCLResources> = if cnf.useopencl {
+        initialize_opencl(
+            true,
+            &cnf.opencldir,
+            &cnf.platformid,
+            &cnf.deviceids,
+            &cnf.workgroups,
+            &cnf.localsize,
+            &cnf.unitsize,
+        )
+    } else {
+        // No OpenCL miners
+        Vec::new()
+    };
+    // Calculate device/cpu quantity
+    #[cfg(feature = "ocl")]
+    let vene: u32 = if cnf.useopencl {
+        opencl_resources.len() as u32
+    } else {
+        cnf.supervene
+    };
+    #[cfg(not(feature = "ocl"))]
+    let vene: u32 = cnf.supervene;
+
     // deal results
     let cnf1 = cnf.clone();
     spawn(move || {
         let mut most_dia_str = [b'W'; 16];
         let mut rstx = res_rx;
         loop {
-            deal_diamond_mining_results(&cnf1, &mut most_dia_str, &mut rstx);
+            deal_diamond_mining_results(&cnf1, &mut most_dia_str, &mut rstx, vene);
             delay_continue_ms!(77);
         }
     });
 
     // start worker
-    let thrnum = cnf.supervene as usize;
-    println!("\n[Start] Create #{} diamond miner worker thread.", thrnum);
-    for thrid in 0..thrnum {
-        let cnf2 = cnf.clone();
-        let rstx = res_tx.clone();
-        spawn(move || {
-            loop {
-                run_diamond_worker_thread(&cnf2, thrid, rstx.clone());
-                delay_continue_ms!(9);
+    if cnf.useopencl { // opencl is enabled
+        #[cfg(feature = "ocl")]
+        {
+            // Initialize OpenCL
+            println!("\n[Start] Create GPU diamond miner worker");
+            for (thrid, opencl_thread) in opencl_resources.into_iter().enumerate() {
+                let opencl_clone = Arc::new(opencl_thread);
+                let cnf2 = cnf.clone();
+                let rstx: mpsc::Sender<DiamondMiningResult> = res_tx.clone();
+                spawn(move || {
+                    loop {
+                        run_diamond_worker_thread_opencl(
+                            &cnf2,
+                            thrid,
+                            rstx.clone(),
+                            opencl_clone.clone(),
+                        );
+                        delay_continue_ms!(9);
+                    }
+                });
             }
-        });
+        }
+        #[cfg(not(feature = "ocl"))]
+        {
+            println!(
+                "[Warning] use_opencl=true but app built without feature 'ocl'; fallback to CPU mining."
+            );
+            let thrnum = cnf.supervene as usize;
+            println!("\n[Start] Create #{} diamond miner worker thread.", thrnum);
+            for thrid in 0..thrnum {
+                let cnf2 = cnf.clone();
+                let rstx = res_tx.clone();
+                spawn(move || {
+                    loop {
+                        run_diamond_worker_thread(&cnf2, thrid, rstx.clone());
+                        delay_continue_ms!(9);
+                    }
+                });
+            }
+        }
+    } else {
+        let thrnum = cnf.supervene as usize;
+        println!("\n[Start] Create #{} diamond miner worker thread.", thrnum);
+        for thrid in 0..thrnum {
+            let cnf2 = cnf.clone();
+            let rstx = res_tx.clone();
+            spawn(move || {
+                loop {
+                    run_diamond_worker_thread(&cnf2, thrid, rstx.clone());
+                    delay_continue_ms!(9);
+                }
+            });
+        }
     }
 
     // pull loop
@@ -117,8 +208,8 @@ fn deal_diamond_mining_results(
     cnf: &DiaWorkConf,
     most_dia_str: &mut [u8; 16],
     result_ch_rx: &mut mpsc::Receiver<DiamondMiningResult>,
+    vene: u32,
 ) {
-    let vene = cnf.supervene;
     let mut deal_number = 0u32;
     let mut most = DiamondMiningResult::default();
     most.dia_str = [b'w'; 16];
@@ -243,6 +334,58 @@ fn run_diamond_worker_thread(
         // check next
         if current_mining_number < MINING_DIAMOND_NUM.load(Relaxed) {
             return; // turn to next number
+        }
+    }
+}
+
+#[cfg(feature = "ocl")]
+fn run_diamond_worker_thread_opencl(
+    cnf: &DiaWorkConf,
+    _thrid: usize,
+    result_ch_tx: mpsc::Sender<DiamondMiningResult>,
+    opencl: Arc<OpenCLResources>,
+) {
+    let cmdn = MINING_DIAMOND_NUM.load(Relaxed);
+    if cmdn == 0 {
+        delay_return_ms!(99); // not yet
+    }
+
+    let rwd_addr = cnf.rewardaddr.clone();
+    let nonce_space: u64 = (cnf.workgroups * cnf.localsize * cnf.unitsize) as u64;
+    let current_mining_number: u32 = cmdn;
+    let current_mining_block_hash: Hash = { MINING_DIAMOND_STUFF.read().unwrap().clone() };
+
+    let mut custom_nonce = [0u8; HASH_WIDTH];
+    getrandom::fill(&mut custom_nonce).unwrap();
+    let custom_nonce = Hash::from(custom_nonce);
+    let mut nonce_start = 0;
+
+    loop {
+        let ctn = Instant::now();
+        let mut result = do_diamond_group_mining_opencl(
+            &opencl,
+            current_mining_number,
+            &current_mining_block_hash,
+            &rwd_addr,
+            &custom_nonce,
+            nonce_start,
+            nonce_space,
+            cnf.workgroups,
+            cnf.localsize,
+            cnf.unitsize,
+        );
+        let use_secs = Instant::now().duration_since(ctn).as_millis() as f64 / 1000.0;
+        result.use_secs = use_secs;
+        result_ch_tx.send(result).unwrap();
+
+        let ns = nonce_start.checked_add(nonce_space);
+        if let None = ns {
+            break;
+        }
+        nonce_start = ns.unwrap();
+
+        if current_mining_number < MINING_DIAMOND_NUM.load(Relaxed) {
+            return;
         }
     }
 }

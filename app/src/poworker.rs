@@ -18,7 +18,9 @@ use sys::*;
 include! {"util.rs"}
 
 #[cfg(feature = "ocl")]
-include! {"opencl.rs"}
+include! {"opencl_common.rs"}
+#[cfg(feature = "ocl")]
+include! {"opencl_pow.rs"}
 
 #[derive(Clone)]
 enum MinerBackend {
@@ -186,7 +188,15 @@ fn build_miner_backends(cnf: &PoWorkConf) -> Vec<MinerBackend> {
     if cnf.useopencl {
         #[cfg(feature = "ocl")]
         {
-            let opencl_resources = initialize_opencl(cnf);
+            let opencl_resources = initialize_opencl(
+                false,
+                &cnf.opencldir,
+                &cnf.platformid,
+                &cnf.deviceids,
+                &cnf.workgroups,
+                &cnf.localsize,
+                &cnf.unitsize,
+            );
             if !opencl_resources.is_empty() {
                 println!(
                     "\n[Start] Create GPU block miner worker #{}.",
