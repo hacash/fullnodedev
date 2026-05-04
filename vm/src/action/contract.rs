@@ -5,7 +5,6 @@
     - 10000 periods ~= 9.51 years when one period = 100 blocks
 */
 pub const CONTRACT_STORE_PERM_PERIODS: u64 = 10_000;
-pub const CONTRACT_STORE_EDIT_PERIODS: u64 = 100;
 
 /*
     Minimum protocol fee purity floor, in unit-238 per tx byte.
@@ -119,26 +118,18 @@ action_define! { ContractUpdate, 41,
         // Purely additive edits (e.g. inherit/library append, or new local funcs with no shadowing)
         // stay Append; structural replacements or selector-owner changes are Change.
         let is_change = did_structural_change || did_effective_lookup_change;
-        // spend protocol fee: expansion fee (may be zero) + edited-bytes fee
-        let old_size = contract.size();
-        let new_size = new_contract.size();
-        let delta_bytes = new_size.saturating_sub(old_size);
+        // spend protocol fee: only charge edited bytes with perm periods
         let edit_bytes = self.edit.size();
-        let expand_periods = contract_store_perm_periods(hei);
-        let edit_periods = contract_store_edit_periods(hei);
-        let expand_fee = calc_contract_protocol_cost_min_with_periods(ctx, delta_bytes, expand_periods)?;
-        let edit_fee = calc_contract_protocol_cost_min_with_periods(ctx, edit_bytes, edit_periods)?;
-        let total_fee = expand_fee.add_mode_u128(&edit_fee)?;
+        let edit_periods = contract_store_perm_periods(hei);
+        let total_fee = calc_contract_protocol_cost_min_with_periods(ctx, edit_bytes, edit_periods)?;
         let pcost = &self.protocol_cost;
         if pcost.is_negative() {
             return xerrf!("protocol fee cannot be negative");
         }
         if *pcost < total_fee {
             return xerrf!(
-                "protocol fee must be at least {} (expand_bytes={}, expand_periods={}, edit_bytes={}, edit_periods={}) but got {}",
+                "protocol fee must be at least {} (edit_bytes={}, edit_periods={}) but got {}",
                 &total_fee,
-                delta_bytes,
-                expand_periods,
                 edit_bytes,
                 edit_periods,
                 &self.protocol_cost
@@ -524,11 +515,6 @@ fn check_sub_contract_protocol_cost(
 #[inline(always)]
 fn contract_store_perm_periods(_hei: u64) -> u64 {
     CONTRACT_STORE_PERM_PERIODS
-}
-
-#[inline(always)]
-fn contract_store_edit_periods(_hei: u64) -> u64 {
-    CONTRACT_STORE_EDIT_PERIODS
 }
 
 #[inline(always)]

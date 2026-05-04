@@ -114,12 +114,9 @@ impl Contract {
         let mut act = ContractUpdate::new();
         act.edit = self.clone().into_edit(new_revision);
         act.address = cadr;
-        // On-chain update fee = expansion fee (perm periods, may be zero) + edited-bytes fee (edit periods).
-        // Helper conservatively estimates from serialized edit bytes because old/new contract delta is unknown here.
+        // On-chain update fee only charges edited-bytes with perm periods.
         let bytes = act.edit.size();
-        let expand_fee = Self::estimate_protocol_cost(&txfee, bytes, bytes, CONTRACT_STORE_PERM_PERIODS);
-        let edit_fee = Self::estimate_protocol_cost(&txfee, bytes, bytes, CONTRACT_STORE_EDIT_PERIODS);
-        act.protocol_cost = expand_fee.add_mode_u128(&edit_fee).unwrap();
+        act.protocol_cost = Self::estimate_protocol_cost(&txfee, bytes, bytes, CONTRACT_STORE_PERM_PERIODS);
         // print
         curl_trs_2(vec![Box::new(act)], fee);
     }
