@@ -5,6 +5,29 @@ const UPGRADE_HEIGHTS: &[u64] = &[
     // 200000,  // example: v1 adjustments
 ];
 
+use crate::space::{validate_volatile_kv_put, VolatileKvLimits};
+use crate::value::value_content_eq;
+
+/// Caps for [`IntentRuntime`] derived once from [`crate::rt::SpaceCap`] (`intent_new`, `intent_key`, `value_size`, `kv_key_size`).
+#[derive(Clone, Copy, Debug)]
+pub struct IntentRuntimeLimits {
+    pub create_limit: usize,
+    pub keys_per_intent: usize,
+    pub val_size_limit: usize,
+    pub key_max_bytes: usize,
+}
+
+impl IntentRuntimeLimits {
+    pub fn from_space_cap(cap: &SpaceCap) -> Self {
+        Self {
+            create_limit: cap.intent_new,
+            keys_per_intent: cap.intent_key,
+            val_size_limit: cap.value_size,
+            key_max_bytes: cap.kv_key_size,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct IntentEntry {
     pub kind: Vec<u8>,
@@ -46,7 +69,10 @@ pub struct IntentRuntime {
     id_generation: usize,
     total_created: usize,
     create_limit: usize,
+    /// Max entries per intent (`SpaceCap.intent_key`); first arg to `MKVMap::with_key_max`.
     key_limit: usize,
+    /// Max encoded key bytes (`SpaceCap.kv_key_size`); second arg to `MKVMap::with_key_max`.
+    key_max_bytes: usize,
     val_size_limit: usize,
     intent_key_limit: usize,
     owners: HashMap<usize, ContractAddress>,
@@ -55,20 +81,26 @@ pub struct IntentRuntime {
 
 impl Default for IntentRuntime {
     fn default() -> Self {
-        Self::new(0, 0, 0, 0)
+        Self::new(IntentRuntimeLimits {
+            create_limit: 0,
+            keys_per_intent: 0,
+            val_size_limit: 0,
+            key_max_bytes: 128,
+        })
     }
 }
 
 impl IntentRuntime {
-    pub fn new(create_limit: usize, key_limit: usize, val_size_limit: usize, intent_key_limit: usize) -> Self {
+    pub fn new(limits: IntentRuntimeLimits) -> Self {
         Self {
             next_id: 0,
             id_generation: 0,
             total_created: 0,
-            create_limit,
-            key_limit,
-            val_size_limit,
-            intent_key_limit,
+            create_limit: limits.create_limit,
+            key_limit: limits.keys_per_intent,
+            key_max_bytes: limits.key_max_bytes,
+            val_size_limit: limits.val_size_limit,
+            intent_key_limit: limits.keys_per_intent,
             owners: HashMap::new(),
             buckets: IntentBucketMap::default(),
         }
@@ -82,11 +114,12 @@ impl IntentRuntime {
         // id_generation is NOT reset to prevent ID reuse
     }
 
-    pub fn reset(&mut self, create_limit: usize, key_limit: usize, val_size_limit: usize, intent_key_limit: usize) {
-        self.create_limit = create_limit;
-        self.key_limit = key_limit;
-        self.val_size_limit = val_size_limit;
-        self.intent_key_limit = intent_key_limit;
+    pub fn reset(&mut self, limits: IntentRuntimeLimits) {
+        self.create_limit = limits.create_limit;
+        self.key_limit = limits.keys_per_intent;
+        self.key_max_bytes = limits.key_max_bytes;
+        self.val_size_limit = limits.val_size_limit;
+        self.intent_key_limit = limits.keys_per_intent;
         self.clear();
     }
 
@@ -114,7 +147,7 @@ impl IntentRuntime {
             next_gen,
             IntentEntry {
                 kind,
-                data: MKVMap::with_key_max(self.key_limit, self.key_limit),
+                data: MKVMap::with_key_max(self.key_limit, self.key_max_bytes),
             },
         );
         Ok(next_gen)
@@ -185,7 +218,14 @@ impl IntentRuntime {
 
     fn extract_intent_key_bytes(&self, key: &Value) -> VmrtRes<Vec<u8>> {
         let key_bytes = key.extract_key_bytes_with_error_code(ItrErrCode::IntentError)?;
-        self.check_size_limit(key_bytes.len(), "key")?;
+        if key_bytes.len() > self.key_max_bytes {
+            return itr_err_fmt!(
+                ItrErrCode::IntentError,
+                "intent key too long, max {} bytes but got {}",
+                self.key_max_bytes,
+                key_bytes.len()
+            );
+        }
         Ok(key_bytes)
     }
 
@@ -195,11 +235,23 @@ impl IntentRuntime {
     }
 
     fn validate_key_value_for_put(&self, key: &Value, val: &Value) -> VmrtErr {
-        Self::validate_non_nil_scalar(val)?;
-        self.validate_intent_key(key)?;
-        let val_len = val.extract_bytes_len_with_error_code(ItrErrCode::IntentError)?;
-        self.check_size_limit(val_len, "value")?;
-        Ok(())
+        let limits = VolatileKvLimits {
+            key_max_bytes: self.key_max_bytes,
+            value_max_bytes: self.val_size_limit,
+        };
+        validate_volatile_kv_put(key, val, &limits, false, ItrErrCode::IntentError)
+    }
+
+    /// VM-style equality (see `value_content_eq`), but errors are always `IntentError` for contract UX.
+    fn intent_value_eq(lhs: &Value, rhs: &Value) -> VmrtRes<bool> {
+        value_content_eq(lhs, rhs).map_err(|ItrErr(_, msg)| {
+            let tip = if msg.is_empty() {
+                "intent value comparison invalid".to_string()
+            } else {
+                msg
+            };
+            ItrErr::new(ItrErrCode::IntentError, &tip)
+        })
     }
 
     fn uint_add_checked_with_msg(left: &Value, right: &Value, msg: &str) -> VmrtRes<Value> {
@@ -418,7 +470,7 @@ impl IntentRuntime {
     ) -> VmrtRes<Value> {
         Self::validate_non_nil_scalar(expected)?;
         let val = self.require(owner, id, key)?;
-        if &val != expected {
+        if !Self::intent_value_eq(&val, expected)? {
             return itr_err_fmt!(ItrErrCode::IntentError, "intent value mismatch");
         }
         Ok(val)
@@ -558,7 +610,7 @@ impl IntentRuntime {
     ) -> VmrtRes<Option<Value>> {
         Self::validate_non_nil_scalar(expected)?;
         let existing = self.require(owner, id, key)?;
-        if existing != *expected {
+        if !Self::intent_value_eq(&existing, expected)? {
             return Ok(None); // Mismatch
         }
         Ok(Some(existing)) // Match
@@ -772,7 +824,7 @@ impl IntentRuntime {
         let entry = self.require_mut(owner, id)?;
         if existed {
             let existing = entry.data.get(&key)?;
-            if existing == val {
+            if Self::intent_value_eq(&existing, &val)? {
                 return Ok(false);
             }
             return itr_err_fmt!(ItrErrCode::IntentError, "intent existing value mismatch");
@@ -1051,7 +1103,7 @@ impl Runtime {
             volatile: VolatileState {
                 global_map: GKVMap::with_key_max(cap.global, cap.kv_key_size),
                 memory_map: CtcKVMap::with_key_max(cap.memory, cap.kv_key_size),
-                intents: IntentRuntime::new(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key),
+                intents: IntentRuntime::new(IntentRuntimeLimits::from_space_cap(&cap)),
                 deferred_registry: DeferredRegistry::new(),
             },
         }
@@ -1082,7 +1134,9 @@ impl Runtime {
         // rebuild
         self.volatile.global_map.reset_with_key_max(cap.global, cap.kv_key_size);
         self.volatile.memory_map.reset_with_key_max(cap.memory, cap.kv_key_size);
-        self.volatile.intents.reset(cap.intent_new, cap.intent_key, cap.value_size, cap.intent_key);
+        self.volatile
+            .intents
+            .reset(IntentRuntimeLimits::from_space_cap(&cap));
         self.warm.space_cap = cap;
         self.warm.gas_extra = GasExtra::new(height);
         self.warm.gas_table = GasTable::new(height);
@@ -1367,7 +1421,12 @@ mod resource_tests {
     #[test]
     fn intent_runtime_enforces_create_limit() {
         let owner = ContractAddress::from_unchecked(Address::create_contract([9u8; 20]));
-        let mut rt = IntentRuntime::new(200, 16, 1280, 128);
+        let mut rt = IntentRuntime::new(IntentRuntimeLimits {
+            create_limit: 200,
+            keys_per_intent: 16,
+            val_size_limit: 1280,
+            key_max_bytes: 128,
+        });
         for _ in 0..200 {
             rt.create(owner.clone(), b"x".to_vec()).unwrap();
         }
@@ -1420,7 +1479,12 @@ mod resource_tests {
     #[test]
     fn intent_keys_after_pagination_returns_correct_next_key() {
         let owner = ContractAddress::from_unchecked(Address::create_contract([1u8; 20]));
-        let mut rt = IntentRuntime::new(100, 16, 1280, 128);
+        let mut rt = IntentRuntime::new(IntentRuntimeLimits {
+            create_limit: 100,
+            keys_per_intent: 16,
+            val_size_limit: 1280,
+            key_max_bytes: 128,
+        });
         let id = rt.create(owner.clone(), b"test".to_vec()).unwrap();
 
         // Insert keys: a, b, c, d, e
@@ -1449,7 +1513,12 @@ mod resource_tests {
     #[test]
     fn intent_rejects_nil_and_empty_keys() {
         let owner = ContractAddress::from_unchecked(Address::create_contract([2u8; 20]));
-        let mut rt = IntentRuntime::new(100, 16, 1280, 128);
+        let mut rt = IntentRuntime::new(IntentRuntimeLimits {
+            create_limit: 100,
+            keys_per_intent: 16,
+            val_size_limit: 1280,
+            key_max_bytes: 128,
+        });
         let id = rt.create(owner.clone(), b"test".to_vec()).unwrap();
 
         for key in [Value::Nil, Value::Bytes(vec![])] {
@@ -1468,5 +1537,88 @@ mod resource_tests {
         for key in [Value::Nil, Value::Bytes(vec![])] {
             assert_eq!(rt.keys_after(&owner, id, Some(&key), 2).unwrap_err().0, ItrErrCode::IntentError);
         }
+    }
+
+    #[test]
+    fn intent_require_eq_matches_uint_width_mismatch() {
+        let owner = ContractAddress::from_unchecked(Address::create_contract([3u8; 20]));
+        let mut rt = IntentRuntime::new(IntentRuntimeLimits {
+            create_limit: 100,
+            keys_per_intent: 16,
+            val_size_limit: 1280,
+            key_max_bytes: 128,
+        });
+        let id = rt.create(owner.clone(), b"t".to_vec()).unwrap();
+        let k = Value::Bytes(b"k".to_vec());
+        rt.put(&owner, id, k.clone(), Value::U64(1)).unwrap();
+        assert_eq!(
+            rt.require_eq(&owner, id, &k, &Value::U8(1)).unwrap(),
+            Value::U64(1)
+        );
+    }
+
+    #[test]
+    fn intent_replace_if_matches_different_uint_widths() {
+        let owner = ContractAddress::from_unchecked(Address::create_contract([4u8; 20]));
+        let mut rt = IntentRuntime::new(IntentRuntimeLimits {
+            create_limit: 100,
+            keys_per_intent: 16,
+            val_size_limit: 1280,
+            key_max_bytes: 128,
+        });
+        let id = rt.create(owner.clone(), b"t".to_vec()).unwrap();
+        let k = Value::Bytes(b"c".to_vec());
+        rt.put(&owner, id, k.clone(), Value::U128(99)).unwrap();
+        assert!(
+            rt.replace_if(
+                &owner,
+                id,
+                k.clone(),
+                Value::U64(99),
+                Value::U8(100)
+            )
+            .unwrap()
+        );
+        assert_eq!(rt.get(&owner, id, &k).unwrap(), Value::U8(100));
+    }
+
+    #[test]
+    fn intent_conditional_ops_error_on_incomparable_types() {
+        let owner = ContractAddress::from_unchecked(Address::create_contract([5u8; 20]));
+        let mut rt = IntentRuntime::new(IntentRuntimeLimits {
+            create_limit: 100,
+            keys_per_intent: 16,
+            val_size_limit: 1280,
+            key_max_bytes: 128,
+        });
+        let id = rt.create(owner.clone(), b"t".to_vec()).unwrap();
+        let k = Value::Bytes(b"k".to_vec());
+        rt.put(&owner, id, k.clone(), Value::Bytes(b"x".to_vec()))
+            .unwrap();
+        let err = rt.require_eq(&owner, id, &k, &Value::U64(1)).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::IntentError);
+
+        let err = rt
+            .replace_if(&owner, id, k.clone(), Value::U64(1), Value::U64(2))
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::IntentError);
+    }
+
+    #[test]
+    fn intent_put_if_absent_or_match_accepts_uint_width_mismatch() {
+        let owner = ContractAddress::from_unchecked(Address::create_contract([6u8; 20]));
+        let mut rt = IntentRuntime::new(IntentRuntimeLimits {
+            create_limit: 100,
+            keys_per_intent: 16,
+            val_size_limit: 1280,
+            key_max_bytes: 128,
+        });
+        let id = rt.create(owner.clone(), b"t".to_vec()).unwrap();
+        let k = Value::Bytes(b"p".to_vec());
+        rt.put(&owner, id, k.clone(), Value::U64(1)).unwrap();
+        assert!(!rt
+            .put_if_absent_or_match(&owner, id, k.clone(), Value::U8(1))
+            .unwrap());
+        assert_eq!(rt.get(&owner, id, &k).unwrap(), Value::U64(1));
     }
 }

@@ -35,27 +35,14 @@ impl GasTable {
         gst.set(3, &[BSHR, BSHL, BXOR, BOR, BAND]);
         // Arithmetic: binary (see module doc ladder)
         gst.set(2, &[ADD, SUB, MAX, MIN, INC, DEC]);
-        gst.set(
-            4,
-            &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF],
-        );
+        gst.set(4, &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
         gst.set(5, &[SQRT, SQRTUP]);
         gst.set(6, &[POW, ADDMOD, CLAMP]);
         gst.set(32, &[RPOW]);
         // Arithmetic: triple-operand mul pipeline
         gst.set(8, &[MULADD, MULSUB]);
         gst.set(10, &[MULMOD, MULSHR]);
-        gst.set(
-            12,
-            &[
-                MULDIV,
-                MULDIVUP,
-                MULDIVROUND,
-                MULSHRUP,
-                DEVSCALED,
-                DEVSCALEDFLOOR,
-            ],
-        );
+        gst.set(12, &[MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED, DEVSCALEDFLOOR]);
         // Arithmetic: four-operand
         gst.set(14, &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
         gst.set(16, &[WAVG2, MUL3DIV]);
@@ -66,50 +53,18 @@ impl GasTable {
         gst.set(8, &[CLONE, MERGE, PACKLIST, PACKMAP, PACKTUPLE]);
         gst.set(10, &[MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE]);
         gst.set(12, &[MTAKE, CALLUSEVIEW, CALLUSEPURE]);
-        gst.set(64, &[SGET]);
-        gst.set(128, &[SPUT]);
         gst.set(16, &[NTENV, NTCTL, NTFUNC, CALLTHIS, CALLSUPER, CODECALL]);
         gst.set(20, &[LOG1, CALLEXTVIEW]);
         gst.set(24, &[LOG2, CALLEXT, CALL]);
         gst.set(28, &[LOG3, ACTENV, SDEL]);
         gst.set(32, &[LOG4, ACTVIEW, SLOAD, SSTAT]);
         gst.set(48, &[ACTION]);
-        gst.set(64, &[SNEW, SEDIT, SRENT, SRECV]);
+        gst.set(64, &[SNEW, SEDIT, SRENT, SRECV, SGET]);
+        gst.set(128, &[SPUT]);
         #[cfg(feature = "calcfunc")]
-        gst.set(128, &[CALCCALL]);
+        gst.set(256, &[CALCCALL]);
         gst
     }
-
-    /*
-    pub fn new_bnk(_hei: u64) -> Self {
-        use Bytecode::*;
-        let mut gst = Self { table : [2; 256] };
-        gst.set(1,  &[P0, P1, P2, P3, PU8, PNBUF, PNIL, PTRUE, PFALSE,
-            CU8, CU16, CU32, CU64, CU128, CBYTES, CTO, TID, TIS, TNIL, TMAP, TLIST,
-            POP, NOP, NT, END, RET, ABT, ERR, AST, PRT]);
-        gst.set(2,  &[]); // all other bytecode
-        gst.set(3,  &[BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE]);
-        gst.set(4,  &[
-            DUPN, POPN, ROLL,
-            PBUF, PBUFL,
-            MOD, MUL, DIV, XOP,
-            HREAD, HREADU, HREADUL, HSLICE, HGROW,
-            ITEMGET, HEAD, BACK, HASKEY, LENGTH
-        ]);
-        gst.set(5,  &[POW, CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP]);
-        gst.set(6,  &[NTENV, HWRITE, HWRITEX, HWRITEXL, INSERT, REMOVE, CLEAR, APPEND]);
-        gst.set(8,  &[NTFUNC, MGET, JOIN, REV, NEWLIST, NEWMAP]);
-        gst.set(10, &[PACKLIST, PACKMAP, PACKTUPLE, TUPLE2LIST, UNPACK, CLONE, MERGE, KEYS, VALUES]);
-        gst.set(12, &[ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE,]);
-        gst.set(16, &[ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE]);
-        gst.set(20, &[LOG1]);
-        gst.set(24, &[LOG2, GPUT, CALLEXTVIEW]);
-        gst.set(28, &[LOG3, SDEL, ACTION]);
-        gst.set(32, &[LOG4, SLOAD, SREST, CALLEXT, CALL]); // external-capable call
-        gst.set(64, &[SSAVE, SRENT]);
-        gst
-    }
-    */
 
     fn set(&mut self, gas: u8, btcds: &[Bytecode]) {
         for cd in btcds {
@@ -194,9 +149,9 @@ impl GasExtra {
             storege_value_base_size: 20,
             storage_key_cost: 1024,
             storage_edit_mul: 4,
-            status_read_byte_mul: 4,
-            status_write_key_byte_mul: 8,
-            status_write_value_byte_mul: 8,
+            status_read_byte_mul: 8,
+            status_write_key_byte_mul: 32,
+            status_write_value_byte_mul: 32,
             // other
             container_cmp_header: 12,
             // Dynamic divisors (byte/N, item/N)
@@ -386,6 +341,24 @@ impl GasExtra {
 mod gas_budget_codec_tests {
     use super::*;
 
+    /// Mirrors `GasExtra::div_op` (private) so sample expectations track divisor field changes.
+    fn expect_div_op(len: usize, div: i64) -> i64 {
+        if div <= 0 || len == 0 {
+            0
+        } else {
+            (len as i64 - 1) / div + 1
+        }
+    }
+
+    /// Mirrors `GasExtra::linear_bytes` (private) for status-style linear byte costs.
+    fn expect_linear_bytes(len: usize, mul: i64) -> i64 {
+        if mul <= 0 || len == 0 {
+            0
+        } else {
+            (len as i64).saturating_mul(mul)
+        }
+    }
+
     fn encode_gas_budget(gas: i64) -> u8 {
         if gas <= 0 {
             return 0;
@@ -536,7 +509,8 @@ mod gas_budget_codec_tests {
     }
 
     #[test]
-    fn gas_extra_constants_match_doc() {
+    /// Scalar `GasExtra` fields: must match literal assignments in `GasExtra::new`.
+    fn gas_extra_field_defaults_match_new() {
         let gst = GasExtra::new(1);
         assert_eq!(gst.main_call_min, 48);
         assert_eq!(gst.p2sh_call_min, 72);
@@ -549,72 +523,102 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.storage_key_cost, 1024);
         assert_eq!(gst.storage_edit_mul, 4);
         assert_eq!(gst.storege_value_base_size, 20);
-        assert_eq!(gst.status_read_byte_mul, 4);
-        assert_eq!(gst.status_write_key_byte_mul, 8);
-        assert_eq!(gst.status_write_value_byte_mul, 8);
+        assert_eq!(gst.status_read_byte_mul, 8);
+        assert_eq!(gst.status_write_key_byte_mul, 32);
+        assert_eq!(gst.status_write_value_byte_mul, 32);
     }
 
     #[test]
-    fn dynamic_formula_divisors_match_doc() {
+    fn dynamic_gas_formulas_match_gas_extra_methods() {
         let gst = GasExtra::new(1);
+        let d = expect_div_op;
+        let lin = expect_linear_bytes;
 
         assert_eq!(gst.stack_copy(0), 0);
-        assert_eq!(gst.stack_copy(31), 1);
-        assert_eq!(gst.stack_copy(32), 1);
-        assert_eq!(gst.stack_copy(64), 2);
+        assert_eq!(gst.stack_copy(31), d(31, gst.stack_copy_div));
+        assert_eq!(gst.stack_copy(32), d(32, gst.stack_copy_div));
+        assert_eq!(gst.stack_copy(64), d(64, gst.stack_copy_div));
         assert_eq!(gst.stack_write(0), 0);
-        assert_eq!(gst.stack_write(27), 1);
-        assert_eq!(gst.stack_write(28), 1);
-        assert_eq!(gst.stack_write(29), 2);
-        assert_eq!(gst.stack_write(57), 3);
+        assert_eq!(gst.stack_write(27), d(27, gst.stack_write_div));
+        assert_eq!(gst.stack_write(28), d(28, gst.stack_write_div));
+        assert_eq!(gst.stack_write(29), d(29, gst.stack_write_div));
+        assert_eq!(gst.stack_write(57), d(57, gst.stack_write_div));
         assert_eq!(gst.stack_op(0), 0);
-        assert_eq!(gst.stack_op(15), 1);
-        assert_eq!(gst.stack_op(20), 1);
-        assert_eq!(gst.stack_op(32), 2);
+        assert_eq!(gst.stack_op(15), d(15, gst.stack_op_div));
+        assert_eq!(gst.stack_op(20), d(20, gst.stack_op_div));
+        assert_eq!(gst.stack_op(32), d(32, gst.stack_op_div));
 
         assert_eq!(gst.nt_bytes(0), 0);
-        assert_eq!(gst.nt_bytes(15), 1);
-        assert_eq!(gst.nt_bytes(16), 1);
+        assert_eq!(gst.nt_bytes(15), d(15, gst.ntfunc_div));
+        assert_eq!(gst.nt_bytes(16), d(16, gst.ntfunc_div));
         assert_eq!(gst.act_bytes(0), 0);
-        assert_eq!(gst.act_bytes(12), 1);
-        assert_eq!(gst.act_bytes(13), 2);
+        assert_eq!(gst.act_bytes(12), d(12, gst.act_div));
+        assert_eq!(gst.act_bytes(13), d(13, gst.act_div));
 
         assert_eq!(gst.heap_read(0), 0);
-        assert_eq!(gst.heap_read(15), 1);
-        assert_eq!(gst.heap_read(16), 1);
+        assert_eq!(gst.heap_read(15), d(15, gst.heap_read_div));
+        assert_eq!(gst.heap_read(16), d(16, gst.heap_read_div));
         assert_eq!(gst.heap_write(0), 0);
-        assert_eq!(gst.heap_write(11), 1);
-        assert_eq!(gst.heap_write(12), 1);
+        assert_eq!(gst.heap_write(11), d(11, gst.heap_write_div));
+        assert_eq!(gst.heap_write(12), d(12, gst.heap_write_div));
 
         assert_eq!(gst.compo_items_read(0), 0);
-        assert_eq!(gst.compo_items_read(3), 1);
-        assert_eq!(gst.compo_items_read(4), 1);
-        assert_eq!(gst.compo_items_edit(5), 3);
-        assert_eq!(gst.compo_items_copy(5), 5);
+        assert_eq!(gst.compo_items_read(3), d(3, gst.compo_item_read_div));
+        assert_eq!(gst.compo_items_read(4), d(4, gst.compo_item_read_div));
+        assert_eq!(gst.compo_items_edit(5), d(5, gst.compo_item_edit_div));
+        assert_eq!(gst.compo_items_copy(5), d(5, gst.compo_item_copy_div));
         assert_eq!(gst.compo_bytes(0), 0);
-        assert_eq!(gst.compo_bytes(39), 1);
-        assert_eq!(gst.compo_bytes(40), 1);
-        assert_eq!(gst.compo_bytes(41), 2);
-        assert_eq!(gst.compo_bytes(80), 2);
+        assert_eq!(gst.compo_bytes(39), d(39, gst.compo_byte_div));
+        assert_eq!(gst.compo_bytes(40), d(40, gst.compo_byte_div));
+        assert_eq!(gst.compo_bytes(41), d(41, gst.compo_byte_div));
+        assert_eq!(gst.compo_bytes(80), d(80, gst.compo_byte_div));
 
         assert_eq!(gst.log_bytes(0), 0);
-        assert_eq!(gst.log_bytes(37), 37);
+        assert_eq!(gst.log_bytes(37), d(37, gst.log_div));
 
-        assert_eq!(gst.storage_read(0), 20);
-        assert_eq!(gst.storage_read(7), 27);
-        assert_eq!(gst.storage_read(8), 28);
-        assert_eq!(gst.storage_write(0), 40);
-        assert_eq!(gst.storage_write(5), 50);
-        assert_eq!(gst.storage_write(6), 52);
+        assert_eq!(
+            gst.storage_read(0),
+            (0i64).saturating_add(gst.storege_value_base_size.max(0))
+        );
+        assert_eq!(
+            gst.storage_read(7),
+            (7i64).saturating_add(gst.storege_value_base_size.max(0))
+        );
+        assert_eq!(
+            gst.storage_read(8),
+            (8i64).saturating_add(gst.storege_value_base_size.max(0))
+        );
+        assert_eq!(gst.storage_write(0), gst.storage_read(0).saturating_mul(2));
+        assert_eq!(gst.storage_write(5), gst.storage_read(5).saturating_mul(2));
+        assert_eq!(gst.storage_write(6), gst.storage_read(6).saturating_mul(2));
+
         assert_eq!(gst.status_read(0), 0);
-        assert_eq!(gst.status_read(7), 28);
-        assert_eq!(gst.status_read(8), 32);
+        assert_eq!(
+            gst.status_read(7),
+            lin(7, gst.status_read_byte_mul)
+        );
+        assert_eq!(
+            gst.status_read(8),
+            lin(8, gst.status_read_byte_mul)
+        );
         assert_eq!(gst.status_write(0, 0), 0);
-        assert_eq!(gst.status_write(3, 4), 56);
-        assert_eq!(gst.status_write(3, 3), 48);
-        assert_eq!(gst.status_write(4, 4), 64);
+        assert_eq!(
+            gst.status_write(3, 4),
+            lin(3, gst.status_write_key_byte_mul)
+                .saturating_add(lin(4, gst.status_write_value_byte_mul))
+        );
+        assert_eq!(
+            gst.status_write(3, 3),
+            lin(3, gst.status_write_key_byte_mul)
+                .saturating_add(lin(3, gst.status_write_value_byte_mul))
+        );
+        assert_eq!(
+            gst.status_write(4, 4),
+            lin(4, gst.status_write_key_byte_mul)
+                .saturating_add(lin(4, gst.status_write_value_byte_mul))
+        );
         assert_eq!(gst.compile_bytes(0), 0);
-        assert_eq!(gst.compile_bytes(15), 1);
-        assert_eq!(gst.compile_bytes(16), 1);
+        assert_eq!(gst.compile_bytes(15), d(15, gst.compile_div));
+        assert_eq!(gst.compile_bytes(16), d(16, gst.compile_div));
     }
 }

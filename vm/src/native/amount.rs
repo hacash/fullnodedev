@@ -26,7 +26,15 @@ fn hac_to_mei(_: u64, buf: &[u8]) -> VmrtRes<Value> {
 
 
 fn hac_to_zhu(_: u64, buf: &[u8]) -> VmrtRes<Value> {
-    let hacash = Amount::build(buf).map_ire(NativeFuncError)?;
+    let (hacash, used) = Amount::create(buf).map_ire(NativeFuncError)?;
+    if used != buf.len() {
+        return itr_err_fmt!(
+            NativeFuncError,
+            "call hac_to_zhu parse length mismatch: used {}, total {}",
+            used,
+            buf.len()
+        )
+    }
     let Ok(zhu) = hacash.to_zhu_u128() else {
         return itr_err_fmt!(NativeFuncError, "call hac_to_zhu overflow")
     };
@@ -95,5 +103,19 @@ mod amount_native_tests {
     fn hac_to_mei_accepts_canonical_amount_bytes() {
         let raw = Amount::mei(1).serialize();
         assert_eq!(hac_to_mei(0, &raw).unwrap(), Value::U64(1));
+    }
+
+    #[test]
+    fn hac_to_zhu_rejects_trailing_bytes() {
+        let mut raw = Amount::mei(1).serialize();
+        raw.push(0xAA);
+        assert!(hac_to_zhu(0, &raw).is_err());
+    }
+
+    #[test]
+    fn hac_to_zhu_accepts_canonical_amount_bytes() {
+        let raw = Amount::mei(1).serialize();
+        let zhu = hac_to_zhu(0, &raw).unwrap();
+        assert_eq!(zhu, Value::U128(10u128.pow(8)));
     }
 }

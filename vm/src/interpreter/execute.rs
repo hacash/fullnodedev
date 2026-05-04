@@ -234,6 +234,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     use Value::*;
 
     let cap = space_cap;
+    let kv_limits = crate::space::VolatileKvLimits::from_space_cap(cap);
     let ops = operands;
     let gst = gas_extra;
     let hei: u64 = host.height();
@@ -460,9 +461,10 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         }
 
         macro_rules! kvput_inner {
-            ($store:expr, $key_cost:expr) => {{
-                let v = ops.pop()?.valid(cap)?;
+            ($store:expr, $key_cost:expr, $ec:expr) => {{
+                let v = ops.pop()?;
                 let k = ops.pop()?;
+                crate::space::validate_volatile_kv_put(&k, &v, &kv_limits, true, $ec)?;
                 let klen = $store.key_len(&k)?;
                 gas_resource!(stack_write, klen);
                 if matches!(v, Value::Nil) {
@@ -480,9 +482,9 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
         }
 
         macro_rules! kvput {
-            ($store:expr, $key_cost:expr) => {{
+            ($store:expr, $key_cost:expr, $ec:expr) => {{
                 nsw!();
-                kvput_inner!($store, $key_cost);
+                kvput_inner!($store, $key_cost, $ec);
             }};
         }
 
@@ -946,18 +948,19 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 }
                 SPUT => {
                     nsw!();
-                    let v = ops.pop()?.valid(cap)?;
+                    let v = ops.pop()?;
                     let k = ops.pop()?;
-                    gas_add!(storage, raw, host.sput_gas(gst, &k, &v)?);
+                    // Gas uses the same key/value checks as sput (see `status_put_prepare`); must run before charging.
+                    gas_add!(storage, raw, host.sput_gas(gst, cap, &k, &v)?);
                     host.sput(gst, cap, context_addr, k, v)?;
                 }
                 // global_map & memory_map
-                GPUT => kvput!(global_map, gst.global_key_cost),
+                GPUT => kvput!(global_map, gst.global_key_cost, GlobalError),
                 GGET => kvget!(k => global_map.get(k)?),
                 MPUT => {
                     nsw!();
                     let mem = memory_map.entry_mut(context_addr)?;
-                    kvput_inner!(mem, gst.memory_key_cost);
+                    kvput_inner!(mem, gst.memory_key_cost, MemoryError);
                 }
                 MGET => kvget!(k => memory_map.get(context_addr, k)?),
                 MTAKE => {

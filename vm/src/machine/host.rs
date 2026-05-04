@@ -33,8 +33,14 @@ pub trait VmHost {
     fn sget_gas(&mut self, gst: &GasExtra, value: &Value) -> i64 {
         crate::VMState::status_get_gas(gst, value)
     }
-    fn sput_gas(&mut self, gst: &GasExtra, key: &Value, value: &Value) -> VmrtRes<i64> {
-        crate::VMState::status_put_gas(gst, key, value)
+    fn sput_gas(
+        &mut self,
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        key: &Value,
+        value: &Value,
+    ) -> VmrtRes<i64> {
+        crate::VMState::status_put_gas(gst, cap, key, value)
     }
     fn sget(
         &mut self,

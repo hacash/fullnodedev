@@ -11,6 +11,8 @@ combi_struct! { StatusKV,
 }
 combi_list! { StatusKVList, Uint2, StatusKV }
 
+use crate::space::{validate_scalar_payload_len, validate_volatile_scalar_put, VolatileKvLimits};
+
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct StatusSto {
     items: StatusKVList,
@@ -88,6 +90,9 @@ impl StatusMap {
 
     fn ensure_save_bounds(&self, cap: &SpaceCap) -> VmrtErr {
         self.validate_key_lengths(cap.kv_key_size, StorageKeyInvalid)?;
+        for (_, v) in &self.items {
+            validate_volatile_scalar_put(v, cap.value_size, StorageValSizeErr)?;
+        }
         let payload = self.payload_size();
         if payload > cap.status_pure_size {
             return itr_err_fmt!(
@@ -355,7 +360,7 @@ impl VMState<'_> {
     }
 
     fn status_key_max(cap: &SpaceCap) -> usize {
-        cap.kv_key_size
+        VolatileKvLimits::from_space_cap(cap).key_max_bytes
     }
 
     fn status_contract_addr(cadr: &Address) -> VmrtRes<ContractAddress> {
@@ -428,12 +433,41 @@ impl VMState<'_> {
         maybe!(matches!(value, Value::Nil), 0i64, gst.status_read(value.val_size()))
     }
 
-    pub(crate) fn status_put_gas(gst: &GasExtra, key: &Value, value: &Value) -> VmrtRes<i64> {
-        let klen = key
-            .extract_key_bytes_with_error_code(StorageKeyInvalid)?
-            .len();
-        let vlen = maybe!(matches!(value, Value::Nil), 0usize, value.val_size());
-        Ok(gst.status_write(klen, vlen))
+    /// Same key/value constraints as [`VMState::sput`] (excluding contract-address check): key ≤ `kv_key_size`,
+    /// delete allowed only as `Nil`, otherwise scalar and encoded length ≤ `value_size`.
+    /// Returns stored key bytes and value byte length for dynamic gas (`status_write`).
+    pub(crate) fn status_put_prepare(
+        cap: &SpaceCap,
+        key: &Value,
+        value: &Value,
+    ) -> VmrtRes<(Vec<u8>, usize)> {
+        let kbytes = Self::status_key_bytes(cap, key)?;
+        let vlen = if matches!(value, Value::Nil) {
+            0usize
+        } else {
+            value.check_scalar()?;
+            let vlen = value.extract_bytes_len_with_error_code(StorageValSizeErr)?;
+            if vlen > cap.value_size {
+                return itr_err_fmt!(
+                    StorageValSizeErr,
+                    "value too long, max {} bytes but got {}",
+                    cap.value_size,
+                    vlen
+                );
+            }
+            vlen
+        };
+        Ok((kbytes, vlen))
+    }
+
+    pub(crate) fn status_put_gas(
+        gst: &GasExtra,
+        cap: &SpaceCap,
+        key: &Value,
+        value: &Value,
+    ) -> VmrtRes<i64> {
+        let (kbytes, vlen) = Self::status_put_prepare(cap, key, value)?;
+        Ok(gst.status_write(kbytes.len(), vlen))
     }
 
     fn sget(&self, cap: &SpaceCap, cadr: &Address, k: &Value) -> VmrtRes<Value> {
@@ -443,7 +477,7 @@ impl VMState<'_> {
 
     fn sput(&mut self, cap: &SpaceCap, cadr: &Address, k: Value, v: Value) -> VmrtErr {
         let caddr = Self::status_contract_addr(cadr)?;
-        let key = Self::status_key_bytes(cap, &k)?;
+        let (key, _vlen) = Self::status_put_prepare(cap, &k, &v)?;
         let mut status = self.status_load_by_contract(cap, &caddr)?;
         status.set_or_remove(key, v)?;
         self.status_save_by_contract(cap, &caddr, &status)
@@ -491,7 +525,7 @@ impl VMState<'_> {
         cadr: &Address,
         k: &Value,
     ) -> VmrtRes<Value> {
-        let sk = Self::skey(cadr, k, cap.value_size)?;
+        let sk = Self::skey(cadr, k, cap.kv_key_size)?;
         let Some(v) = self.sfetch(curhei, gst, &sk)? else {
             return Ok(Value::Nil);
         };
@@ -508,7 +542,7 @@ impl VMState<'_> {
         cadr: &Address,
         k: &Value,
     ) -> VmrtRes<Value> {
-        let sk = Self::skey(cadr, k, cap.value_size)?;
+        let sk = Self::skey(cadr, k, cap.kv_key_size)?;
         let Some(v) = self.sfetch(curhei, gst, &sk)? else {
             return Ok(Value::Nil);
         };
@@ -529,18 +563,9 @@ impl VMState<'_> {
         p: Value,
     ) -> VmrtRes<i64> {
         v.check_non_nil_scalar(StorageNilNotAllowed)?;
-        let val_len = v.can_get_size()? as usize;
-        let max_val = cap.value_size;
-        if val_len > max_val {
-            return itr_err_fmt!(
-                StorageValSizeErr,
-                "storage value too large, max {} bytes but got {}",
-                max_val,
-                val_len
-            );
-        }
+        validate_scalar_payload_len(&v, cap.value_size, StorageValSizeErr)?;
         let period = parse_period(p, cap.storage_live_max_periods)?;
-        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        let sk = Self::skey(cadr, &k, cap.kv_key_size)?;
         if self.sfetch(curhei, gst, &sk)?.is_some() {
             return itr_err_code!(StorageKeyExists);
         }
@@ -564,17 +589,8 @@ impl VMState<'_> {
         v: Value,
     ) -> VmrtRes<(i64, i64)> {
         v.check_non_nil_scalar(StorageNilNotAllowed)?;
-        let val_len = v.can_get_size()? as usize;
-        let max_val = cap.value_size;
-        if val_len > max_val {
-            return itr_err_fmt!(
-                StorageValSizeErr,
-                "storage value too large, max {} bytes but got {}",
-                max_val,
-                val_len
-            );
-        }
-        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        validate_scalar_payload_len(&v, cap.value_size, StorageValSizeErr)?;
+        let sk = Self::skey(cadr, &k, cap.kv_key_size)?;
         let Some(mut old) = self.sfetch(curhei, gst, &sk)? else {
             return itr_err_code!(StorageKeyNotFind);
         };
@@ -622,7 +638,7 @@ impl VMState<'_> {
         p: Value,
     ) -> VmrtRes<i64> {
         let period = parse_period(p, cap.storage_live_max_periods)?;
-        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        let sk = Self::skey(cadr, &k, cap.kv_key_size)?;
         let Some(mut v) = self.sfetch(curhei, gst, &sk)? else {
             return itr_err_code!(StorageKeyNotFind);
         };
@@ -661,7 +677,7 @@ impl VMState<'_> {
         p: Value,
     ) -> VmrtRes<i64> {
         let period = parse_period(p, cap.storage_recv_max_periods)?;
-        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        let sk = Self::skey(cadr, &k, cap.kv_key_size)?;
         let Some(mut v) = self.sfetch(curhei, gst, &sk)? else {
             return itr_err_code!(StorageKeyNotFind);
         };
@@ -703,7 +719,7 @@ impl VMState<'_> {
         cadr: &Address,
         k: Value,
     ) -> VmrtRes<i64> {
-        let sk = Self::skey(cadr, &k, cap.value_size)?;
+        let sk = Self::skey(cadr, &k, cap.kv_key_size)?;
         let Some(mut v) = self.ctrtkvdb(&sk) else {
             return Ok(0);
         };
@@ -747,6 +763,43 @@ mod storage_field_tests {
         cap
     }
 
+    /// `status_pure_size`-aggregate tests need per-value headroom beyond [`test_cap`]’s small `value_size`.
+    fn test_cap_status_aggregate() -> SpaceCap {
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = 1280;
+        cap.kv_key_size = 128;
+        cap.status_pure_size = 128;
+        cap
+    }
+
+    #[test]
+    fn status_put_prepare_rejects_key_over_cap_before_value_checks() {
+        let cap = SpaceCap::new(1);
+        let key = Value::Bytes(vec![0xAB; cap.kv_key_size + 1]);
+        let v = Value::U8(1);
+        assert_eq!(
+            VMState::status_put_prepare(&cap, &key, &v)
+                .unwrap_err()
+                .0,
+            ItrErrCode::StorageKeyInvalid
+        );
+    }
+
+    #[test]
+    fn status_put_prepare_rejects_non_scalar_value() {
+        let cap = SpaceCap::new(1);
+        let key = Value::Bytes(b"k".to_vec());
+        let v = Value::Tuple(
+            crate::value::TupleItem::new(vec![Value::U8(1)]).unwrap(),
+        );
+        assert_eq!(
+            VMState::status_put_prepare(&cap, &key, &v)
+                .unwrap_err()
+                .0,
+            ItrErrCode::CastBeValueFail
+        );
+    }
+
     fn overflow_credit_cap() -> SpaceCap {
         let mut cap = SpaceCap::new(1);
         cap.value_size = u16::MAX as usize - 1;
@@ -784,7 +837,7 @@ mod storage_field_tests {
     fn status_payload_limit_is_enforced_by_pure_key_plus_value_size() {
         let mut state = StateMem::default();
         let mut vmsta = VMState::wrap(&mut state);
-        let cap = test_cap();
+        let cap = test_cap_status_aggregate();
         let addr = test_addr();
         let key = Value::Bytes(vec![1u8; 60]);
 
@@ -795,6 +848,23 @@ mod storage_field_tests {
             .sput(&cap, &addr, key, Value::Bytes(vec![3u8; 69]))
             .unwrap_err();
         assert_eq!(err.0, ItrErrCode::StorageValSizeErr);
+    }
+
+    #[test]
+    fn status_rejects_single_value_over_cap_value_size() {
+        let mut state = StateMem::default();
+        let mut vmsta = VMState::wrap(&mut state);
+        let cap = test_cap();
+        let addr = test_addr();
+        let key = Value::Bytes(b"k".to_vec());
+        let val = Value::Bytes(vec![7u8; 65]);
+        assert_eq!(
+            vmsta
+                .sput(&cap, &addr, key, val)
+                .unwrap_err()
+                .0,
+            ItrErrCode::StorageValSizeErr
+        );
     }
 
     #[test]
@@ -817,6 +887,25 @@ mod storage_field_tests {
                 .0,
             ItrErrCode::StorageKeyInvalid
         );
+    }
+
+    #[test]
+    fn persistent_storage_rejects_key_between_kv_key_size_and_value_size() {
+        let gst = test_gas();
+        let cap = SpaceCap::new(1);
+        assert_eq!(cap.kv_key_size, 128);
+        assert!(cap.value_size > cap.kv_key_size);
+        let addr = test_addr();
+        let key = Value::Bytes(vec![0xAB; 129]);
+        let val = Value::Bytes(vec![1u8; 8]);
+        let err = VMState::wrap(&mut StateMem::default())
+            .snew(&gst, &cap, 1, &addr, key.clone(), val.clone(), Value::U64(1))
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::StorageKeyInvalid);
+        let err = VMState::wrap(&mut StateMem::default())
+            .sload(&gst, &cap, 1, &addr, &key)
+            .unwrap_err();
+        assert_eq!(err.0, ItrErrCode::StorageKeyInvalid);
     }
 
     #[test]
@@ -874,7 +963,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(1);
         sto.recover_credit = Uint4::from(0);
@@ -902,7 +991,7 @@ mod storage_field_tests {
         vmsta
             .snew(&gst, &cap, 1, &addr, key.clone(), val, Value::U64(1))
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(0);
         sto.recover_credit = Uint4::from(1);
@@ -931,7 +1020,7 @@ mod storage_field_tests {
         vmsta
             .snew(&gst, &cap, 1, &addr, key.clone(), val, Value::U64(1))
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(0);
         sto.recover_credit = Uint4::from(1);
@@ -959,7 +1048,7 @@ mod storage_field_tests {
             .sdel(&gst, &cap, cap.storage_period * 2 + 10, &addr, key.clone())
             .unwrap();
         assert_eq!(refund, 0);
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         assert!(vmsta.ctrtkvdb(&sk).is_none());
     }
 
@@ -983,7 +1072,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk_live = VMState::skey(&addr, &key_live, cap.value_size).unwrap();
+        let sk_live = VMState::skey(&addr, &key_live, cap.kv_key_size).unwrap();
         let mut sto_live = vmsta.ctrtkvdb(&sk_live).unwrap();
         sto_live.live_credit = Uint4::from(1);
         vmsta.ctrtkvdb_set(&sk_live, &sto_live);
@@ -1011,7 +1100,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk_recv = VMState::skey(&addr, &key_recv, cap.value_size).unwrap();
+        let sk_recv = VMState::skey(&addr, &key_recv, cap.kv_key_size).unwrap();
         let mut sto_recv = vmsta.ctrtkvdb(&sk_recv).unwrap();
         sto_recv.recover_credit = Uint4::from(1);
         vmsta.ctrtkvdb_set(&sk_recv, &sto_recv);
@@ -1048,7 +1137,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(250);
         sto.recover_credit = Uint4::from(0);
@@ -1081,7 +1170,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(0);
         sto.recover_credit = Uint4::from(50);
@@ -1138,7 +1227,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(0);
         sto.recover_credit = Uint4::from(20);
@@ -1200,7 +1289,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(400);
         sto.recover_credit = Uint4::from(15);
@@ -1248,7 +1337,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(25);
         sto.recover_credit = Uint4::from(200);
@@ -1293,7 +1382,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(20);
         sto.recover_credit = Uint4::from(20);
@@ -1341,7 +1430,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(20);
         sto.recover_credit = Uint4::from(20);
@@ -1377,7 +1466,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(0);
         sto.recover_credit = Uint4::from(1);
@@ -1477,7 +1566,7 @@ mod storage_field_tests {
                     Value::U64(1),
                 )
                 .unwrap();
-            let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+            let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
             let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
             sto.live_credit = Uint4::from(0);
             sto.recover_credit = Uint4::from(10);
@@ -1535,7 +1624,7 @@ mod storage_field_tests {
                     Value::U64(1),
                 )
                 .unwrap();
-            let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+            let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
             let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
             sto.live_credit = Uint4::from(0);
             sto.recover_credit = Uint4::from(10);
@@ -1665,7 +1754,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(5);
         sto.recover_credit = Uint4::from(5);
@@ -1721,7 +1810,7 @@ mod storage_field_tests {
                 Value::U64(1),
             )
             .unwrap();
-        let sk = VMState::skey(&addr, &key, cap.value_size).unwrap();
+        let sk = VMState::skey(&addr, &key, cap.kv_key_size).unwrap();
         let mut sto = vmsta.ctrtkvdb(&sk).unwrap();
         sto.live_credit = Uint4::from(5);
         sto.recover_credit = Uint4::from(5);

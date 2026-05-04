@@ -7,7 +7,8 @@ use crate::rt::ItrErrCode::*;
 use crate::rt::*;
 use crate::value::Value;
 
-pub const DEFAULT_KV_KEY_MAX: usize = 200;
+/// Fallback key-byte cap when constructors omit `with_key_max`; aligned with default [`crate::rt::SpaceCap::kv_key_size`].
+pub const DEFAULT_KV_KEY_MAX: usize = 128;
 
 macro_rules! memories_kvmap_define {
     ($class:ident, $er1:expr, $er2:expr) => {

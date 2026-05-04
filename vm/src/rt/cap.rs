@@ -28,8 +28,10 @@ pub struct SpaceCap {
     pub reentry_level: u32,   // 1, ACTION re-entry level limit
 
     pub intent_bind_depth: usize, // 10
-    pub intent_new: usize,        // 200, total creation limit
-    pub intent_key: usize,        // max keys per intent, same as compo_length
+    /// Max intent instances creatable per execution context (`IntentRuntime` total_created cap).
+    pub intent_new: usize,
+    /// Max keys per intent map instance (MKVMap entry cap and batch put limits).
+    pub intent_key: usize,
 }
 
 impl SpaceCap {
@@ -60,8 +62,8 @@ impl SpaceCap {
             library: 100,
             reentry_level: 1, // allow 1 re-entry (2 call layers total)
             intent_bind_depth: 10,
-            intent_new: 100,
-            intent_key: 64, // same as compo_length
+            intent_new: 128,
+            intent_key: 32,
         }
     }
 
