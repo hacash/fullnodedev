@@ -58,7 +58,7 @@ pub fn minimal_active_uint_bytes(non_zero_len: usize) -> Option<usize> {
 
 #[inline(always)]
 pub fn checked_value_output_len(cap: &SpaceCap, len: usize) -> VmrtRes<usize> {
-    if len >= u16::MAX as usize || len > cap.value_size {
+    if !cap.field_scalar_len_ok(len) {
         return itr_err_code!(OutOfValueSize)
     }
     Ok(len)

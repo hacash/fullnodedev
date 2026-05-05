@@ -40,6 +40,7 @@ pub trait Context: StateOperat {
     fn logs(&mut self) -> &mut dyn Logs;
     // p2sh
     fn p2sh(&self, _: &Address) -> Ret<&dyn P2sh> {  errf!("not found") }
+    fn p2sh_count(&self) -> usize { 0 }
     fn p2sh_set(&mut self, _: Address, _: Box<dyn P2sh>) -> Rerr { Ok(()) }
     fn run_deferred_phase(&mut self) -> Rerr { Ok(()) }
 }

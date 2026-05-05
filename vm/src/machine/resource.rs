@@ -123,6 +123,31 @@ impl IntentRuntime {
         self.clear();
     }
 
+    /// Next monotonic id: `id_generation + 1`, or `1` on `usize` wrap. If that id is still
+    /// occupied in `owners` (should not happen under `create_limit` invariants), advance with
+    /// the same wrap rule until a free slot is found.
+    fn next_intent_id(&self) -> VmrtRes<usize> {
+        let mut id = match self.id_generation.checked_add(1) {
+            Some(n) => n,
+            None => 1,
+        };
+        let mut steps = 0usize;
+        while self.owners.contains_key(&id) {
+            steps += 1;
+            if steps > self.create_limit {
+                return itr_err_fmt!(
+                    ItrErrCode::IntentError,
+                    "intent id allocation failed (invariant broken)"
+                );
+            }
+            id = match id.checked_add(1) {
+                Some(n) => n,
+                None => 1,
+            };
+        }
+        Ok(id)
+    }
+
     pub fn create(&mut self, owner: ContractAddress, kind: Vec<u8>) -> VmrtRes<usize> {
         if kind.is_empty() {
             return itr_err_fmt!(ItrErrCode::IntentError, "intent kind cannot be empty");
@@ -135,10 +160,7 @@ impl IntentRuntime {
                 self.create_limit
             );
         }
-        let next_gen = self
-            .id_generation
-            .checked_add(1)
-            .ok_or_else(|| ItrErr::new(ItrErrCode::IntentError, "intent id generation overflow"))?;
+        let next_gen = self.next_intent_id()?;
         self.id_generation = next_gen;
         self.next_id = next_gen;
         self.total_created += 1;

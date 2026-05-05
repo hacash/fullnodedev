@@ -5,6 +5,8 @@ pub fn peek_vm_runtime_limits(ctx: &mut dyn Context, height: u64) -> (GasExtra, 
     let Ok(conf) = conf.downcast::<(GasExtra, SpaceCap)>() else {
         return (GasExtra::new(height), SpaceCap::new(height));
     };
-    *conf
+    let (gst, mut cap) = *conf;
+    cap.normalize_zero_storage_period(height);
+    (gst, cap)
 }
 

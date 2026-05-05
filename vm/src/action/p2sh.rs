@@ -53,6 +53,13 @@ action_define! { P2SHScriptProve, 46,
         if self._marks_.not_zero() {
             return xerrf!("marks bytes format invalid")
         }
+        let hei = ctx.env().block.height;
+        let (_, cap) = peek_vm_runtime_limits(ctx, hei);
+        let p2sh_count = ctx.p2sh_count();
+        if p2sh_count >= cap.p2sh_set {
+            return xerrf!("p2sh_set overflow ({}>={})", p2sh_count, cap.p2sh_set)
+        }
+        Self::verify_merkle_depth(&cap, self.merkels.as_list().len())?;
         let adr = self.get_merkel()?;
         let stuff = self.get_stuff_with_merkel(ctx, &adr)?;
         ctx.p2sh_set(adr, Box::new(stuff))?;
@@ -158,8 +165,31 @@ impl P2SHScriptProve {
     ) -> Ret<()> {
         let cap = SpaceCap::new(block_height);
         Self::verify_adrlibs(&cap, adrlibs)?;
+        Self::verify_lockbox_bytes(&cap, lockbox.as_vec())?;
         convert_and_check(&cap, gst, codeconf.code_type(), lockbox.as_vec(), block_height)?;
         Self::verify_witness_bytes(&cap, witness.as_vec())?;
+        Ok(())
+    }
+
+    fn verify_lockbox_bytes(cap: &SpaceCap, lockbox: &[u8]) -> Ret<()> {
+        if lockbox.len() > cap.p2sh_lockbox_size_max {
+            return errf!(
+                "p2sh lockbox bytes too long ({}>{})",
+                lockbox.len(),
+                cap.p2sh_lockbox_size_max
+            );
+        }
+        Ok(())
+    }
+
+    fn verify_merkle_depth(cap: &SpaceCap, merkle_depth: usize) -> Ret<()> {
+        if merkle_depth > cap.p2sh_merkle_depth_max {
+            return errf!(
+                "p2sh merkle depth overflow ({}>{})",
+                merkle_depth,
+                cap.p2sh_merkle_depth_max
+            );
+        }
         Ok(())
     }
 
@@ -280,5 +310,30 @@ mod p2sh_test {
         )
         .unwrap_err();
         assert!(err.contains("duplicate"), "{err}");
+    }
+
+    #[test]
+    fn verify_unlock_inputs_rejects_oversized_lockbox() {
+        let libs = ContractAddressW1::from_list(vec![]).unwrap();
+        let lockbox = BytesW2::from(vec![0u8; SpaceCap::new(1).p2sh_lockbox_size_max + 1]).unwrap();
+        let witness = BytesW2::from(vec![]).unwrap();
+        let gst = GasExtra::new(1);
+        let err = P2SHScriptProve::verify_unlock_inputs(
+            1,
+            &gst,
+            &libs,
+            CodeConf::from_type(CodeType::Bytecode),
+            &lockbox,
+            &witness,
+        )
+        .unwrap_err();
+        assert!(err.contains("lockbox bytes too long"), "{err}");
+    }
+
+    #[test]
+    fn verify_merkle_depth_rejects_overflow() {
+        let cap = SpaceCap::new(1);
+        let err = P2SHScriptProve::verify_merkle_depth(&cap, cap.p2sh_merkle_depth_max + 1).unwrap_err();
+        assert!(err.contains("merkle depth overflow"), "{err}");
     }
 }

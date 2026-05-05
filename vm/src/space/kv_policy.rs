@@ -21,22 +21,32 @@ impl VolatileKvLimits {
     }
 }
 
+/// Scalar payload length vs `value_max_bytes` and field serialization (`< u16::MAX` bytes).
+pub fn validate_scalar_payload_against_max(
+    val: &Value,
+    value_max_bytes: usize,
+    ec: ItrErrCode,
+) -> VmrtErr {
+    let val_len = val.extract_bytes_len_with_error_code(ec)?;
+    if !SpaceCap::scalar_field_len_fits(val_len, value_max_bytes) {
+        let eff_max = value_max_bytes.min(SpaceCap::FIELD_BYTES_SERIALIZE_MAX);
+        return itr_err_fmt!(
+            ec,
+            "value too long, max {} bytes but got {}",
+            eff_max,
+            val_len
+        );
+    }
+    Ok(())
+}
+
 /// Scalar payload length vs `value_max_bytes` (encoded byte length from [`Value::extract_bytes_len`]).
 pub fn validate_scalar_payload_len(
     val: &Value,
     value_max_bytes: usize,
     ec: ItrErrCode,
 ) -> VmrtErr {
-    let val_len = val.extract_bytes_len_with_error_code(ec)?;
-    if val_len > value_max_bytes {
-        return itr_err_fmt!(
-            ec,
-            "value too long, max {} bytes but got {}",
-            value_max_bytes,
-            val_len
-        );
-    }
-    Ok(())
+    validate_scalar_payload_against_max(val, value_max_bytes, ec)
 }
 
 /// Non-nil scalar whose encoded length is within `value_max_bytes`.
@@ -46,7 +56,7 @@ pub fn validate_volatile_scalar_put(
     ec: ItrErrCode,
 ) -> VmrtErr {
     val.check_non_nil_scalar(ec).map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?;
-    validate_scalar_payload_len(val, value_max_bytes, ec)
+    validate_scalar_payload_against_max(val, value_max_bytes, ec)
 }
 
 /// Validates one `(key, value)` pair before put into `GKVMap` / contract `MKVMap`.
@@ -74,4 +84,19 @@ pub fn validate_volatile_kv_put(
     }
     validate_volatile_scalar_put(val, limits.value_max_bytes, ec)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rt::ItrErrCode::StorageValSizeErr;
+    use crate::value::Value;
+
+    #[test]
+    fn scalar_payload_rejects_u16_max_bytes_even_if_cap_allows() {
+        let mut cap = SpaceCap::new(1);
+        cap.value_size = usize::MAX / 4;
+        let v = Value::Bytes(vec![0u8; u16::MAX as usize]);
+        assert!(validate_scalar_payload_against_max(&v, cap.value_size, StorageValSizeErr).is_err());
+    }
 }

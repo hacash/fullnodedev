@@ -318,6 +318,10 @@ impl Context for ContextInst<'_> {
         self.p2sh_get(adr)
     }
 
+    fn p2sh_count(&self) -> usize {
+        self.psh.len()
+    }
+
     fn p2sh_set(&mut self, adr: Address, p2sh: Box<dyn P2sh>) -> Rerr {
         self.p2sh_insert(adr, p2sh)
     }

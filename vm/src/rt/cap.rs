@@ -25,6 +25,9 @@ pub struct SpaceCap {
     pub function_size: usize, // 65535 / 2
     pub inherit: usize,       // 12
     pub library: usize,       // 100
+    pub p2sh_set: usize,      // 128
+    pub p2sh_merkle_depth_max: usize, // 8
+    pub p2sh_lockbox_size_max: usize, // 4096
     pub reentry_level: u32,   // 1, ACTION re-entry level limit
 
     pub intent_bind_depth: usize, // 10
@@ -36,6 +39,9 @@ pub struct SpaceCap {
 
 impl SpaceCap {
     pub const DEFAULT_TUPLE_LENGTH: usize = 32;
+
+    /// Upper bound on scalar payload bytes for field `Value` serialization (`Bytes` length must be `< u16::MAX`).
+    pub const FIELD_BYTES_SERIALIZE_MAX: usize = u16::MAX as usize - 1;
 
     pub fn new(_hei: u64) -> SpaceCap {
         const U16M: usize = u16::MAX as usize; // 65535
@@ -60,10 +66,31 @@ impl SpaceCap {
             function_size: U16M / 2, // 65535/2
             inherit: 12,
             library: 100,
+            p2sh_set: 128,
+            p2sh_merkle_depth_max: 8,
+            p2sh_lockbox_size_max: 4096,
             reentry_level: 1, // allow 1 re-entry (2 call layers total)
             intent_bind_depth: 10,
             intent_new: 128,
             intent_key: 32,
+        }
+    }
+
+    /// Whether an encoded scalar length is allowed for persistence under `value_max` (per-key/per-field cap).
+    #[inline(always)]
+    pub fn scalar_field_len_fits(len: usize, value_max: usize) -> bool {
+        len < u16::MAX as usize && len <= value_max
+    }
+
+    #[inline(always)]
+    pub fn field_scalar_len_ok(&self, len: usize) -> bool {
+        Self::scalar_field_len_fits(len, self.value_size)
+    }
+
+    /// Injected runtime configs must not use `storage_period == 0` (division / rent math); normalize to default.
+    pub fn normalize_zero_storage_period(&mut self, height: u64) {
+        if self.storage_period == 0 {
+            self.storage_period = SpaceCap::new(height).storage_period;
         }
     }
 
@@ -126,5 +153,13 @@ mod cap_tests {
 
         assert!(live_credit > Uint4::MAX as u64);
         assert!(recover_credit > Uint4::MAX as u64);
+    }
+
+    #[test]
+    fn normalize_zero_storage_period_restores_default() {
+        let mut cap = SpaceCap::new(1);
+        cap.storage_period = 0;
+        cap.normalize_zero_storage_period(7);
+        assert_eq!(cap.storage_period, SpaceCap::new(7).storage_period);
     }
 }

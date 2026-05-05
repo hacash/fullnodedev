@@ -289,6 +289,9 @@ fn parse_period(v: Value, max_period: u64) -> VmrtRes<u64> {
 
 #[inline(always)]
 fn period_credit(unit: u64, period: u64, storage_period: u64) -> VmrtRes<u64> {
+    if storage_period == 0 {
+        return itr_err_code!(StoragePeriodErr);
+    }
     let blocks = period
         .checked_mul(storage_period)
         .ok_or_else(|| ItrErr::new(StorageError, "period blocks overflow"))?;
@@ -320,7 +323,7 @@ fn rest_blocks(credit: u64, unit: u64) -> VmrtRes<u64> {
 
 #[inline(always)]
 fn refund_for_live_credit(credit: u64, storage_period: u64) -> i64 {
-    u64_to_i64_sat(credit.saturating_div(storage_period))
+    u64_to_i64_sat(credit.checked_div(storage_period).unwrap_or(0))
 }
 
 #[inline(always)]
@@ -447,11 +450,12 @@ impl VMState<'_> {
         } else {
             value.check_scalar()?;
             let vlen = value.extract_bytes_len_with_error_code(StorageValSizeErr)?;
-            if vlen > cap.value_size {
+            if !SpaceCap::scalar_field_len_fits(vlen, cap.value_size) {
+                let eff_max = cap.value_size.min(SpaceCap::FIELD_BYTES_SERIALIZE_MAX);
                 return itr_err_fmt!(
                     StorageValSizeErr,
                     "value too long, max {} bytes but got {}",
-                    cap.value_size,
+                    eff_max,
                     vlen
                 );
             }

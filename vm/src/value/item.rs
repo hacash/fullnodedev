@@ -392,13 +392,17 @@ impl Value {
     }
 
     pub fn valid(self, cap: &SpaceCap) -> VmrtRes<Self> {
-        let cansz = self.can_get_size();
-        match cansz {
-            Ok(n) if n as usize > cap.value_size
-                => return itr_err_code!(OutOfValueSize),
-            _ => {}
-        };
-        Ok(self)
+        match self.can_get_size() {
+            Ok(n) => {
+                if (n as usize) > cap.value_size {
+                    itr_err_code!(OutOfValueSize)
+                } else {
+                    Ok(self)
+                }
+            }
+            Err(ItrErr(ItrErrCode::ItemNoSize, _)) => Ok(self),
+            Err(e) => Err(e),
+        }
     }
 
     pub fn to_string(&self) -> String {
@@ -477,6 +481,24 @@ mod tests {
     fn can_get_size_returns_error_instead_of_panicking_on_u16_max() {
         let v = Value::Bytes(vec![0u8; u16::MAX as usize]);
         assert!(matches!(v.can_get_size(), Err(ItrErr(ItrErrCode::OutOfValueSize, _))));
+    }
+
+    #[test]
+    fn valid_propagates_out_of_value_size_for_oversized_bytes() {
+        let cap = SpaceCap::new(1);
+        let v = Value::Bytes(vec![0u8; u16::MAX as usize]);
+        assert!(matches!(
+            v.valid(&cap),
+            Err(ItrErr(ItrErrCode::OutOfValueSize, _))
+        ));
+    }
+
+    #[test]
+    fn valid_allows_item_no_size_values() {
+        let cap = SpaceCap::new(1);
+        assert!(Value::handle(1u32).valid(&cap).is_ok());
+        let t = Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap());
+        assert!(t.valid(&cap).is_ok());
     }
 
     #[test]
