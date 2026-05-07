@@ -1047,9 +1047,18 @@ fn all_print_options_disabled_preserve_ircode_bytes() {
 
         let text = Formater::new(&opt).print(&lang_to_irnode(script).unwrap());
         let reparsed = lang_to_ircode(&text)
-            .map_err(|e| format!("{}\n---- all-off printed (map_enabled={}) ----\n{}\n---------------------\n", e, map_enabled, text))
+            .map_err(|e| {
+                format!(
+                    "{}\n---- all-off printed (map_enabled={}) ----\n{}\n---------------------\n",
+                    e, map_enabled, text
+                )
+            })
             .unwrap();
-        assert_eq!(ircode, reparsed, "all-off roundtrip mismatch (map_enabled={})\n{}", map_enabled, text);
+        assert_eq!(
+            ircode, reparsed,
+            "all-off roundtrip mismatch (map_enabled={})\n{}",
+            map_enabled, text
+        );
     }
 }
 

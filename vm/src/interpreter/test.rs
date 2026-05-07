@@ -1260,6 +1260,7 @@ mod bounds_tests {
         let mut bindings =
             FrameBindings::contract(cadr.clone(), cadr.clone(), Vec::<Address>::new().into());
         let mut intent_state = crate::frame::IntentScopeState::default();
+        defer_callbacks.replace_defer_auth(Some(cadr.clone()));
         super::execute_code_in_frame(
             &mut pc,
             &codes,
@@ -1290,6 +1291,80 @@ mod bounds_tests {
                 intent_scope: Some(None),
             }]
         );
+    }
+
+    #[test]
+    fn ntreg_defer_requires_intent_owner_even_when_abst_authorized() {
+        use crate::machine::DeferCallbacks;
+        use crate::native::NativeCtl;
+        use crate::rt::Bytecode;
+        use crate::value::IntentId;
+
+        let mut pc: usize = 0;
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
+
+        let owner = ContractAddress::from_unchecked(Address::create_contract([7u8; 20]));
+        let foreign = ContractAddress::from_unchecked(Address::create_contract([8u8; 20]));
+        let mut intents = crate::machine::IntentRuntime::new(crate::machine::IntentRuntimeLimits {
+            create_limit: 8,
+            keys_per_intent: 8,
+            val_size_limit: 128,
+            key_max_bytes: 128,
+        });
+        let iid = intents.create(owner, b"owned".to_vec()).unwrap();
+
+        let mut operands = Stack::new(256);
+        operands.push(Value::handle(IntentId(iid))).unwrap();
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let mut defer_callbacks = DeferCallbacks::default();
+        let mut gas_use = basis::interface::VmGasBuckets::default();
+
+        let codes = vec![
+            Bytecode::NTCTL as u8,
+            NativeCtl::idx_defer,
+            Bytecode::END as u8,
+        ];
+
+        let mut bindings =
+            FrameBindings::contract(foreign.clone(), foreign.clone(), Vec::<Address>::new().into());
+        let mut intent_state = crate::frame::IntentScopeState::default();
+        defer_callbacks.replace_defer_auth(Some(foreign.clone()));
+        let err = super::execute_code_in_frame(
+            &mut pc,
+            &codes,
+            ExecCtx::external(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &mut bindings,
+            &mut intent_state,
+            &foreign.to_addr(),
+            &foreign.to_addr(),
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut gas_use,
+            &mut global_map,
+            &mut memory_map,
+            &mut intents,
+            &mut defer_callbacks,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::DeferredError);
+        assert!(
+            err.1.contains("not owned by contract"),
+            "unexpected error: {}",
+            err.1
+        );
+        assert!(defer_callbacks.drain_lifo().is_empty());
     }
 
     #[test]

@@ -1021,7 +1021,7 @@ pub struct DeferredEntry {
 
 #[derive(Clone, Debug)]
 pub struct DeferredRegistry {
-    active: bool,
+    defer_auth: Option<ContractAddress>,
     entries: Vec<DeferredEntry>,
     seen: HashSet<DeferredEntry>,
 }
@@ -1035,25 +1035,33 @@ impl Default for DeferredRegistry {
 impl DeferredRegistry {
     pub fn new() -> Self {
         Self {
-            active: true,
+            defer_auth: None,
             entries: Vec::new(),
             seen: HashSet::new(),
         }
     }
 
     pub fn clear(&mut self) {
-        self.active = true;
+        self.defer_auth = None;
         self.entries.clear();
         self.seen.clear();
     }
 
-    pub fn register(&mut self, entry: DeferredEntry) -> VmrtErr {
-        if !self.active {
+    pub fn replace_defer_auth(&mut self, auth: Option<ContractAddress>) -> Option<ContractAddress> {
+        std::mem::replace(&mut self.defer_auth, auth)
+    }
+
+    pub fn register_current(&mut self, caller: &ContractAddress, intent_scope: IntentScope) -> VmrtErr {
+        if self.defer_auth.as_ref() != Some(caller) {
             return itr_err_fmt!(
                 ItrErrCode::DeferredError,
-                "defer is closed during deferred dispatch"
+                "defer not allowed in current abst call"
             );
         }
+        let entry = DeferredEntry {
+            addr: caller.clone(),
+            intent_scope,
+        };
         if !self.seen.insert(entry.clone()) {
             return itr_err_fmt!(
                 ItrErrCode::DeferredError,
@@ -1065,7 +1073,6 @@ impl DeferredRegistry {
     }
 
     pub fn drain_lifo(&mut self) -> Vec<DeferredEntry> {
-        self.active = false;
         self.entries.drain(..).rev().collect()
     }
 }
@@ -1462,25 +1469,18 @@ mod resource_tests {
         let mut callbacks = DeferCallbacks::new();
         let a = ContractAddress::from_unchecked(Address::create_contract([1u8; 20]));
         let b = ContractAddress::from_unchecked(Address::create_contract([2u8; 20]));
+        callbacks.replace_defer_auth(Some(a.clone()));
         callbacks
-            .register(DeferredEntry {
-                addr: a.clone(),
-                intent_scope: Some(None),
-            })
+            .register_current(&a, Some(None))
             .unwrap();
         let err = callbacks
-            .register(DeferredEntry {
-                addr: a.clone(),
-                intent_scope: Some(None),
-            })
+            .register_current(&a, Some(None))
             .unwrap_err();
         assert_eq!(err.0, ItrErrCode::DeferredError);
         assert!(err.1.contains("duplicate deferred cleanup hook"));
+        callbacks.replace_defer_auth(Some(b.clone()));
         callbacks
-            .register(DeferredEntry {
-                addr: b.clone(),
-                intent_scope: Some(Some(7)),
-            })
+            .register_current(&b, Some(Some(7)))
             .unwrap();
         let drained = callbacks.drain_lifo();
         assert_eq!(

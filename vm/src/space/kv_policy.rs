@@ -2,8 +2,8 @@
 //! plus reusable scalar length checks for contract status and persistent storage.
 
 use crate::rt::ItrErrCode;
-use crate::rt::*;
 use crate::rt::SpaceCap;
+use crate::rt::*;
 use crate::value::Value;
 
 #[derive(Clone, Copy, Debug)]
@@ -41,11 +41,7 @@ pub fn validate_scalar_payload_against_max(
 }
 
 /// Scalar payload length vs `value_max_bytes` (encoded byte length from [`Value::extract_bytes_len`]).
-pub fn validate_scalar_payload_len(
-    val: &Value,
-    value_max_bytes: usize,
-    ec: ItrErrCode,
-) -> VmrtErr {
+pub fn validate_scalar_payload_len(val: &Value, value_max_bytes: usize, ec: ItrErrCode) -> VmrtErr {
     validate_scalar_payload_against_max(val, value_max_bytes, ec)
 }
 
@@ -55,7 +51,8 @@ pub fn validate_volatile_scalar_put(
     value_max_bytes: usize,
     ec: ItrErrCode,
 ) -> VmrtErr {
-    val.check_non_nil_scalar(ec).map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?;
+    val.check_non_nil_scalar(ec)
+        .map_err(|ItrErr(_, msg)| ItrErr::new(ec, &msg))?;
     validate_scalar_payload_against_max(val, value_max_bytes, ec)
 }
 
@@ -97,6 +94,8 @@ mod tests {
         let mut cap = SpaceCap::new(1);
         cap.value_size = usize::MAX / 4;
         let v = Value::Bytes(vec![0u8; u16::MAX as usize]);
-        assert!(validate_scalar_payload_against_max(&v, cap.value_size, StorageValSizeErr).is_err());
+        assert!(
+            validate_scalar_payload_against_max(&v, cap.value_size, StorageValSizeErr).is_err()
+        );
     }
 }

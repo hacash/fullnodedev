@@ -200,7 +200,6 @@ pub fn parse_func_sig(
     Ok((name, args, ret_ty))
 }
 
-
 pub fn parse_func_body_tokens(state: &mut ParseState) -> Ret<Vec<Token>> {
     state.eat_partition('{')?;
     let mut inner = Vec::new();

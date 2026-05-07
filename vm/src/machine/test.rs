@@ -359,37 +359,23 @@ mod machine_file_test {
     }
 
     #[test]
-    fn defer_requires_intent_owner() {
+    fn user_func_defer_without_abst_auth_is_rejected() {
         let base_addr = test_base_addr();
-        let (contract_owner, contract_foreign, ext_state) = setup_intent_owner_contracts(&base_addr);
+        let (contract_owner, _contract_foreign, ext_state) =
+            setup_intent_owner_contracts(&base_addr);
 
         let owner_script = r##"
             lib O = 0
             var iid = O.make()
             return O.register_defer(iid)
         "##;
-        let rv = run_main_script_raw(
-            base_addr.clone(),
-            vec![contract_owner.clone()],
-            ext_state.clone(),
-            owner_script,
-        )
-        .unwrap();
-        assert_eq!(rv.extract_u8().unwrap(), 0);
-
-        let foreign_script = r##"
-            lib O = 0
-            lib F = 1
-            var iid = O.make()
-            return F.register_defer(iid)
-        "##;
         let res = run_main_script_raw(
             base_addr,
-            vec![contract_owner, contract_foreign],
+            vec![contract_owner],
             ext_state,
-            foreign_script,
+            owner_script,
         );
-        assert_err_contains(res, "not owned by contract");
+        assert_err_contains(res, "defer not allowed in current abst call");
     }
 
     #[test]
@@ -1395,6 +1381,109 @@ mod machine_file_test {
         assert!(err.contains("CallInAbst"), "unexpected error: {err}");
         assert!(runtime.warm.contracts.contains_key(&contract_entry));
         assert!(!runtime.warm.contracts.contains_key(&contract_target));
+    }
+
+    #[test]
+    fn abst_defer_registration_follows_abst_type_boundary() {
+        let base_addr = test_base_addr();
+        let contract = test_contract(&base_addr, 35);
+        let contract_sto = Contract::new()
+            .syst(
+                Abst::new(AbstCall::Append)
+                    .fitsh("defer(nil)\nreturn 0")
+                    .unwrap(),
+            )
+            .syst(
+                Abst::new(AbstCall::PayableHAC)
+                    .fitsh(
+                        r##"
+                        param { from, hac }
+                        defer(nil)
+                        return 0
+                        "##,
+                    )
+                    .unwrap(),
+            )
+            .syst(
+                Abst::new(AbstCall::Deferred)
+                    .fitsh("defer(nil)\nreturn 0")
+                    .unwrap(),
+            )
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract, &contract_sto);
+        }
+
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = base_addr;
+
+        let tx = StubTxBuilder::new()
+            .ty(0)
+            .main(base_addr)
+            .fee(Amount::zero())
+            .gas_max(1)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
+        let mut host = TestVmHost::new(&mut ctx as &mut dyn Context, 1_000_000);
+        let (mut machine, mut runtime) = new_test_machine();
+
+        let append_err = machine
+            .abst_call(
+                &mut runtime,
+                &mut host,
+                AbstCall::Append,
+                contract.clone(),
+                None,
+                Value::Nil,
+            )
+            .expect_err("Append must not be able to register defer");
+        assert!(
+            append_err.contains("defer not allowed in current abst call"),
+            "unexpected error: {append_err}"
+        );
+        assert!(runtime.volatile.deferred_registry.drain_lifo().is_empty());
+
+        let param = Value::pack_call_args(vec![Value::Address(base_addr), Value::Bytes(vec![])]).unwrap();
+        let rv = machine
+            .abst_call(
+                &mut runtime,
+                &mut host,
+                AbstCall::PayableHAC,
+                contract.clone(),
+                None,
+                param,
+            )
+            .unwrap();
+        assert_eq!(rv.extract_u8().unwrap(), 0);
+        assert_eq!(
+            runtime.volatile.deferred_registry.drain_lifo(),
+            vec![DeferredEntry {
+                addr: contract.clone(),
+                intent_scope: Some(None),
+            }]
+        );
+
+        let deferred_err = machine
+            .abst_call(
+                &mut runtime,
+                &mut host,
+                AbstCall::Deferred,
+                contract.clone(),
+                None,
+                Value::Nil,
+            )
+            .expect_err("Deferred must not be able to register another defer");
+        assert!(
+            deferred_err.contains("defer not allowed in current abst call"),
+            "unexpected error: {deferred_err}"
+        );
+        assert!(runtime.volatile.deferred_registry.drain_lifo().is_empty());
     }
 
     #[test]
@@ -2999,10 +3088,11 @@ end",
         vm.runtime
             .volatile
             .deferred_registry
-            .register(DeferredEntry {
-                addr: contract.clone(),
-                intent_scope: Some(None),
-            })
+            .replace_defer_auth(Some(contract.clone()));
+        vm.runtime
+            .volatile
+            .deferred_registry
+            .register_current(&contract, Some(None))
             .unwrap();
 
         let err = vm.drain_deferred(&mut ctx).unwrap_err();

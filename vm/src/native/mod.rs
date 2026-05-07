@@ -103,5 +103,4 @@ native_func_env_define! { ctl, NativeCtl, NativeCtlError,
     intent_sub         = 64,    2,       14,    U64
 }
 
-
 include!("call.rs");

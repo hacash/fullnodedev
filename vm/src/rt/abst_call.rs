@@ -21,6 +21,9 @@ macro_rules! abst_call_type_define {
             pub const fn uint(self) -> u8 {
                 self as u8
             }
+            pub const fn can_register_defer(self) -> bool {
+                self.uint() > Self::Deferred.uint()
+            }
             pub fn from_name(name: &str) -> VmrtRes<Self> {
                 Ok(match name {
                     $(
@@ -44,15 +47,15 @@ abst_call_type_define! {
     Construct    : 0u8 , [ Bytes ]
     Change       : 1   , [ ]
     Append       : 2   , [ ]
-    Deferred     : 10  , [ ]
+    Deferred     : 50  , [ ]
 
-    PermitHAC    : 15  , [ Address, Bytes ]
-    PermitSAT    : 16  , [ Address, U64 ]
-    PermitHACD   : 17  , [ Address, U32, Bytes ]
-    PermitAsset  : 18  , [ Address, U64, U64 ]
+    PermitHAC    : 55  , [ Address, Bytes ]
+    PermitSAT    : 56  , [ Address, U64 ]
+    PermitHACD   : 57  , [ Address, U32, Bytes ]
+    PermitAsset  : 58  , [ Address, U64, U64 ]
 
-    PayableHAC   : 25  , [ Address, Bytes ]
-    PayableSAT   : 26  , [ Address, U64 ]
-    PayableHACD  : 27  , [ Address, U32, Bytes ]
-    PayableAsset : 28  , [ Address, U64, U64 ]
+    PayableHAC   : 65  , [ Address, Bytes ]
+    PayableSAT   : 66  , [ Address, U64 ]
+    PayableHACD  : 67  , [ Address, U32, Bytes ]
+    PayableAsset : 68  , [ Address, U64, U64 ]
 }

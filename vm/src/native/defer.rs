@@ -49,9 +49,6 @@ pub fn call_defer(
         return itr_err_fmt!(DeferredError, "defer requires contract context");
     };
     let intent_scope = defer_intent_scope(&argv, &caddr, intents)?;
-    deferred_registry.register(crate::machine::DeferredEntry {
-        addr: caddr,
-        intent_scope,
-    })?;
+    deferred_registry.register_current(&caddr, intent_scope)?;
     Ok((Value::Nil, NativeCtl::defer.gas_of()))
 }

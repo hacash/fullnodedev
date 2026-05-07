@@ -391,6 +391,11 @@ impl Machine {
         else {
             return xerr!(format!("abst call {:?} not found in {}", cty, adr));
         };
+        let defer_auth = cty.can_register_defer().then(|| contract_addr.clone());
+        let old_defer_auth = runtime
+            .volatile
+            .deferred_registry
+            .replace_defer_auth(defer_auth);
         let rv = self.do_call(
             runtime,
             host,
@@ -399,7 +404,12 @@ impl Machine {
             FrameBindings::contract(contract_addr, hit.owner, hit.lib_table)
                 .with_intent_scope(intent_scope),
             Some(param),
-        ).map_err(XError::from)?;
+        );
+        runtime
+            .volatile
+            .deferred_registry
+            .replace_defer_auth(old_defer_auth);
+        let rv = rv.map_err(XError::from)?;
         validate_vm_entry_return(EntryKind::Abst, &rv, &format!("call {}.{:?}", adr, cty))?;
         Ok(rv)
     }

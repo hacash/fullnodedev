@@ -83,6 +83,9 @@ mod handle_tests {
         let v = Value::handle(123u32);
         assert_eq!(v.val_size(), REF_DUP_SIZE);
         assert_eq!(v.dup_size(), REF_DUP_SIZE);
-        assert!(matches!(v.can_get_size(), Err(ItrErr(ItrErrCode::ItemNoSize, _))));
+        assert!(matches!(
+            v.can_get_size(),
+            Err(ItrErr(ItrErrCode::ItemNoSize, _))
+        ));
     }
 }
