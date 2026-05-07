@@ -31,8 +31,8 @@ impl EntryRequest {
         }
     }
 
-    fn min_call_cost(&self, gas_extra: &GasExtra) -> i64 {
-        self.entry_kind().min_call_cost(gas_extra)
+    fn call_base(&self, gas_extra: &GasExtra) -> i64 {
+        self.entry_kind().call_base(gas_extra)
     }
 
     fn execute(
@@ -64,7 +64,8 @@ impl EntryRequest {
 struct VmEntryFrame {
     kind: EntryKind,
     gas_base: VmGasBuckets,
-    min_cost: i64,
+    /// Per-entry compute surcharge (`GasExtra::*_call_base`), added on top of measured work.
+    call_base: i64,
 }
 
 struct VmEntryGuard {
@@ -80,7 +81,7 @@ impl VmEntryGuard {
         max_reentry: u32,
         gas_base: VmGasBuckets,
         kind: EntryKind,
-        min_cost: i64,
+        call_base: i64,
     ) -> Ret<Self> {
         let next_level = entries
             .len()
@@ -96,13 +97,13 @@ impl VmEntryGuard {
         let entry = VmEntryFrame {
             kind,
             gas_base,
-            min_cost,
+            call_base,
         };
         let index = entries.len();
         entries.push(VmEntryFrame {
             kind: entry.kind,
             gas_base: entry.gas_base,
-            min_cost: entry.min_cost,
+            call_base: entry.call_base,
         });
         Ok(Self {
             entries,
@@ -116,7 +117,7 @@ impl VmEntryGuard {
         VmEntryFrame {
             kind: self.entry.kind,
             gas_base: self.entry.gas_base,
-            min_cost: self.entry.min_cost,
+            call_base: self.entry.call_base,
         }
     }
 
@@ -147,6 +148,70 @@ impl Drop for VmEntryGuard {
         };
         debug_assert_eq!(entries.len(), self.index);
         debug_assert_eq!(popped.kind as u8, self.entry.kind as u8);
+    }
+}
+
+/// Bill this VM entry: measured buckets since `entry.gas_base`, plus `call_base` as compute surcharge (additive).
+fn settle_vm_entry_return_cost(
+    runtime: &mut Runtime,
+    ctx: &mut dyn Context,
+    entry: &VmEntryFrame,
+) -> Result<VmGasBuckets, String> {
+    let mut cost = runtime
+        .gas_use()
+        .checked_sub(entry.gas_base)
+        .ok_or_else(|| {
+            format!(
+                "gas cost underflow: total={:?}, base={:?}",
+                runtime.gas_use(),
+                entry.gas_base
+            )
+        })?;
+    if entry.call_base > 0 {
+        runtime
+            .settle_compute_gas(ctx, entry.call_base)
+            .map_err(|e| e.to_string())?;
+        cost.compute = cost.compute.saturating_add(entry.call_base);
+    }
+    if cost.total() <= 0 {
+        return Err(format!(
+            "{:?} gas cost invalid: {}",
+            entry.kind,
+            cost.total()
+        ));
+    }
+    Ok(cost)
+}
+
+fn settle_vm_entry_return_cost_x(
+    runtime: &mut Runtime,
+    ctx: &mut dyn Context,
+    entry: &VmEntryFrame,
+) -> XRet<VmGasBuckets> {
+    let mut cost = runtime
+        .gas_use()
+        .checked_sub(entry.gas_base)
+        .ok_or_else(|| {
+            XError::fault(format!(
+                "gas cost underflow: total={:?}, base={:?}",
+                runtime.gas_use(),
+                entry.gas_base
+            ))
+        })?;
+    if entry.call_base > 0 {
+        runtime
+            .settle_compute_gas(ctx, entry.call_base)
+            .map_err(XError::from)?;
+        cost.compute = cost.compute.saturating_add(entry.call_base);
+    }
+    if cost.total() <= 0 {
+        xerr!(format!(
+            "{:?} gas cost invalid: {}",
+            entry.kind,
+            cost.total()
+        ))
+    } else {
+        Ok(cost)
     }
 }
 
@@ -510,7 +575,7 @@ impl Executor {
         &mut self,
         ctx: &mut dyn Context,
         kind: EntryKind,
-        min_cost: i64,
+        call_base: i64,
         preserve_exec_from: bool,
         execute: impl FnOnce(&mut Machine, &mut Runtime, &mut dyn Context) -> Ret<T>,
     ) -> Ret<(VmGasBuckets, T)> {
@@ -519,7 +584,7 @@ impl Executor {
             self.runtime.warm.space_cap.reentry_level,
             self.runtime.gas_use(),
             kind,
-            min_cost,
+            call_base,
         )?;
         let result = if preserve_exec_from {
             execute(&mut self.machine, &mut self.runtime, ctx)
@@ -529,29 +594,7 @@ impl Executor {
             })
         };
         let entry = guard.disarm();
-        let settle = {
-            let runtime = &mut self.runtime;
-            let mut cost = runtime
-                .gas_use()
-                .checked_sub(entry.gas_base)
-                .ok_or_else(|| {
-                    format!(
-                        "gas cost underflow: total={:?}, base={:?}",
-                        runtime.gas_use(),
-                        entry.gas_base
-                    )
-                })?;
-            if cost.total() < entry.min_cost {
-                let delta = entry.min_cost - cost.total();
-                runtime.settle_compute_gas(ctx, delta)?;
-                cost.compute += delta;
-            }
-            if cost.total() <= 0 {
-                Err(format!("{:?} gas cost invalid: {}", entry.kind, cost.total()))
-            } else {
-                Ok(cost)
-            }
-        };
+        let settle = settle_vm_entry_return_cost(&mut self.runtime, ctx, &entry);
         match (result, settle) {
             (Err(exec_err), Err(settle_err)) => Err(Self::merge_ret_failure(exec_err, settle_err)),
             (Err(exec_err), _) => Err(exec_err),
@@ -564,7 +607,7 @@ impl Executor {
         &mut self,
         ctx: &mut dyn Context,
         kind: EntryKind,
-        min_cost: i64,
+        call_base: i64,
         preserve_exec_from: bool,
         execute: impl FnOnce(&mut Machine, &mut Runtime, &mut dyn Context) -> XRet<T>,
     ) -> XRet<(VmGasBuckets, T)> {
@@ -573,7 +616,7 @@ impl Executor {
             self.runtime.warm.space_cap.reentry_level,
             self.runtime.gas_use(),
             kind,
-            min_cost,
+            call_base,
         )
         .map_err(XError::fault)?;
         let result = if preserve_exec_from {
@@ -584,31 +627,7 @@ impl Executor {
             })
         };
         let entry = guard.disarm();
-        let settle = {
-            let runtime = &mut self.runtime;
-            let mut cost = runtime
-                .gas_use()
-                .checked_sub(entry.gas_base)
-                .ok_or_else(|| {
-                    XError::fault(format!(
-                        "gas cost underflow: total={:?}, base={:?}",
-                        runtime.gas_use(),
-                        entry.gas_base
-                    ))
-                })?;
-            if cost.total() < entry.min_cost {
-                let delta = entry.min_cost - cost.total();
-                runtime
-                    .settle_compute_gas(ctx, delta)
-                    .map_err(XError::from)?;
-                cost.compute += delta;
-            }
-            if cost.total() <= 0 {
-                xerr!(format!("{:?} gas cost invalid: {}", entry.kind, cost.total()))
-            } else {
-                Ok(cost)
-            }
-        };
+        let settle = settle_vm_entry_return_cost_x(&mut self.runtime, ctx, &entry);
         match (result, settle) {
             (Err(exec_err), Err(settle_err)) => Err(Self::merge_xret_failure(exec_err, settle_err)),
             (Err(exec_err), _) => Err(exec_err),
@@ -623,11 +642,11 @@ impl Executor {
         ctype: CodeType,
         codes: Arc<[u8]>,
     ) -> Ret<(VmGasBuckets, Value)> {
-        let min_cost = EntryKind::Main.min_call_cost(&self.runtime.warm.gas_extra);
+        let call_base = EntryKind::Main.call_base(&self.runtime.warm.gas_extra);
         self.run_vm_entry_ret(
             ctx,
             EntryKind::Main,
-            min_cost,
+            call_base,
             true,
             move |machine, runtime, ctx| machine.main_call_raw(runtime, ctx, ctype, codes),
         )
@@ -639,11 +658,11 @@ impl Executor {
         req: EntryRequest,
     ) -> XRet<(VmGasBuckets, Value)> {
         let kind = req.entry_kind();
-        let min_cost = req.min_call_cost(&self.runtime.warm.gas_extra);
+        let call_base = req.call_base(&self.runtime.warm.gas_extra);
         self.run_vm_entry_xret(
             ctx,
             kind,
-            min_cost,
+            call_base,
             false,
             move |machine, runtime, ctx| req.execute(machine, runtime, ctx),
         )
@@ -673,7 +692,7 @@ impl Executor {
                 .run_vm_entry_ret(
                     ctx,
                     EntryKind::Abst,
-                    EntryKind::Abst.min_call_cost(&self.runtime.warm.gas_extra),
+                    EntryKind::Abst.call_base(&self.runtime.warm.gas_extra),
                     false,
                     move |machine, runtime, ctx| {
                         EntryRequest::Abst {

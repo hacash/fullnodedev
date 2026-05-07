@@ -1670,6 +1670,15 @@ fn test_action_json_create_must_reject_kind_mismatch() {
 }
 
 #[test]
+fn test_action_binary_create_must_reject_kind_mismatch() {
+    let _guard = install_test_registry();
+
+    let bytes = HacFromToTrs::new().serialize();
+    let err = HacToTrs::create(&bytes).unwrap_err();
+    assert!(err.contains("kind mismatch"), "{}", err);
+}
+
+#[test]
 fn test_complex_json_structure() {
     let _guard = install_test_registry();
 

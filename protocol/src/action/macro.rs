@@ -19,6 +19,13 @@ macro_rules! action_define {
             fn parse(&mut self, buf: &[u8]) -> Ret<usize> {
                 let mut mv;
                 mv = self.kind.parse(&buf)?;
+                if *self.kind != Self::KIND {
+                    return errf!(
+                        "action kind mismatch: expected {} but got {}",
+                        Self::KIND,
+                        *self.kind
+                    )
+                }
                 $(
                     mv += self.$item.parse(&buf[mv..])?;
                 )*

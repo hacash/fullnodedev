@@ -52,11 +52,12 @@ impl EntryKind {
         }
     }
 
-    pub fn min_call_cost(self, gas: &GasExtra) -> i64 {
+    /// Compute surcharge added on top of measured work per entry (`GasExtra::{main,p2sh,abst}_call_base`).
+    pub fn call_base(self, gas: &GasExtra) -> i64 {
         match self {
-            Self::Main => gas.main_call_min,
-            Self::P2sh => gas.p2sh_call_min,
-            Self::Abst => gas.abst_call_min,
+            Self::Main => gas.main_call_base,
+            Self::P2sh => gas.p2sh_call_base,
+            Self::Abst => gas.abst_call_base,
         }
     }
 }

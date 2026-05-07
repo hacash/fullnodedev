@@ -2533,7 +2533,7 @@ end",
     }
 
     #[test]
-    fn min_call_gas_is_consumed_from_shared_counter() {
+    fn call_base_gas_is_consumed_from_shared_counter() {
         use crate::rt::Bytecode;
 
         // Prepare a state with enough HAC for gas spending.
@@ -2570,12 +2570,15 @@ end",
         .unwrap();
 
         let gsext = GasExtra::new(1);
-        let min = gsext.main_call_min;
+        let base = gsext.main_call_base;
         let budget = decode_gas_budget(17); // lookup-table decoded budget
-                                            // The min-call cost must be reflected in the shared gas counter.
+        let spent = budget - Context::gas_remaining(&ctx);
+        // END adds measured compute work; entry then bills `call_base` surcharge on top (additive).
         assert!(
-            Context::gas_remaining(&ctx) <= (budget - min),
-            "ctx gas remaining should include min cost deduction"
+            spent >= base + 1,
+            "spent gas {} should include opcode work plus call_base surcharge (base={})",
+            spent,
+            base
         );
     }
 
@@ -2667,7 +2670,7 @@ end",
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
         let mut vm = Executor::from_runtime(Runtime::create(1));
-        let limit = GasExtra::new(1).main_call_min * 2 - 1;
+        let limit = GasExtra::new(1).main_call_base * 2 - 1;
         vm.runtime.warm.gas_extra.compute_limit = limit;
         let codes = vec![Bytecode::END as u8];
 
@@ -2850,7 +2853,7 @@ end",
     }
 
     #[test]
-    fn min_call_floor_ignores_rebate_and_uses_runtime_delta() {
+    fn call_base_surcharge_adds_to_measured_work_ignores_ctx_rebate() {
         let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
         let mut env = Env::default();
         env.block.height = 1;
@@ -2871,30 +2874,93 @@ end",
         ctx.gas_initialize(decode_gas_budget(17)).unwrap();
 
         let mut vm = Executor::from_runtime(Runtime::create(1));
-        let min_cost = EntryKind::Main.min_call_cost(&vm.runtime.warm.gas_extra);
+        let call_base = EntryKind::Main.call_base(&vm.runtime.warm.gas_extra);
         let gas_before = Context::gas_remaining(&ctx);
+        let work = 1i64;
 
         let (cost, ()) = vm
             .run_vm_entry_ret(
                 &mut ctx,
                 EntryKind::Main,
-                min_cost,
+                call_base,
                 true,
                 |_machine, runtime, ctx| {
                     ctx.gas_charge(1)?;
                     ctx.gas_rebate(1)?;
                     runtime.warm.gas_use.compute = runtime
-                        .next_compute_used(1)
+                        .next_compute_used(work)
                         .map_err(|e| e.to_string())?;
                     Ok(())
                 },
             )
             .unwrap();
 
-        assert_eq!(cost.total(), min_cost);
-        assert_eq!(vm.runtime.gas_use().total(), min_cost);
-        assert_eq!(Context::gas_remaining(&ctx), gas_before - min_cost);
+        let expect = work + call_base;
+        assert_eq!(cost.total(), expect);
+        assert_eq!(vm.runtime.gas_use().total(), expect);
+        assert_eq!(Context::gas_remaining(&ctx), gas_before - expect);
         assert_eq!(ctx.exec_from(), basis::component::ExecFrom::Top);
+        assert!(vm.entries.is_empty(), "vm entry stack must unwind after settle");
+    }
+
+    #[test]
+    fn call_base_stacks_with_nested_entry_work_on_shared_meter() {
+        let main = Address::from_readable("1MzNY1oA3kfgYi75zquj3SRUPYztzXHzK9").unwrap();
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.tx.main = main;
+        env.tx.addrs = vec![main];
+
+        let tx = StubTxBuilder::new()
+            .ty(TransactionType3::TYPE)
+            .main(main)
+            .addrs(vec![main])
+            .fee(Amount::unit238(10_000_000))
+            .gas_max(17)
+            .tx_size(128)
+            .fee_purity(1)
+            .build();
+        let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(1_000_000_000)).unwrap();
+        ctx.gas_initialize(decode_gas_budget(17)).unwrap();
+
+        let mut vm = Executor::from_runtime(Runtime::create(1));
+        let outer_base = EntryKind::Main.call_base(&vm.runtime.warm.gas_extra);
+        let inner_base = EntryKind::Abst.call_base(&vm.runtime.warm.gas_extra);
+        let inner_work = 3i64;
+        let outer_work = 2i64;
+        let gas_before = Context::gas_remaining(&ctx);
+
+        let (cost, ()) = vm
+            .run_vm_entry_ret(
+                &mut ctx,
+                EntryKind::Main,
+                outer_base,
+                true,
+                |_machine, runtime, ctx| {
+                    // Simulate an inner entry that already measured and settled its own surcharge.
+                    runtime.warm.gas_use.compute = runtime
+                        .next_compute_used(inner_work)
+                        .map_err(|e| e.to_string())?;
+                    ctx.gas_charge(inner_work)?;
+                    runtime
+                        .settle_compute_gas(ctx, inner_base)
+                        .map_err(|e| e.to_string())?;
+
+                    // Outer entry self work after inner returns.
+                    runtime.warm.gas_use.compute = runtime
+                        .next_compute_used(outer_work)
+                        .map_err(|e| e.to_string())?;
+                    ctx.gas_charge(outer_work)?;
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        let expect = inner_work + inner_base + outer_work + outer_base;
+        assert_eq!(cost.total(), expect);
+        assert_eq!(vm.runtime.gas_use().total(), expect);
+        assert_eq!(Context::gas_remaining(&ctx), gas_before - expect);
         assert!(vm.entries.is_empty(), "vm entry stack must unwind after settle");
     }
 

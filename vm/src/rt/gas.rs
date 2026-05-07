@@ -88,9 +88,10 @@ pub struct GasExtra {
     pub storage_limit: i64,  // <=0 means disabled
     pub one_local_alloc: i64,
     pub new_contract_load: i64,
-    pub main_call_min: i64,
-    pub p2sh_call_min: i64,
-    pub abst_call_min: i64,
+    // VM entry-type base surcharge (调用基础附加费): added on top of measured work for each entry (compute bucket).
+    pub main_call_base: i64,
+    pub p2sh_call_base: i64,
+    pub abst_call_base: i64,
     // Space alloc
     pub memory_key_cost: i64,
     pub global_key_cost: i64,
@@ -140,9 +141,9 @@ impl GasExtra {
             // Load or alloc
             one_local_alloc: 5,    // 5 * num
             new_contract_load: 32, // base gas for loading a new contract
-            main_call_min: 2 * 24, // 48
-            p2sh_call_min: 3 * 24, // 72
-            abst_call_min: 4 * 24, // 96
+            main_call_base: 3 * 16, // 48
+            p2sh_call_base: 4 * 16, // 64
+            abst_call_base: 5 * 16, // 80
             // Space alloc
             memory_key_cost: 20,
             global_key_cost: 32,
@@ -512,9 +513,9 @@ mod gas_budget_codec_tests {
     /// Scalar `GasExtra` fields: must match literal assignments in `GasExtra::new`.
     fn gas_extra_field_defaults_match_new() {
         let gst = GasExtra::new(1);
-        assert_eq!(gst.main_call_min, 48);
-        assert_eq!(gst.p2sh_call_min, 72);
-        assert_eq!(gst.abst_call_min, 96);
+        assert_eq!(gst.main_call_base, 48);
+        assert_eq!(gst.p2sh_call_base, 64);
+        assert_eq!(gst.abst_call_base, 80);
 
         assert_eq!(gst.one_local_alloc, 5);
         assert_eq!(gst.memory_key_cost, 20);

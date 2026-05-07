@@ -36,14 +36,15 @@ These are fixed and can be regarded as the basic overhead of instructions. Opcod
 ## Gas limits
 
 - max_gas_of_tx: 8192 (= 65536 / 8). This is a hard cap for per-tx gas.
-- min_of_main_call: 48. The VM call will consume at least this gas from the shared counter.
-- min_of_p2sh_call: 72. The VM call will consume at least this gas from the shared counter.
-- min_of_abst_call: 96. The VM call will consume at least this gas from the shared counter.
+- call_base_main: 48. Compute surcharge added **on top of** measured Main-entry work (shared counter).
+- call_base_p2sh: 64. Compute surcharge added **on top of** measured P2SH-entry work (shared counter).
+- call_base_abst: 80. Compute surcharge added **on top of** measured abstract/hook-entry work (shared counter).
 
-Min-call enforcement behavior (non-bytecode):
+Per-entry billing formula (non-bytecode):
 
-- Fail-fast path: if `remaining < min_of_*_call`, the VM still deducts that min cost and returns error.
-- Normal path: VM executes first, then if actual consumed gas is below min, it deducts the shortfall to make total cost equal the min.
+- Let `work` be VM-measured buckets accumulated during this entry (`gas_use` delta since entry start).
+- This entry charges **`work` + `call_base_*`** into the shared gas meter (`call_base` is applied as compute gas at entry return).
+- Fail-fast behavior (insufficient host remaining gas for the surcharge) follows normal `settle_compute_gas` / out-of-gas paths on return.
 
 ## tx.gas_max (1-byte) encoding
 
