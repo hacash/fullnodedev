@@ -134,9 +134,9 @@ impl Heap {
         self.do_read(start, length)
     }
 
-    pub fn slice(&self, l: Value, s: &Value) -> VmrtRes<Value> {
-        let start = s.extract_u32()?;
-        let length = l.extract_u32()?;
+    pub fn slice(&self, start: Value, length: Value) -> VmrtRes<Value> {
+        let start = start.extract_u32()?;
+        let length = length.extract_u32()?;
         self.checked_right(start as usize, length as usize, "create slice overflow")?;
         Ok(Value::HeapSlice((start, length)))
     }
@@ -180,7 +180,7 @@ mod heaptest {
         let heap = Heap::new(64);
         let start = Value::U32(u32::MAX);
         let len = Value::U32(1);
-        let err = heap.slice(len, &start).unwrap_err().to_string();
+        let err = heap.slice(start, len).unwrap_err().to_string();
         assert!(err.contains("create slice overflow"));
     }
 }

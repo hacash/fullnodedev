@@ -11,9 +11,15 @@ pub enum FinRoundPolicy {
 pub enum FinKernel {
     Div,
     MulDiv,
+    SqrtMul,
+    Quantize,
     DevScaled,
     ScaledDiv,
+    ScaledAdd,
+    ScaledSub,
     MulShr,
+    MulDivDenAdd,
+    MulDivDenSub,
     MulAddDiv,
     MulSubDiv,
     Mul3Div,
@@ -21,6 +27,9 @@ pub enum FinKernel {
     Lerp,
     AbsDiffLte,
     WithinBps,
+    CrossLte,
+    CrossGte,
+    CrossEq,
     RPow,
 }
 
@@ -72,6 +81,10 @@ const FIN_SPECS: &[FinSpec] = &[
     fin_spec!(Bytecode::FIN2, 2, "div_ceil", FinKernel::Div, FinRoundPolicy::Ceil),
     fin_spec!(Bytecode::FIN2, 3, "div_half_up", FinKernel::Div, FinRoundPolicy::HalfUp),
     fin_spec!(Bytecode::FIN2, 4, "div_half_even", FinKernel::Div, FinRoundPolicy::HalfEven),
+    fin_spec!(Bytecode::FIN2, 5, "sqrt_mul_floor", FinKernel::SqrtMul, FinRoundPolicy::Floor),
+    fin_spec!(Bytecode::FIN2, 6, "sqrt_mul_ceil", FinKernel::SqrtMul, FinRoundPolicy::Ceil),
+    fin_spec!(Bytecode::FIN2, 7, "quantize_floor", FinKernel::Quantize, FinRoundPolicy::Floor),
+    fin_spec!(Bytecode::FIN2, 8, "quantize_ceil", FinKernel::Quantize, FinRoundPolicy::Ceil),
     fin_spec!(Bytecode::FIN3, 0, "mul_div_exact", FinKernel::MulDiv, FinRoundPolicy::Exact),
     fin_spec!(Bytecode::FIN3, 1, "mul_div_floor", FinKernel::MulDiv, FinRoundPolicy::Floor),
     fin_spec!(Bytecode::FIN3, 2, "mul_div_ceil", FinKernel::MulDiv, FinRoundPolicy::Ceil),
@@ -104,6 +117,38 @@ const FIN_SPECS: &[FinSpec] = &[
     ),
     fin_spec!(Bytecode::FIN3, 12, "mul_shr_floor", FinKernel::MulShr, FinRoundPolicy::Floor),
     fin_spec!(Bytecode::FIN3, 13, "mul_shr_ceil", FinKernel::MulShr, FinRoundPolicy::Ceil),
+    fin_spec!(Bytecode::FIN3, 14, "scaled_add_floor", FinKernel::ScaledAdd, FinRoundPolicy::Floor),
+    fin_spec!(Bytecode::FIN3, 15, "scaled_add_ceil", FinKernel::ScaledAdd, FinRoundPolicy::Ceil),
+    fin_spec!(Bytecode::FIN3, 16, "scaled_sub_floor", FinKernel::ScaledSub, FinRoundPolicy::Floor),
+    fin_spec!(Bytecode::FIN3, 17, "scaled_sub_ceil", FinKernel::ScaledSub, FinRoundPolicy::Ceil),
+    fin_spec!(
+        Bytecode::FIN3,
+        18,
+        "mul_div_den_add_floor",
+        FinKernel::MulDivDenAdd,
+        FinRoundPolicy::Floor
+    ),
+    fin_spec!(
+        Bytecode::FIN3,
+        19,
+        "mul_div_den_add_ceil",
+        FinKernel::MulDivDenAdd,
+        FinRoundPolicy::Ceil
+    ),
+    fin_spec!(
+        Bytecode::FIN3,
+        20,
+        "mul_div_den_sub_floor",
+        FinKernel::MulDivDenSub,
+        FinRoundPolicy::Floor
+    ),
+    fin_spec!(
+        Bytecode::FIN3,
+        21,
+        "mul_div_den_sub_ceil",
+        FinKernel::MulDivDenSub,
+        FinRoundPolicy::Ceil
+    ),
     fin_spec!(
         Bytecode::FIN4,
         0,
@@ -209,6 +254,9 @@ const FIN_SPECS: &[FinSpec] = &[
     fin_spec!(Bytecode::FIN4, 24, "lerp_half_even", FinKernel::Lerp, FinRoundPolicy::HalfEven),
     fin_spec!(Bytecode::FINP3, 0, "abs_diff_lte", FinKernel::AbsDiffLte),
     fin_spec!(Bytecode::FINP4, 0, "within_bps", FinKernel::WithinBps),
+    fin_spec!(Bytecode::FINP4, 1, "cross_lte", FinKernel::CrossLte),
+    fin_spec!(Bytecode::FINP4, 2, "cross_gte", FinKernel::CrossGte),
+    fin_spec!(Bytecode::FINP4, 3, "cross_eq", FinKernel::CrossEq),
     fin_spec!(Bytecode::FINPOW3, 0, "rpow_half_up", FinKernel::RPow, FinRoundPolicy::HalfUp),
 ];
 

@@ -534,6 +534,23 @@ fn cmp_u256(ahi: u128, alo: u128, bhi: u128, blo: u128) -> std::cmp::Ordering {
     ahi.cmp(&bhi).then(alo.cmp(&blo))
 }
 
+fn isqrt_u256_floor(hi: u128, lo: u128) -> u128 {
+    if hi == 0 {
+        return lo.isqrt();
+    }
+    let mut out = 0u128;
+    let mut bit = 1u128 << 127;
+    while bit != 0 {
+        let candidate = out | bit;
+        let (sq_hi, sq_lo) = mul_wide_u128(candidate, candidate);
+        if cmp_u256(sq_hi, sq_lo, hi, lo).is_le() {
+            out = candidate;
+        }
+        bit >>= 1;
+    }
+    out
+}
+
 fn cast_uint_result1(sample: &Value, out: u128, op: &str, x: &Value) -> VmrtRes<Value> {
     cast_uint_like_sample(sample, out, || ItrErr::new(Arithmetic, &check_failed_tip1(op, x)))
 }
@@ -780,6 +797,53 @@ fn sqrt_up_checked(x: &Value) -> VmrtRes<Value> {
     cast_uint_result1(x, out, "sqrt_up", x)
 }
 
+fn sqrtmul_with_round_checked(
+    x: &Value,
+    y: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip(op, x, y));
+    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
+    let floor = isqrt_u256_floor(hi, lo);
+    let out = match round {
+        FinRoundPolicy::Floor => floor,
+        FinRoundPolicy::Ceil => {
+            let (sq_hi, sq_lo) = mul_wide_u128(floor, floor);
+            if cmp_u256(sq_hi, sq_lo, hi, lo).is_eq() {
+                floor
+            } else {
+                floor.checked_add(1).ok_or_else(err)?
+            }
+        }
+        _ => return Err(err()),
+    };
+    cast_uint_result2(x, out, op, x, y)
+}
+
+fn quantize_with_round_checked(
+    x: &Value,
+    y: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip(op, x, y));
+    let value = x.extract_u128()?;
+    let step = require_nonzero_u128(y.extract_u128()?, err)?;
+    let quo = value / step;
+    let rem = value % step;
+    let out = match round {
+        FinRoundPolicy::Floor => quo.checked_mul(step).ok_or_else(err)?,
+        FinRoundPolicy::Ceil if rem == 0 => value,
+        FinRoundPolicy::Ceil => quo
+            .checked_add(1)
+            .and_then(|q| q.checked_mul(step))
+            .ok_or_else(err)?,
+        _ => return Err(err()),
+    };
+    cast_uint_result2(x, out, op, x, y)
+}
+
 fn addmod_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     let err = || ItrErr::new(Arithmetic, &check_failed_tip3("add_mod", x, y, z));
     let a = x.extract_u128()?;
@@ -811,6 +875,59 @@ fn muldiv_with_round_checked(
     let div = require_nonzero_u128(z.extract_u128()?, err)?;
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
     let quo = div_u256_by_u128_with_round(hi, lo, div, round, err)?;
+    cast_uint_result3(x, quo, op, x, y, z)
+}
+
+fn scaled_addsub_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    add_delta: bool,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z));
+    if !matches!(round, FinRoundPolicy::Floor | FinRoundPolicy::Ceil) {
+        return Err(err());
+    }
+    let value = x.extract_u128()?;
+    let rate = y.extract_u128()?;
+    let scale = require_nonzero_u128(z.extract_u128()?, err)?;
+    let (hi, lo) = mul_wide_u128(value, rate);
+    let delta = div_u256_by_u128_with_round(hi, lo, scale, round, err)?;
+    let out = if add_delta {
+        value.checked_add(delta)
+    } else {
+        value.checked_sub(delta)
+    }
+    .ok_or_else(err)?;
+    cast_uint_result3(x, out, op, x, y, z)
+}
+
+fn muldiv_den_addsub_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    add_to_den: bool,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z));
+    if !matches!(round, FinRoundPolicy::Floor | FinRoundPolicy::Ceil) {
+        return Err(err());
+    }
+    let lhs = x.extract_u128()?;
+    let rhs = y.extract_u128()?;
+    let den_base = z.extract_u128()?;
+    let (hi, lo) = mul_wide_u128(lhs, rhs);
+    let quo = if add_to_den {
+        let (den_hi, den_lo) = add_u256_u128(0, den_base, rhs).ok_or_else(err)?;
+        div_u256_by_u129_with_round(hi, lo, den_hi, den_lo, round, 0, err)?
+    } else {
+        let den = den_base.checked_sub(rhs).ok_or_else(err)?;
+        let den = require_nonzero_u128(den, err)?;
+        div_u256_by_u128_with_round(hi, lo, den, round, err)?
+    };
     cast_uint_result3(x, quo, op, x, y, z)
 }
 
@@ -1008,6 +1125,27 @@ fn withinbps_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Valu
     Ok(Value::bool(cmp_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).is_le()))
 }
 
+fn crossmul_pred_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    w: &Value,
+    kernel: FinKernel,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w));
+    let (lhs_hi, lhs_lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
+    let (rhs_hi, rhs_lo) = mul_wide_u128(z.extract_u128()?, w.extract_u128()?);
+    let ord = cmp_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo);
+    let out = match kernel {
+        FinKernel::CrossLte => ord.is_le(),
+        FinKernel::CrossGte => ord.is_ge(),
+        FinKernel::CrossEq => ord.is_eq(),
+        _ => return Err(err()),
+    };
+    Ok(Value::bool(out))
+}
+
 fn wavg2_checked(
     x: &Value,
     y: &Value,
@@ -1074,8 +1212,11 @@ fn invalid_fin_spec(spec: FinSpec) -> VmrtRes<Value> {
 }
 
 fn fin2_checked(spec: FinSpec, x: &Value, y: &Value) -> VmrtRes<Value> {
+    let round = spec.round_or_exact();
     match spec.kernel {
-        FinKernel::Div => div_with_round_checked(x, y, spec.round_or_exact(), spec.name),
+        FinKernel::Div => div_with_round_checked(x, y, round, spec.name),
+        FinKernel::SqrtMul => sqrtmul_with_round_checked(x, y, round, spec.name),
+        FinKernel::Quantize => quantize_with_round_checked(x, y, round, spec.name),
         _ => invalid_fin_spec(spec),
     }
 }
@@ -1087,11 +1228,19 @@ fn fin3_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value) -> VmrtRes<Value
             muldiv_with_round_checked(x, y, z, round, spec.name)
         }
         FinKernel::DevScaled => devscaled_with_round_checked(x, y, z, round, spec.name),
+        FinKernel::ScaledAdd => scaled_addsub_checked(x, y, z, true, round, spec.name),
+        FinKernel::ScaledSub => scaled_addsub_checked(x, y, z, false, round, spec.name),
         FinKernel::MulShr if round == FinRoundPolicy::Floor => {
             mul_shr_impl(x, y, z, spec.name, false)
         }
         FinKernel::MulShr if round == FinRoundPolicy::Ceil => {
             mul_shr_impl(x, y, z, spec.name, true)
+        }
+        FinKernel::MulDivDenAdd => {
+            muldiv_den_addsub_checked(x, y, z, true, round, spec.name)
+        }
+        FinKernel::MulDivDenSub => {
+            muldiv_den_addsub_checked(x, y, z, false, round, spec.name)
         }
         _ => invalid_fin_spec(spec),
     }
@@ -1124,6 +1273,9 @@ fn finp3_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value) -> VmrtRes<Valu
 fn finp4_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
     match spec.kernel {
         FinKernel::WithinBps => withinbps_checked(x, y, z, w),
+        FinKernel::CrossLte | FinKernel::CrossGte | FinKernel::CrossEq => {
+            crossmul_pred_checked(x, y, z, w, spec.kernel, spec.name)
+        }
         _ => invalid_fin_spec(spec),
     }
 }
@@ -1953,6 +2105,233 @@ mod shift_u64_tests {
         assert_eq!(
             withinbps_checked(&x, &reference, &tol_bad, &scale).unwrap(),
             Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn fin2_sqrt_mul_and_quantize_work() {
+        assert_eq!(
+            sqrtmul_with_round_checked(
+                &Value::U64(2),
+                &Value::U64(8),
+                FinRoundPolicy::Floor,
+                "sqrt_mul_floor",
+            )
+            .unwrap(),
+            Value::U64(4)
+        );
+        assert_eq!(
+            sqrtmul_with_round_checked(
+                &Value::U64(2),
+                &Value::U64(3),
+                FinRoundPolicy::Floor,
+                "sqrt_mul_floor",
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+        let sqrt_ceil_spec = fin_source_call_spec("sqrt_mul_ceil").unwrap().unwrap();
+        assert_eq!(
+            fin2_checked(sqrt_ceil_spec, &Value::U64(2), &Value::U64(3)).unwrap(),
+            Value::U64(3)
+        );
+        assert_eq!(
+            sqrtmul_with_round_checked(
+                &Value::U128(u128::MAX),
+                &Value::U128(u128::MAX),
+                FinRoundPolicy::Floor,
+                "sqrt_mul_floor",
+            )
+            .unwrap(),
+            Value::U128(u128::MAX)
+        );
+        assert_eq!(
+            quantize_with_round_checked(
+                &Value::U64(101),
+                &Value::U64(10),
+                FinRoundPolicy::Floor,
+                "quantize_floor",
+            )
+            .unwrap(),
+            Value::U64(100)
+        );
+        let quantize_ceil_spec = fin_source_call_spec("quantize_ceil").unwrap().unwrap();
+        assert_eq!(
+            fin2_checked(quantize_ceil_spec, &Value::U64(101), &Value::U64(10)).unwrap(),
+            Value::U64(110)
+        );
+        assert!(quantize_with_round_checked(
+            &Value::U64(101),
+            &Value::U64(0),
+            FinRoundPolicy::Floor,
+            "quantize_floor",
+        )
+        .is_err());
+        assert!(quantize_with_round_checked(
+            &Value::U128(u128::MAX),
+            &Value::U128(2),
+            FinRoundPolicy::Ceil,
+            "quantize_ceil",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn fin3_scaled_add_sub_work() {
+        assert_eq!(
+            scaled_addsub_checked(
+                &Value::U64(101),
+                &Value::U64(1),
+                &Value::U64(2),
+                true,
+                FinRoundPolicy::Floor,
+                "scaled_add_floor",
+            )
+            .unwrap(),
+            Value::U64(151)
+        );
+        let scaled_add_ceil = fin_source_call_spec("scaled_add_ceil").unwrap().unwrap();
+        assert_eq!(
+            fin3_checked(
+                scaled_add_ceil,
+                &Value::U64(101),
+                &Value::U64(1),
+                &Value::U64(2),
+            )
+            .unwrap(),
+            Value::U64(152)
+        );
+        assert_eq!(
+            scaled_addsub_checked(
+                &Value::U64(101),
+                &Value::U64(1),
+                &Value::U64(2),
+                false,
+                FinRoundPolicy::Floor,
+                "scaled_sub_floor",
+            )
+            .unwrap(),
+            Value::U64(51)
+        );
+        let scaled_sub_ceil = fin_source_call_spec("scaled_sub_ceil").unwrap().unwrap();
+        assert_eq!(
+            fin3_checked(
+                scaled_sub_ceil,
+                &Value::U64(101),
+                &Value::U64(1),
+                &Value::U64(2),
+            )
+            .unwrap(),
+            Value::U64(50)
+        );
+        assert!(scaled_addsub_checked(
+            &Value::U64(1),
+            &Value::U64(1),
+            &Value::U64(0),
+            true,
+            FinRoundPolicy::Floor,
+            "scaled_add_floor",
+        )
+        .is_err());
+        assert!(scaled_addsub_checked(
+            &Value::U64(1),
+            &Value::U64(3),
+            &Value::U64(2),
+            false,
+            FinRoundPolicy::Ceil,
+            "scaled_sub_ceil",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn fin3_mul_div_den_add_sub_work() {
+        assert_eq!(
+            muldiv_den_addsub_checked(
+                &Value::U64(100),
+                &Value::U64(10),
+                &Value::U64(90),
+                true,
+                FinRoundPolicy::Floor,
+                "mul_div_den_add_floor",
+            )
+            .unwrap(),
+            Value::U64(10)
+        );
+        let den_add_ceil = fin_source_call_spec("mul_div_den_add_ceil").unwrap().unwrap();
+        assert_eq!(
+            fin3_checked(
+                den_add_ceil,
+                &Value::U64(10),
+                &Value::U64(10),
+                &Value::U64(3),
+            )
+            .unwrap(),
+            Value::U64(8)
+        );
+        assert_eq!(
+            muldiv_den_addsub_checked(
+                &Value::U64(100),
+                &Value::U64(10),
+                &Value::U64(110),
+                false,
+                FinRoundPolicy::Floor,
+                "mul_div_den_sub_floor",
+            )
+            .unwrap(),
+            Value::U64(10)
+        );
+        let den_sub_ceil = fin_source_call_spec("mul_div_den_sub_ceil").unwrap().unwrap();
+        assert_eq!(
+            fin3_checked(
+                den_sub_ceil,
+                &Value::U64(10),
+                &Value::U64(10),
+                &Value::U64(23),
+            )
+            .unwrap(),
+            Value::U64(8)
+        );
+        assert!(muldiv_den_addsub_checked(
+            &Value::U64(10),
+            &Value::U64(10),
+            &Value::U64(10),
+            false,
+            FinRoundPolicy::Floor,
+            "mul_div_den_sub_floor",
+        )
+        .is_err());
+        assert!(muldiv_den_addsub_checked(
+            &Value::U64(10),
+            &Value::U64(11),
+            &Value::U64(10),
+            false,
+            FinRoundPolicy::Floor,
+            "mul_div_den_sub_floor",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn finp4_cross_mul_predicates_use_wide_products() {
+        let max = Value::U128(u128::MAX);
+        let almost = Value::U128(u128::MAX - 1);
+        assert_eq!(
+            crossmul_pred_checked(&max, &almost, &max, &max, FinKernel::CrossLte, "cross_lte").unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            crossmul_pred_checked(&max, &max, &max, &almost, FinKernel::CrossGte, "cross_gte").unwrap(),
+            Value::Bool(true)
+        );
+        let cross_eq = fin_source_call_spec("cross_eq").unwrap().unwrap();
+        assert_eq!(
+            finp4_checked(cross_eq, &max, &almost, &max, &max).unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            finp4_checked(cross_eq, &max, &almost, &max, &almost).unwrap(),
+            Value::Bool(true)
         );
     }
 

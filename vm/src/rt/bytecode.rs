@@ -144,7 +144,7 @@ pub enum Bytecode {
     LOG2 = 0x85,
     LOG3 = 0x86,
     LOG4 = 0x87,
-    HSLICE = 0x88,   // a,b+  create heap slice
+    HSLICE = 0x88,   // start,len+  create heap slice
     HREADUL = 0x89,  // **+   heap read ul
     HREADU = 0x8a,   // *+    heap read u
     HWRITEXL = 0x8b, // **a   heap write xl

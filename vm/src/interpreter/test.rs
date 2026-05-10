@@ -2524,6 +2524,52 @@ mod bounds_tests {
     }
 
     #[test]
+    fn hslice_uses_start_length_stack_order_like_hread() {
+        use crate::rt::Bytecode;
+
+        let cadr = ContractAddress::default();
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        heap.grow(1, &GasExtra::new(1)).unwrap();
+        heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let codes = vec![
+            Bytecode::HSLICE as u8,
+            Bytecode::ACTION as u8,
+            1,
+            Bytecode::END as u8,
+        ];
+        operands.push(Value::U32(1)).unwrap(); // start
+        operands.push(Value::U32(2)).unwrap(); // length
+
+        execute_code(
+            &mut pc,
+            &codes,
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap();
+
+        assert_eq!(host.act_body, vec![8, 7]);
+    }
+
+    #[test]
     fn hread_dynamic_gas_uses_read_length() {
         use crate::rt::Bytecode;
 
