@@ -1065,6 +1065,35 @@ mod token_t {
     }
 
     #[test]
+    fn postfix_lhs_decompile_recompile_preserves_not_operands() {
+        use super::ircode_to_lang;
+        use super::lang_to_ircode;
+
+        for src in ["return (! true) as u8", "return (! true)[0]"] {
+            let expect = lang_to_ircode(src).expect(src);
+            let text = ircode_to_lang(&expect).expect(src);
+            let reparsed = lang_to_ircode(&text)
+                .map_err(|e| format!("{}\n---- decompiled ----\n{}\n--------------------", e, text))
+                .unwrap();
+            assert_eq!(expect, reparsed, "src={}\ndecompiled={}", src, text);
+        }
+    }
+
+    #[test]
+    fn bytecode_pbuf_decompile_recompile_preserves_ircode() {
+        use super::ircode_to_lang;
+        use super::lang_to_ircode;
+
+        let src = "bytecode { PBUF 3 97 98 99 }\nend";
+        let expect = lang_to_ircode(src).expect(src);
+        let text = ircode_to_lang(&expect).expect(src);
+        let reparsed = lang_to_ircode(&text)
+            .map_err(|e| format!("{}\n---- decompiled ----\n{}\n--------------------", e, text))
+            .unwrap();
+        assert_eq!(expect, reparsed, "decompiled={}", text);
+    }
+
+    #[test]
     fn test_all_print_options_disabled_preserve_ircode_semantics() {
         use super::lang_to_ircode;
         use super::lang_to_irnode_with_sourcemap;

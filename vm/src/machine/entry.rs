@@ -310,7 +310,7 @@ pub fn run_p2sh_entry(
     // but this raw host-facing helper also revalidates the parsed payload to avoid trusting forged blobs.
     ensure_vm_run_ready(ctx)?;
     let hei = ctx.env().block.height;
-    let (gst, _) = peek_vm_runtime_limits(ctx, hei);
+    let (gst, cap) = peek_vm_runtime_limits(ctx, hei);
     let codeconf = CodeConf::parse(codeconf)?;
     let witness = BytesW2::from(extract_p2sh_witness(&param)?)?;
     let payload = ByteView::from_arc(Arc::from(payload));
@@ -320,7 +320,7 @@ pub fn run_p2sh_entry(
     let (libs, mv2) = ContractAddressW1::create(&payload_ref[mv1..])?;
     let mv = mv1 + mv2;
     let codes = BytesW2::from(payload_ref[mv..].to_vec())?;
-    crate::action::P2SHScriptProve::verify_unlock_inputs(hei, &gst, &libs, codeconf, &codes, &witness)?;
+    crate::action::P2SHScriptProve::verify_unlock_inputs(hei, &gst, &cap, &libs, codeconf, &codes, &witness)?;
     let intent_scope = ctx.vm_current_intent_scope();
     let (cost, rv) = ctx.vm_call(Box::new(EntryRequest::P2sh {
         code_type: codeconf.code_type(),

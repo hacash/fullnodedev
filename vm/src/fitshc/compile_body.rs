@@ -1,5 +1,5 @@
 use crate::IRNode;
-use crate::ir::{IRNodeArray, IRNodeLeaf, convert_ir_to_bytecode, drop_irblock_wrap};
+use crate::ir::{IRNodeArray, IRNodeLeaf, convert_ir_to_runtime_bytecode, drop_irblock_wrap};
 use crate::ir::{push_addr, push_bytes, push_num};
 use crate::lang::Syntax;
 use crate::rt::{Bytecode, SourceMap, Token, verify_bytecodes};
@@ -118,13 +118,13 @@ pub fn compile_body(
         syntax = syntax.with_consts(const_nodes);
     }
 
-    syntax = syntax.with_params(args).with_ircode(is_ircode);
+    syntax = syntax.with_params(args);
 
     let (irnodes, source_map) = syntax.parse()?;
 
     let compiled = if is_ircode {
         let ircodes = drop_irblock_wrap(irnodes.serialize())?;
-        let codes = convert_ir_to_bytecode(&ircodes).map_err(|e| e.to_string())?;
+        let codes = convert_ir_to_runtime_bytecode(&ircodes).map_err(|e| e.to_string())?;
         verify_bytecodes(&codes).map_err(|e| e.to_string())?;
         CompiledCode::IrCode(ircodes)
     } else {

@@ -158,16 +158,16 @@ impl P2SHScriptProve {
     pub fn verify_unlock_inputs(
         block_height: u64,
         gst: &GasExtra,
+        cap: &SpaceCap,
         adrlibs: &ContractAddressW1,
         codeconf: CodeConf,
         lockbox: &BytesW2,
         witness: &BytesW2,
     ) -> Ret<()> {
-        let cap = SpaceCap::new(block_height);
-        Self::verify_adrlibs(&cap, adrlibs)?;
-        Self::verify_lockbox_bytes(&cap, lockbox.as_vec())?;
-        convert_and_check(&cap, gst, codeconf.code_type(), lockbox.as_vec(), block_height)?;
-        Self::verify_witness_bytes(&cap, witness.as_vec())?;
+        Self::verify_adrlibs(cap, adrlibs)?;
+        Self::verify_lockbox_bytes(cap, lockbox.as_vec())?;
+        convert_and_check(cap, gst, codeconf.code_type(), lockbox.as_vec(), block_height)?;
+        Self::verify_witness_bytes(cap, witness.as_vec())?;
         Ok(())
     }
 
@@ -202,9 +202,9 @@ impl P2SHScriptProve {
 
     fn get_stuff_with_merkel(&self, ctx: &mut dyn Context, scriptmh: &Address) -> Ret<UnlockScript> {
         let hei = ctx.env().block.height;
-        let (gst, _) = peek_vm_runtime_limits(ctx, hei);
+        let (gst, cap) = peek_vm_runtime_limits(ctx, hei);
         let codeconf = CodeConf::parse(self.codeconf.uint())?;
-        Self::verify_unlock_inputs(hei, &gst, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
+        Self::verify_unlock_inputs(hei, &gst, &cap, &self.adrlibs, codeconf, &self.lockbox, &self.argvkey)?;
         let lockbox = self.lockbox.as_vec();
         let witness = self.argvkey.as_vec().clone();
         // ok
@@ -300,9 +300,11 @@ mod p2sh_test {
         let lockbox = dummy_lockbox(13);
         let witness = BytesW2::from(vec![]).unwrap();
         let gst = GasExtra::new(1);
+        let cap = SpaceCap::new(1);
         let err = P2SHScriptProve::verify_unlock_inputs(
             1,
             &gst,
+            &cap,
             &libs,
             CodeConf::from_type(CodeType::Bytecode),
             &lockbox,
@@ -318,9 +320,11 @@ mod p2sh_test {
         let lockbox = BytesW2::from(vec![0u8; SpaceCap::new(1).p2sh_lockbox_size_max + 1]).unwrap();
         let witness = BytesW2::from(vec![]).unwrap();
         let gst = GasExtra::new(1);
+        let cap = SpaceCap::new(1);
         let err = P2SHScriptProve::verify_unlock_inputs(
             1,
             &gst,
+            &cap,
             &libs,
             CodeConf::from_type(CodeType::Bytecode),
             &lockbox,

@@ -1,49 +1,13 @@
-use field::Address as FieldAddress;
 /// Handles descriptive decompilation and formatting logic.
 #[derive(Clone)]
 pub struct Formater<'a> {
     opt: PrintOption<'a>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum LiteralKind {
-    Numeric,
-    Text,
-    Address,
-}
-
-#[allow(unused)]
 #[derive(Clone)]
 struct RecoveredLiteral {
     text: String,
-    kind: LiteralKind,
     ty: Option<ValueTy>,
-}
-
-impl RecoveredLiteral {
-    fn numeric<S: Into<String>>(value: S, ty: ValueTy) -> Self {
-        Self {
-            text: value.into(),
-            kind: LiteralKind::Numeric,
-            ty: Some(ty),
-        }
-    }
-
-    fn text<S: Into<String>>(value: S) -> Self {
-        Self {
-            text: value.into(),
-            kind: LiteralKind::Text,
-            ty: Some(ValueTy::Bytes),
-        }
-    }
-
-    fn address<S: Into<String>>(value: S) -> Self {
-        Self {
-            text: value.into(),
-            kind: LiteralKind::Address,
-            ty: Some(ValueTy::Address),
-        }
-    }
 }
 
 impl<'a> Formater<'a> {
@@ -211,14 +175,6 @@ impl<'a> Formater<'a> {
     }
 
 
-    fn literals(&self, s: String) -> String {
-        s.replace("\\", "\\\\")
-            .replace("\t", "\\t")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\"", "\\\"")
-    }
-
     fn line_prefix(&self) -> String {
         self.opt.indent.repeat(self.opt.tab)
     }
@@ -273,11 +229,13 @@ impl<'a> Formater<'a> {
         None
     }
 
-    fn extract_map_elements(
+    /// Shared shape: `IRLIST elem* count PACK*` where `count` encodes the number of `elem` nodes.
+    fn try_irlist_packed_prefix<'subs>(
         &self,
         inst: Bytecode,
-        subs: &[Box<dyn IRNode>],
-    ) -> Option<Vec<(String, String)>> {
+        subs: &'subs [Box<dyn IRNode>],
+        pack: Bytecode,
+    ) -> Option<(usize, &'subs [Box<dyn IRNode>])> {
         use Bytecode::*;
         if inst != IRLIST {
             return None;
@@ -286,27 +244,34 @@ impl<'a> Formater<'a> {
         if num < 2 {
             return None;
         }
-        let last = &subs[num - 1];
-        if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKMAP {
-                return None;
-            }
-        } else {
+        let last = subs.last()?;
+        let leaf = last.as_any().downcast_ref::<IRNodeLeaf>()?;
+        if leaf.inst != pack {
             return None;
         }
-        let count_idx = num - 2;
-        let count = num - 2;
-        let expected = self.extract_const_usize(&*subs[count_idx])?;
+        let elem_n = num - 2;
+        let count_node = subs.get(elem_n)?;
+        let expected = self.extract_const_usize(&**count_node)?;
+        if expected != elem_n {
+            return None;
+        }
+        Some((elem_n, &subs[..elem_n]))
+    }
+
+    fn extract_map_elements(
+        &self,
+        inst: Bytecode,
+        subs: &[Box<dyn IRNode>],
+    ) -> Option<Vec<(String, String)>> {
+        use Bytecode::*;
+        let (count, prefix) = self.try_irlist_packed_prefix(inst, subs, PACKMAP)?;
         if count % 2 != 0 {
-            return None;
-        }
-        if expected != count {
             return None;
         }
         let mut pairs = Vec::with_capacity(count / 2);
         for i in (0..count).step_by(2) {
-            let k = self.print_inline(&*subs[i]);
-            let v = self.print_inline(&*subs[i + 1]);
+            let k = self.print_inline(&*prefix[i]);
+            let v = self.print_inline(&*prefix[i + 1]);
             pairs.push((k, v));
         }
         Some(pairs)
@@ -318,29 +283,12 @@ impl<'a> Formater<'a> {
         subs: &[Box<dyn IRNode>],
     ) -> Option<Vec<String>> {
         use Bytecode::*;
-        if inst != IRLIST {
-            return None;
-        }
-        let num = subs.len();
-        if num < 2 {
-            return None;
-        }
-        let last = &subs[num - 1];
-        if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKTUPLE {
-                return None;
-            }
-        } else {
-            return None;
-        }
-        let count_idx = num - 2;
-        let count = num - 2;
-        let expected = self.extract_const_usize(&*subs[count_idx])?;
-        if expected != count || count <= 1 {
+        let (count, prefix) = self.try_irlist_packed_prefix(inst, subs, PACKTUPLE)?;
+        if count <= 1 {
             return None;
         }
         let mut elems = Vec::with_capacity(count);
-        for node in &subs[..count] {
+        for node in prefix {
             elems.push(self.print_inline(&**node));
         }
         Some(elems)
@@ -352,29 +300,12 @@ impl<'a> Formater<'a> {
         subs: &[Box<dyn IRNode>],
     ) -> Option<Vec<String>> {
         use Bytecode::*;
-        if inst != IRLIST {
+        if subs.len() < 3 {
             return None;
         }
-        let num = subs.len();
-        if num < 3 {
-            return None;
-        }
-        let last = &subs[num - 1];
-        if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKTUPLE {
-                return None;
-            }
-        } else {
-            return None;
-        }
-        let count_idx = num - 2;
-        let count = num - 2;
-        let expected = self.extract_const_usize(&*subs[count_idx])?;
-        if expected != count {
-            return None;
-        }
+        let (count, prefix) = self.try_irlist_packed_prefix(inst, subs, PACKTUPLE)?;
         let mut elems = Vec::with_capacity(count);
-        for node in &subs[..count] {
+        for node in prefix {
             elems.push(self.print_inline(&**node));
         }
         Some(elems)
@@ -386,29 +317,9 @@ impl<'a> Formater<'a> {
         subs: &[Box<dyn IRNode>],
     ) -> Option<Vec<String>> {
         use Bytecode::*;
-        if inst != IRLIST {
-            return None;
-        }
-        let num = subs.len();
-        if num < 2 {
-            return None;
-        }
-        let last = &subs[num - 1];
-        if let Some(leaf) = last.as_any().downcast_ref::<IRNodeLeaf>() {
-            if leaf.inst != PACKLIST {
-                return None;
-            }
-        } else {
-            return None;
-        }
-        let count_idx = num - 2;
-        let count = num - 2;
-        let expected = self.extract_const_usize(&*subs[count_idx])?;
-        if expected != count {
-            return None;
-        }
+        let (count, prefix) = self.try_irlist_packed_prefix(inst, subs, PACKLIST)?;
         let mut elems = Vec::with_capacity(count);
-        for node in &subs[..count] {
+        for node in prefix {
             elems.push(self.print_inline(&**node));
         }
         Some(elems)
@@ -829,7 +740,7 @@ impl<'a> Formater<'a> {
                         None => self.print_inline(&*s.subx),
                     };
                     let operand = maybe!(
-                        s.subx.level() > 0,
+                        self.needs_postfix_lhs_wrap(&*s.subx),
                         {
                             let t = substr.trim();
                             maybe!(
@@ -929,7 +840,7 @@ impl<'a> Formater<'a> {
                 // Using `print_sub()` can inject newlines/indentation and break parsing.
                 // Also, receiver precedence must be preserved: `(a + b)[0]` is not `a + b[0]`.
                 let mut subxstr = self.print_inline(&*d.subx);
-                if d.subx.level() > 0 {
+                if self.needs_postfix_lhs_wrap(&*d.subx) {
                     let t = subxstr.trim();
                     if !(t.starts_with('(') && t.ends_with(')')) {
                         subxstr = format!("({})", t);
@@ -1004,168 +915,11 @@ impl<'a> Formater<'a> {
         if !self.opt.recover_literals {
             return None;
         }
-        use Bytecode::*;
-        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
-            match single.inst {
-                CU8 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U8),
-                CU16 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U16),
-                CU32 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U32),
-                CU64 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U64),
-                CU128 => return self.numeric_literal_from_cast(&*single.subx, ValueTy::U128),
-                _ => {}
-            }
-        }
-        if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
-            match leaf.inst {
-                P0 => return Some(RecoveredLiteral::numeric("0", ValueTy::U8)),
-                P1 => return Some(RecoveredLiteral::numeric("1", ValueTy::U8)),
-                P2 => return Some(RecoveredLiteral::numeric("2", ValueTy::U8)),
-                P3 => return Some(RecoveredLiteral::numeric("3", ValueTy::U8)),
-                PTRUE => return Some(RecoveredLiteral::numeric("true", ValueTy::Bool)),
-                PFALSE => return Some(RecoveredLiteral::numeric("false", ValueTy::Bool)),
-                _ => {}
-            }
-        }
-        if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
-            if param1.inst == PU8 {
-                return Some(RecoveredLiteral::numeric(
-                    param1.para.to_string(),
-                    ValueTy::U8,
-                ));
-            }
-        }
-        if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
-            if param2.inst == PU16 {
-                return Some(RecoveredLiteral::numeric(
-                    u16::from_be_bytes(param2.para).to_string(),
-                    ValueTy::U16,
-                ));
-            }
-        }
-        if let Some(params) = node.as_any().downcast_ref::<IRNodeParams>() {
-            if let Some(data) = self.params_to_bytes(params) {
-                if let Some(literal) = self.decode_bytes_literal(data) {
-                    return Some(literal);
-                }
-            }
-        }
-        if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
-            use Bytecode::*;
-            if single.inst == CTO && single.para == ValueTy::Address as u8 {
-                if let Some(params) = single.subx.as_any().downcast_ref::<IRNodeParams>() {
-                    if let Some(data) = self.params_to_bytes(params)
-                        && data.len() == FieldAddress::SIZE
-                    {
-                        let addr = FieldAddress::must_vec(data.to_vec());
-                        if addr.check_version().is_ok() {
-                            return Some(RecoveredLiteral::address(addr.to_readable()));
-                        }
-                    }
-                }
-                if let Some(literal) = self.literal_from_node(&*single.subx) {
-                    if literal.ty == Some(ValueTy::Address) {
-                        return Some(literal);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn numeric_literal_from(&self, node: &dyn IRNode, ty: ValueTy) -> Option<RecoveredLiteral> {
-        use Bytecode::*;
-        if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
-            match leaf.inst {
-                P0 => return Some(RecoveredLiteral::numeric("0", ValueTy::U8)),
-                P1 => return Some(RecoveredLiteral::numeric("1", ValueTy::U8)),
-                P2 => return Some(RecoveredLiteral::numeric("2", ValueTy::U8)),
-                P3 => return Some(RecoveredLiteral::numeric("3", ValueTy::U8)),
-                PTRUE => return Some(RecoveredLiteral::numeric("true", ValueTy::Bool)),
-                PFALSE => return Some(RecoveredLiteral::numeric("false", ValueTy::Bool)),
-                _ => {}
-            }
-        }
-        if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
-            if param1.inst == PU8 {
-                return Some(RecoveredLiteral::numeric(
-                    param1.para.to_string(),
-                    ValueTy::U8,
-                ));
-            }
-        }
-        if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
-            if param2.inst == PU16 {
-                return Some(RecoveredLiteral::numeric(
-                    u16::from_be_bytes(param2.para).to_string(),
-                    ValueTy::U16,
-                ));
-            }
-        }
-        if let Some(params) = node.as_any().downcast_ref::<IRNodeParams>() {
-            if let Some(bytes) = self.params_to_bytes(params) {
-                if let Some(value) = self.bytes_to_u128(bytes) {
-                    return Some(RecoveredLiteral::numeric(value.to_string(), ty));
-                }
-            }
-        }
-        None
-    }
-
-    fn numeric_literal_from_cast(
-        &self,
-        node: &dyn IRNode,
-        target: ValueTy,
-    ) -> Option<RecoveredLiteral> {
-        self.numeric_literal_from(node, target)
-            .and_then(|lit| maybe!(lit.ty == Some(target), Some(lit), None))
-    }
-
-    fn decode_bytes_literal(&self, data: &[u8]) -> Option<RecoveredLiteral> {
-        if let Some(text) = self.ascii_show_string(data) {
-            return Some(RecoveredLiteral::text(format!(
-                "\"{}\"",
-                self.literals(text)
-            )));
-        }
-        None
-    }
-
-    fn params_to_bytes<'b>(&self, params: &'b IRNodeParams) -> Option<&'b [u8]> {
-        use Bytecode::*;
-        let header_len = match params.inst {
-            PBUF => 1,
-            PBUFL => 2,
-            _ => return None,
-        };
-        if params.para.len() < header_len {
-            return None;
-        }
-        let data_len = match header_len {
-            1 => params.para[0] as usize,
-            2 => {
-                let hi = params.para[0];
-                let lo = params.para[1];
-                u16::from_be_bytes([hi, lo]) as usize
-            }
-            _ => unreachable!(),
-        };
-        let start = header_len;
-        let end = start + data_len;
-        if params.para.len() < end {
-            return None;
-        }
-        Some(&params.para[start..end])
-    }
-
-    fn bytes_to_u128(&self, data: &[u8]) -> Option<u128> {
-        if data.len() > 16 {
-            return None;
-        }
-        let mut value = 0u128;
-        for &b in data {
-            value = (value << 8) | b as u128;
-        }
-        Some(value)
+        let ir = crate::lang::ir_recovered_literal(node)?;
+        Some(RecoveredLiteral {
+            text: ir.text,
+            ty: ir.ty,
+        })
     }
 
     fn resolve_type_check_name(&self, ty: u8) -> Option<&'static str> {
@@ -1180,11 +934,7 @@ impl<'a> Formater<'a> {
         if node.as_any().downcast_ref::<IRNodeWrapOne>().is_some() {
             return substr;
         }
-        let need_wrap = node.level() > 0
-            || node
-                .as_any()
-                .downcast_ref::<IRNodeSingle>()
-                .is_some_and(|inner| inner.inst == Bytecode::NOT);
+        let need_wrap = self.needs_postfix_lhs_wrap(node);
         if !need_wrap {
             return substr;
         }
@@ -1194,6 +944,14 @@ impl<'a> Formater<'a> {
             substr,
             format!("({})", substr)
         )
+    }
+
+    fn needs_postfix_lhs_wrap(&self, node: &dyn IRNode) -> bool {
+        node.level() > 0
+            || node
+                .as_any()
+                .downcast_ref::<IRNodeSingle>()
+                .is_some_and(|inner| inner.inst == Bytecode::NOT)
     }
 
     fn format_is_components(&self, node: &dyn IRNode) -> Option<(String, String)> {
@@ -1235,7 +993,7 @@ impl<'a> Formater<'a> {
             CTO => {
                 let substr = self.print_inline(&*node.subx);
                 let operand = maybe!(
-                    node.subx.level() > 0,
+                    self.needs_postfix_lhs_wrap(&*node.subx),
                     {
                         let t = substr.trim();
                         maybe!(
@@ -1249,7 +1007,7 @@ impl<'a> Formater<'a> {
                 match ValueTy::build(node.para) {
                     Ok(ValueTy::Bool) => format!("{} as bool", operand),
                     Ok(ValueTy::Address) => {
-                        let literal_casts_to_address = Syntax::extract_literal_value(&*node.subx)
+                        let literal_casts_to_address = crate::lang::ir_literal_value(&*node.subx)
                             .ok()
                             .flatten()
                             .is_some_and(|mut value| value.cast_addr().is_ok());
@@ -1456,11 +1214,11 @@ impl<'a> Formater<'a> {
     }
 
     fn format_data_bytes(&self, node: &IRNodeParams) -> String {
-        if let Some(data) = self.params_to_bytes(node) {
+        if let Some(data) = crate::lang::decode_pbuf_params_borrow(node) {
             if self.opt.recover_literals
-                && let Some(literal) = self.decode_bytes_literal(data)
+                && let Some(text) = crate::lang::ir_recover_quoted_bytes_literal(data)
             {
-                return literal.text;
+                return text;
             }
             return format!("0x{}", hex::encode(data));
         }
@@ -1833,22 +1591,4 @@ impl<'a> Formater<'a> {
         format!("{} {} {}", subx, op, suby)
     }
 
-    // Added: local `ascii_show_string` implementation to avoid relying on external imports.
-    fn ascii_show_string(&self, data: &[u8]) -> Option<String> {
-        if data.is_empty() {
-            return Some(String::new());
-        }
-        // Determine printable ASCII (common newline/tab are allowed).
-        if data
-            .iter()
-            .all(|&b| (b >= 0x20 && b <= 0x7E) || b == 0x0a || b == 0x0d || b == 0x09)
-        {
-            match std::str::from_utf8(data) {
-                Ok(s) => Some(s.to_string()),
-                Err(_) => None,
-            }
-        } else {
-            None
-        }
-    }
 }

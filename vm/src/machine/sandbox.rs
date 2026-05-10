@@ -95,8 +95,12 @@ pub fn sandbox_call(ctx: &mut dyn Context, spec: SandboxSpec) -> Ret<SandboxResu
     )?;
     temp_ctx.gas_initialize(gas_budget)?;
     let mut vmb = global_runtime_pool().checkout(hei);
-    let (gas_use, ret_val) =
-        vmb.raw_main_entry(&mut temp_ctx, CodeType::Bytecode, codes.into())?;
+    let codes: std::sync::Arc<[u8]> = codes.into();
+    let (gas_use, ret_val) = basis::interface::with_exec_from(
+        &mut temp_ctx,
+        basis::component::ExecFrom::Call,
+        |ctx| vmb.raw_main_entry(ctx, CodeType::Bytecode, codes),
+    )?;
     Ok(SandboxResult {
         use_gas: gas_use.total(),
         gas_use,

@@ -19,7 +19,7 @@ macro_rules! define_func_codes {
 
         pub fn ircode(mut self, ircodes: Vec<u8>) -> Ret<Self> {
             // ircodes should be raw block content (without IRBLOCK header)
-            let cds = convert_ir_to_bytecode(&ircodes)?;
+            let cds = convert_ir_to_runtime_bytecode(&ircodes)?;
             verify_bytecodes(&cds)?;
             self.func.code_stuff.conf = Uint1::from(CodeConf::from_type(CodeType::IRNode).raw());
             self.func.code_stuff.data = BytesW2::from(ircodes)?;

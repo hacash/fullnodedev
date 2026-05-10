@@ -267,6 +267,7 @@ impl Syntax {
                     };
                     codes.push(code as u8);
                 }
+                Token::Bytes(bytes) => codes.extend(bytes),
                 Token::Integer(n) if n <= u8::MAX as u128 => codes.push(n as u8),
                 _ => return errf!("bytecode format invalid"),
             }

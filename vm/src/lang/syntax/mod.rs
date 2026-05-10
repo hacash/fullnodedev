@@ -33,7 +33,6 @@ struct SlotStateV2 {
 struct ParserModeV2 {
     expect_retval: bool,
     loop_depth: usize,
-    is_ircode: bool,
 }
 
 #[derive(Default)]
@@ -105,11 +104,6 @@ impl Syntax {
 
     pub fn with_consts(mut self, consts: Vec<(String, Box<dyn IRNode>)>) -> Self {
         self.injected.ext_consts = Some(consts);
-        self
-    }
-
-    pub fn with_ircode(mut self, is_ircode: bool) -> Self {
-        self.mode.is_ircode = is_ircode;
         self
     }
 

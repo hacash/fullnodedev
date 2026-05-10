@@ -1,9 +1,10 @@
 use sys::*;
 
+use field::Address as FieldAddress;
+
 use super::ir::*;
 use super::rt::Token::*;
 use super::rt::*;
-use super::value::*;
 use super::*;
 // use super::rt::TokenType::*;
 
@@ -11,6 +12,8 @@ use super::native::*;
 
 include! {"print_option.rs"}
 include! {"decompilation_helper.rs"}
+include! {"ir_payload.rs"}
+include! {"ir_literal.rs"}
 
 pub mod syntax;
 pub use syntax::Syntax;
@@ -137,7 +140,7 @@ pub fn lang_to_irnode_with_sourcemap(langscript: &str) -> Ret<(IRNodeArray, Sour
     // That wrapper can appear after file-level `lib ...` / `const ...` prelude lines, so skip
     // those declarations before deciding whether the outermost braces are presentation-only.
     strip_display_root_block(&mut tks);
-    let syx = Syntax::new(tks).with_ircode(true);
+    let syx = Syntax::new(tks);
     syx.parse()
 }
 

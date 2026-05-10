@@ -271,7 +271,7 @@ impl Syntax {
                 };
                 Self::check_literal_as_cast(left.as_ref(), target_ty)?;
                 let same_ty =
-                    Self::literal_value_type(left.as_ref()).is_some_and(|ty| ty == target_ty);
+                    crate::lang::ir_literal_ty(left.as_ref()).is_some_and(|ty| ty == target_ty);
                 if !same_ty {
                     let node = std::mem::replace(left, push_empty());
                     *left = Self::build_cast_node(node, target_ty);
@@ -382,135 +382,8 @@ impl Syntax {
         }
     }
 
-    fn literal_value_type(node: &dyn IRNode) -> Option<ValueTy> {
-        use Bytecode::*;
-        if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
-            return match leaf.inst {
-                P0 | P1 | P2 | P3 => Some(ValueTy::U8),
-                PTRUE | PFALSE => Some(ValueTy::Bool),
-                PNBUF => Some(ValueTy::Bytes),
-                _ => None,
-            };
-        }
-        if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
-            if param1.inst == PU8 {
-                return Some(ValueTy::U8);
-            }
-        }
-        if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
-            if param2.inst == PU16 {
-                return Some(ValueTy::U16);
-            }
-        }
-        if let Some(params) = node.as_any().downcast_ref::<IRNodeParams>() {
-            return match params.inst {
-                PBUF | PBUFL => Some(ValueTy::Bytes),
-                _ => None,
-            };
-        }
-        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
-            return match single.inst {
-                CU8 => Some(ValueTy::U8),
-                CU16 => Some(ValueTy::U16),
-                CU32 => Some(ValueTy::U32),
-                CU64 => Some(ValueTy::U64),
-                CU128 => Some(ValueTy::U128),
-                CBYTES => Some(ValueTy::Bytes),
-                _ => None,
-            };
-        }
-        if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
-            if single.inst == CTO {
-                return ValueTy::build(single.para).ok();
-            }
-        }
-        None
-    }
-
-    fn params_literal_bytes(params: &IRNodeParams) -> Option<Vec<u8>> {
-        use Bytecode::*;
-        let header_len = match params.inst {
-            PBUF => 1,
-            PBUFL => 2,
-            _ => return None,
-        };
-        if params.para.len() < header_len {
-            return None;
-        }
-        let len = match header_len {
-            1 => params.para[0] as usize,
-            2 => u16::from_be_bytes([params.para[0], params.para[1]]) as usize,
-            _ => never!(),
-        };
-        if params.para.len() != header_len + len {
-            return None;
-        }
-        Some(params.para[header_len..].to_vec())
-    }
-
     pub(crate) fn extract_literal_value(node: &dyn IRNode) -> Ret<Option<Value>> {
-        use Bytecode::*;
-        if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
-            return Ok(Some(match leaf.inst {
-                P0 => Value::U8(0),
-                P1 => Value::U8(1),
-                P2 => Value::U8(2),
-                P3 => Value::U8(3),
-                PNIL => Value::Nil,
-                PTRUE => Value::Bool(true),
-                PFALSE => Value::Bool(false),
-                PNBUF => Value::Bytes(vec![]),
-                _ => return Ok(None),
-            }));
-        }
-        if let Some(param1) = node.as_any().downcast_ref::<IRNodeParam1>() {
-            return Ok(maybe!(
-                param1.inst == PU8,
-                Some(Value::U8(param1.para)),
-                None
-            ));
-        }
-        if let Some(param2) = node.as_any().downcast_ref::<IRNodeParam2>() {
-            return Ok(maybe!(
-                param2.inst == PU16,
-                Some(Value::U16(u16::from_be_bytes(param2.para))),
-                None
-            ));
-        }
-        if let Some(params) = node.as_any().downcast_ref::<IRNodeParams>() {
-            return Ok(Self::params_literal_bytes(params).map(Value::Bytes));
-        }
-        if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
-            let Some(mut value) = Self::extract_literal_value(&*single.subx)? else {
-                return Ok(None);
-            };
-            let cast = match single.inst {
-                CU8 => value.cast_u8(),
-                CU16 => value.cast_u16(),
-                CU32 => value.cast_u32(),
-                CU64 => value.cast_u64(),
-                CU128 => value.cast_u128(),
-                CBYTES => value.cast_bytes(),
-                _ => return Ok(None),
-            };
-            if cast.is_err() {
-                return Ok(None);
-            }
-            return Ok(Some(value));
-        }
-        if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
-            if single.inst != CTO {
-                return Ok(None);
-            }
-            let Some(mut value) = Self::extract_literal_value(&*single.subx)? else {
-                return Ok(None);
-            };
-            if value.cast_to(single.para).is_err() {
-                return Ok(None);
-            }
-            return Ok(Some(value));
-        }
-        Ok(None)
+        crate::lang::ir_literal_value(node)
     }
 
     fn check_uint_literal_overflow(n: u128, ty: ValueTy) -> Rerr {
