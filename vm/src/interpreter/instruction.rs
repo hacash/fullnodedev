@@ -172,16 +172,6 @@ fn half_up_round_u128_threshold(div: u128) -> u128 {
 }
 
 #[inline]
-fn ceil_div_u128(num: u128, div: u128, err: impl Fn() -> ItrErr) -> VmrtRes<u128> {
-    let quo = num / div;
-    if num % div == 0 {
-        Ok(quo)
-    } else {
-        quo.checked_add(1).ok_or_else(err)
-    }
-}
-
-#[inline]
 fn ceil_quot_if_rem_u128(quo: u128, rem: u128, err: impl Fn() -> ItrErr) -> VmrtRes<u128> {
     if rem == 0 {
         Ok(quo)
@@ -336,8 +326,8 @@ fn mul_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
     ahmtdocheck!(x, y, checked_mul, "mul")
 }
 
-fn div_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
-    ahmtdocheck!(x, y, checked_div, "div")
+fn div_checked(x: &Value, y: &Value, op: &'static str) -> VmrtRes<Value> {
+    ahmtdocheck!(x, y, checked_div, op)
 }
 
 fn mod_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
@@ -435,6 +425,7 @@ fn mul_xy_addsub_z_div_u128(
     z: u128,
     div: u128,
     add_z: bool,
+    round: FinRoundPolicy,
     err: impl Fn() -> ItrErr,
 ) -> VmrtRes<u128> {
     let (hi, lo) = mul_wide_u128(x, y);
@@ -443,8 +434,7 @@ fn mul_xy_addsub_z_div_u128(
     } else {
         sub_u256_u128(hi, lo, z).ok_or_else(|| err())?
     };
-    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(|| err())?;
-    Ok(quo)
+    div_u256_by_u128_with_round(hi, lo, div, round, err)
 }
 
 fn div_u256_by_u128_to_u128(hi: u128, lo: u128, d: u128) -> Option<(u128, u128)> {
@@ -593,6 +583,107 @@ fn round_half_up_div_u256_by_u128(
     Ok(quo)
 }
 
+fn round_half_even_quot_u128(
+    mut quo: u128,
+    rem: u128,
+    d: u128,
+    err: impl Fn() -> ItrErr,
+) -> VmrtRes<u128> {
+    if rem == 0 {
+        return Ok(quo);
+    }
+    let cmp_half = if rem > u128::MAX / 2 {
+        std::cmp::Ordering::Greater
+    } else {
+        rem.checked_mul(2).ok_or_else(&err)?.cmp(&d)
+    };
+    if cmp_half.is_gt() || (cmp_half.is_eq() && quo & 1 == 1) {
+        quo = quo.checked_add(1).ok_or_else(err)?;
+    }
+    Ok(quo)
+}
+
+fn round_quot_u128_with_policy(
+    mut quo: u128,
+    rem: u128,
+    d: u128,
+    round: FinRoundPolicy,
+    err: impl Fn() -> ItrErr,
+) -> VmrtRes<u128> {
+    match round {
+        FinRoundPolicy::Exact => {
+            if rem != 0 {
+                return Err(err());
+            }
+        }
+        FinRoundPolicy::Floor => {}
+        FinRoundPolicy::Ceil => {
+            quo = ceil_quot_if_rem_u128(quo, rem, &err)?;
+        }
+        FinRoundPolicy::HalfUp => {
+            if rem >= half_up_round_u128_threshold(d) {
+                quo = quo.checked_add(1).ok_or_else(&err)?;
+            }
+        }
+        FinRoundPolicy::HalfEven => {
+            quo = round_half_even_quot_u128(quo, rem, d, &err)?;
+        }
+    }
+    Ok(quo)
+}
+
+fn div_u256_by_u128_with_round(
+    hi: u128,
+    lo: u128,
+    d: u128,
+    round: FinRoundPolicy,
+    err: impl Fn() -> ItrErr,
+) -> VmrtRes<u128> {
+    let (quo, rem) = div_u256_by_u128_to_u128(hi, lo, d).ok_or_else(&err)?;
+    round_quot_u128_with_policy(quo, rem, d, round, err)
+}
+
+fn div_u256_by_u129_with_round(
+    hi: u128,
+    lo: u128,
+    d_hi: u128,
+    d_lo: u128,
+    round: FinRoundPolicy,
+    half_even_parity_offset: u128,
+    err: impl Fn() -> ItrErr,
+) -> VmrtRes<u128> {
+    let (mut quo, rem_hi, rem_lo) = div_u256_by_u129_to_u128(hi, lo, d_hi, d_lo).ok_or_else(&err)?;
+    let has_rem = rem_hi != 0 || rem_lo != 0;
+    match round {
+        FinRoundPolicy::Exact => {
+            if has_rem {
+                return Err(err());
+            }
+        }
+        FinRoundPolicy::Floor => {}
+        FinRoundPolicy::Ceil => {
+            if has_rem {
+                quo = quo.checked_add(1).ok_or_else(&err)?;
+            }
+        }
+        FinRoundPolicy::HalfUp => {
+            let (dbl_hi, dbl_lo) = add_u256(rem_hi, rem_lo, rem_hi, rem_lo).ok_or_else(&err)?;
+            if cmp_u256(dbl_hi, dbl_lo, d_hi, d_lo).is_ge() {
+                quo = quo.checked_add(1).ok_or_else(&err)?;
+            }
+        }
+        FinRoundPolicy::HalfEven => {
+            let (dbl_hi, dbl_lo) = add_u256(rem_hi, rem_lo, rem_hi, rem_lo).ok_or_else(&err)?;
+            let cmp_half = cmp_u256(dbl_hi, dbl_lo, d_hi, d_lo);
+            let final_quo_is_odd = (quo & 1) != (half_even_parity_offset & 1);
+            if cmp_half.is_gt() || (cmp_half.is_eq() && final_quo_is_odd) {
+                quo = quo.checked_add(1).ok_or_else(&err)?;
+            }
+        }
+    }
+    Ok(quo)
+}
+
 fn mul_div_half_up(
     lhs: u128,
     rhs: u128,
@@ -604,22 +695,6 @@ fn mul_div_half_up(
 ) -> VmrtRes<u128> {
     let (hi, lo) = mul_wide_u128(lhs, rhs);
     round_half_up_div_u256_by_u128(hi, lo, d, op, x, y, z)
-}
-
-fn weighted_sum_div_u128(
-    lhs: u128,
-    lhs_weight: u128,
-    rhs: u128,
-    rhs_weight: u128,
-    denom: u128,
-) -> Option<(u128, u128)> {
-    if denom == 0 {
-        return None;
-    }
-    let (lhs_hi, lhs_lo) = mul_wide_u128(lhs, lhs_weight);
-    let (rhs_hi, rhs_lo) = mul_wide_u128(rhs, rhs_weight);
-    let (num_hi, num_lo) = add_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo)?;
-    div_u256_by_u128_to_u128(num_hi, num_lo, denom)
 }
 
 fn scaled_abs_diff_div_u128(x: u128, reference: u128, scale: u128) -> Option<(u128, u128)> {
@@ -721,12 +796,22 @@ fn mulmod_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     cast_uint_result3(x, out, "mul_mod", x, y, z)
 }
 
-fn muldiv_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("mul_div", x, y, z));
+fn muldiv_checked(x: &Value, y: &Value, z: &Value, op: &'static str) -> VmrtRes<Value> {
+    muldiv_with_round_checked(x, y, z, FinRoundPolicy::Floor, op)
+}
+
+fn muldiv_with_round_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z));
     let div = require_nonzero_u128(z.extract_u128()?, err)?;
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
-    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
-    cast_uint_result3(x, quo, "mul_div", x, y, z)
+    let quo = div_u256_by_u128_with_round(hi, lo, div, round, err)?;
+    cast_uint_result3(x, quo, op, x, y, z)
 }
 
 fn muladd_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -739,15 +824,6 @@ fn muladd_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
         err,
     )?;
     cast_uint_result3(x, lo, "mul_add", x, y, z)
-}
-
-fn muldivup_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("mul_div_up", x, y, z));
-    let div = require_nonzero_u128(z.extract_u128()?, err)?;
-    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
-    let (quo, rem) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
-    let quo = ceil_quot_if_rem_u128(quo, rem, err)?;
-    cast_uint_result3(x, quo, "mul_div_up", x, y, z)
 }
 
 fn mul_shr_impl(x: &Value, y: &Value, z: &Value, op: &'static str, ceil_dropped: bool) -> VmrtRes<Value> {
@@ -767,33 +843,30 @@ fn mul_shr_impl(x: &Value, y: &Value, z: &Value, op: &'static str, ceil_dropped:
 }
 
 fn mulshr_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    mul_shr_impl(x, y, z, "mul_shr", false)
-}
-
-fn mulshrup_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    mul_shr_impl(x, y, z, "mul_shr_up", true)
+    mul_shr_impl(x, y, z, crate::rt::IR_NAME_MUL_SHR, false)
 }
 
 fn rpow_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("rpow", x, y, z));
+    let op = "rpow_half_up";
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z));
     let mut n = y.extract_u128()?;
     let base = z.extract_u128()?;
     if base == 0 {
         return Err(err());
     }
     if n == 0 {
-        return cast_uint_result3(x, base, "rpow", x, y, z);
+        return cast_uint_result3(x, base, op, x, y, z);
     }
     let mut bas = x.extract_u128()?;
     let mut out = if n & 1 == 1 { bas } else { base };
     while n > 1 {
         n >>= 1;
-        bas = mul_div_half_up(bas, bas, base, "rpow", x, y, z)?;
+        bas = mul_div_half_up(bas, bas, base, op, x, y, z)?;
         if n & 1 == 1 {
-            out = mul_div_half_up(out, bas, base, "rpow", x, y, z)?;
+            out = mul_div_half_up(out, bas, base, op, x, y, z)?;
         }
     }
-    cast_uint_result3(x, out, "rpow", x, y, z)
+    cast_uint_result3(x, out, op, x, y, z)
 }
 
 fn clamp_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -816,25 +889,17 @@ fn satsub_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
     saturating_uint_sub(x, y)
 }
 
-fn divup_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip("div_up", x, y));
+fn div_with_round_checked(
+    x: &Value,
+    y: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip(op, x, y));
     let div = require_nonzero_u128(y.extract_u128()?, err)?;
     let num = x.extract_u128()?;
-    let quo = ceil_div_u128(num, div, err)?;
-    cast_uint_result2(x, quo, "div_up", x, y)
-}
-
-fn divround_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip("div_round", x, y));
-    let div = require_nonzero_u128(y.extract_u128()?, err)?;
-    let num = x.extract_u128()?;
-    let mut quo = num / div;
-    let rem = num % div;
-    let threshold = half_up_round_u128_threshold(div);
-    if rem >= threshold {
-        quo = quo.checked_add(1).ok_or_else(err)?;
-    }
-    cast_uint_result2(x, quo, "div_round", x, y)
+    let quo = round_quot_u128_with_policy(num / div, num % div, div, round, err)?;
+    cast_uint_result2(x, quo, op, x, y)
 }
 
 fn mulsub_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -849,17 +914,15 @@ fn mulsub_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
     cast_uint_result3(x, lo, "mul_sub", x, y, z)
 }
 
-fn muldivround_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("mul_div_round", x, y, z));
-    let div = require_nonzero_u128(z.extract_u128()?, err)?;
-    let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
-    let quo = round_half_up_div_u256_by_u128(hi, lo, div, "mul_div_round", x, y, z)
-        .map_err(|_| err())?;
-    cast_uint_result3(x, quo, "mul_div_round", x, y, z)
-}
-
-fn muladddiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("mul_add_div", x, y, z, w));
+fn muladddiv_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    w: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w));
     let div = require_nonzero_u128(w.extract_u128()?, err)?;
     let quo = mul_xy_addsub_z_div_u128(
         x.extract_u128()?,
@@ -867,13 +930,21 @@ fn muladddiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Valu
         z.extract_u128()?,
         div,
         true,
+        round,
         err,
     )?;
-    cast_uint_result4(x, quo, "mul_add_div", x, y, z, w)
+    cast_uint_result4(x, quo, op, x, y, z, w)
 }
 
-fn mulsubdiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("mul_sub_div", x, y, z, w));
+fn mulsubdiv_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    w: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w));
     let div = require_nonzero_u128(w.extract_u128()?, err)?;
     let quo = mul_xy_addsub_z_div_u128(
         x.extract_u128()?,
@@ -881,33 +952,42 @@ fn mulsubdiv_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Valu
         z.extract_u128()?,
         div,
         false,
+        round,
         err,
     )?;
-    cast_uint_result4(x, quo, "mul_sub_div", x, y, z, w)
+    cast_uint_result4(x, quo, op, x, y, z, w)
 }
 
-fn mul3div_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("mul3_div", x, y, z, w));
+fn mul3div_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    w: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w));
     let div = require_nonzero_u128(w.extract_u128()?, err)?;
     let (hi, lo) = mul_wide_u128(x.extract_u128()?, y.extract_u128()?);
     let (hi, lo) = mul_u256_u128_to_u256_checked(hi, lo, z.extract_u128()?).ok_or_else(err)?;
-    let (quo, _) = div_u256_by_u128_to_u128(hi, lo, div).ok_or_else(err)?;
-    cast_uint_result4(x, quo, "mul3_div", x, y, z, w)
+    let quo = div_u256_by_u128_with_round(hi, lo, div, round, err)?;
+    cast_uint_result4(x, quo, op, x, y, z, w)
 }
 
-fn devscaled_floor_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("dev_scaled_floor", x, y, z));
-    let (quo, _) = scaled_abs_diff_div_u128(x.extract_u128()?, y.extract_u128()?, z.extract_u128()?)
-        .ok_or_else(err)?;
-    cast_uint_result3(x, quo, "dev_scaled_floor", x, y, z)
-}
-
-fn devscaled_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip3("dev_scaled", x, y, z));
-    let (quo, rem) = scaled_abs_diff_div_u128(x.extract_u128()?, y.extract_u128()?, z.extract_u128()?)
-        .ok_or_else(err)?;
-    let out = ceil_quot_if_rem_u128(quo, rem, err)?;
-    cast_uint_result3(x, out, "dev_scaled", x, y, z)
+fn devscaled_with_round_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip3(op, x, y, z));
+    let reference = y.extract_u128()?;
+    let scale = z.extract_u128()?;
+    let (quo, rem) = scaled_abs_diff_div_u128(x.extract_u128()?, reference, scale)
+        .ok_or_else(&err)?;
+    let out = round_quot_u128_with_policy(quo, rem, reference, round, err)?;
+    cast_uint_result3(x, out, op, x, y, z)
 }
 
 fn withinbps_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
@@ -919,14 +999,24 @@ fn withinbps_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Valu
     if reference == 0 || scale == 0 {
         return Err(err());
     }
+    if tolerance > scale {
+        return Err(err());
+    }
     let diff = value.abs_diff(reference);
     let (lhs_hi, lhs_lo) = mul_wide_u128(diff, scale);
     let (rhs_hi, rhs_lo) = mul_wide_u128(reference, tolerance);
     Ok(Value::bool(cmp_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).is_le()))
 }
 
-fn wavg2_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("wavg2", x, y, z, w));
+fn wavg2_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    w: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w));
     let lhs = x.extract_u128()?;
     let rhs = z.extract_u128()?;
     let wx = y.extract_u128()?;
@@ -936,7 +1026,7 @@ fn wavg2_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
         return Err(err());
     }
     if lhs == rhs {
-        return cast_uint_result4(x, lhs, "wavg2", x, y, z, w);
+        return cast_uint_result4(x, lhs, op, x, y, z, w);
     }
     let (base, diff, diff_weight) = if lhs < rhs {
         (lhs, rhs - lhs, wy)
@@ -944,13 +1034,20 @@ fn wavg2_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
         (rhs, lhs - rhs, wx)
     };
     let (part_hi, part_lo) = mul_wide_u128(diff, diff_weight);
-    let (part, _, _) = div_u256_by_u129_to_u128(part_hi, part_lo, den_hi, den_lo).ok_or_else(err)?;
+    let part = div_u256_by_u129_with_round(part_hi, part_lo, den_hi, den_lo, round, base, err)?;
     let out = base.checked_add(part).ok_or_else(err)?;
-    cast_uint_result4(x, out, "wavg2", x, y, z, w)
+    cast_uint_result4(x, out, op, x, y, z, w)
 }
 
-fn lerp_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
-    let err = || ItrErr::new(Arithmetic, &check_failed_tip4("lerp", x, y, z, w));
+fn lerp_checked(
+    x: &Value,
+    y: &Value,
+    z: &Value,
+    w: &Value,
+    round: FinRoundPolicy,
+    op: &'static str,
+) -> VmrtRes<Value> {
+    let err = || ItrErr::new(Arithmetic, &check_failed_tip4(op, x, y, z, w));
     let start = x.extract_u128()?;
     let end = y.extract_u128()?;
     let weight = z.extract_u128()?;
@@ -959,9 +1056,83 @@ fn lerp_checked(x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
         return Err(err());
     }
     let left_weight = base - weight;
-    let (quo, _) = weighted_sum_div_u128(start, left_weight, end, weight, base)
-        .ok_or_else(err)?;
-    cast_uint_result4(x, quo, "lerp", x, y, z, w)
+    let (lhs_hi, lhs_lo) = mul_wide_u128(start, left_weight);
+    let (rhs_hi, rhs_lo) = mul_wide_u128(end, weight);
+    let (num_hi, num_lo) = add_u256(lhs_hi, lhs_lo, rhs_hi, rhs_lo).ok_or_else(err)?;
+    let quo = div_u256_by_u128_with_round(num_hi, num_lo, base, round, err)?;
+    cast_uint_result4(x, quo, op, x, y, z, w)
+}
+
+fn invalid_fin_spec(spec: FinSpec) -> VmrtRes<Value> {
+    itr_err_fmt!(
+        InstParamsErr,
+        "invalid fin spec {} ({:?}, round {:?})",
+        spec.name,
+        spec.kernel,
+        spec.round
+    )
+}
+
+fn fin2_checked(spec: FinSpec, x: &Value, y: &Value) -> VmrtRes<Value> {
+    match spec.kernel {
+        FinKernel::Div => div_with_round_checked(x, y, spec.round_or_exact(), spec.name),
+        _ => invalid_fin_spec(spec),
+    }
+}
+
+fn fin3_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    let round = spec.round_or_exact();
+    match spec.kernel {
+        FinKernel::MulDiv | FinKernel::ScaledDiv => {
+            muldiv_with_round_checked(x, y, z, round, spec.name)
+        }
+        FinKernel::DevScaled => devscaled_with_round_checked(x, y, z, round, spec.name),
+        FinKernel::MulShr if round == FinRoundPolicy::Floor => {
+            mul_shr_impl(x, y, z, spec.name, false)
+        }
+        FinKernel::MulShr if round == FinRoundPolicy::Ceil => {
+            mul_shr_impl(x, y, z, spec.name, true)
+        }
+        _ => invalid_fin_spec(spec),
+    }
+}
+
+fn fin4_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    let round = spec.round_or_exact();
+    match spec.kernel {
+        FinKernel::MulAddDiv => muladddiv_checked(x, y, z, w, round, spec.name),
+        FinKernel::MulSubDiv => mulsubdiv_checked(x, y, z, w, round, spec.name),
+        FinKernel::Mul3Div => mul3div_checked(x, y, z, w, round, spec.name),
+        FinKernel::Wavg2 => wavg2_checked(x, y, z, w, round, spec.name),
+        FinKernel::Lerp => lerp_checked(x, y, z, w, round, spec.name),
+        _ => invalid_fin_spec(spec),
+    }
+}
+
+fn finp3_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    match spec.kernel {
+        FinKernel::AbsDiffLte => {
+            let xv = x.extract_u128()?;
+            let yv = y.extract_u128()?;
+            let tol = z.extract_u128()?;
+            Ok(Value::bool(xv.abs_diff(yv) <= tol))
+        }
+        _ => invalid_fin_spec(spec),
+    }
+}
+
+fn finp4_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value, w: &Value) -> VmrtRes<Value> {
+    match spec.kernel {
+        FinKernel::WithinBps => withinbps_checked(x, y, z, w),
+        _ => invalid_fin_spec(spec),
+    }
+}
+
+fn finpow3_checked(spec: FinSpec, x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    match spec.kernel {
+        FinKernel::RPow => rpow_checked(x, y, z),
+        _ => invalid_fin_spec(spec),
+    }
 }
 
 // the value is must within u32
@@ -1212,11 +1383,23 @@ mod shift_u64_tests {
     #[test]
     fn finance_rounding_and_saturating_ops_work() {
         assert_eq!(
-            divup_checked(&Value::U64(10), &Value::U64(3)).unwrap(),
+            div_with_round_checked(
+                &Value::U64(10),
+                &Value::U64(3),
+                FinRoundPolicy::Ceil,
+                "div_ceil",
+            )
+            .unwrap(),
             Value::U64(4)
         );
         assert_eq!(
-            divround_checked(&Value::U64(10), &Value::U64(6)).unwrap(),
+            div_with_round_checked(
+                &Value::U64(10),
+                &Value::U64(6),
+                FinRoundPolicy::HalfUp,
+                "div_half_up",
+            )
+            .unwrap(),
             Value::U64(2)
         );
         assert_eq!(
@@ -1240,7 +1423,14 @@ mod shift_u64_tests {
             Value::U64(66)
         );
         assert_eq!(
-            muldivround_checked(&Value::U64(5), &Value::U64(10), &Value::U64(6)).unwrap(),
+            muldiv_with_round_checked(
+                &Value::U64(5),
+                &Value::U64(10),
+                &Value::U64(6),
+                FinRoundPolicy::HalfUp,
+                "mul_div_half_up",
+            )
+            .unwrap(),
             Value::U64(8)
         );
         assert_eq!(
@@ -1249,6 +1439,8 @@ mod shift_u64_tests {
                 &Value::U64(3),
                 &Value::U64(4),
                 &Value::U64(5),
+                FinRoundPolicy::Floor,
+                "mul_add_div_floor",
             )
             .unwrap(),
             Value::U64(2)
@@ -1259,6 +1451,8 @@ mod shift_u64_tests {
                 &Value::U64(8),
                 &Value::U64(6),
                 &Value::U64(3),
+                FinRoundPolicy::Floor,
+                "mul_sub_div_floor",
             )
             .unwrap(),
             Value::U64(22)
@@ -1269,6 +1463,8 @@ mod shift_u64_tests {
                 &Value::U64(4),
                 &Value::U64(5),
                 &Value::U64(6),
+                FinRoundPolicy::Floor,
+                "mul3_div_floor",
             )
             .unwrap(),
             Value::U64(10)
@@ -1276,19 +1472,215 @@ mod shift_u64_tests {
     }
 
     #[test]
-    fn finance_guard_and_curve_ops_work() {
+    fn fin4_rounding_modes_work() {
         assert_eq!(
-            devscaled_checked(&Value::U64(10100), &Value::U64(10000), &Value::U64(10000))
-                .unwrap(),
-            Value::U64(100)
+            muladddiv_checked(
+                &Value::U64(2),
+                &Value::U64(3),
+                &Value::U64(4),
+                &Value::U64(5),
+                FinRoundPolicy::Ceil,
+                "mul_add_div_ceil",
+            )
+            .unwrap(),
+            Value::U64(2)
         );
         assert_eq!(
-            devscaled_floor_checked(&Value::U64(10001), &Value::U64(10000), &Value::U64(3))
-                .unwrap(),
+            muladddiv_checked(
+                &Value::U64(2),
+                &Value::U64(3),
+                &Value::U64(4),
+                &Value::U64(5),
+                FinRoundPolicy::HalfUp,
+                "mul_add_div_half_up",
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+        assert!(muladddiv_checked(
+            &Value::U64(2),
+            &Value::U64(3),
+            &Value::U64(4),
+            &Value::U64(6),
+            FinRoundPolicy::Exact,
+            "mul_add_div_exact",
+        )
+        .is_err());
+        assert_eq!(
+            muladddiv_checked(
+                &Value::U64(2),
+                &Value::U64(3),
+                &Value::U64(4),
+                &Value::U64(2),
+                FinRoundPolicy::Exact,
+                "mul_add_div_exact",
+            )
+            .unwrap(),
+            Value::U64(5)
+        );
+        assert_eq!(
+            wavg2_checked(
+                &Value::U64(101),
+                &Value::U64(1),
+                &Value::U64(100),
+                &Value::U64(1),
+                FinRoundPolicy::HalfUp,
+                "wavg2_half_up",
+            )
+            .unwrap(),
+            Value::U64(101)
+        );
+        assert_eq!(
+            lerp_checked(
+                &Value::U64(0),
+                &Value::U64(1),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::Ceil,
+                "lerp_ceil",
+            )
+            .unwrap(),
+            Value::U64(1)
+        );
+    }
+
+    #[test]
+    fn finance_half_even_rounding_modes_work() {
+        assert_eq!(
+            div_with_round_checked(
+                &Value::U64(5),
+                &Value::U64(2),
+                FinRoundPolicy::HalfEven,
+                "div_half_even",
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+        assert_eq!(
+            div_with_round_checked(
+                &Value::U64(7),
+                &Value::U64(2),
+                FinRoundPolicy::HalfEven,
+                "div_half_even",
+            )
+            .unwrap(),
+            Value::U64(4)
+        );
+        assert_eq!(
+            muldiv_with_round_checked(
+                &Value::U64(5),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::HalfEven,
+                "mul_div_half_even",
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+        assert_eq!(
+            muldiv_with_round_checked(
+                &Value::U64(7),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::HalfEven,
+                "mul_div_half_even",
+            )
+            .unwrap(),
+            Value::U64(4)
+        );
+        assert_eq!(
+            devscaled_with_round_checked(
+                &Value::U64(125),
+                &Value::U64(100),
+                &Value::U64(10),
+                FinRoundPolicy::HalfEven,
+                "dev_scaled_half_even",
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+        assert_eq!(
+            devscaled_with_round_checked(
+                &Value::U64(135),
+                &Value::U64(100),
+                &Value::U64(10),
+                FinRoundPolicy::HalfEven,
+                "dev_scaled_half_even",
+            )
+            .unwrap(),
+            Value::U64(4)
+        );
+        assert_eq!(
+            lerp_checked(
+                &Value::U64(0),
+                &Value::U64(1),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::HalfEven,
+                "lerp_half_even",
+            )
+            .unwrap(),
             Value::U64(0)
         );
         assert_eq!(
-            devscaled_checked(&Value::U64(10001), &Value::U64(10000), &Value::U64(3)).unwrap(),
+            lerp_checked(
+                &Value::U64(1),
+                &Value::U64(2),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::HalfEven,
+                "lerp_half_even",
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+        assert_eq!(
+            wavg2_checked(
+                &Value::U64(1),
+                &Value::U64(1),
+                &Value::U64(2),
+                &Value::U64(1),
+                FinRoundPolicy::HalfEven,
+                "wavg2_half_even",
+            )
+            .unwrap(),
+            Value::U64(2)
+        );
+    }
+
+    #[test]
+    fn finance_guard_and_curve_ops_work() {
+        assert_eq!(
+            devscaled_with_round_checked(
+                &Value::U64(10100),
+                &Value::U64(10000),
+                &Value::U64(10000),
+                FinRoundPolicy::Ceil,
+                "dev_scaled_ceil",
+            )
+            .unwrap(),
+            Value::U64(100)
+        );
+        assert_eq!(
+            devscaled_with_round_checked(
+                &Value::U64(10001),
+                &Value::U64(10000),
+                &Value::U64(3),
+                FinRoundPolicy::Floor,
+                "dev_scaled_floor",
+            )
+            .unwrap(),
+            Value::U64(0)
+        );
+        assert_eq!(
+            devscaled_with_round_checked(
+                &Value::U64(10001),
+                &Value::U64(10000),
+                &Value::U64(3),
+                FinRoundPolicy::Ceil,
+                "dev_scaled_ceil",
+            )
+            .unwrap(),
             Value::U64(1)
         );
         assert_eq!(
@@ -1317,6 +1709,8 @@ mod shift_u64_tests {
                 &Value::U64(1),
                 &Value::U64(300),
                 &Value::U64(3),
+                FinRoundPolicy::Floor,
+                "wavg2_floor",
             )
             .unwrap(),
             Value::U64(250)
@@ -1327,6 +1721,8 @@ mod shift_u64_tests {
                 &Value::U64(1),
                 &Value::U64(100),
                 &Value::U64(1),
+                FinRoundPolicy::Floor,
+                "wavg2_floor",
             )
             .unwrap(),
             Value::U64(100)
@@ -1337,6 +1733,8 @@ mod shift_u64_tests {
                 &Value::U128(u128::MAX),
                 &Value::U64(7),
                 &Value::U64(1),
+                FinRoundPolicy::Floor,
+                "wavg2_floor",
             )
             .unwrap(),
             Value::U64(7)
@@ -1347,6 +1745,8 @@ mod shift_u64_tests {
                 &Value::U128(u128::MAX),
                 &Value::U128(14),
                 &Value::U64(2),
+                FinRoundPolicy::Floor,
+                "wavg2_floor",
             )
             .unwrap(),
             Value::U128(10)
@@ -1357,6 +1757,8 @@ mod shift_u64_tests {
                 &Value::U64(200),
                 &Value::U64(1),
                 &Value::U64(4),
+                FinRoundPolicy::Floor,
+                "lerp_floor",
             )
             .unwrap(),
             Value::U64(125)
@@ -1367,51 +1769,147 @@ mod shift_u64_tests {
                 &Value::U64(100),
                 &Value::U64(1),
                 &Value::U64(4),
+                FinRoundPolicy::Floor,
+                "lerp_floor",
             )
             .unwrap(),
             Value::U64(175)
         );
         assert_eq!(
-            lerp_checked(&Value::U64(0), &Value::U64(1), &Value::U64(1), &Value::U64(2)).unwrap(),
+            lerp_checked(
+                &Value::U64(0),
+                &Value::U64(1),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::Floor,
+                "lerp_floor",
+            )
+            .unwrap(),
             Value::U64(0)
         );
         assert_eq!(
-            lerp_checked(&Value::U64(1), &Value::U64(0), &Value::U64(1), &Value::U64(2)).unwrap(),
+            lerp_checked(
+                &Value::U64(1),
+                &Value::U64(0),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::Floor,
+                "lerp_floor",
+            )
+            .unwrap(),
             Value::U64(0)
         );
         assert_eq!(
-            lerp_checked(&Value::U64(101), &Value::U64(100), &Value::U64(1), &Value::U64(2)).unwrap(),
-            wavg2_checked(&Value::U64(101), &Value::U64(1), &Value::U64(100), &Value::U64(1))
+            lerp_checked(
+                &Value::U64(101),
+                &Value::U64(100),
+                &Value::U64(1),
+                &Value::U64(2),
+                FinRoundPolicy::Floor,
+                "lerp_floor",
+            )
+            .unwrap(),
+            wavg2_checked(
+                &Value::U64(101),
+                &Value::U64(1),
+                &Value::U64(100),
+                &Value::U64(1),
+                FinRoundPolicy::Floor,
+                "wavg2_floor",
+            )
                 .unwrap()
         );
         assert_eq!(
-            lerp_checked(&Value::U64(7), &Value::U64(9), &Value::U64(0), &Value::U64(5)).unwrap(),
+            lerp_checked(
+                &Value::U64(7),
+                &Value::U64(9),
+                &Value::U64(0),
+                &Value::U64(5),
+                FinRoundPolicy::Floor,
+                "lerp_floor",
+            )
+            .unwrap(),
             Value::U64(7)
         );
         assert_eq!(
-            lerp_checked(&Value::U64(7), &Value::U64(9), &Value::U64(5), &Value::U64(5)).unwrap(),
+            lerp_checked(
+                &Value::U64(7),
+                &Value::U64(9),
+                &Value::U64(5),
+                &Value::U64(5),
+                FinRoundPolicy::Floor,
+                "lerp_floor",
+            )
+            .unwrap(),
             Value::U64(9)
         );
     }
 
     #[test]
     fn finance_guard_and_curve_ops_reject_invalid_params() {
-        assert!(devscaled_checked(&Value::U64(1), &Value::U64(0), &Value::U64(10)).is_err());
-        assert!(devscaled_checked(&Value::U64(1), &Value::U64(1), &Value::U64(0)).is_err());
-        assert!(devscaled_floor_checked(&Value::U64(1), &Value::U64(0), &Value::U64(10)).is_err());
-        assert!(devscaled_floor_checked(&Value::U64(1), &Value::U64(1), &Value::U64(0)).is_err());
+        assert!(devscaled_with_round_checked(
+            &Value::U64(1),
+            &Value::U64(0),
+            &Value::U64(10),
+            FinRoundPolicy::Ceil,
+            "dev_scaled_ceil",
+        )
+        .is_err());
+        assert!(devscaled_with_round_checked(
+            &Value::U64(1),
+            &Value::U64(1),
+            &Value::U64(0),
+            FinRoundPolicy::Ceil,
+            "dev_scaled_ceil",
+        )
+        .is_err());
+        assert!(devscaled_with_round_checked(
+            &Value::U64(1),
+            &Value::U64(0),
+            &Value::U64(10),
+            FinRoundPolicy::Floor,
+            "dev_scaled_floor",
+        )
+        .is_err());
+        assert!(devscaled_with_round_checked(
+            &Value::U64(1),
+            &Value::U64(1),
+            &Value::U64(0),
+            FinRoundPolicy::Floor,
+            "dev_scaled_floor",
+        )
+        .is_err());
         assert!(withinbps_checked(&Value::U64(1), &Value::U64(0), &Value::U64(1), &Value::U64(10)).is_err());
         assert!(withinbps_checked(&Value::U64(1), &Value::U64(1), &Value::U64(1), &Value::U64(0)).is_err());
-        assert!(lerp_checked(&Value::U64(1), &Value::U64(2), &Value::U64(1), &Value::U64(0)).is_err());
-        assert!(lerp_checked(&Value::U64(1), &Value::U64(2), &Value::U64(3), &Value::U64(2)).is_err());
+        assert!(lerp_checked(
+            &Value::U64(1),
+            &Value::U64(2),
+            &Value::U64(1),
+            &Value::U64(0),
+            FinRoundPolicy::Floor,
+            "lerp_floor",
+        )
+        .is_err());
+        assert!(lerp_checked(
+            &Value::U64(1),
+            &Value::U64(2),
+            &Value::U64(3),
+            &Value::U64(2),
+            FinRoundPolicy::Floor,
+            "lerp_floor",
+        )
+        .is_err());
     }
 
     #[test]
-    fn within_bps_allows_tolerance_over_scale() {
-        assert_eq!(
-            withinbps_checked(&Value::U64(1), &Value::U64(1), &Value::U64(11), &Value::U64(10)).unwrap(),
-            Value::Bool(true)
-        );
+    fn within_bps_rejects_tolerance_over_scale() {
+        assert!(withinbps_checked(
+            &Value::U64(1),
+            &Value::U64(1),
+            &Value::U64(11),
+            &Value::U64(10)
+        )
+        .is_err());
     }
 
     #[test]
@@ -1425,11 +1923,13 @@ mod shift_u64_tests {
             Value::U64(0)
         );
         assert_eq!(
-            mulshrup_checked(&Value::U64(3), &Value::U64(5), &Value::U16(256)).unwrap(),
+            mul_shr_impl(&Value::U64(3), &Value::U64(5), &Value::U16(256), "mul_shr_ceil", true)
+                .unwrap(),
             Value::U64(1)
         );
         assert_eq!(
-            mulshrup_checked(&Value::U64(0), &Value::U64(5), &Value::U16(300)).unwrap(),
+            mul_shr_impl(&Value::U64(0), &Value::U64(5), &Value::U16(300), "mul_shr_ceil", true)
+                .unwrap(),
             Value::U64(0)
         );
     }
@@ -1442,7 +1942,8 @@ mod shift_u64_tests {
         let tol_ok = Value::U64(1);
         let tol_bad = Value::U64(0);
         assert_eq!(
-            devscaled_checked(&x, &reference, &scale).unwrap(),
+            devscaled_with_round_checked(&x, &reference, &scale, FinRoundPolicy::Ceil, "dev_scaled_ceil")
+                .unwrap(),
             Value::U64(1)
         );
         assert_eq!(
@@ -1453,5 +1954,24 @@ mod shift_u64_tests {
             withinbps_checked(&x, &reference, &tol_bad, &scale).unwrap(),
             Value::Bool(false)
         );
+    }
+
+    #[test]
+    fn finp3_abs_diff_lte_works() {
+        let spec = fin_source_call_spec("abs_diff_lte").unwrap().unwrap();
+        assert_eq!(
+            finp3_checked(spec, &Value::U64(105), &Value::U64(100), &Value::U64(5)).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            finp3_checked(spec, &Value::U64(106), &Value::U64(100), &Value::U64(5)).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn fin_lookup_rejects_unknown_family_id() {
+        assert!(fin_spec_lookup(Bytecode::FINPOW3, 31).is_err());
+        assert!(fin_spec_lookup(Bytecode::FIN3, 31).is_err());
     }
 }

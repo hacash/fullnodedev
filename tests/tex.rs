@@ -4,7 +4,7 @@ mod tex {
 
     use basis::interface::{ActExec, StateOperat};
     use field::*;
-    use mint::action::{AssetCreate, ASSET_ALIVE_HEIGHT};
+    use mint::action::{ASSET_ALIVE_HEIGHT, AssetCreate};
     use protocol::{action::*, tex::*};
     use sys::*;
     use vm::contract::*;
@@ -99,7 +99,12 @@ mod tex {
         let main = vm_main_addr();
         let height = ASSET_ALIVE_HEIGHT;
         let tx = make_stub_tx(3, main, vec![main], 17);
-        let mut ctx = make_ctx_from_tx(height, &tx, Box::new(StateMem::default()), Box::new(MemLogs::default()));
+        let mut ctx = make_ctx_from_tx(
+            height,
+            &tx,
+            Box::new(StateMem::default()),
+            Box::new(MemLogs::default()),
+        );
         ctx.env.chain.fast_sync = true;
 
         let bls = Balance::hac(genesis::block_reward(height));
@@ -121,6 +126,12 @@ mod tex {
         let sta = CoreState::wrap(ctx.state());
         assert!(sta.asset(&Fold64::from(1025).unwrap()).is_some());
         let bls = sta.balance(&main).unwrap();
-        assert_eq!(bls.asset(Fold64::from(1025).unwrap()).unwrap().amount.uint(), 10000);
+        assert_eq!(
+            bls.asset(Fold64::from(1025).unwrap())
+                .unwrap()
+                .amount
+                .uint(),
+            10000
+        );
     }
 }

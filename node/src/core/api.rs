@@ -18,7 +18,8 @@ impl HNoder for HacashNode {
     }
 
     fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool, only_insert_txpool: bool) -> Rerr {
-        self.runtime.submit_transaction(txpkg, in_async, only_insert_txpool)
+        self.runtime
+            .submit_transaction(txpkg, in_async, only_insert_txpool)
     }
 
     fn submit_block(&self, blkpkg: &BlkPkg, in_async: bool) -> Rerr {

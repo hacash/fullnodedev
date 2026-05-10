@@ -15,7 +15,10 @@ fn decode_mainnet_prelude_tx(json: &str) -> Ret<Box<dyn Transaction>> {
 }
 
 pub fn register_protocol_extensions(setup: &mut protocol::setup::ProtocolSetup) {
-    setup.tx_codec(TransactionCoinbase::TYPE, create_mainnet_prelude_tx, decode_mainnet_prelude_tx);
+    setup.tx_codec(
+        TransactionCoinbase::TYPE,
+        create_mainnet_prelude_tx,
+        decode_mainnet_prelude_tx,
+    );
     crate::action::register(setup)
 }
-

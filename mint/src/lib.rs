@@ -27,7 +27,6 @@ pub mod hook;
 pub mod oprate;
 pub mod setup;
 
-
 use action::*;
 
 include! {"check/coinbase.rs"}

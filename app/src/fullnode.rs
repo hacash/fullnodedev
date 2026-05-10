@@ -249,9 +249,10 @@ impl FullnodeBuilder {
             .map_err(|e| errb("txpool", e))?
             .into();
         let minter: Arc<dyn Minter> = minter(&self.cnfini).map_err(|e| errb("minter", e))?.into();
-        let engine: Arc<dyn Engine> = engine(diskdb, self.engcnf.clone(), minter.clone(), scaner.clone())
-            .map_err(|e| errb("engine", e))?
-            .into();
+        let engine: Arc<dyn Engine> =
+            engine(diskdb, self.engcnf.clone(), minter.clone(), scaner.clone())
+                .map_err(|e| errb("engine", e))?
+                .into();
         minter.bind_engine(engine.clone());
         let hnoder: Arc<dyn HNoder> = hnoder(&self.cnfini, txpool, engine)
             .map_err(|e| errb("hnoder", e))?

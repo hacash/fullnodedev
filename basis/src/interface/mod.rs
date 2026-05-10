@@ -8,9 +8,9 @@ use num_bigint::BigUint;
 use field::*;
 use sys::*;
 
+pub use super::component::VmGasBuckets;
 use super::component::*;
 use super::config::*;
-pub use super::component::VmGasBuckets;
 
 include! {"peer.rs"}
 include! {"txpool.rs"}

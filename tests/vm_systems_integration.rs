@@ -34,7 +34,11 @@ fn insert_contract(state: &mut dyn State, addr: &ContractAddress, sto: &Contract
 
 fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
     Contract::new()
-        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+        .syst(
+            vm::contract::Abst::new(vm::rt::AbstCall::Construct)
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .func(
             Func::new(func_name)
                 .unwrap()
@@ -413,11 +417,19 @@ fn update_parent_keeps_child_cache_valid_by_reloading_parent_logic() {
     let parent = contract_addr(&main, 4002);
 
     let parent_v1 = Contract::new()
-        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+        .syst(
+            vm::contract::Abst::new(vm::rt::AbstCall::Construct)
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .func(Func::new("f").unwrap().fitsh("return 1").unwrap())
         .into_sto();
     let child_sto = Contract::new()
-        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+        .syst(
+            vm::contract::Abst::new(vm::rt::AbstCall::Construct)
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .inh(parent.to_addr())
         .func(
             Func::new("run")
@@ -446,10 +458,18 @@ fn update_parent_keeps_child_cache_valid_by_reloading_parent_logic() {
     execute_main_bytecode(&mut ctx1, codes).unwrap();
 
     let parent_v2 = Contract::new()
-        .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+        .syst(
+            vm::contract::Abst::new(vm::rt::AbstCall::Construct)
+                .fitsh("return 0")
+                .unwrap(),
+        )
         .func(Func::new("f").unwrap().fitsh("return 2").unwrap())
         .into_sto();
-    insert_contract(basis::interface::StateOperat::state(&mut ctx1), &parent, &parent_v2);
+    insert_contract(
+        basis::interface::StateOperat::state(&mut ctx1),
+        &parent,
+        &parent_v2,
+    );
     let (state_after_update, _logs) = ctx1.release();
 
     let tx2 = make_tx(3, main, vec![child.to_addr()], 17);
@@ -619,11 +639,8 @@ fn sandbox_call_respects_explicit_gas_max_byte() {
     let tx2 = make_tx(3, main, vec![], 64);
     let mut ctx2 = make_ctx(1, &tx2, Box::new(state2), Box::new(MemLogs::default()));
     protocol::operate::hac_add(&mut ctx2, &main, &Amount::unit238(1_000_000_000)).unwrap();
-    let callres = machine::sandbox_call(
-        &mut ctx2,
-        machine::SandboxSpec::new(caddr, "heavy"),
-    )
-    .unwrap();
+    let callres =
+        machine::sandbox_call(&mut ctx2, machine::SandboxSpec::new(caddr, "heavy")).unwrap();
     assert!(callres.use_gas > 0);
     assert_eq!(callres.ret_val, Value::U8(0));
 }

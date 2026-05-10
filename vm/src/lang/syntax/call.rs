@@ -7,6 +7,18 @@ enum ArgPackMode {
 
 impl Syntax {
     pub(super) fn parse_free_call(&mut self, id: String) -> Ret<Box<dyn IRNode>> {
+        if let Some((inst, fin_id, argc, hrtv)) = parse_fin_func_spec(&id)? {
+            let argvs = self.parse_value_container('(', ')', "call argv format error")?;
+            if argvs.len() != argc {
+                return errf!(
+                    "fin func call argv length must {} but got {}",
+                    argc,
+                    argvs.len()
+                );
+            }
+            return build_fin_ir_func(inst, fin_id, argvs, hrtv);
+        }
+
         if id == "tuple" {
             let args = self.parse_value_container('(', ')', "call argv format error")?;
             return pack_explicit_tuple(args);
@@ -454,6 +466,27 @@ impl Syntax {
     }
 }
 
+fn parse_fin_func_spec(id: &str) -> Ret<Option<(Bytecode, u8, usize, bool)>> {
+    let Some(spec) = fin_source_call_spec(id).map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    Ok(Some((
+        spec.family,
+        spec.id,
+        spec.argc().map_err(|e| e.to_string())? as usize,
+        true,
+    )))
+}
+
+fn build_fin_ir_func(
+    inst: Bytecode,
+    fin_id: u8,
+    argvs: Vec<Box<dyn IRNode>>,
+    hrtv: bool,
+) -> Ret<Box<dyn IRNode>> {
+    build_param1_multi_node(hrtv, inst, fin_id, argvs).map_err(|e| e.to_string())
+}
+
 fn build_ir_func(
     inst: Bytecode,
     pms: usize,
@@ -461,30 +494,34 @@ fn build_ir_func(
     rs: usize,
     argvs: Vec<Box<dyn IRNode>>,
 ) -> Ret<Box<dyn IRNode>> {
+    fn take_immediate_u8(arg: &dyn IRNode) -> Ret<u8> {
+        use Bytecode::*;
+        if let Some(node) = arg.as_any().downcast_ref::<IRNodeWrapOne>() {
+            return take_immediate_u8(&*node.node);
+        }
+        if let Some(node) = arg.as_any().downcast_ref::<IRNodeLeaf>() {
+            return match node.inst {
+                P0 => Ok(0),
+                P1 => Ok(1),
+                P2 => Ok(2),
+                P3 => Ok(3),
+                _ => errf!("ir func call param must be an immediate u8 literal"),
+            };
+        }
+        if let Some(node) = arg.as_any().downcast_ref::<IRNodeParam1>() {
+            if node.inst == PU8 {
+                return Ok(node.para);
+            }
+        }
+        errf!("ir func call param must be an immediate u8 literal")
+    }
+
     let mut argvs = std::collections::VecDeque::from(argvs);
     let hrtv = rs == 1;
     let take = |argvs: &mut std::collections::VecDeque<Box<dyn IRNode>>| argvs.pop_front().unwrap();
     let take_param = |argvs: &mut std::collections::VecDeque<Box<dyn IRNode>>| -> Ret<u8> {
-        use Bytecode::*;
         let arg = take(argvs);
-        let mut para = -1i16;
-        if let Some(node) = arg.as_any().downcast_ref::<IRNodeParam1>() {
-            para = node.para as i16;
-        } else if let Some(node) = arg.as_any().downcast_ref::<IRNodeParam2>() {
-            para = i16::from_be_bytes(node.para);
-        } else if let Some(node) = arg.as_any().downcast_ref::<IRNodeLeaf>() {
-            para = match node.inst {
-                P0 | GET0 => 0,
-                P1 | GET1 => 1,
-                P2 | GET2 => 2,
-                P3 | GET3 => 3,
-                _ => -1,
-            };
-        }
-        if para < 0 || para > 255 {
-            return errf!("ir func call param error");
-        }
-        Ok(para as u8)
+        take_immediate_u8(arg.as_ref())
     };
     if pms == 0 {
         return Ok(match args {
@@ -514,6 +551,15 @@ fn build_ir_func(
                 suby: take(&mut argvs),
                 subz: take(&mut argvs),
                 subw: take(&mut argvs),
+            }),
+            5 => Box::new(IRNodeQuint {
+                hrtv,
+                inst,
+                suba: take(&mut argvs),
+                subb: take(&mut argvs),
+                subc: take(&mut argvs),
+                subd: take(&mut argvs),
+                sube: take(&mut argvs),
             }),
             _ => return errf!("cannot match ir call type: params({}), args({})", pms, args),
         });

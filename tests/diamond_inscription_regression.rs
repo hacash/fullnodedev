@@ -310,8 +310,14 @@ fn diamond_inscription_edit_allows_sponsor_main_with_owner_signature() {
     act.execute(&mut ctx).unwrap();
 
     let dia = CoreState::wrap(ctx.state()).diamond(&diamond).unwrap();
-    assert_eq!(dia.inscripts.as_list()[0].content.to_readable_or_hex(), "edited".to_owned());
-    assert_eq!(balance_amount(&mut ctx, &payer), Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap());
+    assert_eq!(
+        dia.inscripts.as_list()[0].content.to_readable_or_hex(),
+        "edited".to_owned()
+    );
+    assert_eq!(
+        balance_amount(&mut ctx, &payer),
+        Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap()
+    );
 }
 
 #[test]
@@ -336,7 +342,11 @@ fn diamond_inscription_edit_rejects_missing_owner_signature_under_sponsor_mode()
     act.engraved_type = Uint1::from(1);
     act.engraved_content = BytesW1::from_str("edited").unwrap();
     let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("signature") || err.contains("failed"), "{}", err);
+    assert!(
+        err.contains("signature") || err.contains("failed"),
+        "{}",
+        err
+    );
 }
 
 #[test]
@@ -364,7 +374,10 @@ fn diamond_inscription_drop_allows_sponsor_main_with_owner_signature() {
 
     let dia = CoreState::wrap(ctx.state()).diamond(&diamond).unwrap();
     assert_eq!(dia.inscripts.length(), 0);
-    assert_eq!(balance_amount(&mut ctx, &payer), Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap());
+    assert_eq!(
+        balance_amount(&mut ctx, &payer),
+        Amount::mei(1_000_000).sub_mode_u128(&expect_cost).unwrap()
+    );
 }
 
 #[test]
@@ -387,7 +400,11 @@ fn diamond_inscription_drop_rejects_missing_owner_signature_under_sponsor_mode()
     act.index = Uint1::from(0);
     act.protocol_cost = calc_drop_inscription_protocol_cost(100);
     let err = act.execute(&mut ctx).unwrap_err();
-    assert!(err.contains("signature") || err.contains("failed"), "{}", err);
+    assert!(
+        err.contains("signature") || err.contains("failed"),
+        "{}",
+        err
+    );
 }
 
 #[test]

@@ -9,7 +9,8 @@ use field::*;
 use sys::*;
 
 fn install_test_registry() -> crate::setup::TestSetupScopeGuard {
-    let mut setup = crate::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff));
+    let mut setup =
+        crate::setup::new_standard_protocol_setup(|_, stuff| sys::calculate_hash(stuff));
     setup.action_codec(
         &[TestExtEnvReadOnly::KIND],
         action_env_try_create,
@@ -216,9 +217,10 @@ impl TestLevelNoopAction {
 
     fn meta(kind: u16) -> Ret<(ActScope, &'static str)> {
         match kind {
-            Self::TOP_ONLY_CAN_WITH_GUARD_KIND => {
-                Ok((ActScope::TOP_ONLY_CAN_WITH_GUARD, "Test top-only-can-with-guard"))
-            }
+            Self::TOP_ONLY_CAN_WITH_GUARD_KIND => Ok((
+                ActScope::TOP_ONLY_CAN_WITH_GUARD,
+                "Test top-only-can-with-guard",
+            )),
             Self::TOP_UNIQUE_KIND => Ok((ActScope::TOP_UNIQUE, "Test top-unique")),
             Self::CALL_ONLY_KIND => Ok((ActScope::CALL_ONLY, "Test call-only")),
             Self::AST_KIND => Ok((ActScope::AST, "Test ast leaf")),
@@ -629,7 +631,9 @@ fn test_block_execute_must_credit_reward_and_fees_to_default_prelude() {
         bls.hacash = Amount::mei(10);
         st.balance_set(&miner, &bls);
     }
-    let (mut state, _) = block.execute(chain, state_in, Box::new(EmptyLogs {})).unwrap();
+    let (mut state, _) = block
+        .execute(chain, state_in, Box::new(EmptyLogs {}))
+        .unwrap();
     let miner_bal = crate::state::CoreState::wrap(state.as_mut())
         .balance(&miner)
         .unwrap_or_default()
@@ -843,11 +847,7 @@ fn test_precheck_tx_actions_rejects_call_only_in_tx_tree() {
     let actions: Vec<Box<dyn Action>> = vec![Box::new(TestLevelNoopAction::call_only())];
 
     let err = precheck_tx_actions(TransactionType3::TYPE, &actions).unwrap_err();
-    assert!(
-        err.contains("CALL_ONLY") && err.contains("TOP"),
-        "{}",
-        err
-    );
+    assert!(err.contains("CALL_ONLY") && err.contains("TOP"), "{}", err);
 }
 
 #[test]
@@ -879,24 +879,36 @@ fn test_precheck_tx_actions_allows_nested_ast_leaf_action_on_type3() {
 
 #[test]
 fn test_guard_level_error_message_reports_top_and_ast_scope() {
-    let err = precheck_runtime_action(TransactionType3::TYPE, &HeightScope::new(), ExecFrom::Call).unwrap_err();
+    let err = precheck_runtime_action(TransactionType3::TYPE, &HeightScope::new(), ExecFrom::Call)
+        .unwrap_err();
     assert!(err.contains("GUARD") && err.contains("CALL"), "{}", err);
 }
 
 #[test]
 fn test_precheck_runtime_action_allows_call_only_from_action_call_at_top_ctx() {
-    precheck_runtime_action(TransactionType3::TYPE, &TestLevelNoopAction::call_only(), ExecFrom::Call).unwrap();
+    precheck_runtime_action(
+        TransactionType3::TYPE,
+        &TestLevelNoopAction::call_only(),
+        ExecFrom::Call,
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_precheck_runtime_action_rejects_call_only_without_action_call_origin() {
-    let err = precheck_runtime_action(TransactionType3::TYPE, &TestLevelNoopAction::call_only(), ExecFrom::Top).unwrap_err();
+    let err = precheck_runtime_action(
+        TransactionType3::TYPE,
+        &TestLevelNoopAction::call_only(),
+        ExecFrom::Top,
+    )
+    .unwrap_err();
     assert!(err.contains("CALL_ONLY") && err.contains("TOP"), "{}", err);
 }
 
 #[test]
 fn test_precheck_runtime_action_rejects_guard_from_action_call() {
-    let err = precheck_runtime_action(TransactionType3::TYPE, &HeightScope::new(), ExecFrom::Call).unwrap_err();
+    let err = precheck_runtime_action(TransactionType3::TYPE, &HeightScope::new(), ExecFrom::Call)
+        .unwrap_err();
     assert!(err.contains("GUARD") && err.contains("CALL"), "{}", err);
 }
 
@@ -1161,6 +1173,38 @@ fn test_type3_top_level_action_local_burn_factor_is_applied() {
 }
 
 #[test]
+fn test_type3_gas_max_zero_allows_plain_zero_surcharge_action() {
+    let _guard = install_test_registry();
+
+    let main = field::ADDRESS_ONEX.clone();
+    let to = field::ADDRESS_ZERO.clone();
+    let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1730000000);
+    tx.gas_max = Uint1::from(0);
+    tx.actions
+        .push(Box::new(HacToTrs::create_by(to, Amount::unit238(10))))
+        .unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&tx.main()).unwrap_or_default();
+        bls.hacash = Amount::unit238(10_000);
+        state.balance_set(&tx.main(), &bls);
+    }
+
+    tx.execute(&mut ctx).unwrap();
+    assert_eq!(ctx.gas_remaining(), 0);
+}
+
+#[test]
 fn test_ast_select_revert_restores_failed_child_only() {
     let _guard = install_test_registry();
     let tx = TransactionType3::new_by(
@@ -1358,7 +1402,12 @@ fn test_tx_req_sign_must_collect_nested_ast_child_actions() {
 
 #[test]
 fn test_precheck_runtime_action_rejects_ast_leaf_from_action_call() {
-    let err = precheck_runtime_action(TransactionType3::TYPE, &TestLevelNoopAction::ast(), ExecFrom::Call).unwrap_err();
+    let err = precheck_runtime_action(
+        TransactionType3::TYPE,
+        &TestLevelNoopAction::ast(),
+        ExecFrom::Call,
+    )
+    .unwrap_err();
     assert!(err.contains("AST") && err.contains("CALL"), "{}", err);
 }
 
@@ -1873,7 +1922,10 @@ fn test_tex_ledger_direct_write_rejects_call_context() {
     let mut ctx = build_tex_test_ctx(&tx);
     ctx.exec_from_set(ExecFrom::Call);
     let err = ctx.tex_ledger_mut_top().err().unwrap();
-    assert!(err.contains("tex ledger write only allowed in TOP context"), "{err}");
+    assert!(
+        err.contains("tex ledger write only allowed in TOP context"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -1888,7 +1940,10 @@ fn test_tex_ledger_direct_write_rejects_ast_context() {
     let mut ctx = build_tex_test_ctx(&tx);
     ctx.exec_from_set(ExecFrom::Ast);
     let err = ctx.tex_ledger_mut_top().err().unwrap();
-    assert!(err.contains("tex ledger write only allowed in TOP context"), "{err}");
+    assert!(
+        err.contains("tex ledger write only allowed in TOP context"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -1905,7 +1960,10 @@ fn test_p2sh_set_rejects_call_context() {
     let err = ctx
         .p2sh_set(Address::create_scriptmh([7u8; 20]), Box::new(DummyP2sh))
         .unwrap_err();
-    assert!(err.contains("p2sh_set only allowed in TOP context"), "{err}");
+    assert!(
+        err.contains("p2sh_set only allowed in TOP context"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -1922,7 +1980,10 @@ fn test_p2sh_set_rejects_ast_context() {
     let err = ctx
         .p2sh_set(Address::create_scriptmh([8u8; 20]), Box::new(DummyP2sh))
         .unwrap_err();
-    assert!(err.contains("p2sh_set only allowed in TOP context"), "{err}");
+    assert!(
+        err.contains("p2sh_set only allowed in TOP context"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -2066,8 +2127,24 @@ fn test_tex_diamond_settlement_assigns_fifo_across_interleaved_actions() {
         assert_eq!(state.diamond(&dia_a).unwrap().address, settlement);
         assert_eq!(state.diamond(&dia_b).unwrap().address, settlement);
         assert_eq!(state.diamond(&dia_c).unwrap().address, settlement);
-        assert_eq!(state.balance(&get1).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
-        assert_eq!(state.balance(&get2).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
+        assert_eq!(
+            state
+                .balance(&get1)
+                .unwrap_or_default()
+                .diamond
+                .to_diamond()
+                .unwrap(),
+            DiamondNumber::from(0u32)
+        );
+        assert_eq!(
+            state
+                .balance(&get2)
+                .unwrap_or_default()
+                .diamond
+                .to_diamond()
+                .unwrap(),
+            DiamondNumber::from(0u32)
+        );
     }
     assert_eq!(ctx.tex_ledger().dia, 0);
 
@@ -2077,11 +2154,51 @@ fn test_tex_diamond_settlement_assigns_fifo_across_interleaved_actions() {
     assert_eq!(state.diamond(&dia_b).unwrap().address, get1);
     assert_eq!(state.diamond(&dia_a).unwrap().address, get2);
     assert_eq!(state.diamond(&dia_c).unwrap().address, get2);
-    assert_eq!(state.balance(&pay1).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
-    assert_eq!(state.balance(&pay2).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
-    assert_eq!(state.balance(&get1).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(1u32));
-    assert_eq!(state.balance(&get2).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(2u32));
-    assert_eq!(state.balance(&settlement).unwrap_or_default().diamond.to_diamond().unwrap(), DiamondNumber::from(0u32));
+    assert_eq!(
+        state
+            .balance(&pay1)
+            .unwrap_or_default()
+            .diamond
+            .to_diamond()
+            .unwrap(),
+        DiamondNumber::from(0u32)
+    );
+    assert_eq!(
+        state
+            .balance(&pay2)
+            .unwrap_or_default()
+            .diamond
+            .to_diamond()
+            .unwrap(),
+        DiamondNumber::from(0u32)
+    );
+    assert_eq!(
+        state
+            .balance(&get1)
+            .unwrap_or_default()
+            .diamond
+            .to_diamond()
+            .unwrap(),
+        DiamondNumber::from(1u32)
+    );
+    assert_eq!(
+        state
+            .balance(&get2)
+            .unwrap_or_default()
+            .diamond
+            .to_diamond()
+            .unwrap(),
+        DiamondNumber::from(2u32)
+    );
+    assert_eq!(
+        state
+            .balance(&settlement)
+            .unwrap_or_default()
+            .diamond
+            .to_diamond()
+            .unwrap(),
+        DiamondNumber::from(0u32)
+    );
 }
 
 #[test]

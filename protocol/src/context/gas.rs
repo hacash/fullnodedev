@@ -194,14 +194,14 @@ impl GasCounter {
         if gas < 0 {
             return errf!("gas cost invalid");
         }
+        if gas == 0 {
+            return Ok(()); // do nothing
+        }
         if !self.running {
             return maybe!(self.max_charge.is_positive(),
                 errf!("gas already settled"),
                 errf!("gas not initialized")
             );
-        }
-        if gas == 0 {
-            return Ok(()); // do nothing
         }
         let Some(next) = self.remaining.checked_sub(gas) else {
             return errf!("gas has run out");

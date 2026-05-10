@@ -262,6 +262,12 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             itrparamu8!(codes, *pc)
         };
     }
+    macro_rules! fin_spec {
+        ($inst:expr) => {{
+            let id = pu8!();
+            fin_spec_lookup($inst, id)?
+        }};
+    }
     macro_rules! pty {
         () => {
             ops.peek()?.ty()
@@ -1000,32 +1006,38 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 ADD => binop_arithmetic(ops, add_checked)?,
                 SUB => binop_arithmetic(ops, sub_checked)?,
                 MUL => binop_arithmetic(ops, mul_checked)?,
-                DIV => binop_arithmetic(ops, div_checked)?,
+                DIV => binop_arithmetic(ops, |x, y| div_checked(x, y, crate::rt::IR_NAME_DIV))?,
                 MOD => binop_arithmetic(ops, mod_checked)?,
                 POW => binop_arithmetic(ops, pow_checked)?,
                 MAX => binop_arithmetic(ops, max_checked)?,
                 MIN => binop_arithmetic(ops, min_checked)?,
-                DIVUP => binop_arithmetic(ops, divup_checked)?,
-                DIVROUND => binop_arithmetic(ops, divround_checked)?,
+                FIN2 => {
+                    let spec = fin_spec!(Bytecode::FIN2);
+                    binop_arithmetic(ops, |x, y| fin2_checked(spec, x, y))?
+                }
+                FIN3 => {
+                    let spec = fin_spec!(Bytecode::FIN3);
+                    triop_arithmetic(ops, |x, y, z| fin3_checked(spec, x, y, z))?
+                }
                 SATADD => binop_arithmetic(ops, satadd_checked)?,
                 SATSUB => binop_arithmetic(ops, satsub_checked)?,
                 ABSDIFF => binop_arithmetic(ops, absdiff_checked)?,
                 ADDMOD => triop_arithmetic(ops, addmod_checked)?,
                 MULMOD => triop_arithmetic(ops, mulmod_checked)?,
-                MULDIV => triop_arithmetic(ops, muldiv_checked)?,
+                MULDIV => triop_arithmetic(ops, |x, y, z| {
+                    muldiv_checked(x, y, z, crate::rt::IR_NAME_MUL_DIV)
+                })?,
                 MULADD => triop_arithmetic(ops, muladd_checked)?,
                 MULSUB => triop_arithmetic(ops, mulsub_checked)?,
-                MULDIVUP => triop_arithmetic(ops, muldivup_checked)?,
-                MULDIVROUND => triop_arithmetic(ops, muldivround_checked)?,
                 MULSHR => triop_arithmetic(ops, mulshr_checked)?,
-                MULSHRUP => triop_arithmetic(ops, mulshrup_checked)?,
-                RPOW => {
+                FINPOW3 => {
+                    let spec = fin_spec!(Bytecode::FINPOW3);
                     let exp_bits = if ops.len() >= 3 {
                         let idx = ops.len() - 2;
                         match ops
                             .datas
                             .get(idx)
-                            .and_then(|v| v.to_uint().ok())
+                            .filter(|v| v.is_uint())
                             .and_then(|v| v.extract_u128().ok())
                         {
                             Some(exp) if exp > 0 => (u128::BITS - exp.leading_zeros()) as i64,
@@ -1035,17 +1047,21 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                         0
                     };
                     gas_add!(compute, raw, gst.rpow_extra(exp_bits));
-                    triop_arithmetic(ops, rpow_checked)?
+                    triop_arithmetic(ops, |x, y, z| finpow3_checked(spec, x, y, z))?
                 }
                 CLAMP => triop_arithmetic(ops, clamp_checked)?,
-                DEVSCALED => triop_arithmetic(ops, devscaled_checked)?,
-                DEVSCALEDFLOOR => triop_arithmetic(ops, devscaled_floor_checked)?,
-                MULADDDIV => quadop_arithmetic(ops, muladddiv_checked)?,
-                MULSUBDIV => quadop_arithmetic(ops, mulsubdiv_checked)?,
-                MUL3DIV => quadop_arithmetic(ops, mul3div_checked)?,
-                WITHINBPS => quadop_arithmetic(ops, withinbps_checked)?,
-                WAVG2 => quadop_arithmetic(ops, wavg2_checked)?,
-                LERP => quadop_arithmetic(ops, lerp_checked)?,
+                FIN4 => {
+                    let spec = fin_spec!(Bytecode::FIN4);
+                    quadop_arithmetic(ops, |x, y, z, w| fin4_checked(spec, x, y, z, w))?
+                }
+                FINP3 => {
+                    let spec = fin_spec!(Bytecode::FINP3);
+                    triop_arithmetic(ops, |x, y, z| finp3_checked(spec, x, y, z))?
+                }
+                FINP4 => {
+                    let spec = fin_spec!(Bytecode::FINP4);
+                    quadop_arithmetic(ops, |x, y, z, w| finp4_checked(spec, x, y, z, w))?
+                }
                 INC => unary_inc(ops.peek()?, pu8!())?,
                 DEC => unary_dec(ops.peek()?, pu8!())?,
                 SQRT => {

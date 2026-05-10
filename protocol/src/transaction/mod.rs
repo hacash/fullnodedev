@@ -69,7 +69,11 @@ fn decode_tx_type3(json: &str) -> Ret<Box<dyn Transaction>> {
 }
 
 pub fn register(setup: &mut crate::setup::ProtocolSetup) {
-    setup.tx_codec(DefaultPreludeTx::TYPE, create_default_prelude_tx, decode_default_prelude_tx);
+    setup.tx_codec(
+        DefaultPreludeTx::TYPE,
+        create_default_prelude_tx,
+        decode_default_prelude_tx,
+    );
     setup.tx_codec(TransactionType1::TYPE, create_tx_type1, decode_tx_type1);
     setup.tx_codec(TransactionType2::TYPE, create_tx_type2, decode_tx_type2);
     setup.tx_codec(TransactionType3::TYPE, create_tx_type3, decode_tx_type3);
@@ -78,6 +82,6 @@ pub fn register(setup: &mut crate::setup::ProtocolSetup) {
 /*
 // Trs list
 */
-combi_dynvec!{ DynVecTransaction,
+combi_dynvec! { DynVecTransaction,
     Uint4, Transaction, transaction_create, transaction_json_decode
 }

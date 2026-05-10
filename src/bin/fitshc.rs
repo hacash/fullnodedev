@@ -2,11 +2,7 @@ use field::*;
 use std::env;
 use std::fs;
 use std::path::Path;
-use vm::action::{
-    CONTRACT_STORE_LOWEST_FEE_PURITY,
-    CONTRACT_STORE_PERM_PERIODS,
-    ContractDeploy,
-};
+use vm::action::{CONTRACT_STORE_LOWEST_FEE_PURITY, CONTRACT_STORE_PERM_PERIODS, ContractDeploy};
 use vm::fitshc::compiler::compile;
 // use sys::*;
 use basis::interface::*;
@@ -177,9 +173,8 @@ fn main() {
     let nonce = d_nonce.unwrap_or(Uint4::from(nonce_val));
 
     let argv = d_argv.unwrap_or_default();
-    let protocol_cost = d_fee.unwrap_or_else(|| {
-        estimate_protocol_cost_auto(&txfee, nonce, argv.clone(), &sto)
-    });
+    let protocol_cost =
+        d_fee.unwrap_or_else(|| estimate_protocol_cost_auto(&txfee, nonce, argv.clone(), &sto));
 
     let mut action = ContractDeploy::default();
     action.protocol_cost = protocol_cost;

@@ -15,13 +15,18 @@ impl ProtocolAdapter {
         let nwkr = worker.fork();
         tasks.spawn_thread("node-msg-handler", move || {
             let rt = new_current_thread_tokio_rt();
-            rt.block_on(async move {
-                MsgHandler::start(hdl, nwkr).await
-            });
+            rt.block_on(async move { MsgHandler::start(hdl, nwkr).await });
         });
     }
 
-    pub(super) fn submit_transaction(&self, txpkg: &TxPkg, engine: Arc<dyn Engine>, txpool: Arc<dyn TxPool>, in_async: bool, only_insert_txpool: bool) -> Rerr {
+    pub(super) fn submit_transaction(
+        &self,
+        txpkg: &TxPkg,
+        engine: Arc<dyn Engine>,
+        txpool: Arc<dyn TxPool>,
+        in_async: bool,
+        only_insert_txpool: bool,
+    ) -> Rerr {
         let txread = txpkg.tx_read();
         engine.try_execute_tx(txread)?;
         if only_insert_txpool {
@@ -62,14 +67,25 @@ impl ProtocolAdapter {
     }
 }
 
-pub(crate) async fn get_status_try_sync_blocks(hdl: &MsgHandler, peer: Arc<Peer>, starthei: u64, remote_height: u64) {
+pub(crate) async fn get_status_try_sync_blocks(
+    hdl: &MsgHandler,
+    peer: Arc<Peer>,
+    starthei: u64,
+    remote_height: u64,
+) {
     let prevdo = hdl.doing_sync.load(Ordering::Relaxed);
     if prevdo + 2 > curtimes() {
-        if !hdl.sync_tracker.begin_or_refresh(&peer, starthei, remote_height) {
-            return
+        if !hdl
+            .sync_tracker
+            .begin_or_refresh(&peer, starthei, remote_height)
+        {
+            return;
         }
-    } else if !hdl.sync_tracker.begin_or_refresh(&peer, starthei, remote_height) {
-        return
+    } else if !hdl
+        .sync_tracker
+        .begin_or_refresh(&peer, starthei, remote_height)
+    {
+        return;
     }
     send_req_block_msg(hdl, peer, starthei).await;
 }
@@ -112,20 +128,20 @@ pub(crate) async fn receive_status(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u
     let status = HandshakeStatus::create(&buf);
     if status.is_err() {
         peer.disconnect();
-        return
+        return;
     }
     let (status, _) = status.unwrap();
     let my_status = create_status(hdl);
     if status.genesis_hash != my_status.genesis_hash {
         peer.disconnect();
-        return
+        return;
     }
     let tar_hei = *status.latest_height;
     let my_hei = *my_status.latest_height;
     if my_hei == 0 && tar_hei > 0 {
         let start_hei = 1;
         get_status_try_sync_blocks(hdl, peer, start_hei, tar_hei).await;
-        return
+        return;
     }
     if my_hei < tar_hei {
         let mut ubh = hdl.engine.config().unstable_block;
@@ -133,24 +149,26 @@ pub(crate) async fn receive_status(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u
             ubh = 255
         }
         let diff_hei = my_hei;
-        let _ = hdl.sync_tracker.begin_or_refresh(&peer, diff_hei + 1, tar_hei);
+        let _ = hdl
+            .sync_tracker
+            .begin_or_refresh(&peer, diff_hei + 1, tar_hei);
         send_req_block_hash_msg(peer, ubh as u8, diff_hei).await;
     }
 }
 
 pub(crate) async fn send_hashs(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u8>) {
     if buf.len() != 1 + 8 {
-        return
+        return;
     }
     let hnum = buf[0] as u64;
     if hnum > 80 {
-        return
+        return;
     }
     let endhei = u64::from_be_bytes(bufcut!(buf, 1, 9));
     let latest = hdl.engine.latest_block();
     let lathei = latest.height().uint();
     if endhei > lathei {
-        return
+        return;
     }
     let mut starthei = endhei - hnum;
     if hnum >= endhei {
@@ -162,7 +180,7 @@ pub(crate) async fn send_hashs(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u8>) 
     for hei in (starthei..=endhei).rev() {
         let curhx = store.block_hash(&BlockHeight::from(hei));
         if curhx.is_none() {
-            return
+            return;
         }
         reshxs.push(curhx.unwrap().to_vec());
     }
@@ -171,19 +189,19 @@ pub(crate) async fn send_hashs(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u8>) 
 
 pub(crate) async fn receive_hashs(hdl: &MsgHandler, peer: Arc<Peer>, mut buf: Vec<u8>) {
     if buf.len() < 8 {
-        return
+        return;
     }
     let hashs = buf.split_off(8);
     let end_hei = u64::from_be_bytes(bufcut!(buf, 0, 8));
     let hash_len = hashs.len();
     if hash_len == 0 || hash_len % 32 != 0 {
-        return
+        return;
     }
     let mut hash_num = hash_len as u64 / 32;
     let latest = hdl.engine.latest_block();
     let lathei = latest.height().uint();
     if end_hei > lathei {
-        return
+        return;
     }
     let dfhmax = hdl.engine.config().unstable_block as u64 + 1;
     if hash_num > dfhmax {
@@ -198,13 +216,13 @@ pub(crate) async fn receive_hashs(hdl: &MsgHandler, peer: Arc<Peer>, mut buf: Ve
     for hei in ((start_hei + 1)..=end_hei).rev() {
         let myhx = store.block_hash(&BlockHeight::from(hei));
         if myhx.is_none() {
-            return
+            return;
         }
         let myhx = myhx.unwrap();
         let hx = Fixed32::from(bufcut!(hashs, hi, hi + 32));
         if hx == myhx {
             get_status_try_sync_blocks(hdl, peer, hei + 1, end_hei).await;
-            return
+            return;
         }
         hi += 32;
     }
@@ -212,7 +230,7 @@ pub(crate) async fn receive_hashs(hdl: &MsgHandler, peer: Arc<Peer>, mut buf: Ve
 
 pub(crate) async fn send_blocks(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u8>) {
     if buf.len() != 8 {
-        return
+        return;
     }
     let starthei = u64::from_be_bytes(bufcut!(buf, 0, 8));
     let latest = hdl.engine.latest_block();
@@ -226,14 +244,14 @@ pub(crate) async fn send_blocks(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u8>)
     let mut blkdtsary = vec![];
     for hei in starthei..=lathei {
         let Some((_, blkdts)) = store.block_data_by_height(&BlockHeight::from(hei)) else {
-            return
+            return;
         };
         totalsize += blkdts.len();
         totalnum += 1;
         endhei = hei;
         blkdtsary.push(blkdts);
         if totalnum >= maxsendnum || totalsize >= maxsendsize {
-            break
+            break;
         }
     }
     let resblkdts = blkdtsary.concat();
@@ -242,14 +260,15 @@ pub(crate) async fn send_blocks(hdl: &MsgHandler, peer: Arc<Peer>, buf: Vec<u8>)
         starthei.to_be_bytes().to_vec(),
         endhei.to_be_bytes().to_vec(),
         resblkdts,
-    ].concat();
+    ]
+    .concat();
     let _ = peer.send_msg(MSG_BLOCK, msgbody).await;
 }
 
 pub(crate) async fn receive_blocks(hdl: &MsgHandler, peer: Arc<Peer>, mut buf: Vec<u8>) {
     if buf.len() < 3 * 8 {
         println!("data check failed");
-        return
+        return;
     }
     let blocks = buf.split_off(3 * 8);
     let latest_hei = u64::from_be_bytes(bufcut!(buf, 0, 8));
@@ -262,18 +281,22 @@ pub(crate) async fn receive_blocks(hdl: &MsgHandler, peer: Arc<Peer>, mut buf: V
         let _lk = inserting.lock().unwrap();
         flush!("{}({:.2}%) inserting...", end_hei, persent);
         eng.synchronize(blocks)
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     if let Err(e) = res {
         println!("{}", e);
-        return
+        return;
     }
     println!("ok.");
     if end_hei >= latest_hei {
-        hdl.sync_tracker.finish_if_done(&peer, end_hei + 1, latest_hei);
+        hdl.sync_tracker
+            .finish_if_done(&peer, end_hei + 1, latest_hei);
         println!("all blocks sync finished.");
-        return
+        return;
     }
-    hdl.sync_tracker.finish_if_done(&peer, end_hei + 1, latest_hei);
+    hdl.sync_tracker
+        .finish_if_done(&peer, end_hei + 1, latest_hei);
     let peer = hdl.switch_peer(peer);
     send_req_block_msg(hdl, peer, end_hei + 1).await;
 }
@@ -282,31 +305,31 @@ pub(crate) async fn handle_new_tx(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer>>,
     let engcnf = hdl.engine.config();
     let minter = hdl.engine.minter();
     let Ok(txpkg) = protocol::transaction::build_tx_package(body) else {
-        return
+        return;
     };
     let hxfe = txpkg.tx().hash_with_fee();
     // println!("handle_new_tx: {:?}", hxfe.to_hex());
     let (already, knowkey) = check_know(&hdl.knows, &hxfe, peer.clone());
     if already {
-        return
+        return;
     }
     if txpkg.fpur() < engcnf.lowest_fee_purity {
-        return
+        return;
     }
     if txpkg.data().len() > engcnf.max_tx_size {
-        return
+        return;
     }
     let txdatas = txpkg.data().to_vec();
     let txpr = txpkg.tx_read();
     if let Err(..) = hdl.engine.try_execute_tx(txpr) {
-        return
+        return;
     }
     if let Err(..) = minter.tx_submit(hdl.engine.as_read(), &txpkg) {
-        return
+        return;
     }
     let res = hdl.txpool.insert_by(txpkg, &|tx| minter.tx_pool_group(tx));
     if let Err(..) = res {
-        return
+        return;
     }
     let p2p = hdl.p2pmng.lock().unwrap();
     let p2p = p2p.as_ref().unwrap();
@@ -317,11 +340,11 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
     let eng = hdl.engine.clone();
     let engcnf = eng.config();
     if body.len() > engcnf.max_block_size {
-        return
+        return;
     }
     let mut blkhead = protocol::block::BlockIntro::default();
     if let Err(..) = blkhead.parse(&body) {
-        return
+        return;
     }
     let blkhei = blkhead.height().uint();
     let blkhx = blkhead.hash();
@@ -329,7 +352,7 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
     // println!("knows: {:?}", hdl.knows);
     // println!("handle_new_block {} already: {}", blkhx.to_hex(), already);
     if already {
-        return
+        return;
     }
     let mintckr = eng.minter();
     let sto = eng.store();
@@ -340,7 +363,7 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
                 let p2p = hdl.p2pmng.lock().unwrap();
                 let p2p = p2p.as_ref().unwrap();
                 p2p.broadcast_message(0, knowkey, MSG_BLOCK_DISCOVER, body);
-                return
+                return;
             }
             RetBlkFound::Normal => {}
         }
@@ -351,7 +374,7 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
     let latest = eng.latest_block();
     let lathei = latest.height().uint();
     if blkhei <= root_hei {
-        return
+        return;
     }
     if blkhei > lathei + 1 {
         if let Some(ref pr) = peer {
@@ -360,17 +383,20 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
         if lathei + heispan + 1 < blkhei {
             println!(
                 "[P2P] ignore future block height={} root_height={} local_head={} store_height={} during history sync",
-                blkhei, root_hei, lathei, status.last_height.uint(),
+                blkhei,
+                root_hei,
+                lathei,
+                status.last_height.uint(),
             );
         }
-        return
+        return;
     }
     if let Err(..) = mintckr.blk_arrive(&blkhead, &body, sto.as_ref()) {
-        return
+        return;
     }
     let blkpkg = protocol::block::build_block_package(body.clone());
     if let Err(..) = blkpkg {
-        return
+        return;
     }
     let mut blkp = blkpkg.unwrap();
     blkp.set_origin(BlkOrigin::Discover);
@@ -385,8 +411,15 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
     let inserting = hdl.inserting.clone();
     let res = tokio::task::spawn_blocking(move || {
         let _lk = inserting.lock().unwrap();
-        print!("block {} ...{}...{} txs{:2} insert at {} {}",
-            blkhei, hex::encode(&hxstrt), hex::encode(&hxtail), txs, &ctshow()[11..], mshow);
+        print!(
+            "block {} ...{}...{} txs{:2} insert at {} {}",
+            blkhei,
+            hex::encode(&hxstrt),
+            hex::encode(&hxtail),
+            txs,
+            &ctshow()[11..],
+            mshow
+        );
         let r = engptr.discover(blkp);
         if let Err(e) = &r {
             println!("Error: {}", e);
@@ -396,9 +429,11 @@ pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer
             mintckr2.tx_pool_refresh(engptr.as_ref().as_read(), txpool.as_ref(), thsx, blkhei);
         }
         r
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     if res.is_err() {
-        return
+        return;
     }
     let p2p = hdl.p2pmng.lock().unwrap();
     let p2p = p2p.as_ref().unwrap();
@@ -411,7 +446,7 @@ fn check_know(mine: &Knowledge, hxkey: &Hash, peer: Option<Arc<Peer>>) -> (bool,
         pr.knows.add(knowkey.clone());
     }
     if mine.check(&knowkey) {
-        return (true, knowkey)
+        return (true, knowkey);
     }
     mine.add(knowkey.clone());
     (false, knowkey)
@@ -419,13 +454,13 @@ fn check_know(mine: &Knowledge, hxkey: &Hash, peer: Option<Arc<Peer>>) -> (bool,
 
 fn may_show_miner_detail(engcnf: &EngineConf, blkp: &BlkPkg) -> String {
     if !engcnf.show_miner_name {
-        return s!("")
+        return s!("");
     }
     let Ok(ptx) = blkp.block().prelude_transaction() else {
-        return s!("")
+        return s!("");
     };
     let Some(author) = ptx.author() else {
-        return s!("")
+        return s!("");
     };
     let adrt = author.to_readable().drain(..9).collect::<String>();
     let message = ptx

@@ -38,6 +38,7 @@ fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRe
     let (instable, jumpdests) = verify_valid_instruction(codes, max_push_buf_len)?;
     // check jump dests
     verify_jump_dests(&instable, &jumpdests)?;
+    verify_simple_stack_prefix(codes)?;
     // ok finish
     Ok(instable)
 }
@@ -140,6 +141,10 @@ fn verify_valid_instruction(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<(V
                     return itr_err_fmt!(NativeEnvError, "native env idx {} not found", idx)
                 }
             }
+            _ if is_fin_family(inst) => {
+                let sub = pu8!();
+                verify_fin_runtime_supported(inst, sub)?;
+            }
             CTO => {
                 let _ = parse_cto_target_ty_param(pu8!())?;
             }
@@ -185,6 +190,68 @@ fn verify_jump_dests(instable: &[u8], jumpdests: &[isize]) -> VmrtErr {
         }
     }
     // finish
+    Ok(())
+}
+
+/// Lightweight FIN stack sanity check.
+///
+/// Runtime frames may legitimately start with an argv value on the operand
+/// stack, and bytecode can use branches, packed containers, calls, locals, and
+/// other dynamic-stack operations. A general verifier here would either become
+/// a real abstract interpreter or reject valid contracts. Keep this deliberately
+/// narrow: only catch the most obvious FIN underflow in a literal-only prefix.
+fn verify_simple_stack_prefix(codes: &[u8]) -> VmrtErr {
+    const ENTRY_STACK_ALLOWANCE: i32 = 1;
+    let mut depth: i32 = ENTRY_STACK_ALLOWANCE;
+    let mut i = 0usize;
+    while i < codes.len() {
+        let inst: Bytecode = std_mem_transmute!(codes[i]);
+        let meta = inst.metadata();
+        i += 1;
+
+        let pend = match inst {
+            PBUF => {
+                if i >= codes.len() {
+                    return itr_err_code!(InstParamsErr);
+                }
+                i + 1 + codes[i] as usize
+            }
+            PBUFL => {
+                if i + 2 > codes.len() {
+                    return itr_err_code!(InstParamsErr);
+                }
+                let len = u16::from_be_bytes(codes[i..i + 2].try_into().unwrap()) as usize;
+                i + 2 + len
+            }
+            _ => i + meta.param as usize,
+        };
+        if pend > codes.len() {
+            return itr_err_code!(InstParamsErr);
+        }
+
+        if matches!(
+            inst,
+            PU8 | PU16 | PBUF | PBUFL | P0 | P1 | P2 | P3 | PNIL | PNBUF | PTRUE | PFALSE
+        ) {
+            depth += 1;
+            i = pend;
+            continue;
+        }
+
+        if is_fin_family(inst) {
+            let input = meta.input as i32;
+            if depth < input {
+                return itr_err_fmt!(
+                    StackError,
+                    "bytecode {:?} requires {} stack values but only {} available",
+                    inst,
+                    input,
+                    depth
+                );
+            }
+        }
+        break;
+    }
     Ok(())
 }
 
@@ -296,5 +363,61 @@ mod call_verify_tests {
         let err = verify_bytecodes(&codes).unwrap_err();
         assert_eq!(err.0, ItrErrCode::InstParamsErr);
         assert!(err.1.contains("ACTION id 255 not found"));
+    }
+}
+
+#[cfg(test)]
+mod fin_verify_tests {
+    use super::*;
+
+    #[test]
+    fn verify_rejects_obvious_fin_underflow() {
+        let fin_id = fin_source_call_spec("mul_div_floor").unwrap().unwrap().id;
+        let codes = vec![Bytecode::P1 as u8, Bytecode::FIN3 as u8, fin_id, Bytecode::END as u8];
+        let err = verify_bytecodes(&codes).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::StackError);
+    }
+
+    #[test]
+    fn verify_accepts_simple_fin_prefix() {
+        let fin_id = fin_source_call_spec("mul_div_floor").unwrap().unwrap().id;
+        let codes = vec![
+            Bytecode::P1 as u8,
+            Bytecode::P2 as u8,
+            Bytecode::P3 as u8,
+            Bytecode::FIN3 as u8,
+            fin_id,
+            Bytecode::END as u8,
+        ];
+        assert!(verify_bytecodes(&codes).is_ok());
+    }
+
+    #[test]
+    fn verify_rejects_unknown_finp_id() {
+        let codes = vec![
+            Bytecode::P0 as u8,
+            Bytecode::P0 as u8,
+            Bytecode::P0 as u8,
+            Bytecode::FINP3 as u8,
+            32,
+            Bytecode::END as u8,
+        ];
+        let err = verify_bytecodes(&codes).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstParamsErr);
+    }
+
+    #[test]
+    fn verify_rejects_unknown_finpow3_op_id() {
+        let fin_id = 31;
+        let codes = vec![
+            Bytecode::P1 as u8,
+            Bytecode::P1 as u8,
+            Bytecode::P1 as u8,
+            Bytecode::FINPOW3 as u8,
+            fin_id,
+            Bytecode::END as u8,
+        ];
+        let err = verify_bytecodes(&codes).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstParamsErr);
     }
 }

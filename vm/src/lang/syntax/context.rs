@@ -76,8 +76,8 @@ impl Syntax {
         if let Some(state) = self.slots.get(&idx) {
             return Ok(*state);
         }
-        // Keep compatibility with decompiled source without source-map metadata:
-        // `$n` aliases may appear without an explicit local declaration and must stay writable.
+        // Decompiled source without source-map metadata can refer to raw `$n` slots.
+        // Those slots may appear without an explicit local declaration and must stay writable.
         let _ = idx;
         Ok(SlotStateV2 { mutable: true })
     }

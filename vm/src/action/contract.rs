@@ -30,7 +30,7 @@ action_define! { ContractDeploy, 40,
         format!("Deploy smart contract with nonce {}", *self.nonce)
     }),
     (self, ctx, _gas {
-        if self._marks_.not_zero() { // compatibility for future
+        if self._marks_.not_zero() { // reserved marks must stay zero
             return xerrf!("marks bytes invalid")
         }
         let hei = ctx.env().block.height;

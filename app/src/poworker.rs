@@ -10,9 +10,9 @@ use serde_json::Value as JV;
 use basis::difficulty::*;
 use basis::interface::*;
 use field::*;
+use mint::TransactionCoinbase;
 use mint::genesis::*;
 use protocol::block::*;
-use mint::TransactionCoinbase;
 use sys::*;
 
 include! {"util.rs"}

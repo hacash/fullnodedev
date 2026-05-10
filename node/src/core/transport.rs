@@ -21,9 +21,8 @@ impl TransportAdapter {
             imtip = " with multi thread."
         }
         println!("[P2P] Start and listening on {}{}", self.cnf.listen, imtip);
-        let _ = new_tokio_rt(is_multi_thread).block_on(async move {
-            P2PManage::start(p2p, worker).await
-        });
+        let _ = new_tokio_rt(is_multi_thread)
+            .block_on(async move { P2PManage::start(p2p, worker).await });
     }
 
     pub(super) fn peer_prints(&self) -> Vec<String> {
@@ -65,11 +64,11 @@ pub(crate) async fn connect_stable_then_boot(p2p: &P2PManage) -> Rerr {
 
 pub(crate) async fn connect_stable_nodes(p2p: &P2PManage) -> Rerr {
     if !p2p.cnf.use_stable_nodes {
-        return Ok(())
+        return Ok(());
     }
     let addrs = p2p.load_stable_nodes();
     if addrs.is_empty() {
-        return Ok(())
+        return Ok(());
     }
     print!("[P2P] Connect {} stable nodes", addrs.len());
     for ndip in &addrs {
@@ -106,7 +105,11 @@ pub(crate) async fn connect_node(p2p: &P2PManage, addr: SocketAddr) -> Ret<Arc<P
     handle_conn(p2p, conn, true).await
 }
 
-pub(crate) async fn handle_conn(p2p: &P2PManage, mut conn: TcpStream, report_me: bool) -> Ret<Arc<Peer>> {
+pub(crate) async fn handle_conn(
+    p2p: &P2PManage,
+    mut conn: TcpStream,
+    report_me: bool,
+) -> Ret<Arc<Peer>> {
     tcp_check_handshake(&mut conn, 5).await?;
     let mynodeinfo = p2p.pick_my_node_info();
     let mndf = mynodeinfo.clone();
@@ -116,7 +119,11 @@ pub(crate) async fn handle_conn(p2p: &P2PManage, mut conn: TcpStream, report_me:
     insert_peer(p2p, conn, mynodeinfo).await
 }
 
-pub(crate) async fn insert_peer(p2p: &P2PManage, conn: TcpStream, mynodeinfo: Vec<u8>) -> Ret<Arc<Peer>> {
+pub(crate) async fn insert_peer(
+    p2p: &P2PManage,
+    conn: TcpStream,
+    mynodeinfo: Vec<u8>,
+) -> Ret<Arc<Peer>> {
     let (peer, conn_read) = try_create_peer(p2p, conn, mynodeinfo).await?;
     let dropeds = p2p.insert(peer.clone()).await?;
     p2p.delay_close_peers(dropeds, 15).await;
@@ -124,26 +131,34 @@ pub(crate) async fn insert_peer(p2p: &P2PManage, conn: TcpStream, mynodeinfo: Ve
     Ok(peer)
 }
 
-pub(crate) async fn try_create_peer(p2p: &P2PManage, mut stream: TcpStream, mynodeinfo: Vec<u8>) -> Ret<(Arc<Peer>, OwnedReadHalf)> {
+pub(crate) async fn try_create_peer(
+    p2p: &P2PManage,
+    mut stream: TcpStream,
+    mynodeinfo: Vec<u8>,
+) -> Ret<(Arc<Peer>, OwnedReadHalf)> {
     let conn = &mut stream;
     let (ty, body) = tcp_read_msg(conn, 5).await?;
     if MSG_REMIND_ME_IS_PUBLIC == ty {
-        return errf!("ok")
+        return errf!("ok");
     } else if MSG_REQUEST_NODE_KEY_FOR_PUBLIC_CHECK == ty {
         let buf = p2p.cnf.node_key.clone();
         let _ = AsyncWriteExt::write_all(conn, &buf).await;
-        return errf!("ok")
+        return errf!("ok");
     } else if MSG_REQUEST_NEAREST_PUBLIC_NODES == ty {
         let peerlist = p2p.publics();
         let (count, adrbts) = serialize_public_nodes(&peerlist, 100);
         let retbts = vec![vec![count as u8], adrbts].concat();
         let _ = AsyncWriteExt::write_all(conn, &retbts).await;
-        return errf!("ok")
+        return errf!("ok");
     }
     Peer::create_with_msg(stream, ty, body, mynodeinfo).await
 }
 
-pub(crate) async fn handle_peer_message(p2p: &P2PManage, peer: Arc<Peer>, conn_read: OwnedReadHalf) -> Rerr {
+pub(crate) async fn handle_peer_message(
+    p2p: &P2PManage,
+    peer: Arc<Peer>,
+    conn_read: OwnedReadHalf,
+) -> Rerr {
     let peer1 = peer.clone();
     let peer2 = peer.clone();
     let peer3 = peer.clone();
@@ -155,9 +170,7 @@ pub(crate) async fn handle_peer_message(p2p: &P2PManage, peer: Arc<Peer>, conn_r
     tokio::spawn(async move {
         do_handle_pmsg(peersnaprx, peertabletx, hdl2, peer2, conn_read).await;
         let hdlcp = hdl3;
-        tokio::spawn(async move {
-            hdlcp.on_disconnect(peer3).await
-        });
+        tokio::spawn(async move { hdlcp.on_disconnect(peer3).await });
     });
     tokio::spawn(async move {
         hdl1.on_connect(peer1).await;
@@ -165,11 +178,21 @@ pub(crate) async fn handle_peer_message(p2p: &P2PManage, peer: Arc<Peer>, conn_r
     Ok(())
 }
 
-pub(crate) async fn do_handle_pmsg(peersnaprx: PeerSnapRx, peertabletx: PeerTableCmdTx, msghdl: Arc<MsgHandler>, peer: Arc<Peer>, mut conn_read: OwnedReadHalf) {
+pub(crate) async fn do_handle_pmsg(
+    peersnaprx: PeerSnapRx,
+    peertabletx: PeerTableCmdTx,
+    msghdl: Arc<MsgHandler>,
+    peer: Arc<Peer>,
+    mut conn_read: OwnedReadHalf,
+) {
     {
         let peersnap = peersnaprx.borrow().clone();
-        println!("[Peer] {} connected, total {} public {} subnet.",
-            peer.nick(), peersnap.backbones.len(), peersnap.offshoots.len());
+        println!(
+            "[Peer] {} connected, total {} public {} subnet.",
+            peer.nick(),
+            peersnap.backbones.len(),
+            peersnap.offshoots.len()
+        );
     }
     loop {
         let rdres = tokio::select! {
@@ -179,13 +202,13 @@ pub(crate) async fn do_handle_pmsg(peersnaprx: PeerSnapRx, peertabletx: PeerTabl
             rd = tcp_read_msg(&mut conn_read, 0) => rd,
         };
         if let Err(_) = rdres {
-            break
+            break;
         }
         peer.update_active();
         let (ty, msg) = rdres.unwrap();
         if MSG_CUSTOMER == ty {
             if msg.len() < 2 {
-                continue
+                continue;
             }
             let prcp = peer.clone();
             let ty = u16::from_be_bytes(bufcut!(msg, 0, 2));
@@ -194,12 +217,12 @@ pub(crate) async fn do_handle_pmsg(peersnaprx: PeerSnapRx, peertabletx: PeerTabl
             tokio::spawn(async move {
                 msghd1.on_message(prcp, ty, body).await;
             });
-            continue
+            continue;
         } else if MSG_PING == ty {
             let _ = peer.send_p2p_msg(MSG_PONG, vec![]).await;
         } else if MSG_PONG == ty {
         } else if MSG_CLOSE == ty {
-            break
+            break;
         } else {
         }
     }

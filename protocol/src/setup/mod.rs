@@ -29,12 +29,7 @@ impl ProtocolSetup {
         self.vm_assigner = Some(f);
     }
 
-    pub fn tx_codec(
-        &mut self,
-        ty: u8,
-        create: FnTxCreateFunc,
-        json_decode: FnTxJsonDecodeFunc,
-    ) {
+    pub fn tx_codec(&mut self, ty: u8, create: FnTxCreateFunc, json_decode: FnTxJsonDecodeFunc) {
         self.tx_codecs.insert(
             ty,
             TxCodec {
@@ -62,7 +57,6 @@ impl ProtocolSetup {
     pub fn action_hook(&mut self, f: FnActionHookFunc) {
         self.action_hooks.push(f);
     }
-
 }
 
 impl Default for ProtocolSetup {
@@ -125,4 +119,3 @@ pub fn new_standard_protocol_setup(block_hasher: FnBlockHasherFunc) -> ProtocolS
     crate::tex::register(&mut setup);
     setup
 }
-

@@ -414,6 +414,32 @@ impl<'a> Formater<'a> {
         Some(elems)
     }
 
+    fn format_fin_call(&self, inst: Bytecode, para: u8, args: &[&dyn IRNode]) -> Option<String> {
+        let spec = fin_spec_lookup(inst, para).ok()?;
+        if args.len() != spec.argc().ok()? as usize {
+            return None;
+        }
+        for a in args {
+            if a.as_any().downcast_ref::<IRNodeTopStackValue>().is_some() {
+                return None;
+            }
+            if !a.hasretval() {
+                return None;
+            }
+        }
+        let args = args
+            .iter()
+            .map(|n| self.print_inline(*n))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Some(format!("{}{}({})", self.line_prefix(), spec.name, args))
+    }
+
+    fn format_fin_node(&self, node: &dyn IRNode) -> Option<String> {
+        let parts = param1_multi_parts(node)?;
+        self.format_fin_call(parts.inst, parts.para, &parts.args)
+    }
+
     fn format_call_args(&self, args: &[String]) -> String {
         // Join on argument boundaries (not line boundaries).
         // Some expressions (e.g. `{ ... }` blocks) legitimately contain newlines; splitting
@@ -788,7 +814,7 @@ impl<'a> Formater<'a> {
             let pre = self.line_prefix();
             match s.inst {
                 TNIL | TLIST | TMAP => {
-                    let substr = self.print_inline(&*s.subx);
+                    let substr = self.format_is_target(&*s.subx);
                     return Some(match s.inst {
                         TNIL => format!("{}{} is nil", pre, substr),
                         TLIST => format!("{}{} is list", pre, substr),
@@ -1149,10 +1175,31 @@ impl<'a> Formater<'a> {
         }
     }
 
+    fn format_is_target(&self, node: &dyn IRNode) -> String {
+        let substr = self.print_inline(node);
+        if node.as_any().downcast_ref::<IRNodeWrapOne>().is_some() {
+            return substr;
+        }
+        let need_wrap = node.level() > 0
+            || node
+                .as_any()
+                .downcast_ref::<IRNodeSingle>()
+                .is_some_and(|inner| inner.inst == Bytecode::NOT);
+        if !need_wrap {
+            return substr;
+        }
+        let t = substr.trim();
+        maybe!(
+            t.starts_with('(') && t.ends_with(')'),
+            substr,
+            format!("({})", substr)
+        )
+    }
+
     fn format_is_components(&self, node: &dyn IRNode) -> Option<(String, String)> {
         use Bytecode::*;
         if let Some(inner) = node.as_any().downcast_ref::<IRNodeSingle>() {
-            let target = self.print_inline(&*inner.subx);
+            let target = self.format_is_target(&*inner.subx);
             return match inner.inst {
                 TNIL => Some((target, "nil".to_string())),
                 TLIST => Some((target, "list".to_string())),
@@ -1162,7 +1209,7 @@ impl<'a> Formater<'a> {
         }
         if let Some(inner) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
             if inner.inst == TIS {
-                let target = self.print_inline(&*inner.subx);
+                let target = self.format_is_target(&*inner.subx);
                 if let Some(name) = self.resolve_type_check_name(inner.para) {
                     return Some((target, name.to_string()));
                 } else {
@@ -1179,7 +1226,7 @@ impl<'a> Formater<'a> {
         let meta = node.inst.metadata();
         let body = match node.inst {
             TIS => {
-                let substr = self.print_inline(&*node.subx);
+                let substr = self.format_is_target(&*node.subx);
                 match self.resolve_type_check_name(node.para) {
                     Some(name) => format!("{} is {}", substr, name),
                     None => format!("type_id({}) == {}", substr, node.para),
@@ -1202,12 +1249,12 @@ impl<'a> Formater<'a> {
                 match ValueTy::build(node.para) {
                     Ok(ValueTy::Bool) => format!("{} as bool", operand),
                     Ok(ValueTy::Address) => {
-                        let source_compatible = Syntax::extract_literal_value(&*node.subx)
+                        let literal_casts_to_address = Syntax::extract_literal_value(&*node.subx)
                             .ok()
                             .flatten()
                             .is_some_and(|mut value| value.cast_addr().is_ok());
                         maybe!(
-                            source_compatible,
+                            literal_casts_to_address,
                             format!("{} as address", operand),
                             format!("{}({}, {})", meta.intro, node.para, substr)
                         )
@@ -1511,6 +1558,17 @@ impl<'a> Formater<'a> {
                 prefix, meta.intro, subx, suby, subz, subw
             );
         }
+        if let Some(quint) = node.as_any().downcast_ref::<IRNodeQuint>() {
+            let suba = self.print_inline(&*quint.suba);
+            let subb = self.print_inline(&*quint.subb);
+            let subc = self.print_inline(&*quint.subc);
+            let subd = self.print_inline(&*quint.subd);
+            let sube = self.print_inline(&*quint.sube);
+            return format!(
+                "{}{}({}, {}, {}, {}, {})",
+                prefix, meta.intro, suba, subb, subc, subd, sube
+            );
+        }
         format!("{}{}", prefix, meta.intro)
     }
 
@@ -1605,6 +1663,9 @@ impl<'a> Formater<'a> {
         }
         if let Some(pss) = node.as_any().downcast_ref::<IRNodeParam2Single>() {
             return self.print_param2_single(pss);
+        }
+        if let Some(line) = self.format_fin_node(node) {
+            return line;
         }
         if let Some(line) = self.format_kv_put(node) {
             return line;

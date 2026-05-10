@@ -1013,6 +1013,58 @@ mod token_t {
     }
 
     #[test]
+    fn direct_ir_func_params_accept_only_immediate_u8_literals() {
+        use super::lang_to_ircode;
+
+        for src in [
+            r#"return buf_left(1, "abcdef")"#,
+            r#"return buf_left((1), "abcdef")"#,
+            r#"const N = 1
+               return buf_left(N, "abcdef")"#,
+            r#"return heap_read_uint_long(1, 2)"#,
+        ] {
+            lang_to_ircode(src).expect(src);
+        }
+
+        for src in [
+            r#"return buf_left(context_address(), "abcdef")"#,
+            r#"var n $5 = 2
+               return buf_left($5, "abcdef")"#,
+            r#"return heap_read_uint_long(258, 0)"#,
+        ] {
+            let err = lang_to_ircode(src).unwrap_err().to_string();
+            assert!(
+                err.contains("immediate u8 literal"),
+                "src={}, err={}",
+                src,
+                err
+            );
+        }
+    }
+
+    #[test]
+    fn is_expression_decompile_recompile_preserves_ircode() {
+        use super::ircode_to_lang;
+        use super::lang_to_ircode;
+
+        for src in [
+            "return (1 == 1) is bool",
+            "return (1 == 1) is not bool",
+            "return (1 + 2) is u64",
+            "return (! true) is bool",
+            "return (1 | 2) is u64",
+            "return (true && false) is nil",
+        ] {
+            let expect = lang_to_ircode(src).expect(src);
+            let text = ircode_to_lang(&expect).expect(src);
+            let reparsed = lang_to_ircode(&text)
+                .map_err(|e| format!("{}\n---- decompiled ----\n{}\n--------------------", e, text))
+                .unwrap();
+            assert_eq!(expect, reparsed, "src={}\ndecompiled={}", src, text);
+        }
+    }
+
+    #[test]
     fn test_all_print_options_disabled_preserve_ircode_semantics() {
         use super::lang_to_ircode;
         use super::lang_to_irnode_with_sourcemap;

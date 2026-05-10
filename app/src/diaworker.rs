@@ -1,7 +1,7 @@
-use std::sync::atomic::{AtomicU32, Ordering::*};
-use std::sync::{RwLock, mpsc};
 #[cfg(feature = "ocl")]
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering::*};
+use std::sync::{RwLock, mpsc};
 
 use std::thread::*;
 use std::time::*;
@@ -29,13 +29,13 @@ pub struct DiaWorkConf {
     pub supervene: u32, // cpu core
     pub bidaddr: Address,
     pub rewardaddr: Address,
-    pub useopencl: bool, // use opencl miner
-    pub workgroups: u32, // opencl work groups
-    pub localsize: u32, // opencl work units per work group
-    pub unitsize: u32, // opencl hashes per work unit
+    pub useopencl: bool,   // use opencl miner
+    pub workgroups: u32,   // opencl work groups
+    pub localsize: u32,    // opencl work units per work group
+    pub unitsize: u32,     // opencl hashes per work unit
     pub opencldir: String, // opencl source dir
-    pub debug: u32, // enable debug mode
-    pub platformid: u32, // opencl platform id
+    pub debug: u32,        // enable debug mode
+    pub platformid: u32,   // opencl platform id
     pub deviceids: String, // opencl device id list
 }
 
@@ -55,7 +55,7 @@ impl DiaWorkConf {
             opencldir: ini_must(sec_gpu, "opencl_dir", "opencl/"),
             debug: ini_must_u64(sec_gpu, "debug", 0) as u32,
             platformid: ini_must_u64(sec_gpu, "platform_id", 0) as u32,
-            deviceids: ini_must(sec_gpu, "device_ids", "")
+            deviceids: ini_must(sec_gpu, "device_ids", ""),
         };
         cnf
     }
@@ -142,7 +142,8 @@ pub fn diaworker() {
     });
 
     // start worker
-    if cnf.useopencl { // opencl is enabled
+    if cnf.useopencl {
+        // opencl is enabled
         #[cfg(feature = "ocl")]
         {
             // Initialize OpenCL

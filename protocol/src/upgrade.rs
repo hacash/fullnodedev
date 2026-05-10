@@ -1,5 +1,5 @@
-use sys::*;
 use field::*;
+use sys::*;
 
 // Local development is allowed from genesis to this height.
 pub const DEV_OPEN_MAX_HEIGHT: u64 = 65_432;

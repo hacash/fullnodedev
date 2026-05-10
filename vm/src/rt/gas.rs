@@ -1,18 +1,16 @@
 /***********************************/
 
 // Per-opcode base gas units (`GasTable::gas`). The interpreter may add dynamic metering
-// on top (e.g. `RPOW` exponent bits, compare on wide integers).
+// on top (e.g. `FINPOW3` exponent bits, compare on wide integers).
 //
 // Arithmetic ladder (see `GasTable::new` grouping):
 // - 2: add/sub/min/max/inc/dec - single-step integer ops on stack slots.
-// - 4: mul/div/mod, div variants, saturating add/sub, abs diff - widening or division.
+// - 4: mul/div/mod, saturating add/sub, abs diff - widening or division.
 // - 6: POW, ADDMOD, CLAMP - extra branches or triple operands without full mul-div path.
 // - 8: MULADD, MULSUB - one multiply plus add/sub.
 // - 10: MULMOD, MULSHR - multiply then mod or shift.
-// - 12: MULDIV*, MULSHRUP, DEVSCALED* - multiply then divide/round.
-// - 14: MULADDDIV, MULSUBDIV, WITHINBPS, LERP - four operands, one divide.
-// - 16: WAVG2, MUL3DIV - four operands with extra multiply or sum path.
-// - 32: RPOW - high base like storage reads; extra per exponent in execute.
+// - 6/10/18: FIN* family base decode+dispatch tiers.
+// - 32: FINPOW3 - high base like storage reads; extra per exponent in execute.
 //
 // Unrelated opcodes may share a tier when base interpreter cost is similar.
 // Reserved bytecode bytes stay at default 1.
@@ -35,17 +33,17 @@ impl GasTable {
         gst.set(3, &[BSHR, BSHL, BXOR, BOR, BAND]);
         // Arithmetic: binary (see module doc ladder)
         gst.set(2, &[ADD, SUB, MAX, MIN, INC, DEC]);
-        gst.set(4, &[MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF]);
+        gst.set(4, &[MUL, DIV, MOD, SATADD, SATSUB, ABSDIFF]);
         gst.set(5, &[SQRT, SQRTUP]);
-        gst.set(6, &[POW, ADDMOD, CLAMP]);
-        gst.set(32, &[RPOW]);
+        gst.set(6, &[POW, ADDMOD, CLAMP, FIN2]);
+        gst.set(10, &[FIN3, FINP3, FINP4]);
+        gst.set(18, &[FIN4]);
+        gst.set(32, &[FINPOW3]);
         // Arithmetic: triple-operand mul pipeline
         gst.set(8, &[MULADD, MULSUB]);
         gst.set(10, &[MULMOD, MULSHR]);
-        gst.set(12, &[MULDIV, MULDIVUP, MULDIVROUND, MULSHRUP, DEVSCALED, DEVSCALEDFLOOR]);
-        // Arithmetic: four-operand
-        gst.set(14, &[MULADDDIV, MULSUBDIV, WITHINBPS, LERP]);
-        gst.set(16, &[WAVG2, MUL3DIV]);
+        gst.set(12, &[MULDIV]);
+        // Arithmetic: four-operand handled by FIN4 family
         // Other
         gst.set(4, &[INSERT, REMOVE, HEAD, BACK, APPEND]);
         gst.set(5, &[MGET, GGET, NEWLIST, NEWMAP]);
@@ -62,7 +60,7 @@ impl GasTable {
         gst.set(64, &[SNEW, SEDIT, SRENT, SRECV, SGET]);
         gst.set(128, &[SPUT]);
         #[cfg(feature = "calcfunc")]
-        gst.set(256, &[CALCCALL]);
+        gst.set(128, &[CALCCALL]);
         gst
     }
 
@@ -310,6 +308,9 @@ impl GasExtra {
 
     #[inline(always)]
     pub fn rpow_extra(&self, exp_bits: i64) -> i64 {
+        if exp_bits <= 0 {
+            return 0;
+        }
         exp_bits
             .saturating_mul(self.rpow_exp_bit_mul)
             .saturating_add(self.rpow_exp_base)
@@ -426,14 +427,14 @@ mod gas_budget_codec_tests {
             (
                 4,
                 vec![
-                    MUL, DIV, MOD, DIVUP, DIVROUND, SATADD, SATSUB, ABSDIFF, INSERT, REMOVE, HEAD,
+                    MUL, DIV, MOD, SATADD, SATSUB, ABSDIFF, INSERT, REMOVE, HEAD,
                     BACK, APPEND,
                 ],
             ),
             (5, vec![MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP]),
             (
                 6,
-                vec![POW, ADDMOD, CLAMP, CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK],
+                vec![POW, ADDMOD, CLAMP, FIN2, CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK],
             ),
             (
                 8,
@@ -458,24 +459,20 @@ mod gas_budget_codec_tests {
                     CALLUSEVIEW,
                     CALLUSEPURE,
                     MULDIV,
-                    MULDIVUP,
-                    MULDIVROUND,
-                    MULSHRUP,
-                    DEVSCALED,
-                    DEVSCALEDFLOOR,
                 ],
             ),
-            (14, vec![MULADDDIV, MULSUBDIV, WITHINBPS, LERP]),
+            (10, vec![FIN3, FINP3, FINP4]),
+            (18, vec![FIN4]),
             (
                 16,
                 vec![
-                    NTENV, NTFUNC, NTCTL, CALLTHIS, CALLSUPER, CODECALL, WAVG2, MUL3DIV,
+                    NTENV, NTFUNC, NTCTL, CALLTHIS, CALLSUPER, CODECALL,
                 ],
             ),
             (20, vec![LOG1, CALLEXTVIEW]),
             (24, vec![LOG2, CALLEXT, CALL]),
             (28, vec![LOG3, ACTENV, SDEL]),
-            (32, vec![LOG4, ACTVIEW, SLOAD, SSTAT, RPOW]),
+            (32, vec![LOG4, ACTVIEW, SLOAD, SSTAT, FINPOW3]),
             (48, vec![ACTION]),
             (64, vec![SGET, SNEW, SEDIT, SRENT, SRECV]),
             (128, vec![SPUT]),

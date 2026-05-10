@@ -11,12 +11,15 @@ impl NodeRuntime {
 
     pub fn stop_network(&self) {
         if self.exited.swap(true, Ordering::Relaxed) {
-            return
+            return;
         }
         self.metrics.lock().unwrap().on_exit();
         self.protocol.exit();
         self.transport.exit();
         self.engine.exit();
-        println!("[Node] network exit. runtime_threads={}", self.running_task_count());
+        println!(
+            "[Node] network exit. runtime_threads={}",
+            self.running_task_count()
+        );
     }
 }

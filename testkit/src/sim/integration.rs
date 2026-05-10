@@ -10,7 +10,9 @@ use crate::sim::tx::{StubTx, StubTxBuilder};
 
 pub fn test_guard() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner())
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 pub fn vm_main_addr() -> Address {
@@ -55,7 +57,9 @@ fn set_scoped_setup_guard(guard: protocol::setup::TestSetupScopeGuard) {
     });
 }
 
-pub fn scoped_setup(vm_assigner: Option<protocol::setup::FnVmAssignFunc>) -> protocol::setup::TestSetupScopeGuard {
+pub fn scoped_setup(
+    vm_assigner: Option<protocol::setup::FnVmAssignFunc>,
+) -> protocol::setup::TestSetupScopeGuard {
     let mut setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
     mint::setup::register_protocol_extensions(&mut setup);
     if let Some(assigner) = vm_assigner {
@@ -101,5 +105,7 @@ pub fn disable_vm_setup() {
 }
 
 pub fn enable_default_vm_setup() {
-    set_vm_assigner(Some(|height| Box::new(vm::global_runtime_pool().checkout(height))))
+    set_vm_assigner(Some(|height| {
+        Box::new(vm::global_runtime_pool().checkout(height))
+    }))
 }

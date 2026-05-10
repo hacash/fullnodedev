@@ -5,8 +5,8 @@ mod action_coverage {
     use basis::interface::{Context, Logs, State, StateOperat, Transaction, TransactionRead};
     use field::{
         Address, Amount, BlockHeight, BytesW1, BytesW2, DiamondInscript, DiamondName,
-        DiamondNumber, DiamondSmelt, DiamondSto, Field, Fixed8, Hash, Inscripts, Parse,
-        Readable, Serialize, Uint1, Uint2, Uint4,
+        DiamondNumber, DiamondSmelt, DiamondSto, Field, Fixed8, Hash, Inscripts, Parse, Readable,
+        Serialize, Uint1, Uint2, Uint4,
     };
     use protocol::action::{TxBlob, TxMessage};
     use protocol::state::CoreState;
@@ -73,11 +73,7 @@ mod action_coverage {
 
     fn make_external_contract(func_name: &str, body: &str) -> ContractSto {
         Contract::new()
-            .syst(
-                Abst::new(AbstCall::Construct)
-                    .fitsh("return 0")
-                    .unwrap(),
-            )
+            .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
             .func(
                 Func::new(func_name)
                     .unwrap()
@@ -511,9 +507,14 @@ mod action_coverage {
         let rv = execute_main_bytecode(&mut ctx, lang_to_bytecode(&script).unwrap()).unwrap();
         assert!(!rv.extract_bool().unwrap());
 
-        let dia = CoreState::wrap(StateOperat::state(&mut ctx)).diamond(&diamond).unwrap();
+        let dia = CoreState::wrap(StateOperat::state(&mut ctx))
+            .diamond(&diamond)
+            .unwrap();
         assert_eq!(*dia.inscripts.as_list()[0].engraved_type, 1);
-        assert_eq!(dia.inscripts.as_list()[0].content.to_readable_or_hex(), "edited");
+        assert_eq!(
+            dia.inscripts.as_list()[0].content.to_readable_or_hex(),
+            "edited"
+        );
     }
 
     #[test]
@@ -768,8 +769,7 @@ mod action_coverage {
         let mut tx = make_tx3(main, 17);
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
         tx.push_action(Box::new(ContractDeploy::new())).unwrap();
-        let err =
-            protocol::action::precheck_tx_actions(tx.ty(), tx.actions()).unwrap_err();
+        let err = protocol::action::precheck_tx_actions(tx.ty(), tx.actions()).unwrap_err();
         assert!(err.contains("TOP_ONLY_CAN_WITH_GUARD"), "{err}");
     }
 
@@ -1063,7 +1063,11 @@ mod action_coverage {
         act.nonce = Uint4::from(80u32);
         act.protocol_cost = Amount::coin(10000, 244);
         act.contract = Contract::new()
-            .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 1").unwrap())
+            .syst(
+                vm::contract::Abst::new(vm::rt::AbstCall::Construct)
+                    .fitsh("return 1")
+                    .unwrap(),
+            )
             .func(
                 Func::new("f")
                     .unwrap()
@@ -1104,7 +1108,11 @@ mod action_coverage {
         let cap = SpaceCap::new(1).value_size;
         act.construct_argv = BytesW2::from(vec![0xCD; cap]).unwrap();
         act.contract = Contract::new()
-            .syst(vm::contract::Abst::new(vm::rt::AbstCall::Construct).fitsh("return 0").unwrap())
+            .syst(
+                vm::contract::Abst::new(vm::rt::AbstCall::Construct)
+                    .fitsh("return 0")
+                    .unwrap(),
+            )
             .func(
                 Func::new("f")
                     .unwrap()
@@ -1361,7 +1369,8 @@ mod action_coverage {
         act.edit = edit;
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
-            err.contains("abst call Append not found in") || err.contains("Append") && err.contains("not found in"),
+            err.contains("abst call Append not found in")
+                || err.contains("Append") && err.contains("not found in"),
             "{err}"
         );
     }
@@ -1410,7 +1419,8 @@ mod action_coverage {
         act.edit = edit;
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
-            err.contains("abst call Change not found in") || err.contains("Change") && err.contains("not found in"),
+            err.contains("abst call Change not found in")
+                || err.contains("Change") && err.contains("not found in"),
             "{err}"
         );
     }
@@ -1455,10 +1465,10 @@ mod action_coverage {
         let new_size = old_size + edit.size();
         let delta_bytes = new_size.saturating_sub(old_size);
         let edit_bytes = edit.size();
-        let fee_purity = ctx
-            .tx()
-            .fee_purity()
-            .max(vm::action::CONTRACT_STORE_LOWEST_FEE_PURITY as u64) as u128;
+        let fee_purity =
+            ctx.tx()
+                .fee_purity()
+                .max(vm::action::CONTRACT_STORE_LOWEST_FEE_PURITY as u64) as u128;
         let _expected = Amount::coin_u128(
             fee_purity
                 .saturating_mul(delta_bytes as u128)
@@ -2623,14 +2633,17 @@ mod action_coverage {
         execute_deploy(&mut ctx, 1, sto).unwrap();
 
         let caddr = contract_addr(&main, 1);
-        let err = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr.clone(), "nonexistent"))
-            .unwrap_err();
+        let err = machine::sandbox_call(
+            &mut ctx,
+            machine::SandboxSpec::new(caddr.clone(), "nonexistent"),
+        )
+        .unwrap_err();
         assert!(err.contains("CallNotExist"), "{err}");
 
         let sig = vm::rt::calc_func_sign("f");
         let selector = format!("0x{}", hex::encode(sig));
-        let callres = machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, selector))
-            .unwrap();
+        let callres =
+            machine::sandbox_call(&mut ctx, machine::SandboxSpec::new(caddr, selector)).unwrap();
         assert_eq!(callres.ret_val, Value::U8(0));
     }
 
@@ -2667,12 +2680,7 @@ mod action_coverage {
 
         for nonce in 1..=5u32 {
             let tx = make_tx(3, main, vec![], 17);
-            let mut ctx = make_ctx(
-                1,
-                &tx,
-                state,
-                Box::new(MemLogs::default()),
-            );
+            let mut ctx = make_ctx(1, &tx, state, Box::new(MemLogs::default()));
             ctx.env.chain.fast_sync = true;
             fund_main_addr(&mut ctx);
             let budget = protocol::context::decode_gas_budget(

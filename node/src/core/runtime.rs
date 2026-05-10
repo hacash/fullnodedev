@@ -37,7 +37,12 @@ impl NodeRuntime {
         self.start_network(worker)
     }
 
-    pub fn submit_transaction(&self, txpkg: &TxPkg, in_async: bool, only_insert_txpool: bool) -> Rerr {
+    pub fn submit_transaction(
+        &self,
+        txpkg: &TxPkg,
+        in_async: bool,
+        only_insert_txpool: bool,
+    ) -> Rerr {
         self.submit_transaction_inner(txpkg, in_async, only_insert_txpool)
     }
 

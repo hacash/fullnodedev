@@ -413,9 +413,7 @@ fn inline_if_expression_as_list_element_roundtrips() {
 
 #[test]
 fn ir_func_call_arguments_parse_in_value_context() {
-    // IR functions like `append(...)` previously parsed argv via `item_may_block(false)`
-    // (statement context), which would make `if ... else ...` become `IRIF` (no retval)
-    // and fail `checkretval()` when used as an argument.
+    // IR function arguments must parse in value context so `if ... else ...` has a return value.
     let script = r##"
         bind numbers = [1]
         append(numbers, if true { 2 } else { 3 })
@@ -1259,21 +1257,121 @@ fn fitsh_ir_roundtrip_suite() {
         ),
         (
             r##"
-                bind dv = dev_scaled(10001, 10000, 3)
-                bind dvf = dev_scaled_floor(10001, 10000, 3)
+                bind dv = scaled_div_ceil(abs_diff(10001, 10000), 3, 10000)
+                bind dvf = scaled_div_floor(abs_diff(10001, 10000), 3, 10000)
                 bind ok = within_bps(10001, 10000, 1, 3)
-                bind px = lerp(101, 100, 1, 2)
+                bind px = lerp_floor(101, 100, 1, 2)
+                bind pxu = lerp_ceil(0, 1, 1, 2)
+                bind absok = abs_diff_lte(105, 100, 5)
                 print dv
                 print dvf
                 print ok
                 print px
+                print pxu
+                print absok
             "##,
-            &["dev_scaled", "dev_scaled_floor", "within_bps", "lerp"],
+            &[
+                "scaled_div_ceil",
+                "scaled_div_floor",
+                "within_bps",
+                "lerp_floor",
+                "lerp_ceil",
+                "abs_diff_lte",
+            ],
         ),
     ];
 
     for (script, keywords) in scripts {
         check_fitsh_ir_roundtrip(script, keywords);
+    }
+}
+
+#[test]
+fn direct_muldiv_mulshr_decompile_roundtrip_keeps_opcode_identity() {
+    let cases = [(Bytecode::MULDIV, "mul_div"), (Bytecode::MULSHR, "mul_shr")];
+
+    for (inst, name) in cases {
+        let ircode = vec![
+            Bytecode::RET as u8,
+            inst as u8,
+            Bytecode::P1 as u8,
+            Bytecode::P2 as u8,
+            Bytecode::P3 as u8,
+        ];
+        let printed = ircode_to_lang(&ircode).unwrap();
+        assert!(
+            printed.contains(name),
+            "expected direct helper {} in decompile output, got: {}",
+            name,
+            printed
+        );
+        let reparsed = lang_to_ircode(&printed).unwrap();
+        assert_eq!(
+            ircode, reparsed,
+            "direct {} roundtrip changed opcode identity\n{}",
+            name, printed
+        );
+    }
+}
+
+#[test]
+fn all_fin_source_names_decompile_recompile_roundtrip() {
+    for spec in fin_specs() {
+        let args = (1..=spec.argc().unwrap())
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let script = format!("return {}({})", spec.name, args);
+        let ircode = lang_to_ircode(&script).unwrap();
+        let printed = ircode_to_lang(&ircode).unwrap();
+        let reparsed = lang_to_ircode(&printed).unwrap();
+        assert_eq!(
+            ircode, reparsed,
+            "FIN source call {} roundtrip changed IR\n{}",
+            spec.name, printed
+        );
+    }
+}
+
+#[test]
+fn all_fin_runtime_specs_decompile_recompile_roundtrip() {
+    let families = [
+        Bytecode::FIN2,
+        Bytecode::FIN3,
+        Bytecode::FIN4,
+        Bytecode::FINP3,
+        Bytecode::FINP4,
+        Bytecode::FINPOW3,
+    ];
+    let args = [
+        Bytecode::P0 as u8,
+        Bytecode::P1 as u8,
+        Bytecode::P2 as u8,
+        Bytecode::P3 as u8,
+    ];
+
+    for family in families {
+        for fin_id in 0u8..=u8::MAX {
+            let Ok(spec) = fin_spec_lookup(family, fin_id) else {
+                continue;
+            };
+            let mut ircode = vec![Bytecode::RET as u8, family as u8, fin_id];
+            ircode.extend_from_slice(&args[..spec.argc().unwrap() as usize]);
+
+            let printed = ircode_to_lang(&ircode).unwrap();
+            assert!(
+                printed.contains(spec.name),
+                "expected FIN name {} in decompile output, got: {}",
+                spec.name,
+                printed
+            );
+            let reparsed = lang_to_ircode(&printed).unwrap();
+            assert_eq!(
+                ircode, reparsed,
+                "FIN runtime spec {:?}/{} roundtrip changed IR\n{}",
+                family, fin_id, printed
+            );
+        }
     }
 }
 
@@ -1736,7 +1834,7 @@ fn format_ircode_preserves_cto_address_opcode_identity() {
 }
 
 #[test]
-fn old_pair_count_packmap_is_not_decompiled_as_map_literal() {
+fn pair_count_packmap_is_not_decompiled_as_map_literal() {
     let mut list = IRNodeArray::with_opcode(Bytecode::IRLIST);
     list.push(push_inst(Bytecode::P1));
     list.push(push_inst(Bytecode::P2));
@@ -2075,7 +2173,7 @@ fn each_call_opcode_roundtrips_and_emits_expected_bytecode() {
 }
 
 #[test]
-fn legacy_call_external_lib_shorthand_is_not_supported() {
+fn external_lib_shorthand_without_binding_is_not_supported() {
     assert!(lang_to_ircode("call 1::0x01020304(10, 20)").is_err());
 }
 

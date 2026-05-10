@@ -1,3 +1,4 @@
+use crate::TransactionCoinbase;
 use basis::component::*;
 use basis::interface::*;
 use basis::method::*;
@@ -5,7 +6,6 @@ use field::*;
 use protocol::operate::*;
 use protocol::setup::*;
 use protocol::state::*;
-use crate::TransactionCoinbase;
 use protocol::*;
 use std::any::Any;
 use sys::*;

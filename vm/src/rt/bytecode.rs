@@ -1,76 +1,77 @@
 /* Bytecode define Add one bytecode */
 
 #[repr(u8)]
+#[allow(non_camel_case_types)]
 #[derive(Default, PartialEq, Debug, Clone, Copy)]
 pub enum Bytecode {
     #[default]
     ACTION = 0x00, // *@  call action
-    ________________1 = 0x01,
-    ________________2 = 0x02,
-    ________________3 = 0x03,
-    ________________4 = 0x04,
-    ________________5 = 0x05,
+    ____________01 = 0x01,
+    ____________02 = 0x02,
+    ____________03 = 0x03,
+    ____________04 = 0x04,
+    ____________05 = 0x05,
     ACTVIEW = 0x06, // *@  call action view (read-only query)
     ACTENV = 0x07,  // *+  call action env
     NTENV = 0x08,   // *+  native env (VM state read)
     NTCTL = 0x09,   // *@  native runtime control (modify VM tx-local state)
     NTFUNC = 0x0a,  // *@  native pure function
-    ________________11 = 0x0b,
-    ________________12 = 0x0c,
+    ____________0b = 0x0b,
+    ____________0c = 0x0c,
     #[cfg(feature = "calcfunc")]
     CALCCALL = 0x0d, // ****@ local calc coprocessor call
     #[cfg(not(feature = "calcfunc"))]
-    ________________13 = 0x0d,
+    ____________0d = 0x0d,
     CODECALL = 0x0e,    // *,****
     CALL = 0x0f,        // **,****@
     CALLEXT = 0x10,     // *,****@
     CALLEXTVIEW = 0x11, // *,****@
-    ________________18 = 0x12,
-    ________________19 = 0x13,
+    ____________12 = 0x12,
+    ____________13 = 0x13,
     CALLUSEVIEW = 0x14, // *,****@
     CALLUSEPURE = 0x15, // *,****@
-    ________________22 = 0x16,
-    ________________23 = 0x17,
-    CALLTHIS = 0x18,     //   ****@
-    CALLSELF = 0x19,     //   ****@
-    CALLSUPER = 0x1a,    //   ****@
-    CALLSELFVIEW = 0x1b, //   ****@
-    CALLSELFPURE = 0x1c, //   ****@
-    ________________29 = 0x1d,
-    ________________30 = 0x1e,
-    ________________31 = 0x1f, // *@  native call
-    PU8 = 0x20,                // *+     push u8
-    PU16 = 0x21,               // **+    push u16
-    PBUF = 0x22,               // *+     push buf
-    PBUFL = 0x23,              // **+    push buf long
-    P0 = 0x24,                 // +      push u8 0
-    P1 = 0x25,                 // +      push u8 1
-    P2 = 0x26,                 // +      push u8 2
-    P3 = 0x27,                 // +      push u8 3
-    PNIL = 0x28,               // +      push nil
-    PNBUF = 0x29,              // +      push buf empty
-    PTRUE = 0x2a,              // +      push true
-    PFALSE = 0x2b,             // +      push false
-    ________________44 = 0x2c,
-    ________________45 = 0x2d,
-    ________________46 = 0x2e,
-    ________________47 = 0x2f,
+    ____________16 = 0x16,
+    ____________17 = 0x17,
+    CALLTHIS = 0x18,     // ****@
+    CALLSELF = 0x19,     // ****@
+    CALLSUPER = 0x1a,    // ****@
+    CALLSELFVIEW = 0x1b, // ****@
+    CALLSELFPURE = 0x1c, // ****@
+    ____________1d = 0x1d,
+    ____________1e = 0x1e,
+    ____________1f = 0x1f,
+    PU8 = 0x20,    // *+     push u8
+    PU16 = 0x21,   // **+    push u16
+    PBUF = 0x22,   // *+     push buf
+    PBUFL = 0x23,  // **+    push buf long
+    P0 = 0x24,     // +      push u8 0
+    P1 = 0x25,     // +      push u8 1
+    P2 = 0x26,     // +      push u8 2
+    P3 = 0x27,     // +      push u8 3
+    PNIL = 0x28,   // +      push nil
+    PNBUF = 0x29,  // +      push buf empty
+    PTRUE = 0x2a,  // +      push true
+    PFALSE = 0x2b, // +      push false
+    ____________2c = 0x2c,
+    ____________2d = 0x2d,
+    ____________2e = 0x2e,
+    ____________2f = 0x2f,
     CU8 = 0x30,   // &      cast u8
     CU16 = 0x31,  // &      cast u16
     CU32 = 0x32,  // &      cast u32
     CU64 = 0x33,  // &      cast u64
     CU128 = 0x34, // &      cast u128
-    ________________53 = 0x35,
-    CBYTES = 0x36,  // &      cast bytes
-    CTO = 0x37,   // *&     cast to
-    TNIL = 0x38,  // &   is nil push Bool(true)
-    TLIST = 0x39, // &   is compo list push Bool(true)
-    TMAP = 0x3a,  // &   is compo map  push Bool(true)
-    TIS = 0x3b,   // *&  is type id
-    TID = 0x3c,   // &   type id
-    ________________61 = 0x3d,
-    ________________62 = 0x3e,
-    ________________63 = 0x3f,
+    ____________35 = 0x35,
+    CBYTES = 0x36, // &      cast bytes
+    CTO = 0x37,    // *&     cast to
+    TNIL = 0x38,   // &      is nil push Bool(true)
+    TLIST = 0x39,  // &      is compo list push Bool(true)
+    TMAP = 0x3a,   // &      is compo map  push Bool(true)
+    TIS = 0x3b,    // *&     is type id
+    TID = 0x3c,    // &      type id
+    ____________3d = 0x3d,
+    ____________3e = 0x3e,
+    ____________3f = 0x3f,
     DUP = 0x40,    // +      copy 0
     DUPN = 0x41,   // *+     copy u8
     POP = 0x42,    // a      pop top
@@ -89,20 +90,20 @@ pub enum Bytecode {
     RDROP = 0x4f,  // *&     drop buf right *
     SIZE = 0x50,   // &      size (u16)
     CHOOSE = 0x51, // cond,yes,no+ (cond ? yes : no)
-    ________________82 = 0x52,
-    ________________83 = 0x53,
-    ________________84 = 0x54,
-    ________________85 = 0x55,
-    ________________86 = 0x56,
-    ________________87 = 0x57,
-    ________________88 = 0x58,
-    ________________89 = 0x59,
-    ________________90 = 0x5a,
-    ________________91 = 0x5b,
-    ________________92 = 0x5c,
-    ________________93 = 0x5d,
-    ________________94 = 0x5e,
-    ________________95 = 0x5f,
+    ____________52 = 0x52,
+    ____________53 = 0x53,
+    ____________54 = 0x54,
+    ____________55 = 0x55,
+    ____________56 = 0x56,
+    ____________57 = 0x57,
+    ____________58 = 0x58,
+    ____________59 = 0x59,
+    ____________5a = 0x5a,
+    ____________5b = 0x5b,
+    ____________5c = 0x5c,
+    ____________5d = 0x5d,
+    ____________5e = 0x5e,
+    ____________5f = 0x5f,
     NEWLIST = 0x60,    // + new compo list
     NEWMAP = 0x61,     // + new compo map
     PACKLIST = 0x62,   // (v...,n)+ pack compo list
@@ -123,22 +124,22 @@ pub enum Bytecode {
     UNPACK = 0x71,     // a       unpack sequence to local
     PACKTUPLE = 0x72,  // (v...,n)+ pack tuple value
     TUPLE2LIST = 0x73, // &       tuple to list
-    _______________116 = 0x74,
-    _______________117 = 0x75,
-    _______________118 = 0x76,
-    _______________119 = 0x77,
-    _______________120 = 0x78,
-    XLG = 0x79,      // *&    local logic
-    XOP = 0x7a,      // *a    local operand
-    GET = 0x7b,      // *+    local get
-    PUT = 0x7c,      // *a,b  local put
-    GETX = 0x7d,     // &     local x get
-    PUTX = 0x7e,     // v,i   local x put
-    ALLOC = 0x7f,    // *     local allocQ
-    GET0 = 0x80,     // +     local get idx 0
-    GET1 = 0x81,     // +     local get idx 1
-    GET2 = 0x82,     // +     local get idx 2
-    GET3 = 0x83,     // +     local get idx 3
+    ____________74 = 0x74,
+    ____________75 = 0x75,
+    ____________76 = 0x76,
+    ____________77 = 0x77,
+    ____________78 = 0x78,
+    XLG = 0x79,   // *&    local logic
+    XOP = 0x7a,   // *a    local operand
+    GET = 0x7b,   // *+    local get
+    PUT = 0x7c,   // *a,b  local put
+    GETX = 0x7d,  // &     local x get
+    PUTX = 0x7e,  // v,i   local x put
+    ALLOC = 0x7f, // *     local allocQ
+    GET0 = 0x80,  // +     local get idx 0
+    GET1 = 0x81,  // +     local get idx 1
+    GET2 = 0x82,  // +     local get idx 2
+    GET3 = 0x83,  // +     local get idx 3
     LOG1 = 0x84,
     LOG2 = 0x85,
     LOG3 = 0x86,
@@ -158,8 +159,8 @@ pub enum Bytecode {
     MTAKE = 0x94,    // &     memory take
     SGET = 0x95,     // &     status get
     SPUT = 0x96,     // a,b   status put
-    ________________151 = 0x97,
-    ________________152 = 0x98,
+    ____________97 = 0x97,
+    ____________98 = 0x98,
     SSTAT = 0x99, // &       storage info
     SLOAD = 0x9a, // &       storage load
     SEDIT = 0x9b, // a,b     storage edit
@@ -176,64 +177,67 @@ pub enum Bytecode {
     LE = 0xa6,    // a,b+   less and eq
     GE = 0xa7,    // a,b+   great and eq
     NOT = 0xa8,   // a+   not
-    ________________169 = 0xa9,
-    ________________170 = 0xaa,
-    BSHR = 0xab,                // a,b+   shr: >>
-    BSHL = 0xac,                // a,b+   shl: <<
-    BXOR = 0xad,                // a,b+   xor: ^
-    BOR  = 0xae,                // a,b+   or:  |
-    BAND = 0xaf,                // a,b+   and: &
-    // arithmetic: binary core, div variants, pow, extrema, saturating, local inc/dec
-    ADD         = 0xb0,         // a,b+   +
-    SUB         = 0xb1,         // a,b+   -
-    MUL         = 0xb2,         // a,b+   *
-    DIV         = 0xb3,         // a,b+   /
-    MOD         = 0xb4,         // a,b+   mod
-    DIVUP       = 0xb5,         // a,b+   ceil(x/y)
-    DIVROUND    = 0xb6,         // a,b+   round_half_up(x/y)
-    POW         = 0xb7,         // a,b+   pow
-    RPOW        = 0xb8,         // a,b,c+ fixed-point pow
-    MAX         = 0xb9,         // a,b+   max
-    MIN         = 0xba,         // a,b+   min
-    SATADD      = 0xbb,         // a,b+   saturating add
-    SATSUB      = 0xbc,         // a,b+   saturating sub
-    ABSDIFF     = 0xbd,         // a,b+   abs(x-y)
-    INC         = 0xbe,         // *&     += u8
-    DEC         = 0xbf,         // *&     -= u8
-    SQRT        = 0xc0,         // a+     floor isqrt(a)
-    SQRTUP      = 0xc1,         // a+     ceil sqrt (min y with y*y >= a)
-    ________________211 = 0xc2, // reserved
-    // arithmetic: triple-input mul pipeline and mod
-    ADDMOD      = 0xc3,         // a,b,c+ (x+y)%z
-    MULMOD      = 0xc4,         // a,b,c+ (x*y)%z
-    MULADD      = 0xc5,         // a,b,c+ (x*y)+z
-    MULSUB      = 0xc6,         // a,b,c+ (x*y)-z
-    MULDIV      = 0xc7,         // a,b,c+ (x*y)/z
-    MULDIVUP    = 0xc8,         // a,b,c+ ceil((x*y)/z)
-    MULDIVROUND = 0xc9,         // a,b,c+ round_half_up((x*y)/z)
-    MULSHR      = 0xca,         // a,b,c+ (x*y)>>z
-    MULSHRUP    = 0xcb,         // a,b,c+ ceil((x*y)/2^z)
-    ________________212 = 0xcc, // reserved
-    ________________213 = 0xcd, // reserved
-    CLAMP          = 0xce,         // a,b,c+ clamp(x, lo, hi)
-    DEVSCALED      = 0xcf,         // a,b,c+ ceil(abs(x-b)*scale/b)
-    DEVSCALEDFLOOR = 0xd0,         // a,b,c+ floor(abs(x-b)*scale/b)
-    // arithmetic: four-input composites
-    MULADDDIV   = 0xd1,         // a,b,c,d+ ((x*y)+z)/d
-    MULSUBDIV   = 0xd2,         // a,b,c,d+ ((x*y)-z)/d
-    MUL3DIV     = 0xd3,         // a,b,c,d+ (a*b*c)/d
-    WITHINBPS   = 0xd4,         // a,b,c,d+ abs(a-b)*scale <= b*tolerance
-    WAVG2       = 0xd5,         // a,b,c,d+ (a*b+c*d)/(b+d)
-    LERP        = 0xd6,         // a,b,c,d+ (a*(d-c)+b*c)/d
-    ________________215 = 0xd7,
-    ________________216 = 0xd8,
-    ________________217 = 0xd9,
-    ________________218 = 0xda,
-    ________________219 = 0xdb,
-    ________________220 = 0xdc,
-    ________________221 = 0xdd,
-    ________________222 = 0xde,
-    ________________223 = 0xdf,
+    ____________a9 = 0xa9,
+    ____________aa = 0xaa,
+    BSHR = 0xab, // a,b+   shr: >>
+    BSHL = 0xac, // a,b+   shl: <<
+    BXOR = 0xad, // a,b+   xor: ^
+    BOR = 0xae,  // a,b+   or:  |
+    BAND = 0xaf, // a,b+   and: &
+
+    // arithmetic: scalar/core operations
+    ADD = 0xb0,     // a,b+   +
+    SUB = 0xb1,     // a,b+   -
+    MUL = 0xb2,     // a,b+   *
+    DIV = 0xb3,     // a,b+   /
+    MOD = 0xb4,     // a,b+   mod
+    POW = 0xb5,     // a,b+   pow
+    SQRT = 0xb6,    // a+     floor isqrt(a)
+    SQRTUP = 0xb7,  // a+     ceil sqrt (min y with y*y >= a)
+    MAX = 0xb8,     // a,b+   max
+    MIN = 0xb9,     // a,b+   min
+    CLAMP = 0xba,   // a,b,c+ clamp(x, lo, hi)
+    ABSDIFF = 0xbb, // a,b+   abs(x-y)
+    SATADD = 0xbc,  // a,b+   saturating add
+    SATSUB = 0xbd,  // a,b+   saturating sub
+    INC = 0xbe,     // *&     += u8
+    DEC = 0xbf,     // *&     -= u8
+
+    // arithmetic: multi-input exact helpers
+    ADDMOD = 0xc0, // a,b,c+ (x+y)%z
+    MULMOD = 0xc1, // a,b,c+ (x*y)%z
+    MULADD = 0xc2, // a,b,c+ (x*y)+z
+    MULSUB = 0xc3, // a,b,c+ (x*y)-z
+    MULDIV = 0xc4, // a,b,c+ (x*y)/z
+    MULSHR = 0xc5, // a,b,c+ (x*y)>>z
+    ____________c6 = 0xc6,
+    ____________c7 = 0xc7,
+    ____________c8 = 0xc8,
+    ____________c9 = 0xc9,
+    ____________ca = 0xca,
+    ____________cb = 0xcb,
+    ____________cc = 0xcc,
+    ____________cd = 0xcd,
+    ____________ce = 0xce,
+    ____________cf = 0xcf,
+
+    // arithmetic: financial families
+    FIN2 = 0xd0,    // *,a,b+     fin 2-input calc id
+    FIN3 = 0xd1,    // *,a,b,c+   fin 3-input calc id
+    FIN4 = 0xd2,    // *,a,b,c,d+ fin 4-input calc id
+    FINP3 = 0xd3,   // *,a,b,c+   fin 3-input predicate
+    FINP4 = 0xd4,   // *,a,b,c,d+ fin 4-input predicate
+    FINPOW3 = 0xd5, // *,a,b,c+   fin pow id
+    ____________d6 = 0xd6,
+    ____________d7 = 0xd7,
+    ____________d8 = 0xd8,
+    ____________d9 = 0xd9,
+    ____________da = 0xda,
+    ____________db = 0xdb,
+    ____________dc = 0xdc,
+    ____________dd = 0xdd,
+    ____________de = 0xde,
+    ____________df = 0xdf,
     JMPL = 0xe0,  // **    jump long
     JMPS = 0xe1,  // *     jump offset
     JMPSL = 0xe2, // **    jump offset long
@@ -241,15 +245,15 @@ pub enum Bytecode {
     BRS = 0xe4,   // *a    branch offset
     BRSL = 0xe5,  // **a   branch offset long not_zero
     BRSLN = 0xe6, // **a   branch offset long is_zero
-    ________________231 = 0xe7,
-    ________________232 = 0xe8,
-    ________________233 = 0xe9,
+    ____________e7 = 0xe7,
+    ____________e8 = 0xe8,
+    ____________e9 = 0xe9,
     PRT = 0xea,        // s     print for debug
     AST = 0xeb,        // c     assert throw
     ERR = 0xec,        // a     throw (ERR)
-    ABT = 0xed,        //       abord
+    ABT = 0xed,        // abord
     RET = 0xee,        // a     func return (DATA)
-    END = 0xef,        //       func return nil
+    END = 0xef,        // func return nil
     IRBYTECODE = 0xf0, // <IR NODE>
     IRLIST = 0xf1,     // <IR NODE>
     IRBLOCK = 0xf2,    // <IR NODE>
@@ -259,13 +263,13 @@ pub enum Bytecode {
     IRWHILE = 0xf6,    // <IR NODE>
     IRBREAK = 0xf7,    // <IR NODE>
     IRCONTINUE = 0xf8, // <IR NODE>
-    ________________249 = 0xf9,
-    ________________250 = 0xfa,
-    ________________251 = 0xfb,
-    ________________252 = 0xfc,
+    ____________f9 = 0xf9,
+    ____________fa = 0xfa,
+    ____________fb = 0xfb,
+    ____________fc = 0xfc,
     BURN = 0xfd, // **    burn gas
-    NOP = 0xfe,  //       do nothing
-    NT = 0xff,   //       panic: never touch
+    NOP = 0xfe,  // do nothing
+    NT = 0xff,   // panic: never touch
 }
 
 use Bytecode::*;
@@ -383,7 +387,7 @@ bytecode_metadata_define! {
     TID        : 0, 1, 1,     type_id
 
     DUP        : 0, 0, 1,     dump
-    DUPN       : 1, 0, 1,     dump_n
+    DUPN       : 1, 0, 255,   dump_n
     POP        : 0, 255, 0,   pop
     POPN       : 1, 255, 0,   pop_n
     ROLL0      : 0, 0, 1,     roll_0
@@ -434,10 +438,10 @@ bytecode_metadata_define! {
     GET2       : 0, 0, 1,     local_2
     GET3       : 0, 0, 1,     local_3
 
-    LOG1       : 0, 1, 0,     log_1
-    LOG2       : 0, 2, 0,     log_2
-    LOG3       : 0, 3, 0,     log_3
-    LOG4       : 0, 4, 0,     log_4
+    LOG1       : 0, 2, 0,     log_1
+    LOG2       : 0, 3, 0,     log_2
+    LOG3       : 0, 4, 0,     log_3
+    LOG4       : 0, 5, 0,     log_4
 
     HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
@@ -485,37 +489,31 @@ bytecode_metadata_define! {
     MUL         : 0, 2, 1,     mul
     DIV         : 0, 2, 1,     div
     MOD         : 0, 2, 1,     mod
-    DIVUP       : 0, 2, 1,     div_up
-    DIVROUND    : 0, 2, 1,     div_round
     POW         : 0, 2, 1,     pow
-    RPOW        : 0, 3, 1,     rpow
-    MAX         : 0, 2, 1,     max
-    MIN         : 0, 2, 1,     min
-    SATADD      : 0, 2, 1,     sat_add
-    SATSUB      : 0, 2, 1,     sat_sub
-    ABSDIFF     : 0, 2, 1,     abs_diff
-    INC         : 1, 1, 1,     increase
-    DEC         : 1, 1, 1,     decrease
     SQRT        : 0, 1, 1,     sqrt
     SQRTUP      : 0, 1, 1,     sqrt_up
+    MAX         : 0, 2, 1,     max
+    MIN         : 0, 2, 1,     min
+    CLAMP       : 0, 3, 1,     clamp
+    ABSDIFF     : 0, 2, 1,     abs_diff
+    SATADD      : 0, 2, 1,     sat_add
+    SATSUB      : 0, 2, 1,     sat_sub
+    INC         : 1, 1, 1,     increase
+    DEC         : 1, 1, 1,     decrease
+
     ADDMOD      : 0, 3, 1,     add_mod
     MULMOD      : 0, 3, 1,     mul_mod
     MULADD      : 0, 3, 1,     mul_add
     MULSUB      : 0, 3, 1,     mul_sub
     MULDIV      : 0, 3, 1,     mul_div
-    MULDIVUP    : 0, 3, 1,     mul_div_up
-    MULDIVROUND : 0, 3, 1,     mul_div_round
     MULSHR      : 0, 3, 1,     mul_shr
-    MULSHRUP    : 0, 3, 1,     mul_shr_up
-    CLAMP          : 0, 3, 1,     clamp
-    DEVSCALED      : 0, 3, 1,     dev_scaled
-    DEVSCALEDFLOOR : 0, 3, 1,     dev_scaled_floor
-    MULADDDIV      : 0, 4, 1,     mul_add_div
-    MULSUBDIV   : 0, 4, 1,     mul_sub_div
-    MUL3DIV     : 0, 4, 1,     mul3_div
-    WITHINBPS   : 0, 4, 1,     within_bps
-    WAVG2       : 0, 4, 1,     wavg2
-    LERP        : 0, 4, 1,     lerp
+
+    FIN2        : 1, 2, 1,     fin_2
+    FIN3        : 1, 3, 1,     fin_3
+    FIN4        : 1, 4, 1,     fin_4
+    FINP3       : 1, 3, 1,     fin_p3
+    FINP4       : 1, 4, 1,     fin_p4
+    FINPOW3     : 1, 3, 1,     fin_pow3
 
     JMPL       : 2, 0, 0,     jump_long
     JMPS       : 1, 0, 0,     jump_offset

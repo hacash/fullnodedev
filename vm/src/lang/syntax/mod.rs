@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn syntax_rejects_legacy_naked_hex_codecall_body() {
+    fn syntax_rejects_naked_hex_codecall_body() {
         let err = parse("codecall abcdef0123").unwrap_err().to_string();
         assert!(
             err.contains("no lib binding") || err.contains("codecall body"),

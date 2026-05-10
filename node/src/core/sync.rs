@@ -25,14 +25,14 @@ impl SyncTracker {
         if let Some(st) = sync.as_mut() {
             if let Some(pk) = st.active_peer {
                 if pk != peer.key && now.duration_since(st.updated_at).as_secs() < 10 {
-                    return false
+                    return false;
                 }
             }
             st.active_peer = Some(peer.key);
             st.next_height = starthei;
             st.remote_height = remote_height.max(st.remote_height);
             st.updated_at = now;
-            return true
+            return true;
         }
         *sync = Some(SyncState {
             active_peer: Some(peer.key),
@@ -45,11 +45,9 @@ impl SyncTracker {
 
     pub fn finish_if_done(&self, peer: &Arc<Peer>, next_height: u64, remote_height: u64) {
         let mut sync = self.inner.lock().unwrap();
-        let Some(st) = sync.as_mut() else {
-            return
-        };
+        let Some(st) = sync.as_mut() else { return };
         if st.active_peer != Some(peer.key) {
-            return
+            return;
         }
         st.next_height = next_height;
         st.remote_height = remote_height;

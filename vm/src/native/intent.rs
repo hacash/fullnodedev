@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-// Legacy helper functions (kept for compatibility with special cases)
+// Intent validation helpers.
 
 fn ctl_expect_no_arg(argv: Value, name: &str) -> VmrtErr {
     if argv.is_nil() {

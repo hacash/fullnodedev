@@ -30,7 +30,9 @@ fn local_operand(mark: u8, locals: &mut Stack, mut value: Value) -> VmrtErr {
         LxOp::Add => locop_arithmetic(basev, &mut value, add_checked),
         LxOp::Sub => locop_arithmetic(basev, &mut value, sub_checked),
         LxOp::Mul => locop_arithmetic(basev, &mut value, mul_checked),
-        LxOp::Div => locop_arithmetic(basev, &mut value, div_checked),
+        LxOp::Div => locop_arithmetic(basev, &mut value, |x, y| {
+            div_checked(x, y, crate::rt::IR_NAME_DIV)
+        }),
     }?;
     Ok(())
 }
