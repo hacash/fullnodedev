@@ -52,9 +52,10 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let act = &this.d;
     act.address.must_privakey()?;
     let env = ctx.env().clone();
-    let mut state = CoreState::wrap(ctx.state());
+    check_diamond_mint_tx_type(ctx)?;
     let pending_height = env.block.height;
     let pending_hash = env.block.hash;
+    let tx_bid_fee = env.tx.fee.clone();
     let number = act.number;
     let dianum = *number;
     let name = act.diamond;
@@ -66,6 +67,12 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     if dianum > DIAMOND_ABOVE_NUMBER_OF_CREATE_BY_CUSTOM_MESSAGE {
         custom_message = act.custom_message.serialize();
     }
+    let tx_bid_burn_238 = if dianum > DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES {
+        Some(diamond_mint_legacy_bid_burn(ctx, &tx_bid_fee)?.to_238_u64()?)
+    } else {
+        None
+    };
+    let mut state = CoreState::wrap(ctx.state());
     // check mine
     let (sha3hx, mediumhx, diahx) =
         x16rs::mine_diamond(dianum, &prev_hash, &nonce, &address, &custom_message);
@@ -129,19 +136,15 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
             return xerrf!("diamond {} already exists", namestr);
         }
     }
-    // tx fee
-    let tx_bid_fee = &env.tx.fee;
     // total count
     let mut ttcount = state.get_total_count();
     let minted = (*ttcount.minted_diamond as usize)
         .checked_add(1)
         .ok_or_else(|| "minted_diamond overflow".to_string())?;
     ttcount.minted_diamond = DiamondNumber::from_usize(minted)?;
-    if dianum > DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES {
-        // Burn 90% by subtracting a safe floor(10%) part.
-        let keep_ten_percent = tx_bid_fee.ten_percent_floor()?;
-        let burn = tx_bid_fee.clone().sub_mode_u64(&keep_ten_percent)?;
-        let burn_238 = burn.to_238_u64()?;
+    if let Some(burn_238) = tx_bid_burn_238 {
+        // Diamond bid burn accounting must follow the actual legacy fee split,
+        // not an independent percentage approximation.
         let total_burn = (*ttcount.hacd_bid_burn_238)
             .checked_add(burn_238 as u128)
             .ok_or_else(|| "hacd_bid_burn_238 overflow".to_string())?;
@@ -187,4 +190,123 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     hacd_add(&mut state, &act.address, &DiamondNumber::from(1))?;
     // ok
     Ok(vec![])
+}
+
+fn check_diamond_mint_tx_type(ctx: &dyn Context) -> Rerr {
+    if ctx.env().tx.ty != protocol::transaction::TransactionType2::TYPE {
+        return errf!("DiamondMint can only be executed in tx type 2")
+    }
+    Ok(())
+}
+
+fn diamond_mint_legacy_bid_burn(ctx: &dyn Context, tx_bid_fee: &Amount) -> Ret<Amount> {
+    check_diamond_mint_tx_type(ctx)?;
+    tx_bid_fee.sub_mode_u128(&ctx.tx().fee_got())
+}
+
+#[cfg(test)]
+mod diamond_mint_tests {
+    use super::*;
+    use basis::component::{Env, MemMap};
+    use basis::interface::{ActExec, State, Transaction};
+    use protocol::context::{ContextInst, EmptyState};
+    use protocol::state::EmptyLogs;
+    use protocol::transaction::{TransactionType2, TransactionType3};
+    use std::sync::Weak;
+
+    #[derive(Default, Clone)]
+    struct FlatMemState {
+        mem: MemMap,
+    }
+
+    impl State for FlatMemState {
+        fn fork_sub(&self, _: Weak<Box<dyn State>>) -> Box<dyn State> {
+            Box::new(Self::default())
+        }
+
+        fn merge_sub(&mut self, sta: Box<dyn State>) {
+            self.mem.extend(sta.as_mem().clone());
+        }
+
+        fn detach(&mut self) {}
+
+        fn clone_state(&self) -> Box<dyn State> {
+            Box::new(self.clone())
+        }
+
+        fn as_mem(&self) -> &MemMap {
+            &self.mem
+        }
+
+        fn get(&self, k: Vec<u8>) -> Option<Vec<u8>> {
+            self.mem.get(&k).and_then(|v| v.clone())
+        }
+
+        fn set(&mut self, k: Vec<u8>, v: Vec<u8>) {
+            self.mem.insert(k, Some(v));
+        }
+
+        fn del(&mut self, k: Vec<u8>) {
+            self.mem.insert(k, None);
+        }
+    }
+
+    fn diamond_mint_action(number: u32) -> DiamondMint {
+        let mut act = DiamondMint::with(
+            DiamondName::from(*b"WTYUIA"),
+            DiamondNumber::from(number),
+        );
+        act.d.address = Address::create_privakey([7u8; 20]);
+        act
+    }
+
+    fn env_for_tx(tx: &dyn TransactionRead) -> Env {
+        let mut env = Env::default();
+        env.chain.fast_sync = true;
+        env.block.height = 1;
+        env.tx.ty = tx.ty();
+        env.tx.main = tx.main();
+        env.tx.addrs = tx.addrs();
+        env.tx.fee = tx.fee().clone();
+        env
+    }
+
+    #[test]
+    fn diamond_mint_rejects_type3() {
+        let main = Address::create_privakey([1u8; 20]);
+        let fee = Amount::coin(1000, UNIT_238);
+        let act = diamond_mint_action(DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES + 1);
+        let mut tx = TransactionType3::new_by(main, fee, 1);
+        tx.push_action(Box::new(act.clone())).unwrap();
+        let env = env_for_tx(&tx);
+        let mut ctx = ContextInst::new(
+            env,
+            Box::new(EmptyState {}),
+            Box::new(EmptyLogs {}),
+            &tx,
+        );
+
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(err.to_string().contains("tx type 2"), "{err}");
+    }
+
+    #[test]
+    fn diamond_mint_type2_bid_burn_uses_actual_fee_delta() {
+        let main = Address::create_privakey([1u8; 20]);
+        let fee = Amount::coin(1000, UNIT_238);
+        let act = diamond_mint_action(DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES + 1);
+        let mut tx = TransactionType2::new_by(main, fee.clone(), 1);
+        tx.push_action(Box::new(act)).unwrap();
+        let env = env_for_tx(&tx);
+        let ctx = ContextInst::new(
+            env,
+            Box::new(FlatMemState::default()),
+            Box::new(EmptyLogs {}),
+            &tx,
+        );
+
+        let expected = fee.sub_mode_u128(&tx.fee_got()).unwrap();
+        let burn = diamond_mint_legacy_bid_burn(&ctx, tx.fee()).unwrap();
+        assert_eq!(burn, expected);
+    }
 }

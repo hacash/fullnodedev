@@ -1341,12 +1341,36 @@ fn unary_dec(x: &mut Value, n: u8) -> VmrtErr {
 #[cfg(test)]
 mod shift_u64_tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn test_heap() -> Heap {
         let mut h = Heap::new(64);
         let gst = GasExtra::new(1);
         h.grow(1, &gst).unwrap();
         h
+    }
+
+    fn fin_dispatch_for_test(spec: FinSpec, args: &[Value]) -> VmrtRes<Value> {
+        match spec.family {
+            Bytecode::FIN2 => fin2_checked(spec, &args[0], &args[1]),
+            Bytecode::FIN3 => fin3_checked(spec, &args[0], &args[1], &args[2]),
+            Bytecode::FIN4 => fin4_checked(spec, &args[0], &args[1], &args[2], &args[3]),
+            Bytecode::FINP3 => finp3_checked(spec, &args[0], &args[1], &args[2]),
+            Bytecode::FINP4 => finp4_checked(spec, &args[0], &args[1], &args[2], &args[3]),
+            Bytecode::FINPOW3 => finpow3_checked(spec, &args[0], &args[1], &args[2]),
+            _ => invalid_fin_spec(spec),
+        }
+    }
+
+    fn fin_call_by_name(name: &'static str, args: Vec<Value>) -> VmrtRes<Value> {
+        let spec = fin_source_call_spec(name).unwrap().unwrap();
+        assert_eq!(
+            spec.argc().unwrap() as usize,
+            args.len(),
+            "test case argc mismatch for {}",
+            name
+        );
+        fin_dispatch_for_test(spec, &args)
     }
 
     #[test]
@@ -2345,6 +2369,339 @@ mod shift_u64_tests {
         assert_eq!(
             finp3_checked(spec, &Value::U64(106), &Value::U64(100), &Value::U64(5)).unwrap(),
             Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn every_fin_registry_entry_has_a_runtime_behavior_case() {
+        macro_rules! case_u {
+            ($name:literal, [$($arg:expr),* $(,)?], $expected:expr) => {
+                (
+                    $name,
+                    vec![$(Value::U128($arg)),*],
+                    Value::U128($expected),
+                )
+            };
+        }
+        macro_rules! case_b {
+            ($name:literal, [$($arg:expr),* $(,)?], $expected:expr) => {
+                (
+                    $name,
+                    vec![$(Value::U128($arg)),*],
+                    Value::Bool($expected),
+                )
+            };
+        }
+
+        let cases = vec![
+            case_u!("div_exact", [12, 3], 4),
+            case_u!("div_floor", [10, 3], 3),
+            case_u!("div_ceil", [10, 3], 4),
+            case_u!("div_half_up", [10, 6], 2),
+            case_u!("div_half_even", [5, 2], 2),
+            case_u!("sqrt_mul_floor", [2, 3], 2),
+            case_u!("sqrt_mul_ceil", [2, 3], 3),
+            case_u!("quantize_floor", [101, 10], 100),
+            case_u!("quantize_ceil", [101, 10], 110),
+            case_u!("mul_div_exact", [6, 7, 3], 14),
+            case_u!("mul_div_floor", [5, 10, 6], 8),
+            case_u!("mul_div_ceil", [5, 10, 6], 9),
+            case_u!("mul_div_half_up", [5, 1, 2], 3),
+            case_u!("mul_div_half_even", [5, 1, 2], 2),
+            case_u!("dev_scaled_floor", [10001, 10000, 3], 0),
+            case_u!("dev_scaled_ceil", [10001, 10000, 3], 1),
+            case_u!("dev_scaled_half_even", [125, 100, 10], 2),
+            case_u!("scaled_div_floor", [5, 1, 2], 2),
+            case_u!("scaled_div_ceil", [5, 1, 2], 3),
+            case_u!("scaled_div_half_up", [5, 1, 2], 3),
+            case_u!("scaled_div_half_even", [5, 1, 2], 2),
+            case_u!("mul_shr_floor", [15, 1, 1], 7),
+            case_u!("mul_shr_ceil", [15, 1, 1], 8),
+            case_u!("scaled_add_floor", [101, 1, 2], 151),
+            case_u!("scaled_add_ceil", [101, 1, 2], 152),
+            case_u!("scaled_sub_floor", [101, 1, 2], 51),
+            case_u!("scaled_sub_ceil", [101, 1, 2], 50),
+            case_u!("mul_div_den_add_floor", [100, 10, 90], 10),
+            case_u!("mul_div_den_add_ceil", [10, 10, 3], 8),
+            case_u!("mul_div_den_sub_floor", [100, 10, 110], 10),
+            case_u!("mul_div_den_sub_ceil", [10, 10, 23], 8),
+            case_u!("mul_add_div_exact", [2, 3, 4, 2], 5),
+            case_u!("mul_add_div_floor", [2, 3, 4, 6], 1),
+            case_u!("mul_add_div_ceil", [2, 3, 4, 6], 2),
+            case_u!("mul_add_div_half_up", [2, 3, 4, 6], 2),
+            case_u!("mul_add_div_half_even", [2, 3, 4, 4], 2),
+            case_u!("mul_sub_div_exact", [9, 8, 6, 3], 22),
+            case_u!("mul_sub_div_floor", [9, 8, 6, 5], 13),
+            case_u!("mul_sub_div_ceil", [9, 8, 6, 5], 14),
+            case_u!("mul_sub_div_half_up", [9, 8, 6, 4], 17),
+            case_u!("mul_sub_div_half_even", [9, 8, 6, 4], 16),
+            case_u!("mul3_div_exact", [3, 4, 5, 6], 10),
+            case_u!("mul3_div_floor", [3, 4, 5, 7], 8),
+            case_u!("mul3_div_ceil", [3, 4, 5, 7], 9),
+            case_u!("mul3_div_half_up", [3, 4, 5, 8], 8),
+            case_u!("mul3_div_half_even", [13, 4, 1, 8], 6),
+            case_u!("wavg2_exact", [100, 1, 300, 3], 250),
+            case_u!("wavg2_floor", [101, 1, 100, 1], 100),
+            case_u!("wavg2_ceil", [101, 1, 100, 1], 101),
+            case_u!("wavg2_half_up", [101, 1, 100, 1], 101),
+            case_u!("wavg2_half_even", [1, 1, 2, 1], 2),
+            case_u!("lerp_exact", [100, 200, 1, 4], 125),
+            case_u!("lerp_floor", [101, 100, 1, 2], 100),
+            case_u!("lerp_ceil", [101, 100, 1, 2], 101),
+            case_u!("lerp_half_up", [101, 100, 1, 2], 101),
+            case_u!("lerp_half_even", [0, 1, 1, 2], 0),
+            case_b!("abs_diff_lte", [105, 100, 5], true),
+            case_b!("within_bps", [10050, 10000, 60, 10000], true),
+            case_b!("cross_lte", [2, 3, 3, 2], true),
+            case_b!("cross_gte", [2, 3, 3, 2], true),
+            case_b!("cross_eq", [2, 3, 3, 2], true),
+            case_u!("rpow_half_up", [105, 2, 100], 110),
+        ];
+
+        let mut covered = HashSet::new();
+        for (name, args, expected) in cases {
+            let got = fin_call_by_name(name, args).unwrap();
+            assert_eq!(got, expected, "FIN behavior case failed for {}", name);
+            assert!(covered.insert(name), "duplicate FIN behavior case {}", name);
+        }
+
+        for spec in fin_specs() {
+            assert!(
+                covered.contains(spec.name),
+                "missing runtime behavior case for FIN spec {}",
+                spec.name
+            );
+        }
+        assert_eq!(
+            covered.len(),
+            fin_specs().len(),
+            "FIN behavior case count must match registry"
+        );
+    }
+
+    #[test]
+    fn fin_exact_rounding_rejects_any_remainder() {
+        let cases = [
+            ("div_exact", vec![Value::U128(10), Value::U128(3)]),
+            ("mul_div_exact", vec![Value::U128(5), Value::U128(10), Value::U128(6)]),
+            (
+                "mul_add_div_exact",
+                vec![Value::U128(2), Value::U128(3), Value::U128(4), Value::U128(6)],
+            ),
+            (
+                "mul_sub_div_exact",
+                vec![Value::U128(9), Value::U128(8), Value::U128(6), Value::U128(5)],
+            ),
+            (
+                "mul3_div_exact",
+                vec![Value::U128(3), Value::U128(4), Value::U128(5), Value::U128(7)],
+            ),
+            (
+                "wavg2_exact",
+                vec![Value::U128(1), Value::U128(1), Value::U128(2), Value::U128(1)],
+            ),
+            (
+                "lerp_exact",
+                vec![Value::U128(0), Value::U128(1), Value::U128(1), Value::U128(2)],
+            ),
+        ];
+
+        for (name, args) in cases {
+            assert!(
+                fin_call_by_name(name, args).is_err(),
+                "{} must reject non-exact division",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn fin_rejects_zero_denominators_and_invalid_parameters() {
+        let invalid = [
+            ("div_floor", vec![Value::U128(1), Value::U128(0)]),
+            ("quantize_floor", vec![Value::U128(1), Value::U128(0)]),
+            ("mul_div_floor", vec![Value::U128(1), Value::U128(1), Value::U128(0)]),
+            ("scaled_div_floor", vec![Value::U128(1), Value::U128(1), Value::U128(0)]),
+            ("dev_scaled_floor", vec![Value::U128(1), Value::U128(0), Value::U128(1)]),
+            ("dev_scaled_floor", vec![Value::U128(1), Value::U128(1), Value::U128(0)]),
+            ("scaled_add_floor", vec![Value::U128(1), Value::U128(1), Value::U128(0)]),
+            ("scaled_sub_floor", vec![Value::U128(1), Value::U128(1), Value::U128(0)]),
+            ("mul_div_den_sub_floor", vec![Value::U128(1), Value::U128(1), Value::U128(1)]),
+            (
+                "mul_add_div_floor",
+                vec![Value::U128(1), Value::U128(1), Value::U128(1), Value::U128(0)],
+            ),
+            (
+                "mul_sub_div_floor",
+                vec![Value::U128(1), Value::U128(1), Value::U128(1), Value::U128(0)],
+            ),
+            (
+                "mul3_div_floor",
+                vec![Value::U128(1), Value::U128(1), Value::U128(1), Value::U128(0)],
+            ),
+            (
+                "wavg2_floor",
+                vec![Value::U128(1), Value::U128(0), Value::U128(2), Value::U128(0)],
+            ),
+            (
+                "lerp_floor",
+                vec![Value::U128(1), Value::U128(2), Value::U128(1), Value::U128(0)],
+            ),
+            (
+                "lerp_floor",
+                vec![Value::U128(1), Value::U128(2), Value::U128(3), Value::U128(2)],
+            ),
+            (
+                "within_bps",
+                vec![Value::U128(1), Value::U128(0), Value::U128(1), Value::U128(10)],
+            ),
+            (
+                "within_bps",
+                vec![Value::U128(1), Value::U128(1), Value::U128(1), Value::U128(0)],
+            ),
+            (
+                "within_bps",
+                vec![Value::U128(1), Value::U128(1), Value::U128(11), Value::U128(10)],
+            ),
+            ("rpow_half_up", vec![Value::U128(1), Value::U128(1), Value::U128(0)]),
+        ];
+
+        for (name, args) in invalid {
+            assert!(
+                fin_call_by_name(name, args).is_err(),
+                "{} must reject invalid parameters",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn fin_u128_wide_arithmetic_boundaries_are_checked() {
+        let max = Value::U128(u128::MAX);
+        let almost = Value::U128(u128::MAX - 1);
+
+        assert_eq!(
+            fin_call_by_name("mul_div_floor", vec![max.clone(), max.clone(), max.clone()]).unwrap(),
+            max
+        );
+        assert!(
+            fin_call_by_name("mul_div_ceil", vec![max.clone(), max.clone(), almost]).is_err(),
+            "quotient above u128::MAX must be rejected"
+        );
+        assert!(
+            fin_call_by_name(
+                "mul3_div_floor",
+                vec![max.clone(), max.clone(), Value::U128(2), max.clone()],
+            )
+            .is_err(),
+            "3-factor product above u256 must be rejected"
+        );
+        assert!(
+            fin_call_by_name("mul_add_div_floor", vec![max.clone(), max, Value::U128(1), Value::U128(1)])
+                .is_err(),
+            "unrepresentable divided result must be rejected"
+        );
+    }
+
+    #[test]
+    fn fin_mul_shr_boundary_shifts_cover_high_limb_and_round_up() {
+        let max = Value::U128(u128::MAX);
+        assert_eq!(
+            fin_call_by_name("mul_shr_floor", vec![max.clone(), max.clone(), Value::U128(128)]).unwrap(),
+            Value::U128(u128::MAX - 1)
+        );
+        assert_eq!(
+            fin_call_by_name("mul_shr_ceil", vec![max.clone(), max, Value::U128(128)]).unwrap(),
+            Value::U128(u128::MAX)
+        );
+        assert_eq!(
+            fin_call_by_name("mul_shr_floor", vec![Value::U128(1), Value::U128(1), Value::U128(255)]).unwrap(),
+            Value::U128(0)
+        );
+        assert_eq!(
+            fin_call_by_name("mul_shr_ceil", vec![Value::U128(1), Value::U128(1), Value::U128(255)]).unwrap(),
+            Value::U128(1)
+        );
+    }
+
+    #[test]
+    fn fin_rounding_half_even_ties_round_to_even_across_kernels() {
+        assert_eq!(
+            fin_call_by_name("div_half_even", vec![Value::U128(5), Value::U128(2)]).unwrap(),
+            Value::U128(2)
+        );
+        assert_eq!(
+            fin_call_by_name("div_half_even", vec![Value::U128(7), Value::U128(2)]).unwrap(),
+            Value::U128(4)
+        );
+        assert_eq!(
+            fin_call_by_name("mul_add_div_half_even", vec![
+                Value::U128(2),
+                Value::U128(3),
+                Value::U128(4),
+                Value::U128(4),
+            ])
+            .unwrap(),
+            Value::U128(2)
+        );
+        assert_eq!(
+            fin_call_by_name("mul_sub_div_half_even", vec![
+                Value::U128(9),
+                Value::U128(8),
+                Value::U128(6),
+                Value::U128(4),
+            ])
+            .unwrap(),
+            Value::U128(16)
+        );
+        assert_eq!(
+            fin_call_by_name("wavg2_half_even", vec![
+                Value::U128(0),
+                Value::U128(1),
+                Value::U128(1),
+                Value::U128(1),
+            ])
+            .unwrap(),
+            Value::U128(0)
+        );
+        assert_eq!(
+            fin_call_by_name("wavg2_half_even", vec![
+                Value::U128(1),
+                Value::U128(1),
+                Value::U128(2),
+                Value::U128(1),
+            ])
+            .unwrap(),
+            Value::U128(2)
+        );
+    }
+
+    #[test]
+    fn fin_rpow_half_up_matches_reference_edges() {
+        assert_eq!(
+            fin_call_by_name("rpow_half_up", vec![Value::U128(123), Value::U128(0), Value::U128(100)]).unwrap(),
+            Value::U128(100)
+        );
+        assert_eq!(
+            fin_call_by_name("rpow_half_up", vec![Value::U128(123), Value::U128(1), Value::U128(100)]).unwrap(),
+            Value::U128(123)
+        );
+        assert_eq!(
+            fin_call_by_name("rpow_half_up", vec![Value::U128(105), Value::U128(2), Value::U128(100)]).unwrap(),
+            Value::U128(110)
+        );
+        assert_eq!(
+            fin_call_by_name("rpow_half_up", vec![Value::U128(105), Value::U128(3), Value::U128(100)]).unwrap(),
+            Value::U128(116)
+        );
+        assert!(
+            fin_call_by_name("rpow_half_up", vec![
+                Value::U128(u128::MAX),
+                Value::U128(2),
+                Value::U128(1),
+            ])
+            .is_err(),
+            "rpow must reject intermediate quotient overflow"
         );
     }
 
