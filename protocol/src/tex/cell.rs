@@ -79,6 +79,15 @@ combi_dynlist!{ DnyTexCellW1, Uint1, TexCell, tex_cell_create, tex_cell_json_dec
 
 
 
+impl DnyTexCellW1 {
+    pub(crate) fn has_asset_transfer_cell(&self) -> bool {
+        self.as_list().iter().any(|cell| {
+            let kind = cell.kind();
+            kind == CellTrsAssetPay::CID as u16 || kind == CellTrsAssetGet::CID as u16
+        })
+    }
+}
+
 impl CellExec for DnyTexCellW1 {
     fn execute(&self, ctx: &mut dyn Context, main: &Address) -> Rerr {        
         for cell in self.as_list() {

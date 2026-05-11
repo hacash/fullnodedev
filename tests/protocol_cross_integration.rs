@@ -1051,6 +1051,7 @@ fn test_tex_action_rejects_ast_context_even_in_fast_sync() {
     use protocol::tex::*;
 
     let mut env = Env::default();
+    env.tx.ty = TransactionType3::TYPE;
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];
     let mut ctx = build_tex_ctx_with_state(env, Box::new(TestMemState::default()));
@@ -1120,6 +1121,7 @@ fn test_tex_action_signature_rejects_payload_tamper() {
     use protocol::tex::*;
 
     let mut env = Env::default();
+    env.tx.ty = TransactionType3::TYPE;
     env.tx.main = Address::from_readable("16Jswqk47s9PUcyCc88MMVwzgvHPvtEpf").unwrap();
     env.tx.main = field::ADDRESS_ONEX.clone();
     env.tx.addrs = vec![field::ADDRESS_ONEX.clone()];

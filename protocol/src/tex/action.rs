@@ -2,7 +2,7 @@
 * simple hac to
 */
 action_define! { TexCellAct, 22,
-    ActScope::TOP, 2, false, [],
+    ActScope::TOP, 3, self.cells.has_asset_transfer_cell(), [],
     {
         addr  : Address
         cells : DnyTexCellW1

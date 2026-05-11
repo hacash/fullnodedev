@@ -1204,6 +1204,171 @@ fn test_type3_gas_max_zero_allows_plain_zero_surcharge_action() {
     assert_eq!(ctx.gas_remaining(), 0);
 }
 
+fn seed_tex_asset_state(ctx: &mut dyn Context, owner: Address, serial: Fold64, amount: u64) {
+    let mut state = crate::state::CoreState::wrap(ctx.state());
+    let smelt = AssetSmelt {
+        serial,
+        supply: Fold64::from(1_000_000).unwrap(),
+        decimal: Uint1::from(0),
+        issuer: owner,
+        ticket: BytesW1::from_str("TEXAST").unwrap(),
+        name: BytesW1::from_str("Tex Asset").unwrap(),
+    };
+    state.asset_set(&serial, &smelt);
+    let mut bls = state.balance(&owner).unwrap_or_default();
+    bls.asset_set(AssetAmt::from(serial.uint(), amount).unwrap())
+        .unwrap();
+    state.balance_set(&owner, &bls);
+}
+
+fn fund_tex_type3_main(ctx: &mut dyn Context, main: Address) {
+    let mut state = crate::state::CoreState::wrap(ctx.state());
+    let mut bls = state.balance(&main).unwrap_or_default();
+    bls.hacash = Amount::unit238(1_000_000_000_000);
+    state.balance_set(&main, &bls);
+}
+
+#[test]
+fn test_type3_tex_asset_cell_extra9_requires_initialized_gas() {
+    let _guard = install_test_registry();
+    use crate::tex::*;
+
+    let main = field::ADDRESS_ONEX.clone();
+    let pay_acc = Account::create_by_password("tex_type3_asset_pay_zero_gas").unwrap();
+    let pay = Address::from(*pay_acc.address());
+    let serial = Fold64::from(77).unwrap();
+
+    let mut act = TexCellAct::create_by(pay);
+    act.add_cell(Box::new(CellTrsAssetPay::new(
+        AssetAmt::from(serial.uint(), 100).unwrap(),
+    )))
+    .unwrap();
+    act.do_sign(&pay_acc).unwrap();
+    assert!(act.extra9());
+
+    let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1730000000);
+    tx.gas_max = Uint1::from(0);
+    tx.actions.push(Box::new(act)).unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    fund_tex_type3_main(&mut ctx, tx.main());
+    seed_tex_asset_state(&mut ctx, pay, serial, 100);
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(err.contains("gas not initialized"), "{err}");
+}
+
+#[test]
+fn test_type3_tex_non_asset_cell_still_allows_zero_gas() {
+    let _guard = install_test_registry();
+    use crate::tex::*;
+
+    let main = field::ADDRESS_ONEX.clone();
+    let tex_acc = Account::create_by_password("tex_type3_non_asset_zero_gas").unwrap();
+    let tex_addr = Address::from(*tex_acc.address());
+
+    let mut act = TexCellAct::create_by(tex_addr);
+    act.add_cell(Box::new(CellCondHeightAtMost::new(100)))
+        .unwrap();
+    act.do_sign(&tex_acc).unwrap();
+    assert!(!act.extra9());
+
+    let mut tx = TransactionType3::new_by(main, Amount::unit238(1000), 1730000000);
+    tx.gas_max = Uint1::from(0);
+    tx.actions.push(Box::new(act)).unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    fund_tex_type3_main(&mut ctx, tx.main());
+
+    tx.execute(&mut ctx).unwrap();
+    assert_eq!(ctx.gas_remaining(), 0);
+}
+
+#[test]
+fn test_type3_tex_asset_cell_succeeds_with_gas_budget() {
+    let _guard = install_test_registry();
+    use crate::tex::*;
+
+    let main = field::ADDRESS_ONEX.clone();
+    let pay_acc = Account::create_by_password("tex_type3_asset_pay_with_gas").unwrap();
+    let get_acc = Account::create_by_password("tex_type3_asset_get_with_gas").unwrap();
+    let pay = Address::from(*pay_acc.address());
+    let get = Address::from(*get_acc.address());
+    let serial = Fold64::from(78).unwrap();
+
+    let mut pay_act = TexCellAct::create_by(pay);
+    pay_act
+        .add_cell(Box::new(CellTrsAssetPay::new(
+            AssetAmt::from(serial.uint(), 100).unwrap(),
+        )))
+        .unwrap();
+    pay_act.do_sign(&pay_acc).unwrap();
+
+    let mut get_act = TexCellAct::create_by(get);
+    get_act
+        .add_cell(Box::new(CellTrsAssetGet::new(
+            AssetAmt::from(serial.uint(), 100).unwrap(),
+        )))
+        .unwrap();
+    get_act.do_sign(&get_acc).unwrap();
+    assert!(pay_act.extra9());
+    assert!(get_act.extra9());
+
+    let mut tx = TransactionType3::new_by(main, Amount::unit238(1_000_000), 1730000000);
+    tx.gas_max = Uint1::from(99);
+    tx.actions.push(Box::new(pay_act)).unwrap();
+    tx.actions.push(Box::new(get_act)).unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    fund_tex_type3_main(&mut ctx, tx.main());
+    seed_tex_asset_state(&mut ctx, pay, serial, 100);
+
+    tx.execute(&mut ctx).unwrap();
+
+    let state = crate::state::CoreState::wrap(ctx.state());
+    assert_eq!(
+        state
+            .balance(&get)
+            .unwrap_or_default()
+            .asset(serial)
+            .unwrap()
+            .amount
+            .uint(),
+        100
+    );
+    assert!(
+        state
+            .balance(&pay)
+            .unwrap_or_default()
+            .asset(serial)
+            .is_none()
+    );
+}
+
 #[test]
 fn test_ast_select_revert_restores_failed_child_only() {
     let _guard = install_test_registry();
@@ -1991,7 +2156,7 @@ fn test_tex_action_rejects_call_context_even_in_fast_sync() {
     let _guard = install_test_registry();
     use crate::tex::*;
 
-    let tx = TransactionType2::new_by(
+    let tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
         Amount::unit238(1000),
         1730000000,
@@ -2018,7 +2183,7 @@ fn test_tex_action_rejects_ast_context_even_in_fast_sync() {
     let _guard = install_test_registry();
     use crate::tex::*;
 
-    let tx = TransactionType2::new_by(
+    let tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
         Amount::unit238(1000),
         1730000000,
@@ -2045,7 +2210,7 @@ fn test_tex_diamond_settlement_assigns_fifo_across_interleaved_actions() {
     let _guard = install_test_registry();
     use crate::tex::*;
 
-    let tx = TransactionType2::new_by(
+    let tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
         Amount::unit238(1000),
         1730000000,
