@@ -21,4 +21,6 @@ include!{"address.rs"}
 include!{"log.rs"}
 include!{"func.rs"}
 include!{"contract.rs"}
+include!{"status.rs"}
 include!{"storage.rs"}
+include!{"state.rs"}
