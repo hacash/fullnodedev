@@ -215,7 +215,8 @@ impl P2shMerkleTree {
     }
 
     /// Same as `build_unlock_script_prove_unchecked`, but performs local checks using
-    /// the same rules as `P2SHScriptProve::get_stuff`.
+    /// the same rules as `P2SHScriptProve::get_stuff`, and enforces Merkle proof depth
+    /// against [`crate::rt::SpaceCap::p2sh_merkle_depth_max`] for `block_height` (matches on-chain `execute`).
     pub fn build_unlock_script_prove_checked(&self, block_height: u64, idx: usize, witness: BytesW2) -> Ret<(Address, P2SHScriptProve, ScriptmhCalc)> {
         let spec = self.leaves.get(idx).ok_or_else(|| format!("p2sh tool: leaf index {} overflow", idx))?.spec.clone();
         let gst = GasExtra::new(block_height);
@@ -229,7 +230,8 @@ impl P2shMerkleTree {
             &spec.lockbox,
             &witness,
         )?;
-        // ok, build action
+        let merkle_depth = self.proof_for_index(idx)?.as_list().len();
+        P2SHScriptProve::verify_merkle_depth(&cap, merkle_depth)?;
         self.build_unlock_script_prove_unchecked(idx, witness)
     }
 }

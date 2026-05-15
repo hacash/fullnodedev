@@ -182,7 +182,7 @@ impl P2SHScriptProve {
         Ok(())
     }
 
-    fn verify_merkle_depth(cap: &SpaceCap, merkle_depth: usize) -> Ret<()> {
+    pub(crate) fn verify_merkle_depth(cap: &SpaceCap, merkle_depth: usize) -> Ret<()> {
         if merkle_depth > cap.p2sh_merkle_depth_max {
             return errf!(
                 "p2sh merkle depth overflow ({}>{})",

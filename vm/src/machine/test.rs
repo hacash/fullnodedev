@@ -1974,6 +1974,38 @@ end",
     }
 
     #[test]
+    fn irnode_tail_invoke_propagates_entry_failure_code() {
+        let base_addr = test_base_addr();
+        let contract_addr = test_contract(&base_addr, 40);
+
+        let mut tail_call = vec![crate::rt::Bytecode::PNIL as u8, crate::rt::Bytecode::CALLSELF as u8];
+        tail_call.extend_from_slice(&crate::rt::calc_func_sign("fail"));
+        let mut run_ir = vec![crate::rt::Bytecode::IRBYTECODE as u8];
+        run_ir.extend_from_slice(&(tail_call.len() as u16).to_be_bytes());
+        run_ir.extend_from_slice(&tail_call);
+
+        let contract_sto = Contract::new()
+            .func(Func::new("fail").unwrap().fitsh("return 7").unwrap())
+            .func(Func::new("run").unwrap().external().ircode(run_ir).unwrap())
+            .into_sto();
+
+        let mut ext_state = StateMem::default();
+        {
+            let mut vmsta = crate::VMState::wrap(&mut ext_state);
+            vmsta.contract_set_sync_edition(&contract_addr, &contract_sto);
+        }
+
+        let script = r##"
+            lib C = 0
+            return C.run()
+        "##;
+        assert_err_contains(
+            run_main_script(base_addr, vec![contract_addr], ext_state, script),
+            "main call return error code 7",
+        );
+    }
+
+    #[test]
     fn callsuper_uses_direct_parent_order() {
         let base_addr = test_base_addr();
         let contract_a = test_contract(&base_addr, 24);

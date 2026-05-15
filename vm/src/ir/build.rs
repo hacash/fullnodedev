@@ -6,8 +6,10 @@ pub fn convert_ir_to_bytecode(bytes: &[u8]) -> VmrtRes<Vec<u8>> {
 
 pub fn verify_ir_runtime_safe_bytecodes(codes: &[u8]) -> VmrtErr {
     let mut i = 0usize;
+    let mut last = None;
     while i < codes.len() {
         let inst: Bytecode = std_mem_transmute!(codes[i]);
+        last = Some(inst);
         let meta = inst.metadata();
         if !meta.valid {
             return itr_err_fmt!(InstInvalid, "bytecode {} not found", inst as u8);
@@ -40,6 +42,10 @@ pub fn verify_ir_runtime_safe_bytecodes(codes: &[u8]) -> VmrtErr {
         }
         i = end;
     }
+    let Some(last) = last else {
+        return itr_err_code!(CodeEmpty);
+    };
+    ensure_terminal_instruction(last)?;
     Ok(())
 }
 
@@ -55,8 +61,9 @@ pub fn runtime_irs_to_bytecodes(bytes: &[u8], gas_extra: &GasExtra) -> VmrtRes<V
 
 pub fn runtime_irs_to_exec_bytecodes(bytes: &[u8], gas_extra: &GasExtra) -> VmrtRes<Vec<u8>> {
     let codes = convert_ir_to_runtime_bytecode(bytes)?;
-    // Runtime executable stream is BURN(compile_fee) + code + END, where compile_fee uses chain gas config formula.
-    let exec_len = codes.len() + 1; // include END
+    // Runtime executable stream is BURN(compile_fee) + code. The converted IR code
+    // must be terminal by itself so a trailing CALL remains a real tail call.
+    let exec_len = codes.len();
     let fee = gas_extra.compile_bytes(exec_len);
     if fee < 0 || fee > u16::MAX as i64 {
         return itr_err_fmt!(GasError, "IR compile fee overflow: {}", fee);
@@ -65,7 +72,6 @@ pub fn runtime_irs_to_exec_bytecodes(bytes: &[u8], gas_extra: &GasExtra) -> Vmrt
     rescodes.push(BURN as u8);
     rescodes.extend_from_slice(&(fee as u16).to_be_bytes());
     rescodes.extend_from_slice(&codes);
-    rescodes.push(END as u8);
     Ok(rescodes)
 }
 
@@ -113,5 +119,28 @@ mod ir_runtime_codegen_tests {
             RET as u8,
         ];
         convert_ir_to_runtime_bytecode(&raw).expect("relative jumps stay valid after BURN prefix");
+    }
+
+    #[test]
+    fn irnode_runtime_requires_converted_code_to_be_terminal() {
+        let raw = vec![IRBYTECODE as u8, 0, 1, P1 as u8];
+        let err = convert_ir_to_runtime_bytecode(&raw).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CodeNotWithEnd);
+    }
+
+    #[test]
+    fn irnode_exec_bytecode_does_not_append_end_after_tail_call() {
+        let selector = [1, 2, 3, 4];
+        let mut raw_call = vec![PNIL as u8, CALLSELF as u8];
+        raw_call.extend_from_slice(&selector);
+
+        let mut raw = vec![IRBYTECODE as u8];
+        raw.extend_from_slice(&(raw_call.len() as u16).to_be_bytes());
+        raw.extend_from_slice(&raw_call);
+
+        let exec = runtime_irs_to_exec_bytecodes(&raw, &GasExtra::new(1)).unwrap();
+        assert_eq!(exec[0], BURN as u8);
+        assert_eq!(&exec[3..], raw_call.as_slice());
+        assert_ne!(exec.last().copied(), Some(END as u8));
     }
 }
