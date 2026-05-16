@@ -50,7 +50,12 @@ satoshi_operate_define!(sat_sub, addr, sat, oldsat, {
 
 pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &Satoshi
 ) -> XRet<Vec<u8>> {
-    crate::upgrade::check_transfer_addr_online_open(ctx.env().block.height, from, to)?;
+    crate::upgrade::check_transfer_addr_online_open(
+        ctx.env().chain.id,
+        ctx.env().block.height,
+        from,
+        to,
+    )?;
     if from == to {
 		return xerrf!("cannot transfer to self")
     }

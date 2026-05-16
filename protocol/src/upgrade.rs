@@ -6,6 +6,7 @@ pub const DEV_OPEN_MAX_HEIGHT: u64 = 65_432;
 
 // Set the real mainnet activation height before rollout.
 pub const ONLINE_OPEN_HEIGHT: u64 = 765_432;
+pub const MAINNET_CHAIN_ID: u32 = 0;
 
 // One-time pre-upgrade allowlist.
 // In the middle closed interval only legacy tx/action kinds below are allowed.
@@ -36,7 +37,10 @@ pub fn is_global_upgrade_open(height: u64) -> bool {
 }
 
 #[inline]
-pub fn check_gated_tx(height: u64, tx_type: u8) -> Rerr {
+pub fn check_gated_tx(chain_id: u32, height: u64, tx_type: u8) -> Rerr {
+    if chain_id != MAINNET_CHAIN_ID {
+        return Ok(());
+    }
     if is_global_upgrade_open(height) || is_pre_upgrade_allowed_tx_type(tx_type) {
         return Ok(());
     }
@@ -50,7 +54,10 @@ pub fn check_gated_tx(height: u64, tx_type: u8) -> Rerr {
 }
 
 #[inline]
-pub fn check_gated_action(height: u64, kind: u16) -> Rerr {
+pub fn check_gated_action(chain_id: u32, height: u64, kind: u16) -> Rerr {
+    if chain_id != MAINNET_CHAIN_ID {
+        return Ok(());
+    }
     if is_global_upgrade_open(height) || is_pre_upgrade_allowed_action(kind) {
         return Ok(());
     }
@@ -64,7 +71,10 @@ pub fn check_gated_action(height: u64, kind: u16) -> Rerr {
 }
 
 #[inline]
-pub fn check_transfer_addr_online_open(height: u64, from: &Address, to: &Address) -> Rerr {
+pub fn check_transfer_addr_online_open(chain_id: u32, height: u64, from: &Address, to: &Address) -> Rerr {
+    if chain_id != MAINNET_CHAIN_ID {
+        return Ok(());
+    }
     if is_global_upgrade_open(height) {
         return Ok(());
     }
@@ -90,27 +100,27 @@ mod tests {
     #[test]
     fn low_height_is_open_for_gated_tx_and_action() {
         assert!(is_global_upgrade_open(0));
-        assert!(check_gated_tx(0, 3).is_ok());
-        assert!(check_gated_action(0, 25).is_ok());
+        assert!(check_gated_tx(MAINNET_CHAIN_ID, 0, 3).is_ok());
+        assert!(check_gated_action(MAINNET_CHAIN_ID, 0, 25).is_ok());
     }
 
     #[test]
     fn middle_height_is_closed_for_gated_tx_and_action() {
         let height = DEV_OPEN_MAX_HEIGHT.saturating_add(1);
         assert!(!is_global_upgrade_open(height));
-        assert!(check_gated_tx(height, 3).is_err());
-        assert!(check_gated_action(height, 25).is_err());
+        assert!(check_gated_tx(MAINNET_CHAIN_ID, height, 3).is_err());
+        assert!(check_gated_action(MAINNET_CHAIN_ID, height, 25).is_err());
     }
 
     #[test]
     fn ungated_kind_always_passes() {
         let height = DEV_OPEN_MAX_HEIGHT.saturating_add(1);
-        assert!(check_gated_action(height, 1).is_ok());
-        assert!(check_gated_action(height, 2).is_ok());
-        assert!(check_gated_action(height, 4).is_ok());
-        assert!(check_gated_action(height, 32).is_ok());
-        assert!(check_gated_tx(height, 1).is_ok());
-        assert!(check_gated_tx(height, 2).is_ok());
+        assert!(check_gated_action(MAINNET_CHAIN_ID, height, 1).is_ok());
+        assert!(check_gated_action(MAINNET_CHAIN_ID, height, 2).is_ok());
+        assert!(check_gated_action(MAINNET_CHAIN_ID, height, 4).is_ok());
+        assert!(check_gated_action(MAINNET_CHAIN_ID, height, 32).is_ok());
+        assert!(check_gated_tx(MAINNET_CHAIN_ID, height, 1).is_ok());
+        assert!(check_gated_tx(MAINNET_CHAIN_ID, height, 2).is_ok());
     }
 
     #[test]
@@ -128,13 +138,25 @@ mod tests {
             0x0601, // ViewBalance
             0x0701, // EnvHeight
         ] {
-            assert!(check_gated_action(height, kind).is_err(), "kind {}", kind);
+            assert!(
+                check_gated_action(MAINNET_CHAIN_ID, height, kind).is_err(),
+                "kind {}",
+                kind
+            );
         }
     }
 
     #[test]
     fn tx_type3_is_gated_in_middle_closed_interval() {
         let height = DEV_OPEN_MAX_HEIGHT.saturating_add(1);
-        assert!(check_gated_tx(height, 3).is_err());
+        assert!(check_gated_tx(MAINNET_CHAIN_ID, height, 3).is_err());
+    }
+
+    #[test]
+    fn sidechain_bypasses_gates() {
+        let sidechain_id = 1u32;
+        let height = DEV_OPEN_MAX_HEIGHT.saturating_add(1);
+        assert!(check_gated_tx(sidechain_id, height, 3).is_ok());
+        assert!(check_gated_action(sidechain_id, height, 25).is_ok());
     }
 }

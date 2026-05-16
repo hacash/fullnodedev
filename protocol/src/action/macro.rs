@@ -102,7 +102,11 @@ macro_rules! action_define {
         impl ActExec for $class {
             fn execute(&$pself, $pctx: &mut dyn Context) -> XRet<(u32, Vec<u8>)> {
                 use std::any::Any;
-                $crate::upgrade::check_gated_action($pctx.env().block.height, $pself.kind())?;
+                $crate::upgrade::check_gated_action(
+                    $pctx.env().chain.id,
+                    $pctx.env().block.height,
+                    $pself.kind()
+                )?;
                 if $pctx.env().chain.fast_sync {
                     $crate::action::precheck_runtime_action_fast_sync($pctx.env().tx.ty, $pself)?;
                 } else {
