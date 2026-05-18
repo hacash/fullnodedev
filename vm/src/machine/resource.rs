@@ -1288,13 +1288,21 @@ impl Runtime {
         self.charge_and_commit_gas(host, 0, gas, 0)
     }
 
+    pub fn settle_resource_gas<H: VmHost + ?Sized>(
+        &mut self,
+        host: &mut H,
+        gas: i64,
+    ) -> VmrtErr {
+        self.charge_and_commit_gas(host, 0, gas, 0)
+    }
+
     #[cfg(feature = "calcfunc")]
     pub fn settle_calc_resource_gas<H: VmHost + ?Sized>(
         &mut self,
         host: &mut H,
         gas: i64,
     ) -> VmrtErr {
-        self.charge_and_commit_gas(host, 0, gas, 0)
+        self.settle_resource_gas(host, gas)
     }
 
     pub fn settle_compute_gas<H: VmHost + ?Sized>(&mut self, host: &mut H, gas: i64) -> VmrtErr {

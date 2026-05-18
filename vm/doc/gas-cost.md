@@ -194,18 +194,20 @@ byte = value_byte = ContractSto.size(), not include key_byte. The formula is as 
 - Truncation scope: per loaded contract (`floor(byte_i / 64)`), no cross-contract remainder carry
 - Warm tx-local cache hit: no contract-load gas charge
 
-#### IR runtime compile fee
+#### IR format fee
 
-IR code real-time compile consumes gas by byte size:
+IR code is converted to runtime bytecode before execution. The executable stream is the
+compiled code only; it is not prefixed with a synthetic `BURN` instruction.
 
-- byte/16: IR compile output byte length (includes runtime-appended `END`)
-- Runtime encoding path wraps executable stream as `BURN(compile_fee) + code + END`.
+- byte/16: raw serialized IR byte length (`FnObj.codes.len()`)
+- Charging point: frame entry, immediately before the frame's first instruction executes
+- Gas bucket: resource gas
 
 Execution policy in one tx:
 
-- Compile-fee charging is executed by `BURN(compile_fee)` in runtime bytecode, so it is charged on every execution of that IR function body.
-- MainCall/P2sh paths construct transient `FnObj` values; IR-to-bytecode conversion cache is not reused across separate top-level calls.
-- Contract function `FnObj` keeps a `OnceLock`-cached compiled bytecode view when the same function object is reused (commonly via contract cache), but `BURN` still runs each call.
+- The IR format fee is charged on every execution of that IR function body.
+- MainCall/P2sh paths construct transient `FnObj` values, so their IR-to-bytecode conversion cache is not reused across separate top-level calls.
+- Contract function `FnObj` keeps a `OnceLock`-cached compiled bytecode view when the same function object is reused (commonly via contract cache), but the IR format fee is still charged for each prepared frame.
 
 
 ## Examples (visualized)

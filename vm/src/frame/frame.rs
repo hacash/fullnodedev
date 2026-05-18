@@ -94,6 +94,7 @@ pub struct Frame {
     pub oprnds: Stack,
     pub locals: Stack,
     pub heap: Heap,
+    ir_format_fee_pending: i64,
 }
 
 impl Frame {
@@ -163,6 +164,7 @@ impl Frame {
         cap: &SpaceCap,
     ) -> VmrtErr {
         self.clear_runtime_state();
+        self.ir_format_fee_pending = 0;
         if have_param {
             if let Some(vtys) = &fnobj.agvty {
                 vtys.check_params(&mut argv)?;
@@ -177,6 +179,11 @@ impl Frame {
         self.pc = 0;
         self.exec = exec;
         self.codes = fnobj.exec_bytecodes(height, gas_extra)?;
+        self.ir_format_fee_pending = if matches!(fnobj.ctype, CodeType::IRNode) {
+            gas_extra.ir_format_bytes(fnobj.codes.len())
+        } else {
+            0
+        };
         Ok(())
     }
 
@@ -224,6 +231,7 @@ impl Frame {
         param: Value,
         cap: &SpaceCap,
     ) -> VmrtErr {
+        self.ir_format_fee_pending = 0;
         param.check_func_argv()?;
         param.check_boundary_value_cap(cap)?;
         param.check_container_cap(cap)?;
@@ -252,6 +260,11 @@ impl Frame {
         self.exec = exec;
         self.call_argv = param;
         self.codes = fnobj.exec_bytecodes(height, gas_extra)?;
+        self.ir_format_fee_pending = if matches!(fnobj.ctype, CodeType::IRNode) {
+            gas_extra.ir_format_bytes(fnobj.codes.len())
+        } else {
+            0
+        };
         Ok(())
     }
 
@@ -267,6 +280,11 @@ impl Frame {
             .as_ref()
             .map(ContractAddress::to_addr)
             .unwrap_or(context_addr);
+        if self.ir_format_fee_pending > 0 {
+            let fee = self.ir_format_fee_pending;
+            r.settle_resource_gas(host, fee)?;
+            self.ir_format_fee_pending = 0;
+        }
         execute_code_in_frame(
             &mut self.pc,
             self.codes.as_slice(),
@@ -319,6 +337,46 @@ mod frame_boundary_tests {
             )
             .unwrap();
         assert_eq!(frame.call_argv, Value::U8(7));
+    }
+
+    #[test]
+    fn prepare_irnode_sets_format_fee_from_raw_ir_even_when_compiled_cached() {
+        let mut res = Runtime::create(1);
+        let raw_ir = vec![Bytecode::IRBYTECODE as u8, 0, 1, Bytecode::END as u8];
+        let fnobj = FnObj::plain(CodeType::IRNode, raw_ir.clone(), 0, None);
+        let expected = res.warm.gas_extra.ir_format_bytes(raw_ir.len());
+
+        let _ = fnobj.exec_bytecodes(1, &res.warm.gas_extra).unwrap();
+
+        let owner = ContractAddress::default();
+        let bindings = FrameBindings::contract(owner.clone(), owner, Vec::<field::Address>::new().into());
+        let mut first = Frame::new(&mut res);
+        first
+            .prepare(
+                ExecCtx::main(),
+                bindings.clone(),
+                &fnobj,
+                1,
+                &res.warm.gas_extra,
+                Some(Value::Nil),
+                &res.warm.space_cap,
+            )
+            .unwrap();
+        assert_eq!(first.ir_format_fee_pending, expected);
+
+        let mut second = Frame::new(&mut res);
+        second
+            .prepare(
+                ExecCtx::main(),
+                bindings,
+                &fnobj,
+                1,
+                &res.warm.gas_extra,
+                Some(Value::Nil),
+                &res.warm.space_cap,
+            )
+            .unwrap();
+        assert_eq!(second.ir_format_fee_pending, expected);
     }
 
     #[test]

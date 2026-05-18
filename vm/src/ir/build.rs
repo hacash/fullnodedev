@@ -59,20 +59,11 @@ pub fn runtime_irs_to_bytecodes(bytes: &[u8], gas_extra: &GasExtra) -> VmrtRes<V
     runtime_irs_to_exec_bytecodes(bytes, gas_extra)
 }
 
-pub fn runtime_irs_to_exec_bytecodes(bytes: &[u8], gas_extra: &GasExtra) -> VmrtRes<Vec<u8>> {
+pub fn runtime_irs_to_exec_bytecodes(bytes: &[u8], _gas_extra: &GasExtra) -> VmrtRes<Vec<u8>> {
     let codes = convert_ir_to_runtime_bytecode(bytes)?;
-    // Runtime executable stream is BURN(compile_fee) + code. The converted IR code
-    // must be terminal by itself so a trailing CALL remains a real tail call.
-    let exec_len = codes.len();
-    let fee = gas_extra.compile_bytes(exec_len);
-    if fee < 0 || fee > u16::MAX as i64 {
-        return itr_err_fmt!(GasError, "IR compile fee overflow: {}", fee);
-    }
-    let mut rescodes = Vec::with_capacity(exec_len + 3);
-    rescodes.push(BURN as u8);
-    rescodes.extend_from_slice(&(fee as u16).to_be_bytes());
-    rescodes.extend_from_slice(&codes);
-    Ok(rescodes)
+    // Runtime executable stream is the compiled code only. IR-format gas is charged
+    // at frame entry from raw IR length, so cached bytecode stays independent from gas policy.
+    Ok(codes)
 }
 
 #[cfg(test)]
@@ -118,7 +109,7 @@ mod ir_runtime_codegen_tests {
             P2 as u8,
             RET as u8,
         ];
-        convert_ir_to_runtime_bytecode(&raw).expect("relative jumps stay valid after BURN prefix");
+        convert_ir_to_runtime_bytecode(&raw).expect("relative jumps stay valid in compiled IR");
     }
 
     #[test]
@@ -139,8 +130,14 @@ mod ir_runtime_codegen_tests {
         raw.extend_from_slice(&raw_call);
 
         let exec = runtime_irs_to_exec_bytecodes(&raw, &GasExtra::new(1)).unwrap();
-        assert_eq!(exec[0], BURN as u8);
-        assert_eq!(&exec[3..], raw_call.as_slice());
+        assert_eq!(exec, raw_call);
         assert_ne!(exec.last().copied(), Some(END as u8));
+    }
+
+    #[test]
+    fn irnode_exec_bytecode_has_no_burn_prefix() {
+        let raw = vec![IRBYTECODE as u8, 0, 1, END as u8];
+        let exec = runtime_irs_to_exec_bytecodes(&raw, &GasExtra::new(1)).unwrap();
+        assert_eq!(exec, vec![END as u8]);
     }
 }

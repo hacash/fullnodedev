@@ -277,6 +277,11 @@ impl GasExtra {
     }
 
     #[inline(always)]
+    pub fn ir_format_bytes(&self, raw_ir_len: usize) -> i64 {
+        Self::div_op(raw_ir_len, self.compile_div)
+    }
+
+    #[inline(always)]
     pub fn compo_items_read(&self, n: usize) -> i64 {
         Self::div_op(n, self.compo_item_read_div)
     }

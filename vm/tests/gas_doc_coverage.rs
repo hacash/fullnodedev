@@ -46,6 +46,10 @@ fn doc_tracks_current_dynamic_metering_groups() {
         "fixed: SDEL",
         "every contract load",
         "BURN: add immediate `u16` gas",
+        "IR format fee",
+        "raw serialized IR byte length",
+        "Charging point: frame entry",
+        "compiled code only",
         "Coverage Notes",
     ] {
         assert!(DOC.contains(key), "missing section key: {key}");
@@ -61,5 +65,13 @@ fn doc_does_not_use_legacy_opcode_names() {
     assert!(
         !DOC.contains("EXTFUNC"),
         "legacy name EXTFUNC should not appear in doc"
+    );
+    assert!(
+        !DOC.contains("BURN(compile_fee)"),
+        "legacy IR compile-fee BURN prefix should not appear in doc"
+    );
+    assert!(
+        !DOC.contains("runtime-appended `END`"),
+        "legacy IR runtime-appended END wording should not appear in doc"
     );
 }
