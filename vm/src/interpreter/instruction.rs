@@ -330,6 +330,14 @@ fn div_checked(x: &Value, y: &Value, op: &'static str) -> VmrtRes<Value> {
     ahmtdocheck!(x, y, checked_div, op)
 }
 
+fn div_up_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
+    div_with_round_checked(x, y, FinRoundPolicy::Ceil, "div_up")
+}
+
+fn div_exact_op_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
+    div_with_round_checked(x, y, FinRoundPolicy::Exact, "div_exact_op")
+}
+
 fn mod_checked(x: &Value, y: &Value) -> VmrtRes<Value> {
     ahmtdocheck!(x, y, checked_rem, "mod") // rem = mod
 }
@@ -864,6 +872,10 @@ fn muldiv_checked(x: &Value, y: &Value, z: &Value, op: &'static str) -> VmrtRes<
     muldiv_with_round_checked(x, y, z, FinRoundPolicy::Floor, op)
 }
 
+fn muldiv_up_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
+    muldiv_with_round_checked(x, y, z, FinRoundPolicy::Ceil, "mul_div_up")
+}
+
 fn muldiv_with_round_checked(
     x: &Value,
     y: &Value,
@@ -957,10 +969,6 @@ fn mul_shr_impl(x: &Value, y: &Value, z: &Value, op: &'static str, ceil_dropped:
         out
     };
     cast_uint_result3(x, out, op, x, y, z)
-}
-
-fn mulshr_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
-    mul_shr_impl(x, y, z, crate::rt::IR_NAME_MUL_SHR, false)
 }
 
 fn rpow_checked(x: &Value, y: &Value, z: &Value) -> VmrtRes<Value> {
@@ -1217,6 +1225,8 @@ fn fin2_checked(spec: FinSpec, x: &Value, y: &Value) -> VmrtRes<Value> {
         FinKernel::Div => div_with_round_checked(x, y, round, spec.name),
         FinKernel::SqrtMul => sqrtmul_with_round_checked(x, y, round, spec.name),
         FinKernel::Quantize => quantize_with_round_checked(x, y, round, spec.name),
+        FinKernel::SatAdd => satadd_checked(x, y),
+        FinKernel::SatSub => satsub_checked(x, y),
         _ => invalid_fin_spec(spec),
     }
 }
@@ -1383,6 +1393,35 @@ mod shift_u64_tests {
     fn bit_shr_u64_rejects_shift_count_over_u32() {
         let r = Value::U64((u32::MAX as u64) + 1);
         assert!(bit_shr(&Value::U64(1), &r).is_err());
+    }
+
+    #[test]
+    fn direct_ceil_math_ops_match_fin_rounding() {
+        assert_eq!(
+            div_up_checked(&Value::U64(10), &Value::U64(3)).unwrap(),
+            fin_call_by_name("div_ceil", vec![Value::U64(10), Value::U64(3)]).unwrap()
+        );
+        assert_eq!(
+            div_exact_op_checked(&Value::U64(12), &Value::U64(3)).unwrap(),
+            fin_call_by_name("div_exact", vec![Value::U64(12), Value::U64(3)]).unwrap()
+        );
+        assert!(div_exact_op_checked(&Value::U64(10), &Value::U64(3)).is_err());
+        assert_eq!(
+            muldiv_up_checked(&Value::U64(10), &Value::U64(10), &Value::U64(6)).unwrap(),
+            fin_call_by_name(
+                "mul_div_ceil",
+                vec![Value::U64(10), Value::U64(10), Value::U64(6)]
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            fin_call_by_name("sat_add", vec![Value::U8(u8::MAX), Value::U8(1)]).unwrap(),
+            Value::U8(u8::MAX)
+        );
+        assert_eq!(
+            fin_call_by_name("sat_sub", vec![Value::U64(0), Value::U64(1)]).unwrap(),
+            Value::U64(0)
+        );
     }
 
     #[test]
@@ -2091,11 +2130,25 @@ mod shift_u64_tests {
     #[test]
     fn mul_shr_large_shift_has_defined_zero_or_one_semantics() {
         assert_eq!(
-            mulshr_checked(&Value::U64(3), &Value::U64(5), &Value::U16(256)).unwrap(),
+            mul_shr_impl(
+                &Value::U64(3),
+                &Value::U64(5),
+                &Value::U16(256),
+                "mul_shr_floor",
+                false
+            )
+            .unwrap(),
             Value::U64(0)
         );
         assert_eq!(
-            mulshr_checked(&Value::U64(3), &Value::U64(5), &Value::U16(300)).unwrap(),
+            mul_shr_impl(
+                &Value::U64(3),
+                &Value::U64(5),
+                &Value::U16(300),
+                "mul_shr_floor",
+                false
+            )
+            .unwrap(),
             Value::U64(0)
         );
         assert_eq!(
@@ -2403,6 +2456,8 @@ mod shift_u64_tests {
             case_u!("sqrt_mul_ceil", [2, 3], 3),
             case_u!("quantize_floor", [101, 10], 100),
             case_u!("quantize_ceil", [101, 10], 110),
+            case_u!("sat_add", [u128::MAX, 1], u128::MAX),
+            case_u!("sat_sub", [0, 1], 0),
             case_u!("mul_div_exact", [6, 7, 3], 14),
             case_u!("mul_div_floor", [5, 10, 6], 8),
             case_u!("mul_div_ceil", [5, 10, 6], 9),

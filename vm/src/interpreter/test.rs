@@ -2252,6 +2252,29 @@ mod bounds_tests {
     }
 
     #[test]
+    fn swap_charges_two_moved_items() {
+        use crate::rt::Bytecode;
+
+        let gas = run_with_setup(
+            vec![Bytecode::SWAP as u8, Bytecode::END as u8],
+            DummyHost::default(),
+            |ops, _locals, _heap, _global_map, _memory_map, _cadr| {
+                ops.push(Value::U8(1)).unwrap();
+                ops.push(Value::U8(2)).unwrap();
+            },
+        );
+
+        let gas_table = GasTable::new(1);
+        let gas_extra = GasExtra::new(1);
+        assert_eq!(
+            gas,
+            gas_table.gas(Bytecode::SWAP as u8)
+                + gas_table.gas(Bytecode::END as u8)
+                + gas_extra.stack_move_items(2)
+        );
+    }
+
+    #[test]
     fn rev_gas_increases_by_one_per_item() {
         use crate::rt::Bytecode;
 

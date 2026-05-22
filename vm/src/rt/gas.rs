@@ -5,10 +5,11 @@
 //
 // Arithmetic ladder (see `GasTable::new` grouping):
 // - 2: add/sub/min/max/inc/dec - single-step integer ops on stack slots.
-// - 4: mul/div/mod, saturating add/sub, abs diff - widening or division.
-// - 6: POW, ADDMOD, CLAMP - extra branches or triple operands without full mul-div path.
+// - 4: mul/div/mod, abs diff - widening or division.
+// - 6: div_up/div_exact_op, POW, ADDMOD, CLAMP - extra branches or triple operands without full mul-div path.
 // - 8: MULADD, MULSUB - one multiply plus add/sub.
-// - 10: MULMOD, MULSHR - multiply then mod or shift.
+// - 10: MULMOD - multiply then mod.
+// - 12: MULDIV/MULDIVUP - wide multiply and divide.
 // - 6/10/18: FIN* family base decode+dispatch tiers.
 // - 32: FINPOW3 - high base like storage reads; extra per exponent in execute.
 //
@@ -28,21 +29,21 @@ impl Default for GasTable {
 impl GasTable {
     pub fn new(_hei: u64) -> Self {
         let mut gst = Self { table: [1; 256] };
-        gst.set(2, &[BRL, BRS, BRSL, BRSLN]);
+        gst.set(2, &[BRL, BRS, BRSL, BRSLN, XLG, XOP]);
         gst.set(2, &[AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT]);
         gst.set(3, &[BSHR, BSHL, BXOR, BOR, BAND]);
         // Arithmetic: binary (see module doc ladder)
         gst.set(2, &[ADD, SUB, MAX, MIN, INC, DEC]);
-        gst.set(4, &[MUL, DIV, MOD, SATADD, SATSUB, ABSDIFF]);
+        gst.set(4, &[MUL, DIV, MOD, ABSDIFF]);
         gst.set(5, &[SQRT, SQRTUP]);
-        gst.set(6, &[POW, ADDMOD, CLAMP, FIN2]);
+        gst.set(6, &[DIVUP, DIVEXACT, POW, ADDMOD, CLAMP, FIN2]);
         gst.set(10, &[FIN3, FINP3, FINP4]);
         gst.set(18, &[FIN4]);
         gst.set(32, &[FINPOW3]);
         // Arithmetic: triple-operand mul pipeline
         gst.set(8, &[MULADD, MULSUB]);
-        gst.set(10, &[MULMOD, MULSHR]);
-        gst.set(12, &[MULDIV]);
+        gst.set(10, &[MULMOD]);
+        gst.set(12, &[MULDIV, MULDIVUP]);
         // Arithmetic: four-operand handled by FIN4 family
         // Other
         gst.set(4, &[INSERT, REMOVE, HEAD, BACK, APPEND]);
@@ -424,22 +425,24 @@ mod gas_budget_codec_tests {
             (
                 2,
                 vec![
-                    BRL, BRS, BRSL, BRSLN, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD, SUB, MAX,
-                    MIN, INC, DEC,
+                    BRL, BRS, BRSL, BRSLN, XLG, XOP, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD,
+                    SUB, MAX, MIN, INC, DEC,
                 ],
             ),
             (3, vec![BSHR, BSHL, BXOR, BOR, BAND]),
             (
                 4,
                 vec![
-                    MUL, DIV, MOD, SATADD, SATSUB, ABSDIFF, INSERT, REMOVE, HEAD,
-                    BACK, APPEND,
+                    MUL, DIV, MOD, ABSDIFF, INSERT, REMOVE, HEAD, BACK, APPEND,
                 ],
             ),
             (5, vec![MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP]),
             (
                 6,
-                vec![POW, ADDMOD, CLAMP, FIN2, CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK],
+                vec![
+                    DIVUP, DIVEXACT, POW, ADDMOD, CLAMP, FIN2, CLEAR, KEYS, VALUES, TUPLE2LIST,
+                    UNPACK,
+                ],
             ),
             (
                 8,
@@ -454,7 +457,6 @@ mod gas_budget_codec_tests {
                     CALLSELFVIEW,
                     CALLSELFPURE,
                     MULMOD,
-                    MULSHR,
                 ],
             ),
             (
@@ -464,6 +466,7 @@ mod gas_budget_codec_tests {
                     CALLUSEVIEW,
                     CALLUSEPURE,
                     MULDIV,
+                    MULDIVUP,
                 ],
             ),
             (10, vec![FIN3, FINP3, FINP4]),

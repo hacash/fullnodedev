@@ -73,7 +73,12 @@ pub fn check_gated_action(chain_id: u32, height: u64, kind: u16) -> Rerr {
 }
 
 #[inline]
-pub fn check_transfer_addr_online_open(chain_id: u32, height: u64, from: &Address, to: &Address) -> Rerr {
+pub fn check_transfer_addr_online_open(
+    chain_id: u32,
+    height: u64,
+    from: &Address,
+    to: &Address,
+) -> Rerr {
     if chain_id != MAINNET_CHAIN_ID {
         return Ok(());
     }

@@ -3,4 +3,3 @@
 
 pub const IR_NAME_DIV: &str = "div";
 pub const IR_NAME_MUL_DIV: &str = "mul_div";
-pub const IR_NAME_MUL_SHR: &str = "mul_shr";

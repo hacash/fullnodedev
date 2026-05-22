@@ -632,7 +632,10 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     gas_resource_raw!(gst.stack_move_items(n as usize + 1));
                     ops.roll(n)?;
                 }
-                SWAP => ops.swap()?,
+                SWAP => {
+                    gas_resource_raw!(gst.stack_move_items(2));
+                    ops.swap()?;
+                }
                 REV => {
                     let n = pu8!();
                     gas_resource_raw!(gst.stack_move_items(n as usize));
@@ -1007,6 +1010,8 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 SUB => binop_arithmetic(ops, sub_checked)?,
                 MUL => binop_arithmetic(ops, mul_checked)?,
                 DIV => binop_arithmetic(ops, |x, y| div_checked(x, y, crate::rt::IR_NAME_DIV))?,
+                DIVUP => binop_arithmetic(ops, div_up_checked)?,
+                DIVEXACT => binop_arithmetic(ops, div_exact_op_checked)?,
                 MOD => binop_arithmetic(ops, mod_checked)?,
                 POW => binop_arithmetic(ops, pow_checked)?,
                 MAX => binop_arithmetic(ops, max_checked)?,
@@ -1019,17 +1024,15 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     let spec = fin_spec!(Bytecode::FIN3);
                     triop_arithmetic(ops, |x, y, z| fin3_checked(spec, x, y, z))?
                 }
-                SATADD => binop_arithmetic(ops, satadd_checked)?,
-                SATSUB => binop_arithmetic(ops, satsub_checked)?,
                 ABSDIFF => binop_arithmetic(ops, absdiff_checked)?,
                 ADDMOD => triop_arithmetic(ops, addmod_checked)?,
                 MULMOD => triop_arithmetic(ops, mulmod_checked)?,
                 MULDIV => triop_arithmetic(ops, |x, y, z| {
                     muldiv_checked(x, y, z, crate::rt::IR_NAME_MUL_DIV)
                 })?,
+                MULDIVUP => triop_arithmetic(ops, muldiv_up_checked)?,
                 MULADD => triop_arithmetic(ops, muladd_checked)?,
                 MULSUB => triop_arithmetic(ops, mulsub_checked)?,
-                MULSHR => triop_arithmetic(ops, mulshr_checked)?,
                 FINPOW3 => {
                     let spec = fin_spec!(Bytecode::FINPOW3);
                     let exp_bits = if ops.len() >= 3 {

@@ -305,15 +305,15 @@ irfn_define! {
     storage_edit
     storage_rent
 
+    div_up
+    div_exact_op
     add_mod
     mul_mod
     mul_div
+    mul_div_up
     mul_add
     mul_sub
-    mul_shr
     clamp
-    sat_add
-    sat_sub
     abs_diff
     max
     min

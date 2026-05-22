@@ -1287,31 +1287,26 @@ fn fitsh_ir_roundtrip_suite() {
 }
 
 #[test]
-fn direct_muldiv_mulshr_decompile_roundtrip_keeps_opcode_identity() {
-    let cases = [(Bytecode::MULDIV, "mul_div"), (Bytecode::MULSHR, "mul_shr")];
-
-    for (inst, name) in cases {
-        let ircode = vec![
-            Bytecode::RET as u8,
-            inst as u8,
-            Bytecode::P1 as u8,
-            Bytecode::P2 as u8,
-            Bytecode::P3 as u8,
-        ];
-        let printed = ircode_to_lang(&ircode).unwrap();
-        assert!(
-            printed.contains(name),
-            "expected direct helper {} in decompile output, got: {}",
-            name,
-            printed
-        );
-        let reparsed = lang_to_ircode(&printed).unwrap();
-        assert_eq!(
-            ircode, reparsed,
-            "direct {} roundtrip changed opcode identity\n{}",
-            name, printed
-        );
-    }
+fn direct_muldiv_decompile_roundtrip_keeps_opcode_identity() {
+    let ircode = vec![
+        Bytecode::RET as u8,
+        Bytecode::MULDIV as u8,
+        Bytecode::P1 as u8,
+        Bytecode::P2 as u8,
+        Bytecode::P3 as u8,
+    ];
+    let printed = ircode_to_lang(&ircode).unwrap();
+    assert!(
+        printed.contains("mul_div"),
+        "expected direct helper mul_div in decompile output, got: {}",
+        printed
+    );
+    let reparsed = lang_to_ircode(&printed).unwrap();
+    assert_eq!(
+        ircode, reparsed,
+        "direct mul_div roundtrip changed opcode identity\n{}",
+        printed
+    );
 }
 
 #[test]

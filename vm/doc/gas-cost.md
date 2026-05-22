@@ -1,74 +1,53 @@
 Gas Cost
 ===
 
-
 ## Base cost every opcode
 
-These are fixed and can be regarded as the basic overhead of instructions. Opcodes not appearing in the list are all 2.
+These are fixed compute gas units from `GasTable::new`. Opcode bytes not listed here use the default base cost `1` (including reserved/invalid byte values before validation rejects them).
 
-- 1: PU8, P0, P1, P2, P3, PNBUF, PNIL, PTRUE, PFALSE,
-    CU8, CU16, CU32, CU64, CU128, CBUF, CTO, TID, TIS, TNIL, TMAP, TLIST, 
-    POP, NOP, NT, END, RET, ABT, ERR, AST, PRT
-- 2: `all other opcode`
-- 3: BRL, BRS, BRSL, BRSLN, XLG, PUT, PUTX, CHOOSE
-- 4: DUPN, POPN, ROLL,
-    PBUF, PBUFL,
-    MOD, MUL, DIV, XOP, 
-    HREAD, HREADU, HREADUL, HSLICE, HGROW,
-    ITEMGET, HEAD, BACK, HASKEY, LENGTH,
-- 5: POW
-- 6: HWRITE, HWRITEX, HWRITEXL, 
-    INSERT, REMOVE, CLEAR, APPEND,
-    NTENV
-- 8: CAT, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP,
-    MGET, JOIN, REV, 
-    NEWLIST, NEWMAP,
-    NTFUNC
-- 12: ACTENV, MPUT, CALLTHIS, CALLSELF, CALLSUPER, CALLSELFVIEW, CALLSELFPURE,
-    PACKLIST, PACKMAP, UNPACK, CLONE, MERGE, KEYS, VALUES
-- 16: ACTVIEW, GGET, CODECALL, CALLUSEVIEW, CALLUSEPURE
-- 24: LOG2, GPUT, CALLEXTVIEW
-- 28: LOG3, SDEL, ACTION
-- 32: LOG4, SLOAD, SREST, CALLEXT, CALL
-- 64: SSAVE, SRENT
-
+- 2: BRL, BRS, BRSL, BRSLN, XLG, XOP, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD, SUB, MAX, MIN, INC, DEC
+- 3: BSHR, BSHL, BXOR, BOR, BAND
+- 4: MUL, DIV, MOD, ABSDIFF, INSERT, REMOVE, HEAD, BACK, APPEND
+- 5: MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP
+- 6: DIVUP, DIVEXACT, POW, ADDMOD, CLAMP, FIN2, CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK
+- 8: MULADD, MULSUB, CLONE, MERGE, PACKLIST, PACKMAP, PACKTUPLE
+- 10: MPUT, GPUT, CALLSELF, CALLSELFVIEW, CALLSELFPURE, MULMOD, FIN3, FINP3, FINP4
+- 12: MTAKE, CALLUSEVIEW, CALLUSEPURE, MULDIV, MULDIVUP
+- 16: NTENV, NTCTL, NTFUNC, CALLTHIS, CALLSUPER, CODECALL
+- 18: FIN4
+- 20: LOG1, CALLEXTVIEW
+- 24: LOG2, CALLEXT, CALL
+- 28: LOG3, ACTENV, SDEL
+- 32: LOG4, ACTVIEW, SLOAD, SSTAT, FINPOW3
+- 48: ACTION
+- 64: SGET, SNEW, SEDIT, SRENT, SRECV
+- 128: SPUT, CALCCALL (when `calcfunc` is enabled)
 
 ## Gas limits
 
-- max_gas_of_tx: 8192 (= 65536 / 8). This is a hard cap for per-tx gas.
-- call_base_main: 48. Compute surcharge added **on top of** measured Main-entry work (shared counter).
-- call_base_p2sh: 64. Compute surcharge added **on top of** measured P2SH-entry work (shared counter).
-- call_base_abst: 80. Compute surcharge added **on top of** measured abstract/hook-entry work (shared counter).
+- max_gas_of_tx: 8192 (= 65536 / 8). This is the current hard cap for per-tx gas.
+- call_base_main: 48. Compute surcharge added on top of measured Main-entry work.
+- call_base_p2sh: 64. Compute surcharge added on top of measured P2SH-entry work.
+- call_base_abst: 80. Compute surcharge added on top of measured abstract/hook-entry work.
 
-Per-entry billing formula (non-bytecode):
+Per-entry billing formula:
 
 - Let `work` be VM-measured buckets accumulated during this entry (`gas_use` delta since entry start).
-- This entry charges **`work` + `call_base_*`** into the shared gas meter (`call_base` is applied as compute gas at entry return).
-- Fail-fast behavior (insufficient host remaining gas for the surcharge) follows normal `settle_compute_gas` / out-of-gas paths on return.
+- This entry charges `work + call_base_*` into the shared gas meter. `call_base` is applied as compute gas at entry return.
+- Insufficient host gas follows normal `settle_compute_gas` / out-of-gas behavior.
 
 ## tx.gas_max (1-byte) encoding
 
-`TransactionType3.gas_max` is a 1-byte lookup key. Runtime decodes it with `decode_gas_budget()` and applies chain cap clamp before `gas_init_tx` (see `protocol/src/context/gas.rs`; VM mirror constants are in `vm/src/rt/gas.rs`).
+`TransactionType3.gas_max` is a 1-byte lookup key. Runtime decodes it with `decode_gas_budget()` and applies the chain cap clamp before `gas_init_tx` (see `protocol/src/context/gas.rs`; VM mirror constants are in `vm/src/rt/gas.rs`).
 
-- `gas_max=0`: no VM gas budget (non-contract tx); any contract/p2sh call will fail to initialize gas.
-- `gas_max>0`: decoded budget is read from `GAS_BUDGET_LOOKUP_1P07_FROM_138` and then clamped by `max_gas_of_tx` (chain hard cap).
-
-Decode (byte → gas):
-
-- `b=0` → `0`
-- `b in 1..=255`:
-  - `gas = GAS_BUDGET_LOOKUP_1P07_FROM_138[b]`
-  - table generation rule: `table[i] = floor(138 * 1.07^i)`, `i in 0..=255`
-  - table max: `table[255] = 4,292,817,207` (fits in `u32`)
-
-Practical notes on current L1 parameters (`max_gas_of_tx=8192`):
-
-- The lookup table is dense and strictly increasing (1-byte full scale), suitable for future L2/high-cap settings.
-- Under current L1 cap, bytes above the clamp threshold are still equivalent after clamping.
+- `gas_max=0`: no VM gas budget. Any contract/p2sh call fails to initialize gas.
+- `gas_max>0`: decoded budget is read from `GAS_BUDGET_LOOKUP_1P07_FROM_138` and then clamped by `max_gas_of_tx`.
+- `b=0`: gas is `0`.
+- `b in 1..=255`: `gas = GAS_BUDGET_LOOKUP_1P07_FROM_138[b]`.
+- Table generation rule: `table[i] = floor(138 * 1.07^i)`, `i in 0..=255`.
+- Table max: `table[255] = 4,292,817,207`.
 
 ## Tx-level gas settle (non-bytecode)
-
-This section describes account-level gas charging/refund outside opcode execution.
 
 - Precharge at tx start (only when `gas_max > 0`): deduct max possible charge for `budget` from tx main address before action execution.
 - Refund at tx end: refund `max_charge - used_charge`.
@@ -82,200 +61,160 @@ Formula:
 - `used_charge = burn_amount(initial_budget - gas_remaining)`
 - `refund = max_charge - used_charge`
 
+## Dynamic gas
 
-## Extra cost every behavior
+Dynamic gas is added on top of opcode base gas. Unless noted as linear multiplication, `byte/N` and `item/N` use runtime ceil division: `0 -> 0`, otherwise `(len - 1) / N + 1`.
 
-These are dynamic and depend on the size of the resources or the scale of usage. `byte` does not include key or any type/meta data, only the pure bytes of the value. Except for Compo map total size, key_byte is not included in any other calculation. `item` refers to the number of elements in a Compo value. Operation settings: 1 gas = 1 byte = 1 item, byte/10 = byte*0.1. `byte/N` uses integer truncation. Gas is an `i64`, so divisions are integer divisions with truncation.
+For dynamic billing based on a VM value object, byte size is usually `Value::val_size()`.
 
-For dynamic billing based on a VM value object, byte size is `Value::val_size()`.
+### Space and movement
 
-#### Space alloc
+- 5: every local slot allocated by ALLOC.
+- 20: every new memory key.
+- 32: every new global key.
+- 32 + byte/64: every cold contract load, where byte is `ContractSto.size()`.
+- 1024: every newly created persistent storage key.
+- HGROW: first 8 heap segments cost 2, 4, 8, 16, 32, 64, 128, 256; later segments cost 256 each.
+- 1 per moved stack item: POPN moves `n`, ROLL0 moves 1, ROLL moves `n + 1`, REV moves `n`, SWAP moves 2.
 
-- 5:   every local stack slot
-- 20:  every memory key
-- 32:  every global key
-- 32:  every contract load
-- 256: every heap segment in linear ( the first 8 segments of the HGROW command grow exponentially, and after 8 segments they change to linear growth. start from 2, 4, 8, 16, 32, 64, 128 to 256, the linear part is fixed at 256 gas per segment. the actual size of one heap segment is 256 bytes )
-  - Heap segment growth:
-    - First 8 segments: exponential growth (2, 4, 8, 16, 32, 64, 128, 256 gas per segment)
-    - After 8 segments: linear growth (256 gas per segment)
-    - Example: HGROW 1 = 2 gas, HGROW 8 = 510 gas, HGROW 10 = 1022 gas
-- 256: every (re)created storage key
+### Stack payload copy/write/op
 
+- byte/32: DUP, DUPN, GET, GET0, GET1, GET2, GET3, GETX, MGET, GGET, MTAKE, PBUF, PBUFL.
+- byte/28: PUT, PUTX, MPUT, GPUT, UNPACK local-slot writes (`stack_write_div`).
+- byte/20: CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP. The measured byte count is the source/input payload size used by the operation.
 
-#### Stack buffer copy and write
+### Reference compare
 
-For opcode that create/copy byte payload to stack values, or write value payload into local/global/memory slots.
+- byte/24: EQ, NEQ, XLG (`==` / `!=` only), using `stack_cmp_div`.
+- The compare byte count comes from `value_compare_fee(left, right, container_cmp_header)`.
+- Ordered comparisons LT, GT, LE, GE and ordered XLG marks only use base gas.
 
-`byte` is of type i64. Integer truncation applies.
+### Native/action calls
 
-- byte/32: DUP, DUPN, GET, GET0, GET1, GET2, GET3, GETX, MGET, GGET, PBUF, PBUFL
-  (runtime divisor: `stack_copy_div`)
-- byte/24: PUT, PUTX, MPUT, GPUT
-  (runtime divisor: `stack_write_div`, independent from `stack_copy_div`)
-- byte/24: UNPACK local-slot writes, per unpacked item
-  (`unpack` charges `stack_write(item.val_size())` for each written local slot)
-- byte/16: CAT, JOIN, BYTE, CUT, LEFT, RIGHT, LDROP, RDROP (byte = output value `val_size()`)
-- fixed: REV (only reorders stack values, no real payload copy)
+NTFUNC, NTENV, and NTCTL have three components: opcode base, byte-extra, and native fixed gas returned by the native implementation.
 
-#### Reference compare
+- byte/16: NTFUNC input argv bytes and return `val_size()`.
+- byte/16: NTENV return `val_size()`.
+- byte/16: NTCTL return `val_size()`. Current runtime does not separately byte-meter the NTCTL input value.
+- byte/12: ACTION input body bytes.
+- byte/12: ACTVIEW input body bytes and return `val_size()`.
+- byte/12: ACTENV return `val_size()`.
+- ACTION, ACTVIEW, and ACTENV also include host-returned gas (`bgasu`).
 
-- byte/24: EQ, NEQ, XLG (`==` / `!=` only)
-  (runtime divisor: `stack_cmp_div`)
-  - byte = `left.dup_size() + right.dup_size()`
-  - `Tuple`/`Compo` equality is pointer-identity only
+### Heap read/write
 
-#### Extend call handle
+- byte/16: HREAD, HREADU, HREADUL.
+- byte/12: HWRITE, HWRITEX, HWRITEXL.
 
-NTFUNC/NTENV each have three components: 1-base, 2-byte-extra, 3-native fixed fee.
-The native fixed fee is defined in native function/env code and returned after the call.
-ACTION/ACTVIEW/ACTENV also include host-returned gas (`bgasu`) from host execution.
+### Compo/tuple handling
 
-- byte/16: NTFUNC    (op base is 8, byte = argv/input and return `val_size()`)
-- byte/16: NTENV     (op base is 6, byte = return `val_size()`)
-- byte/16: ACTVIEW   (op base is 16, byte = input body bytes and return `val_size()`)
-- byte/16: EXTENV    (op base is 12, byte = return `val_size()`)
-- byte/10: ACTION (op base is 28, byte = input body bytes)
+KEYS and VALUES byte counts include output bytes. For maps, byte count includes key bytes plus value bytes.
 
-#### Heap read and write
+- item/4: HASKEY, ITEMGET, KEYS, VALUES.
+- item/2: PACKLIST, PACKMAP, PACKTUPLE, INSERT, REMOVE, CLEAR, HEAD, BACK, APPEND.
+- item/1: CLONE, MERGE, TUPLE2LIST.
+- byte/40: INSERT map key bytes and inserted value bytes; APPEND value bytes; CLEAR total compo `val_size()`; MERGE source bytes; ITEMGET/HEAD/BACK output value bytes; KEYS/VALUES output bytes; CLONE copied bytes; TUPLE2LIST copied bytes.
+- LENGTH has only opcode base gas.
 
-- byte/16: HREAD* (byte = read length)
-- byte/12: HWRITE* (byte = written value_byte)
+### Log render
 
-#### Compo value handle
+- byte/1: LOG1, LOG2, LOG3, LOG4, where byte is the sum of all topic/data `val_size()` values.
 
-Some opcode should be charged based on both the number of items and the total size. item/4 is item*0.25, item/2 is item*0.5
+### Status and persistent storage
 
-KEYS, VALUES byte refers to the total bytes output (create on stack). map byte = all key_byte + all value_byte, list byte = all value_byte, total_gas = base + item_gas + byte_gas
+Status (`SGET`/`SPUT`) is priced separately from persistent storage rent.
 
-The byte in ITEMGET/HEAD/BACK refers to outputting value_byte; list types do not include key_byte.
+- SGET: base 64 + `8 * value_byte` for a non-Nil value.
+- SPUT: base 128 + `32 * key_byte + 32 * value_byte`.
+- SSTAT: base 32 only; it returns a fixed status tuple and does not add SLOAD value-read gas.
+- SLOAD: base 32 + `20 + value_byte` for a non-Nil active value.
+- SNEW: base 64 + `storage_key_cost` 1024 + `(20 + value_byte) * period`.
+- SEDIT: base 64 + `(20 + value_byte) * storage_edit_mul`, where `storage_edit_mul = 4`; it may rebate trimmed live credit.
+- SRENT: base 64 + `(20 + current_value_byte) * period`.
+- SRECV: base 64 + `((20 + current_value_byte) * period) / 3`.
+- SDEL: base 28 only for gas use; it may rebate remaining live credit plus `storage_key_cost`.
 
-- item/4:  ITEMGET, HEAD, BACK, HASKEY, APPEND
-- item/2:  KEYS, VALUES, INSERT, REMOVE
-- item/1:  CLONE, MERGE
-- byte/20: CLONE, KEYS, VALUES, ITEMGET, HEAD, BACK
+One storage period is 100 blocks.
 
-#### Log render
+### Manual burn
 
-byte = sum(all_param_bytes) = topic_bytes + sum(all_data_bytes)
+- BURN: default base gas 1 + immediate `u16` gas.
 
-- byte/1: LOG*
+### IR format fee
 
-#### Storage read and write
+IR code is converted to runtime bytecode before execution. The executable stream is the compiled code only; it is not prefixed with a synthetic BURN instruction.
 
-The key_byte is not calculated here.
-
-SSAVE pricing semantics:
-- writing an expired key is treated as (re)create: charge 1-period rent and key-create fee.
-- writing a valid key with remaining lease `< 1 period` triggers auto-renew to 1 period and charges 1-period rent.
-
-- byte/8: SLOAD
-- fixed: SREST (only opcode base gas)
-- fixed: SDEL (only opcode base gas)
-- byte/6: SSAVE (write bytes; rent/key-create fee may also apply depending on key state)
-
-#### Manual burn
-
-- BURN: add immediate `u16` gas (`base + immediate`)
-
-#### Storage rent
-
-1 period = 100 blocks
-
-- (20+byte)/1: every period (20 is base bytes, byte = value_byte)
-
-#### Contract load
-
-byte = value_byte = ContractSto.size(), not include key_byte. The formula is as follows:
-
-
-- 32 + byte/64: every new contract load
-- Charging point: immediate at each cold-load event (not delayed batch settlement at call boundary)
-- Truncation scope: per loaded contract (`floor(byte_i / 64)`), no cross-contract remainder carry
-- Warm tx-local cache hit: no contract-load gas charge
-
-#### IR format fee
-
-IR code is converted to runtime bytecode before execution. The executable stream is the
-compiled code only; it is not prefixed with a synthetic `BURN` instruction.
-
-- byte/16: raw serialized IR byte length (`FnObj.codes.len()`)
-- Charging point: frame entry, immediately before the frame's first instruction executes
-- Gas bucket: resource gas
-
-Execution policy in one tx:
-
+- byte/16: raw serialized IR byte length (`FnObj.codes.len()`).
+- Charging point: frame entry, immediately before the frame's first instruction executes.
+- Gas bucket: resource gas.
 - The IR format fee is charged on every execution of that IR function body.
-- MainCall/P2sh paths construct transient `FnObj` values, so their IR-to-bytecode conversion cache is not reused across separate top-level calls.
-- Contract function `FnObj` keeps a `OnceLock`-cached compiled bytecode view when the same function object is reused (commonly via contract cache), but the IR format fee is still charged for each prepared frame.
 
+## Examples
 
-## Examples (visualized)
+1. SLOAD with `value_byte = 40`:
 
-Assume `1 gas = 1 byte`. The following examples show how to compute total cost:
-
-1) SLOAD (value_byte = 40)
-```
+```text
 base = 32
-dynamic = 40 / 8 = 5
-total = 37 gas
+dynamic = 20 + 40 = 60
+total = 92 gas
 ```
 
-2) SSAVE (value_byte = 80, renew/new-key includes 1 period rent; if new-key add +1024)
-```
+2. SEDIT with `value_byte = 80`, before any rebate:
+
+```text
 base = 64
-dynamic_write = 80 / 6 = 13
-rent = (20 + 80) * 1 = 100
-total = 64 + 13 + 100 = 177 gas
+dynamic = (20 + 80) * 4 = 400
+total = 464 gas
 ```
 
-3) LOG2 (value_byte = 100)
-```
+3. LOG2 with total log bytes 100:
+
+```text
 base = 24
-dynamic = 100 / 1 = 100
+dynamic = 100
 total = 124 gas
 ```
 
+4. SWAP:
+
+```text
+base = 1
+dynamic = 2 moved items
+total = 3 gas
+```
 
 ## Expected Usage (DeFi Scenarios)
 
-This section provides a 3-tier “DeFi operation” **expected resource usage** and a rough gas estimate table, intended to help contract developers quickly gauge whether a workflow may approach `max_gas_of_tx=8192`.
+These are rough estimates. Real costs depend on opcode mix, contract sizes, host-returned gas from ACTION/ACTVIEW/ACTENV, and storage state.
 
-Assumptions and notes:
+- Contract load cost: `32 * new_loads + sum(ceil(contract_bytes_i / 64))`.
+- Common U64-like balances use `value_byte = 8`.
+- Existing SEDIT of a U64-like value costs `64 + (20 + 8) * 4 = 176`.
+- SNEW of a U64-like value for 1 period costs `64 + 1024 + (20 + 8) = 1116`.
 
-- These are estimation templates. Real costs depend on opcode mix, contract sizes, host-returned gas from `ACTION/ACTVIEW/ACTENV`, and whether `SSAVE` triggers renewals or (re)creates a storage key.
-- The “Other compute opcodes” column is meant to count opcodes **excluding** those already accounted for as IO/heavy ops in this table (e.g. `SLOAD/SSAVE/LOG*/HGROW/HREAD/HWRITE/EXT*/NTFUNC`), to avoid double counting.
-- Contract load cost: `32 * new_loads + sum(floor(contract_bytes_i / 64))` (integer truncation per loaded contract).
-- `SSAVE` has two typical pricing cases:
-  - **Normal write**: `64 + value_byte/6`
-  - **New / expired-recreate / auto-renew triggered**: on top of normal write, add `rent_one_period = 20 + value_byte`; for new/recreate also add `storage_key_cost=1024`.
-
-> In the table, `value_byte=8` corresponds to `U64`-like balances/reserves. If you store `Bytes(32)` (e.g. hash/commitment), replace `8` with `32` and recompute.
-
-| Scenario | Contract Loads | ACTION | NTFUNC | Other Compute Opcodes (rough) | Heap (rough) | Storage (rough) | Log (rough) | Estimated Total Gas (range) |
+| Scenario | Contract Loads | ACTION | NTFUNC | Other Compute Opcodes | Heap | Storage | Log | Estimated Total |
 |---|---|---|---|---|---|---|---|---|
-| Light DeFi op (e.g. single-pool fee settle / single-contract balance move) | 1 new load; contract ~8KB | 0 | 0 | ~300 opcodes (avg 2 gas/op → ~600) | none | `SLOAD*2` (value_byte=8) + `SSAVE*2` (existing, value_byte=8) | `LOG2*1` (total value_byte ~24) | ~1000–~1100 (example: `160(load)+600(code)+196(storage)+48(log)=1004`; if SSAVE renew triggers +80; if new key is created cost rises significantly) |
-| Typical DeFi op (e.g. AMM swap / lending borrow/repay step) | 3 new loads; each contract ~8KB | 1; body ~96B; host returned gas ~200 (example) | 3 hash calls (e.g. sha2/sha3/ripemd160; input ~32B) | ~1200 opcodes (~2400) | `HGROW 2 seg` + `HWRITE 512B` + `HREAD 512B` | `SLOAD*10` (8B) + `SSAVE*6` (existing, 8B) | `LOG3*2` (~48B each) | ~4200–~5200 (example: `480(load)+2400(code)+237(ext)+119(nt)+94(heap)+720(storage)+152(log)=4202`; depends on host gas and whether SSAVE renew/new happens) |
-| Heavy DeFi op (e.g. liquidation / multi-hop routing / batch distribution step; near gas cap) | 6 new loads; each contract ~12KB | 2; body ~256B; host returned gas ~400 (example) | 6 hash calls (input ~32B) | ~1800 opcodes (~3600) | `HGROW 4 seg` + `HWRITE 1024B` + `HREAD 1024B` | `SLOAD*20` (8B) + `SSAVE*12` (existing, 8B) | `LOG4*2` (~64B each) | ~7900–~8600 (example: `1344(load)+3600(code)+906(ext)+264(nt)+193(heap)+1440(storage)+192(log)=7939`; easy to exceed 8192 due to SSAVE renew/new or high host-returned gas) |
+| Light DeFi op | 1 cold load, ~8KB | 0 | 0 | ~300 opcodes, avg 2 gas | none | `SLOAD*2` + existing `SEDIT*2`, U64 values | `LOG2*1`, ~24B | ~1250-1400 |
+| Typical DeFi op | 3 cold loads, each ~8KB | 1 body ~96B, host gas ~200 | 3 hash calls, ~32B input | ~1200 opcodes | HGROW 2 seg + HWRITE/HREAD 512B | `SLOAD*10` + existing `SEDIT*6`, U64 values | `LOG3*2`, ~48B each | ~5000-5600 |
+| Heavy DeFi op | 6 cold loads, each ~12KB | 2 bodies ~256B, host gas ~400 each | 6 hash calls, ~32B input | ~1800 opcodes | HGROW 4 seg + HWRITE/HREAD 1024B | `SLOAD*20` + existing `SEDIT*12`, U64 values | `LOG4*2`, ~64B each | ~9500-10500 |
 
-Suggested workflow (quick estimate):
+Suggested workflow:
 
-1. List contracts/libraries touched, estimate new contract loads and contract sizes.
-2. List counts of `SLOAD/SSAVE/SRENT` and their `value_byte` (store `U64` → 8B; common hashes → 32B).
-3. If you assemble large parameters in heap (HeapSlice feeding `NTFUNC/EXT*`), list `HGROW` segments and read/write byte sizes.
-4. Treat `ACTION/ACTVIEW/ACTENV` body bytes and host-returned gas as variables; start conservative, then calibrate with on-chain measurements.
+1. List contracts/libraries touched, estimate cold contract loads and contract sizes.
+2. List counts of `SLOAD`, `SNEW`, `SEDIT`, `SRENT`, `SRECV`, `SGET`, and `SPUT` with value/key byte sizes.
+3. If large parameters are assembled in heap, list HGROW segments and HREAD/HWRITE byte sizes.
+4. Treat ACTION/ACTVIEW/ACTENV body bytes and host-returned gas as variables.
 
 ## Coverage Notes
 
-The following are intentionally not separately metered in the current version (only opcode base or other aggregated gas applies):
+The following are intentionally not separately metered in the current version beyond base or existing aggregate gas:
 
-- Storage key length/hash cpu cost in `skey()` (key bytes are validated, and long keys may be hashed, but no extra gas bucket is charged for hash work).
-- Value key encoding/decoding and type-cast cpu overhead are not itemized as separate dynamic gas.
-- `CLEAR` / `PACKLIST` / `PACKMAP` currently do not have additional byte-based dynamic billing (beyond base and other related costs).
-- `REV` does not have additional byte-based dynamic billing (no memory copy path).
-- `INSERT`/`REMOVE`/`APPEND` are item-based; value-byte size itself is not separately charged in these paths.
+- Storage key length/hash CPU cost in `skey()`; key bytes are validated and long keys may be hashed, but no extra hash-work gas is charged.
+- Value key encoding/decoding and type-cast CPU overhead are not itemized as separate dynamic gas.
+- SWAP/ROLL/REV/POPN use item movement gas, not payload byte-copy gas.
+- NTCTL input value size is not separately byte-metered; only return bytes and native fixed gas are charged.
 
-Potential future refinement (if pricing is made more resource-proportional):
+Potential future refinement:
 
-- Add byte-based dynamic billing for large `CLEAR`/`PACK*` workloads.
 - Add explicit gas for heavy key-hash paths if storage key size or hash cost becomes a bottleneck.
+- Add NTCTL input-size metering if intent/control payload size becomes a practical bottleneck.

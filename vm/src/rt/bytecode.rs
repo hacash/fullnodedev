@@ -186,30 +186,30 @@ pub enum Bytecode {
     BAND = 0xaf, // a,b+   and: &
 
     // arithmetic: scalar/core operations
-    ADD = 0xb0,     // a,b+   +
-    SUB = 0xb1,     // a,b+   -
-    MUL = 0xb2,     // a,b+   *
-    DIV = 0xb3,     // a,b+   /
-    MOD = 0xb4,     // a,b+   mod
-    POW = 0xb5,     // a,b+   pow
-    SQRT = 0xb6,    // a+     floor isqrt(a)
-    SQRTUP = 0xb7,  // a+     ceil sqrt (min y with y*y >= a)
-    MAX = 0xb8,     // a,b+   max
-    MIN = 0xb9,     // a,b+   min
-    CLAMP = 0xba,   // a,b,c+ clamp(x, lo, hi)
-    ABSDIFF = 0xbb, // a,b+   abs(x-y)
-    SATADD = 0xbc,  // a,b+   saturating add
-    SATSUB = 0xbd,  // a,b+   saturating sub
-    INC = 0xbe,     // *&     += u8
-    DEC = 0xbf,     // *&     -= u8
+    ADD = 0xb0,      // a,b+   +
+    SUB = 0xb1,      // a,b+   -
+    MUL = 0xb2,      // a,b+   *
+    DIV = 0xb3,      // a,b+   floor(a/b)
+    DIVUP = 0xb4,    // a,b+   ceil(a/b)
+    DIVEXACT = 0xb5, // a,b+   exact(a/b)
+    MULDIV = 0xb6,   // a,b,c+ floor((x*y)/z)
+    MULDIVUP = 0xb7, // a,b,c+ ceil((x*y)/z)
+    MULADD = 0xb8,   // a,b,c+ (x*y)+z
+    MULSUB = 0xb9,   // a,b,c+ (x*y)-z
+    MOD = 0xba,      // a,b+   mod
+    ADDMOD = 0xbb,   // a,b,c+ (x+y)%z
+    MULMOD = 0xbc,   // a,b,c+ (x*y)%z
+    POW = 0xbd,      // a,b+   pow
+    SQRT = 0xbe,     // a+     floor isqrt(a)
+    SQRTUP = 0xbf,   // a+     ceil sqrt (min y with y*y >= a)
 
-    // arithmetic: multi-input exact helpers
-    ADDMOD = 0xc0, // a,b,c+ (x+y)%z
-    MULMOD = 0xc1, // a,b,c+ (x*y)%z
-    MULADD = 0xc2, // a,b,c+ (x*y)+z
-    MULSUB = 0xc3, // a,b,c+ (x*y)-z
-    MULDIV = 0xc4, // a,b,c+ (x*y)/z
-    MULSHR = 0xc5, // a,b,c+ (x*y)>>z
+    // arithmetic: scalar/core operations continued
+    MAX = 0xc0,     // a,b+   max
+    MIN = 0xc1,     // a,b+   min
+    CLAMP = 0xc2,   // a,b,c+ clamp(x, lo, hi)
+    ABSDIFF = 0xc3, // a,b+   abs(x-y)
+    INC = 0xc4,     // *&     += u8
+    DEC = 0xc5,     // *&     -= u8
     ____________c6 = 0xc6,
     ____________c7 = 0xc7,
     ____________c8 = 0xc8,
@@ -488,6 +488,8 @@ bytecode_metadata_define! {
     SUB         : 0, 2, 1,     sub
     MUL         : 0, 2, 1,     mul
     DIV         : 0, 2, 1,     div
+    DIVUP       : 0, 2, 1,     div_up
+    DIVEXACT    : 0, 2, 1,     div_exact_op
     MOD         : 0, 2, 1,     mod
     POW         : 0, 2, 1,     pow
     SQRT        : 0, 1, 1,     sqrt
@@ -496,8 +498,6 @@ bytecode_metadata_define! {
     MIN         : 0, 2, 1,     min
     CLAMP       : 0, 3, 1,     clamp
     ABSDIFF     : 0, 2, 1,     abs_diff
-    SATADD      : 0, 2, 1,     sat_add
-    SATSUB      : 0, 2, 1,     sat_sub
     INC         : 1, 1, 1,     increase
     DEC         : 1, 1, 1,     decrease
 
@@ -506,7 +506,7 @@ bytecode_metadata_define! {
     MULADD      : 0, 3, 1,     mul_add
     MULSUB      : 0, 3, 1,     mul_sub
     MULDIV      : 0, 3, 1,     mul_div
-    MULSHR      : 0, 3, 1,     mul_shr
+    MULDIVUP    : 0, 3, 1,     mul_div_up
 
     FIN2        : 1, 2, 1,     fin_2
     FIN3        : 1, 3, 1,     fin_3
