@@ -78,13 +78,17 @@ macro_rules! action_define {
         impl FromJSON for $class {
             fn from_json(&mut self, json_str: &str) -> Ret<()> {
                 let pairs = json_split_object(json_str)?;
+                let mut seen_fields = std::collections::HashSet::<&'static str>::new();
                 for (k, v) in pairs {
                     if k == "kind" {
                         self.kind.from_json(v)?;
+                        continue;
                     }
                     $(
                         if k == stringify!($item) {
                             self.$item.from_json(v)?;
+                            seen_fields.insert(stringify!($item));
+                            continue;
                         }
                     )*
                 }
@@ -93,6 +97,19 @@ macro_rules! action_define {
                         "action kind mismatch: expected {} but got {}",
                         Self::KIND,
                         *self.kind
+                    )
+                }
+                let mut missing_fields = Vec::new();
+                $(
+                    if !seen_fields.contains(stringify!($item)) {
+                        missing_fields.push(stringify!($item));
+                    }
+                )*
+                if !missing_fields.is_empty() {
+                    return errf!(
+                        "action {} missing required field(s): {}",
+                        Self::KIND,
+                        missing_fields.join(", ")
                     )
                 }
                 Ok(())

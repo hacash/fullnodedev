@@ -69,37 +69,92 @@ fn transaction_sign(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     api_data(data)
 }
 
+fn create_transaction_error_response(
+    code: &str,
+    message: &str,
+    stage: &str,
+    details: Vec<(&str, Value)>,
+) -> ApiResponse {
+    let mut data = serde_json::Map::new();
+    data.insert("ret".to_owned(), json!(1));
+    data.insert("err".to_owned(), json!(message));
+    data.insert("error".to_owned(), json!(message));
+    data.insert("code".to_owned(), json!(code));
+    data.insert("message".to_owned(), json!(message));
+    data.insert("stage".to_owned(), json!(stage));
+    for (k, v) in details {
+        data.insert(k.to_owned(), v);
+    }
+    ApiResponse::json(Value::Object(data).to_string())
+}
+
 fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
+    transaction_build_inner(&req)
+}
+
+fn transaction_build_inner(req: &ApiRequest) -> ApiResponse {
     let unit = q_string(&req, "unit", "fin");
     let action = q_bool(&req, "action", false);
     let signature = q_bool(&req, "signature", false);
     let description = q_bool(&req, "description", false);
 
-    let api_error_create_transaction = |errmsg: &str| {
-        ApiResponse::json(json!({"ret":1,"err":errmsg,"error":errmsg}).to_string())
+    let api_error_create_transaction = |code: &str, message: &str, stage: &str| {
+        create_transaction_error_response(code, message, stage, vec![])
     };
 
     let Ok(txjsondts) = body_data_may_hex(&req) else {
-        return api_error_create_transaction("transaction json body invalid");
+        return api_error_create_transaction(
+            "create_transaction_invalid_json_body",
+            "transaction JSON body invalid",
+            "parse_body",
+        );
     };
     let Ok(jsonstr) = std::str::from_utf8(&txjsondts) else {
-        return api_error_create_transaction("transaction json body invalid");
+        return api_error_create_transaction(
+            "create_transaction_invalid_json_body",
+            "transaction JSON body invalid",
+            "parse_body",
+        );
     };
     let Ok(jsonv) = serde_json::from_str::<serde_json::Value>(jsonstr) else {
-        return api_error_create_transaction("transaction json body invalid");
+        return api_error_create_transaction(
+            "create_transaction_invalid_json_body",
+            "transaction JSON body invalid",
+            "parse_body",
+        );
     };
 
     let Some(main_addr) = jsonv["main_address"].as_str() else {
-        return api_error_create_transaction("address format invalid");
+        return create_transaction_error_response(
+            "create_transaction_invalid_main_address",
+            "main_address format invalid",
+            "parse_main_address",
+            vec![("field", json!("main_address"))],
+        );
     };
     let Ok(main_addr) = Address::from_readable(main_addr) else {
-        return api_error_create_transaction("address format invalid");
+        return create_transaction_error_response(
+            "create_transaction_invalid_main_address",
+            "main_address format invalid",
+            "parse_main_address",
+            vec![("field", json!("main_address"))],
+        );
     };
     let Some(fee) = jsonv["fee"].as_str() else {
-        return api_error_create_transaction("amount format invalid");
+        return create_transaction_error_response(
+            "create_transaction_invalid_fee",
+            "fee format invalid",
+            "parse_fee",
+            vec![("field", json!("fee"))],
+        );
     };
     let Ok(fee) = Amount::from(fee) else {
-        return api_error_create_transaction("amount format invalid");
+        return create_transaction_error_response(
+            "create_transaction_invalid_fee",
+            "fee format invalid",
+            "parse_fee",
+            vec![("field", json!("fee"))],
+        );
     };
 
     let mut tx = TransactionType2::new_by(main_addr, fee, curtimes());
@@ -108,15 +163,59 @@ fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     }
 
     let Some(acts) = jsonv["actions"].as_array() else {
-        return api_error_create_transaction("actions format invalid");
+        return create_transaction_error_response(
+            "create_transaction_invalid_actions",
+            "actions array format invalid",
+            "parse_actions",
+            vec![("field", json!("actions"))],
+        );
     };
-    for act in acts {
+    for (action_index, act) in acts.iter().enumerate() {
+        let action_kind = act.get("kind").and_then(Value::as_u64);
         let a = match action_from_json(&act.to_string()) {
             Ok(v) => v,
-            Err(e) => return api_error_create_transaction(&format!("push action failed: {}", e)),
+            Err(e) => {
+                let message = match action_kind {
+                    Some(kind) => {
+                        format!("transaction action[{action_index}] kind {kind} invalid: {e}")
+                    }
+                    None => format!("transaction action[{action_index}] invalid: {e}"),
+                };
+                let mut details = vec![
+                    ("action_index", json!(action_index)),
+                    ("cause", json!(e)),
+                ];
+                if let Some(kind) = action_kind {
+                    details.push(("action_kind", json!(kind)));
+                }
+                return create_transaction_error_response(
+                    "create_transaction_invalid_action",
+                    &message,
+                    "action_decode",
+                    details,
+                );
+            }
         };
         if let Err(e) = tx.push_action(a) {
-            return api_error_create_transaction(&format!("push action failed: {}", e));
+            let message = match action_kind {
+                Some(kind) => {
+                    format!("transaction action[{action_index}] kind {kind} rejected: {e}")
+                }
+                None => format!("transaction action[{action_index}] rejected: {e}"),
+            };
+            let mut details = vec![
+                ("action_index", json!(action_index)),
+                ("cause", json!(e)),
+            ];
+            if let Some(kind) = action_kind {
+                details.push(("action_kind", json!(kind)));
+            }
+            return create_transaction_error_response(
+                "create_transaction_action_rejected",
+                &message,
+                "action_push",
+                details,
+            );
         }
     }
 
@@ -130,6 +229,64 @@ fn transaction_build(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
         action,
         description,
     ))
+}
+
+#[cfg(test)]
+mod transaction_build_tests {
+    use super::*;
+
+    fn install_protocol_setup() -> protocol::setup::TestSetupScopeGuard {
+        let setup = protocol::setup::new_standard_protocol_setup(x16rs::block_hash);
+        protocol::setup::install_test_scope(setup)
+    }
+
+    #[test]
+    fn transaction_build_must_return_structured_action_decode_error() {
+        let _guard = install_protocol_setup();
+        let req = ApiRequest {
+            body: json!({
+                "main_address": "1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS",
+                "fee": "1:244",
+                "actions": [
+                    {
+                        "kind": 6,
+                        "to": "1BcktgV7EjHmxEwQDFFhhztzNqZkd5gdm",
+                        "diamonds": "WWWTTT"
+                    }
+                ]
+            })
+            .to_string()
+            .into_bytes(),
+            ..ApiRequest::default()
+        };
+
+        let res = transaction_build_inner(&req);
+        let body: Value = serde_json::from_slice(&res.body).unwrap();
+
+        assert_eq!(res.status, 200);
+        assert_eq!(body["ret"].as_u64(), Some(1));
+        assert_eq!(
+            body["code"].as_str(),
+            Some("create_transaction_invalid_action")
+        );
+        assert_eq!(body["stage"].as_str(), Some("action_decode"));
+        assert_eq!(body["action_index"].as_u64(), Some(0));
+        assert_eq!(body["action_kind"].as_u64(), Some(6));
+        assert_eq!(body["err"], body["message"]);
+        assert_eq!(body["error"], body["message"]);
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("action[0]")
+        );
+        assert!(
+            body["cause"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("missing required field(s): from")
+        );
+    }
 }
 
 fn transaction_check(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {

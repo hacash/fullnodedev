@@ -1884,6 +1884,27 @@ fn test_action_json_create_must_reject_kind_mismatch() {
 }
 
 #[test]
+fn test_action_json_create_must_reject_missing_required_field_for_diamond_from_to() {
+    let _guard = install_test_registry();
+
+    let json =
+        r#"{"kind":6,"to":"1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS","diamonds":"WWWTTT"}"#;
+    let err = crate::action::action_json_create(DiaFromToTrs::KIND, json).unwrap_err();
+    assert!(err.contains("missing required field"), "{}", err);
+    assert!(err.contains("from"), "{}", err);
+}
+
+#[test]
+fn test_action_json_create_must_reject_missing_required_field_for_diamond_from() {
+    let _guard = install_test_registry();
+
+    let json = r#"{"kind":8,"diamonds":"WWWTTT"}"#;
+    let err = crate::action::action_json_create(DiaFromTrs::KIND, json).unwrap_err();
+    assert!(err.contains("missing required field"), "{}", err);
+    assert!(err.contains("from"), "{}", err);
+}
+
+#[test]
 fn test_action_binary_create_must_reject_kind_mismatch() {
     let _guard = install_test_registry();
 
