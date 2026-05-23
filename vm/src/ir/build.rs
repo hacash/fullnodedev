@@ -52,6 +52,7 @@ pub fn verify_ir_runtime_safe_bytecodes(codes: &[u8]) -> VmrtErr {
 pub fn convert_ir_to_runtime_bytecode(bytes: &[u8]) -> VmrtRes<Vec<u8>> {
     let codes = convert_ir_to_bytecode(bytes)?;
     verify_ir_runtime_safe_bytecodes(&codes)?;
+    verify_bytecodes(&codes)?;
     Ok(codes)
 }
 
@@ -117,6 +118,14 @@ mod ir_runtime_codegen_tests {
         let raw = vec![IRBYTECODE as u8, 0, 1, P1 as u8];
         let err = convert_ir_to_runtime_bytecode(&raw).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CodeNotWithEnd);
+    }
+
+    #[test]
+    fn irnode_runtime_rejects_leaked_ir_bytecodes_after_conversion() {
+        let raw = vec![IRBYTECODE as u8, 0, 2, IRBREAK as u8, END as u8];
+        let err = convert_ir_to_runtime_bytecode(&raw).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::InstInvalid);
+        assert!(err.1.contains("IR bytecode"), "{}", err.1);
     }
 
     #[test]

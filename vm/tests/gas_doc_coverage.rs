@@ -36,7 +36,10 @@ fn doc_tracks_current_dynamic_metering_groups() {
         "ACTION input body bytes",
         "host-returned gas (`bgasu`)",
     ] {
-        assert!(DOC.contains(key), "missing action/native coverage key: {key}");
+        assert!(
+            DOC.contains(key),
+            "missing action/native coverage key: {key}"
+        );
     }
 
     // storage/space/manual sections

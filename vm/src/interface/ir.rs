@@ -32,6 +32,7 @@ pub trait IRNode : DynClone {
         Ok(())
     }
     fn serialize(&self) -> Vec<u8> { vec![] }
+    fn is_serialization_elided(&self) -> bool { false }
     /* { let (_, _, _, out) = Bytecode::metadata(std_mem_transmute!(self.bytecode())); out == 1 } */
     fn as_any(&self) -> &dyn Any { unimplemented!() }
     fn as_any_mut(&mut self) -> &mut dyn Any { unimplemented!() }

@@ -21,6 +21,9 @@ impl IRNode for IRNodeEmpty {
     fn codegen_into(&self, _buf: &mut Vec<u8>) -> VmrtRes<()> {
         Ok(())
     }
+    fn is_serialization_elided(&self) -> bool {
+        true
+    }
     fn print(&self) -> String {
         String::new()
     }
@@ -1115,11 +1118,18 @@ impl IRNode for IRNodeArray {
         let mut children_bytes: Vec<u8> = Vec::new();
         let mut count: usize = 0;
         for a in &self.subs {
-            let mut b = a.serialize();
-            if !b.is_empty() {
-                count += 1;
-                children_bytes.append(&mut b);
+            if a.is_serialization_elided() {
+                continue;
             }
+            let mut b = a.serialize();
+            if b.is_empty() {
+                panic!(
+                    "IRNodeArray child {:?} serialized to empty bytes without explicit elision",
+                    a.bytecode()
+                );
+            }
+            count += 1;
+            children_bytes.append(&mut b);
         }
         let mut bytes = iter::once(self.inst as u8)
             .chain((count as u16).to_be_bytes())
@@ -1193,6 +1203,22 @@ impl IRNodeArray {
 #[cfg(test)]
 mod node_tests {
     use super::*;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[derive(Clone, Debug)]
+    struct EmptySerializeNode;
+
+    impl IRNode for EmptySerializeNode {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn hasretval(&self) -> bool {
+            false
+        }
+        fn bytecode(&self) -> u8 {
+            Bytecode::NOP as u8
+        }
+    }
 
     #[test]
     fn wrap_codegen_delegates_param_node() {
@@ -1223,5 +1249,25 @@ mod node_tests {
             bytes,
             vec![Bytecode::P1 as u8, Bytecode::P2 as u8, Bytecode::ADD as u8]
         );
+    }
+
+    #[test]
+    fn array_serialize_elides_only_explicit_empty_nodes() {
+        let mut root = IRNodeArray::with_opcode(Bytecode::IRBLOCK);
+        root.push(Box::new(IRNodeEmpty {}));
+        root.push(Box::new(IRNodeLeaf::notext(false, Bytecode::END)));
+
+        assert_eq!(
+            root.serialize(),
+            vec![Bytecode::IRBLOCK as u8, 0, 1, Bytecode::END as u8]
+        );
+    }
+
+    #[test]
+    fn array_serialize_rejects_unmarked_empty_child_serialization() {
+        let mut root = IRNodeArray::with_opcode(Bytecode::IRBLOCK);
+        root.push(Box::new(EmptySerializeNode));
+
+        assert!(catch_unwind(AssertUnwindSafe(|| root.serialize())).is_err());
     }
 }
