@@ -115,10 +115,8 @@ impl Heap {
         Ok(())
     }
 
-    /* pub fn write(&mut self, k: Value, v: Value) -> VmrtErr { let start = k.extract_u32()? as usize; self.do_write(start, v) } pub fn write_x(&mut self, start: u8, v: Value) -> VmrtErr { self.do_write(start as usize, v) } */
-
-    pub fn write(&mut self, start: u16, v: Value) -> VmrtErr {
-        self.do_write(start as usize, v)
+    pub fn write(&mut self, start: usize, v: Value) -> VmrtErr {
+        self.do_write(start, v)
     }
 
     pub fn do_read(&self, start: usize, len: usize) -> VmrtRes<Value> {
@@ -141,7 +139,7 @@ impl Heap {
         Ok(Value::HeapSlice((start, length)))
     }
 
-    /* 2 bit = u8 u16 u32 u64 6 bit = seg max 64 (u8:64, u16:128, u32:256, u64:512) */
+    /* 2 bit = u8 u16 u32 u64; remaining 6 bits encode the segment (u8: bytes 0..=63, u16: 0..=127, u32: 0..=255, u64: 0..=511) */
     pub fn read_u(&self, mark: u8) -> VmrtRes<Value> {
         let uty = mark >> 6;
         let seg = mark & 0b00111111;
@@ -182,5 +180,24 @@ mod heaptest {
         let len = Value::U32(1);
         let err = heap.slice(start, len).unwrap_err().to_string();
         assert!(err.contains("create slice overflow"));
+    }
+
+    #[test]
+    fn write_accepts_offsets_above_u16() {
+        let mut heap = Heap::new(300);
+        let gas = GasExtra::new(1);
+
+        for _ in 0..17 {
+            heap.grow(16, &gas).unwrap();
+        }
+
+        let start = 66_000usize;
+        heap.write(start, Value::Bytes(vec![0xAA, 0xBB, 0xCC]))
+            .unwrap();
+
+        assert_eq!(
+            heap.do_read(start, 3).unwrap(),
+            Value::Bytes(vec![0xAA, 0xBB, 0xCC])
+        );
     }
 }

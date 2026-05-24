@@ -303,6 +303,11 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             ops.pop()?.extract_u16()?
         };
     }
+    macro_rules! ops_pop_to_u32 {
+        () => {
+            ops.pop()?.extract_u32()?
+        };
+    }
     macro_rules! ops_peek_to_u16 {
         () => {
             ops.peek()?.extract_u16()?
@@ -877,8 +882,8 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 }
                 HREADUL => hread_push!(heap.read_ul(pu16!())?),
                 HREADU => hread_push!(heap.read_u(pu8!())?),
-                HWRITEXL => hwrite!(pu16!()),
-                HWRITEX => hwrite!(pu8_as_u16!()),
+                HWRITEXL => hwrite!(pu16!() as usize),
+                HWRITEX => hwrite!(pu8!() as usize),
                 HREAD => {
                     let n = ops.pop()?;
                     let len = n.extract_u16()? as usize;
@@ -886,7 +891,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     let peek = ops.peek()?;
                     *peek = heap.read(peek, n)?.valid(cap)?;
                 }
-                HWRITE => hwrite!(ops_pop_to_u16!()),
+                HWRITE => hwrite!(ops_pop_to_u32!() as usize),
                 HGROW => gas_resource_raw!(heap.grow(pu8!(), gst)?),
                 // storage
                 SSTAT => {
@@ -968,8 +973,25 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 GGET => kvget!(k => global_map.get(k)?),
                 MPUT => {
                     nsw!();
-                    let mem = memory_map.entry_mut(context_addr)?;
-                    kvput_inner!(mem, gst.memory_key_cost, MemoryError);
+                    let v = ops.pop()?;
+                    let k = ops.pop()?;
+                    crate::space::validate_volatile_kv_put(&k, &v, &kv_limits, true, MemoryError)?;
+                    let klen = k.extract_key_bytes_with_error_code(MemoryError)?.len();
+                    gas_resource!(stack_write, klen);
+                    if matches!(v, Value::Nil) {
+                        memory_map.remove(context_addr, &k)?;
+                    } else {
+                        let vlen = v.val_size();
+                        let is_new = match memory_map.entry(context_addr)? {
+                            Some(mem) => !mem.contains_key(&k)?,
+                            None => true,
+                        };
+                        gas_resource!(stack_write, vlen);
+                        if is_new {
+                            gas_resource_raw!(gst.memory_key_cost);
+                        }
+                        memory_map.entry_mut(context_addr)?.put(k, v)?;
+                    }
                 }
                 MGET => kvget!(k => memory_map.get(context_addr, k)?),
                 MTAKE => {

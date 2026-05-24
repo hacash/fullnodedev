@@ -77,7 +77,7 @@ pub enum Bytecode {
     ROLL = 0x45,   // *+     roll
     SWAP = 0x46,   // a,b++  swap  b,a = a,b
     REV = 0x47,    // a...b  reverse u8
-    CAT = 0x48,    // a,b+   buf: b + a
+    CAT = 0x48,    // a,b+   buf: a + b
     JOIN = 0x49,   // a...bn+
     BYTE = 0x4a,   // a,b+   val[n] = u8
     CUT = 0x4b,    // a,b,c+ cut buf (v, ost, len)+
@@ -144,10 +144,10 @@ pub enum Bytecode {
     HSLICE = 0x88,   // start,len+  create heap slice
     HREADUL = 0x89,  // **+   heap read ul
     HREADU = 0x8a,   // *+    heap read u
-    HWRITEXL = 0x8b, // **a   heap write xl
-    HWRITEX = 0x8c,  // *a    heap write x
+    HWRITEXL = 0x8b, // **a   heap write xl (u16 immediate offset)
+    HWRITEX = 0x8c,  // *a    heap write x (u8 immediate offset)
     HREAD = 0x8d,    // a,b+  heap read
-    HWRITE = 0x8e,   // a,b   heap write
+    HWRITE = 0x8e,   // a,b   heap write (dynamic u32 offset)
     HGROW = 0x8f,    // *     heap grow
     GPUT = 0x90,     // a,b   global put
     GGET = 0x91,     // &     global get

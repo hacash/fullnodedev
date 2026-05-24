@@ -505,7 +505,8 @@ let first = $0         // 从槽位 0 读取
 **特点**：
 - 字节数组；按段扩展（每段 256 字节）
 - `heap_grow(n)` 分配；`heap_write(offset, data)` / `heap_read(offset, len)` 访问
-- `heap_read_uint`、`heap_write_x` 用于固定宽度整数
+- `heap_write(offset, data)` 接受运行时 `u32` 偏移；`heap_write_x` / `heap_write_xl` 是 `u8` / `u16` 的立即数偏移辅助形式
+- `heap_read_uint`、`heap_read_uint_long` 用于固定宽度整数读取
 - 最多 64 段（约 16 KB）
 
 **示例**：在单次调用内解析或构建二进制结构。
@@ -952,7 +953,7 @@ TEX 说明：
 - `TexCellAct` 只能在交易顶层执行，不能从运行时 `CALL` 上下文触发。
 - TEX 条件检查的是当前交易内、当前动作执行点的状态，发生在最终 TEX 清算之前。
 - TEX 的钻石 `get` 只声明数量；最终具体钻石名会在清算阶段按整笔交易的 FIFO 顺序分配。
-| `heap_write(offset, data)` | 写入堆 |
+| `heap_write(offset, data)` | 在运行时 `u32` 偏移处写入堆 |
 | `heap_read(offset, len)` | 从堆读取 |
 
 ### 11.8 数据结构函数

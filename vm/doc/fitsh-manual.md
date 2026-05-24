@@ -505,7 +505,8 @@ Contracts can use six resource spaces. Understanding their scope, lifetime, and 
 **Characteristics**:
 - Byte array; grow by segments (256 bytes each)
 - `heap_grow(n)` allocates; `heap_write(offset, data)` / `heap_read(offset, len)` access
-- `heap_read_uint`, `heap_write_x` for fixed-width integers
+- `heap_write(offset, data)` accepts a runtime `u32` offset; `heap_write_x` / `heap_write_xl` are `u8` / `u16` immediate-offset helpers
+- `heap_read_uint`, `heap_read_uint_long` read fixed-width integers
 - Max 64 segments (~16 KB)
 
 **Example**: Parsing or building binary structures within one call.
@@ -952,7 +953,7 @@ TEX note:
 - `TexCellAct` is top-level only; it must not execute from runtime `CALL` context.
 - TEX conditions observe the current in-tx state at the action point, before final TEX settlement.
 - TEX diamond `get` claims quantity only; final names are assigned later at settlement in FIFO order across the whole transaction.
-| `heap_write(offset, data)` | Write to heap |
+| `heap_write(offset, data)` | Write to heap at a runtime `u32` offset |
 | `heap_read(offset, len)` | Read from heap |
 
 ### 11.8 Data Structure Functions

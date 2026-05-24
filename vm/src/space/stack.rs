@@ -134,20 +134,6 @@ impl Stack {
     }
 
     #[inline(always)]
-    pub fn __popx(&mut self, x: u8) -> VmrtErr {
-        let x = x as usize;
-        if x < 2 {
-            return itr_err_fmt!(StackError, "inst popn param must be at least 2");
-        }
-        let cl = self.datas.len();
-        if x > cl {
-            return Err(Self::pop_empty());
-        }
-        self.datas.truncate(cl - x);
-        Ok(())
-    }
-
-    #[inline(always)]
     pub fn dupn(&mut self, n: u8) -> VmrtErr {
         let n = n as usize;
         if n < 2 {
@@ -166,12 +152,12 @@ impl Stack {
 
     #[inline(always)]
     pub fn roll(&mut self, x: u8) -> VmrtErr {
-        let x = x as usize;
-        let idx = self.datas.len() as i32 - x as i32 - 1;
-        if idx < 0 {
-            return itr_err_code!(OutOfStack);
-        }
-        let item = self.datas.remove(idx as usize);
+        let idx = self
+            .datas
+            .len()
+            .checked_sub(x as usize + 1)
+            .ok_or_else(|| ItrErr::code(OutOfStack))?;
+        let item = self.datas.remove(idx);
         self.push(item)?;
         Ok(())
     }
@@ -184,13 +170,13 @@ impl Stack {
         }
         let l = self.datas.len();
         if x > l {
-            return itr_err_fmt!(StackError, "pop empty stack");
+            return itr_err_fmt!(StackError, "reverse exceeds stack length");
         }
         self.datas[l - x..l].reverse();
         Ok(())
     }
 
-    /* return buf: b + a */
+    /* return buf: a + b */
     pub fn cat(&mut self, cap: &SpaceCap) -> VmrtErr {
         let y = self.pop()?;
         let x = self.peek()?;
@@ -268,7 +254,7 @@ impl Stack {
             .datas
             .len()
             .checked_sub(n + 1)
-            .ok_or_else(|| ItrErr::new(StackError, "Read stack overflow"))?;
+            .ok_or_else(|| ItrErr::new(StackError, "Read stack underflow"))?;
         Ok(self.get_at(idx)?.clone())
     }
 

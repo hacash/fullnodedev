@@ -1975,7 +1975,8 @@ mod bounds_tests {
         .unwrap();
 
         assert_eq!(memory_map.get(&cadr, &key).unwrap(), Value::Nil);
-        assert_eq!(memory_map.entry_mut(&cadr).unwrap().len(), 0);
+        assert!(memory_map.contains_addr(&cadr).unwrap());
+        assert_eq!(memory_map.entry(&cadr).unwrap().unwrap().len(), 0);
     }
 
     #[test]
@@ -2103,8 +2104,10 @@ mod bounds_tests {
         )
         .unwrap();
 
+        assert_eq!(memory_map.addr_len(), 0);
+        assert!(!memory_map.contains_addr(&cadr).unwrap());
+
         let mem = memory_map.entry_mut(&cadr).unwrap();
-        assert_eq!(mem.len(), 0);
         mem.put(Value::Bytes(vec![0x76u8]), Value::U8(1)).unwrap();
         assert_eq!(mem.len(), 1);
     }
@@ -2631,6 +2634,54 @@ mod bounds_tests {
         let gas_u8 = run(Value::U8(1)); // 1/12 = 0
         let gas_16 = run(Value::U128(1)); // 16/12 = 1
         assert_eq!(gas_16, gas_u8 + 1);
+    }
+
+    #[test]
+    fn hwrite_accepts_u32_runtime_offsets() {
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1_000_000;
+        let mut host = DummyHost::default();
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(300);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+
+        for _ in 0..17 {
+            heap.grow(16, &GasExtra::new(1)).unwrap();
+        }
+
+        let start = 66_000u32;
+        let bytes = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        operands.push(Value::U32(start)).unwrap();
+        operands.push(Value::Bytes(bytes.clone())).unwrap();
+
+        execute_code(
+            &mut pc,
+            &[Bytecode::HWRITE as u8, Bytecode::END as u8],
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &SpaceCap::new(1),
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap();
+
+        assert_eq!(
+            heap.do_read(start as usize, bytes.len()).unwrap(),
+            Value::Bytes(bytes)
+        );
     }
 
     #[test]

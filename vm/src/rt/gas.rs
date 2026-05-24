@@ -337,7 +337,7 @@ impl GasExtra {
                 .checked_add(add)
                 .ok_or_else(|| ItrErr::new(HeapError, "heap grow gas overflow"))?;
         }
-        Ok(gas as i64)
+        i64::try_from(gas).map_err(|_| ItrErr::new(HeapError, "heap grow gas overflow"))
     }
 }
 

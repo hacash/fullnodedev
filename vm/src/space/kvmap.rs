@@ -68,11 +68,11 @@ macro_rules! memories_kvmap_define {
                 Ok(self.key(k)?.len())
             }
 
-            pub fn put(&mut self, k: Value, v: Value) -> VmrtErr {
+            pub(crate) fn put(&mut self, k: Value, v: Value) -> VmrtErr {
                 self.put_with_stats(k, v).map(|_| ())
             }
 
-            pub fn put_with_stats(&mut self, k: Value, v: Value) -> VmrtRes<(usize, bool)> {
+            pub(crate) fn put_with_stats(&mut self, k: Value, v: Value) -> VmrtRes<(usize, bool)> {
                 v.check_scalar()?;
                 let key = self.key(&k)?;
                 let key_len = key.len();
@@ -169,6 +169,20 @@ impl CtcKVMap {
         self.datas.clear();
     }
 
+    pub fn entry(&self, addr: &Address) -> VmrtRes<Option<&MKVMap>> {
+        Self::check_addr(addr)?;
+        Ok(self.datas.get(addr))
+    }
+
+    pub fn contains_addr(&self, addr: &Address) -> VmrtRes<bool> {
+        Self::check_addr(addr)?;
+        Ok(self.datas.contains_key(addr))
+    }
+
+    pub fn addr_len(&self) -> usize {
+        self.datas.len()
+    }
+
     pub fn entry_mut(&mut self, addr: &Address) -> VmrtRes<&mut MKVMap> {
         Self::check_addr(addr)?;
         Ok(self
@@ -245,5 +259,21 @@ mod kvmap_tests {
             assert!(m.contains_key(&key).is_err());
             assert!(m.remove(&key).is_err());
         }
+    }
+
+    #[test]
+    fn ctc_read_only_entry_helpers_do_not_insert() {
+        let addr = Address::zero();
+        let mut m = CtcKVMap::new(1);
+
+        assert_eq!(m.addr_len(), 0);
+        assert!(!m.contains_addr(&addr).unwrap());
+        assert!(m.entry(&addr).unwrap().is_none());
+        assert_eq!(m.addr_len(), 0);
+
+        m.entry_mut(&addr).unwrap();
+        assert!(m.contains_addr(&addr).unwrap());
+        assert!(m.entry(&addr).unwrap().is_some());
+        assert_eq!(m.addr_len(), 1);
     }
 }
