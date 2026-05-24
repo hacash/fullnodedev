@@ -18,9 +18,6 @@ pub enum Bytecode {
     NTFUNC = 0x0a,  // *@  native pure function
     ____________0b = 0x0b,
     ____________0c = 0x0c,
-    #[cfg(feature = "calcfunc")]
-    CALCCALL = 0x0d, // ****@ local calc coprocessor call
-    #[cfg(not(feature = "calcfunc"))]
     ____________0d = 0x0d,
     CODECALL = 0x0e,    // *,****
     CALL = 0x0f,        // **,****@
@@ -295,16 +292,6 @@ macro_rules! bytecode_metadata_define {
 impl Bytecode {
 
     pub fn metadata(&self) -> BytecodeMetadata {
-        #[cfg(feature = "calcfunc")]
-        if matches!(self, CALCCALL) {
-            return BytecodeMetadata {
-                valid: true,
-                param: 4,
-                input: 1,
-                output: 1,
-                intro: "calc_call",
-            }
-        }
         match self {
             $(
             $inst => BytecodeMetadata {valid: true, param: $p, input: $i, output: $o, intro: stringify!($s)},
@@ -314,10 +301,6 @@ impl Bytecode {
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        #[cfg(feature = "calcfunc")]
-        if s == "CALCCALL" {
-            return Some(CALCCALL)
-        }
         match s {
             $(
             stringify!($inst) => Some($inst),

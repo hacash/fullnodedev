@@ -38,6 +38,9 @@ impl ContractAddress {
 		ContractAddress::from_addr(addr).unwrap()
 	}
 
+    /// Build from raw 21 bytes. Panics if the leading version byte is not
+    /// [`Address::CONTRACT`]; callers must construct the contract-version address
+    /// explicitly (e.g. via [`Address::create_contract`]) before calling this.
     pub fn must(bts: [u8; CONTRACT_ADDRESS_WIDTH]) -> Self {
         Self::from_addr(Address::from(bts)).unwrap()
     }

@@ -1104,16 +1104,6 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     }
                 } // assert(..)
                 PRT => debug_print_value(context_addr, current_addr, exec, ops.pop()?),
-                #[cfg(feature = "calcfunc")]
-                CALCCALL => {
-                    let end = *pc + FN_SIGN_WIDTH;
-                    if end > codes.len() {
-                        return itr_err_code!(CodeOverflow);
-                    }
-                    let selector = unsafe { read_arr::<FN_SIGN_WIDTH>(codes, *pc) };
-                    *pc = end;
-                    return Ok(Step::Exit(CalcCall(selector)));
-                }
                 // call
                 CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE | CALLTHIS
                 | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE => {

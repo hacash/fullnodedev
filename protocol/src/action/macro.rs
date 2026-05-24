@@ -99,7 +99,7 @@ macro_rules! action_define {
                         *self.kind
                     )
                 }
-                let mut missing_fields = Vec::new();
+                let mut missing_fields: Vec<&'static str> = Vec::new();
                 $(
                     if !seen_fields.contains(stringify!($item)) {
                         missing_fields.push(stringify!($item));

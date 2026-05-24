@@ -5,7 +5,6 @@ edition = "2024"
 
 [features]
 default = []
-calcfunc = []
 
 [dependencies]
 sys            = {path = "../sys"}

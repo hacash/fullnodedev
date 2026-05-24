@@ -105,38 +105,6 @@ impl CallFrame {
                         }
                     }
                 }
-                #[cfg(feature = "calcfunc")]
-                CalcCall(selector) => {
-                    let owner = curr!()
-                        .bindings
-                        .code_contract
-                        .clone()
-                        .ok_or_else(|| ItrErr::code(ItrErrCode::CallInvalid))?;
-                    let calcfn = r.resolve_local_calcfn(host, &owner, selector)?;
-                    let input = {
-                        let frame = curr_mut!();
-                        let param = frame.pop_value()?;
-                        param.extract_call_data(&frame.heap)?
-                    };
-                    let gas_limit = r.calc_resource_gas_limit(host)?;
-                    let (gas_used, output) =
-                        host.calc_call(&owner, selector, calcfn.as_ref(), input, gas_limit)?;
-                    if gas_used > gas_limit {
-                        return itr_err_fmt!(
-                            OutOfGas,
-                            "calc resource gas {} exceeds limit {}",
-                            gas_used,
-                            gas_limit
-                        );
-                    }
-                    r.settle_calc_resource_gas(host, gas_used)?;
-                    curr_mut!().push_value(Value::Bytes(output).valid(&r.warm.space_cap)?)?;
-                    if curr!().pc == curr!().codes.len() {
-                        let retv = curr_mut!().pop_value()?;
-                        settle_return!(retv);
-                    }
-                    continue;
-                }
 
                 Abort | Throw | Finish | Return => {
                     let mut retv = Value::Nil;

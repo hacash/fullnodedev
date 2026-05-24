@@ -125,6 +125,7 @@ impl ContractUserFunc {
 
 impl ContractCalcFunc {
 
+	#[allow(dead_code)]
 	fn check(&self, _hei: u64) -> VmrtErr {
 		let e = itr_err_fmt!(ContractError, "contract ContractCalcFunc format invalid");
 		if self.mark.not_zero() {
@@ -142,22 +143,6 @@ fn verify_code_stuff(cap: &SpaceCap, gst: &GasExtra, code_stuff: &CodeStuff, hei
 	convert_and_check(cap, gst, code_pkg.code_type()?, &code_pkg.data, hei)?;
 	Ok(())
 }
-
-fn verify_calc_code_stuff(cap: &SpaceCap, code_stuff: &CodeStuff, _hei: u64) -> VmrtErr {
-	let code_pkg = CodePkg {
-		conf: code_stuff.conf.uint(),
-		data: code_stuff.data.to_vec(),
-	};
-	let cdlen = code_pkg.data.len();
-	if cdlen <= 0 {
-		return itr_err_code!(CodeEmpty)
-	}
-	if cdlen > cap.function_size {
-		return itr_err_code!(CodeTooLong)
-	}
-	Ok(())
-}
-
 
 macro_rules! func_list_merge_define {
 	($ty:ty) => {
@@ -196,10 +181,6 @@ impl ContractUserFuncList {
 	func_list_merge_define!{ ContractUserFunc }
 }
 
-impl ContractCalcFuncList {
-	func_list_merge_define!{ ContractCalcFunc }
-}
-
 // Contract
 combi_struct!{ ContractSto,
 	metas: ContractMeta
@@ -222,13 +203,10 @@ impl ContractSto {
 		}
 	}
 
-	pub fn apply_edit(&mut self, edit: &ContractEdit, hei: u64, cap: &SpaceCap, gst: &GasExtra) -> VmrtRes<(bool, bool)> {
+	pub fn apply_edit(&mut self, edit: &ContractEdit, hei: u64, cap: &SpaceCap, gst: &GasExtra) -> VmrtRes<bool> {
 		use ItrErrCode::*;
 
 		let old_rev = self.metas.revision.uint();
-		if old_rev == Uint2::MAX {
-			return itr_err_fmt!(ContractError, "contract revision reached max");
-		}
 		let Some(next_rev) = old_rev.checked_add(1) else {
 			return itr_err_fmt!(ContractError, "contract revision overflow");
 		};
@@ -251,12 +229,10 @@ impl ContractSto {
 		if edit_empty {
 			return itr_err_fmt!(ContractError, "contract edit is empty");
 		}
-		#[cfg(not(feature = "calcfunc"))]
 		if edit.calcfuncs.length() > 0 {
-			return itr_err_fmt!(ContractError, "calcfunc feature disabled");
+			return itr_err_fmt!(ContractError, "calcfunc not enabled yet");
 		}
 
-		let mut did_append = false;
 		let mut did_change = false;
 
 		let inh_len = self.inherit.length();
@@ -304,29 +280,13 @@ impl ContractSto {
 			for a in edit.inherit_add.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 			}
-			self.inherit.append(edit.inherit_add.lists.clone()).unwrap();
-			did_append = true;
+			self.inherit.append(edit.inherit_add.lists.clone()).map_ire(InheritError)?;
 		}
 		if edit.library_add.length() > 0 {
 			for a in edit.library_add.as_list() {
 				a.check().map_ire(ContractAddrErr)?;
 			}
-			self.library.append(edit.library_add.lists.clone()).unwrap();
-			did_append = true;
-		}
-
-		// check repeat after edit
-		let mut inhset: HashSet<ContractAddress> = HashSet::new();
-		for a in self.inherit.as_list() {
-			if !inhset.insert(a.clone()) {
-				return itr_err_fmt!(InheritError, "inherit already exists")
-			}
-		}
-		let mut libset: HashSet<ContractAddress> = HashSet::new();
-		for a in self.library.as_list() {
-			if !libset.insert(a.clone()) {
-				return itr_err_fmt!(LibraryError, "library already exists")
-			}
+			self.library.append(edit.library_add.lists.clone()).map_ire(LibraryError)?;
 		}
 
 		if edit.abstcalls.length() > 0 {
@@ -334,6 +294,12 @@ impl ContractSto {
 			{
 				let mut seen = HashSet::new();
 				for a in edit.abstcalls.as_list() {
+					if a.sign[0] == AbstCall::Construct as u8 {
+						return itr_err_fmt!(
+							ContractUpgradeErr,
+							"contract update cannot carry Construct abstcall"
+						)
+					}
 					if !seen.insert(a.sign[0]) {
 						return itr_err_fmt!(ContractUpgradeErr, "abstcall sign already exists in edit")
 					}
@@ -342,7 +308,7 @@ impl ContractSto {
 			for a in edit.abstcalls.as_list() {
 				a.check(hei)?;
 				AbstCall::check(a.sign[0])?;
-					verify_code_stuff(cap, gst, &a.code_stuff, hei)?;
+				verify_code_stuff(cap, gst, &a.code_stuff, hei)?;
 			}
 			self.abstcalls.check_merge(&edit.abstcalls)?;
 		}
@@ -359,44 +325,19 @@ impl ContractSto {
 			}
 			for a in edit.userfuncs.as_list() {
 				a.check(hei)?;
-					verify_code_stuff(cap, gst, &a.code_stuff, hei)?;
+				verify_code_stuff(cap, gst, &a.code_stuff, hei)?;
 			}
-			let replaced = self.userfuncs.check_merge(&edit.userfuncs)?;
-			if replaced {
+			if self.userfuncs.check_merge(&edit.userfuncs)? {
 				did_change = true;
-			} else {
-				did_append = true;
 			}
-		}
-		if edit.calcfuncs.length() > 0 {
-			{
-				let mut seen = HashSet::new();
-				for a in edit.calcfuncs.as_list() {
-					let key = a.sign.to_array();
-					if !seen.insert(key) {
-						return itr_err_fmt!(ContractUpgradeErr, "calcfunc sign already exists in edit");
-					}
-				}
-			}
-			for a in edit.calcfuncs.as_list() {
-				a.check(hei)?;
-				verify_calc_code_stuff(&cap, &a.code_stuff, hei)?;
-			}
-			let replaced = self.calcfuncs.check_merge(&edit.calcfuncs)?;
-			self.morextend = Uint8::from(1);
-			if replaced {
-				did_change = true;
-			} else {
-				did_append = true;
-			}
-		}
-
-		if self.size() > cap.contract_size {
-			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
 		}
 
 		self.metas.revision = Uint2::from(next_rev);
-		Ok((did_append, did_change))
+
+		// Final tail check: enforces size cap, dedup of inherit/library/abstcall/userfunc,
+		// reserved-must-be-zero on `morextend`, and `calcfuncs.length() == 0`.
+		self.check(hei, cap, gst)?;
+		Ok(did_change)
 	}
 
 
@@ -409,61 +350,20 @@ impl ContractSto {
 		false
 	}
 
-	/* return Upgrade or Append for check */
-	pub fn merge(&mut self, src: &ContractSto, hei: u64, cap: &SpaceCap, gst: &GasExtra) -> VmrtRes<bool> {
-		use ItrErrCode::*;
-		src.check(hei, cap, gst)?;
-		if self.inherit.length() + src.inherit.length() > cap.inherit {
-			return itr_err_fmt!(InheritError, "inherit number overflow")
-		}
-		if self.library.length() + src.library.length() > cap.library {
-			return itr_err_fmt!(LibraryError, "library link number overflow")
-		}
-		// inhs and libs check repeat
-		if self.inherit.check_repeat(&src.inherit) {
-			return itr_err_fmt!(InheritError, "inherit already exists")
-		}
-		if self.library.check_repeat(&src.library) {
-			return itr_err_fmt!(LibraryError, "library already exists")
-		}
-		// append inherit and library
-		self.inherit.append(src.inherit.lists.clone()).unwrap();
-		self.library.append(src.library.lists.clone()).unwrap();
-		// merge abstcall & usrfun 
-		let edit1 = self.abstcalls.check_merge(&src.abstcalls)?;
-		let edit2 = self.userfuncs.check_merge(&src.userfuncs)?;
-		let edit3 = self.calcfuncs.check_merge(&src.calcfuncs)?;
-		if src.morextend.uint() > 0 {
-			self.morextend = Uint8::from(1);
-		}
-		// check size
-		if self.size() > cap.contract_size {
-			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
-		}
-		// ok
-		Ok(edit1 || edit2 || edit3)
-	}
-
 	pub fn check(&self, hei: u64, cap: &SpaceCap, gst: &GasExtra) -> VmrtErr {
 		self.metas.check(hei)?;
 		use ItrErrCode::*;
-		if self.morextend.uint() > 1 {
-			return itr_err_fmt!(ContractError, "contract format invalid")
+		// `morextend` and `calcfuncs` are reserved slots: kept in the on-disk layout for
+		// forward compatibility but currently must be empty/zero.
+		if self.morextend.uint() != 0 {
+			return itr_err_fmt!(ContractError, "morextend reserved, must be zero")
+		}
+		if self.calcfuncs.length() != 0 {
+			return itr_err_fmt!(ContractError, "calcfunc not enabled yet")
 		}
 		// check size
 		if self.size() > cap.contract_size {
 			return itr_err_fmt!(ContractError, "contract size overflow, max {}", cap.contract_size)
-		}
-		let extn = self.morextend.uint();
-		if extn == 0 && self.calcfuncs.length() > 0 {
-			return itr_err_fmt!(ContractError, "calcfunc extension not enabled")
-		}
-		if extn == 1 && self.calcfuncs.length() == 0 {
-			return itr_err_fmt!(ContractError, "extend data format invalid")
-		}
-		#[cfg(not(feature = "calcfunc"))]
-		if extn == 1 {
-			return itr_err_fmt!(ContractError, "calcfunc feature disabled")
 		}
 		// inherit and library
 		if self.inherit.length() > cap.inherit {
@@ -517,19 +417,6 @@ impl ContractSto {
 			a.check(hei)?;
 			verify_code_stuff(cap, gst, &a.code_stuff, hei)?; // check compile
 		}
-		{
-			let mut seen = HashSet::new();
-			for a in self.calcfuncs.as_list() {
-				let key = a.sign.to_array();
-				if !seen.insert(key) {
-					return itr_err_fmt!(ContractError, "calcfunc sign already exists")
-				}
-			}
-		}
-		for a in self.calcfuncs.as_list() {
-			a.check(hei)?;
-			verify_calc_code_stuff(&cap, &a.code_stuff, hei)?;
-		}
 		// ok
 		Ok(())
 	}
@@ -546,7 +433,6 @@ pub struct ContractObj {
 	pub sto: ContractSto,
 	pub abstfns: HashMap<AbstCall, Arc<FnObj>>,
 	pub userfns: HashMap<FnSign, Arc<FnObj>>,
-	pub calcfns: HashMap<FnSign, Arc<CalcFnObj>>,
 	pub edition: ContractEdition,
 }
 
@@ -570,31 +456,12 @@ impl ContractSto {
 			let cty = a.sign.to_array();
 			userfns.insert(cty, code.into());
 		}
-		let calcfns_cap = self.calcfuncs.length();
-		#[cfg(not(feature = "calcfunc"))]
-		if self.calcfuncs.length() > 0 {
-			return itr_err_fmt!(ContractError, "calcfunc feature disabled")
-		}
-		#[cfg(not(feature = "calcfunc"))]
-		let calcfns = HashMap::with_capacity(calcfns_cap);
-		#[cfg(feature = "calcfunc")]
-		let mut calcfns = HashMap::with_capacity(calcfns_cap);
-		#[cfg(feature = "calcfunc")]
-		for a in self.calcfuncs.as_mut() {
-			let code_stuff = std::mem::take(&mut a.code_stuff);
-			let code_pkg = CodePkg {
-				conf: code_stuff.conf.uint(),
-				data: code_stuff.data.into_vec(),
-			};
-			let code = CalcFnObj::create(a.fncnf[0], code_pkg)?;
-			let cty = a.sign.to_array();
-			calcfns.insert(cty, code.into());
-		}
+		// `calcfuncs` is a reserved on-disk slot kept for forward compatibility; the
+		// list is enforced empty by `ContractSto::check`, so there is nothing to load here.
 		Ok(ContractObj {
 			sto: self,
 			abstfns,
 			userfns,
-			calcfns,
 			edition,
 		})
 	}

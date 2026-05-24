@@ -21,7 +21,7 @@ These are fixed compute gas units from `GasTable::new`. Opcode bytes not listed 
 - 32: LOG4, ACTVIEW, SLOAD, SSTAT, FINPOW3
 - 48: ACTION
 - 64: SGET, SNEW, SEDIT, SRENT, SRECV
-- 128: SPUT, CALCCALL (when `calcfunc` is enabled)
+- 128: SPUT
 
 ## Gas limits
 

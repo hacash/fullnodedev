@@ -60,8 +60,6 @@ impl GasTable {
         gst.set(48, &[ACTION]);
         gst.set(64, &[SNEW, SEDIT, SRENT, SRECV, SGET]);
         gst.set(128, &[SPUT]);
-        #[cfg(feature = "calcfunc")]
-        gst.set(128, &[CALCCALL]);
         gst
     }
 
@@ -485,10 +483,6 @@ mod gas_budget_codec_tests {
             (64, vec![SGET, SNEW, SEDIT, SRENT, SRECV]),
             (128, vec![SPUT]),
         ];
-        #[cfg(feature = "calcfunc")]
-        let mut groups = groups;
-        #[cfg(feature = "calcfunc")]
-        groups.push((128, vec![CALCCALL]));
         for (gas, items) in &groups {
             for op in items {
                 let code = *op as u8;

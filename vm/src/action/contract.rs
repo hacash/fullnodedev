@@ -103,7 +103,7 @@ action_define! { ContractUpdate, 41,
         };
         // apply edit (in memory)
         let mut new_contract = contract.clone();
-        let (_did_append, did_structural_change) = new_contract.apply_edit(&self.edit, hei, &cap, &gst)?;
+        let did_structural_change = new_contract.apply_edit(&self.edit, hei, &cap, &gst)?;
         let _ = precheck_contract_store(&caddr, &new_contract, &gst, ctx)?;
         if new_contract.size() == 0 {
             return xerrf!("contract content cannot be empty");
@@ -617,6 +617,7 @@ mod contract_test {
 
         let mut env = Env::default();
         env.block.height = 1;
+        env.chain.id = 1; // non-mainnet: bypasses online-upgrade height gating in tests
         env.chain.fast_sync = true; // skip action-level check in direct action tests
         env.tx.ty = tx.ty();
         env.tx.main = tx.main();
@@ -662,6 +663,7 @@ mod contract_test {
 
         let mut env = Env::default();
         env.block.height = 1;
+        env.chain.id = 1; // non-mainnet: bypasses online-upgrade height gating in tests
         env.chain.fast_sync = true;
         env.tx.ty = tx.ty();
         env.tx.main = tx.main();

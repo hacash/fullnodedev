@@ -199,9 +199,6 @@ impl ContractCacheInner {
         for f in obj.userfns.values() {
             sum = sum.saturating_add(f.codes.len());
         }
-        for f in obj.calcfns.values() {
-            sum = sum.saturating_add(f.codes.len());
-        }
         sum.saturating_add(256)
     }
 
