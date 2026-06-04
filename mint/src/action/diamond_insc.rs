@@ -192,7 +192,7 @@ action_define! { DiaInscPush, 32,
     ActScope::TOP, 2, true, [],
     {
         diamonds         : DiamondNameListMax200
-        protocol_cost    : Amount
+        protocol_cost    : WireAmount
         engraved_type    : Uint1
         engraved_content : BytesW1
     },
@@ -216,7 +216,7 @@ action_define! { DiaInscPush, 32,
 fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let env = ctx.env().clone();
     let main_addr = env.tx.main;
-    let pfee = &this.protocol_cost;
+    let pfee = this.protocol_cost.amount();
     check_protocol_cost(pfee)?;
     // check
     this.diamonds.check()?;

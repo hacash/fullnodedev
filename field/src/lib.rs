@@ -49,6 +49,7 @@ include! {"combi/dynvec.rs"}
 include! {"core/define.rs"}
 include! {"core/address.rs"}
 include! {"core/amount.rs"}
+include! {"core/wire_amount.rs"}
 include! {"core/diamond.rs"}
 include! {"core/diamond_smelt.rs"}
 include! {"core/status.rs"}

@@ -166,7 +166,7 @@ impl GasExtra {
             ntfunc_div: 16,
             act_div: 12,
             burn_div: 1,
-            rpow_exp_bit_mul: 2,
+            rpow_exp_bit_mul: 8,
             rpow_exp_base: 1,
             heap_grow_exp_segments: 8,
             heap_grow_linear_seg: 256,
@@ -526,6 +526,24 @@ mod gas_budget_codec_tests {
         assert_eq!(gst.status_read_byte_mul, 8);
         assert_eq!(gst.status_write_key_byte_mul, 32);
         assert_eq!(gst.status_write_value_byte_mul, 32);
+        assert_eq!(gst.rpow_exp_bit_mul, 8);
+        assert_eq!(gst.rpow_exp_base, 1);
+    }
+
+    #[test]
+    fn rpow_extra_scales_with_exponent_bit_length() {
+        let gst = GasExtra::new(1);
+        let finpow3_base = GasTable::new(1).gas(Bytecode::FINPOW3 as u8);
+
+        assert_eq!(gst.rpow_extra(0), 0);
+        assert_eq!(gst.rpow_extra(-1), 0);
+        assert_eq!(gst.rpow_extra(1), 9);
+        assert_eq!(gst.rpow_extra(8), 65);
+        assert_eq!(gst.rpow_extra(128), 1025);
+
+        // FINPOW3 total compute gas = opcode base + rpow_extra(exp_bits).
+        assert_eq!(finpow3_base + gst.rpow_extra(2), 32 + 17);
+        assert_eq!(finpow3_base + gst.rpow_extra(128), 32 + 1025);
     }
 
     #[test]

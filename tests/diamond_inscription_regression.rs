@@ -127,7 +127,7 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
         seed_diamond(&mut fail_ctx, diamond, main, cur_len, 0, 100);
         let mut fail_act = DiaInscPush::new();
         fail_act.diamonds = DiamondNameListMax200::one(diamond);
-        fail_act.protocol_cost = Amount::zero();
+        fail_act.protocol_cost = WireAmount::from(Amount::zero());
         fail_act.engraved_type = Uint1::from(1);
         fail_act.engraved_content = BytesW1::from_str("hello").unwrap();
         let fail_exec = fail_act.execute(&mut fail_ctx);
@@ -148,7 +148,7 @@ fn diamond_inscription_append_uses_stepped_protocol_cost_tiers() {
         seed_diamond(&mut ok_ctx, diamond, main, cur_len, 0, 100);
         let mut ok_act = DiaInscPush::new();
         ok_act.diamonds = DiamondNameListMax200::one(diamond);
-        ok_act.protocol_cost = expect_cost.clone();
+        ok_act.protocol_cost = WireAmount::from(expect_cost.clone());
         ok_act.engraved_type = Uint1::from(1);
         ok_act.engraved_content = BytesW1::from_str("hello").unwrap();
         ok_act.execute(&mut ok_ctx).unwrap();
@@ -182,7 +182,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
     seed_diamond(&mut fail_ctx, diamond, main, 0, 0, 100);
     let mut fail_act = DiaInscPush::new();
     fail_act.diamonds = DiamondNameListMax200::one(diamond);
-    fail_act.protocol_cost = Amount::zero();
+    fail_act.protocol_cost = WireAmount::from(Amount::zero());
     fail_act.engraved_type = Uint1::from(100);
     fail_act.engraved_content = raw_non_readable.clone();
     let err = fail_act.execute(&mut fail_ctx).unwrap_err();
@@ -194,7 +194,7 @@ fn diamond_inscription_readable_content_type_boundary_is_100() {
     seed_diamond(&mut ok_ctx, diamond, main, 0, 0, 100);
     let mut ok_act = DiaInscPush::new();
     ok_act.diamonds = DiamondNameListMax200::one(diamond);
-    ok_act.protocol_cost = Amount::zero();
+    ok_act.protocol_cost = WireAmount::from(Amount::zero());
     ok_act.engraved_type = Uint1::from(101);
     ok_act.engraved_content = raw_non_readable;
     ok_act.execute(&mut ok_ctx).unwrap();
@@ -227,7 +227,7 @@ fn diamond_inscription_clear_ignores_cooldown_and_resets_trace() {
     // Append immediately at the same height should pass because clear reset cooldown trace to 0.
     let mut append = DiaInscPush::new();
     append.diamonds = DiamondNameListMax200::one(diamond);
-    append.protocol_cost = Amount::zero();
+    append.protocol_cost = WireAmount::from(Amount::zero());
     append.engraved_type = Uint1::from(1);
     append.engraved_content = BytesW1::from_str("again").unwrap();
     append.execute(&mut ctx).unwrap();
@@ -500,7 +500,7 @@ fn diamond_inscription_rejects_non_privakey_owner() {
 
     let mut act = DiaInscPush::new();
     act.diamonds = DiamondNameListMax200::one(diamond);
-    act.protocol_cost = Amount::zero();
+    act.protocol_cost = WireAmount::from(Amount::zero());
     act.engraved_type = Uint1::from(1);
     act.engraved_content = BytesW1::from_str("hello").unwrap();
     let err = act.execute(&mut ctx).unwrap_err();

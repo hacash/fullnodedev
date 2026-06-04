@@ -76,8 +76,7 @@ impl Amount {
             return errf!("amount leading zero byte is not canonical")
         }
         if bytes_is_zero(byte) && (unit != 0 || dist != 0 || !byte.is_empty()) {
-            // Not reporting an error is for compatibility with historical blocks.
-            println!("amount semantic zero is not canonical")
+            return errf!("amount semantic zero is not canonical");
         }
         Ok(())
     }
@@ -1171,9 +1170,10 @@ mod amount_tests {
 
         let non_canonical_zero_bytes = vec![0u8, 1, 0];
         let mut parsed = Amount::default();
-        parsed.parse(&non_canonical_zero_bytes).unwrap();
-        assert!(parsed.is_zero(), "parse of non-canonical zero [0,1,0] must still be semantic zero");
-        assert_eq!(parsed.to_bigint(), BigInt::from(0));
+        assert!(
+            parsed.parse(&non_canonical_zero_bytes).is_err(),
+            "strict Amount must reject non-canonical semantic zero [0,1,0]"
+        );
     }
 
     #[test]
