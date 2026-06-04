@@ -744,6 +744,58 @@ mod bounds_tests {
             run(Value::Bytes(vec![1, 2, 3]), ValueTy::U16),
             Err(ItrErr(ItrErrCode::CastFail, _))
         ));
+        assert!(matches!(
+            run(Value::Nil, ValueTy::Bytes),
+            Err(ItrErr(ItrErrCode::CastFail, _))
+        ));
+    }
+
+    #[test]
+    fn execute_code_cbytes_rejects_nil() {
+        use crate::rt::Bytecode;
+
+        let run = |stack_v: Value| -> VmrtRes<Value> {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+
+            let mut operands = Stack::new(256);
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let cadr = ContractAddress::default();
+            let codes = vec![Bytecode::CBYTES as u8, Bytecode::END as u8];
+
+            operands.push(stack_v)?;
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )?;
+            operands.pop()
+        };
+
+        assert!(matches!(
+            run(Value::Nil),
+            Err(ItrErr(ItrErrCode::CastFail, _))
+        ));
+        assert_eq!(
+            run(Value::Bytes(vec![])).unwrap(),
+            Value::Bytes(vec![])
+        );
     }
 
     #[test]
@@ -1640,7 +1692,7 @@ mod bounds_tests {
         ));
         assert!(matches!(
             run(
-                vec![Bytecode::HEAD as u8, Bytecode::END as u8],
+                vec![Bytecode::TAKEFIRST as u8, Bytecode::END as u8],
                 args(),
                 None
             ),
@@ -1648,7 +1700,7 @@ mod bounds_tests {
         ));
         assert!(matches!(
             run(
-                vec![Bytecode::BACK as u8, Bytecode::END as u8],
+                vec![Bytecode::TAKELAST as u8, Bytecode::END as u8],
                 args(),
                 None
             ),

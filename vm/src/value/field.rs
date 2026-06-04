@@ -278,11 +278,14 @@ mod field_tests {
 
     #[test]
     fn scalar_bytes_keep_serialize_size_and_extract_bytes_aligned() {
+        assert_eq!(Value::Nil.scalar_bytes().unwrap(), vec![] as Vec<u8>);
+        assert!(Value::Nil.extract_bytes().is_err());
+
         let values = [
-            Value::Nil,
             Value::Bool(true),
             Value::U32(7),
             Value::Bytes(vec![1, 2, 3]),
+            Value::Bytes(vec![]),
             Value::Address(field::Address::create_contract([3u8; 20])),
         ];
         for value in values {

@@ -365,9 +365,12 @@ x is address
 
 ### 7.4 Pitfalls
 
-1. **Arithmetic allows Bytes→Uint, comparisons do not**: `Bytes([0x01]) == U8(1)` fails; use explicit cast.
-2. **Bytes↔Uint asymmetry**: Uint→Bytes is fixed-width; Bytes→Uint uses trim + variable width.
-3. **Empty bytes**: Cannot participate in arithmetic as zero; normalize to `0 as u64` if needed.
+1. **Stack arithmetic is uint-only**: `ADD`/`SUB`/`MUL` require operands that are already `u8`..`u128`; `Nil`/`Bool`/`Bytes` are not silently coerced—cast with `as u64` first.
+2. **Cross-type compare is rejected**: `Bytes([0x01]) == U8(1)` fails; cast explicitly before comparing.
+3. **Explicit stack casts are wider than function boundaries**: `nil as u64`, `1 as bool`, etc. work on the stack; function param checks allow uint-family casts only (`value-cast.md` §6.2).
+4. **Bytes↔Uint asymmetry**: Uint→Bytes is fixed-width; Bytes→Uint uses trim + minimal width (explicit `CU*`/`CTO U*` only).
+5. **Empty bytes**: `Bytes([])` is not a numeric zero; use `0 as u64` when you need zero.
+6. **Map duplicate keys**: literal `map { ... }` / `PACKMAP` and `MERGE` reject duplicate keys (unrecoverable **Fault**); `INSERT` overwrites an existing key (`value-cast.md` §8).
 
 ---
 
@@ -755,7 +758,7 @@ Frame restrictions:
 |--------|-------------|------|-----------|-----------|------------------|----------|
 | NTENV | `context_address` | 0 | ❌ Forbidden (`nsr!`) | ✅ Allowed | ✅ Allowed | Read VM execution state |
 | NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ Allowed | ✅ | ✅ | Pure hash functions |
-| NTFUNC | `hac_to_mei/zhu`, `mei/zhu_to_hac`, `u64_to_fold64`, `fold64_to_u64` | 1 | ✅ Allowed | ✅ | ✅ | Pure amount/encoding conversion |
+| NTFUNC | `hac_to_mei/zhu(amount)`, `mei/zhu_to_hac(count)`, `fold64_to_u64(data)`, `u64_to_fold64(n)` | 1 | ✅ Allowed | ✅ | ✅ | Pure amount/encoding conversion (decode/encode arg types differ; see §11.4) |
 | NTFUNC | `pack_asset(serial, amount)` | 2 | ✅ Allowed | ✅ | ✅ | Build AssetAmt bytes from two u64 |
 | NTFUNC | `address_ptr` | 1 | ✅ Allowed | ✅ | ✅ | Pure address pointer extraction |
 
@@ -908,12 +911,14 @@ contract Child {
 | `sha2(data)` | SHA-256 hash |
 | `sha3(data)` | SHA3 hash |
 | `ripemd160(data)` | RIPEMD-160 hash |
-| `hac_to_mei(n)` | HAC to mei conversion |
-| `hac_to_zhu(n)` | HAC to zhu conversion |
-| `mei_to_hac(n)` | Mei to HAC |
-| `zhu_to_hac(n)` | Zhu to HAC |
-| `u64_to_fold64(n)` | Encode u64 to Fold64 bytes |
-| `fold64_to_u64(data)` | Decode Fold64 bytes to u64 |
+| `hac_to_mei(amount)` | Decode HAC **Amount serialized bytes** to mei count (`u64`); buffer must be fully consumed (trailing bytes rejected) |
+| `hac_to_zhu(amount)` | Decode HAC **Amount serialized bytes** to zhu count (`u128`); same rules as `hac_to_mei` |
+| `mei_to_hac(mei)` | Encode **mei unit count** (integer scalar, not Amount bytes) to HAC Amount bytes |
+| `zhu_to_hac(zhu)` | Encode **zhu unit count** (integer scalar, not Amount bytes) to HAC Amount bytes |
+| `u64_to_fold64(n)` | Encode u64 integer scalar to Fold64 bytes |
+| `fold64_to_u64(data)` | Decode Fold64 serialized bytes to u64; buffer must be fully consumed |
+
+`hac_to_*` and `mei/zhu_to_hac` intentionally use different argument types: the former expects on-wire Amount bytes (often from `transfer_*` `amount` or a `buf_*` slice), the latter expects unit-count integers. Typical round-trip: `mei_to_hac(n)` → Amount bytes → `hac_to_mei(...)` → `n`. Do not pass integers to `hac_to_*` or Amount bytes to `mei/zhu_to_hac`.
 | `pack_asset(serial, amount)` | Encode `(u64,u64)` into AssetAmt bytes |
 
 ### 11.5 Extension Actions (EXTACTION)
@@ -964,8 +969,8 @@ TEX note:
 | `keys(map)` | Map keys |
 | `values(map)` | Map values |
 | `has_key(map, key)` | Check key |
-| `head(list)` | First element |
-| `back(list)` | Last element |
+| `take_first(list)` | Take first element; consumes the list and discards other elements |
+| `take_last(list)` | Take last element; consumes the list and discards other elements |
 | `append(list, item)` | Append |
 | `insert(list, index, item)` | Insert |
 | `remove(list, index)` | Remove |

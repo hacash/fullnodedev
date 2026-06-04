@@ -118,4 +118,30 @@ mod amount_native_tests {
         let zhu = hac_to_zhu(0, &raw).unwrap();
         assert_eq!(zhu, Value::U128(10u128.pow(8)));
     }
+
+    #[test]
+    fn pack_asset_accepts_two_be_u64_concat() {
+        let mut buf = Value::U64(1).scalar_bytes().unwrap();
+        buf.extend(Value::U64(100).scalar_bytes().unwrap());
+        assert_eq!(buf.len(), 16);
+        let (ret, _) =
+            NativeFunc::call(0, NativeFunc::idx_pack_asset, &buf).expect("pack_asset");
+        assert!(matches!(ret, Value::Bytes(_)));
+    }
+
+    #[test]
+    fn pack_asset_rejects_short_concat() {
+        let buf = Value::U8(1).scalar_bytes().unwrap();
+        assert!(NativeFunc::call(0, NativeFunc::idx_pack_asset, &buf).is_err());
+    }
+
+    #[test]
+    fn pack_asset_tar_uint_tys_matches_arity() {
+        let tys = NativeFunc::tar_uint_tys(NativeFunc::idx_pack_asset).expect("tar_uint_tys");
+        assert_eq!(tys, &[ValueTy::U64, ValueTy::U64]);
+        assert_eq!(
+            tys.len(),
+            NativeFunc::argv_len(NativeFunc::idx_pack_asset).unwrap()
+        );
+    }
 }

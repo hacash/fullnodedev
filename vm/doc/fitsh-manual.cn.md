@@ -365,9 +365,12 @@ x is address
 
 ### 7.4 注意事项
 
-1. **算术允许 Bytes→Uint，比较不允许**：`Bytes([0x01]) == U8(1)` 会失败；需显式转换。
-2. **Bytes↔Uint 不对称**：Uint→Bytes 是固定宽度；Bytes→Uint 使用 trim + 可变宽度。
-3. **空字节**：无法作为零参与算术；如需要则用 `0 as u64` 归一化。
+1. **栈算术仅 uint**：`ADD`/`SUB`/`MUL` 等要求操作数已是 `u8`..`u128`；`Nil`/`Bool`/`Bytes` 不会自动进算术，需先 `as u64` 等显式 cast。
+2. **比较不允许跨类型归一化**：`Bytes([0x01]) == U8(1)` 会失败；需显式转换后再比。
+3. **显式 cast 宽于栈算术**：`nil as u64`、`1 as bool` 等在栈上可用；函数形参边界更严（仅 uint 族互转，见 `value-cast.md` §6.2）。
+4. **Bytes↔Uint 不对称**：Uint→Bytes 是固定宽度；Bytes→Uint 使用 trim + 可变宽度（仅显式 `CU*`/`CTO U*`）。
+5. **空字节**：`Bytes([])` 不能当零参与算术；需要数值零时用 `0 as u64`。
+6. **Map 重复键**：字面量 `map { ... }` / `PACKMAP` 与 `MERGE` 拒重键（不可恢复失败 / **Fault**）；`INSERT` 对已有键覆盖（见 `value-cast.md` §8）。
 
 ---
 
@@ -755,7 +758,7 @@ Frame 轴限制：
 |--------|----------|--------|-----------|-----------|------------------|------|
 | NTENV | `context_address` | 0 | ❌ 禁止（`nsr!`） | ✅ 允许 | ✅ 允许 | 读取 VM 执行状态 |
 | NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ 允许 | ✅ | ✅ | 纯哈希函数 |
-| NTFUNC | `hac_to_mei/zhu`、`mei/zhu_to_hac`、`u64_to_fold64`、`fold64_to_u64` | 1 | ✅ 允许 | ✅ | ✅ | 纯金额/编码转换 |
+| NTFUNC | `hac_to_mei/zhu(amount)`、`mei/zhu_to_hac(count)`、`fold64_to_u64(data)`、`u64_to_fold64(n)` | 1 | ✅ 允许 | ✅ | ✅ | 纯金额/编码转换（解码/编码入参类型不同，见 §11.4） |
 | NTFUNC | `pack_asset(serial, amount)` | 2 | ✅ 允许 | ✅ | ✅ | 由两个 u64 组装 AssetAmt bytes |
 | NTFUNC | `address_ptr` | 1 | ✅ 允许 | ✅ | ✅ | 纯地址指针提取 |
 
@@ -908,12 +911,14 @@ contract Child {
 | `sha2(data)` | SHA-256 哈希 |
 | `sha3(data)` | SHA3 哈希 |
 | `ripemd160(data)` | RIPEMD-160 哈希 |
-| `hac_to_mei(n)` | HAC 转 mei |
-| `hac_to_zhu(n)` | HAC 转 zhu |
-| `mei_to_hac(n)` | Mei 转 HAC |
-| `zhu_to_hac(n)` | Zhu 转 HAC |
-| `u64_to_fold64(n)` | 将 u64 编码为 Fold64 bytes |
-| `fold64_to_u64(data)` | 将 Fold64 bytes 解码为 u64 |
+| `hac_to_mei(amount)` | 将 HAC **Amount 序列化字节**解码为 mei 数量（`u64`）；缓冲区须被完整解析，拒绝尾部多余字节 |
+| `hac_to_zhu(amount)` | 将 HAC **Amount 序列化字节**解码为 zhu 数量（`u128`）；同上 |
+| `mei_to_hac(mei)` | 将 **mei 单位数量**（整数标量，非 Amount 字节）编码为 HAC Amount 字节 |
+| `zhu_to_hac(zhu)` | 将 **zhu 单位数量**（整数标量，非 Amount 字节）编码为 HAC Amount 字节 |
+| `u64_to_fold64(n)` | 将 u64 整数标量编码为 Fold64 bytes |
+| `fold64_to_u64(data)` | 将 Fold64 序列化字节解码为 u64；缓冲区须被完整解析 |
+
+`hac_to_*` 与 `mei/zhu_to_hac` 的入参类型有意不对称：前者接链上 Amount 线格式（常与 `transfer_*` 的 `amount` 或 `buf_*` 切片后的字节连用），后者接单位计数整数。典型往返：`mei_to_hac(n)` → Amount bytes → `hac_to_mei(...)` → `n`。勿把整数传给 `hac_to_*`，也不要把 Amount 字节传给 `mei/zhu_to_hac`。
 | `pack_asset(serial, amount)` | 将 `(u64,u64)` 编码为 AssetAmt bytes |
 
 ### 11.5 扩展动作（EXTACTION）
@@ -964,8 +969,8 @@ TEX 说明：
 | `keys(map)` | 映射键 |
 | `values(map)` | 映射值 |
 | `has_key(map, key)` | 检查键 |
-| `head(list)` | 首元素 |
-| `back(list)` | 末元素 |
+| `take_first(list)` | 取首元素；消费列表，其余元素丢弃 |
+| `take_last(list)` | 取末元素；消费列表，其余元素丢弃 |
 | `append(list, item)` | 追加 |
 | `insert(list, index, item)` | 插入 |
 | `remove(list, index)` | 移除 |

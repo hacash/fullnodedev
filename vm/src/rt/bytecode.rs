@@ -114,8 +114,8 @@ pub enum Bytecode {
     ITEMGET = 0x6a,    // t,k+    compo iten get
     KEYS = 0x6b,       // &       compo keys
     VALUES = 0x6c,     // &       compo values
-    HEAD = 0x6d,       // &       compo pick first
-    BACK = 0x6e,       // &       compo pick last
+    TAKEFIRST = 0x6d,  // t+      compo take first; discard rest
+    TAKELAST = 0x6e,   // t+      compo take last; discard rest
     APPEND = 0x6f,     // &       compo append
     CLONE = 0x70,      // a++     compo clone
     UNPACK = 0x71,     // a       unpack sequence to local
@@ -401,8 +401,8 @@ bytecode_metadata_define! {
     ITEMGET    : 0, 2, 1,     item_get
     KEYS       : 0, 1, 1,     keys
     VALUES     : 0, 1, 1,     values
-    HEAD       : 0, 1, 1,     head
-    BACK       : 0, 1, 1,     back
+    TAKEFIRST  : 0, 1, 1,     take_first
+    TAKELAST   : 0, 1, 1,     take_last
     APPEND     : 0, 2, 1,     append
     CLONE      : 0, 1, 1,     clone
     PACKTUPLE  : 0, 255, 1,   pack_tuple

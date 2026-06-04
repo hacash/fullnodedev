@@ -137,11 +137,12 @@ impl Frame {
     }
 
     pub fn check_output_type(&self, v: &mut Value, cap: &SpaceCap) -> VmrtErr {
+        v.materialize_boundary_heap_slices(&self.heap, cap)?;
         v.check_func_retv()?;
         v.check_boundary_value_cap(cap)?;
         v.check_container_cap(cap)?;
         match &self.types {
-            Some(ty) => ty.check_output(v),
+            Some(ty) => ty.check_output(v, &self.heap, cap),
             None => Ok(()),
         }
     }
@@ -167,7 +168,9 @@ impl Frame {
         self.ir_format_fee_pending = 0;
         if have_param {
             if let Some(vtys) = &fnobj.agvty {
-                vtys.check_params(&mut argv)?;
+                vtys.check_params(&mut argv, &self.heap, cap)?;
+            } else {
+                argv.materialize_boundary_heap_slices(&self.heap, cap)?;
             }
             argv.check_boundary_value_cap(cap)?;
             argv.check_container_cap(cap)?;
@@ -228,11 +231,12 @@ impl Frame {
         fnobj: &FnObj,
         height: u64,
         gas_extra: &GasExtra,
-        param: Value,
+        mut param: Value,
         cap: &SpaceCap,
     ) -> VmrtErr {
         self.ir_format_fee_pending = 0;
         param.check_func_argv()?;
+        param.materialize_boundary_heap_slices(&self.heap, cap)?;
         param.check_boundary_value_cap(cap)?;
         param.check_container_cap(cap)?;
         let caller_output = match &self.types {
@@ -390,13 +394,18 @@ mod frame_boundary_tests {
     }
 
     #[test]
-    fn check_output_type_rejects_heapslice_without_declared_output_type() {
-        let frame = Frame::default();
+    fn check_output_type_materializes_heapslice_without_declared_output_type() {
+        let mut heap = Heap::new(64);
+        let cap = SpaceCap::new(1);
+        let gst = GasExtra::new(1);
+        heap.grow(1, &gst).unwrap();
+        heap.write(0, Value::Bytes(vec![7])).unwrap();
+
+        let mut frame = Frame::default();
+        frame.heap = heap;
         let mut retv = Value::HeapSlice((0, 1));
-        let err = frame
-            .check_output_type(&mut retv, &SpaceCap::new(1))
-            .unwrap_err();
-        assert!(matches!(err, ItrErr(CastBeFnRetvFail, _)));
+        frame.check_output_type(&mut retv, &cap).unwrap();
+        assert_eq!(retv, Value::Bytes(vec![7]));
     }
 
     #[test]

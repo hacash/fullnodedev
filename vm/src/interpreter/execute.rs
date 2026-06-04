@@ -809,8 +809,8 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                     gas_resource!(compo_bytes, bsz);
                     *ops.peek()? = v;
                 }
-                HEAD => compo_pop_one!(head),
-                BACK => compo_pop_one!(back),
+                TAKEFIRST => compo_pop_one!(take_first),
+                TAKELAST => compo_pop_one!(take_last),
                 APPEND => {
                     let v = ops.pop()?;
                     compo_edit_gas!();

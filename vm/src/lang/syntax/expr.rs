@@ -360,7 +360,7 @@ impl Syntax {
         }
     }
 
-    fn build_cast_node(left: Box<dyn IRNode>, ty: ValueTy) -> Box<dyn IRNode> {
+    pub(crate) fn build_cast_node(left: Box<dyn IRNode>, ty: ValueTy) -> Box<dyn IRNode> {
         match ty {
             ValueTy::Bool | ValueTy::Address => {
                 push_single_p1_hr(true, Bytecode::CTO, ty as u8, left)
@@ -404,7 +404,7 @@ impl Syntax {
         }
     }
 
-    fn check_literal_as_cast(node: &dyn IRNode, target_ty: ValueTy) -> Rerr {
+    pub(crate) fn check_literal_as_cast(node: &dyn IRNode, target_ty: ValueTy) -> Rerr {
         let Some(mut literal) = Self::extract_literal_value(node)? else {
             return Ok(());
         };

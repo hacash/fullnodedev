@@ -125,10 +125,9 @@ impl<'a> ContextInst<'a> {
     }
 
     fn restore_volatile_inner(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<i64>() else {
-            return;
-        };
-        let rebated = *snap;
+        let rebated = *snap
+            .downcast::<i64>()
+            .expect("gas snapshot type mismatch");
         // On AST rollback, keep gas_charge effects but roll back gas_rebate to avoid refundable-gas replay.
         self.gas.restore_rebated(rebated);
     }

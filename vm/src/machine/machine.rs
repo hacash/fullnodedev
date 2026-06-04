@@ -48,10 +48,9 @@ impl Executor {
     }
 
     fn restore_volatile_state(&mut self, snap: Box<dyn Any>) {
-        let Ok(snap) = snap.downcast::<VmVolatileSnapshot>() else {
-            debug_assert!(false, "restore_volatile: snapshot type mismatch");
-            return;
-        };
+        let snap = snap
+            .downcast::<VmVolatileSnapshot>()
+            .expect("volatile snapshot type mismatch");
         let snap = *snap;
         let r = &mut self.runtime;
         r.volatile.global_map = snap.global_map;

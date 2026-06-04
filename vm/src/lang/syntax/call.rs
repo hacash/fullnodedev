@@ -45,18 +45,20 @@ impl Syntax {
         }
 
         if let Some(idx) = NativeFunc::from_name(&id).map(|v| v.0) {
-            let (num, argvs) = self.parse_call_args(ArgPackMode::Concat)?;
+            let arg_nodes = self.parse_value_container('(', ')', "call argv format error")?;
             let Some(need) = NativeFunc::argv_len(idx) else {
                 return errf!("unknown native func idx {}", idx);
             };
-            if num != need {
+            if arg_nodes.len() != need {
                 return errf!(
                     "native func '{}' requires {} argument(s) but got {}",
                     id,
                     need,
-                    num
+                    arg_nodes.len()
                 );
             }
+            let arg_nodes = self.apply_native_tar_uint_literal_coercion(&id, idx, arg_nodes)?;
+            let argvs = concat_func_args(arg_nodes)?;
             return Ok(push_single_p1_hr(true, Bytecode::NTFUNC, idx, argvs));
         }
 
@@ -111,6 +113,61 @@ impl Syntax {
         }
 
         errf!("unknown function '{}'", id)
+    }
+
+    fn apply_native_tar_uint_literal_coercion(
+        &self,
+        name: &str,
+        idx: u8,
+        argvs: Vec<Box<dyn IRNode>>,
+    ) -> Ret<Vec<Box<dyn IRNode>>> {
+        let Some(tys) = NativeFunc::tar_uint_tys(idx) else {
+            return Ok(argvs);
+        };
+        if tys.len() != argvs.len() {
+            return errf!(
+                "native func '{}' tar_uint_tys length {} does not match arity {}",
+                name,
+                tys.len(),
+                argvs.len()
+            );
+        }
+        let mut out = Vec::with_capacity(argvs.len());
+        for (i, (arg, &ty)) in argvs.into_iter().zip(tys.iter()).enumerate() {
+            out.push(self.apply_native_tar_uint_literal_one(name, i, arg, ty)?);
+        }
+        Ok(out)
+    }
+
+    fn apply_native_tar_uint_literal_one(
+        &self,
+        name: &str,
+        pos: usize,
+        arg: Box<dyn IRNode>,
+        ty: ValueTy,
+    ) -> Ret<Box<dyn IRNode>> {
+        if !ty.is_uint() {
+            return Ok(arg);
+        }
+        let Some(literal) = Self::extract_literal_value(arg.as_ref())? else {
+            return Ok(arg);
+        };
+        if !literal.ty().is_uint() {
+            return Ok(arg);
+        }
+        if crate::lang::ir_node_effective_ty(arg.as_ref()) == Some(ty) {
+            return Ok(arg);
+        }
+        if let Err(e) = Self::check_literal_as_cast(arg.as_ref(), ty) {
+            return errf!(
+                "native func '{}' argument {} literal requires type {}, {}",
+                name,
+                pos + 1,
+                ty.name(),
+                e
+            );
+        }
+        Ok(Self::build_cast_node(arg, ty))
     }
 
     fn track_special_ir_func(&mut self, inst: Bytecode, argvs: &[Box<dyn IRNode>]) -> Rerr {

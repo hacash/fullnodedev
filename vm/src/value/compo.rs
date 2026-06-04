@@ -491,20 +491,22 @@ impl CompoItem {
             Compo::Map(m) => {
                 let src = compo.map_ref()?.clone();
                 let src_len = src.len();
-                let mut add = 0usize;
                 let mut src_bsz = 0usize;
                 for (k, v) in src.iter() {
                     v.check_scalar()?;
                     src_bsz = add_size_saturating(src_bsz, k.len());
                     src_bsz = add_size_saturating(src_bsz, v.val_size());
-                    if !m.contains_key(k) {
-                        add += 1;
+                    if m.contains_key(k) {
+                        return itr_err_fmt!(CompoPackError, "duplicate key in merge");
                     }
                 }
-                if m.len() + add > cap.compo_length {
+                let new_len = m.len() + src_len;
+                if new_len > cap.compo_length {
                     return itr_err_code!(OutOfCompoLen);
                 }
-                m.extend(src);
+                for (k, v) in src {
+                    m.insert(k, v);
+                }
                 Ok((src_len, src_bsz))
             }
         }
@@ -675,7 +677,7 @@ impl CompoItem {
         fee
     }
 
-    pub fn head(&mut self) -> VmrtRes<Value> {
+    pub fn take_first(&mut self) -> VmrtRes<Value> {
         let list = self.list_mut()?;
         match list.pop_front() {
             Some(v) => Ok(v),
@@ -683,9 +685,9 @@ impl CompoItem {
         }
     }
 
-    /// Returns the last element of the list.
-    /// e.g. back([10, 20, 30]) -> 30
-    pub fn back(&mut self) -> VmrtRes<Value> {
+    /// Returns the last element of the list; remaining elements are discarded by the opcode.
+    /// e.g. take_last([10, 20, 30]) -> 30
+    pub fn take_last(&mut self) -> VmrtRes<Value> {
         let list = self.list_mut()?;
         match list.pop_back() {
             Some(v) => Ok(v),
@@ -848,5 +850,68 @@ mod compo_tests {
             let err = CompoItem::pack_map(&cap, &mut ops).unwrap_err();
             assert_eq!(err.0, ItrErrCode::CastBeKeyFail);
         }
+    }
+
+    #[test]
+    fn pack_map_rejects_duplicate_keys_while_insert_overwrites() {
+        let cap = SpaceCap::new(1);
+        let key = Value::Bytes(vec![1]);
+
+        let mut ops = Stack::new(8);
+        ops.push(key.clone()).unwrap();
+        ops.push(Value::U8(1)).unwrap();
+        ops.push(key.clone()).unwrap();
+        ops.push(Value::U8(2)).unwrap();
+        ops.push(Value::U16(4)).unwrap();
+        let err = CompoItem::pack_map(&cap, &mut ops).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CompoPackError);
+
+        let mut map = CompoItem::new_map();
+        map.insert(&cap, key.clone(), Value::U8(1)).unwrap();
+        map.insert(&cap, key, Value::U8(9)).unwrap();
+        assert_eq!(
+            map.map_ref().unwrap().get(&vec![1]).unwrap(),
+            &Value::U8(9)
+        );
+    }
+
+    #[test]
+    fn merge_map_rejects_duplicate_keys_from_source() {
+        use std::collections::BTreeMap;
+
+        let cap = SpaceCap::new(1);
+        let mut dst = CompoItem::new_map();
+        dst.insert(&cap, Value::Bytes(vec![1]), Value::U8(1)).unwrap();
+
+        let mut src_map = BTreeMap::new();
+        src_map.insert(vec![1], Value::U8(9));
+        src_map.insert(vec![2], Value::U8(2));
+        let src = CompoItem::map(src_map).unwrap();
+
+        let err = dst.merge(&cap, src).unwrap_err();
+        assert_eq!(err.0, ItrErrCode::CompoPackError);
+        let map = dst.map_ref().unwrap();
+        assert_eq!(map.get(&vec![1]).unwrap(), &Value::U8(1));
+        assert!(!map.contains_key(&vec![2]));
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn merge_map_accepts_disjoint_keys() {
+        use std::collections::BTreeMap;
+
+        let cap = SpaceCap::new(1);
+        let mut dst = CompoItem::new_map();
+        dst.insert(&cap, Value::Bytes(vec![1]), Value::U8(1)).unwrap();
+
+        let mut src_map = BTreeMap::new();
+        src_map.insert(vec![2], Value::U8(2));
+        let src = CompoItem::map(src_map).unwrap();
+
+        dst.merge(&cap, src).unwrap();
+        let map = dst.map_ref().unwrap();
+        assert_eq!(map.get(&vec![1]).unwrap(), &Value::U8(1));
+        assert_eq!(map.get(&vec![2]).unwrap(), &Value::U8(2));
+        assert_eq!(map.len(), 2);
     }
 }

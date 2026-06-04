@@ -516,3 +516,18 @@ The following must be treated as acceptance items:
 | `Invoke(Ext(lib), *)` | library root + direct parents | yes | yes | explicit |
 | `Invoke(Use(lib), *)` | library root only | no | yes | explicit |
 | `CODECALL` | library root only | no | no | inherited |
+
+## 16. Value Type Boundaries at Function Calls
+
+Function entry/exit uses `check_param_type` / `cast_param` (`vm/src/value/cast.rs`), which is **stricter** than stack-level `CTO` / `CU*` / `CBYTES`.
+
+| Layer | Typical use | Allowed coercion |
+|-------|-------------|------------------|
+| Stack explicit cast | `x as u64`, `CBYTES`, `CTO Address` | Sections 4.1–4.4 in `value-cast.md` |
+| Function param / return check | Typed signature at `Invoke` boundary | Identical type; uint-family casts; **`HeapSlice → Bytes` unconditionally at boundary** |
+
+Implications for contract authors:
+
+1. A value that passes `as u64` on the stack may still fail when passed into a typed `u32` param if it does not fit.
+2. `Bytes`, `Bool`, `Address`, and `Nil` cannot cross into a different param type via boundary cast—even when stack `CTO` would succeed.
+3. **`HeapSlice` is always materialized to owned `Bytes` at function entry and return** (with `SpaceCap` length check, no extra gas). Typed signatures then check the materialized value. Details: `vm/doc/heapslice-func-boundary.md`.

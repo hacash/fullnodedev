@@ -26,7 +26,7 @@ impl VM for CounterMockVm {
     fn restore_volatile(&mut self, snap: Box<dyn Any>) {
         match snap.downcast::<i64>() {
             Ok(c) => self.counter.store(*c, Ordering::SeqCst),
-            Err(_) => panic!("CounterMockVm::restore_volatile expects i64 snapshot"),
+            Err(_) => panic!("volatile snapshot type mismatch"),
         }
     }
 }

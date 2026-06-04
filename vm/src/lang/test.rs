@@ -983,6 +983,61 @@ mod token_t {
     }
 
     #[test]
+    fn pack_asset_small_literals_compile_with_u64_coercion() {
+        use super::lang_to_bytecode;
+        use crate::native::NativeFunc;
+        use crate::rt::Bytecode;
+
+        lang_to_bytecode("return pack_asset(1, 2)").expect("compile");
+        assert!(NativeFunc::tar_uint_tys(NativeFunc::idx_pack_asset).is_some());
+
+        let codes = lang_to_bytecode("return pack_asset(1, 100)").expect("compile");
+        let cu64_count = codes
+            .iter()
+            .filter(|&&b| b == Bytecode::CU64 as u8)
+            .count();
+        assert_eq!(
+            cu64_count, 2,
+            "both numeric literals should get CU64, got {}",
+            cu64_count
+        );
+    }
+
+    #[test]
+    fn pack_asset_variables_do_not_get_compile_time_u64_coercion() {
+        use super::lang_to_bytecode;
+        use crate::rt::Bytecode;
+
+        let codes = lang_to_bytecode("var s = 1\nreturn pack_asset(s, 100)").expect("compile");
+        let cu64_count = codes
+            .iter()
+            .filter(|&&b| b == Bytecode::CU64 as u8)
+            .count();
+        assert_eq!(
+            cu64_count, 1,
+            "only literal 100 should get CU64, not variable s, got {}",
+            cu64_count
+        );
+    }
+
+    #[test]
+    fn pack_asset_literal_overflow_fails_at_compile() {
+        use super::lang_to_irnode;
+
+        let err = lang_to_irnode(&format!(
+            "return pack_asset({}, 1)",
+            u64::MAX as u128 + 1
+        ))
+        .expect_err("u128 literal over u64 must fail");
+        let text = format!("{:?}", err);
+        assert!(
+            text.contains("u64") || text.contains("overflow"),
+            "unexpected error: {}",
+            text
+        );
+    }
+
+    #[test]
     fn test_syscall_multi_arg_cat_chain_splits_by_arity() {
         use super::lang_to_irnode;
         use super::Formater;

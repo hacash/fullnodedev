@@ -257,14 +257,14 @@ mod fitsh_compile_tests {
             nest_arith_4: "return 1 + 2 + 3 + 4 + 5",
             nest_logical_2: "return (true && false) || (true || false)",
             nest_func_1: "return length(append(list { 1 2 }, 3))",
-            nest_func_3: "return head(append(list { 1 2 3 }, 4))",
+            nest_func_3: "return take_first(append(list { 1 2 3 }, 4))",
             nest_cast_1: "return (1 as u64) as u128",
             nest_mixed_4: "return [1, 2, 3] ++ list { 4 5 }",
             nest_deep_1: "return (((((1)))))",
             nest_deep_2: "return [[[[1]]]]",
             nest_deep_3: "return map { \"a\": map { \"b\": map { \"c\": 1 } } }",
             nest_complex_1: "return length(list { 1 + 2, 3 * 4, 5 - 6 })",
-            nest_complex_3: "return head(append(list { 1 2 3 }, (4 + 5) * 2))",
+            nest_complex_3: "return take_first(append(list { 1 2 3 }, (4 + 5) * 2))",
         );
     }
 
@@ -468,8 +468,8 @@ mod fitsh_compile_tests {
             func_heap_write: "heap_grow(10)\nheap_write(0, 0xABCD)\nreturn 1",
             func_heap_read: "heap_grow(10)\nheap_write(0, 0xABCD)\nreturn heap_read(0, 1)",
             func_length: "return length(list { 1 2 3 })",
-            func_head: "return head(list { 1 2 3 })",
-            func_back: "return back(list { 1 2 3 })",
+            func_take_first: "return take_first(list { 1 2 3 })",
+            func_take_last: "return take_last(list { 1 2 3 })",
             func_append: "return append(list { 1 2 }, 3)",
             func_insert: "return insert(list { 1 3 }, 1, 2)",
             func_remove: "return remove(list { 1 2 3 }, 0)",
@@ -490,7 +490,7 @@ mod fitsh_compile_tests {
             func_balance: "return balance(emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS)",
             func_nested_1: "return length(append(list { 1 2 }, 3))",
             func_nested_2: "return size(buf_left_drop(3, buf_right(5, \"hello world\")))",
-            func_nested_3: "return head(append(list { 1 }, head(list { 2 3 })))",
+            func_nested_3: "return take_first(append(list { 1 }, take_first(list { 2 3 })))",
         );
 
         assert_compile_err!(

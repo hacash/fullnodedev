@@ -1437,6 +1437,15 @@ mod shift_u64_tests {
     }
 
     #[test]
+    fn nil_and_bool_false_are_falsy_but_not_equal() {
+        assert!(lgc_equal(&Value::Nil, &Value::Bool(false)).is_err());
+        assert!(!Value::Nil.extract_bool().unwrap());
+        assert!(!Value::Bool(false).extract_bool().unwrap());
+        assert!(Value::U8(2).extract_bool().unwrap());
+        assert!(!Value::Bytes(vec![]).extract_bool().unwrap());
+    }
+
+    #[test]
     fn eq_neq_uint_operands_use_numeric_compare() {
         assert_eq!(
             lgc_equal(&Value::U8(1), &Value::U16(1)).unwrap(),

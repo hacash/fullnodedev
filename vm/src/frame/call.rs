@@ -73,7 +73,11 @@ impl CallFrame {
                         CallSpec::Splice { .. } => {
                             let mut param = curr_mut!().pop_value()?;
                             if let Some(vtys) = plan.fnobj.agvty.as_ref() {
-                                vtys.check_params(&mut param)?;
+                                vtys.check_params(
+                                    &mut param,
+                                    &curr_mut!().heap,
+                                    &r.warm.space_cap,
+                                )?;
                             }
                             curr_mut!().push_value(param.clone())?;
                             curr_mut!().prepare_splice(

@@ -7,7 +7,7 @@ These are fixed compute gas units from `GasTable::new`. Opcode bytes not listed 
 
 - 2: BRL, BRS, BRSL, BRSLN, XLG, XOP, AND, OR, EQ, NEQ, LT, GT, LE, GE, NOT, ADD, SUB, MAX, MIN, INC, DEC
 - 3: BSHR, BSHL, BXOR, BOR, BAND
-- 4: MUL, DIV, MOD, ABSDIFF, INSERT, REMOVE, HEAD, BACK, APPEND
+- 4: MUL, DIV, MOD, ABSDIFF, INSERT, REMOVE, TAKEFIRST, TAKELAST, APPEND
 - 5: MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP
 - 6: DIVUP, DIVEXACT, POW, ADDMOD, CLAMP, FIN2, CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK
 - 8: MULADD, MULSUB, CLONE, MERGE, PACKLIST, PACKMAP, PACKTUPLE
@@ -111,9 +111,9 @@ NTFUNC, NTENV, and NTCTL have three components: opcode base, byte-extra, and nat
 KEYS and VALUES byte counts include output bytes. For maps, byte count includes key bytes plus value bytes.
 
 - item/4: HASKEY, ITEMGET, KEYS, VALUES.
-- item/2: PACKLIST, PACKMAP, PACKTUPLE, INSERT, REMOVE, CLEAR, HEAD, BACK, APPEND.
+- item/2: PACKLIST, PACKMAP, PACKTUPLE, INSERT, REMOVE, CLEAR, TAKEFIRST, TAKELAST, APPEND.
 - item/1: CLONE, MERGE, TUPLE2LIST.
-- byte/40: INSERT map key bytes and inserted value bytes; APPEND value bytes; CLEAR total compo `val_size()`; MERGE source bytes; ITEMGET/HEAD/BACK output value bytes; KEYS/VALUES output bytes; CLONE copied bytes; TUPLE2LIST copied bytes.
+- byte/40: INSERT map key bytes and inserted value bytes; APPEND value bytes; CLEAR total compo `val_size()`; MERGE source bytes; ITEMGET/TAKEFIRST/TAKELAST output value bytes; KEYS/VALUES output bytes; CLONE copied bytes; TUPLE2LIST copied bytes.
 - LENGTH has only opcode base gas.
 
 ### Log render

@@ -1,14 +1,6 @@
-
-
-
-
-
-
-
-
 /// Helper: generates the type-specific dispatch method.
 macro_rules! native_dispatch_method {
-    (func, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {
+    (func, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr, $_tar_uint_tys:expr )+) => {
         pub fn call(hei: u64, idx: u8, v: &[u8]) -> VmrtRes<(Value, i64)> {
             let cty = Self::try_from_u8(idx)?;
             match cty {
@@ -22,15 +14,41 @@ macro_rules! native_dispatch_method {
             }
         }
     };
-    (ctl, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {};
-    (env, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+) => {};
+    (ctl, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr, $_tar_uint_tys:expr )+) => {};
+    (env, $EnumName:ident, $ErrCode:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr, $_tar_uint_tys:expr )+) => {};
+}
+
+macro_rules! native_tar_uint_tys_api {
+    (func, $EnumName:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr, $tar_uint_tys:expr )+) => {
+        pub fn tar_uint_tys_of(&self) -> &'static [ValueTy] {
+            match self {
+                $( Self::$name => $tar_uint_tys, )+
+                Self::Null => &[],
+            }
+        }
+
+        pub fn tar_uint_tys(idx: u8) -> Option<&'static [ValueTy]> {
+            Self::try_from_u8(idx).ok().and_then(|n| {
+                let tys = n.tar_uint_tys_of();
+                if tys.is_empty() {
+                    None
+                } else {
+                    Some(tys)
+                }
+            })
+        }
+    };
+    (ctl, $EnumName:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr, $tar_uint_tys:expr )+) => {};
+    (env, $EnumName:ident, $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr, $tar_uint_tys:expr )+) => {};
 }
 
 /// Unified macro for native func / ctl / env metadata.
 /// `func` additionally generates `call()`, while `ctl/env` keep runtime dispatch outside this macro.
+/// Optional `tar_uint_tys` (`func` only): compile-time uint width for **numeric literals** at each
+/// argv position; variables/expressions are unchanged. Use `&[]` when unchecked.
 macro_rules! native_func_env_define {
     ( $kind:ident, $EnumName:ident, $ErrCode:ident,
-      $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr )+ ) => {
+      $( $name:ident = $v:expr, $argv_len:expr, $gas:expr, $rty:expr, $tar_uint_tys:expr )+ ) => {
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -56,7 +74,8 @@ impl $EnumName {
         }
     }
 
-    native_dispatch_method!($kind, $EnumName, $ErrCode, $( $name = $v, $argv_len, $gas, $rty )+);
+    native_dispatch_method!($kind, $EnumName, $ErrCode, $( $name = $v, $argv_len, $gas, $rty, $tar_uint_tys )+);
+    native_tar_uint_tys_api!($kind, $EnumName, $( $name = $v, $argv_len, $gas, $rty, $tar_uint_tys )+);
 
     pub const fn gas_of(&self) -> i64 {
         match self {

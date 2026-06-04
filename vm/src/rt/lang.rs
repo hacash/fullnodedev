@@ -269,8 +269,8 @@ irfn_define! {
     item_get
     keys
     values
-    head
-    back
+    take_first
+    take_last
     append
     clone
     unpack

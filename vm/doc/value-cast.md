@@ -25,11 +25,16 @@ This separation is strict and must remain stable.
 
 Output type: `Vec<u8>`.
 
+Implementation: `Value::extract_bytes_with_error_code` in `vm/src/value/canbe.rs`. Do not use `Value::scalar_bytes` for this path.
+
 - `Bool` -> `[0x01]` or `[0x00]`
 - `U8/U16/U32/U64/U128` -> fixed-width big-endian bytes (leading zero bytes preserved)
-- `Bytes` -> raw bytes
+- `Bytes` -> raw bytes (including `Bytes([])`; empty bytes is a valid value, not absence)
 - `Address` -> raw address bytes
-- Other types (`Nil`, `HeapSlice`, `Compo`) -> error
+- `Nil` -> error (typed absence; not equivalent to `Bytes([])`)
+- `HeapSlice`, `Compo` -> error
+
+Field serialization (`Value::serialize` / `scalar_bytes`) is separate: `Nil` encodes as type tag with zero payload and round-trips as `Nil`, not `Bytes([])`.
 
 ## 3.2 Bool normalization (`extract_bool`)
 
@@ -42,28 +47,24 @@ Output type: `bool`.
 - `Address` -> any non-zero byte => `true`, otherwise `false`
 - `HeapSlice`, `Compo` -> error
 
-## 3.3 Minimal Uint normalization (`to_uint`)
+## 3.3 Stack arithmetic uint gate (`to_uint`)
 
 Output type: `Value` (`U8/U16/U32/U64/U128`).
 
-- `U*` -> keep current uint value/type
-- `Nil` -> `U8(0)`
-- `Bool` -> `U8(0|1)`
-- `Bytes` / `Address`:
-  - drop leading zero bytes
-  - map remaining byte length to minimal uint width:
-    - `0` -> `U8(0)`
-    - `1` -> `U8`
-    - `2` -> `U16`
-    - `3..=4` -> `U32`
-    - `5..=8` -> `U64`
-    - `9..=16` -> `U128`
-    - `>16` -> error
-- `HeapSlice`, `Compo` -> error
+Implementation: `Value::to_uint` in `vm/src/value/convert.rs`.
 
-## 3.4 Numeric scalar normalization (`to_u128`)
+Runtime **arithmetic / bit-op** paths (`ADD`, `BSHL`, `INC`, etc.) call this gate before width promotion. It is **strict**:
+
+- `U8/U16/U32/U64/U128` -> keep current uint value/type
+- All other types (`Nil`, `Bool`, `Bytes`, `Address`, `HeapSlice`, `Compo`, ...) -> error
+
+Operands must already be uint variants or the instruction fails immediately. Use explicit `CU*` / `CTO U*` on the stack when a wider scalar domain is needed.
+
+## 3.4 Explicit uint cast normalization (`to_u128`)
 
 Output type: `u128`.
+
+Used by explicit uint casts (`CU*`, `CTO U*`) when the source is not already `Bytes` with width-aware rules. This is **broader** than stack arithmetic `to_uint` (section 3.3):
 
 - `U*` -> value widening to `u128`
 - `Nil` -> `0`
@@ -93,18 +94,20 @@ For target width `W` bits (`N = W/8` bytes):
   - check target range (`u8/u16/u32/u64/u128`)
   - overflow => error
 
-So explicit uint cast and implicit numeric normalization share the same scalar domain (`Nil/Bool/U*/Address` are all normalized by numeric rules), while `Bytes` keeps width-aware cast semantics.
+Explicit uint cast uses section 3.4 (`to_u128`) plus width/range checks. Stack arithmetic uses section 3.3 (`to_uint`, uint-only). `Bytes` on explicit cast keeps width-aware cast semantics; `Bytes` does not implicitly enter stack arithmetic.
 
-## 4.3 `cast_buf` / `CBUF`
+## 4.3 `cast_buf` / `CBYTES`
 
-- Uses byte normalization from section 3.1
+- Uses byte normalization from section 3.1 (`extract_bytes_ec`)
 - `Nil`, `HeapSlice`, `Compo` are rejected
+- `Bytes([])` is accepted (empty bytes is a value, not absence)
 
 ## 4.4 `cast_addr`
 
-- First `cast_buf`
-- Then parse exact `Address` byte length
+- First `cast_buf` / `cast_bytes()` (section 3.1 / 4.3)
+- Then parse exact `Address` byte length via `Address::from_bytes`
 - Length mismatch or invalid address bytes => error
+- Implementation: `Value::cast_addr` in `vm/src/value/cast.rs`
 
 ## 4.5 `cast_to` / `CTO <type>`
 
@@ -125,17 +128,19 @@ Uses section 3.2 (`extract_bool`):
 - Control-flow condition: `CHOOSE`, `BRL`, `BRS`, `BRSL`, `BRSLN`, `AST`
 - `CTO Bool`
 
-## 5.2 Numeric arithmetic context (implicit uint normalization)
+## 5.2 Numeric arithmetic context (uint-only gate)
 
-Uses: `to_uint(x)`, `to_uint(y)`, then width promotion (`cast_arithmetic`) to the wider uint type.
+Uses section 3.3 (`to_uint`): **both operands must already be uint variants** (`U8`..`U128`), then width promotion (`cast_arithmetic`) to the wider uint type.
 
 Applied by:
 
 - Arithmetic: `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `POW`, `MAX`, `MIN`
 - Bit ops: `BSHL`, `BSHR`, `BAND`, `BOR`, `BXOR`
-- Unary numeric: `INC`, `DEC` (single operand normalized by `to_uint` when needed)
+- Unary numeric: `INC`, `DEC` (operand must already be uint; no implicit `to_uint` widening from `Nil`/`Bytes`)
 
-Failure in either operand normalization or width/range checks => immediate error.
+`Nil`, `Bool`, `Bytes`, and `Address` do **not** silently enter this path. Cast with `CU*` / `CTO U*` first when needed.
+
+Failure in either operand gate or width/range checks => immediate error.
 
 ## 5.3 Equality context (`EQ`, `NEQ`)
 
@@ -184,15 +189,30 @@ This is the only allowed conversion path where `HeapSlice` participates.
 - Param type cannot be `Nil`, `HeapSlice`, `Tuple`
 - Return type cannot be `Nil`, `HeapSlice`
 
-## 6.2 Runtime checked cast (`check_param_type`)
+## 6.2 Runtime checked cast (`check_param_type` / `cast_param`)
+
+Function boundaries are **stricter than stack-level explicit casts** (`CTO` / `CU*` / `CBYTES`), except for one heap bridge:
+
+| Context | Allowed conversions |
+|---------|---------------------|
+| Stack `CTO` / `CU*` / `CBYTES` | Full explicit-cast family (sections 4.1–4.4) |
+| Function param / return boundary | **`HeapSlice → Bytes` unconditionally first**; then identical type and uint-family narrowing/widening via `cast_param` |
+
+`HeapSlice → Bytes` at function boundary (params and returns):
+
+- Runs before shape/type checks via `materialize_boundary_heap_slices`.
+- Reads bytes from the **current frame heap** (same source as `extract_call_data` for slices).
+- Replaces the slot with owned `Bytes`.
+- Validates materialized length against `SpaceCap.value_size`.
+- Does **not** add gas (boundary check only).
+
+Rules after materialization:
 
 - If source and target are identical: pass
-- Allowed checked casts are uint-family only:
-  - `U8/U16/U32/U64/U128 -> U8/U16/U32/U64/U128`
-  - narrowing succeeds only when the value fits the target width
-- All other source/target combinations: fail
+- Allowed uint casts: `U8/U16/U32/U64/U128` ↔ same family with fit check
+- All other source/target combinations: `CallArgvTypeFail`
 
-Note: `check_param_type` is the non-mutating wrapper over `cast_param`.
+Note: `check_param_type(v, ty, heap, cap)` is the non-mutating wrapper (includes materialization). See `vm/doc/heapslice-func-boundary.md` and `vm/doc/call-standard.md` §16.
 
 ## 7. Deterministic Edge Cases (Normative)
 
@@ -202,8 +222,23 @@ Note: `check_param_type` is the non-mutating wrapper over `cast_param`.
 - `Bytes([0,1]) == U8(1)` fails (cross-type compare is not allowed)
 - `Bytes([0,1]) == Bytes([1])` is `false` (same-type raw-bytes compare)
 - Ordered compare with non-uint values (`Nil`, `Bool`, `Bytes`, `Address`, `HeapSlice`, `Compo`) always fails
+- `Nil` and `Bool(false)` are both falsy in `extract_bool` / `CHOOSE`, but `Nil == Bool(false)` fails (cross-type `EQ`)
 
-## 8. U256 Reservation Contract (Forward Compatibility)
+## 8. Compo Map Semantics (Normative)
+
+Map duplicate-key policy is classified by operation intent:
+
+| Intent | Operation | Duplicate key behavior |
+|--------|-----------|------------------------|
+| **Materialize** (multi-key commit) | `PACKMAP` / `pack_map`, `map { ... }` literal | **Reject** with `CompoPackError` |
+| **Materialize** (multi-key commit) | `MERGE` / `merge` (map + map) | **Reject** with `CompoPackError` if source key already exists in destination |
+| **Upsert** (single-key write) | `INSERT` / `insert` on map | **Overwrite** value for existing key |
+
+Multi-key commits (`PACKMAP`, `MERGE`) require disjoint key sets: duplicate keys are contract errors and must fail as an unrecoverable **Fault** (`CompoPackError` → `XError::Fault`), not a recoverable Revert. Single-key upserts (`INSERT`) model ledger field updates and intentionally overwrite.
+
+List `MERGE` appends elements; it has no key domain and does not deduplicate elements.
+
+## 9. U256 Reservation Contract (Forward Compatibility)
 
 This section defines mandatory constraints before enabling `U256`, to prevent compatibility breaks and normalization drift.
 

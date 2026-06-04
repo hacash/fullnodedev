@@ -3,6 +3,30 @@
 use crate::rt::Bytecode::*;
 use crate::value::{Value, ValueTy};
 
+/// Static type of an IR subtree when it is a literal or an explicit cast wrapper.
+pub(crate) fn ir_node_effective_ty(node: &dyn IRNode) -> Option<ValueTy> {
+    if let Some(ty) = ir_literal_ty(node) {
+        return Some(ty);
+    }
+    if let Some(single) = node.as_any().downcast_ref::<IRNodeSingle>() {
+        return match single.inst {
+            CU8 => Some(ValueTy::U8),
+            CU16 => Some(ValueTy::U16),
+            CU32 => Some(ValueTy::U32),
+            CU64 => Some(ValueTy::U64),
+            CU128 => Some(ValueTy::U128),
+            CBYTES => Some(ValueTy::Bytes),
+            _ => None,
+        };
+    }
+    if let Some(single) = node.as_any().downcast_ref::<IRNodeParam1Single>() {
+        if single.inst == CTO {
+            return ValueTy::build(single.para).ok();
+        }
+    }
+    None
+}
+
 pub(crate) fn ir_literal_ty(node: &dyn IRNode) -> Option<ValueTy> {
     if let Some(leaf) = node.as_any().downcast_ref::<IRNodeLeaf>() {
         return match leaf.inst {

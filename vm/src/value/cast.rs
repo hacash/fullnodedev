@@ -225,8 +225,9 @@ impl Value {
         if matches!(self, Address(..)) {
             return Ok(());
         }
+        self.cast_bytes()?;
         let Bytes(buf) = self else {
-            return itr_err_fmt!(CastFail, "cannot cast {:?} to address", self);
+            never!()
         };
         let adr = field::Address::from_bytes(buf).map_ire(CastFail)?;
         *self = Address(adr);
@@ -269,21 +270,23 @@ impl Value {
         }
     }
 
-    pub fn cast_param(&mut self, ty: ValueTy) -> VmrtErr {
+    pub fn cast_param(&mut self, ty: ValueTy, _heap: &Heap, _cap: &SpaceCap) -> VmrtErr {
         let actual = self.ty();
         if ty == actual {
             return Ok(());
         }
         if ty.is_uint() && actual.is_uint() {
-            return self.cast_to_ty(ty)
+            return self
+                .cast_to_ty(ty)
                 .map_err(|err| Self::map_boundary_cast_error(ty, actual, err));
         }
         Err(Self::fn_boundary_type_fail(ty, actual))
     }
 
-    pub fn check_param_type(&self, ty: ValueTy) -> VmrtErr {
+    pub fn check_param_type(&self, ty: ValueTy, heap: &Heap, cap: &SpaceCap) -> VmrtErr {
         let mut tmp = self.clone();
-        tmp.cast_param(ty)
+        tmp.materialize_boundary_heap_slices(heap, cap)?;
+        tmp.cast_param(ty, heap, cap)
     }
 }
 
@@ -291,26 +294,44 @@ impl Value {
 mod cast_tests {
     use super::*;
 
+    fn boundary_env() -> (Heap, SpaceCap) {
+        (Heap::new(64), SpaceCap::new(1))
+    }
+
     #[test]
     fn cast_param_allows_narrowing_uint() {
+        let (heap, cap) = boundary_env();
         let mut v = Value::U32(1);
-        v.cast_param(ValueTy::U16).unwrap();
+        v.cast_param(ValueTy::U16, &heap, &cap).unwrap();
         assert_eq!(v, Value::U16(1));
     }
 
     #[test]
     fn cast_param_allows_widening_uint() {
+        let (heap, cap) = boundary_env();
         let mut v = Value::U16(7);
-        v.cast_param(ValueTy::U64).unwrap();
+        v.cast_param(ValueTy::U64, &heap, &cap).unwrap();
         assert_eq!(v, Value::U64(7));
     }
 
     #[test]
     fn cast_param_rejects_cross_family_casts() {
+        let (heap, cap) = boundary_env();
         let mut v = Value::U8(0);
-        let err = v.cast_param(ValueTy::Bool).unwrap_err();
+        let err = v.cast_param(ValueTy::Bool, &heap, &cap).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
         assert_eq!(v, Value::U8(0));
+    }
+
+    #[test]
+    fn check_param_type_materializes_heap_slice_to_bytes() {
+        let (mut heap, cap) = boundary_env();
+        let gst = GasExtra::new(1);
+        heap.grow(1, &gst).unwrap();
+        heap.write(0, Value::Bytes(vec![4, 5, 6])).unwrap();
+
+        let hs = Value::HeapSlice((0, 3));
+        assert!(hs.check_param_type(ValueTy::Bytes, &heap, &cap).is_ok());
     }
 
     #[test]
@@ -322,21 +343,27 @@ mod cast_tests {
 
     #[test]
     fn cast_param_invalid_target_uses_call_argv_type_fail() {
+        let (heap, cap) = boundary_env();
         let mut v = Value::U8(1);
-        let err = v.cast_param(ValueTy::Compo).unwrap_err();
+        let err = v.cast_param(ValueTy::Compo, &heap, &cap).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 
     #[test]
     fn check_param_type_uses_uint_boundary_rules() {
+        let (heap, cap) = boundary_env();
         let ok = Value::U32(1);
-        assert!(ok.check_param_type(ValueTy::U16).is_ok());
+        assert!(ok.check_param_type(ValueTy::U16, &heap, &cap).is_ok());
 
         let overflow = Value::U32(70000);
-        assert!(overflow.check_param_type(ValueTy::U16).is_err());
+        assert!(overflow
+            .check_param_type(ValueTy::U16, &heap, &cap)
+            .is_err());
 
         let bytes = Value::Bytes(vec![1]);
-        assert!(bytes.check_param_type(ValueTy::U8).is_err());
+        assert!(bytes
+            .check_param_type(ValueTy::U8, &heap, &cap)
+            .is_err());
     }
 
     #[test]
@@ -348,5 +375,37 @@ mod cast_tests {
         let mut n = Value::Nil;
         n.cast_u16().unwrap();
         assert_eq!(n, Value::U16(0));
+    }
+
+    #[test]
+    fn cast_bytes_rejects_nil_but_accepts_empty_bytes() {
+        let mut nil = Value::Nil;
+        assert!(nil.cast_bytes().is_err());
+        assert_eq!(nil, Value::Nil);
+
+        let mut empty = Value::Bytes(vec![]);
+        empty.cast_bytes().unwrap();
+        assert_eq!(empty, Value::Bytes(vec![]));
+
+        let mut n = Value::Nil;
+        assert!(n.cast_to_ty(ValueTy::Bytes).is_err());
+        assert_eq!(n, Value::Nil);
+    }
+
+    #[test]
+    fn cast_addr_uses_cast_bytes_then_exact_length() {
+        let adr = field::Address::create_contract([7u8; 20]);
+        let raw = adr.serialize();
+
+        let mut from_bytes = Value::Bytes(raw.clone());
+        from_bytes.cast_addr().unwrap();
+        assert_eq!(from_bytes, Value::Address(adr));
+
+        let mut short = Value::U8(1);
+        assert!(short.cast_addr().is_err());
+
+        let mut nil = Value::Nil;
+        assert!(nil.cast_addr().is_err());
+        assert_eq!(nil, Value::Nil);
     }
 }

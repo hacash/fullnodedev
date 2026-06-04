@@ -142,10 +142,9 @@ impl Drop for VmEntryGuard {
         }
         // SAFETY: same invariant as `disarm` — this guard only ever targets the executor entry stack it was pushed into.
         let entries = unsafe { &mut *self.entries };
-        let Some(popped) = entries.pop() else {
-            debug_assert!(false, "vm entry frame missing during guard drop");
-            return;
-        };
+        let popped = entries
+            .pop()
+            .expect("vm entry stack empty on guard drop");
         debug_assert_eq!(entries.len(), self.index);
         debug_assert_eq!(popped.kind as u8, self.entry.kind as u8);
     }

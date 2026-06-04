@@ -118,7 +118,7 @@ action_define! { ContractUpdate, 41,
         // Purely additive edits (e.g. inherit/library append, or new local funcs with no shadowing)
         // stay Append; structural replacements or selector-owner changes are Change.
         let is_change = did_structural_change || did_effective_lookup_change;
-        // spend protocol fee: only charge edited bytes with perm periods
+        // Modification tax: charge the edit payload at perm periods (edit.size() >= chain delta).
         let edit_bytes = self.edit.size();
         let edit_periods = contract_store_perm_periods(hei);
         let total_fee = calc_contract_protocol_cost_min_with_periods(ctx, edit_bytes, edit_periods)?;
@@ -565,6 +565,7 @@ fn calc_contract_protocol_cost_min_with_periods(
 mod contract_test {
     use super::*;
     use crate::contract::{Abst, Contract, Func};
+    use crate::rt::Bytecode;
     use basis::component::Env;
     use basis::interface::ActExec;
     use field::{Address, Amount, Uint4};
@@ -869,5 +870,115 @@ mod contract_test {
             edit,
         )
         .expect("new selector without parent conflict should update successfully");
+    }
+
+    /// Compare edit.size() (update tax base) vs on-chain delta after apply_edit.
+    #[test]
+    fn update_edit_size_usually_covers_chain_delta() {
+        init_vm_assigner_once();
+        let hei = 1u64;
+        let (gst, cap) = {
+            let tx = StubTxBuilder::new()
+                .ty(TransactionType3::TYPE)
+                .main(test_main_addr())
+                .fee_purity(1)
+                .build();
+            let mut env = Env::default();
+            env.chain.id = 1;
+            let mut ctx = make_ctx_with_state(env, Box::new(StateMem::default()), &tx);
+            peek_vm_runtime_limits(&mut ctx, hei)
+        };
+
+        let base = || {
+            Contract::new()
+                .syst(Abst::new(AbstCall::Construct).fitsh("return 0").unwrap())
+                .syst(Abst::new(AbstCall::Append).fitsh("return 0").unwrap())
+        };
+
+        let measure = |name: &str, old: ContractSto, edit: ContractEdit| {
+            let edit_bytes = edit.size();
+            let mut new = old.clone();
+            new.apply_edit(&edit, hei, &cap, &gst).unwrap();
+            let delta = new.size().saturating_sub(old.size());
+            assert!(
+                edit_bytes >= delta,
+                "{name}: edit_bytes={edit_bytes} < chain_delta={delta}"
+            );
+        };
+
+        measure(
+            "add_userfunc",
+            base().into_sto(),
+            Contract::new()
+                .func(
+                    Func::new("grow")
+                        .unwrap()
+                        .external()
+                        .fitsh("return 0")
+                        .unwrap(),
+                )
+                .into_edit(1),
+        );
+
+        let lib_addr = test_contract(&test_main_addr(), 99);
+        measure(
+            "library_add",
+            base().into_sto(),
+            {
+                let mut e = ContractEdit::new();
+                e.new_revision = Uint2::from(1);
+                e.library_add.push(lib_addr).unwrap();
+                e
+            },
+        );
+
+        let parent = test_contract(&test_main_addr(), 98);
+        measure(
+            "inherit_add",
+            base().into_sto(),
+            {
+                let mut e = ContractEdit::new();
+                e.new_revision = Uint2::from(1);
+                e.inherit_add.push(parent).unwrap();
+                e
+            },
+        );
+
+        let mut pad_codes = vec![Bytecode::PNIL as u8; 400];
+        pad_codes.push(Bytecode::END as u8);
+        let large_func = Func::new("big")
+            .unwrap()
+            .external()
+            .bytecode(pad_codes.clone())
+            .unwrap();
+        measure(
+            "add_large_userfunc",
+            base().into_sto(),
+            Contract::new().func(large_func).into_edit(1),
+        );
+
+        let old_with_f = base()
+            .func(Func::new("f").unwrap().fitsh("return 0").unwrap())
+            .into_sto();
+        measure(
+            "replace_userfunc_smaller",
+            old_with_f.clone(),
+            Contract::new()
+                .func(Func::new("f").unwrap().fitsh("return 1").unwrap())
+                .into_edit(1),
+        );
+        measure(
+            "replace_userfunc_larger",
+            old_with_f,
+            Contract::new()
+                .func(
+                    Func::new("f")
+                        .unwrap()
+                        .external()
+                        .bytecode(pad_codes)
+                        .unwrap(),
+                )
+                .into_edit(1),
+        );
     }
 }

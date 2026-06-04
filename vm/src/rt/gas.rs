@@ -46,7 +46,7 @@ impl GasTable {
         gst.set(12, &[MULDIV, MULDIVUP]);
         // Arithmetic: four-operand handled by FIN4 family
         // Other
-        gst.set(4, &[INSERT, REMOVE, HEAD, BACK, APPEND]);
+        gst.set(4, &[INSERT, REMOVE, TAKEFIRST, TAKELAST, APPEND]);
         gst.set(5, &[MGET, GGET, NEWLIST, NEWMAP]);
         gst.set(6, &[CLEAR, KEYS, VALUES, TUPLE2LIST, UNPACK]);
         gst.set(8, &[CLONE, MERGE, PACKLIST, PACKMAP, PACKTUPLE]);
@@ -431,7 +431,7 @@ mod gas_budget_codec_tests {
             (
                 4,
                 vec![
-                    MUL, DIV, MOD, ABSDIFF, INSERT, REMOVE, HEAD, BACK, APPEND,
+                    MUL, DIV, MOD, ABSDIFF, INSERT, REMOVE, TAKEFIRST, TAKELAST, APPEND,
                 ],
             ),
             (5, vec![MGET, GGET, NEWLIST, NEWMAP, SQRT, SQRTUP]),
