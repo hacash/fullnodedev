@@ -1534,25 +1534,6 @@ mod shift_u64_tests {
     }
 
     #[test]
-    fn heapslice_eq_is_rejected_and_other_ops_still_reject() {
-        let mut heap = test_heap();
-        heap.write(0, Value::Bytes(vec![1, 2, 3])).unwrap();
-        let hs = Value::HeapSlice((0, 2));
-
-        assert!(Value::arithmetic_args2(&hs, &Value::U8(1)).is_err());
-        assert!(lgc_equal(&hs, &Value::HeapSlice((0, 2))).is_err());
-        assert!(lgc_not_equal(&hs, &Value::HeapSlice((0, 3))).is_err());
-        assert!(lgc_equal(&hs, &Value::Bytes(vec![1, 2])).is_err());
-        assert!(lgc_not_equal(&hs, &Value::Bytes(vec![1, 2])).is_err());
-        assert!(lgc_less(&hs, &Value::U8(1)).is_err());
-
-        let mut incv = hs.clone();
-        let mut decv = hs.clone();
-        assert!(unary_inc(&mut incv, 1).is_err());
-        assert!(unary_dec(&mut decv, 1).is_err());
-    }
-
-    #[test]
     fn tuple_eq_uses_content_semantics() {
         let shared = TupleItem::new(vec![Value::U8(7), Value::Bytes(vec![1, 2, 3])]).unwrap();
         let same = shared.clone();

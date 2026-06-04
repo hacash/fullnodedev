@@ -503,7 +503,7 @@ let first = $0         // 从槽位 0 读取
 **适用场景**：
 - 单次调用内的大块二进制数据
 - 按偏移访问（类似 C 数组）
-- 通过 `HeapSlice` 向被调用方传递原始字节
+- 通过 `heap_read` 读成 `Bytes` 后向被调用方传递原始字节
 
 **特点**：
 - 字节数组；按段扩展（每段 256 字节）
@@ -706,7 +706,7 @@ VM 现在把运行时权限模型拆成 **ExecCtx = (ExecDomain, FrameMode)**。
 
 **状态** = 存储、全局、内存、日志。
 
-**重要说明**：`codecall` 在**当前帧**中执行并**完整继承调用方的 ExecCtx** —— 它**没有独立的状态访问控制逻辑**。codecall 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV）都受继承下来的 domain/frame 权限限制。与隔离的新调用帧不同，`codecall` **不会**额外禁止后续嵌套调用；splice 代码中的 `CALL*` 仍按普通 `(domain, frame, depth)` 运行时门控执行。
+**重要说明**：`codecall` 在**当前帧**中执行并**完整继承调用方的 ExecCtx** —— 它**没有独立的状态访问控制逻辑**。codecall 体内的所有状态操作（存储读写、EXTACTION/EXTENV/EXTVIEW、NTFUNC/NTENV/NTCTL）都受继承下来的 domain/frame 权限限制。与隔离的新调用帧不同，`codecall` **不会**额外禁止后续嵌套调用；splice 代码中的 `CALL*` 仍按普通 `(domain, frame, depth)` 运行时门控执行。
 
 #### 正交权限矩阵
 
@@ -752,22 +752,48 @@ Frame 轴限制：
 | **View** | ❌ 禁止 | ✅ 允许 | ✅ 允许 | 只读环境访问 |
 | **Pure** | ❌ 禁止 | ❌ 禁止 | ❌ 禁止 | 无外部状态访问 |
 
-**原生函数（NTFUNC / NTENV）**：
+**原生调用（NTFUNC / NTENV / NTCTL）**：
 
-| 操作码 | 原生调用 | 参数数 | Pure 模式 | View 模式 | Main/External/Inner | 功能 |
-|--------|----------|--------|-----------|-----------|------------------|------|
-| NTENV | `context_address` | 0 | ❌ 禁止（`nsr!`） | ✅ 允许 | ✅ 允许 | 读取 VM 执行状态 |
+| 操作码 | 原生调用 | 源码参数数 | Pure 模式 | View 模式 | Edit（Main/External/Inner） | 功能 |
+|--------|----------|------------|-----------|-----------|------------------------------|------|
+| NTENV | `context_address` | 0 | ❌ 禁止（`InstDisabled`） | ✅ 允许 | ✅ 允许 | 读取 VM 执行上下文地址 |
 | NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ 允许 | ✅ | ✅ | 纯哈希函数 |
 | NTFUNC | `hac_to_mei/zhu(amount)`、`mei/zhu_to_hac(count)`、`fold64_to_u64(data)`、`u64_to_fold64(n)` | 1 | ✅ 允许 | ✅ | ✅ | 纯金额/编码转换（解码/编码入参类型不同，见 §11.4） |
 | NTFUNC | `pack_asset(serial, amount)` | 2 | ✅ 允许 | ✅ | ✅ | 由两个 u64 组装 AssetAmt bytes |
 | NTFUNC | `address_ptr` | 1 | ✅ 允许 | ✅ | ✅ | 纯地址指针提取 |
+| NTCTL | `defer`、`intent_*` 写（如 `intent_put`、`intent_pop`） | 0–2 | ❌ 禁止（`IntentError`） | ❌ 禁止（`IntentError`） | ✅ 允许（仅 Edit） | 修改 tx 本地 VM 状态（defer 注册表、intent 作用域） |
+| NTCTL | `intent_*` 读（如 `intent_get`、`intent_kind`、`intent_len`） | 0–2 | ❌ 禁止（`IntentError`） | ✅ 允许 | ✅ 允许 | 读取 tx 本地 intent 状态 |
+
+**Native 栈约定**（操作码级 vs 源码级参数个数）：
+
+VM 使用两类 native 调用栈模型，这是刻意设计，不要假设所有 native 共享同一栈形。
+
+| 模型 | 操作码 | 操作码栈 | 源码零参形式 |
+|------|--------|----------|--------------|
+| 环境读 | `NTENV`、`ACTENV` | `0 → 1`（不消耗操作数） | `context_address()`、`block_height()` |
+| 带参调用 | `NTFUNC`、`NTCTL` | `1 → 1`（固定弹栈 1 个 argv） | 源码无参时编译器先压入 `nil` |
+
+**`NTCTL`** / **`NTFUNC`** 的操作码 metadata 始终要求 1 个栈输入。注册表中 `argv_len = 0` 的 native（如 `intent_pop()`、`intent_kind()`）仍走带参调用模型：编译器生成 `PNIL; NTCTL idx`，运行期仅接受 `nil` 作为 argv。手写字节码须同样保留 `nil` 占位。反编译器在 `hide_default_call_argv` 开启时可能隐藏该占位（仅影响显示）。详见 `call-standard.md` §11.3。
+
+**`NTENV`** 的操作码 metadata 为真零输入（`0 → 1`），不使用 `nil` 占位。
+
+**Effect 门控错误码**（为何禁止时并非同一错误码）：
+
+| 层级 | 示例 | Pure 禁止 | 典型错误 |
+|------|------|-----------|----------|
+| VM 操作码读门控 | `SGET`、`NTENV` | 是 | `InstDisabled` — 当前 effect 下指令禁用 |
+| Host action 门控 | `ACTENV`、`ACTVIEW`、`EXTENV`、`EXTVIEW` | 是 | `ActDisabled` — 当前 effect 下 action/env/view 调用被阻止 |
+| Native ctl 门控 | `NTCTL` `intent_*` | 按 native（`ctl_require_edit` / `ctl_require_non_pure`） | `IntentError` — 含 native 名；View 可读而写仍被禁 |
+
+`NTENV` 使用 `InstDisabled`（而非 `ActDisabled`），因其在操作码层读取 VM 本地执行状态，与存储读指令（`nsr!` → `InstDisabled`）同类。`ACTENV` 经 host action 层，在 `Pure` 下因此报告 `ActDisabled`。
 
 **小结**：
 - **EXTACTION**（资产转移）：仅 `Main` 模式在 `depth == 0`
-- **EXTENV**（`block_height`、`tx_main_address`）：在 `Pure` 中禁止，其他允许
-- **EXTVIEW**（`check_signature`、`balance`）：在 `Pure` 中禁止，其他允许 —— 只读链状态查询
+- **EXTENV**（`block_height`、`tx_main_address`）：在 `Pure` 中禁止，其他允许（`ActDisabled`）
+- **EXTVIEW**（`check_signature`、`balance`）：在 `Pure` 中禁止，其他允许 —— 只读链状态查询（`ActDisabled`）
 - **NTFUNC**（纯计算）：所有模式均允许，包括 `Pure`
-- **NTENV**（`context_address`）：在 `Pure` 中禁止（读取 VM 状态），其他允许
+- **NTENV**（`context_address`）：在 `Pure` 中禁止（读取 VM 状态，`InstDisabled`），其他允许
+- **NTCTL**（`defer`、`intent_*`）：写操作仅 Edit；读操作 View 允许、Pure 禁止；源码零参在字节码层须 `nil` 栈占位
 
 #### EXTACTION 限制
 
@@ -904,9 +930,17 @@ contract Child {
 
 ### 11.4 原生调用
 
+内置 native 分三类操作码族，栈形与 effect 门控不同 —— 见 §11.2 权限矩阵与 `call-standard.md` §11.3。
+
+| 族 | 操作码 | 示例 | 栈模型 |
+|----|--------|------|--------|
+| 纯函数 | `NTFUNC` | `sha2`、`hac_to_mei` | `1 → 1`；栈上始终 1 个 argv |
+| VM 环境读 | `NTENV` | `context_address` | `0 → 1`；字节码级真零参 |
+| 运行时控制 | `NTCTL` | `defer`、`intent_*` | `1 → 1`；源码零参时用 `nil` 占位 |
+
 | 函数 | 说明 |
 |------|------|
-| `context_address()` | 当前执行上下文地址 |
+| `context_address()` | 当前执行上下文地址（`NTENV`；`Pure` 禁止，错误 `InstDisabled`） |
 | `block_height()` | 当前区块高度 |
 | `sha2(data)` | SHA-256 哈希 |
 | `sha3(data)` | SHA3 哈希 |

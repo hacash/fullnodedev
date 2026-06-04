@@ -14,7 +14,7 @@ pub enum Value {
     Bytes(Vec<u8>),          //           8
     Address(field::Address), //           9
     // reserved              //           10
-    HeapSlice((u32, u32)),   //           11
+    // reserved              //           11  (formerly HeapSlice)
     // reserved              //           12
     Tuple(TupleItem),        //           13
     Compo(CompoItem),        //           14
@@ -59,7 +59,7 @@ pub(crate) fn add_size_saturating(total: usize, add: usize) -> usize {
 // IMPORTANT: this is intentionally different from Rust `PartialEq` on `Value`.
 // - uint values compare by numeric value across widths (e.g. U8(1) == U64(1))
 // - Tuple/Compo compare by content
-// - Handle/HeapSlice and some cross-type comparisons are invalid and return an error
+// - Handle and some cross-type comparisons are invalid and return an error
 // Therefore, do NOT infer VM-level bugs from raw Rust `==` on `Value`/`CompoItem`
 // without first checking whether the surrounding code needs identity semantics or
 // true VM semantic equality.
@@ -82,7 +82,7 @@ pub(crate) fn value_content_eq(lhs: &Value, rhs: &Value) -> VmrtRes<bool> {
         (Address(l), Address(r)) => Ok(l == r),
         (Tuple(l), Tuple(r)) => l.content_eq(r),
         (Compo(l), Compo(r)) => l.content_eq(r),
-        (HeapSlice(..), HeapSlice(..)) | (Handle(..), Handle(..)) => {
+        (Handle(..), Handle(..)) => {
             itr_err_fmt!(Arithmetic, "cannot compare {:?} and {:?}", lhs, rhs)
         }
         (U8(l), U8(r)) => Ok(l == r),
@@ -115,7 +115,6 @@ impl Value {
             U128(..)      => ValueTy::U128,
             Bytes(..)     => ValueTy::Bytes,
             Address(..)   => ValueTy::Address,
-            HeapSlice(..) => ValueTy::HeapSlice,
             Tuple(..)     => ValueTy::Tuple,
             Compo(..)     => ValueTy::Compo,
             Handle(..)    => ValueTy::Handle,
@@ -308,8 +307,6 @@ impl Value {
         Ok(compo)
     }
 
-    /* pub fn _____deval(&self, heap: &Heap) -> VmrtRes<Vec<u8>> { match self { Compo(..) => itr_err_code!(CompoToSerialize), HeapSlice((s, l)) => { match heap.do_read(*s as usize, *l as usize)? { Bytes(buf) => Ok(buf), _ => never!() } } _ => Ok(self.raw()) } } */
-
 
     pub(crate) fn scalar_bytes(&self) -> Option<Vec<u8>> {
         match self {
@@ -331,8 +328,6 @@ impl Value {
             return bytes;
         }
         match &self {
-            // ptr
-            HeapSlice((s, l)) => vec![s.to_be_bytes(), l.to_be_bytes()].concat(),
             // not support
             Tuple(..) => "{tuple value ...}".to_owned().into_bytes(),
             Compo(..) => "{compo value ...}".to_owned().into_bytes(),
@@ -358,7 +353,6 @@ impl Value {
             U128(..) => 16,
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
-            HeapSlice((_, n)) => *n as usize,
             Tuple(a) => a.val_size(),
             Compo(c) => c.val_size(),
             Handle(..) => REF_DUP_SIZE,
@@ -376,12 +370,12 @@ impl Value {
             U128(..) => 16,
             Bytes(b) => b.len(),
             Address(..) => field::Address::SIZE,
-            HeapSlice(..) | Tuple(..) | Compo(..) | Handle(..) => REF_DUP_SIZE,
+            Tuple(..) | Compo(..) | Handle(..) => REF_DUP_SIZE,
         }
     }
 
     pub fn can_get_size(&self) -> VmrtRes<u16> {
-        if let HeapSlice(..) | Tuple(..) | Compo(..) | Handle(..) = self {
+        if let Tuple(..) | Compo(..) | Handle(..) = self {
             return itr_err_code!(ItemNoSize)
         }
         let n = self.val_size();
@@ -420,7 +414,6 @@ impl Value {
                 _ => "0x".to_owned() + &hex::encode(b),
             },
             Address(a) => a.to_string(),
-            HeapSlice((s, l)) => format!("heap({},{})", s, l),
             Tuple(a) => a.to_string(),
             Compo(a) => format!("compo({}){}", a.len(), a.to_string()),
             Handle(..) => s!("handle"),
@@ -439,7 +432,6 @@ impl Value {
             U128(n) => format!("{}", n),
             Bytes(b) => serde_json::to_string(&to_readable_or_base64(b)).unwrap(),
             Address(a) =>  format!("\"{}\"", a),
-            HeapSlice((s, l)) => format!("[{},{}]", s, l),
             Tuple(a) => a.to_json(),
             Compo(a) => a.to_json(),
             Handle(..) => s!(r#"{"$handle":true}"#),
@@ -461,7 +453,6 @@ impl Value {
                 None => format!(r#"{{"$bytes_hex":"{}"}}"#, b.to_hex()),
             },
             Address(a) => serde_json::to_string(&a.to_string()).unwrap(),
-            HeapSlice((s, l)) => format!(r#"{{"$heap":[{},{}]}}"#, s, l),
             Tuple(a) => a.to_debug_json(),
             Compo(a) => a.to_debug_json(),
             Handle(..) => s!(r#"{"$handle":true}"#),
@@ -509,7 +500,6 @@ mod tests {
 
     #[test]
     fn can_get_size_rejects_runtime_and_container_values() {
-        assert!(matches!(Value::HeapSlice((0, 1)).can_get_size(), Err(ItrErr(ItrErrCode::ItemNoSize, _))));
         assert!(matches!(
             Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap()).can_get_size(),
             Err(ItrErr(ItrErrCode::ItemNoSize, _))
@@ -544,7 +534,6 @@ mod tests {
         let compo = Value::Compo(CompoItem::list(VecDeque::from([Value::Bytes(vec![0u8; 128])])).unwrap());
         assert_eq!(tuple.dup_size(), REF_DUP_SIZE);
         assert_eq!(compo.dup_size(), REF_DUP_SIZE);
-        assert_eq!(Value::HeapSlice((7, 4096)).dup_size(), REF_DUP_SIZE);
         assert_eq!(Value::Bytes(vec![0u8; 33]).dup_size(), 33);
     }
 

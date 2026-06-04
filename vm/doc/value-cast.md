@@ -7,7 +7,7 @@ This document is the single source of truth for `Value` conversion, normalizatio
 `Value` variants:
 
 - Scalar/value domain: `Nil`, `Bool`, `U8`, `U16`, `U32`, `U64`, `U128`, `Bytes`, `Address`
-- Special domain: `HeapSlice`, `Compo`
+- Special domain: `Compo`, `Tuple`, `Handle`
 
 Unless explicitly stated, all conversion and comparison rules only apply to the scalar/value domain.
 
@@ -32,7 +32,7 @@ Implementation: `Value::extract_bytes_with_error_code` in `vm/src/value/canbe.rs
 - `Bytes` -> raw bytes (including `Bytes([])`; empty bytes is a valid value, not absence)
 - `Address` -> raw address bytes
 - `Nil` -> error (typed absence; not equivalent to `Bytes([])`)
-- `HeapSlice`, `Compo` -> error
+- `Compo`, `Tuple`, `Handle` -> error
 
 Field serialization (`Value::serialize` / `scalar_bytes`) is separate: `Nil` encodes as type tag with zero payload and round-trips as `Nil`, not `Bytes([])`.
 
@@ -45,7 +45,7 @@ Output type: `bool`.
 - `U*` -> `n != 0`
 - `Bytes` -> any non-zero byte => `true`, otherwise `false`
 - `Address` -> any non-zero byte => `true`, otherwise `false`
-- `HeapSlice`, `Compo` -> error
+- `Compo`, `Tuple`, `Handle` -> error
 
 ## 3.3 Stack arithmetic uint gate (`to_uint`)
 
@@ -56,7 +56,7 @@ Implementation: `Value::to_uint` in `vm/src/value/convert.rs`.
 Runtime **arithmetic / bit-op** paths (`ADD`, `BSHL`, `INC`, etc.) call this gate before width promotion. It is **strict**:
 
 - `U8/U16/U32/U64/U128` -> keep current uint value/type
-- All other types (`Nil`, `Bool`, `Bytes`, `Address`, `HeapSlice`, `Compo`, ...) -> error
+- All other types (`Nil`, `Bool`, `Bytes`, `Address`, `Compo`, `Tuple`, `Handle`, ...) -> error
 
 Operands must already be uint variants or the instruction fails immediately. Use explicit `CU*` / `CTO U*` on the stack when a wider scalar domain is needed.
 
@@ -73,7 +73,7 @@ Used by explicit uint casts (`CU*`, `CTO U*`) when the source is not already `By
   - drop leading zero bytes
   - remaining length `<=16` => parse as big-endian `u128`
   - remaining length `>16` => error
-- `HeapSlice`, `Compo` -> error
+- `Compo`, `Tuple`, `Handle` -> error
 
 ## 4. Explicit Cast Rules (`cast_*` / `CU*` / `CTO`)
 
@@ -99,7 +99,7 @@ Explicit uint cast uses section 3.4 (`to_u128`) plus width/range checks. Stack a
 ## 4.3 `cast_buf` / `CBYTES`
 
 - Uses byte normalization from section 3.1 (`extract_bytes_ec`)
-- `Nil`, `HeapSlice`, `Compo` are rejected
+- `Nil`, `Compo`, `Tuple`, `Handle` are rejected
 - `Bytes([])` is accepted (empty bytes is a value, not absence)
 
 ## 4.4 `cast_addr`
@@ -113,8 +113,8 @@ Explicit uint cast uses section 3.4 (`to_u128`) plus width/range checks. Stack a
 
 - Dispatches to `cast_bool`, `cast_u*`, `cast_buf`, `cast_addr`
 - `CTO` target type param must be in the explicit-cast set: `Bool/U8/U16/U32/U64/U128/Bytes/Address`
-- `CTO` target outside this set (`Nil`, `HeapSlice`, `Compo`) => `InstParamsErr`
-- `TIS` type param accepts all declared `ValueTy` (including `Nil/HeapSlice/Compo`) for type checking
+- `CTO` target outside this set (`Nil`, `Compo`, `Tuple`, `Handle`) => `InstParamsErr`
+- `TIS` type param accepts all declared `ValueTy` (including `Nil` / `Compo` / `Tuple` / `Handle`) for type checking
 - `TIS` unknown or reserved type id => `InstParamsErr`
 - `CTO` unknown or reserved type id => `InstParamsErr`
 
@@ -153,7 +153,6 @@ Failure in either operand gate or width/range checks => immediate error.
   - `Bool` compares bool value
   - `Bytes` compares raw bytes
   - `Address` compares raw address bytes
-  - `HeapSlice` compares `(start, len)`
   - `Compo` compares pointer identity (`ptr_eq`)
 
 ## 5.4 Ordered compare context (`LT`, `LE`, `GT`, `GE`)
@@ -170,49 +169,40 @@ Uses section 3.1 (`extract_bytes_ec`):
 
 - `CAT`, `JOIN`, `BYTE`, `CUT`, `LEFT`, `RIGHT`, `LDROP`, `RDROP`
 
-`Nil`, `HeapSlice`, `Compo` are rejected in this path.
+`Nil`, `Compo`, `Tuple`, `Handle` are rejected in this path.
 
 ## 5.6 External/native call data context
 
 Uses `extract_call_data`:
 
 - `Nil` => `[]`
-- `HeapSlice(start, len)` => read bytes from heap slice
-- Otherwise => `extract_bytes_ec`
-
-This is the only allowed conversion path where `HeapSlice` participates.
+- Otherwise => `extract_bytes_ec` (scalars and `Bytes` only)
 
 ## 6. Function Param/Return Type Check Rules
 
 ## 6.1 Signature-level constraints (`ValueTy`)
 
-- Param type cannot be `Nil`, `HeapSlice`, `Tuple`
-- Return type cannot be `Nil`, `HeapSlice`
+- Param type cannot be `Nil`, `Tuple`
+- Return type cannot be `Nil`
 
 ## 6.2 Runtime checked cast (`check_param_type` / `cast_param`)
 
-Function boundaries are **stricter than stack-level explicit casts** (`CTO` / `CU*` / `CBYTES`), except for one heap bridge:
+Function boundaries are **stricter than stack-level explicit casts** (`CTO` / `CU*` / `CBYTES`):
 
 | Context | Allowed conversions |
 |---------|---------------------|
 | Stack `CTO` / `CU*` / `CBYTES` | Full explicit-cast family (sections 4.1–4.4) |
-| Function param / return boundary | **`HeapSlice → Bytes` unconditionally first**; then identical type and uint-family narrowing/widening via `cast_param` |
+| Function param / return boundary | Identical type; uint-family narrowing/widening only |
 
-`HeapSlice → Bytes` at function boundary (params and returns):
-
-- Runs before shape/type checks via `materialize_boundary_heap_slices`.
-- Reads bytes from the **current frame heap** (same source as `extract_call_data` for slices).
-- Replaces the slot with owned `Bytes`.
-- Validates materialized length against `SpaceCap.value_size`.
-- Does **not** add gas (boundary check only).
-
-Rules after materialization:
+Rules:
 
 - If source and target are identical: pass
 - Allowed uint casts: `U8/U16/U32/U64/U128` ↔ same family with fit check
 - All other source/target combinations: `CallArgvTypeFail`
 
-Note: `check_param_type(v, ty, heap, cap)` is the non-mutating wrapper (includes materialization). See `vm/doc/heapslice-func-boundary.md` and `vm/doc/call-standard.md` §16.
+Note: `check_param_type(v, ty, heap, cap)` is the non-mutating wrapper. See `vm/doc/call-standard.md` §16.
+
+Heap payload for callees or host calls: materialize with `heap_read` (or keep data as `Bytes`) before crossing a function or `extract_call_data` boundary.
 
 ## 7. Deterministic Edge Cases (Normative)
 
@@ -221,7 +211,7 @@ Note: `check_param_type(v, ty, heap, cap)` is the non-mutating wrapper (includes
 - `Nil == Bool(false)` fails (cross-type compare is not allowed)
 - `Bytes([0,1]) == U8(1)` fails (cross-type compare is not allowed)
 - `Bytes([0,1]) == Bytes([1])` is `false` (same-type raw-bytes compare)
-- Ordered compare with non-uint values (`Nil`, `Bool`, `Bytes`, `Address`, `HeapSlice`, `Compo`) always fails
+- Ordered compare with non-uint values (`Nil`, `Bool`, `Bytes`, `Address`, `Compo`, `Tuple`, `Handle`) always fails
 - `Nil` and `Bool(false)` are both falsy in `extract_bool` / `CHOOSE`, but `Nil == Bool(false)` fails (cross-type `EQ`)
 
 ## 8. Compo Map Semantics (Normative)
@@ -243,6 +233,7 @@ List `MERGE` appends elements; it has no key domain and does not deduplicate ele
 This section defines mandatory constraints before enabling `U256`, to prevent compatibility breaks and normalization drift.
 
 - Type id `7` and keyword `u256` are reserved and currently disabled.
+- Type id `11` (formerly `HeapSlice`) and bytecode `0x88` (formerly `HSLICE`) are reserved and disabled.
 - Any decode/build path receiving type id `7` must fail explicitly (not silently downgraded).
 - Any type parser receiving `u256` must fail explicitly with a reserved/not-enabled error.
 - Activation must be version-gated (e.g. codeconf/height fork switch), not implicit by parser/runtime fallback.

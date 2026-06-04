@@ -280,7 +280,6 @@ irfn_define! {
     local_x_put
     local_x
 
-    heap_slice
     heap_read_uint_long
     heap_read_uint
     heap_write_xl

@@ -132,13 +132,6 @@ impl Heap {
         self.do_read(start, length)
     }
 
-    pub fn slice(&self, start: Value, length: Value) -> VmrtRes<Value> {
-        let start = start.extract_u32()?;
-        let length = length.extract_u32()?;
-        self.checked_right(start as usize, length as usize, "create slice overflow")?;
-        Ok(Value::HeapSlice((start, length)))
-    }
-
     /* 2 bit = u8 u16 u32 u64; remaining 6 bits encode the segment (u8: bytes 0..=63, u16: 0..=127, u32: 0..=255, u64: 0..=511) */
     pub fn read_u(&self, mark: u8) -> VmrtRes<Value> {
         let uty = mark >> 6;
@@ -171,15 +164,6 @@ mod heaptest {
         assert_eq!(heap.grow(1, &GasExtra::new(1)).unwrap(), 2);
         assert_eq!(heap.grow(1, &GasExtra::new(1)).unwrap(), 4);
         assert_eq!(heap.grow(1, &GasExtra::new(1)).unwrap(), 8);
-    }
-
-    #[test]
-    fn slice_overflow_is_rejected() {
-        let heap = Heap::new(64);
-        let start = Value::U32(u32::MAX);
-        let len = Value::U32(1);
-        let err = heap.slice(start, len).unwrap_err().to_string();
-        assert!(err.contains("create slice overflow"));
     }
 
     #[test]

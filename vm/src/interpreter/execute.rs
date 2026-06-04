@@ -385,7 +385,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 let kid = u16::from_be_bytes([instbyte, idx]);
                 let mut actbody = vec![];
                 if pass_body {
-                    let mut bdv = ops.peek()?.extract_call_data(heap)?;
+                    let mut bdv = ops.peek()?.extract_call_data()?;
                     actbody.append(&mut bdv);
                     gas_resource!(act_bytes, actbody.len());
                 }
@@ -561,7 +561,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 // native func (pure computation, always allowed)
                 NTFUNC => {
                     let nt_idx = pu8!();
-                    let argv = ops.pop()?.extract_call_data(heap)?;
+                    let argv = ops.pop()?.extract_call_data()?;
                     gas_resource!(nt_bytes, argv.len());
                     let (r, g) = call_ntfunc(hei, nt_idx, &argv)?;
                     finish_ntcall(cap, gst, &mut step_gas_use, ops, r, g)?;
@@ -875,11 +875,6 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
                 ALLOC => gas_resource_raw!(gst.one_local_alloc * locals.alloc(pu8!())? as i64),
                 GET0 | GET1 | GET2 | GET3 => local_get!(instbyte - GET0 as u8),
                 LOG1 | LOG2 | LOG3 | LOG4 => wlog!(instbyte - LOG1 as u8 + 2),
-                HSLICE => {
-                    let length = ops.pop()?;
-                    let start = ops.peek()?;
-                    *start = heap.slice(start.clone(), length)?;
-                }
                 HREADUL => hread_push!(heap.read_ul(pu16!())?),
                 HREADU => hread_push!(heap.read_u(pu8!())?),
                 HWRITEXL => hwrite!(pu16!() as usize),

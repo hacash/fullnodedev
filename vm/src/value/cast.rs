@@ -285,7 +285,6 @@ impl Value {
 
     pub fn check_param_type(&self, ty: ValueTy, heap: &Heap, cap: &SpaceCap) -> VmrtErr {
         let mut tmp = self.clone();
-        tmp.materialize_boundary_heap_slices(heap, cap)?;
         tmp.cast_param(ty, heap, cap)
     }
 }
@@ -321,17 +320,6 @@ mod cast_tests {
         let err = v.cast_param(ValueTy::Bool, &heap, &cap).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
         assert_eq!(v, Value::U8(0));
-    }
-
-    #[test]
-    fn check_param_type_materializes_heap_slice_to_bytes() {
-        let (mut heap, cap) = boundary_env();
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![4, 5, 6])).unwrap();
-
-        let hs = Value::HeapSlice((0, 3));
-        assert!(hs.check_param_type(ValueTy::Bytes, &heap, &cap).is_ok());
     }
 
     #[test]

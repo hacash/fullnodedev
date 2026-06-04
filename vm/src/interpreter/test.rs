@@ -447,7 +447,6 @@ mod bounds_tests {
 
         let non_castable_targets = [
             ValueTy::Nil,
-            ValueTy::HeapSlice,
             ValueTy::Tuple,
             ValueTy::Handle,
             ValueTy::Compo,
@@ -539,19 +538,17 @@ mod bounds_tests {
         assert_eq!(run(Value::Nil, ValueTy::Nil).unwrap(), Value::Bool(true));
         assert_eq!(run(Value::U8(0), ValueTy::Nil).unwrap(), Value::Bool(false));
         assert_eq!(
-            run(Value::HeapSlice((0, 0)), ValueTy::HeapSlice).unwrap(),
-            Value::Bool(true)
-        );
-        assert_eq!(
-            run(Value::U8(1), ValueTy::HeapSlice).unwrap(),
-            Value::Bool(false)
-        );
-        assert_eq!(
             run(Value::Compo(CompoItem::new_list()), ValueTy::Compo).unwrap(),
             Value::Bool(true)
         );
         assert_eq!(
             run(Value::handle(7u32), ValueTy::Handle).unwrap(),
+            Value::Bool(true)
+        );
+
+        let args = TupleItem::new(vec![Value::U8(1)]).unwrap();
+        assert_eq!(
+            run(Value::Tuple(args.clone()), ValueTy::Tuple).unwrap(),
             Value::Bool(true)
         );
     }
@@ -654,15 +651,6 @@ mod bounds_tests {
             Err(ItrErr(ItrErrCode::InstParamsErr, _))
         ));
 
-        assert_eq!(
-            run(Bytecode::TIS, Value::HeapSlice((0, 0)), ValueTy::HeapSlice).unwrap(),
-            Value::Bool(true)
-        );
-        assert!(matches!(
-            run(Bytecode::CTO, Value::HeapSlice((0, 0)), ValueTy::HeapSlice),
-            Err(ItrErr(ItrErrCode::InstParamsErr, _))
-        ));
-
         let args = TupleItem::new(vec![Value::U8(1)]).unwrap();
         assert_eq!(
             run(Bytecode::TIS, Value::Tuple(args.clone()), ValueTy::Tuple).unwrap(),
@@ -734,10 +722,6 @@ mod bounds_tests {
 
         assert!(matches!(
             run(Value::U8(1), ValueTy::Address),
-            Err(ItrErr(ItrErrCode::CastFail, _))
-        ));
-        assert!(matches!(
-            run(Value::HeapSlice((0, 0)), ValueTy::Bool),
             Err(ItrErr(ItrErrCode::CastFail, _))
         ));
         assert!(matches!(
@@ -1016,7 +1000,7 @@ mod bounds_tests {
     }
 
     #[test]
-    fn size_rejects_tuple_compo_handle_and_heapslice() {
+    fn size_rejects_tuple_compo_and_handle() {
         use crate::rt::Bytecode;
 
         let run_err = |input: Value| -> ItrErrCode {
@@ -1062,7 +1046,7 @@ mod bounds_tests {
             ItrErrCode::ItemNoSize
         );
         assert_eq!(run_err(Value::handle(7u32)), ItrErrCode::ItemNoSize);
-        assert_eq!(run_err(Value::HeapSlice((0, 1))), ItrErrCode::ItemNoSize);
+        assert_eq!(run_err(Value::handle(1u32)), ItrErrCode::ItemNoSize);
     }
 
     #[test]
@@ -1523,10 +1507,10 @@ mod bounds_tests {
     }
 
     #[test]
-    fn get0_stack_copy_uses_dup_size_for_heapslice() {
+    fn get0_stack_copy_uses_dup_size_for_handle() {
         use crate::rt::Bytecode;
 
-        let run = |len: u32| -> i64 {
+        let run = |_len: u32| -> i64 {
             let mut pc: usize = 0;
             let mut gas: i64 = 1000;
             let mut host = DummyHost::default();
@@ -1534,7 +1518,7 @@ mod bounds_tests {
             let mut operands = Stack::new(256);
             let mut locals = Stack::new(256);
             locals.alloc(1).unwrap();
-            locals.save(0, Value::HeapSlice((7, len))).unwrap();
+            locals.save(0, Value::handle(7u32)).unwrap();
 
             let mut heap = Heap::new(64);
             let mut global_map = GKVMap::new(20);
@@ -1813,10 +1797,10 @@ mod bounds_tests {
     }
 
     #[test]
-    fn getx_stack_copy_uses_dup_size_for_heapslice() {
+    fn getx_stack_copy_uses_dup_size_for_handle() {
         use crate::rt::Bytecode;
 
-        let run = |len: u32| -> i64 {
+        let run = |_len: u32| -> i64 {
             run_with_setup(
                 vec![
                     Bytecode::P0 as u8,
@@ -1826,7 +1810,7 @@ mod bounds_tests {
                 DummyHost::default(),
                 |_ops, locals, _heap, _global_map, _memory_map, _cadr| {
                     locals.alloc(1).unwrap();
-                    locals.save(0, Value::HeapSlice((9, len))).unwrap();
+                    locals.save(0, Value::handle(9u32)).unwrap();
                 },
             )
         };
@@ -2517,7 +2501,7 @@ mod bounds_tests {
     }
 
     #[test]
-    fn heapslice_can_be_used_as_ext_and_nt_call_param() {
+    fn bytes_can_be_used_as_action_and_nt_call_param() {
         use crate::native::NativeFunc;
         use crate::rt::Bytecode;
 
@@ -2528,11 +2512,9 @@ mod bounds_tests {
             let mut gas: i64 = 1000;
             let mut host = DummyHost::default();
             let mut operands = Stack::new(256);
-            operands.push(Value::HeapSlice((1, 2))).unwrap();
+            operands.push(Value::Bytes(vec![8, 7])).unwrap();
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            heap.grow(1, &GasExtra::new(1)).unwrap();
-            heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
             let mut global_map = GKVMap::new(20);
             let mut memory_map = CtcKVMap::new(12);
             let codes = vec![Bytecode::ACTION as u8, 1, Bytecode::END as u8];
@@ -2563,11 +2545,9 @@ mod bounds_tests {
             let mut gas: i64 = 1000;
             let mut host = DummyHost::default();
             let mut operands = Stack::new(256);
-            operands.push(Value::HeapSlice((1, 2))).unwrap();
+            operands.push(Value::Bytes(vec![8, 7])).unwrap();
             let mut locals = Stack::new(256);
             let mut heap = Heap::new(64);
-            heap.grow(1, &GasExtra::new(1)).unwrap();
-            heap.write(0, Value::Bytes(vec![9, 8, 7, 6])).unwrap();
             let mut global_map = GKVMap::new(20);
             let mut memory_map = CtcKVMap::new(12);
             let codes = vec![
@@ -2602,7 +2582,7 @@ mod bounds_tests {
     }
 
     #[test]
-    fn hslice_uses_start_length_stack_order_like_hread() {
+    fn hread_uses_start_length_stack_order() {
         use crate::rt::Bytecode;
 
         let cadr = ContractAddress::default();
@@ -2617,13 +2597,13 @@ mod bounds_tests {
         let mut global_map = GKVMap::new(20);
         let mut memory_map = CtcKVMap::new(12);
         let codes = vec![
-            Bytecode::HSLICE as u8,
+            Bytecode::HREAD as u8,
             Bytecode::ACTION as u8,
             1,
             Bytecode::END as u8,
         ];
         operands.push(Value::U32(1)).unwrap(); // start
-        operands.push(Value::U32(2)).unwrap(); // length
+        operands.push(Value::U16(2)).unwrap(); // length
 
         execute_code(
             &mut pc,

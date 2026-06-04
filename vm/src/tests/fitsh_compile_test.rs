@@ -399,11 +399,9 @@ mod fitsh_compile_tests {
             is_u64: "return 1 is u64",
             is_bytes: "return \"\" is bytes",
             is_address: "return emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS is address",
-            is_heapslice: "return nil is heapslice",
             is_compo: "return nil is compo",
             is_not_list: "return [] is not list",
             is_not_map: "return map { } is not map",
-            is_not_heapslice: "return nil is not heapslice",
             is_not_compo: "return nil is not compo",
         );
 

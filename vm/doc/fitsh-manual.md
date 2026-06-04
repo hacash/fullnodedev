@@ -503,7 +503,7 @@ Contracts can use six resource spaces. Understanding their scope, lifetime, and 
 **Use when**:
 - Large buffers or binary data in a single call
 - Offset-based access (like C arrays)
-- Passing raw bytes to callees via `HeapSlice`
+- Passing raw bytes to callees via `heap_read` into `Bytes`
 
 **Characteristics**:
 - Byte array; grow by segments (256 bytes each)
@@ -706,7 +706,7 @@ The VM now models runtime permission as **ExecCtx = (ExecDomain, FrameMode)**.
 
 **State** = Storage, Global, Memory, Log.
 
-**Important**: `codecall` runs in the **current frame** and **fully inherits the caller's ExecCtx** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV) in the codecall body are governed by the inherited domain/frame permissions. Unlike an isolated call frame, `codecall` does **not** forbid subsequent nested calls; nested `CALL*` instructions continue to follow the normal `(domain, frame, depth)` runtime gates.
+**Important**: `codecall` runs in the **current frame** and **fully inherits the caller's ExecCtx** — it has **no independent state access control logic**. All state operations (storage read/write, EXTACTION/EXTENV/EXTVIEW, NTFUNC/NTENV/NTCTL) in the codecall body are governed by the inherited domain/frame permissions. Unlike an isolated call frame, `codecall` does **not** forbid subsequent nested calls; nested `CALL*` instructions continue to follow the normal `(domain, frame, depth)` runtime gates.
 
 #### Orthogonal Permission Matrix
 
@@ -752,22 +752,48 @@ Frame restrictions:
 | **View** | ❌ No | ✅ Yes | ✅ Yes | Read-only environment access |
 | **Pure** | ❌ No | ❌ No | ❌ No | No external state access |
 
-**Native Functions (NTFUNC / NTENV)**:
+**Native Calls (NTFUNC / NTENV / NTCTL)**:
 
-| Opcode | Native Call | Args | Pure Mode | View Mode | Main/External/Inner | Function |
-|--------|-------------|------|-----------|-----------|------------------|----------|
-| NTENV | `context_address` | 0 | ❌ Forbidden (`nsr!`) | ✅ Allowed | ✅ Allowed | Read VM execution state |
+| Opcode | Native Call | Source args | Pure Mode | View Mode | Edit (Main/External/Inner) | Function |
+|--------|-------------|-------------|-----------|-----------|----------------------------|----------|
+| NTENV | `context_address` | 0 | ❌ Forbidden (`InstDisabled`) | ✅ Allowed | ✅ Allowed | Read VM execution context address |
 | NTFUNC | `sha2/sha3/ripemd160` | 1 | ✅ Allowed | ✅ | ✅ | Pure hash functions |
 | NTFUNC | `hac_to_mei/zhu(amount)`, `mei/zhu_to_hac(count)`, `fold64_to_u64(data)`, `u64_to_fold64(n)` | 1 | ✅ Allowed | ✅ | ✅ | Pure amount/encoding conversion (decode/encode arg types differ; see §11.4) |
 | NTFUNC | `pack_asset(serial, amount)` | 2 | ✅ Allowed | ✅ | ✅ | Build AssetAmt bytes from two u64 |
 | NTFUNC | `address_ptr` | 1 | ✅ Allowed | ✅ | ✅ | Pure address pointer extraction |
+| NTCTL | `defer`, `intent_*` writes (e.g. `intent_put`, `intent_pop`) | 0–2 | ❌ Forbidden (`IntentError`) | ❌ Forbidden (`IntentError`) | ✅ Allowed (Edit only) | Modify tx-local VM state (defer registry, intent scope) |
+| NTCTL | `intent_*` reads (e.g. `intent_get`, `intent_kind`, `intent_len`) | 0–2 | ❌ Forbidden (`IntentError`) | ✅ Allowed | ✅ Allowed | Read tx-local intent state |
+
+**Native stack conventions** (opcode-level vs source-level arity):
+
+The VM uses two native call stack models. This is intentional; do not assume all natives share the same stack shape.
+
+| Model | Opcodes | Opcode stack | Source zero-arg form |
+|-------|---------|--------------|----------------------|
+| Env read | `NTENV`, `ACTENV` | `0 → 1` (no operand consumed) | `context_address()`, `block_height()` |
+| Value call | `NTFUNC`, `NTCTL` | `1 → 1` (always pops one argv value) | compiler pushes `nil` when source args are empty |
+
+For **`NTCTL`** / **`NTFUNC`**, opcode metadata always requires one stack input. Natives registered with `argv_len = 0` (e.g. `intent_pop()`, `intent_kind()`) still use the value-call model: the compiler emits `PNIL` then `NTCTL idx`, and the runtime accepts only `nil` as argv. Hand-written bytecode must include the same `nil` placeholder. Decompilers may hide this placeholder when `hide_default_call_argv` is enabled (display only). See also `call-standard.md` §11.3.
+
+For **`NTENV`**, opcode metadata is true zero-input (`0 → 1`); no `nil` placeholder is used.
+
+**Effect gate error codes** (why forbidden calls do not all share one code):
+
+| Layer | Examples | Pure forbidden | Typical error |
+|-------|----------|----------------|---------------|
+| VM opcode read gate | `SGET`, `NTENV` | yes | `InstDisabled` — instruction disabled in current effect |
+| Host action gate | `ACTENV`, `ACTVIEW`, `EXTENV`, `EXTVIEW` | yes | `ActDisabled` — action/env/view call blocked in current effect |
+| Native ctl gate | `NTCTL` `intent_*` | per native (`ctl_require_edit` / `ctl_require_non_pure`) | `IntentError` — includes native name; View may allow reads while blocking writes |
+
+`NTENV` uses `InstDisabled` (not `ActDisabled`) because it reads VM-local execution state at the opcode layer, same category as storage read instructions (`nsr!` → `InstDisabled`). `ACTENV` goes through the host action layer and therefore reports `ActDisabled` in `Pure`.
 
 **Summary**:
 - **EXTACTION** (asset transfers): Only `Main` mode at `depth == 0`
-- **EXTENV** (`block_height`, `tx_main_address`): Forbidden in `Pure`, allowed elsewhere
-- **EXTVIEW** (`check_signature`, `balance`): Forbidden in `Pure`, allowed elsewhere — read-only chain state queries
+- **EXTENV** (`block_height`, `tx_main_address`): Forbidden in `Pure`, allowed elsewhere (`ActDisabled`)
+- **EXTVIEW** (`check_signature`, `balance`): Forbidden in `Pure`, allowed elsewhere — read-only chain state queries (`ActDisabled`)
 - **NTFUNC** (pure computation): Always allowed in all modes including `Pure`
-- **NTENV** (`context_address`): Forbidden in `Pure` (reads VM state), allowed elsewhere
+- **NTENV** (`context_address`): Forbidden in `Pure` (reads VM state, `InstDisabled`), allowed elsewhere
+- **NTCTL** (`defer`, `intent_*`): Edit-only for writes; reads allowed in View but not Pure; zero source args require a `nil` stack placeholder at bytecode level
 
 #### EXTACTION Restriction
 
@@ -904,9 +930,17 @@ contract Child {
 
 ### 11.4 Native Calls
 
+Native builtins fall into three opcode families. Stack shape and effect gates differ — see §11.2 permission matrix and `call-standard.md` §11.3.
+
+| Family | Opcode | Examples | Stack model |
+|--------|--------|----------|-------------|
+| Pure func | `NTFUNC` | `sha2`, `hac_to_mei` | `1 → 1`; always one argv on stack |
+| VM env read | `NTENV` | `context_address` | `0 → 1`; true zero-arg at bytecode level |
+| Runtime ctl | `NTCTL` | `defer`, `intent_*` | `1 → 1`; zero source args use `nil` placeholder |
+
 | Function | Description |
 |----------|-------------|
-| `context_address()` | Current execution context address |
+| `context_address()` | Current execution context address (`NTENV`; forbidden in `Pure`, error `InstDisabled`) |
 | `block_height()` | Current block height |
 | `sha2(data)` | SHA-256 hash |
 | `sha3(data)` | SHA3 hash |

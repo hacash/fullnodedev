@@ -16,14 +16,13 @@ fn check_scalar_as(value: &Value, ec: ItrErrCode) -> VmrtErr {
 fn check_func_tuple_item(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
         Tuple(..) => itr_err_code!(ec),
-        HeapSlice(..) | Compo(..) | Handle(..) => Ok(()),
+        Compo(..) | Handle(..) => Ok(()),
         _ => check_scalar_as(value, ec),
     }
 }
 
 fn check_func_boundary(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
-        HeapSlice(..) => Ok(()),
         Tuple(tuple) => {
             for item in tuple.as_slice() {
                 check_func_tuple_item(item, ec)?;
@@ -50,7 +49,7 @@ fn check_vm_boundary_compo(compo: &CompoItem, ec: ItrErrCode) -> VmrtErr {
 
 fn check_vm_tuple_item(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
-        HeapSlice(..) | Tuple(..) | Handle(..) => itr_err_code!(ec),
+        Tuple(..) | Handle(..) => itr_err_code!(ec),
         Compo(compo) => check_vm_boundary_compo(compo, ec),
         _ => check_scalar_as(value, ec),
     }
@@ -58,7 +57,6 @@ fn check_vm_tuple_item(value: &Value, ec: ItrErrCode) -> VmrtErr {
 
 fn check_vm_boundary(value: &Value, ec: ItrErrCode) -> VmrtErr {
     match value {
-        HeapSlice(..) => itr_err_code!(ec),
         Tuple(tuple) => {
             for item in tuple.as_slice() {
                 check_vm_tuple_item(item, ec)?;
@@ -161,70 +159,16 @@ impl Value {
     pub fn check_tuple_item(&self) -> VmrtErr {
         match self {
             Tuple(..) => itr_err_code!(CastBeValueFail),
-            HeapSlice(..) | Compo(..) | Handle(..) => Ok(()),
+            Compo(..) | Handle(..) => Ok(()),
             _ => check_scalar_as(self, CastBeValueFail),
         }
     }
 
-    pub fn extract_call_data(&self, heap: &Heap) -> VmrtRes<Vec<u8>> {
+    pub fn extract_call_data(&self) -> VmrtRes<Vec<u8>> {
         let ec = CastBeCallDataFail;
         match self {
             Nil => Ok(vec![]),
-            HeapSlice((start, length)) => {
-                let Value::Bytes(buf) = heap.do_read(*start as usize, *length as usize)? else {
-                    never!()
-                };
-                Ok(buf)
-            }
             _ => self.extract_bytes_with_error_code(ec),
-        }
-    }
-
-    /// Materialize a heap view into owned `Bytes` for function param boundaries.
-    /// Length is validated against `SpaceCap` after read; no extra gas is charged.
-    pub(crate) fn materialize_heap_slice_to_bytes(
-        &mut self,
-        heap: &Heap,
-        cap: &SpaceCap,
-    ) -> VmrtErr {
-        let ec = CallArgvTypeFail;
-        let HeapSlice((start, length)) = self else {
-            return Ok(());
-        };
-        let Value::Bytes(buf) = heap.do_read(*start as usize, *length as usize)? else {
-            never!()
-        };
-        *self = Value::bytes(buf).valid(cap).map_err(|ItrErr(_, msg)| {
-            if msg.is_empty() {
-                ItrErr::new(ec, "heap slice exceeds value size cap")
-            } else {
-                ItrErr::new(ec, &msg)
-            }
-        })?;
-        Ok(())
-    }
-
-    /// Unconditionally replace every `HeapSlice` carrier with owned `Bytes` at a function boundary.
-    pub fn materialize_boundary_heap_slices(
-        &mut self,
-        heap: &Heap,
-        cap: &SpaceCap,
-    ) -> VmrtErr {
-        match self {
-            HeapSlice(..) => self.materialize_heap_slice_to_bytes(heap, cap),
-            Tuple(tuple) => {
-                let mut items = tuple.to_vec();
-                for item in items.iter_mut() {
-                    item.materialize_boundary_heap_slices(heap, cap)?;
-                }
-                *self = Value::Tuple(
-                    TupleItem::new(items).map_err(|ItrErr(_, msg)| {
-                        ItrErr::new(CallArgvTypeFail, &msg)
-                    })?,
-                );
-                Ok(())
-            }
-            _ => Ok(()),
         }
     }
 
@@ -262,9 +206,6 @@ impl Value {
 
     pub fn check_vm_boundary_retv(&self) -> VmrtErr {
         match self {
-            Value::HeapSlice(..) => {
-                itr_err_fmt!(CastBeFnRetvFail, "return type HeapSlice is not supported")
-            }
             Value::Handle(..) => {
                 itr_err_fmt!(CastBeFnRetvFail, "return type Handle is not supported")
             }
@@ -299,48 +240,9 @@ mod canbe_tests {
     use super::*;
 
     #[test]
-    fn heapslice_ext_call_data_reads_heap_bytes_only_here() {
-        let mut heap = Heap::new(64);
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![1, 2, 3, 4])).unwrap();
-        let hs = Value::HeapSlice((1, 2));
-
-        assert_eq!(hs.extract_call_data(&heap).unwrap(), vec![2, 3]);
-        assert!(hs.extract_bytes_with_error_code(CastBeBytesFail).is_err());
-        assert!(hs.check_func_argv().is_ok());
-        assert!(hs.check_func_retv().is_ok());
-
-        let tuple = Value::Tuple(
-            TupleItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_list())]).unwrap(),
-        );
-        assert!(tuple.check_func_argv().is_ok());
-        assert!(tuple.check_func_retv().is_ok());
-
-        let handle = Value::handle(7u32);
-        assert!(handle.check_func_argv().is_ok());
-        assert!(handle.check_func_retv().is_ok());
-        assert!(handle.check_vm_boundary_argv().is_err());
-        assert!(handle.check_vm_boundary_retv().is_err());
-    }
-
-    #[test]
-    fn heapslice_func_retv_accepts_carrier_shape_before_materialization() {
-        let hs = Value::HeapSlice((0, 1));
-        assert!(hs.check_func_retv().is_ok());
-    }
-
-    #[test]
-    fn materialize_boundary_heap_slices_replaces_top_level() {
-        let mut heap = Heap::new(64);
-        let cap = SpaceCap::new(1);
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![1, 2])).unwrap();
-
-        let mut top = Value::HeapSlice((0, 2));
-        top.materialize_boundary_heap_slices(&heap, &cap).unwrap();
-        assert_eq!(top, Value::Bytes(vec![1, 2]));
+    fn extract_call_data_maps_nil_to_empty_bytes() {
+        assert_eq!(Value::Nil.extract_call_data().unwrap(), Vec::<u8>::new());
+        assert!(Value::Compo(CompoItem::new_list()).extract_call_data().is_err());
     }
 
     #[test]
@@ -379,10 +281,7 @@ mod canbe_tests {
     #[test]
     fn nil_rejected_by_extract_bytes_ec_but_allowed_in_call_data() {
         assert!(Value::Nil.extract_bytes().is_err());
-        assert_eq!(
-            Value::Nil.extract_call_data(&Heap::new(64)).unwrap(),
-            Vec::<u8>::new()
-        );
+        assert_eq!(Value::Nil.extract_call_data().unwrap(), Vec::<u8>::new());
 
         let cap = SpaceCap::new(1);
         assert!(Value::concat(&Value::Nil, &Value::Bytes(vec![1]), &cap).is_err());
@@ -427,7 +326,9 @@ mod canbe_tests {
         let mut cap = SpaceCap::new(1);
         cap.value_size = 2;
 
-        let err = Value::Bytes(vec![0u8; 3]).check_boundary_value_cap(&cap).unwrap_err();
+        let err = Value::Bytes(vec![0u8; 3])
+            .check_boundary_value_cap(&cap)
+            .unwrap_err();
         assert_eq!(err.0, ItrErrCode::OutOfValueSize);
 
         let mut map = std::collections::BTreeMap::new();

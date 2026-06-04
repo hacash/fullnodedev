@@ -99,8 +99,8 @@ impl Serialize for Value {
         match self {
             // Runtime-only variants are intentionally excluded from field serialization.
             // Parse also rejects them, so serialize must keep the same type boundary.
-            HeapSlice(..) | Tuple(..) | Handle(..) | Compo(..) => {
-                panic!("Value::serialize does not support HeapSlice/Tuple/Handle/Compo")
+            Tuple(..) | Handle(..) | Compo(..) => {
+                panic!("Value::serialize does not support Tuple/Handle/Compo")
             }
             Bytes(buf) => {
                 assert!(
@@ -126,8 +126,8 @@ impl Serialize for Value {
 
     fn size(&self) -> usize {
         match self {
-            HeapSlice(..) | Tuple(..) | Handle(..) | Compo(..) => {
-                panic!("Value::size does not support HeapSlice/Tuple/Handle/Compo")
+            Tuple(..) | Handle(..) | Compo(..) => {
+                panic!("Value::size does not support Tuple/Handle/Compo")
             }
             Bytes(buf) => {
                 assert!(
@@ -186,11 +186,6 @@ mod field_tests {
 
     #[test]
     fn value_size_panics_for_runtime_only_variants() {
-        let hv = Value::HeapSlice((3, 7));
-        assert_panics(|| {
-            <Value as Serialize>::size(&hv);
-        });
-
         let compo = CompoItem::list(VecDeque::from([Value::U8(1), Value::U16(2)])).unwrap();
         let cv = Value::Compo(compo);
         assert_panics(|| {
@@ -210,11 +205,6 @@ mod field_tests {
 
     #[test]
     fn value_serialize_panics_for_runtime_only_variants() {
-        let hv = Value::HeapSlice((3, 7));
-        assert_panics(|| {
-            <Value as Serialize>::serialize(&hv);
-        });
-
         let compo = CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap();
         let cv = Value::Compo(compo);
         assert_panics(|| {

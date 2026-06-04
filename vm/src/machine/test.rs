@@ -2597,7 +2597,7 @@ end",
                 AbstCall::Construct,
                 contract_target.clone(),
                 None,
-                Value::HeapSlice((0, 1)),
+                Value::handle(0u32),
             )
             .expect_err("invalid abst argv must fail locally");
         assert!(err.contains("CastBeFnArgvFail"), "unexpected error: {err}");

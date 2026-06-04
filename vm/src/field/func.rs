@@ -76,7 +76,6 @@ impl FuncArgvTypes {
     }
 
     pub fn check_output(&self, v: &mut Value, heap: &Heap, cap: &SpaceCap) -> VmrtErr {
-        v.materialize_boundary_heap_slices(heap, cap)?;
         let Some(oty) = self.output_type().map_ire(CallArgvTypeFail)? else {
             return Ok(());
         };
@@ -88,7 +87,6 @@ impl FuncArgvTypes {
 
     pub fn check_params(&self, v: &mut Value, heap: &Heap, cap: &SpaceCap) -> VmrtErr {
         let ec = CallArgvTypeFail;
-        v.materialize_boundary_heap_slices(heap, cap)?;
         let types = self.param_types().map_ire(ec)?;
         match types.as_slice() {
             [] => Ok(()),
@@ -304,60 +302,6 @@ mod code_stuff_tests {
     }
 
     #[test]
-    fn check_params_materializes_heap_slice_to_bytes_with_cap() {
-        let (mut heap, mut cap) = boundary_env();
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![9, 8, 7])).unwrap();
-
-        let tys = FuncArgvTypes::from_types(None, vec![ValueTy::Bytes]).unwrap();
-        let mut argv = Value::HeapSlice((0, 3));
-        tys.check_params(&mut argv, &heap, &cap).unwrap();
-        assert_eq!(argv, Value::Bytes(vec![9, 8, 7]));
-
-        cap.value_size = 2;
-        let mut oversize = Value::HeapSlice((0, 3));
-        let err = tys
-            .check_params(&mut oversize, &heap, &cap)
-            .unwrap_err();
-        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
-        assert!(matches!(oversize, Value::HeapSlice(..)));
-    }
-
-    #[test]
-    fn check_params_heap_slice_in_tuple_materializes_to_bytes() {
-        let (mut heap, cap) = boundary_env();
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![1, 2])).unwrap();
-
-        let tys = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::Bytes]).unwrap();
-        let mut argv = Value::Tuple(
-            TupleItem::new(vec![Value::U8(4), Value::HeapSlice((0, 2))]).unwrap(),
-        );
-        tys.check_params(&mut argv, &heap, &cap).unwrap();
-        assert_eq!(
-            argv,
-            Value::Tuple(
-                TupleItem::new(vec![Value::U8(4), Value::Bytes(vec![1, 2])]).unwrap()
-            )
-        );
-    }
-
-    #[test]
-    fn check_params_rejects_heap_slice_for_non_bytes_param() {
-        let (mut heap, cap) = boundary_env();
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![1])).unwrap();
-
-        let tys = FuncArgvTypes::from_types(None, vec![ValueTy::U8]).unwrap();
-        let mut argv = Value::HeapSlice((0, 1));
-        let err = tys.check_params(&mut argv, &heap, &cap).unwrap_err();
-        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
-    }
-
-    #[test]
     fn check_params_single_rejects_cross_family_implicit_casts() {
         let (heap, cap) = boundary_env();
         let addr = field::Address::create_contract([1u8; 20]);
@@ -484,33 +428,6 @@ mod code_stuff_tests {
             .unwrap(),
         );
         types.check_params(&mut args, &heap, &cap).unwrap();
-    }
-
-    #[test]
-    fn check_output_materializes_heap_slice_to_bytes() {
-        let (mut heap, cap) = boundary_env();
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![3, 4])).unwrap();
-
-        let tys = FuncArgvTypes::from_types(Some(ValueTy::Bytes), vec![]).unwrap();
-        let mut out = Value::HeapSlice((0, 2));
-        tys.check_output(&mut out, &heap, &cap).unwrap();
-        assert_eq!(out, Value::Bytes(vec![3, 4]));
-    }
-
-    #[test]
-    fn check_output_rejects_materialized_heap_slice_for_non_bytes_return() {
-        let (mut heap, cap) = boundary_env();
-        let gst = GasExtra::new(1);
-        heap.grow(1, &gst).unwrap();
-        heap.write(0, Value::Bytes(vec![1])).unwrap();
-
-        let tys = FuncArgvTypes::from_types(Some(ValueTy::U8), vec![]).unwrap();
-        let mut out = Value::HeapSlice((0, 1));
-        let err = tys.check_output(&mut out, &heap, &cap).unwrap_err();
-        assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
-        assert_eq!(out, Value::Bytes(vec![1]));
     }
 
     #[test]

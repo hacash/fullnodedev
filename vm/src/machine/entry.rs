@@ -257,7 +257,7 @@ pub fn check_vm_return_value(rv: &Value, err_msg: &str) -> XRerr {
             None,
             Some(format!("address {}", a.to_readable()))
         ),
-        HeapSlice(_) | Handle(_) => never!(),
+        Handle(_) => never!(),
         Tuple(_) | Compo(_) => Some(format!("object {}", rv.to_json())),
     };
     match detail {

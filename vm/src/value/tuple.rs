@@ -158,10 +158,7 @@ mod tuple_tests {
     use super::*;
 
     #[test]
-    fn tuple_rejects_nested_tuple_and_accepts_heapslice_carrier() {
-        let hs = TupleItem::new(vec![Value::HeapSlice((0, 1))]).unwrap();
-        assert_eq!(hs.len(), 1);
-
+    fn tuple_rejects_nested_tuple() {
         let nested = Value::Tuple(TupleItem::new(vec![Value::U8(1)]).unwrap());
         let err = TupleItem::new(vec![nested]).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CastBeValueFail);

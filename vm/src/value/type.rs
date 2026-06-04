@@ -15,7 +15,7 @@ pub enum ValueTy {
     Bytes       = 8,
     Address     = 9,
     //          = 10,
-    HeapSlice   = 11,
+    //          = 11,  // reserved (formerly HeapSlice)
     //          = 12,
     Tuple       = 13,
     Compo       = 14,
@@ -27,7 +27,7 @@ impl ValueTy {
     pub fn check_func_argv_type(&self) -> Rerr {
         use ValueTy::*;
         match self {
-            Nil | HeapSlice | Tuple => errf!("Value Type {:?} cannot be func argv", self),
+            Nil | Tuple => errf!("Value Type {:?} cannot be func argv", self),
             _ => Ok(())
         }
     }
@@ -36,7 +36,7 @@ impl ValueTy {
     pub fn check_func_retv_type(&self) -> Rerr {
         use ValueTy::*;
         match self {
-            Nil | HeapSlice => errf!("Value Type {:?} cannot be func retval", self),
+            Nil => errf!("Value Type {:?} cannot be func retval", self),
             _ => Ok(())
         }
     }
@@ -52,7 +52,6 @@ impl ValueTy {
             ValueTy::U128      => "u128"      ,
             ValueTy::Bytes     => "bytes"     ,
             ValueTy::Address   => "address"   ,
-            ValueTy::HeapSlice => "heapslice" ,
             ValueTy::Tuple     => "tuple"     ,
             ValueTy::Compo     => "compo"     ,
             ValueTy::Handle    => "handle"    ,
@@ -86,7 +85,6 @@ impl ValueTy {
             "u128"      => U128,
             "bytes"     => Bytes,
             "address"   => Address,
-            "heapslice" => HeapSlice,
             "tuple"     => Tuple,
             "compo"     => Compo,
             "handle"    => Handle,
@@ -106,7 +104,6 @@ impl ValueTy {
             6  => U128      ,
             8  => Bytes     ,
             9  => Address   ,
-            11 => HeapSlice ,
             13 => Tuple     ,
             14 => Compo     ,
             15 => Handle    ,
@@ -143,8 +140,10 @@ mod type_tests {
         assert!(err_uint.contains("unknown type 'uint'"));
         let err_unknown = ValueTy::from_name("wat").unwrap_err();
         assert!(err_unknown.contains("unknown type 'wat'"));
+        assert!(ValueTy::from_name("heapslice").is_err());
         assert!(ValueTy::build(7).is_err());
         assert!(ValueTy::build(10).is_err());
+        assert!(ValueTy::build(11).is_err());
         assert!(ValueTy::build(12).is_err());
     }
 
@@ -172,10 +171,11 @@ mod type_tests {
             assert_eq!(parse_cto_target_ty_param(ty as u8).unwrap(), ty);
         }
 
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
             let res = parse_cto_target_ty_param(ty as u8);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
         }
+        assert!(parse_cto_target_ty_param(11).is_err());
     }
 
     #[test]
@@ -184,7 +184,6 @@ mod type_tests {
         assert!(ValueTy::Compo.check_func_retv_type().is_ok());
         assert!(ValueTy::Tuple.check_func_retv_type().is_ok());
         assert!(ValueTy::Nil.check_func_argv_type().is_err());
-        assert!(ValueTy::HeapSlice.check_func_argv_type().is_err());
         assert!(ValueTy::Tuple.check_func_argv_type().is_err());
         assert!(ValueTy::Handle.check_func_argv_type().is_ok());
         assert!(ValueTy::Handle.check_func_retv_type().is_ok());

@@ -379,6 +379,41 @@ Upper-layer development requirement:
 2. an arbitrary normal business function should not be reused as a `CODECALL` target without an explicit frame-layout contract
 3. any required locals/stack layout must be treated as part of the library interface
 
+### 11.3 Native Calls (`NTFUNC`, `NTENV`, `NTCTL`)
+
+Native calls use **two stack models**. Opcode metadata, the compiler, and hand-written bytecode must follow the model for each opcode family.
+
+#### Env-read model (`NTENV`, `ACTENV`)
+
+Opcode metadata: **`0 → 1`** (no stack operand consumed).
+
+1. Only the opcode byte and native index byte(s) appear in bytecode.
+2. Source calls with zero arguments (e.g. `context_address()`, `block_height()`) compile directly — no `nil` push.
+3. This differs from `NTCTL` / `NTFUNC` even when the source call also has zero arguments.
+
+#### Value-call model (`NTFUNC`, `NTCTL`)
+
+Opcode metadata: **`1 → 1`** (always consumes exactly one argv value from the operand stack).
+
+Compiler convention (same rule as `Invoke` §11.1):
+
+1. single argument: raw value on stack
+2. multiple arguments: packed argv container on stack
+3. zero source arguments: push **`nil`** (`PNIL`) before the native opcode
+
+For **`NTCTL`** natives registered with **`argv_len = 0`** (e.g. `intent_pop()`, `intent_kind()`):
+
+1. Fitsh source remains zero-arg: `intent_pop()`
+2. Bytecode is `PNIL; NTCTL <idx>` (plus terminal)
+3. Runtime validates argv is `nil`; any other value is `IntentError`
+4. Hand-written bytecode **must** include the `nil` placeholder; omitting it causes stack underflow
+
+For **`NTFUNC`**, every current native requires at least one source argument; the same `1 → 1` rule applies.
+
+**Decompilation note**: formatters may omit the default `nil` placeholder when `hide_default_call_argv` is enabled. That is display-only; on-chain bytecode still contains `PNIL`.
+
+**Why metadata differs from native `argv_len`**: `argv_len` describes source-level arity; opcode `input` describes the uniform stack contract for the whole opcode family. Zero-arg `NTCTL` natives bridge the two via the `nil` sentinel, matching the Invoke zero-arg convention in §11.1.
+
 ## 12. Source-Language Manual
 
 Canonical source form for `Invoke` is:
@@ -524,10 +559,10 @@ Function entry/exit uses `check_param_type` / `cast_param` (`vm/src/value/cast.r
 | Layer | Typical use | Allowed coercion |
 |-------|-------------|------------------|
 | Stack explicit cast | `x as u64`, `CBYTES`, `CTO Address` | Sections 4.1–4.4 in `value-cast.md` |
-| Function param / return check | Typed signature at `Invoke` boundary | Identical type; uint-family casts; **`HeapSlice → Bytes` unconditionally at boundary** |
+| Function param / return check | Typed signature at `Invoke` boundary | Identical type; uint-family casts only |
 
 Implications for contract authors:
 
 1. A value that passes `as u64` on the stack may still fail when passed into a typed `u32` param if it does not fit.
 2. `Bytes`, `Bool`, `Address`, and `Nil` cannot cross into a different param type via boundary cast—even when stack `CTO` would succeed.
-3. **`HeapSlice` is always materialized to owned `Bytes` at function entry and return** (with `SpaceCap` length check, no extra gas). Typed signatures then check the materialized value. Details: `vm/doc/heapslice-func-boundary.md`.
+3. Large heap payloads must be read with `heap_read` into `Bytes` before passing to typed params, ACTION, or NTFUNC.

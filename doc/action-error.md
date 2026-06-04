@@ -211,13 +211,13 @@ This checklist is the authoritative reference for recoverable errors.
 
 - **Success:** Return value is falsy (nil, 0, false, empty/all-zero bytes or address).
 - **Recoverable:** Non-falsy scalar or object (Args, Compo) — business error code or JSON detail; all reported via `xerr_rf!`/`XError::revert`.
-- **Unrecoverable:** Return type is `HeapSlice` — not supported; reported via `xerrf!`/`XError::fault`.
+- **Unrecoverable:** Return type is `Handle` — not supported; reported via `xerrf!`/`XError::fault`.
 
 Rule:
 
 - Falsy return => success.
 - Non-falsy or Args/Compo => recoverable return error.
-- HeapSlice => unrecoverable (return type not supported).
+- Handle => unrecoverable (return type not supported).
 
 Mapping location:
 

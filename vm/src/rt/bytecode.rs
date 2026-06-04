@@ -141,7 +141,7 @@ pub enum Bytecode {
     LOG2 = 0x85,
     LOG3 = 0x86,
     LOG4 = 0x87,
-    HSLICE = 0x88,   // start,len+  create heap slice
+    ____________88 = 0x88,  // reserved (removed HSLICE)
     HREADUL = 0x89,  // **+   heap read ul
     HREADU = 0x8a,   // *+    heap read u
     HWRITEXL = 0x8b, // **a   heap write xl (u16 immediate offset)
@@ -426,7 +426,6 @@ bytecode_metadata_define! {
     LOG3       : 0, 4, 0,     log_3
     LOG4       : 0, 5, 0,     log_4
 
-    HSLICE     : 0, 2, 1,     heap_slice
     HREADUL    : 2, 0, 1,     heap_read_uint_long
     HREADU     : 1, 0, 1,     heap_read_uint
     HWRITEXL   : 2, 1, 0,     heap_write_xl

@@ -255,8 +255,8 @@ fn vm_non_numeric_return_is_revert_with_stable_detail() {
         &format!("return error address {}", addr.to_readable()),
     );
     expect_fault_bret(
-        check_vm_return_value(&Value::HeapSlice((0, 2)), "main call"),
-        "return type HeapSlice is not supported",
+        check_vm_return_value(&Value::handle(0u32), "main call"),
+        "return type Handle is not supported",
     );
     expect_revert_bret(
         check_vm_return_value(&Value::Compo(CompoItem::new_list()), "main call"),

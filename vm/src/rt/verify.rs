@@ -16,16 +16,34 @@ pub fn convert_and_check(cap: &SpaceCap, gst: &GasExtra, ctype: CodeType, codes:
         return itr_err_code!(CodeTooLong)
     }
     // verify inst
-    verify_bytecodes_with_limits(bytecodes, cap.value_size)
+    verify_bytecodes_with_limits(bytecodes, cap.value_size, VerifyEntryStack::OptionalArgv)
 }
 
 
 pub fn verify_bytecodes(codes: &[u8]) -> VmrtRes<Vec<u8>> {
     const VERIFY_MAX_PUSH_BUF_LEN: usize = 1280;
-    verify_bytecodes_with_limits(codes, VERIFY_MAX_PUSH_BUF_LEN)
+    verify_bytecodes_with_limits(codes, VERIFY_MAX_PUSH_BUF_LEN, VerifyEntryStack::OptionalArgv)
 }
 
-fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRes<Vec<u8>> {
+/// Initial operand-stack shape assumed by bytecode stack verification.
+///
+/// Existing runtime entries may execute with no argv value, or with one argv
+/// value already pushed onto the operand stack. Keep the default verifier
+/// compatible with both, and let stricter callers opt into the exact shape they
+/// know they will use.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum VerifyEntryStack {
+    Empty,
+    Argv,
+    OptionalArgv,
+}
+
+pub fn verify_bytecodes_with_entry_stack(codes: &[u8], entry_stack: VerifyEntryStack) -> VmrtRes<Vec<u8>> {
+    const VERIFY_MAX_PUSH_BUF_LEN: usize = 1280;
+    verify_bytecodes_with_limits(codes, VERIFY_MAX_PUSH_BUF_LEN, entry_stack)
+}
+
+fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize, entry_stack: VerifyEntryStack) -> VmrtRes<Vec<u8>> {
     // check empty
     let cl = codes.len();
     if cl <= 0 {
@@ -38,7 +56,12 @@ fn verify_bytecodes_with_limits(codes: &[u8], max_push_buf_len: usize) -> VmrtRe
     let (instable, jumpdests) = verify_valid_instruction(codes, max_push_buf_len)?;
     // check jump dests
     verify_jump_dests(&instable, &jumpdests)?;
-    verify_simple_stack_prefix(codes)?;
+    // Stack verification is intentionally layered. The linear verifier catches
+    // definite underflow in straight-line bytecode, then stops at control-flow,
+    // calls, and stack effects whose arity cannot be known without value
+    // interpretation. Runtime Stack::pop remains the final guard.
+    verify_linear_stack_effects(codes, entry_stack)?;
+    verify_literal_fin_stack_prefix(codes)?;
     // ok finish
     Ok(instable)
 }
@@ -189,14 +212,197 @@ fn verify_jump_dests(instable: &[u8], jumpdests: &[isize]) -> VmrtErr {
     Ok(())
 }
 
-/// Lightweight FIN stack sanity check.
+#[derive(Debug, Copy, Clone)]
+struct LinearStackState {
+    min_depth: i32,
+    max_depth: i32,
+    top_const_u16: Option<u16>,
+}
+
+impl LinearStackState {
+    fn new(entry_stack: VerifyEntryStack) -> Self {
+        let (min_depth, max_depth) = match entry_stack {
+            VerifyEntryStack::Empty => (0, 0),
+            VerifyEntryStack::Argv => (1, 1),
+            VerifyEntryStack::OptionalArgv => (0, 1),
+        };
+        Self { min_depth, max_depth, top_const_u16: None }
+    }
+
+    fn push_unknown(&mut self) {
+        self.min_depth += 1;
+        self.max_depth += 1;
+        self.top_const_u16 = None;
+    }
+
+    fn push_const(&mut self, value: u16) {
+        self.min_depth += 1;
+        self.max_depth += 1;
+        self.top_const_u16 = Some(value);
+    }
+
+    fn apply_effect(&mut self, inst: Bytecode, input: i32, output: i32) -> VmrtErr {
+        if self.max_depth < input {
+            return stack_underflow_err(inst, input, self.max_depth);
+        }
+        let surviving_min = if self.min_depth < input { input } else { self.min_depth };
+        self.min_depth = surviving_min - input + output;
+        self.max_depth = self.max_depth - input + output;
+        self.top_const_u16 = None;
+        Ok(())
+    }
+}
+
+fn stack_underflow_err(inst: Bytecode, input: i32, available: i32) -> VmrtErr {
+    itr_err_fmt!(
+        StackError,
+        "bytecode {:?} requires {} stack values but only {} available",
+        inst,
+        input,
+        available
+    )
+}
+
+fn read_u8_param(codes: &[u8], pc: usize) -> VmrtRes<u8> {
+    let Some(v) = codes.get(pc + 1).copied() else {
+        return itr_err_code!(InstParamsErr);
+    };
+    Ok(v)
+}
+
+fn instruction_end(codes: &[u8], pc: usize, inst: Bytecode) -> VmrtRes<usize> {
+    let meta = inst.metadata();
+    let pend = match inst {
+        PBUF => {
+            let len = read_u8_param(codes, pc)? as usize;
+            pc + 2 + len
+        }
+        PBUFL => {
+            let start = pc + 1;
+            let end = start + 2;
+            if end > codes.len() {
+                return itr_err_code!(InstParamsErr);
+            }
+            let len = u16::from_be_bytes(codes[start..end].try_into().unwrap()) as usize;
+            end + len
+        }
+        _ => pc + 1 + meta.param as usize,
+    };
+    if pend > codes.len() {
+        return itr_err_code!(InstParamsErr);
+    }
+    Ok(pend)
+}
+
+fn is_external_stack_boundary(inst: Bytecode) -> bool {
+    matches!(
+        inst,
+        ACTION | ACTENV | ACTVIEW | NTENV | NTCTL | NTFUNC |
+        CODECALL | CALL | CALLEXT | CALLEXTVIEW | CALLUSEVIEW | CALLUSEPURE |
+        CALLTHIS | CALLSELF | CALLSUPER | CALLSELFVIEW | CALLSELFPURE
+    )
+}
+
+/// Conservative straight-line stack-depth verifier.
+///
+/// This catches definite underflow before the first control-flow/call boundary.
+/// For dynamic arity that comes from the stack, it only simulates precisely when
+/// the arity is a small literal already visible on the stack. Otherwise it stops
+/// rather than guessing and risking false positives.
+fn verify_linear_stack_effects(codes: &[u8], entry_stack: VerifyEntryStack) -> VmrtErr {
+    let mut state = LinearStackState::new(entry_stack);
+    let mut pc = 0usize;
+
+    while pc < codes.len() {
+        let inst: Bytecode = std_mem_transmute!(codes[pc]);
+        let meta = inst.metadata();
+        let next = instruction_end(codes, pc, inst)?;
+
+        match inst {
+            P0 => state.push_const(0),
+            P1 => state.push_const(1),
+            P2 => state.push_const(2),
+            P3 => state.push_const(3),
+            PU8 => state.push_const(read_u8_param(codes, pc)? as u16),
+            PU16 => {
+                let start = pc + 1;
+                let end = start + 2;
+                if end > codes.len() {
+                    return itr_err_code!(InstParamsErr);
+                }
+                state.push_const(u16::from_be_bytes(codes[start..end].try_into().unwrap()));
+            }
+            PBUF | PBUFL | PNIL | PNBUF | PTRUE | PFALSE | NEWLIST | NEWMAP | GET | GET0 | GET1 | GET2 | GET3 | HREADUL | HREADU => {
+                state.push_unknown();
+            }
+            DUP => {
+                let top = state.top_const_u16;
+                state.apply_effect(inst, 1, 2)?;
+                state.top_const_u16 = top;
+            }
+            DUPN => {
+                let n = read_u8_param(codes, pc)? as i32;
+                if n < 2 {
+                    return itr_err_fmt!(StackError, "inst dupn param must be at least 2");
+                }
+                let top = state.top_const_u16;
+                state.apply_effect(inst, n, n * 2)?;
+                state.top_const_u16 = top;
+            }
+            POP => state.apply_effect(inst, 1, 0)?,
+            POPN => state.apply_effect(inst, read_u8_param(codes, pc)? as i32, 0)?,
+            ROLL0 => state.apply_effect(inst, 1, 1)?,
+            ROLL => state.apply_effect(inst, read_u8_param(codes, pc)? as i32 + 1, read_u8_param(codes, pc)? as i32 + 1)?,
+            REV => {
+                let n = read_u8_param(codes, pc)? as i32;
+                if n < 2 {
+                    return itr_err_fmt!(StackError, "inst reverse param must be at least 2");
+                }
+                state.apply_effect(inst, n, n)?;
+            }
+            JOIN => {
+                let n = read_u8_param(codes, pc)? as i32;
+                if n < 3 {
+                    return itr_err_fmt!(StackError, "inst join param must be at least 3");
+                }
+                state.apply_effect(inst, n, 1)?;
+            }
+            PACKLIST | PACKMAP | PACKTUPLE => {
+                let Some(arity) = state.top_const_u16 else {
+                    state.apply_effect(inst, 1, 1)?;
+                    return Ok(());
+                };
+                state.apply_effect(inst, arity as i32 + 1, 1)?;
+            }
+            _ if is_external_stack_boundary(inst) || matches!(inst, JMPL | JMPS | JMPSL) => {
+                return Ok(());
+            }
+            BRL | BRS | BRSL | BRSLN => {
+                state.apply_effect(inst, 1, 0)?;
+                return Ok(());
+            }
+            _ => {
+                if meta.input == 255 || meta.output == 255 {
+                    return Ok(());
+                }
+                state.apply_effect(inst, meta.input as i32, meta.output as i32)?;
+            }
+        }
+
+        pc = next;
+    }
+
+    Ok(())
+}
+
+/// Lightweight literal FIN stack sanity check.
 ///
 /// Runtime frames may legitimately start with an argv value on the operand
 /// stack, and bytecode can use branches, packed containers, calls, locals, and
 /// other dynamic-stack operations. A general verifier here would either become
 /// a real abstract interpreter or reject valid contracts. Keep this deliberately
 /// narrow: only catch the most obvious FIN underflow in a literal-only prefix.
-fn verify_simple_stack_prefix(codes: &[u8]) -> VmrtErr {
+fn verify_literal_fin_stack_prefix(codes: &[u8]) -> VmrtErr {
     const ENTRY_STACK_ALLOWANCE: i32 = 1;
     let mut depth: i32 = ENTRY_STACK_ALLOWANCE;
     let mut i = 0usize;
@@ -287,7 +493,6 @@ mod verify_type_param_tests {
             ValueTy::U128,
             ValueTy::Bytes,
             ValueTy::Address,
-            ValueTy::HeapSlice,
             ValueTy::Tuple,
             ValueTy::Handle,
             ValueTy::Compo,
@@ -318,7 +523,7 @@ mod verify_type_param_tests {
 
     #[test]
     fn verify_rejects_cto_targets_outside_cast_set() {
-        for ty in [ValueTy::Nil, ValueTy::HeapSlice, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
+        for ty in [ValueTy::Nil, ValueTy::Tuple, ValueTy::Handle, ValueTy::Compo] {
             let cto_codes = vec![Bytecode::P0 as u8, Bytecode::CTO as u8, ty as u8, Bytecode::END as u8];
             let res = verify_bytecodes(&cto_codes);
             assert!(matches!(res, Err(ItrErr(ItrErrCode::InstParamsErr, _))));
@@ -415,5 +620,86 @@ mod fin_verify_tests {
         ];
         let err = verify_bytecodes(&codes).unwrap_err();
         assert_eq!(err.0, ItrErrCode::InstParamsErr);
+    }
+}
+
+#[cfg(test)]
+mod linear_stack_verify_tests {
+    use super::*;
+
+    fn assert_stack_error(res: VmrtRes<Vec<u8>>) {
+        let err = res.unwrap_err();
+        assert_eq!(err.0, ItrErrCode::StackError);
+    }
+
+    #[test]
+    fn default_verify_keeps_optional_argv_compatibility() {
+        let codes = vec![Bytecode::P1 as u8, Bytecode::ADD as u8, Bytecode::END as u8];
+        assert!(verify_bytecodes(&codes).is_ok());
+    }
+
+    #[test]
+    fn empty_entry_rejects_arithmetic_underflow() {
+        let codes = vec![Bytecode::P1 as u8, Bytecode::ADD as u8, Bytecode::END as u8];
+        assert_stack_error(verify_bytecodes_with_entry_stack(&codes, VerifyEntryStack::Empty));
+    }
+
+    #[test]
+    fn default_verify_rejects_definite_arithmetic_underflow() {
+        let codes = vec![Bytecode::P1 as u8, Bytecode::ADDMOD as u8, Bytecode::END as u8];
+        assert_stack_error(verify_bytecodes(&codes));
+    }
+
+    #[test]
+    fn empty_entry_rejects_kv_insert_underflow() {
+        let codes = vec![Bytecode::P0 as u8, Bytecode::P0 as u8, Bytecode::INSERT as u8, Bytecode::END as u8];
+        assert_stack_error(verify_bytecodes_with_entry_stack(&codes, VerifyEntryStack::Empty));
+    }
+
+    #[test]
+    fn default_verify_rejects_definite_kv_insert_underflow() {
+        let codes = vec![Bytecode::P0 as u8, Bytecode::INSERT as u8, Bytecode::END as u8];
+        assert_stack_error(verify_bytecodes(&codes));
+    }
+
+    #[test]
+    fn default_verify_rejects_immediate_stack_ops_underflow() {
+        for codes in [
+            vec![Bytecode::POPN as u8, 2, Bytecode::END as u8],
+            vec![Bytecode::DUPN as u8, 2, Bytecode::END as u8],
+            vec![Bytecode::REV as u8, 2, Bytecode::END as u8],
+            vec![Bytecode::JOIN as u8, 3, Bytecode::END as u8],
+        ] {
+            assert_stack_error(verify_bytecodes(&codes));
+        }
+    }
+
+    #[test]
+    fn empty_entry_rejects_dup_and_roll_underflow() {
+        for codes in [
+            vec![Bytecode::DUP as u8, Bytecode::END as u8],
+            vec![Bytecode::ROLL0 as u8, Bytecode::END as u8],
+            vec![Bytecode::ROLL as u8, 1, Bytecode::END as u8],
+        ] {
+            assert_stack_error(verify_bytecodes_with_entry_stack(&codes, VerifyEntryStack::Empty));
+        }
+    }
+
+    #[test]
+    fn default_verify_rejects_known_pack_arity_underflow() {
+        let codes = vec![Bytecode::P2 as u8, Bytecode::PACKLIST as u8, Bytecode::END as u8];
+        assert_stack_error(verify_bytecodes(&codes));
+    }
+
+    #[test]
+    fn unknown_pack_arity_stops_without_guessing() {
+        let codes = vec![Bytecode::GET0 as u8, Bytecode::PACKLIST as u8, Bytecode::END as u8];
+        assert!(verify_bytecodes_with_entry_stack(&codes, VerifyEntryStack::Empty).is_ok());
+    }
+
+    #[test]
+    fn empty_entry_rejects_branch_condition_underflow() {
+        let codes = vec![Bytecode::BRL as u8, 0, 3, Bytecode::END as u8];
+        assert_stack_error(verify_bytecodes_with_entry_stack(&codes, VerifyEntryStack::Empty));
     }
 }
