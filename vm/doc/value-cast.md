@@ -200,7 +200,7 @@ Rules:
 - Allowed uint casts: `U8/U16/U32/U64/U128` ↔ same family with fit check
 - All other source/target combinations: `CallArgvTypeFail`
 
-Note: `check_param_type(v, ty, heap, cap)` is the non-mutating wrapper. See `vm/doc/call-standard.md` §16.
+Note: `check_param_type(v, ty)` is the non-mutating wrapper. See `vm/doc/call-standard.md` §16.
 
 Heap payload for callees or host calls: materialize with `heap_read` (or keep data as `Bytes`) before crossing a function or `extract_call_data` boundary.
 

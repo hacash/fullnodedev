@@ -141,7 +141,7 @@ impl Frame {
         v.check_boundary_value_cap(cap)?;
         v.check_container_cap(cap)?;
         match &self.types {
-            Some(ty) => ty.check_output(v, &self.heap, cap),
+            Some(ty) => ty.check_output(v),
             None => Ok(()),
         }
     }
@@ -167,7 +167,7 @@ impl Frame {
         self.ir_format_fee_pending = 0;
         if have_param {
             if let Some(vtys) = &fnobj.agvty {
-                vtys.check_params(&mut argv, &self.heap, cap)?;
+                vtys.check_params(&mut argv)?;
             }
             argv.check_boundary_value_cap(cap)?;
             argv.check_container_cap(cap)?;

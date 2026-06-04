@@ -75,22 +75,22 @@ impl FuncArgvTypes {
         bit4r!(self.typnum.uint()) as usize
     }
 
-    pub fn check_output(&self, v: &mut Value, heap: &Heap, cap: &SpaceCap) -> VmrtErr {
+    pub fn check_output(&self, v: &mut Value) -> VmrtErr {
         let Some(oty) = self.output_type().map_ire(CallArgvTypeFail)? else {
             return Ok(());
         };
-        if let Err(e) = v.cast_param(oty, heap, cap) {
+        if let Err(e) = v.cast_param(oty) {
             return itr_err_fmt!(CallArgvTypeFail, "check output failed: {:?}", e);
         }
         Ok(())
     }
 
-    pub fn check_params(&self, v: &mut Value, heap: &Heap, cap: &SpaceCap) -> VmrtErr {
+    pub fn check_params(&self, v: &mut Value) -> VmrtErr {
         let ec = CallArgvTypeFail;
         let types = self.param_types().map_ire(ec)?;
         match types.as_slice() {
             [] => Ok(()),
-            [ty] => v.cast_param(*ty, heap, cap),
+            [ty] => v.cast_param(*ty),
             tys => {
                 // Typed multi-parameter ABI accepts only Tuple packing; plain Compo values,
                 // including List, stay ordinary single values unless user code unpacks them.
@@ -107,7 +107,7 @@ impl FuncArgvTypes {
                     );
                 }
                 for (item, ty) in items.iter_mut().zip(tys.iter().copied()) {
-                    item.cast_param(ty, heap, cap)?;
+                    item.cast_param(ty)?;
                 }
 
                 *v = Value::Tuple(
@@ -232,10 +232,6 @@ mod code_stuff_tests {
     use super::*;
     use std::collections::VecDeque;
 
-    fn boundary_env() -> (Heap, SpaceCap) {
-        (Heap::new(64), SpaceCap::new(1))
-    }
-
     #[test]
     fn code_stuff_to_pkg_rejects_invalid_conf() {
         let mut code_stuff = CodeStuff::new();
@@ -294,21 +290,19 @@ mod code_stuff_tests {
 
     #[test]
     fn check_params_single_normalizes_uints_in_place() {
-        let (heap, cap) = boundary_env();
         let tys = FuncArgvTypes::from_types(None, vec![ValueTy::U16]).unwrap();
         let mut argv = Value::U8(7);
-        tys.check_params(&mut argv, &heap, &cap).unwrap();
+        tys.check_params(&mut argv).unwrap();
         assert_eq!(argv, Value::U16(7));
     }
 
     #[test]
     fn check_params_single_rejects_cross_family_implicit_casts() {
-        let (heap, cap) = boundary_env();
         let addr = field::Address::create_contract([1u8; 20]);
         let mut argv = Value::Bytes(addr.serialize());
         let err = FuncArgvTypes::from_types(None, vec![ValueTy::Address])
             .unwrap()
-            .check_params(&mut argv, &heap, &cap)
+            .check_params(&mut argv)
             .unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
         assert_eq!(argv, Value::Bytes(addr.serialize()));
@@ -316,7 +310,7 @@ mod code_stuff_tests {
         let mut flag = Value::U8(1);
         let err = FuncArgvTypes::from_types(None, vec![ValueTy::Bool])
             .unwrap()
-            .check_params(&mut flag, &heap, &cap)
+            .check_params(&mut flag)
             .unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
         assert_eq!(flag, Value::U8(1));
@@ -324,7 +318,6 @@ mod code_stuff_tests {
 
     #[test]
     fn check_params_multi_compo_list_is_rejected_without_mutation() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U8]).unwrap();
         let shared = CompoItem::list(VecDeque::from([Value::U16(1), Value::U16(256)])).unwrap();
         let mut argv = Value::Compo(shared.clone());
@@ -342,7 +335,7 @@ mod code_stuff_tests {
         assert_eq!(snapshot(&argv), vec![Value::U16(1), Value::U16(256)]);
         assert_eq!(snapshot(&alias), vec![Value::U16(1), Value::U16(256)]);
 
-        let err = types.check_params(&mut argv, &heap, &cap).unwrap_err();
+        let err = types.check_params(&mut argv).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
 
         assert_eq!(snapshot(&argv), vec![Value::U16(1), Value::U16(256)]);
@@ -351,29 +344,26 @@ mod code_stuff_tests {
 
     #[test]
     fn check_params_multi_non_tuple_input_uses_call_argv_type_fail() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U16]).unwrap();
         let mut argv = Value::U8(1);
-        let err = types.check_params(&mut argv, &heap, &cap).unwrap_err();
+        let err = types.check_params(&mut argv).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 
     #[test]
     fn check_params_multi_map_input_uses_call_argv_type_fail() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U8, ValueTy::U16]).unwrap();
         let mut argv = Value::Compo(CompoItem::new_map());
-        let err = types.check_params(&mut argv, &heap, &cap).unwrap_err();
+        let err = types.check_params(&mut argv).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 
     #[test]
     fn check_params_multi_args_input_supports_tuple_only() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U16, ValueTy::U64]).unwrap();
 
         let mut args = Value::Tuple(TupleItem::new(vec![Value::U8(1), Value::U16(2)]).unwrap());
-        types.check_params(&mut args, &heap, &cap).unwrap();
+        types.check_params(&mut args).unwrap();
         assert_eq!(
             args,
             Value::Tuple(TupleItem::new(vec![Value::U16(1), Value::U64(2)]).unwrap())
@@ -382,43 +372,38 @@ mod code_stuff_tests {
 
     #[test]
     fn check_params_multi_args_rejects_compo_list_input() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::U16, ValueTy::U64]).unwrap();
         let mut list =
             Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1), Value::U16(2)])).unwrap());
-        let err = types.check_params(&mut list, &heap, &cap).unwrap_err();
+        let err = types.check_params(&mut list).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 
     #[test]
     fn check_params_single_compo_input_supported() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo]).unwrap();
         let mut argv = Value::Compo(CompoItem::new_map());
-        types.check_params(&mut argv, &heap, &cap).unwrap();
+        types.check_params(&mut argv).unwrap();
     }
 
     #[test]
     fn check_params_single_compo_list_input_supported() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo]).unwrap();
         let mut argv = Value::Compo(CompoItem::list(VecDeque::from([Value::U8(1)])).unwrap());
-        types.check_params(&mut argv, &heap, &cap).unwrap();
+        types.check_params(&mut argv).unwrap();
     }
 
     #[test]
     fn check_params_multi_args_input_supports_compo_items() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo, ValueTy::U8]).unwrap();
         let mut args = Value::Tuple(
             TupleItem::new(vec![Value::Compo(CompoItem::new_map()), Value::U8(7)]).unwrap(),
         );
-        types.check_params(&mut args, &heap, &cap).unwrap();
+        types.check_params(&mut args).unwrap();
     }
 
     #[test]
     fn check_params_multi_args_supports_compo_list_as_ordinary_item() {
-        let (heap, cap) = boundary_env();
         let types = FuncArgvTypes::from_types(None, vec![ValueTy::Compo, ValueTy::U8]).unwrap();
         let mut args = Value::Tuple(
             TupleItem::new(vec![
@@ -427,55 +412,50 @@ mod code_stuff_tests {
             ])
             .unwrap(),
         );
-        types.check_params(&mut args, &heap, &cap).unwrap();
+        types.check_params(&mut args).unwrap();
     }
 
     #[test]
     fn check_output_normalizes_uints() {
-        let (heap, cap) = boundary_env();
         let tys = FuncArgvTypes::from_types(Some(ValueTy::U64), vec![]).unwrap();
         let mut out = Value::U16(7);
-        tys.check_output(&mut out, &heap, &cap).unwrap();
+        tys.check_output(&mut out).unwrap();
         assert_eq!(out, Value::U64(7));
     }
 
     #[test]
     fn check_output_rejects_cross_family_casts() {
-        let (heap, cap) = boundary_env();
         let tys = FuncArgvTypes::from_types(Some(ValueTy::Bool), vec![]).unwrap();
         let mut out = Value::U16(7);
-        let err = tys.check_output(&mut out, &heap, &cap).unwrap_err();
+        let err = tys.check_output(&mut out).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
         assert_eq!(out, Value::U16(7));
     }
 
     #[test]
     fn check_output_uses_call_argv_type_fail_for_unreachable_target() {
-        let (heap, cap) = boundary_env();
         let tys = FuncArgvTypes::from_types(Some(ValueTy::Compo), vec![]).unwrap();
         let mut out = Value::U8(1);
-        let err = tys.check_output(&mut out, &heap, &cap).unwrap_err();
+        let err = tys.check_output(&mut out).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 
     #[test]
     fn args_output_type_roundtrips_and_checks_exact_match() {
-        let (heap, cap) = boundary_env();
         let tys = FuncArgvTypes::from_types(Some(ValueTy::Tuple), vec![]).unwrap();
         assert_eq!(tys.output_type().unwrap(), Some(ValueTy::Tuple));
 
         let mut out = Value::Tuple(
             TupleItem::new(vec![Value::U8(1), Value::Compo(CompoItem::new_map())]).unwrap(),
         );
-        tys.check_output(&mut out, &heap, &cap).unwrap();
+        tys.check_output(&mut out).unwrap();
     }
 
     #[test]
     fn args_output_rejects_non_args_value() {
-        let (heap, cap) = boundary_env();
         let tys = FuncArgvTypes::from_types(Some(ValueTy::Tuple), vec![]).unwrap();
         let mut out = Value::U8(1);
-        let err = tys.check_output(&mut out, &heap, &cap).unwrap_err();
+        let err = tys.check_output(&mut out).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 }

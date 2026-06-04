@@ -183,8 +183,9 @@ fn scan_jump_dests(codes: &[u8]) -> Vec<usize> {
         let meta = inst.metadata();
         i += 1;
         match inst {
-            PBUF  => i += (pu8!() +1) as usize,
-            PBUFL => i += (pu16!()+2) as usize,
+            // Payload only; length prefix is covered by meta.param (same as verify.rs).
+            PBUF  => i += pu8!() as usize,
+            PBUFL => i += pu16!() as usize,
             JMPL  | BRL  => adddest!(pu16!()),
             JMPS  | BRS  => adddest!(i as isize + pi8!() as isize + 1),
             JMPSL | BRSL | BRSLN => adddest!(i as isize + pi16!() as isize + 2),
@@ -199,6 +200,65 @@ fn scan_jump_dests(codes: &[u8]) -> Vec<usize> {
 #[cfg(test)]
 mod parse_tests {
     use super::*;
+
+    #[test]
+    fn scan_jump_dests_skips_pbuf_payload_before_relative_jump() {
+        let codes = vec![
+            Bytecode::PU8 as u8,
+            1,
+            Bytecode::PBUF as u8,
+            4,
+            0,
+            0,
+            0,
+            0,
+            Bytecode::JMPS as u8,
+            0,
+            Bytecode::P1 as u8,
+            Bytecode::END as u8,
+        ];
+        // JMPS at 8: param at 9, dest = 9 + 0 + 1 = 10 (END)
+        assert_eq!(scan_jump_dests(&codes), vec![10usize]);
+    }
+
+    #[test]
+    fn scan_jump_dests_skips_pbufl_payload_before_absolute_jump() {
+        let codes = vec![
+            Bytecode::PBUFL as u8,
+            0,
+            2,
+            0xAA,
+            0xBB,
+            Bytecode::JMPL as u8,
+            0,
+            10,
+            Bytecode::P0 as u8,
+            Bytecode::P1 as u8,
+            Bytecode::END as u8,
+        ];
+        assert_eq!(scan_jump_dests(&codes), vec![10usize]);
+    }
+
+    #[test]
+    fn bytecode_print_desc_marks_jump_after_pbuf() {
+        let codes = vec![
+            Bytecode::PBUF as u8,
+            2,
+            0xAA,
+            0xBB,
+            Bytecode::JMPL as u8,
+            0,
+            7,
+            Bytecode::END as u8,
+        ];
+        let printed = codes.bytecode_print(true).unwrap();
+        assert!(
+            printed.contains("block: [7]"),
+            "unexpected print:\n{}",
+            printed
+        );
+        assert!(printed.contains("#7:"), "unexpected print:\n{}", printed);
+    }
 
     #[test]
     fn scan_jump_dests_long_jump_uses_absolute_target() {

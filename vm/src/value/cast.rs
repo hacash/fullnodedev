@@ -270,7 +270,7 @@ impl Value {
         }
     }
 
-    pub fn cast_param(&mut self, ty: ValueTy, _heap: &Heap, _cap: &SpaceCap) -> VmrtErr {
+    pub fn cast_param(&mut self, ty: ValueTy) -> VmrtErr {
         let actual = self.ty();
         if ty == actual {
             return Ok(());
@@ -283,9 +283,9 @@ impl Value {
         Err(Self::fn_boundary_type_fail(ty, actual))
     }
 
-    pub fn check_param_type(&self, ty: ValueTy, heap: &Heap, cap: &SpaceCap) -> VmrtErr {
+    pub fn check_param_type(&self, ty: ValueTy) -> VmrtErr {
         let mut tmp = self.clone();
-        tmp.cast_param(ty, heap, cap)
+        tmp.cast_param(ty)
     }
 }
 
@@ -293,31 +293,24 @@ impl Value {
 mod cast_tests {
     use super::*;
 
-    fn boundary_env() -> (Heap, SpaceCap) {
-        (Heap::new(64), SpaceCap::new(1))
-    }
-
     #[test]
     fn cast_param_allows_narrowing_uint() {
-        let (heap, cap) = boundary_env();
         let mut v = Value::U32(1);
-        v.cast_param(ValueTy::U16, &heap, &cap).unwrap();
+        v.cast_param(ValueTy::U16).unwrap();
         assert_eq!(v, Value::U16(1));
     }
 
     #[test]
     fn cast_param_allows_widening_uint() {
-        let (heap, cap) = boundary_env();
         let mut v = Value::U16(7);
-        v.cast_param(ValueTy::U64, &heap, &cap).unwrap();
+        v.cast_param(ValueTy::U64).unwrap();
         assert_eq!(v, Value::U64(7));
     }
 
     #[test]
     fn cast_param_rejects_cross_family_casts() {
-        let (heap, cap) = boundary_env();
         let mut v = Value::U8(0);
-        let err = v.cast_param(ValueTy::Bool, &heap, &cap).unwrap_err();
+        let err = v.cast_param(ValueTy::Bool).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
         assert_eq!(v, Value::U8(0));
     }
@@ -331,27 +324,21 @@ mod cast_tests {
 
     #[test]
     fn cast_param_invalid_target_uses_call_argv_type_fail() {
-        let (heap, cap) = boundary_env();
         let mut v = Value::U8(1);
-        let err = v.cast_param(ValueTy::Compo, &heap, &cap).unwrap_err();
+        let err = v.cast_param(ValueTy::Compo).unwrap_err();
         assert_eq!(err.0, ItrErrCode::CallArgvTypeFail);
     }
 
     #[test]
     fn check_param_type_uses_uint_boundary_rules() {
-        let (heap, cap) = boundary_env();
         let ok = Value::U32(1);
-        assert!(ok.check_param_type(ValueTy::U16, &heap, &cap).is_ok());
+        assert!(ok.check_param_type(ValueTy::U16).is_ok());
 
         let overflow = Value::U32(70000);
-        assert!(overflow
-            .check_param_type(ValueTy::U16, &heap, &cap)
-            .is_err());
+        assert!(overflow.check_param_type(ValueTy::U16).is_err());
 
         let bytes = Value::Bytes(vec![1]);
-        assert!(bytes
-            .check_param_type(ValueTy::U8, &heap, &cap)
-            .is_err());
+        assert!(bytes.check_param_type(ValueTy::U8).is_err());
     }
 
     #[test]

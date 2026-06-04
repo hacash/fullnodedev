@@ -372,6 +372,9 @@ fn verify_linear_stack_effects(codes: &[u8], entry_stack: VerifyEntryStack) -> V
                     state.apply_effect(inst, 1, 1)?;
                     return Ok(());
                 };
+                if arity == 0 {
+                    return itr_err_code!(CompoPackError);
+                }
                 state.apply_effect(inst, arity as i32 + 1, 1)?;
             }
             _ if is_external_stack_boundary(inst) || matches!(inst, JMPL | JMPS | JMPSL) => {
@@ -689,6 +692,18 @@ mod linear_stack_verify_tests {
     fn default_verify_rejects_known_pack_arity_underflow() {
         let codes = vec![Bytecode::P2 as u8, Bytecode::PACKLIST as u8, Bytecode::END as u8];
         assert_stack_error(verify_bytecodes(&codes));
+    }
+
+    #[test]
+    fn default_verify_rejects_zero_pack_arity_when_literal_visible() {
+        for codes in [
+            vec![Bytecode::P0 as u8, Bytecode::PACKLIST as u8, Bytecode::END as u8],
+            vec![Bytecode::P0 as u8, Bytecode::PACKMAP as u8, Bytecode::END as u8],
+            vec![Bytecode::P0 as u8, Bytecode::PACKTUPLE as u8, Bytecode::END as u8],
+        ] {
+            let err = verify_bytecodes(&codes).unwrap_err();
+            assert_eq!(err.0, ItrErrCode::CompoPackError);
+        }
     }
 
     #[test]
