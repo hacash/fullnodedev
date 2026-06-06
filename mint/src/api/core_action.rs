@@ -40,3 +40,10 @@ fn action_to_json_desc(
     }
     obj
 }
+
+fn reject_api_tx_non_canonical_dia_insc_push_wire(tx: &dyn TransactionRead) -> Option<ApiResponse> {
+    if let Err(e) = action::reject_tx_dia_insc_push_non_canonical_protocol_cost_wire(tx) {
+        return Some(api_error(&e));
+    }
+    None
+}

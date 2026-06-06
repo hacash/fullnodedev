@@ -13,6 +13,9 @@ fn transaction_sign(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok((mut tx, _)) = protocol::transaction::transaction_create(&txdts) else {
         return api_error("transaction body invalid");
     };
+    if let Some(resp) = reject_api_tx_non_canonical_dia_insc_push_wire(tx.as_read()) {
+        return resp;
+    }
 
     let (address, signobj) = if prikey.len() == 64 {
         let Ok(prik) = hex::decode(&prikey) else {
@@ -219,6 +222,15 @@ fn transaction_build_inner(req: &ApiRequest) -> ApiResponse {
         }
     }
 
+    if reject_api_tx_non_canonical_dia_insc_push_wire(tx.as_read()).is_some() {
+        return create_transaction_error_response(
+            "create_transaction_non_canonical_protocol_cost",
+            "DiaInscPush protocol_cost must use canonical amount encoding",
+            "validate_protocol_cost_wire",
+            vec![],
+        );
+    }
+
     api_data(render_tx_info(
         tx.as_read(),
         None,
@@ -303,6 +315,9 @@ fn transaction_check(_ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok((mut tx, _)) = protocol::transaction::transaction_create(&txdts) else {
         return api_error("transaction body invalid");
     };
+    if let Some(resp) = reject_api_tx_non_canonical_dia_insc_push_wire(tx.as_read()) {
+        return resp;
+    }
 
     if !set_fee.is_empty() {
         let Ok(fee) = Amount::from(&set_fee) else {

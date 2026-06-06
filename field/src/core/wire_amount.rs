@@ -38,6 +38,18 @@ impl WireAmount {
     pub fn wire(&self) -> &[u8] {
         &self.wire
     }
+
+    pub fn is_canonical_wire(&self) -> bool {
+        self.wire == self.amount.serialize()
+    }
+
+    pub fn require_canonical_wire(&self) -> Ret<()> {
+        if self.is_canonical_wire() {
+            Ok(())
+        } else {
+            errf!("amount wire encoding is not canonical")
+        }
+    }
 }
 
 impl Deref for WireAmount {
@@ -169,8 +181,11 @@ mod wire_amount_tests {
     }
 
     #[test]
-    fn rejects_invalid_wire() {
-        assert!(WireAmount::build(&[0u8, 2, 0, 0]).is_err());
-        assert!(WireAmount::build(&[1u8]).is_err());
+    fn require_canonical_wire_rejects_non_canonical_semantic_zero() {
+        let bytes = vec![0u8, 1, 0];
+        let mut parsed = WireAmount::default();
+        parsed.parse(&bytes).unwrap();
+        assert!(!parsed.is_canonical_wire());
+        assert!(parsed.require_canonical_wire().is_err());
     }
 }

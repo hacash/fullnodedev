@@ -7,6 +7,9 @@ fn submit_transaction(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok(txpkg) = txpkg else {
         return api_error("transaction parse failed");
     };
+    if let Some(resp) = reject_api_tx_non_canonical_dia_insc_push_wire(txpkg.tx_read()) {
+        return resp;
+    }
 
     if txpkg.fpur() < engcnf.lowest_fee_purity {
         return api_error(&format!(

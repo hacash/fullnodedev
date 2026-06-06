@@ -46,6 +46,7 @@ struct ParserInjectedV2 {
     ext_params: Option<Vec<(String, ValueTy)>>,
     ext_libs: Option<Vec<(String, u8, Option<FieldAddress>)>>,
     ext_consts: Option<Vec<(String, Box<dyn IRNode>)>>,
+    skip_empty_param_prelude: bool,
 }
 
 pub struct Syntax {
@@ -92,8 +93,9 @@ impl Syntax {
         }
     }
 
-    pub fn with_params(mut self, params: Vec<(String, ValueTy)>) -> Self {
+    pub fn with_params(mut self, params: Vec<(String, ValueTy)>, skip_empty_param_prelude: bool) -> Self {
         self.injected.ext_params = Some(params);
+        self.injected.skip_empty_param_prelude = skip_empty_param_prelude;
         self
     }
 
@@ -141,6 +143,9 @@ impl Syntax {
         let Some(params) = self.injected.ext_params.take() else {
             return Ok(());
         };
+        if params.is_empty() && self.injected.skip_empty_param_prelude {
+            return Ok(());
+        }
         let mut names = Vec::with_capacity(params.len());
         for (i, (name, _ty)) in params.iter().enumerate() {
             if i > u8::MAX as usize {

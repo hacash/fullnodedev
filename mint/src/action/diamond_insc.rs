@@ -185,6 +185,24 @@ fn add_diamond_insc_burn_count(state: &mut CoreState, pfee: &Amount) -> Rerr {
     Ok(())
 }
 
+/// Reject non-canonical `protocol_cost` wire on new tx paths (API / mempool).
+/// Historical block replay still uses permissive [`WireAmount`] parse.
+pub fn reject_tx_dia_insc_push_non_canonical_protocol_cost_wire(
+    tx: &dyn TransactionRead,
+) -> Rerr {
+    for act in tx.actions() {
+        if let Some(a) = DiaInscPush::downcast(act) {
+            a.protocol_cost.require_canonical_wire().map_err(|e| {
+                format!(
+                    "DiaInscPush protocol_cost must use canonical amount encoding: {}",
+                    e
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /*
 *
 */

@@ -12,7 +12,6 @@ use rt::*;
 use rt::ItrErrCode::*;
 use value::*;
 use ir::*;
-use crate::space::Heap;
 
 
 

@@ -506,3 +506,52 @@ fn diamond_inscription_rejects_non_privakey_owner() {
     let err = act.execute(&mut ctx).unwrap_err();
     assert!(err.as_str().to_lowercase().contains("privakey"), "{}", err);
 }
+
+#[test]
+fn only_dia_insc_push_accepts_non_canonical_zero_protocol_cost() {
+    let diamond = DiamondName::from_readable(b"WTYUIA").unwrap();
+    let non_canonical_zero = [0u8, 1, 0];
+
+    let mut push = DiaInscPush::new();
+    push.diamonds = DiamondNameListMax200::one(diamond);
+    push.protocol_cost = WireAmount::from(Amount::zero());
+    push.engraved_type = Uint1::from(1);
+    push.engraved_content = BytesW1::from_str("hello").unwrap();
+
+    let mut push_bytes = push.serialize();
+    let push_cost_offset = Uint2::SIZE + push.diamonds.size();
+    push_bytes.splice(
+        push_cost_offset..push_cost_offset + Amount::zero().size(),
+        non_canonical_zero,
+    );
+
+    let parsed_push = DiaInscPush::build(&push_bytes).unwrap();
+    assert!(parsed_push.protocol_cost.amount().is_zero());
+    assert_eq!(parsed_push.protocol_cost.wire(), non_canonical_zero);
+    assert_eq!(parsed_push.serialize(), push_bytes);
+
+    let main_acc = Account::create_by("api-policy-push-wire").unwrap();
+    let main = addr_of(&main_acc);
+    let mut tx = TransactionType2::new_by(main, Amount::mei(1), 1);
+    tx.push_action(Box::new(parsed_push)).unwrap();
+    let err = reject_tx_dia_insc_push_non_canonical_protocol_cost_wire(tx.as_read()).unwrap_err();
+    assert!(err.contains("canonical"), "{}", err);
+
+    let mut clean = DiaInscClean::new();
+    clean.diamonds = DiamondNameListMax200::one(diamond);
+    clean.protocol_cost = Amount::zero();
+
+    let mut clean_bytes = clean.serialize();
+    let clean_cost_offset = Uint2::SIZE + clean.diamonds.size();
+    clean_bytes.splice(
+        clean_cost_offset..clean_cost_offset + Amount::zero().size(),
+        non_canonical_zero,
+    );
+
+    let err = DiaInscClean::build(&clean_bytes).unwrap_err();
+    assert!(
+        err.contains("semantic zero is not canonical"),
+        "unexpected error: {}",
+        err
+    );
+}

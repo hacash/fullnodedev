@@ -67,6 +67,9 @@ fn fee_raise(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
     let Ok((mut txb, _)) = txb else {
         return api_error("transaction parse failed");
     };
+    if let Some(resp) = reject_api_tx_non_canonical_dia_insc_push_wire(txb.as_read()) {
+        return resp;
+    }
 
     let old_fee = txb.fee();
     if fee < *old_fee {

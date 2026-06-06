@@ -2,7 +2,7 @@ use crate::IRNode;
 use crate::ir::{IRNodeArray, IRNodeLeaf, convert_ir_to_runtime_bytecode, drop_irblock_wrap};
 use crate::ir::{push_addr, push_bytes, push_num};
 use crate::lang::Syntax;
-use crate::rt::{Bytecode, SourceMap, Token, verify_bytecodes};
+use crate::rt::{Bytecode, KwTy, SourceMap, Token, verify_bytecodes};
 use crate::value::ValueTy;
 use field::Address;
 use sys::Ret;
@@ -87,6 +87,12 @@ mod compile_body_tests {
         };
         assert!(err.to_string().contains("too many contract libs: max 255"));
     }
+
+    #[test]
+    fn manual_param_block_with_empty_signature_compiles() {
+        let body_tokens = Tokenizer::new(b"param { a b }\nreturn a + b").parse().unwrap();
+        let _ = compile_body(body_tokens, vec![], &[], &[], true).unwrap();
+    }
 }
 
 /// Compile function/abstract body tokens to IR or bytecode
@@ -97,6 +103,7 @@ pub fn compile_body(
     consts: &[(String, String)],
     is_ircode: bool,
 ) -> Ret<(IRNodeArray, CompiledCode, SourceMap)> {
+    let has_manual_param_block = body_tokens.iter().any(|tk| matches!(tk, Token::Keyword(KwTy::Param)));
     let mut syntax = Syntax::new(body_tokens);
 
     if !libs.is_empty() {
@@ -118,7 +125,7 @@ pub fn compile_body(
         syntax = syntax.with_consts(const_nodes);
     }
 
-    syntax = syntax.with_params(args);
+    syntax = syntax.with_params(args, has_manual_param_block);
 
     let (irnodes, source_map) = syntax.parse()?;
 
