@@ -79,14 +79,14 @@ pub enum Bytecode {
     REV = 0x47,    // a...b  reverse u8
     CAT = 0x48,    // a,b+   buf: a + b
     JOIN = 0x49,   // a...bn+
-    BYTE = 0x4a,   // a,b+   val[n] = u8
-    CUT = 0x4b,    // a,b,c+ cut buf (v, ost, len)+
+    BYTE = 0x4a,   // idx,buf+ pop idx; peek buf -> u8 at idx
+    CUT = 0x4b,    // len,ost,buf+ pop len,ost; cut buf[ost..ost+len]
     LEFT = 0x4c,   // *&     cut left  buf *
     RIGHT = 0x4d,  // *&     cut right buf *
     LDROP = 0x4e,  // *&     drop buf left *
     RDROP = 0x4f,  // *&     drop buf right *
     SIZE = 0x50,   // &      size (u16)
-    CHOOSE = 0x51, // cond,yes,no+ (cond ? yes : no)
+    CHOOSE = 0x51, // no,yes,cond+ cond?yes:no (IR reversed order)
     ____________52 = 0x52,
     ____________53 = 0x53,
     ____________54 = 0x54,

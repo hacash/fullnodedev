@@ -436,6 +436,9 @@ mod fitsh_compile_tests {
         assert_compile_ok!(
             func_sha2: "return sha2(\"hello\")",
             func_sha3: "return sha3(\"hello\")",
+            func_keccak256: "return keccak256(\"hello\")",
+            func_blake2s256: "return blake2s256(\"hello\")",
+            func_blake2b256: "return blake2b256(\"hello\")",
             func_ripemd160: "return ripemd160(\"hello\")",
             func_verify_signature: "return verify_signature(sha2(\"hello\"), emqjNS9PscqdBpMtnC3Jfuc4mvZUPYTPS, 0x1234)",
             func_hac_to_mei: "return hac_to_mei(100)",

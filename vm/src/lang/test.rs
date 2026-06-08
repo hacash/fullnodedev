@@ -914,6 +914,51 @@ mod token_t {
     }
 
     #[test]
+    fn test_keccak256_roundtrips_as_single_arg_ntfunc() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("return keccak256(\"abc\")").expect("Failed to compile");
+        let decompiled = Formater::new(&PrintOption::new("  ", 0)).print(&ir);
+        assert!(
+            decompiled.contains("keccak256(") && decompiled.contains("0x616263"),
+            "expected keccak256 call to survive decompile with canonical bytes, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
+    fn test_blake2s256_roundtrips_as_single_arg_ntfunc() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("return blake2s256(\"abc\")").expect("Failed to compile");
+        let decompiled = Formater::new(&PrintOption::new("  ", 0)).print(&ir);
+        assert!(
+            decompiled.contains("blake2s256(") && decompiled.contains("0x616263"),
+            "expected blake2s256 call to survive decompile with canonical bytes, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
+    fn test_blake2b256_roundtrips_as_single_arg_ntfunc() {
+        use super::lang_to_irnode;
+        use super::Formater;
+        use super::PrintOption;
+
+        let ir = lang_to_irnode("return blake2b256(\"abc\")").expect("Failed to compile");
+        let decompiled = Formater::new(&PrintOption::new("  ", 0)).print(&ir);
+        assert!(
+            decompiled.contains("blake2b256(") && decompiled.contains("0x616263"),
+            "expected blake2b256 call to survive decompile with canonical bytes, got: {}",
+            decompiled
+        );
+    }
+
+    #[test]
     fn test_hide_default_call_argv_applies_to_ntenv() {
         use super::lang_to_irnode;
         use super::Formater;

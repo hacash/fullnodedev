@@ -61,10 +61,7 @@ impl Value {
     #[inline(always)]
     pub fn cutright(&mut self, n: u16) -> VmrtErr {
         let buf = self.extract_bytes_with_error_code(BytesHandle)?;
-        let spx = buf.len() as isize - n as isize;
-        if spx < 0 {
-            return itr_err_fmt!(StackError, "cut buf right overflow");
-        }
+        let spx = buf.len().checked_sub(n as usize).ok_or_else(|| ItrErr::new(StackError, "cut buf right overflow"))?;
         *self = Self::Bytes(buf[spx as usize..].to_vec());
         Ok(())
     }
@@ -74,7 +71,7 @@ impl Value {
         let len = len.extract_u16()? as usize;
         let ost = ost.extract_u16()? as usize;
         let val = self.extract_bytes_with_error_code(BytesHandle)?;
-        let end = len + ost;
+        let end = len.checked_add(ost).ok_or_else(|| ItrErr::new(StackError, "cutout buf index overflow"))?;
         if end > val.len() {
             return itr_err_fmt!(StackError, "cutout buf overflow");
         }
@@ -95,10 +92,7 @@ impl Value {
 
     pub fn dropright(&mut self, n: u16) -> VmrtErr {
         let buf = self.extract_bytes_with_error_code(BytesHandle)?;
-        let spx = buf.len() as isize - n as isize;
-        if spx < 0 {
-            return itr_err_fmt!(StackError, "drop buf right overflow");
-        }
+        let spx = buf.len().checked_sub(n as usize).ok_or_else(|| ItrErr::new(StackError, "drop buf right overflow"))?;
         *self = Self::Bytes(buf[0..spx as usize].to_vec());
         Ok(())
     }

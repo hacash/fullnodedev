@@ -2579,6 +2579,126 @@ mod bounds_tests {
                 Value::Bytes(sys::sha2(&[8, 7]).to_vec())
             );
         }
+
+        {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            operands.push(Value::Bytes(vec![8, 7])).unwrap();
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let codes = vec![
+                Bytecode::NTFUNC as u8,
+                NativeFunc::idx_keccak256,
+                Bytecode::END as u8,
+            ];
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap();
+            assert_eq!(
+                operands.pop().unwrap(),
+                Value::Bytes(sys::keccak256(&[8, 7]).to_vec())
+            );
+        }
+
+        {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            operands.push(Value::Bytes(vec![8, 7])).unwrap();
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let codes = vec![
+                Bytecode::NTFUNC as u8,
+                NativeFunc::idx_blake2s256,
+                Bytecode::END as u8,
+            ];
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap();
+            assert_eq!(
+                operands.pop().unwrap(),
+                Value::Bytes(sys::blake2s256(&[8, 7]).to_vec())
+            );
+        }
+
+        {
+            let mut pc: usize = 0;
+            let mut gas: i64 = 1000;
+            let mut host = DummyHost::default();
+            let mut operands = Stack::new(256);
+            operands.push(Value::Bytes(vec![8, 7])).unwrap();
+            let mut locals = Stack::new(256);
+            let mut heap = Heap::new(64);
+            let mut global_map = GKVMap::new(20);
+            let mut memory_map = CtcKVMap::new(12);
+            let codes = vec![
+                Bytecode::NTFUNC as u8,
+                NativeFunc::idx_blake2b256,
+                Bytecode::END as u8,
+            ];
+
+            execute_code(
+                &mut pc,
+                &codes,
+                ExecCtx::main(),
+                &mut operands,
+                &mut locals,
+                &mut heap,
+                &cadr,
+                &cadr,
+                &mut gas,
+                &GasTable::new(1),
+                &GasExtra::new(1),
+                &SpaceCap::new(1),
+                &mut global_map,
+                &mut memory_map,
+                &mut host,
+            )
+            .unwrap();
+            assert_eq!(
+                operands.pop().unwrap(),
+                Value::Bytes(sys::blake2b256(&[8, 7]).to_vec())
+            );
+        }
     }
 
     #[test]

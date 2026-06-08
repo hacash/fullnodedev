@@ -1140,10 +1140,11 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             Ok(Step::Continue)
         })();
 
-        // reduce gas for use
-        let step_total = check_add_gas_use(gas_use, &step_gas_use, gst)?;
+        // reduce gas for use: charge protocol first, then commit VM bucket
+        let (step_total, next_gas_use) = check_add_gas_use(gas_use, &step_gas_use, gst)?;
         host.gas_charge(step_total)?;
         host.gas_rebate(step_gas_rebate)?;
+        *gas_use = next_gas_use;
         match step {
             Ok(Step::Exit(exit)) => return Ok(exit),
             Ok(Step::Continue) => {}
@@ -1155,10 +1156,10 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
 
 #[inline(always)]
 fn check_add_gas_use(
-    gas_use: &mut VmGasBuckets,
+    gas_use: &VmGasBuckets,
     step_gas_use: &VmGasBuckets,
     gst: &GasExtra,
-) -> VmrtRes<i64> {
+) -> VmrtRes<(i64, VmGasBuckets)> {
     if step_gas_use.compute < 0 || step_gas_use.resource < 0 || step_gas_use.storage < 0 {
         return itr_err_fmt!(
             ItrErrCode::GasError,
@@ -1189,8 +1190,7 @@ fn check_add_gas_use(
     check_limit("compute", next_gas_use.compute, gst.compute_limit)?;
     check_limit("resource", next_gas_use.resource, gst.resource_limit)?;
     check_limit("storage", next_gas_use.storage, gst.storage_limit)?;
-    *gas_use = next_gas_use;
-    Ok(step_total)
+    Ok((step_total, next_gas_use))
 }
 
 #[allow(unused)]
