@@ -1086,6 +1086,8 @@ pub struct WarmState {
     pub space_cap: SpaceCap,
     pub contracts: HashMap<ContractAddress, Arc<ContractObj>>,
     pub gas_use: VmGasBuckets, // tx-cumulative VM bucket usage for metering/reporting, not protocol billing source of truth
+    /// Cumulative log bytes across all LOG1..LOG4 calls in this execution context.
+    pub log_bytes_total: usize,
     pub stack_pool: Vec<Stack>,
     pub heap_pool: Vec<Heap>,
 }
@@ -1140,6 +1142,7 @@ impl Runtime {
 
     pub fn reclaim(&mut self) {
         self.warm.gas_use = VmGasBuckets::default();
+        self.warm.log_bytes_total = 0;
         self.volatile.global_map.clear();
         self.volatile.memory_map.clear();
         self.volatile.intents.clear();
@@ -1169,6 +1172,7 @@ impl Runtime {
         self.warm.space_cap = cap;
         self.warm.gas_extra = GasExtra::new(height);
         self.warm.gas_table = GasTable::new(height);
+        self.warm.log_bytes_total = 0;
     }
 
     #[inline(always)]

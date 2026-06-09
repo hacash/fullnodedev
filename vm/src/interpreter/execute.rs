@@ -174,6 +174,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
     gas_extra: &GasExtra,
     space_cap: &SpaceCap,
     gas_use: &mut VmGasBuckets,
+    log_use: &mut usize,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
     deferred_registry: &mut DeferredRegistry,
@@ -197,6 +198,7 @@ pub fn execute_code<H: VmHost + ?Sized>(
         gas_extra,
         space_cap,
         gas_use,
+        log_use,
         global_map,
         memory_map,
         &mut intents,
@@ -222,6 +224,7 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
     gas_extra: &GasExtra,
     space_cap: &SpaceCap,
     gas_use: &mut VmGasBuckets,
+    log_use: &mut usize,
     global_map: &mut GKVMap,
     memory_map: &mut CtcKVMap,
     intents: &mut IntentRuntime,
@@ -422,7 +425,27 @@ pub fn execute_code_in_frame<H: VmHost + ?Sized>(
             ($itn: expr) => {{
                 nsw!();
                 let items = ops.popn($itn)?;
-                gas_add!(storage, log_bytes, items.iter().map(|v| v.val_size()).sum());
+                let log_bytes: usize = items.iter().map(|v| v.val_size()).sum();
+                // Hard cap on log bytes — independent of gas metering.
+                if cap.log_size == 0 {
+                    return itr_err_fmt!(OutOfLogSize, "logging disabled");
+                }
+                let next_total = log_use
+                    .checked_add(log_bytes)
+                    .ok_or_else(|| ItrErr::new(
+                        OutOfLogSize,
+                        "log bytes overflow",
+                    ))?;
+                if next_total > cap.log_size {
+                    return itr_err_fmt!(
+                        OutOfLogSize,
+                        "log bytes limit exceeded: {} > {}",
+                        next_total,
+                        cap.log_size
+                    );
+                }
+                *log_use = next_total;
+                gas_add!(storage, log_bytes, log_bytes);
                 host.log_push(context_addr, items)?;
             }};
         }

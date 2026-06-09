@@ -165,6 +165,10 @@ impl EngineConf {
         cnf.dmer_enable = ini_must_bool(sec_dmer, "enable", false);
         if cnf.dmer_enable {
             cnf.dmer_reward_address = ini_must_address(sec_dmer, "reward");
+            if !cnf.dmer_reward_address.is_privakey() {
+                panic!("diamond miner reward address {} must be PRIVAKEY type but got version {}",
+                    cnf.dmer_reward_address.to_readable(), cnf.dmer_reward_address.version())
+            }
             cnf.dmer_bid_account = ini_must_account(sec_dmer, "bid_password");
             cnf.dmer_bid_min =  ini_must_amount(sec_dmer, "bid_min").compress(2, AmtCpr::Grow).unwrap();
             cnf.dmer_bid_max =  ini_must_amount(sec_dmer, "bid_max").compress(2, AmtCpr::Grow).unwrap();

@@ -203,6 +203,7 @@ mod tests {
         let mut locals = Stack::new(16);
         let mut heap = Heap::new(16);
         let mut gas_use = basis::interface::VmGasBuckets::default();
+        let mut log_use = 9600;
 
         let mut host = TestVmHost {
             ctx,
@@ -222,6 +223,7 @@ mod tests {
             &GasExtra::new(1),
             &SpaceCap::new(1),
             &mut gas_use,
+            &mut log_use,
             &mut GKVMap::new(4),
             &mut CtcKVMap::new(4),
             &mut defer_callbacks,

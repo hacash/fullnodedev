@@ -300,6 +300,7 @@ impl Frame {
             &r.warm.gas_extra,
             &r.warm.space_cap,
             &mut r.warm.gas_use,
+            &mut r.warm.log_bytes_total,
             &mut r.volatile.global_map,
             &mut r.volatile.memory_map,
             &mut r.volatile.intents,

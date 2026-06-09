@@ -15,6 +15,8 @@ fn impl_blk_verify(this: &HacashMinter, curblk: &dyn BlockRead, prevblk: &dyn Bl
     if curhei < blkcln*200 && this.cnf.is_mainnet() {
         return Ok(()) // not check, compatible history code
     }
+    // coinbase address must be PRIVAKEY type for modern blocks
+    verify_coinbase_privakey(ptx)?;
     let curn = curblk.difficulty().uint(); // u32
     let (tarn, tarhx, _tarbign) = this.next_difficulty(prevblk, curblk.timestamp().uint(), src);
     if tarn != curn {

@@ -203,6 +203,7 @@ fn execute_test_with_argv(
         gas_remaining: gas,
     };
     let mut gas_use = basis::interface::VmGasBuckets::default();
+    let mut log_bytes_total = 0usize;
     let mut deferred_registry = DeferredRegistry::default();
     super::interpreter::execute_code(
         &mut pc,
@@ -217,6 +218,7 @@ fn execute_test_with_argv(
         &GasExtra::new(1),
         &SpaceCap::new(1),
         &mut gas_use,
+        &mut log_bytes_total,
         &mut GKVMap::new(20),
         &mut CtcKVMap::new(12),
         &mut deferred_registry,

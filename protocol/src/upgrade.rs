@@ -34,7 +34,6 @@ pub fn is_online_upgrade_open(height: u64) -> bool {
     height >= ONLINE_OPEN_HEIGHT
 }
 
-#[cfg(test)]
 #[inline]
 fn is_dev_upgrade_open(height: u64) -> bool {
     height <= DEV_OPEN_MAX_HEIGHT
@@ -45,7 +44,7 @@ pub fn check_gated_tx(chain_id: u32, height: u64, tx_type: u8) -> Rerr {
     if chain_id != MAINNET_CHAIN_ID {
         return Ok(());
     }
-    if is_online_upgrade_open(height) || is_pre_upgrade_allowed_tx_type(tx_type) {
+    if is_online_upgrade_open(height) || is_dev_upgrade_open(height) || is_pre_upgrade_allowed_tx_type(tx_type) {
         return Ok(());
     }
     errf!(
@@ -61,7 +60,7 @@ pub fn check_gated_action(chain_id: u32, height: u64, kind: u16) -> Rerr {
     if chain_id != MAINNET_CHAIN_ID {
         return Ok(());
     }
-    if is_online_upgrade_open(height) || is_pre_upgrade_allowed_action(kind) {
+    if is_online_upgrade_open(height) || is_dev_upgrade_open(height) || is_pre_upgrade_allowed_action(kind) {
         return Ok(());
     }
     errf!(
@@ -106,10 +105,11 @@ mod tests {
 
     #[test]
     fn dev_marker_height_is_not_online_open() {
+        let mid = DEV_OPEN_MAX_HEIGHT.saturating_add(1);
         assert!(is_dev_upgrade_open(0));
         assert!(!is_online_upgrade_open(0));
-        assert!(check_gated_tx(MAINNET_CHAIN_ID, 0, 3).is_err());
-        assert!(check_gated_action(MAINNET_CHAIN_ID, 0, 25).is_err());
+        assert!(check_gated_tx(MAINNET_CHAIN_ID, mid, 3).is_err());
+        assert!(check_gated_action(MAINNET_CHAIN_ID, mid, 25).is_err());
     }
 
     #[test]

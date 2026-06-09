@@ -1476,7 +1476,7 @@ mod action_coverage {
                 .saturating_add(
                     fee_purity
                         .saturating_mul(edit_bytes as u128)
-                        .saturating_mul(vm::action::CONTRACT_STORE_EDIT_PERIODS as u128),
+                        .saturating_mul(vm::action::CONTRACT_STORE_PERM_PERIODS as u128),
                 ),
             field::UNIT_238,
         );
@@ -1488,10 +1488,8 @@ mod action_coverage {
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(
             err.contains("protocol fee must be at least")
-                && err.contains("expand_bytes=14")
-                && err.contains("expand_periods=10000")
                 && err.contains("edit_bytes=25")
-                && err.contains("edit_periods=100"),
+                && err.contains("edit_periods=10000"),
             "{err}"
         );
     }

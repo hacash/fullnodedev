@@ -35,6 +35,7 @@ mod bounds_tests {
     ) -> VmrtRes<CallExit> {
         host.set_test_gas(*gas_usable);
         let mut gas_use = basis::interface::VmGasBuckets::default();
+        let mut log_bytes_total = 0usize;
         let mut defer_callbacks = DeferCallbacks::default();
         let res = super::execute_code(
             pc,
@@ -49,6 +50,7 @@ mod bounds_tests {
             gas_extra,
             space_cap,
             &mut gas_use,
+            &mut log_bytes_total,
             global_map,
             memory_map,
             &mut defer_callbacks,
@@ -1266,6 +1268,52 @@ mod bounds_tests {
     }
 
     #[test]
+    fn max_log_bytes_zero_disables_log_opcode() {
+        use crate::rt::Bytecode;
+
+        let mut pc: usize = 0;
+        let mut gas: i64 = 1000;
+        let mut host = DummyHost {
+            gas_remaining: 1000,
+            ..Default::default()
+        };
+
+        let mut operands = Stack::new(256);
+        let mut locals = Stack::new(256);
+        let mut heap = Heap::new(64);
+        let mut global_map = GKVMap::new(20);
+        let mut memory_map = CtcKVMap::new(12);
+        let cadr = ContractAddress::default();
+        let mut cap = SpaceCap::new(1);
+        cap.log_size = 0;
+
+        operands.push(Value::Nil).unwrap();
+        operands.push(Value::Nil).unwrap();
+
+        let err = execute_code(
+            &mut pc,
+            &[Bytecode::LOG1 as u8, Bytecode::END as u8],
+            ExecCtx::main(),
+            &mut operands,
+            &mut locals,
+            &mut heap,
+            &cadr,
+            &cadr,
+            &mut gas,
+            &GasTable::new(1),
+            &GasExtra::new(1),
+            &cap,
+            &mut global_map,
+            &mut memory_map,
+            &mut host,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.0, ItrErrCode::OutOfLogSize);
+        assert_eq!(host.log_calls, 0);
+    }
+
+    #[test]
     fn ntreg_defer_registers_current_contract() {
         use crate::machine::DeferCallbacks;
         use crate::native::NativeCtl;
@@ -1296,6 +1344,7 @@ mod bounds_tests {
         let mut bindings =
             FrameBindings::contract(cadr.clone(), cadr.clone(), Vec::<Address>::new().into());
         let mut intent_state = crate::frame::IntentScopeState::default();
+        let mut log_bytes_total = 0usize;
         defer_callbacks.replace_defer_auth(Some(cadr.clone()));
         super::execute_code_in_frame(
             &mut pc,
@@ -1312,6 +1361,7 @@ mod bounds_tests {
             &GasExtra::new(1),
             &SpaceCap::new(1),
             &mut gas_use,
+            &mut log_bytes_total,
             &mut global_map,
             &mut memory_map,
             &mut crate::machine::IntentRuntime::default(),
@@ -1370,6 +1420,7 @@ mod bounds_tests {
         let mut bindings =
             FrameBindings::contract(foreign.clone(), foreign.clone(), Vec::<Address>::new().into());
         let mut intent_state = crate::frame::IntentScopeState::default();
+        let mut log_bytes_total = 0usize;
         defer_callbacks.replace_defer_auth(Some(foreign.clone()));
         let err = super::execute_code_in_frame(
             &mut pc,
@@ -1386,6 +1437,7 @@ mod bounds_tests {
             &GasExtra::new(1),
             &SpaceCap::new(1),
             &mut gas_use,
+            &mut log_bytes_total,
             &mut global_map,
             &mut memory_map,
             &mut intents,
@@ -1422,6 +1474,7 @@ mod bounds_tests {
         let mut memory_map = CtcKVMap::new(12);
         let mut defer_callbacks = DeferCallbacks::default();
         let mut gas_use = basis::interface::VmGasBuckets::default();
+        let mut log_bytes_total = 0usize;
 
         let main = Address::create_privakey([3u8; 20]);
         let codes = vec![
@@ -1444,6 +1497,7 @@ mod bounds_tests {
             &GasExtra::new(1),
             &SpaceCap::new(1),
             &mut gas_use,
+            &mut log_bytes_total,
             &mut global_map,
             &mut memory_map,
             &mut defer_callbacks,

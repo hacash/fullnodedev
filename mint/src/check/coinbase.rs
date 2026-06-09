@@ -117,6 +117,20 @@ fn verify_coinbase(height: u64, cbtx: &dyn TransactionRead) -> Rerr {
     if need != *got {
         return errf!("block coinbase reward expected {} but got {}", need, got)
     }
-    // ok    
+    // ok
+    Ok(())
+}
+
+// Separate gate: enforce coinbase address must be PRIVAKEY type.
+// This is called AFTER impl_blk_verify's historical-mainnet skip so it
+// only applies to modern blocks (height >= 57_600 on mainnet) and all
+// non-mainnet chains, matching the same boundary as the difficulty gate.
+fn verify_coinbase_privakey(cbtx: &dyn TransactionRead) -> Rerr {
+    if let Some(ref addr) = cbtx.author() {
+        if !addr.is_privakey() {
+            return errf!("coinbase address {} must be PRIVAKEY type but got version {}",
+                addr.to_readable(), addr.version())
+        }
+    }
     Ok(())
 }

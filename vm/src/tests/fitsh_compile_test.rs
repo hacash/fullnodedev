@@ -1019,6 +1019,7 @@ return C.0xabcdef01(1, 2)",
                 gas_remaining: gas,
             };
             let mut gas_use = basis::interface::VmGasBuckets::default();
+            let mut log_bytes_total = 0usize;
             let mut defer_callbacks = crate::machine::DeferCallbacks::default();
 
             crate::interpreter::execute_code(
@@ -1034,6 +1035,7 @@ return C.0xabcdef01(1, 2)",
                 &GasExtra::new(1),
                 &SpaceCap::new(1),
                 &mut gas_use,
+                &mut log_bytes_total,
                 &mut GKVMap::new(20),
                 &mut CtcKVMap::new(12),
                 &mut defer_callbacks,

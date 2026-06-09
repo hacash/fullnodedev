@@ -81,6 +81,11 @@ fn impl_packing_next_block(
 }
 
 pub fn create_coinbase_tx(hei: u64, msg: Fixed16, adr: Address) -> crate::TransactionCoinbase {
+    // miner reward address must be PRIVAKEY type
+    if !adr.is_privakey() {
+        panic!("miner reward address {} must be PRIVAKEY type but got version {}",
+            adr.to_readable(), adr.version())
+    }
     let rwdamt = genesis::block_reward(hei);
     crate::TransactionCoinbase {
         ty: Uint1::from(0), // ccoinbase type = 0

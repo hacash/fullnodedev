@@ -46,7 +46,8 @@ pub enum ItrErrCode {
     MemoryError = 45,
     GlobalError = 46,
     StorageError = 47,
-    LogError = 48,
+    OutOfLogSize = 48,
+    LogError = 49,
 
     CallNotExist = 51,
     CallLibIdxOverflow = 52,

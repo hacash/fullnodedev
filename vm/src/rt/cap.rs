@@ -21,6 +21,10 @@ pub struct SpaceCap {
     pub kv_key_size: usize,      // 128
     pub status_pure_size: usize, // 128
 
+    /// Max total log bytes per execution context (sum of `val_size()` across all LOG1..LOG4 calls).
+    /// Set to 0 to disable logging entirely.
+    pub log_size: usize,   // 9600
+
     pub contract_size: usize, // 65535 * 1
     pub function_size: usize, // 65535 / 4
     pub inherit: usize,       // 12
@@ -62,6 +66,7 @@ impl SpaceCap {
             memory: 24,
             kv_key_size: 128,
             status_pure_size: 128,
+            log_size: 9600,
             contract_size: U16M * 1, // 65535*1
             function_size: U16M / 4, // 65535/4
             inherit: 12,
