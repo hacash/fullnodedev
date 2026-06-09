@@ -228,7 +228,58 @@ Multi-key commits (`PACKMAP`, `MERGE`) require disjoint key sets: duplicate keys
 
 List `MERGE` appends elements; it has no key domain and does not deduplicate elements.
 
-## 9. U256 Reservation Contract (Forward Compatibility)
+## 9. Map Key Semantics: Known Pitfalls
+
+This section documents a structural tension between the VM's two independent value-matching paths — `value_content_eq` (numeric/type semantics) and map-key bytes (`extract_key_bytes` → `scalar_bytes`, representation semantics). These are **not independent bugs**; they are four projections of the same root cause: equality and key encoding are separate code paths with different normalization rules.
+
+### 9.1 uint cross-width key splitting
+
+`value_content_eq` normalizes all uint widths to `u128` before comparison:
+- `U8(1) == U64(1)` is `true`.
+
+`extract_key_bytes` encodes each uint variant as its own fixed-width big-endian bytes:
+- `scalar_bytes(U8(1))`  → `[01]`  (1 byte)
+- `scalar_bytes(U64(1))` → `[00, 00, 00, 00, 00, 00, 00, 01]` (8 bytes)
+
+**Consequence**: `U8(1)` and `U64(1)` land in different map slots despite being numerically equal. In DeFi contracts, this means a balance written with `U8` cannot be read with `U64`, silently returning `Nil`. Mitigation: always use the same uint width for both map writes and reads on the same key.
+
+See `value_content_eq` in `vm/src/value/item.rs:66` and `extract_key_bytes` in `vm/src/value/canbe.rs:140`.
+
+### 9.2 Address / Bytes key collision
+
+`scalar_bytes(Address(X))` and `scalar_bytes(Bytes(X.serialize()))` produce identical bytes. They share the same map key even though `value_content_eq` rejects cross-type comparison between them.
+
+**Consequence**: a map slot written via `Address` can be read (or overwritten) via the corresponding `Bytes`, and vice versa. Because the two types are semantically distinct and cannot compare equal, this contradicts the expectation that distinct types occupy distinct slots. Mitigation: do not mix `Address` and `Bytes` keys that may carry the same byte payload.
+
+See `scalar_bytes` in `vm/src/value/item.rs:311`.
+
+### 9.3 Dual byte→uint conversion paths
+
+Raw bytes can be converted to uint through two different paths:
+- `buf_to_uint` (in `vm/src/value/convert.rs:1`) picks the **minimal** active uint width (trailing zeros stripped → fits into smallest width).
+- `cast_to_uint_width` / `bytes_to_uint_width` (in `vm/src/value/cast.rs:38`) converts to a **fixed** target width.
+
+**Consequence**: the same source bytes can produce `U8(1)` via one path and `U64(1)` via the other. When these values are then used as map keys, pitfall 9.1 applies — they land in different slots. Mitigation: prefer one conversion path consistently, or explicitly cast to the same width before a map lookup.
+
+### 9.4 Bool / Nil multiple rule sets
+
+- **Bool**: canonical byte decoding (`decode_canonical_bool_byte` in `vm/src/value/util.rs:16`) is strict (only 0 and 1 are valid). Runtime truthiness (`extract_bool`) is loose (any non-zero is true). This divergence is intentional and stable — canonical decoding is for typed wire formats; runtime truthiness is for control flow and `as bool` casts.
+- **Nil**: `scalar_bytes(Nil)` → `[]`. `extract_bytes(Nil)` → error. `extract_call_data(Nil)` → `[]`. `extract_key_bytes(Nil)` → error.
+
+**Consequence**: Bool-as-map-key is blocked (`extract_key_bytes` rejects it); Nil-as-map-key is blocked. These are not storage-splitting risks — the existing guardrails work as intended. The rule divergence only surfaces in serialization vs. runtime-cast contexts, not in map storage.
+
+### 9.5 Root cause summary
+
+All key-space pitfalls (9.1–9.3) share one root cause: `value_content_eq` and map-key encoding are independent implementations with incompatible normalization choices. Pitfall 9.4 (Bool/Nil) is documented here only for completeness; it does not cause storage splitting.
+
+Users of this VM should be aware that:
+
+- **Map keys are bytes, not values.** The key derived from a `Value` depends on the concrete variant and width, not just the mathematical value.
+- **When crossing boundaries** (different contracts, different opcodes, different cast paths), explicitly normalize the key to a consistent type and width before map operations.
+
+---
+
+## 10. U256 Reservation Contract (Forward Compatibility)
 
 This section defines mandatory constraints before enabling `U256`, to prevent compatibility breaks and normalization drift.
 

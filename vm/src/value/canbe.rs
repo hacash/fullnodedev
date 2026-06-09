@@ -137,6 +137,19 @@ impl Value {
         self.extract_bytes_with_error_code(CastBeBytesFail)
     }
 
+    /// Derive map key bytes from a value. Keys are representation bytes (`scalar_bytes`),
+    /// not canonical/value-normalized bytes — they reflect the concrete variant and width.
+    ///
+    /// KNOWN PITFALLS (see `vm/doc/value-cast.md` §9):
+    ///
+    /// - `value_content_eq` normalizes all uint widths to `u128`, but this function
+    ///   encodes each width separately. `U8(1)` → `[01]`, `U64(1)` → `[00..01]` —
+    ///   numerically equal uints land in different map slots.
+    /// - `Address(X)` and `Bytes(X.serialize())` produce identical key bytes, so
+    ///   they share a map slot even though they are semantically distinct types.
+    /// - Bool and empty bytes are rejected as keys; Nil is rejected.
+    ///
+    /// Mitigation: use a consistent type and width for all map operations on a given key.
     pub(crate) fn extract_key_bytes_with_error_code(&self, ec: ItrErrCode) -> VmrtRes<Vec<u8>> {
         let key = match self {
             Bool(..) => return itr_err_code!(ec),

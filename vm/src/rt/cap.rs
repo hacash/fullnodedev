@@ -16,15 +16,15 @@ pub struct SpaceCap {
 
     pub heap_segment: usize, // 64: 256 * 64 = 16kb
 
-    pub global: usize,           // 20
-    pub memory: usize,           // 16
+    pub global: usize,           // 40
+    pub memory: usize,           // 24
     pub kv_key_size: usize,      // 128
     pub status_pure_size: usize, // 128
 
-    pub contract_size: usize, // 65535 * 2
-    pub function_size: usize, // 65535 / 2
+    pub contract_size: usize, // 65535 * 1
+    pub function_size: usize, // 65535 / 4
     pub inherit: usize,       // 12
-    pub library: usize,       // 100
+    pub library: usize,       // 64
     pub p2sh_set: usize,      // 128
     pub p2sh_merkle_depth_max: usize, // 8
     pub p2sh_lockbox_size_max: usize, // 4096
@@ -58,14 +58,14 @@ impl SpaceCap {
             stack_slot: 256,
             local_slot: 256,
             heap_segment: 64,
-            global: 20,
-            memory: 16,
+            global: 40,
+            memory: 24,
             kv_key_size: 128,
             status_pure_size: 128,
-            contract_size: U16M * 2, // 65535*2
-            function_size: U16M / 2, // 65535/2
+            contract_size: U16M * 1, // 65535*1
+            function_size: U16M / 4, // 65535/4
             inherit: 12,
-            library: 100,
+            library: 64,
             p2sh_set: 128,
             p2sh_merkle_depth_max: 8,
             p2sh_lockbox_size_max: 4096,

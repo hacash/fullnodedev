@@ -12,6 +12,18 @@ pub fn buf_is_empty_or_all_zero(buf: &[u8]) -> bool {
 /// Canonical bool byte decoding for typed/raw byte representations only.
 /// This is intentionally stricter than runtime truthiness (`Value::extract_bool`),
 /// which is used by control flow and explicit `as bool` coercions.
+///
+/// The divergence is intentional and stable:
+/// - `decode_canonical_bool_byte(0)` → `Some(false)`, `(1)` → `Some(true)`, all
+///   other bytes → `None`. Used by `type_from(ValueTy::Bool, ..)` and `Parse` to
+///   enforce canonical wire format.
+/// - `extract_bool` treats any non-zero byte as `true` (including `2..=255`),
+///   and also accepts `Nil`, `uint`, `Bytes`, `Address`. Used by control flow
+///   (`CHOOSE`, `BRL*`) and `as bool` casts.
+///
+/// This does not cause storage splitting — `extract_key_bytes` rejects `Bool`
+/// as a map key regardless. The two rule sets only diverge in serialization vs.
+/// runtime-cast contexts. See `vm/doc/value-cast.md` §9.4.
 #[inline(always)]
 pub fn decode_canonical_bool_byte(byte: u8) -> Option<bool> {
     match byte {
