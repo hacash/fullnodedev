@@ -1105,6 +1105,18 @@ fn test_type3_fee_got_does_not_burn_from_action_mark() {
     assert!(tx.fee_purity() > 0);
 }
 
+#[test]
+fn test_fee_purity_saturates_instead_of_zero_on_large_fee() {
+    let _guard = install_test_registry();
+
+    let fee = Amount::coin_u128(u64::MAX as u128 + 1, UNIT_238);
+    let tx3 = TransactionType3::new_by(field::ADDRESS_ONEX.clone(), fee.clone(), 1730000000);
+    assert!(tx3.fee_purity() > 0);
+
+    let tx2 = TransactionType2::new_by(field::ADDRESS_ONEX.clone(), fee, 1730000000);
+    assert!(tx2.fee_purity() > 0);
+}
+
 fn run_type3_top_level_gas_case(burn: bool) -> i64 {
     let mut tx = TransactionType3::new_by(
         field::ADDRESS_ONEX.clone(),
@@ -1363,13 +1375,11 @@ fn test_type3_tex_asset_cell_succeeds_with_gas_budget() {
             .uint(),
         100
     );
-    assert!(
-        state
-            .balance(&pay)
-            .unwrap_or_default()
-            .asset(serial)
-            .is_none()
-    );
+    assert!(state
+        .balance(&pay)
+        .unwrap_or_default()
+        .asset(serial)
+        .is_none());
 }
 
 #[test]
@@ -1890,8 +1900,7 @@ fn test_action_json_create_must_reject_kind_mismatch() {
 fn test_action_json_create_must_reject_missing_required_field_for_diamond_from_to() {
     let _guard = install_test_registry();
 
-    let json =
-        r#"{"kind":6,"to":"1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS","diamonds":"WWWTTT"}"#;
+    let json = r#"{"kind":6,"to":"1AVRuFXNFi3rdMrPH4hdqSgFrEBnWisWaS","diamonds":"WWWTTT"}"#;
     let err = crate::action::action_json_create(DiaFromToTrs::KIND, json).unwrap_err();
     assert!(err.contains("missing required field"), "{}", err);
     assert!(err.contains("from"), "{}", err);

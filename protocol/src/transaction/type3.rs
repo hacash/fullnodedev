@@ -57,7 +57,9 @@ impl TransactionRead for TransactionType3 {
         if txsz == 0 {
             return 0;
         }
-        self.fee.to_238_u64().unwrap_or(0) / txsz
+        let fee238 = self.fee.to_238_u128().unwrap_or(u128::MAX);
+        let purity = fee238 / txsz as u128;
+        purity.min(u64::MAX as u128) as u64
     }
 
     fn action_count(&self) -> usize {
@@ -212,8 +214,6 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
     crate::tex::settlement_addr_postsettle_cleanup(ctx);
     Ok(())
 }
-
-
 
 // init gas
 pub fn tx_gas_initialize(ctx: &mut dyn Context) -> Ret<bool> {

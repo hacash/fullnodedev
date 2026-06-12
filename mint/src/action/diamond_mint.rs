@@ -148,14 +148,15 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
         let total_burn = (*ttcount.hacd_bid_burn_238)
             .checked_add(burn_238 as u128)
             .ok_or_else(|| "hacd_bid_burn_238 overflow".to_string())?;
-        ttcount.hacd_bid_burn_238 = Uint12::from(total_burn);
+        ttcount.hacd_bid_burn_238 = Uint12::from_checked(total_burn)
+            .ok_or_else(|| "hacd_bid_burn_238 overflow".to_string())?;
     }
     // gene
     let (life_gene, _visual_gene) =
         calculate_diamond_gene(dianum, &mediumhx, &diahx, &pending_hash, &tx_bid_fee);
     // The running average here uses cumulative burned bid fee that already
     // includes the current diamond update in ttcount.
-    let average_bid_burn = calculate_diamond_average_bid_burn(dianum, *ttcount.hacd_bid_burn_238);
+    let average_bid_burn = calculate_diamond_average_bid_burn(dianum, *ttcount.hacd_bid_burn_238)?;
     // save diamond smelt
     let diasmelt = DiamondSmelt {
         diamond: name.clone(),
@@ -194,7 +195,7 @@ fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
 
 fn check_diamond_mint_tx_type(ctx: &dyn Context) -> Rerr {
     if ctx.env().tx.ty != protocol::transaction::TransactionType2::TYPE {
-        return errf!("DiamondMint can only be executed in tx type 2")
+        return errf!("DiamondMint can only be executed in tx type 2");
     }
     Ok(())
 }
@@ -252,10 +253,7 @@ mod diamond_mint_tests {
     }
 
     fn diamond_mint_action(number: u32) -> DiamondMint {
-        let mut act = DiamondMint::with(
-            DiamondName::from(*b"WTYUIA"),
-            DiamondNumber::from(number),
-        );
+        let mut act = DiamondMint::with(DiamondName::from(*b"WTYUIA"), DiamondNumber::from(number));
         act.d.address = Address::create_privakey([7u8; 20]);
         act
     }
@@ -279,12 +277,7 @@ mod diamond_mint_tests {
         let mut tx = TransactionType3::new_by(main, fee, 1);
         tx.push_action(Box::new(act.clone())).unwrap();
         let env = env_for_tx(&tx);
-        let mut ctx = ContextInst::new(
-            env,
-            Box::new(EmptyState {}),
-            Box::new(EmptyLogs {}),
-            &tx,
-        );
+        let mut ctx = ContextInst::new(env, Box::new(EmptyState {}), Box::new(EmptyLogs {}), &tx);
 
         let err = act.execute(&mut ctx).unwrap_err();
         assert!(err.to_string().contains("tx type 2"), "{err}");

@@ -78,12 +78,14 @@ action_define! { AssetCreate, 16,
         let new_created_asset = ttcount.created_asset.uint()
             .checked_add(1)
             .ok_or("created_asset overflow".to_string())?;
-        ttcount.created_asset = Uint8::from(new_created_asset);
+        ttcount.created_asset = Uint8::from_checked(new_created_asset)
+            .ok_or("created_asset overflow".to_string())?;
         let pfee_238 = pfee.to_238_u64()?;
         let new_asset_issue_burn_238 = (*ttcount.asset_issue_burn_238)
             .checked_add(pfee_238 as u128)
             .ok_or("asset_issue_burn_238 overflow".to_string())?;
-        ttcount.asset_issue_burn_238 = Uint12::from(new_asset_issue_burn_238);
+        ttcount.asset_issue_burn_238 = Uint12::from_checked(new_asset_issue_burn_238)
+            .ok_or("asset_issue_burn_238 overflow".to_string())?;
         sta.set_total_count(&ttcount);
         // do mint
         let asset_obj = AssetAmt::from(amd.serial.uint(), amd.supply.uint())?;

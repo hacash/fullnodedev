@@ -339,7 +339,7 @@ pub(crate) async fn handle_new_tx(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer>>,
 pub(crate) async fn handle_new_block(hdl: Arc<MsgHandler>, peer: Option<Arc<Peer>>, body: Vec<u8>) {
     let eng = hdl.engine.clone();
     let engcnf = eng.config();
-    if body.len() > engcnf.max_block_size {
+    if body.len() > engcnf.max_block_size + 100 {
         return;
     }
     let mut blkhead = protocol::block::BlockIntro::default();

@@ -165,7 +165,8 @@ fn add_diamond_engraved_count(state: &mut CoreState, add_num: usize) -> Rerr {
     let engraved_total = (*ttcount.diamond_engraved)
         .checked_add(add_num as u64)
         .ok_or_else(|| "diamond_engraved overflow".to_string())?;
-    ttcount.diamond_engraved = Uint8::from(engraved_total);
+    ttcount.diamond_engraved = Uint8::from_checked(engraved_total)
+        .ok_or_else(|| "diamond_engraved overflow".to_string())?;
     state.set_total_count(&ttcount);
     Ok(())
 }
@@ -180,16 +181,15 @@ fn add_diamond_insc_burn_count(state: &mut CoreState, pfee: &Amount) -> Rerr {
     let burn_total = (*ttcount.diamond_insc_burn_238)
         .checked_add(pfee_238 as u128)
         .ok_or_else(|| "diamond_insc_burn_238 overflow".to_string())?;
-    ttcount.diamond_insc_burn_238 = Uint12::from(burn_total);
+    ttcount.diamond_insc_burn_238 = Uint12::from_checked(burn_total)
+        .ok_or_else(|| "diamond_insc_burn_238 overflow".to_string())?;
     state.set_total_count(&ttcount);
     Ok(())
 }
 
 /// Reject non-canonical `protocol_cost` wire on new tx paths (API / mempool).
 /// Historical block replay still uses permissive [`WireAmount`] parse.
-pub fn reject_tx_dia_insc_push_non_canonical_protocol_cost_wire(
-    tx: &dyn TransactionRead,
-) -> Rerr {
+pub fn reject_tx_dia_insc_push_non_canonical_protocol_cost_wire(tx: &dyn TransactionRead) -> Rerr {
     for act in tx.actions() {
         if let Some(a) = DiaInscPush::downcast(act) {
             a.protocol_cost.require_canonical_wire().map_err(|e| {

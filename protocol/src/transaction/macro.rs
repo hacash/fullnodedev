@@ -93,8 +93,9 @@ macro_rules! transaction_define_legacy {
                 if txsz == 0 {
                     return 0;
                 }
-                let fee238 = self.fee_got().to_238_u64().unwrap_or(0);
-                fee238 / txsz
+                let fee238 = self.fee_got().to_238_u128().unwrap_or(u128::MAX);
+                let purity = fee238 / txsz as u128;
+                purity.min(u64::MAX as u128) as u64
             }
         }
 
@@ -290,11 +291,7 @@ fn mark_tx_exist(ctx: &mut dyn Context, hx: &Hash, blkhei: u64) {
 
 // Legacy Type1/Type2 extra9 burned-fee accounting. This records the fee delta
 // created by `fee_got()` and is not part of Type3 returned-gas surcharge semantics.
-fn record_legacy_extra9_burn_fee(
-    ctx: &mut dyn Context,
-    fee: &Amount,
-    fee_got: &Amount,
-) -> Rerr {
+fn record_legacy_extra9_burn_fee(ctx: &mut dyn Context, fee: &Amount, fee_got: &Amount) -> Rerr {
     let burn_fee = fee.sub_mode_u128(fee_got)?;
     if burn_fee.is_positive() {
         let burn_238 = burn_fee.to_238_u64()?;
@@ -304,7 +301,8 @@ fn record_legacy_extra9_burn_fee(
             let next_burn = (*ttcount.tx_fee_burn90_238)
                 .checked_add(burn_238 as u128)
                 .ok_or_else(|| "legacy_tx_extra9_burn_238 overflow".to_string())?;
-            ttcount.tx_fee_burn90_238 = Uint12::from(next_burn);
+            ttcount.tx_fee_burn90_238 = Uint12::from_checked(next_burn)
+                .ok_or_else(|| "legacy_tx_extra9_burn_238 overflow".to_string())?;
             state.set_total_count(&ttcount);
         }
     }
