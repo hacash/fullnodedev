@@ -55,7 +55,10 @@ struct GasPrice {
 impl GasPrice {
     fn from_tx(tx: &dyn TransactionRead) -> Ret<Self> {
         // Preserve the raw fee/size fraction so gas settle does not lose price precision.
-        let purity_fee = tx.fee_got().to_238_u128().unwrap_or(0);
+        let purity_fee = tx
+            .fee_got()
+            .to_238_u128()
+            .map_err(|e| format!("tx gas price invalid: {}", e))?;
         let purity_size = tx.size() as u128;
         if purity_fee > i128::MAX as u128 || purity_size > i128::MAX as u128 {
             return errf!("tx gas price invalid");
