@@ -1,6 +1,5 @@
 use dyn_clone::clone_box;
 use field::Address as FieldAddress;
-use hex;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
