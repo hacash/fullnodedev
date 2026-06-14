@@ -92,7 +92,11 @@ impl Syntax {
         }
     }
 
-    pub fn with_params(mut self, params: Vec<(String, ValueTy)>, skip_empty_param_prelude: bool) -> Self {
+    pub fn with_params(
+        mut self,
+        params: Vec<(String, ValueTy)>,
+        skip_empty_param_prelude: bool,
+    ) -> Self {
         self.injected.ext_params = Some(params);
         self.injected.skip_empty_param_prelude = skip_empty_param_prelude;
         self

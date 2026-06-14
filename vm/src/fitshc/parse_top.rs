@@ -40,7 +40,10 @@ pub fn parse_top_level(state: &mut ParseState) -> Ret<()> {
 
 fn parse_required_pragma(state: &mut ParseState) -> Rerr {
     if !matches!(state.current(), Some(Keyword(KwTy::Pragma))) {
-        return errf!("expected 'pragma fitsh {}' at file start", FITSH_CURRENT_VERSION);
+        return errf!(
+            "expected 'pragma fitsh {}' at file start",
+            FITSH_CURRENT_VERSION
+        );
     }
     state.advance();
 

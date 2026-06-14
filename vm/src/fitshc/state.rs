@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use super::parse_deploy::DeployInfo;
-use crate::Token::*;
 use crate::IRNode;
+use crate::Token::*;
 use crate::contract::Contract;
 use crate::rt::SourceMap;
 use crate::rt::*;

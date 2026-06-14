@@ -3,9 +3,9 @@ use crate::ir::{IRNodeArray, convert_ir_to_runtime_bytecode, drop_irblock_wrap};
 use crate::lang::Syntax;
 use crate::rt::{KwTy, SourceMap, Token, verify_bytecodes};
 use crate::value::ValueTy;
+use dyn_clone::clone_box;
 use field::Address;
 use sys::Ret;
-use dyn_clone::clone_box;
 
 /// Compiled code result - either IR codes or bytecodes
 pub enum CompiledCode {
@@ -43,7 +43,9 @@ mod compile_body_tests {
 
     #[test]
     fn manual_param_block_with_empty_signature_compiles() {
-        let body_tokens = Tokenizer::new(b"param { a b }\nreturn a + b").parse().unwrap();
+        let body_tokens = Tokenizer::new(b"param { a b }\nreturn a + b")
+            .parse()
+            .unwrap();
         let _ = compile_body(body_tokens, vec![], &[], &[], true).unwrap();
     }
 }
@@ -56,7 +58,9 @@ pub fn compile_body(
     consts: &[(String, Box<dyn IRNode>)],
     is_ircode: bool,
 ) -> Ret<(IRNodeArray, CompiledCode, SourceMap)> {
-    let has_manual_param_block = body_tokens.iter().any(|tk| matches!(tk, Token::Keyword(KwTy::Param)));
+    let has_manual_param_block = body_tokens
+        .iter()
+        .any(|tk| matches!(tk, Token::Keyword(KwTy::Param)));
     let mut syntax = Syntax::new(body_tokens);
 
     if !libs.is_empty() {

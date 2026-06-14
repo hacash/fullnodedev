@@ -1375,11 +1375,13 @@ fn test_type3_tex_asset_cell_succeeds_with_gas_budget() {
             .uint(),
         100
     );
-    assert!(state
-        .balance(&pay)
-        .unwrap_or_default()
-        .asset(serial)
-        .is_none());
+    assert!(
+        state
+            .balance(&pay)
+            .unwrap_or_default()
+            .asset(serial)
+            .is_none()
+    );
 }
 
 #[test]

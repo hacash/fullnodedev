@@ -54,8 +54,7 @@ pub fn parse_deploy(state: &mut ParseState) -> Ret<DeployInfo> {
             info.nonce = Some(Uint4::from(parse_nonce(state)?));
         } else if key == "construct_argv" {
             if let Some(Bytes(v)) = state.current() {
-                info.construct_argv =
-                    Some(BytesW2::from(v.clone()).map_err(|e| e.to_string())?);
+                info.construct_argv = Some(BytesW2::from(v.clone()).map_err(|e| e.to_string())?);
                 state.advance();
             } else {
                 return errf!("expected bytes literal at construct_argv");

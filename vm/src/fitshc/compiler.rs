@@ -14,9 +14,7 @@ pub type FitshCompileOutput = (
     String,
 );
 
-pub fn compile_with_warnings(
-    code: &str,
-) -> Ret<(FitshCompileOutput, Vec<String>)> {
+pub fn compile_with_warnings(code: &str) -> Ret<(FitshCompileOutput, Vec<String>)> {
     let tkr = Tokenizer::new(code.as_bytes());
     let tokens = tkr.parse().map_err(|e| e.to_string())?;
     let mut state = ParseState::new(tokens);
