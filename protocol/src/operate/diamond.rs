@@ -37,7 +37,9 @@ pub fn hacd_add(state: &mut CoreState, addr: &Address, hacd: &DiamondNumber) -> 
     let newhacd = DiamondNumber::from_usize(sum as usize)?;
     userbls.diamond = DiamondNumberAuto::from_diamond(&newhacd);
     state.balance_set(addr, &userbls);
-    blackhole_engulf(state, addr);
+    if blackhole_engulf(state, addr) {
+        total_record_blackhole_hacd(state)?;
+    }
     Ok(newhacd)
 }
 

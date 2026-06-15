@@ -35,7 +35,9 @@ pub fn asset_add(state: &mut CoreState, addr: &Address, asset: &AssetAmt) -> XRe
     let newast = oldasset.checked_add(asset)?;
     userbls.asset_set(newast.clone())?;
     state.balance_set(addr, &userbls);
-    blackhole_engulf(state, addr);
+    if blackhole_engulf(state, addr) {
+        total_record_blackhole_asset(state)?;
+    }
     Ok(newast)
 }
 

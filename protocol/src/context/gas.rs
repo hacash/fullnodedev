@@ -295,13 +295,13 @@ impl ContextInst<'_> {
         }
         // add count
         let mut state = crate::state::CoreState::wrap(self.state());
-        let mut ttcount = state.get_total_count();
-        let next_burn = (*ttcount.ast_vm_gas_burn_238)
-            .checked_add(used_238 as u128)
-            .ok_or_else(|| "ast_vm_gas_burn_238 overflow".to_string())?;
-        ttcount.ast_vm_gas_burn_238 = Uint12::from_checked(next_burn)
-            .ok_or_else(|| "ast_vm_gas_burn_238 overflow".to_string())?;
-        state.set_total_count(&ttcount);
+        crate::operate::with_total_count(&mut state, |ttcount| {
+            crate::operate::total_add_u12(
+                &mut ttcount.ast_vm_gas_burn_238,
+                used_238 as u128,
+                "ast_vm_gas_burn_238",
+            )
+        })?;
         Ok(())
     }
 }

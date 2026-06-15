@@ -158,8 +158,10 @@ impl Address {
     }}
     concat_idents::concat_idents!{ creat_by_version = create_, $name {
     pub fn creat_by_version(hx: [u8; 20]) -> Self {
-        let data = vec![vec![Self::$key], hx.to_vec()].concat();
-        Self::from(<Vec<u8> as TryInto<[u8; 21]>>::try_into(data).unwrap())
+        let mut data = [0u8; 21];
+        data[0] = Self::$key;
+        data[1..].copy_from_slice(&hx);
+        Self::from(data)
     }
     }}
     )+

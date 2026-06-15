@@ -55,15 +55,14 @@ pub fn calculate_diamond_visual_gene(name: &[u8; 6], life_gene: &[u8; 32]) -> Di
 }
 
 /**
- * calculate diamond visual gene
+ * calculate diamond life gene
 */
-pub fn calculate_diamond_gene(
+pub fn calculate_diamond_life_gene(
     dianum: u32,
     diamhash: &[u8; 32],
-    diamondstr: &[u8; 16],
     pedding_block_hash: &Hash,
     diabidfee: &Amount,
-) -> (DiamondLifeGene, DiamondVisualGene) {
+) -> DiamondLifeGene {
     // cacl vgenehash
     let mut vgenehash = diamhash.clone();
     if dianum > DIAMOND_ABOVE_NUMBER_OF_VISUAL_GENE_APPEND_BLOCK_HASH {
@@ -74,11 +73,30 @@ pub fn calculate_diamond_gene(
         }
         vgenehash = x16rs::calculate_hash(vgenestuff);
     }
+    DiamondLifeGene::from(vgenehash.try_into().unwrap())
+}
+
+/**
+ * calculate diamond genes
+ */
+pub fn calculate_diamond_gene(
+    dianum: u32,
+    diamhash: &[u8; 32],
+    diamondstr: &[u8; 16],
+    pedding_block_hash: &Hash,
+    diabidfee: &Amount,
+) -> (DiamondLifeGene, DiamondVisualGene) {
+    let life_gene = calculate_diamond_life_gene(
+        dianum,
+        diamhash,
+        pedding_block_hash,
+        diabidfee,
+    );
     let dianame = diamondstr[10..16].try_into().unwrap();
     // ok ret
     (
-        DiamondLifeGene::from(vgenehash.try_into().unwrap()),
-        calculate_diamond_visual_gene(&dianame, &vgenehash),
+        life_gene,
+        calculate_diamond_visual_gene(&dianame, &life_gene),
     )
 }
 

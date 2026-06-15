@@ -150,14 +150,18 @@ macro_rules! transaction_define_legacy {
             }
 
             fn hash_ex(&self, adfe: Vec<u8>) -> Hash {
-                let stuff = vec![
-                    self.ty.serialize(),
-                    self.timestamp.serialize(),
-                    self.addrlist.serialize(),
-                    adfe,
-                    self.actions.serialize(),
-                ]
-                .concat();
+                let mut stuff = Vec::with_capacity(
+                    self.ty.size()
+                        + self.timestamp.size()
+                        + self.addrlist.size()
+                        + adfe.len()
+                        + self.actions.size(),
+                );
+                self.ty.serialize_to(&mut stuff);
+                self.timestamp.serialize_to(&mut stuff);
+                self.addrlist.serialize_to(&mut stuff);
+                stuff.extend_from_slice(&adfe);
+                self.actions.serialize_to(&mut stuff);
                 let hx = sys::calculate_hash(stuff);
                 Hash::must(&hx[..])
             }
@@ -294,17 +298,14 @@ fn mark_tx_exist(ctx: &mut dyn Context, hx: &Hash, blkhei: u64) {
 fn record_legacy_extra9_burn_fee(ctx: &mut dyn Context, fee: &Amount, fee_got: &Amount) -> Rerr {
     let burn_fee = fee.sub_mode_u128(fee_got)?;
     if burn_fee.is_positive() {
-        let burn_238 = burn_fee.to_238_u64()?;
-        if burn_238 > 0 {
-            let mut state = CoreState::wrap(ctx.state());
-            let mut ttcount = state.get_total_count();
-            let next_burn = (*ttcount.tx_fee_burn90_238)
-                .checked_add(burn_238 as u128)
-                .ok_or_else(|| "legacy_tx_extra9_burn_238 overflow".to_string())?;
-            ttcount.tx_fee_burn90_238 = Uint12::from_checked(next_burn)
-                .ok_or_else(|| "legacy_tx_extra9_burn_238 overflow".to_string())?;
-            state.set_total_count(&ttcount);
-        }
+        let mut state = CoreState::wrap(ctx.state());
+        crate::operate::with_total_count(&mut state, |ttcount| {
+            crate::operate::total_add_amount_238(
+                &mut ttcount.tx_fee_burn90_238,
+                &burn_fee,
+                "legacy_tx_extra9_burn_238",
+            )
+        })?;
     }
     Ok(())
 }
@@ -329,6 +330,10 @@ fn do_tx_execute_legacy<T: Transaction + LegacyTransactionRead>(
         return errf!("tx type {} ano_mark must be zero", prep.txty);
     }
     mark_tx_exist(ctx, &prep.hx, prep.blkhei);
+    {
+        let mut state = CoreState::wrap(ctx.state());
+        crate::operate::total_add_tx_fee_pay(&mut state, tx)?;
+    }
     for action in tx.actions() {
         ctx.exec_from_set(ExecFrom::Top);
         // Legacy top-level execution ignores returned gas. Legacy extra9 fee semantics

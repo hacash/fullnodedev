@@ -40,7 +40,9 @@ pub fn sat_add(ctx: &mut dyn Context, addr: &Address, sat: &Satoshi) -> XRet<Sat
     let newsat = Satoshi::from(sum);
     userbls.satoshi = SatoshiAuto::from_satoshi(&newsat);
     state.balance_set(addr, &userbls);
-    blackhole_engulf(&mut state, addr);
+    if blackhole_engulf(&mut state, addr) {
+        total_record_blackhole_sat(&mut state, sat)?;
+    }
     Ok(newsat)
 }
 

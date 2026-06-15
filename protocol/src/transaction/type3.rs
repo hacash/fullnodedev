@@ -144,16 +144,22 @@ impl TransactionType3 {
     }
 
     fn hash_ex(&self, adfe: Vec<u8>) -> Hash {
-        let mut stuff = vec![
-            self.ty.serialize(),
-            self.timestamp.serialize(),
-            self.addrlist.serialize(),
-            adfe,
-            self.actions.serialize(),
-        ]
-        .concat();
-        stuff.append(&mut self.gas_max.serialize());
-        stuff.append(&mut self.ano_mark.serialize());
+        let mut stuff = Vec::with_capacity(
+            self.ty.size()
+                + self.timestamp.size()
+                + self.addrlist.size()
+                + adfe.len()
+                + self.actions.size()
+                + self.gas_max.size()
+                + self.ano_mark.size(),
+        );
+        self.ty.serialize_to(&mut stuff);
+        self.timestamp.serialize_to(&mut stuff);
+        self.addrlist.serialize_to(&mut stuff);
+        stuff.extend_from_slice(&adfe);
+        self.actions.serialize_to(&mut stuff);
+        self.gas_max.serialize_to(&mut stuff);
+        self.ano_mark.serialize_to(&mut stuff);
         let hx = sys::calculate_hash(stuff);
         Hash::must(&hx[..])
     }
@@ -194,6 +200,10 @@ fn do_tx_execute_type3(tx: &TransactionType3, ctx: &mut dyn Context) -> Rerr {
         return errf!("tx type {} ano_mark must be zero", prep.txty);
     }
     mark_tx_exist(ctx, &prep.hx, prep.blkhei);
+    {
+        let mut state = CoreState::wrap(ctx.state());
+        crate::operate::total_add_tx_fee_pay(&mut state, tx)?;
+    }
     let gas_initialized = tx_gas_initialize(ctx)?;
     for action in tx.actions() {
         ctx.exec_from_set(ExecFrom::Top);

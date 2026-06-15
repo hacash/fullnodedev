@@ -92,7 +92,9 @@ pub fn hac_add(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> XRet<Vec<
     check_amount_is_positive!(amt);
     do_hac_add(ctx, addr, amt)?;
     let state = &mut CoreState::wrap(ctx.state());
-    blackhole_engulf(state, addr);
+    if blackhole_engulf(state, addr) {
+        total_record_blackhole_hac(state, amt)?;
+    }
     Ok(vec![])
 }
 

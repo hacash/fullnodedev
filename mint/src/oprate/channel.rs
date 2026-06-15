@@ -57,14 +57,21 @@ pub fn close_channel_with_distribution(
     if *left_sat + *right_sat != ttsat {
         return errf!("BTC distribution amount must match lock-in");
     }
-    // let mut state = ;
-    // total supply
-    let mut ttcount = { CoreState::wrap(ctx.state()).get_total_count() };
-    let opening = (*ttcount.opening_channel)
-        .checked_sub(1)
-        .ok_or_else(|| "opening_channel underflow".to_string())?;
-    ttcount.opening_channel =
-        Uint8::from_checked(opening).ok_or_else(|| "opening_channel overflow".to_string())?;
+    // Validate total-count deltas first, then apply them once at the end so
+    // nested balance ops (e.g. blackhole engulf stats) cannot be overwritten
+    // by a stale total_count snapshot.
+    let mut interest_add_238 = 0u64;
+    let mut deposit_sub_238 = 0u128;
+    let mut closed_hac_volume_add_238 = 0u128;
+    let mut deposit_sat_sub = 0u64;
+    let mut ttcount_check = {
+        let state = CoreState::wrap(ctx.state());
+        preview_total_count(&state, |ttcount| {
+            total_sub_u8(&mut ttcount.opening_channel, 1, "opening_channel")?;
+            total_add_u8(&mut ttcount.channel_close_total, 1, "channel_close_total")?;
+            Ok(())
+        })?
+    };
     // do close
     if ttamt.is_positive() {
         // calculate_interest
@@ -80,17 +87,24 @@ pub fn close_channel_with_distribution(
             return errf!("interest calculation failed");
         }
         let ttiesthac = ttnewhac.sub_mode_u64(&ttamt)?;
-        let ttiesthac_238 = ttiesthac.to_238_u64()?;
-        let interest = (*ttcount.channel_interest_238)
-            .checked_add(ttiesthac_238)
-            .ok_or_else(|| "channel_interest_238 overflow".to_string())?;
-        ttcount.channel_interest_238 = Uint8::from_checked(interest)
-            .ok_or_else(|| "channel_interest_238 overflow".to_string())?;
-        let dep = (*ttcount.channel_deposit_238)
-            .checked_sub(ttamt_238 as u128)
-            .ok_or_else(|| "channel_deposit_238 underflow".to_string())?;
-        ttcount.channel_deposit_238 =
-            Uint12::from_checked(dep).ok_or_else(|| "channel_deposit_238 overflow".to_string())?;
+        interest_add_238 = ttiesthac.to_238_u64()?;
+        deposit_sub_238 = ttamt_238 as u128;
+        closed_hac_volume_add_238 = ttamt_238 as u128;
+        total_add_u8(
+            &mut ttcount_check.channel_interest_238,
+            interest_add_238,
+            "channel_interest_238",
+        )?;
+        total_sub_u12(
+            &mut ttcount_check.channel_deposit_238,
+            deposit_sub_238,
+            "channel_deposit_238",
+        )?;
+        total_add_u12(
+            &mut ttcount_check.channel_closed_hac_volume_238,
+            closed_hac_volume_add_238,
+            "channel_closed_hac_volume_238",
+        )?;
         if newamt1.is_positive() {
             hac_add(ctx, left_addr, &newamt1)?;
         }
@@ -99,11 +113,12 @@ pub fn close_channel_with_distribution(
         }
     }
     if *ttsat > 0 {
-        let dep = (*ttcount.channel_deposit_sat)
-            .checked_sub(*ttsat)
-            .ok_or_else(|| "channel_deposit_sat underflow".to_string())?;
-        ttcount.channel_deposit_sat =
-            Uint8::from_checked(dep).ok_or_else(|| "channel_deposit_sat overflow".to_string())?;
+        deposit_sat_sub = *ttsat;
+        total_sub_u8(
+            &mut ttcount_check.channel_deposit_sat,
+            deposit_sat_sub,
+            "channel_deposit_sat",
+        )?;
         if left_sat.uint() > 0 {
             sat_add(ctx, left_addr, &left_sat.to_satoshi())?;
         }
@@ -141,7 +156,35 @@ pub fn close_channel_with_distribution(
     }
     {
         let mut state = CoreState::wrap(ctx.state());
-        state.set_total_count(&ttcount);
+        with_total_count(&mut state, |ttcount| {
+            total_sub_u8(&mut ttcount.opening_channel, 1, "opening_channel")?;
+            total_add_u8(&mut ttcount.channel_close_total, 1, "channel_close_total")?;
+            if interest_add_238 > 0 {
+                total_add_u8(
+                    &mut ttcount.channel_interest_238,
+                    interest_add_238,
+                    "channel_interest_238",
+                )?;
+                total_sub_u12(
+                    &mut ttcount.channel_deposit_238,
+                    deposit_sub_238,
+                    "channel_deposit_238",
+                )?;
+                total_add_u12(
+                    &mut ttcount.channel_closed_hac_volume_238,
+                    closed_hac_volume_add_238,
+                    "channel_closed_hac_volume_238",
+                )?;
+            }
+            if deposit_sat_sub > 0 {
+                total_sub_u8(
+                    &mut ttcount.channel_deposit_sat,
+                    deposit_sat_sub,
+                    "channel_deposit_sat",
+                )?;
+            }
+            Ok(())
+        })?;
     }
     // ok finish
     Ok(vec![])

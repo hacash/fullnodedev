@@ -1,3 +1,7 @@
+
+use protocol::operate::*;
+
+
 /*
     Permanent storage pricing reference:
     - 0.0002 HAC / 200 bytes = 0.000001 HAC per byte
@@ -65,6 +69,36 @@ action_define! { ContractDeploy, 40,
             charge_bytes,
             contract_store_perm_periods(hei),
         )?;
+        if self.protocol_cost.is_positive() {
+            let mut state = CoreState::wrap(ctx.state());
+            with_total_count(&mut state, |ttcount| {
+                total_add_amount_238(
+                    &mut ttcount.contract_protocol_cost_burn_238,
+                    &self.protocol_cost,
+                    "contract_protocol_cost_burn_238",
+                )?;
+                total_add_u8(
+                    &mut ttcount.contract_deploy_count,
+                    1,
+                    "contract_deploy_count",
+                )?;
+                total_add_u12(
+                    &mut ttcount.contract_charge_bytes_total,
+                    charge_bytes as u128,
+                    "contract_charge_bytes_total",
+                )?;
+                Ok(())
+            })?;
+        } else {
+            let mut state = CoreState::wrap(ctx.state());
+            with_total_count(&mut state, |ttcount| {
+                total_add_u8(
+                    &mut ttcount.contract_deploy_count,
+                    1,
+                    "contract_deploy_count",
+                )
+            })?;
+        }
         // save the contract first; tx-level rollback owns final unwind if Construct fails.
         vmsto!(ctx).contract_set_sync_edition(&caddr, &self.contract);
         if has_construct {
@@ -139,6 +173,27 @@ action_define! { ContractUpdate, 41,
             let maddr = ctx.env().tx.main;
             operate::hac_sub(ctx, &maddr, pcost)?;
         }
+        let mut state = CoreState::wrap(ctx.state());
+        with_total_count(&mut state, |ttcount| {
+            total_add_u8(
+                &mut ttcount.contract_update_count,
+                1,
+                "contract_update_count",
+            )?;
+            total_add_u12(
+                &mut ttcount.contract_charge_bytes_total,
+                edit_bytes as u128,
+                "contract_charge_bytes_total",
+            )?;
+            if pcost.is_positive() {
+                total_add_amount_238(
+                    &mut ttcount.contract_protocol_cost_burn_238,
+                    pcost,
+                    "contract_protocol_cost_burn_238",
+                )?;
+            }
+            Ok(())
+        })?;
         let sys = maybe!(is_change, Change, Append); // Change or Append
         // Authorization is intentionally delegated to the current contract's Change/Append hook.
         // Run the selected hook on the current on-chain contract; failure means the update is not allowed.
@@ -633,7 +688,7 @@ mod contract_test {
         }
 
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
-        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000_000))?;
+        hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000_000))?;
         ctx.gas_initialize(decode_gas_budget(17))?;
 
         let mut act = ContractDeploy::new();
@@ -679,7 +734,7 @@ mod contract_test {
         }
 
         let mut ctx = make_ctx_with_state(env, Box::new(ext_state), &tx);
-        protocol::operate::hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000_000))?;
+        hac_add(&mut ctx, &main, &Amount::unit238(10_000_000_000_000))?;
         ctx.gas_initialize(decode_gas_budget(17))?;
 
         let mut act = ContractUpdate::new();
