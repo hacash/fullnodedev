@@ -159,30 +159,26 @@ pub fn close_channel_with_distribution(
         with_total_count(&mut state, |ttcount| {
             total_sub_u8(&mut ttcount.opening_channel, 1, "opening_channel")?;
             total_add_u8(&mut ttcount.channel_close_total, 1, "channel_close_total")?;
-            if interest_add_238 > 0 {
-                total_add_u8(
-                    &mut ttcount.channel_interest_238,
-                    interest_add_238,
-                    "channel_interest_238",
-                )?;
-                total_sub_u12(
-                    &mut ttcount.channel_deposit_238,
-                    deposit_sub_238,
-                    "channel_deposit_238",
-                )?;
-                total_add_u12(
-                    &mut ttcount.channel_closed_hac_volume_238,
-                    closed_hac_volume_add_238,
-                    "channel_closed_hac_volume_238",
-                )?;
-            }
-            if deposit_sat_sub > 0 {
-                total_sub_u8(
-                    &mut ttcount.channel_deposit_sat,
-                    deposit_sat_sub,
-                    "channel_deposit_sat",
-                )?;
-            }
+            total_add_u8(
+                &mut ttcount.channel_interest_238,
+                interest_add_238,
+                "channel_interest_238",
+            )?;
+            total_sub_u12(
+                &mut ttcount.channel_deposit_238,
+                deposit_sub_238,
+                "channel_deposit_238",
+            )?;
+            total_add_u12(
+                &mut ttcount.channel_closed_hac_volume_238,
+                closed_hac_volume_add_238,
+                "channel_closed_hac_volume_238",
+            )?;
+            total_sub_u8(
+                &mut ttcount.channel_deposit_sat,
+                deposit_sat_sub,
+                "channel_deposit_sat",
+            )?;
             Ok(())
         })?;
     }
