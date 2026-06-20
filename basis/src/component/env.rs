@@ -5,6 +5,8 @@ pub struct ChainInfo {
     pub id: u32,
     pub fast_sync: bool,
     pub diamond_form: bool,
+    /// HIP-25: 0 = disabled until on-chain `StakingGlobal.activation_height` or this value is set in config.
+    pub staking_activation_height: u64,
 }
 
 

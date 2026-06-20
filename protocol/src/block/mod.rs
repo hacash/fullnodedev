@@ -6,6 +6,7 @@ use field::*;
 
 use super::context;
 use super::operate;
+use super::state::CoreState;
 use super::transaction::*;
 
 include! {"util.rs"}

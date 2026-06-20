@@ -5,6 +5,10 @@
 pub const DIAMOND_STATUS_NORMAL                : Uint1 = Uint1::from(1);
 pub const DIAMOND_STATUS_LENDING_TO_SYSTEM     : Uint1 = Uint1::from(2);
 pub const DIAMOND_STATUS_LENDING_TO_USER       : Uint1 = Uint1::from(3);
+/// HIP-25: locked and earning rewards
+pub const DIAMOND_STATUS_STAKED                : Uint1 = Uint1::from(4);
+/// HIP-25: post-unstake cooldown until unlock_height
+pub const DIAMOND_STATUS_STAKING_COOLDOWN      : Uint1 = Uint1::from(5);
 
 
 /*

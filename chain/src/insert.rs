@@ -111,6 +111,7 @@ fn insert_by(eng: &ChainEngine, tree: &mut Roller, mut blk: BlkPkg) -> Ret<Inser
         fast_sync,
         diamond_form: eng.cnf.diamond_form,
         id: eng.cnf.chain_id,
+        staking_activation_height: eng.cnf.staking_activation_height,
     };
 
     let logs = Box::new(eng.logs.next(maybe!(is_open_vmlog(eng, height), height, 0)));

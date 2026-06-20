@@ -97,8 +97,19 @@ pub fn check_diamond_status(state: &mut CoreState, addr_from: &Address, hacd_nam
     let Some(diaitem) = state.diamond(hacd_name) else {
         return xerrf!("diamond status {} not found", hacd_name.to_readable());
     };
-    if diaitem.status != DIAMOND_STATUS_NORMAL {
-        return xerr_rf!("diamond {} has been mortgaged and cannot be transferred", hacd_name.to_readable())
+    if !diamond_status_allows_transfer(&diaitem.status) {
+        let msg = if diamond_status_is_staking_locked(&diaitem.status) {
+            format!(
+                "diamond {} is staked or in staking cooldown and cannot be transferred",
+                hacd_name.to_readable()
+            )
+        } else {
+            format!(
+                "diamond {} has been mortgaged and cannot be transferred",
+                hacd_name.to_readable()
+            )
+        };
+        return xerr_rf!("{}", msg);
     }
     if *addr_from != diaitem.address {
         return xerr_rf!("diamond {} does not belong to address {}", hacd_name.to_readable(), addr_from)

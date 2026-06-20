@@ -22,6 +22,13 @@ inst_state_define!{ CoreState,
     16, diamond_owned,  Address          : DiamondOwnedForm
     17, asset,          Fold64           : AssetSmelt
 
+    /* HIP-25 staking */
+
+    18, staking_global,  Empty            : StakingGlobal
+    19, staking_record,  DiamondName      : StakingRecord
+    20, staking_unlock,  Uint5            : StakingUnlockEntry
+    21, staking_event,   Uint5            : StakingEvent
+
 }
 
 

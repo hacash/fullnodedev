@@ -623,6 +623,7 @@ fn test_block_execute_must_credit_reward_and_fees_to_default_prelude() {
         id: 0,
         diamond_form: false,
         fast_sync: false,
+        staking_activation_height: 0,
     };
     let mut state_in: Box<dyn State> = Box::new(AstForkableState::default());
     {

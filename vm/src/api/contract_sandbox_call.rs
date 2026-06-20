@@ -14,6 +14,7 @@ fn contract_sandbox_call(ctx: &ApiExecCtx, req: ApiRequest) -> ApiResponse {
             id: engcnf.chain_id,
             diamond_form: false,
             fast_sync: false,
+            staking_activation_height: engcnf.staking_activation_height,
         },
         block: BlkInfo {
             height,

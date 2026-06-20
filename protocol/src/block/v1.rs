@@ -97,15 +97,31 @@ impl BlockExec for BlockV1 {
         let mut ctxobj = context::ContextInst::new(env, state, logs, ptx);
         let ctx = &mut ctxobj;
         let txs = self.transactions();
-        let mut total_fee = Amount::zero();
+        let height = self.height().uint();
+        let activation = ctx.env().chain.staking_activation_height;
+        let mut miner_fee = Amount::zero();
         // exec each tx
         for tx in txs {
             ctx.reset_for_new_tx(tx.as_read());
             tx.execute(ctx)?; // do exec
-            total_fee = total_fee.add_mode_u64(&tx.fee_got())?; // add fee
+            let fee = tx.fee_got();
+            if fee.is_positive() {
+                let mut state = CoreState::wrap(ctx.state());
+                let redirect = operate::staking_is_active_at_height(&state, height, activation)
+                    && operate::staking_tx_qualifies_for_mint_fee_redirect(tx.as_read());
+                if redirect {
+                    operate::staking_deposit_mint_miner_share(&mut state, &fee);
+                } else {
+                    miner_fee = miner_fee.add_mode_u64(&fee)?;
+                }
+            }
         }
-        if let Some(fee_receiver) = fee_receiver.filter(|_| total_fee.is_positive()) {
-            operate::hac_add(ctx, &fee_receiver, &total_fee)?;
+        if let Some(fee_receiver) = fee_receiver.filter(|_| miner_fee.is_positive()) {
+            operate::hac_add(ctx, &fee_receiver, &miner_fee)?;
+        }
+        {
+            let mut state = CoreState::wrap(ctx.state());
+            operate::staking_on_block_close(&mut state, height, activation)?;
         }
         Ok(ctxobj.release())
 

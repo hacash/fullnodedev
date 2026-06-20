@@ -30,6 +30,7 @@ fn try_execute_tx_by_author(
             id: this.cnf.chain_id,
             diamond_form: this.cnf.diamond_form,
             fast_sync: false,
+            staking_activation_height: this.cnf.staking_activation_height,
         },
         block: BlkInfo {
             height: pd_hei,

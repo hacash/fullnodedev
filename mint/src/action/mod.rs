@@ -17,6 +17,7 @@ include! {"channel.rs"}
 include! {"diamond_util.rs"}
 include! {"diamond_mint.rs"}
 include! {"diamond_insc.rs"}
+include! {"diamond_staking.rs"}
 include! {"asset.rs"}
 include! {"util.rs"}
 
@@ -46,5 +47,9 @@ action_register! {
     DiaInscMove
     DiaInscDrop
     DiaInscEdit
+
+    // HIP-25 staking
+    DiaStake
+    DiaUnstake
 
 }

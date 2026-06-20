@@ -78,11 +78,19 @@ fn load_diamond_for_inscription(state: &mut CoreState, diamond: &DiamondName) ->
         state.diamond(diamond)
     );
     check_inscription_owner_privakey(&diasto.address, diamond)?;
-    if diasto.status != DIAMOND_STATUS_NORMAL {
-        return errf!(
-            "diamond {} has been mortgaged and cannot operate inscription",
-            diamond.to_readable()
-        );
+    if !diamond_status_allows_inscription(&diasto.status) {
+        let msg = if diamond_status_is_staking_locked(&diasto.status) {
+            format!(
+                "diamond {} is staked or in staking cooldown and cannot operate inscription",
+                diamond.to_readable()
+            )
+        } else {
+            format!(
+                "diamond {} has been mortgaged and cannot operate inscription",
+                diamond.to_readable()
+            )
+        };
+        return errf!("{}", msg);
     }
     Ok(diasto)
 }

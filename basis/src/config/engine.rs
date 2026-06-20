@@ -46,6 +46,8 @@ pub struct EngineConf {
     // VM contract cache (performance-only, consensus-neutral)
     // Unit: MB. `0` disables cache.
     pub contract_cache_size: f64,
+    /// HIP-25: mainnet fork height; 0 = disabled.
+    pub staking_activation_height: u64,
 }
 
 
@@ -125,6 +127,7 @@ impl EngineConf {
             txpool_maxs: Vec::default(),
             // vm cache
             contract_cache_size: 0.0,
+            staking_activation_height: 0,
         };
         // setup lowest_fee
         if ini_must(sec_server, "lowest_fee", "").len() > 0 {
@@ -142,6 +145,7 @@ impl EngineConf {
         cnf.sync_maxh = ini_must_u64(sec_mint, "height_max", 0);
         cnf.dev_count_switch = ini_must_u64(sec_mint, "dev_count_switch", 0) as usize;
         cnf.show_miner_name = ini_must_bool(sec_mint, "show_miner_name", false);
+        cnf.staking_activation_height = ini_must_u64(sec_mint, "staking_activation_height", 0);
 
         let sec_vm = &ini_section(ini, "vm");
         cnf.vm_log_enable = ini_must_bool(sec_vm, "log_enable", false);
