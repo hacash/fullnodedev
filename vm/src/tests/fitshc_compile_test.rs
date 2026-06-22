@@ -2,6 +2,8 @@
 mod fitshc_compile_tests {
     use crate::fitshc::compile as fitshc_compile;
     use crate::fitshc::compile_with_warnings as fitshc_compile_with_warnings;
+    use crate::ir::convert_ir_to_runtime_bytecode;
+    use crate::rt::{Bytecode, CodePkg, CodeType};
 
     const PRAGMA: &str = "pragma fitsh 1.0.0\n";
 
@@ -161,7 +163,10 @@ mod fitshc_compile_tests {
             }
         "#;
         let res = std::panic::catch_unwind(|| compile_src(src));
-        assert!(res.is_ok(), "fitshc compile panicked for non-contract library address");
+        assert!(
+            res.is_ok(),
+            "fitshc compile panicked for non-contract library address"
+        );
         let err = match res.unwrap() {
             Ok(_) => panic!("fitshc compile should fail"),
             Err(e) => e,
@@ -178,7 +183,10 @@ mod fitshc_compile_tests {
             }
         "#;
         let res = std::panic::catch_unwind(|| compile_src(src));
-        assert!(res.is_ok(), "fitshc compile panicked for non-contract inherit address");
+        assert!(
+            res.is_ok(),
+            "fitshc compile panicked for non-contract inherit address"
+        );
         let err = match res.unwrap() {
             Ok(_) => panic!("fitshc compile should fail"),
             Err(e) => e,
@@ -199,8 +207,8 @@ mod fitshc_compile_tests {
 
     #[test]
     fn rejects_inherit_count_overflow_without_panic() {
-        use field::{Address, Uint4};
         use crate::ContractAddress;
+        use field::{Address, Uint4};
 
         let base = Address::from_readable("18dekVcACnj6Tbd69SsexVMQ5KLBZZfn5K").unwrap();
         let inherit = (0..=u8::MAX as u32)
@@ -218,12 +226,18 @@ mod fitshc_compile_tests {
             inherit
         );
         let res = std::panic::catch_unwind(|| compile_src(&src));
-        assert!(res.is_ok(), "fitshc compile panicked for overflowing inherit count");
+        assert!(
+            res.is_ok(),
+            "fitshc compile panicked for overflowing inherit count"
+        );
         let err = match res.unwrap() {
             Ok(_) => panic!("fitshc compile should fail"),
             Err(e) => e,
         };
-        assert!(err.to_string().contains("too many inherit contracts: max 255"));
+        assert!(
+            err.to_string()
+                .contains("too many inherit contracts: max 255")
+        );
     }
 
     #[test]
@@ -272,8 +286,8 @@ mod fitshc_compile_tests {
 
     #[test]
     fn rejects_contract_library_count_overflow_without_panic() {
-        use field::{Address, Uint4};
         use crate::ContractAddress;
+        use field::{Address, Uint4};
 
         let base = Address::from_readable("18dekVcACnj6Tbd69SsexVMQ5KLBZZfn5K").unwrap();
         let libs = (0..=u8::MAX as u32)
@@ -291,12 +305,18 @@ mod fitshc_compile_tests {
             libs
         );
         let res = std::panic::catch_unwind(|| compile_src(&src));
-        assert!(res.is_ok(), "fitshc compile panicked for overflowing library count");
+        assert!(
+            res.is_ok(),
+            "fitshc compile panicked for overflowing library count"
+        );
         let err = match res.unwrap() {
             Ok(_) => panic!("fitshc compile should fail"),
             Err(e) => e,
         };
-        assert!(err.to_string().contains("too many contract libraries: max 255"));
+        assert!(
+            err.to_string()
+                .contains("too many contract libraries: max 255")
+        );
     }
 
     #[test]
@@ -313,7 +333,6 @@ mod fitshc_compile_tests {
         "#;
         assert!(compile_src(src).is_ok(), "fitshc compile should succeed");
     }
-
 
     #[test]
     fn accepts_tuple_return_type_and_constructor() {
@@ -367,6 +386,59 @@ mod fitshc_compile_tests {
     }
 
     #[test]
+    fn accepts_ircode_log_before_terminal_statements() {
+        let src = r#"
+            contract demo {
+                function external ircode log_then_throw() -> u64 {
+                    log("topic", 1)
+                    throw 7
+                }
+                function external ircode log_then_return() -> u64 {
+                    log("topic", 1)
+                    return 0
+                }
+            }
+        "#;
+        assert!(compile_src(src).is_ok(), "fitshc compile should succeed");
+    }
+
+    #[test]
+    fn ircode_log_does_not_swallow_following_expression_nodes() {
+        let src = r#"
+            contract demo {
+                function external ircode run() -> u64 {
+                    log("topic", 1)
+                    2
+                    3
+                    return 0
+                }
+            }
+        "#;
+        let (contract, _, _, _) = compile_src(src).expect("fitshc compile should succeed");
+        let mut sto = contract.into_sto();
+        let func = sto.userfuncs.as_mut().first_mut().expect("user function");
+        let pkg = CodePkg::try_from(std::mem::take(&mut func.code_stuff)).expect("code pkg");
+        assert!(matches!(pkg.code_type().unwrap(), CodeType::IRNode));
+        let codes = convert_ir_to_runtime_bytecode(&pkg.data).expect("IR codegen");
+        let p2 = codes.iter().filter(|b| **b == Bytecode::P2 as u8).count();
+        let p3 = codes.iter().filter(|b| **b == Bytecode::P3 as u8).count();
+        assert_eq!(p2, 1, "P2 expression must remain a standalone statement");
+        assert_eq!(p3, 1, "P3 expression must remain a standalone statement");
+    }
+
+    #[test]
+    fn rejects_ircode_standalone_stack_source_ops() {
+        let src = r#"
+            contract demo {
+                function external ircode run() -> u64 {
+                    return roll_0()
+                }
+            }
+        "#;
+        expect_compile_err(src, "existing stack value");
+    }
+
+    #[test]
     fn rejects_duplicate_separator_in_deploy_block() {
         let src = r#"
             contract demo {
@@ -406,7 +478,10 @@ mod fitshc_compile_tests {
         let err = compile_src(src)
             .err()
             .expect("fitshc compile should reject construct_must");
-        assert!(err.to_string().contains("unknown deploy field 'construct_must'"));
+        assert!(
+            err.to_string()
+                .contains("unknown deploy field 'construct_must'")
+        );
     }
 
     #[test]

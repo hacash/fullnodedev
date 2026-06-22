@@ -225,7 +225,7 @@ impl Syntax {
             Some(Token::Partition('[')) => ('[', ']'),
             _ => return errf!("log argv number invalid"),
         };
-        let mut subs = self.parse_value_container(open, close, "log argv number invalid")?;
+        let subs = self.parse_value_container(open, close, "log argv number invalid")?;
         let inst = match subs.len() {
             2 => LOG1,
             3 => LOG2,
@@ -233,8 +233,7 @@ impl Syntax {
             5 => LOG4,
             _ => return errf!("log argv number invalid"),
         };
-        subs.push(push_inst_noret(inst));
-        Ok(Box::new(Self::build_irlist(subs)?))
+        super::call::build_log_irnode(inst, subs)
     }
 
     fn parse_single_value_stmt(
@@ -267,6 +266,11 @@ impl Syntax {
                 _ => return errf!("bytecode format invalid"),
             }
         }
-        Ok(Box::new(IRNodeBytecodes { codes }))
+        // Surface-level `bytecode { ... }` must produce a runtime-safe
+        // fragment: no IR-only opcodes, no absolute jumps, no misaligned
+        // params. Routing through `IRNodeBytecodes::new` is the single
+        // construction-time gate, matching the serialized-IR parser entry.
+        let node = IRNodeBytecodes::new(codes).map_err(|e| e.to_string())?;
+        Ok(Box::new(node))
     }
 }
