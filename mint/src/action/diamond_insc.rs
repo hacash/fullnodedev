@@ -157,17 +157,16 @@ fn load_diamond_owner_for_inscription_index(
 }
 
 #[inline]
-fn add_diamond_engraved_count(state: &mut CoreState, add_num: usize) -> Rerr {
-    if add_num == 0 {
+fn add_dia_insc_u8(
+    state: &mut CoreState,
+    field: fn(&mut TotalCount) -> &mut Uint8,
+    add: u64,
+    name: &str,
+) -> Rerr {
+    if add == 0 {
         return Ok(());
     }
-    with_total_count(state, |ttcount| {
-        total_add_u8(
-            &mut ttcount.diamond_engraved,
-            add_num as u64,
-            "diamond_engraved",
-        )
-    })?;
+    with_total_count(state, |ttcount| total_add_u8(field(ttcount), add, name))?;
     Ok(())
 }
 
@@ -187,67 +186,16 @@ fn add_diamond_insc_burn_count(state: &mut CoreState, pfee: &Amount) -> Rerr {
 }
 
 #[inline]
-fn add_dia_insc_action_count(state: &mut CoreState, field: fn(&mut TotalCount) -> &mut Uint8, name: &str) -> Rerr {
-    with_total_count(state, |ttcount| total_add_u8(field(ttcount), 1, name))?;
-    Ok(())
-}
-
-#[inline]
-fn add_dia_insc_live_entries(state: &mut CoreState, add: u64) -> Rerr {
-    if add == 0 {
-        return Ok(());
-    }
-    with_total_count(state, |ttcount| {
-        total_add_u8(
-            &mut ttcount.dia_insc_live_entry_count,
-            add,
-            "dia_insc_live_entry_count",
-        )
-    })?;
-    Ok(())
-}
-
-#[inline]
-fn saturating_sub_dia_insc_live_diamonds(state: &mut CoreState, sub: u64) -> Rerr {
+fn saturating_sub_dia_insc_live_diamond(state: &mut CoreState, sub: u64) -> Rerr {
     if sub == 0 {
         return Ok(());
     }
     with_total_count(state, |ttcount| {
-        let cur = ttcount.dia_insc_live_diamond_count.uint();
+        let cur = ttcount.dia_insc_live_diamond.uint();
         let next = cur.saturating_sub(sub);
-        ttcount.dia_insc_live_diamond_count =
-            Uint8::from_checked(next).ok_or_else(|| "dia_insc_live_diamond_count overflow".to_string())?;
+        ttcount.dia_insc_live_diamond =
+            Uint8::from_checked(next).ok_or_else(|| "dia_insc_live_diamond overflow".to_string())?;
         Ok(())
-    })?;
-    Ok(())
-}
-
-#[inline]
-fn saturating_sub_dia_insc_live_entries(state: &mut CoreState, sub: u64) -> Rerr {
-    if sub == 0 {
-        return Ok(());
-    }
-    with_total_count(state, |ttcount| {
-        let cur = ttcount.dia_insc_live_entry_count.uint();
-        let next = cur.saturating_sub(sub);
-        ttcount.dia_insc_live_entry_count =
-            Uint8::from_checked(next).ok_or_else(|| "dia_insc_live_entry_count overflow".to_string())?;
-        Ok(())
-    })?;
-    Ok(())
-}
-
-#[inline]
-fn add_dia_insc_live_diamonds(state: &mut CoreState, add: u64) -> Rerr {
-    if add == 0 {
-        return Ok(());
-    }
-    with_total_count(state, |ttcount| {
-        total_add_u8(
-            &mut ttcount.dia_insc_live_diamond_count,
-            add,
-            "dia_insc_live_diamond_count",
-        )
     })?;
     Ok(())
 }
@@ -336,11 +284,20 @@ fn diamond_inscription(this: &DiaInscPush, ctx: &mut dyn Context) -> XRet<Vec<u8
         );
     }
     // change count
-    add_diamond_engraved_count(&mut state, this.diamonds.length())?;
+    add_dia_insc_u8(&mut state, |t| &mut t.diamond_engraved, 1, "diamond_engraved")?;
+    add_dia_insc_u8(
+        &mut state,
+        |t| &mut t.dia_insc_push,
+        this.diamonds.length() as u64,
+        "dia_insc_push",
+    )?;
     add_diamond_insc_burn_count(&mut state, pfee)?;
-    add_dia_insc_action_count(&mut state, |ttcount| &mut ttcount.dia_insc_push_count, "dia_insc_push_count")?;
-    add_dia_insc_live_entries(&mut state, this.diamonds.length() as u64)?;
-    add_dia_insc_live_diamonds(&mut state, live_diamond_add)?;
+    add_dia_insc_u8(
+        &mut state,
+        |t| &mut t.dia_insc_live_diamond,
+        live_diamond_add,
+        "dia_insc_live_diamond",
+    )?;
     // sub main addr balance
     if pfee.is_positive() {
         hac_sub(ctx, &main_addr, pfee)?;
@@ -406,9 +363,9 @@ fn diamond_inscription_clean(this: &DiaInscClean, ctx: &mut dyn Context) -> XRet
     }
     // change count and sub hac
     add_diamond_insc_burn_count(&mut state, pfee)?;
-    add_dia_insc_action_count(&mut state, |ttcount| &mut ttcount.dia_insc_clean_count, "dia_insc_clean_count")?;
-    saturating_sub_dia_insc_live_entries(&mut state, cleared_entries)?;
-    saturating_sub_dia_insc_live_diamonds(&mut state, cleared_diamonds)?;
+    add_dia_insc_u8(&mut state, |t| &mut t.dia_insc_clean, 1, "dia_insc_clean")?;
+    add_dia_insc_u8(&mut state, |t| &mut t.dia_insc_drop, cleared_entries, "dia_insc_drop")?;
+    saturating_sub_dia_insc_live_diamond(&mut state, cleared_diamonds)?;
     if pfee.is_positive() {
         hac_sub(ctx, &main_addr, pfee)?;
     }
@@ -484,7 +441,7 @@ fn diamond_inscription_edit(this: &DiaInscEdit, ctx: &mut dyn Context) -> XRet<V
     state.diamond_set(&this.diamond, &diasto);
     // burn protocol cost
     add_diamond_insc_burn_count(&mut state, pfee)?;
-    add_dia_insc_action_count(&mut state, |ttcount| &mut ttcount.dia_insc_edit_count, "dia_insc_edit_count")?;
+    add_dia_insc_u8(&mut state, |t| &mut t.dia_insc_edit, 1, "dia_insc_edit")?;
     if pfee.is_positive() {
         hac_sub(ctx, &main_addr, pfee)?;
     }
@@ -575,12 +532,12 @@ fn diamond_inscription_move(this: &DiaInscMove, ctx: &mut dyn Context) -> XRet<V
     state.diamond_set(&this.to_diamond, &to_sto);
     // burn protocol cost
     add_diamond_insc_burn_count(&mut state, pfee)?;
-    add_dia_insc_action_count(&mut state, |ttcount| &mut ttcount.dia_insc_move_count, "dia_insc_move_count")?;
+    add_dia_insc_u8(&mut state, |t| &mut t.dia_insc_move, 1, "dia_insc_move")?;
     if from_len == 1 {
-        saturating_sub_dia_insc_live_diamonds(&mut state, 1)?;
+        saturating_sub_dia_insc_live_diamond(&mut state, 1)?;
     }
     if to_len == 0 {
-        add_dia_insc_live_diamonds(&mut state, 1)?;
+        add_dia_insc_u8(&mut state, |t| &mut t.dia_insc_live_diamond, 1, "dia_insc_live_diamond")?;
     }
     if pfee.is_positive() {
         hac_sub(ctx, &main_addr, pfee)?;
@@ -641,10 +598,9 @@ fn diamond_inscription_drop(this: &DiaInscDrop, ctx: &mut dyn Context) -> XRet<V
     state.diamond_set(&this.diamond, &diasto);
     // burn fee
     add_diamond_insc_burn_count(&mut state, pfee)?;
-    add_dia_insc_action_count(&mut state, |ttcount| &mut ttcount.dia_insc_drop_count, "dia_insc_drop_count")?;
-    saturating_sub_dia_insc_live_entries(&mut state, 1)?;
+    add_dia_insc_u8(&mut state, |t| &mut t.dia_insc_drop, 1, "dia_insc_drop")?;
     if prev_len == 1 {
-        saturating_sub_dia_insc_live_diamonds(&mut state, 1)?;
+        saturating_sub_dia_insc_live_diamond(&mut state, 1)?;
     }
     if pfee.is_positive() {
         hac_sub(ctx, &main_addr, pfee)?;
