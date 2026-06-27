@@ -88,6 +88,20 @@ pub fn hac_check(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> XRet<Am
 }
 
 
+/// Credit HAC balance without Context (block-close / internal settlement).
+pub fn hac_add_balance(state: &mut CoreState, addr: &Address, amt: &Amount) -> XRet<()> {
+    check_amount_is_positive!(amt);
+    addr.check_version()?;
+    let mut bls = state.balance(addr).unwrap_or_default();
+    bls.hacash = bls.hacash.add_mode_u128(amt)?;
+    bls.hacash.check_store_long()?;
+    state.balance_set(addr, &bls);
+    if blackhole_engulf(state, addr) {
+        total_record_blackhole_hac(state, amt)?;
+    }
+    Ok(())
+}
+
 pub fn hac_add(ctx: &mut dyn Context, addr: &Address, amt: &Amount) -> XRet<Vec<u8>> {
     check_amount_is_positive!(amt);
     do_hac_add(ctx, addr, amt)?;

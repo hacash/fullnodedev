@@ -52,6 +52,7 @@ include! {"core/amount.rs"}
 include! {"core/wire_amount.rs"}
 include! {"core/diamond.rs"}
 include! {"core/diamond_smelt.rs"}
+include! {"core/staking.rs"}
 include! {"core/status.rs"}
 include! {"core/asset.rs"}
 

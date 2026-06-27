@@ -11,4 +11,5 @@ include! {"hacash.rs"}
 include! {"diamond.rs"}
 include! {"satoshi.rs"}
 include! {"asset.rs"}
+include! {"staking.rs"}
 // include!{"channel.rs"}
