@@ -1,21 +1,6 @@
 
 use protocol::operate::*;
 
-
-/*
-    Permanent storage pricing reference:
-    - 0.0002 HAC / 200 bytes = 0.000001 HAC per byte
-    - 1600 bytes * 10000 periods ~= 8 HAC total permanent protocol cost
-    - 10000 periods ~= 9.51 years when one period = 100 blocks
-*/
-pub const CONTRACT_STORE_PERM_PERIODS: u64 = 10_000;
-
-/*
-    Minimum protocol fee purity floor, in unit-238 per tx byte.
-    10000:238 == 100:244 == 0.000001 HAC per byte.
-*/
-pub const CONTRACT_STORE_LOWEST_FEE_PURITY: i64 = 10000;
-
 macro_rules! vmsto { ($ctx: expr) => {
     VMState::wrap($ctx.state())
 }}
@@ -67,7 +52,7 @@ action_define! { ContractDeploy, 40,
             ctx,
             &self.protocol_cost,
             charge_bytes,
-            contract_store_perm_periods(hei),
+            protocol::params::CONTRACT_STORE_PERM_PERIODS,
         )?;
         if self.protocol_cost.is_positive() {
             let mut state = CoreState::wrap(ctx.state());
@@ -154,7 +139,7 @@ action_define! { ContractUpdate, 41,
         let is_change = did_structural_change || did_effective_lookup_change;
         // Modification tax: charge the edit payload at perm periods (edit.size() >= chain delta).
         let edit_bytes = self.edit.size();
-        let edit_periods = contract_store_perm_periods(hei);
+        let edit_periods = protocol::params::CONTRACT_STORE_PERM_PERIODS;
         let total_fee = calc_contract_protocol_cost_min_with_periods(ctx, edit_bytes, edit_periods)?;
         let pcost = &self.protocol_cost;
         if pcost.is_negative() {
@@ -567,18 +552,6 @@ fn check_sub_contract_protocol_cost(
     Ok(())
 }
 
-#[inline(always)]
-fn contract_store_perm_periods(_hei: u64) -> u64 {
-    CONTRACT_STORE_PERM_PERIODS
-}
-
-#[inline(always)]
-fn effective_contract_fee_purity(ctx: &dyn Context) -> u64 {
-    ctx.tx()
-        .fee_purity()
-        .max(CONTRACT_STORE_LOWEST_FEE_PURITY as u64)
-}
-
 fn calc_contract_protocol_cost_min_with_periods(
     ctx: &dyn Context,
     charge_bytes: usize,
@@ -587,7 +560,10 @@ fn calc_contract_protocol_cost_min_with_periods(
     if charge_bytes == 0 {
         return Ok(Amount::zero());
     }
-    let fee_purity = effective_contract_fee_purity(ctx) as u128; // unit-238 per tx byte
+    let fee_purity = protocol::params::vm_effective_fee_purity(
+        ctx.env().block.height,
+        ctx.tx().fee_purity(),
+    ) as u128; // unit-238 per tx byte
     let periods = periods as u128;
     if periods == 0 || fee_purity == 0 {
         return errf!(
@@ -613,8 +589,6 @@ fn calc_contract_protocol_cost_min_with_periods(
     };
     Ok(Amount::coin_u128(need, UNIT_238))
 }
-
-/* ************************************* fn check_sub_contract_protocol_fee(ctx: &mut dyn Context, ctlsz: usize, ptcfee: &Amount) -> Rerr { // let _hei = ctx.env().block.height; let e = errf!("contract protocol fee calculate failed"); let mul = CONTRACT_STORE_FEE_MUL as u128; // 30 let feep = ctx.tx().fee_purity() as u128; // per-byte, no GSCU division let Some(rlfe) = feep.checked_mul(ctlsz as u128) else { return e }; let Some(rlfe) = rlfe.checked_mul(mul) else { return e }; let tx50fee = &Amount::coin_u128(rlfe, UNIT_238).compress(2, AmtCpr::Grow)?; if tx50fee <= ctx.tx().fee() { return e } println!("{}, {}, {}, {}", ctx.tx().size(), ctlsz, ctx.tx().fee(), tx50fee); let maddr = ctx.env().tx.main; // check fee if ptcfee < tx50fee { return errf!("protocol fee must need at least {} but just got {}", tx50fee, ptcfee) } operate::hac_sub(ctx, &maddr, ptcfee)?; Ok(()) } */
 
 #[cfg(test)]
 mod contract_test {

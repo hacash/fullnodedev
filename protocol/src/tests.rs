@@ -1528,6 +1528,42 @@ fn test_gas_refund_enters_settled_state_and_keeps_queries() {
 }
 
 #[test]
+fn test_type3_gas_price_uses_protocol_vm_floor_when_fee_purity_is_low() {
+    let main = field::ADDRESS_ONEX.clone();
+    let mut tx = TransactionType3::new_by(main, Amount::unit238(1), 1730000000);
+    tx.gas_max = Uint1::from(1);
+    let tx: &'static TransactionType3 = Box::leak(Box::new(tx));
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::unit238(5_000_000_000);
+        state.balance_set(&main, &bls);
+    }
+
+    ctx.gas_initialize(100).unwrap();
+    assert_eq!(
+        ctx.gas_max_charge().unwrap(),
+        Amount::unit238(100 * crate::params::VM_LOWEST_FEE_PURITY)
+    );
+
+    ctx.gas_charge(25).unwrap();
+    assert_eq!(
+        ctx.gas_used_charge().unwrap(),
+        Amount::unit238(25 * crate::params::VM_LOWEST_FEE_PURITY)
+    );
+}
+
+#[test]
 fn test_gas_charge_out_of_gas_does_not_mutate_remaining() {
     let (mut ctx, _main) = build_type3_gas_ctx(100);
 

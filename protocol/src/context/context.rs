@@ -49,7 +49,7 @@ impl<'a> ContextInst<'a> {
     }
 
     pub fn gas_used_charge(&self) -> Ret<Amount> {
-        let price = GasPrice::from_tx(self.txr)?;
+        let price = GasPrice::from_tx(self.txr, self.env.block.height)?;
         self.gas.used_charge(&price)
     }
 

@@ -53,13 +53,18 @@ struct GasPrice {
 }
 
 impl GasPrice {
-    fn from_tx(tx: &dyn TransactionRead) -> Ret<Self> {
+    fn from_tx(tx: &dyn TransactionRead, height: u64) -> Ret<Self> {
         // Preserve the raw fee/size fraction so gas settle does not lose price precision.
-        let purity_fee = tx
+        let raw_fee = tx
             .fee_got()
             .to_238_u128()
             .map_err(|e| format!("tx gas price invalid: {}", e))?;
         let purity_size = tx.size() as u128;
+        let floor = crate::params::vm_lowest_fee_purity(height) as u128;
+        let floor_fee = floor
+            .checked_mul(purity_size)
+            .ok_or_else(|| "tx gas price invalid".to_owned())?;
+        let purity_fee = raw_fee.max(floor_fee);
         if purity_fee > i128::MAX as u128 || purity_size > i128::MAX as u128 {
             return errf!("tx gas price invalid");
         }
@@ -259,7 +264,7 @@ impl ContextInst<'_> {
         if budget <= 0 {
             return errf!("gas budget invalid");
         }
-        let price = GasPrice::from_tx(self.tx())?;
+        let price = GasPrice::from_tx(self.tx(), self.env().block.height)?;
         let cap = decode_gas_budget(TX_GAS_BUDGET_CAP_BYTE);
         let budget = budget.min(cap);
         let max_burn_amt = GasCounter::calc_burn_amount(budget, &price)?;
@@ -279,7 +284,7 @@ impl ContextInst<'_> {
     /// - this runs only on the tx success path
     /// - if upper layers roll back the transaction, neither the refund nor the statistics update commit
     pub fn gas_refund(&mut self) -> Rerr {
-        let price = GasPrice::from_tx(self.tx())?;
+        let price = GasPrice::from_tx(self.tx(), self.env().block.height)?;
         let (refund, used_charge) = self.gas.finalize(&price)?;
         if refund.is_positive() {
             // do refund

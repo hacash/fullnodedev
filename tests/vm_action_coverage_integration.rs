@@ -1465,18 +1465,18 @@ mod action_coverage {
         let new_size = old_size + edit.size();
         let delta_bytes = new_size.saturating_sub(old_size);
         let edit_bytes = edit.size();
-        let fee_purity =
-            ctx.tx()
-                .fee_purity()
-                .max(vm::action::CONTRACT_STORE_LOWEST_FEE_PURITY as u64) as u128;
+        let fee_purity = protocol::params::vm_effective_fee_purity(
+            ctx.env().block.height,
+            ctx.tx().fee_purity(),
+        ) as u128;
         let _expected = Amount::coin_u128(
             fee_purity
                 .saturating_mul(delta_bytes as u128)
-                .saturating_mul(vm::action::CONTRACT_STORE_PERM_PERIODS as u128)
+                .saturating_mul(protocol::params::CONTRACT_STORE_PERM_PERIODS as u128)
                 .saturating_add(
                     fee_purity
                         .saturating_mul(edit_bytes as u128)
-                        .saturating_mul(vm::action::CONTRACT_STORE_PERM_PERIODS as u128),
+                        .saturating_mul(protocol::params::CONTRACT_STORE_PERM_PERIODS as u128),
                 ),
             field::UNIT_238,
         );
