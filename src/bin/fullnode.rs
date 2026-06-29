@@ -17,7 +17,7 @@ use sys::*;
 fn main() {
     println!(
         "[Version] full node v{}, build time: {}, database type: {}.",
-        HACASH_NODE_VERSION, HACASH_NODE_BUILD_TIME, HACASH_STATE_DB_UPDT
+        HACASH_NODE_VERSION, HACASH_NODE_BUILD_TIME, DB_VERSION
     );
 
     if let Err(e) = run() {
@@ -69,7 +69,7 @@ pub fn run_with_scaner(cnfpath: &str, scan: Box<dyn Scaner>) -> Rerr {
         .txpool(build_txpool)
         .minter(|ini| Ok(Box::new(HacashMinter::create(ini))))
         .engine(|dbfn, cnf, minter, scaner| {
-            Ok(Box::new(ChainEngine::open(dbfn, cnf, minter, scaner)))
+            Ok(Box::new(ChainEngine::open(dbfn, cnf, minter, scaner, DB_VERSION)))
         })
         .hnoder(|ini, txpool, engine| Ok(Box::new(HacashNode::open(ini, txpool, engine))))
         .server(|ini, hnoder| {

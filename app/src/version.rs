@@ -1,9 +1,8 @@
 
 
 #[allow(unused)]
-pub const HACASH_NODE_VERSION: &str    = "1.0.6";
+pub const HACASH_NODE_VERSION: &str    = "1.0.8";
 #[allow(unused)]
-pub const HACASH_NODE_BUILD_TIME: &str = "2026/6/26 #1";
+pub const HACASH_NODE_BUILD_TIME: &str = "2026/6/19 #1";
 #[allow(unused)]
-pub const HACASH_STATE_DB_UPDT: u32    = 8;
-
+pub const DB_VERSION: u32              = 8;

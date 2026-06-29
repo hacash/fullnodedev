@@ -48,6 +48,7 @@ pub fn hac_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, amt: &A
         from,
         to,
     )?;
+    check_transfer_recipient_allowed(to)?;
     // is to self
     if from == to {
         if !from.is_privakey() {

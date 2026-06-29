@@ -603,7 +603,8 @@ fn test_block_execute_must_credit_reward_and_fees_to_default_prelude() {
 
     let miner_acc = Account::create_by("protocol-default-prelude-main").unwrap();
     let miner = Address::from(*miner_acc.address());
-    let payee = field::ADDRESS_TWOX.clone();
+    let payee_acc = Account::create_by("protocol-default-prelude-payee").unwrap();
+    let payee = Address::from(*payee_acc.address());
 
     let mut block = BlockV1::default();
     block.intro.head.height = BlockHeight::from(1);
@@ -1217,6 +1218,51 @@ fn test_type3_gas_max_zero_allows_plain_zero_surcharge_action() {
 
     tx.execute(&mut ctx).unwrap();
     assert_eq!(ctx.gas_remaining(), 0);
+}
+
+#[test]
+fn test_transfer_rejects_system_recipient_but_allows_blackhole() {
+    let _guard = install_test_registry();
+
+    let main_acc = Account::create_by("protocol-system-recipient-main").unwrap();
+    let main = Address::from(*main_acc.address());
+    let mut tx = TransactionType2::new_by(main.clone(), Amount::mei(1), 1730000000);
+    let mut act = HacToTrs::new();
+    act.to = AddrOrPtr::from_addr(field::ADDRESS_ONEX.clone());
+    act.hacash = Amount::zhu(1);
+    tx.actions.push(Box::new(act)).unwrap();
+    tx.fill_sign(&main_acc).unwrap();
+
+    let mut env = Env::default();
+    env.chain.fast_sync = true;
+    env.tx = crate::transaction::create_tx_info(&tx);
+    let mut ctx = ContextInst::new(
+        env,
+        Box::new(AstForkableState::default()),
+        Box::new(EmptyLogs {}),
+        &tx,
+    );
+    {
+        let mut state = crate::state::CoreState::wrap(ctx.state());
+        let mut bls = state.balance(&main).unwrap_or_default();
+        bls.hacash = Amount::mei(10);
+        state.balance_set(&main, &bls);
+    }
+
+    let err = tx.execute(&mut ctx).unwrap_err();
+    assert!(
+        err.contains("cannot transfer to system address"),
+        "{}",
+        err
+    );
+
+    let mut tx_ok = TransactionType2::new_by(main, Amount::mei(1), 1730000000);
+    let mut act_ok = HacToTrs::new();
+    act_ok.to = AddrOrPtr::from_addr(field::ADDRESS_ZERO.clone());
+    act_ok.hacash = Amount::zhu(1);
+    tx_ok.actions.push(Box::new(act_ok)).unwrap();
+    tx_ok.fill_sign(&main_acc).unwrap();
+    tx_ok.execute(&mut ctx).unwrap();
 }
 
 fn seed_tex_asset_state(ctx: &mut dyn Context, owner: Address, serial: Fold64, amount: u64) {

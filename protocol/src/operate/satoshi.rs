@@ -69,6 +69,7 @@ pub fn sat_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, sat: &S
         from,
         to,
     )?;
+    check_transfer_recipient_allowed(to)?;
     if from == to {
 		return xerrf!("cannot transfer to self")
     }

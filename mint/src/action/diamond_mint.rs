@@ -51,6 +51,7 @@ impl DiamondMint {
 fn diamond_mint(this: &DiamondMint, ctx: &mut dyn Context) -> XRet<Vec<u8>> {
     let act = &this.d;
     act.address.must_privakey()?;
+    check_transfer_recipient_allowed(&act.address)?;
     let env = ctx.env().clone();
     check_diamond_mint_tx_type(ctx)?;
     let pending_height = env.block.height;
@@ -337,5 +338,27 @@ mod diamond_mint_tests {
         let supply = CoreState::wrap(ctx.state()).get_total_count();
         assert_eq!(supply.minted_diamond.uint(), 1);
         assert_eq!(*supply.blackhole_hacd_burn_count, 1);
+    }
+
+    #[test]
+    fn diamond_mint_rejects_non_blackhole_system_recipient() {
+        let _guard = scoped_protocol_setup();
+        let main = Address::create_privakey([1u8; 20]);
+        let fee = Amount::coin(1000, UNIT_238);
+        let mut act = diamond_mint_action(DIAMOND_ABOVE_NUMBER_OF_BURNING90_PERCENT_TX_FEES + 1);
+        act.d.address = ADDRESS_ONEX;
+
+        let mut tx = TransactionType2::new_by(main, fee, 1);
+        tx.push_action(Box::new(act.clone())).unwrap();
+        let env = env_for_tx(&tx);
+        let mut ctx = ContextInst::new(
+            env,
+            Box::new(FlatMemState::default()),
+            Box::new(EmptyLogs {}),
+            &tx,
+        );
+
+        let err = act.execute(&mut ctx).unwrap_err();
+        assert!(err.to_string().contains("system address"), "{err}");
     }
 }

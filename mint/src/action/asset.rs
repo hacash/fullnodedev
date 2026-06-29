@@ -35,8 +35,11 @@ action_define! { AssetCreate, 16,
         }
         // check meta
         amd.issuer.check_version()?;
-        if amd.issuer == BLACKHOLE_ADDR {
-            return xerr!("issuer cannot be blackhole address")
+        if amd.issuer.is_privakey_unknown() {
+            return xerrf!(
+                "issuer cannot be system address {} (privakey unknown)",
+                amd.issuer
+            )
         }
         let tl = amd.ticket.length();
         let nl = amd.name.length();

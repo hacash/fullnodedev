@@ -426,7 +426,7 @@ mod tests {
         let txp = TxPkg::create(Box::new(tx));
         let tp = OneTxPool { tx: txp };
 
-        let mut cnf = EngineConf::new(&IniObj::default(), 0);
+        let mut cnf = EngineConf::new(&IniObj::default());
         cnf.max_block_txs = 10;
         cnf.max_block_size = 1_000_000;
         cnf.max_tx_size = 100_000;

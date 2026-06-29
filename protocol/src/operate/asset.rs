@@ -64,6 +64,7 @@ pub fn asset_transfer(ctx: &mut dyn Context, from: &Address, to: &Address, asset
         from,
         to,
     )?;
+    check_transfer_recipient_allowed(to)?;
     if from == to {
 		return xerrf!("cannot transfer to self")
     }
