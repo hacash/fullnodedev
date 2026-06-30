@@ -590,6 +590,15 @@ fn calc_contract_protocol_cost_min_with_periods(
     Ok(Amount::coin_u128(need, UNIT_238))
 }
 
+/// Minimum on-chain `protocol_cost` for `charge_bytes` stored `periods` times.
+pub fn contract_protocol_cost_min(
+    ctx: &dyn Context,
+    charge_bytes: usize,
+    periods: u64,
+) -> Ret<Amount> {
+    calc_contract_protocol_cost_min_with_periods(ctx, charge_bytes, periods)
+}
+
 #[cfg(test)]
 mod contract_test {
     use super::*;
@@ -667,9 +676,13 @@ mod contract_test {
 
         let mut act = ContractDeploy::new();
         act.nonce = Uint4::from(nonce);
-        act.protocol_cost = Amount::coin(10000, 244);
         act.construct_argv = BytesW2::from(construct_argv)?;
         act.contract = deploy_contract;
+        act.protocol_cost = contract_protocol_cost_min(
+            &ctx,
+            act.contract.size(),
+            protocol::params::CONTRACT_STORE_PERM_PERIODS,
+        )?;
         let _ = act.execute(&mut ctx)?;
         Ok(())
     }
@@ -713,8 +726,12 @@ mod contract_test {
 
         let mut act = ContractUpdate::new();
         act.address = target.to_addr();
-        act.protocol_cost = Amount::coin(10000, 244);
         act.edit = edit;
+        act.protocol_cost = contract_protocol_cost_min(
+            &ctx,
+            act.edit.size(),
+            protocol::params::CONTRACT_STORE_PERM_PERIODS,
+        )?;
         let _ = act.execute(&mut ctx)?;
         Ok(())
     }
@@ -1008,6 +1025,79 @@ mod contract_test {
                         .unwrap(),
                 )
                 .into_edit(1),
+        );
+    }
+
+    fn make_protocol_cost_ctx(
+        fee_purity: u64,
+    ) -> (
+        &'static testkit::sim::tx::StubTx,
+        &'static mut protocol::context::ContextInst<'static>,
+    ) {
+        init_vm_assigner_once();
+        let main = test_main_addr();
+        let tx = Box::leak(Box::new(
+            StubTxBuilder::new()
+                .ty(TransactionType3::TYPE)
+                .main(main)
+                .addrs(vec![main])
+                .fee(Amount::unit238(1_000_000))
+                .gas_max(17)
+                .tx_size(128)
+                .fee_purity(fee_purity)
+                .build(),
+        ));
+        let mut env = Env::default();
+        env.block.height = 1;
+        env.chain.id = 1;
+        env.chain.fast_sync = true;
+        env.tx.ty = tx.ty();
+        env.tx.main = tx.main();
+        env.tx.addrs = tx.addrs();
+        let ctx = Box::leak(Box::new(make_ctx_with_state(
+            env,
+            Box::new(StateMem::default()),
+            tx,
+        )));
+        (tx, ctx)
+    }
+
+    #[test]
+    fn contract_protocol_cost_min_uses_vm_fee_purity_floor() {
+        let (_tx, ctx) = make_protocol_cost_ctx(1);
+        let min =
+            contract_protocol_cost_min(ctx, 48, protocol::params::CONTRACT_STORE_PERM_PERIODS)
+                .unwrap();
+        let expect = Amount::coin_u128(
+            protocol::params::VM_LOWEST_FEE_PURITY as u128 * 48 * 10_000,
+            field::UNIT_238,
+        );
+        assert_eq!(min, expect);
+        assert!(
+            Amount::coin(10000, 244) < min,
+            "legacy test fixture 1:248 must stay below deploy floor"
+        );
+    }
+
+    #[test]
+    fn contract_protocol_cost_min_scales_with_charge_bytes_and_periods() {
+        let (_tx, ctx) = make_protocol_cost_ctx(80_000);
+        let fee_purity = protocol::params::vm_effective_fee_purity(
+            ctx.env().block.height,
+            ctx.tx().fee_purity(),
+        ) as u128;
+        assert_eq!(fee_purity, 80_000);
+        let min = contract_protocol_cost_min(ctx, 25, 10_000).unwrap();
+        assert_eq!(min, Amount::coin_u128(fee_purity * 25 * 10_000, field::UNIT_238));
+    }
+
+    #[test]
+    fn contract_protocol_cost_min_zero_when_charge_bytes_zero() {
+        let (_tx, ctx) = make_protocol_cost_ctx(1);
+        assert_eq!(
+            contract_protocol_cost_min(ctx, 0, protocol::params::CONTRACT_STORE_PERM_PERIODS)
+                .unwrap(),
+            Amount::zero()
         );
     }
 }
